@@ -132,10 +132,6 @@ type Options struct {
 	HandshakeTimeout time.Duration
 	// RegisterTimeout defaults to RegisterTimeout when zero.
 	RegisterTimeout time.Duration
-	// OnRotate is told the old token of a link a widen rotated in a session
-	// on this socket, after this socket's other sessions of it ended, so the
-	// engine ends the token's sessions on its other transport (DIRECT).
-	OnRotate func(old channel.LinkToken)
 	// Links are the live links registered again after every READY; none
 	// when nil.
 	Links Links
@@ -148,9 +144,6 @@ type Options struct {
 	// when zero. Tests shorten them.
 	IdleTimeout     time.Duration
 	SessionLifetime time.Duration
-	// Tally counts sessions together with the other transport's (give the
-	// same Tally to DirectOptions); nil counts this socket's alone.
-	Tally *Tally
 }
 
 func (o *Options) defaults() {
@@ -209,6 +202,10 @@ type Client struct {
 	opts    Options
 	target  target
 	running atomic.Bool
+	// tally counts the sessions of every socket this client opens, so the
+	// per-engine and per-link limits hold while an old socket's sessions
+	// are still ending as a new socket starts.
+	tally *Tally
 
 	mu sync.Mutex
 	// cur is the READY socket, nil while there is none.
@@ -229,7 +226,7 @@ func New(opts Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{opts: opts, target: t, waitingSince: opts.Now()}, nil
+	return &Client{opts: opts, target: t, waitingSince: opts.Now(), tally: newTally()}, nil
 }
 
 // Status is the connection's state now, with the engine's identity.

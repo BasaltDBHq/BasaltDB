@@ -64,3 +64,15 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 | Object | Change |
 |---|---|
 | `record_setup(setup_id uuid, kind text, agent name, guard_version int, expires_at timestamptz) returns bigint` | Replaced (owner and grants kept). `EXPIRY_TOO_FAR` is now an `expires_at` more than 10 minutes and 5 minutes after the clock reading, or more than 10 minutes after the `setup_id`'s time (it was 24 hours). `EXPIRED` now has a grace of 30 minutes, the length of the address hold: it is refused only when the clock reading is more than 30 minutes past `expires_at` (it was refused from `expires_at` on). Opening and confirming a code need a live `expiresAt`, and a run that already passed those checks may finish within the grace. `USED`, `SUPERSEDED`, `SETUP_ID_IN_FUTURE` and every other rule are unchanged |
+
+### Schema version 8: engine address removed
+
+The direct transport is [removed](cli.md#removed), and with it the engine address recorded with an engine's key ([Engine records](basalt-meta-installs.md#engine-records)). File `018_engine_address_removed.sql`. **Non-breaking** (AE-11): the engine reads only `engine_id`, `public_key`, `recorded_at` and `revoked_at` from `agent_engines`, which a guard without it has too, so every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. An older engine on a version 8 guard is served as before, but its `engineRecord` reads `UNKNOWN` and its `basalt engine list` fails until it is updated: both read the removed `url` column. Only an older setup that records an engine fails there: the two-argument `record_engine` it calls no longer exists, so its transaction rolls back and nothing changes, and the person updates `basalt`. A setup that leaves the guard below version 8 records its engine with `record_engine(<key>, NULL)`. Idempotent.
+
+| Object | Change |
+|---|---|
+| `engines` | Column `url` dropped. Rows and their revocation are kept |
+| `agent_engines` | Recreated without `url` (`security_barrier`, `SELECT` for `<prefix>_agents`) |
+| `record_engine(public_key bytea) returns text` | Replaces `record_engine(public_key bytea, url text)`, which is dropped. Owned by `<prefix>_guard`, `EXECUTE` revoked from `PUBLIC`. Inserts a new key with an `ENGINE_RECORDED` row (detail `engineId`, `by`), changes nothing for a key already recorded, and refuses a revoked key (`ENGINE_REVOKED`) and a malformed one (`ENGINE_KEY`) |
+| `revoke_engine(engine_id text) returns int` | Replaced (owner and grants kept). Its `ENGINE_REVOKED` detail no longer names `url` |
+| `_engine_url_ok(text)` | Dropped |

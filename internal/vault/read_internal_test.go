@@ -145,65 +145,12 @@ func TestSessionsPerLink(t *testing.T) {
 	require.Len(t, s.ofToken(channel.LinkToken{7}), MaxSessionsPerLink+1)
 }
 
-// Two tables given one Tally (the Vault's socket and the direct listener)
-// count together: the engine's 64 and a link's 4 hold across both, and a
-// slot comes back when a session ends on either.
-func TestSessionLimitsCountBothTransports(t *testing.T) {
-	t.Parallel()
-	tally := NewTally()
-	relay := newSessions(10*time.Second, time.Now, tally)
-	direct := newSessions(10*time.Second, time.Now, tally)
-
-	tok := channel.LinkToken{7}
-	for i := range MaxSessionsPerLink {
-		table := relay
-		if i%2 == 1 {
-			table = direct
-		}
-		code, _ := table.add(sid{byte(i)}, tok)
-		require.Zero(t, code)
-		_, ss := table.lookup(sid{byte(i)})
-		ok, code := table.establish(ss, &established{})
-		require.True(t, ok)
-		require.Zero(t, code)
-	}
-	code, _ := direct.add(sid{50}, tok)
-	require.Zero(t, code, "a fifth session may start its handshake")
-	_, ss := direct.lookup(sid{50})
-	ok, code := direct.establish(ss, &established{})
-	require.False(t, ok)
-	require.Equal(t, channel.ErrSessionLimit, code, "the link's fourth is across both transports")
-	require.NotNil(t, direct.take(sid{50}))
-
-	relay.take(sid{0})
-	code, _ = direct.add(sid{51}, tok)
-	require.Zero(t, code)
-	_, ss = direct.lookup(sid{51})
-	ok, _ = direct.establish(ss, &established{})
-	require.True(t, ok, "a session ending on the relay frees the link's slot")
-
-	// Fill to the engine's limit from both tables.
-	for i := range MaxSessions {
-		table := relay
-		if i%2 == 0 {
-			table = direct
-		}
-		code, _ = table.add(sid{100, byte(i)}, channel.LinkToken{8, byte(i)})
-		if code != 0 {
-			require.Equal(t, channel.ErrSessionLimit, code)
-			require.Greater(t, i, 0)
-			return
-		}
-	}
-	t.Fatal("the engine's limit never held across both tables")
-}
-
 // A widen moves the session's link slot to the new token: the new token's
 // count includes it, the old token keeps none, and the session ending
 // frees the new token's slot.
 func TestSessionLimitFollowsARotatedToken(t *testing.T) {
 	t.Parallel()
-	s := newSessions(10*time.Second, time.Now, NewTally())
+	s := newSessions(10*time.Second, time.Now, newTally())
 	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
 	code, _ := s.add(sid{1}, oldTok)
 	require.Zero(t, code)
@@ -239,7 +186,7 @@ func TestSessionLimitFollowsARotatedToken(t *testing.T) {
 // would release.
 func TestRotateAfterTheSessionEndedMovesNoSlot(t *testing.T) {
 	t.Parallel()
-	s := newSessions(10*time.Second, time.Now, NewTally())
+	s := newSessions(10*time.Second, time.Now, newTally())
 	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
 	code, _ := s.add(sid{1}, oldTok)
 	require.Zero(t, code)
@@ -252,4 +199,45 @@ func TestRotateAfterTheSessionEndedMovesNoSlot(t *testing.T) {
 	require.Zero(t, s.tally.established[newTok])
 	require.Zero(t, s.tally.established[oldTok])
 	require.Zero(t, s.tally.total)
+}
+
+// A client's sockets share one Tally: while an old socket's sessions are
+// still open, a new socket cannot take the engine past its limit, and the
+// old socket's end gives the slots back.
+func TestSocketsOfOneClientShareTheLimits(t *testing.T) {
+	t.Parallel()
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	c, err := New(Options{Keys: keys})
+	require.NoError(t, err)
+	old := newSessions(10*time.Second, time.Now, c.tally)
+	next := newSessions(10*time.Second, time.Now, c.tally)
+
+	for i := range MaxSessions {
+		code, _ := old.add(sid{1, byte(i)}, channel.LinkToken{1, byte(i)})
+		require.Zero(t, code)
+	}
+	code, _ := next.add(sid{2}, channel.LinkToken{2})
+	require.Equal(t, channel.ErrSessionLimit, code, "the engine's limit holds across the old and the new socket")
+
+	require.Len(t, old.takeAll(), MaxSessions, "the old socket ends")
+	code, _ = next.add(sid{2}, channel.LinkToken{2})
+	require.Zero(t, code, "its slots are back")
+
+	// The per-link limit holds across both too.
+	tok := channel.LinkToken{9}
+	a := newSessions(10*time.Second, time.Now, c.tally)
+	for i := range MaxSessionsPerLink {
+		code, _ := a.add(sid{3, byte(i)}, tok)
+		require.Zero(t, code)
+		_, ss := a.lookup(sid{3, byte(i)})
+		ok, _ := a.establish(ss, &established{})
+		require.True(t, ok)
+	}
+	code, _ = next.add(sid{4}, tok)
+	require.Zero(t, code)
+	_, ss := next.lookup(sid{4})
+	ok, code := next.establish(ss, &established{})
+	require.False(t, ok)
+	require.Equal(t, channel.ErrSessionLimit, code)
 }

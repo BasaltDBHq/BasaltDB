@@ -25,7 +25,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -532,7 +532,6 @@ async function main() {
   const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired, shown: new Map(), revealDone: false, valuesHidden: false };
   render(state);
   $("main").hidden = false;
-  showEngine(relay?.session);
   setInterval(() => {
     showExpiry(state.req.binding.expiresAt);
   }, EXPIRY_TICK_MS);

@@ -265,6 +265,19 @@ func TestConnectPageRefusesHostileSetupsClosed(t *testing.T) {
 		f.untouched()
 	})
 
+	t.Run("opened live, checked inside the grace", func(t *testing.T) {
+		t.Parallel()
+		f := newConnectFixture(t)
+		code := f.install.res.Code
+		f.describe(code)
+		f.srv.Advance(setupcode.Lifetime + time.Minute)
+		// Opening again needs a live code; the page that opened it goes on.
+		f.page.refused("DescribeSetup", map[string]any{"code": code}, "invalid_argument", "EXPIRED")
+		var chk connectv1.CheckSetupResponse
+		f.page.ok("CheckSetup", map[string]any{"code": code, "databaseUrl": f.d.URL}, &chk)
+		f.untouched()
+	})
+
 	t.Run("used code", func(t *testing.T) {
 		t.Parallel()
 		f := newConnectFixture(t)
@@ -368,6 +381,18 @@ func TestConnectPageRefusesHostileSetupsClosed(t *testing.T) {
 		f.srv.Advance(connecttest.ChallengeLife + time.Minute)
 		f.page.refused("RunSetup", f.runBody(f.install.res.Code, desc.GetChallenge(), passkeyOf(t, f.person, desc.GetChallenge())),
 			"invalid_argument", "CHALLENGE_EXPIRED")
+		f.untouched()
+	})
+
+	t.Run("opened live, run past the grace", func(t *testing.T) {
+		t.Parallel()
+		f := newConnectFixture(t)
+		desc := f.describe(f.install.res.Code)
+		// Inside the grace only the challenge (15 minutes) has run out;
+		// past expiresAt plus the grace the code itself is refused.
+		f.srv.Advance(setupcode.Lifetime + connecttest.OpenGrace + time.Minute)
+		f.page.refused("RunSetup", f.runBody(f.install.res.Code, desc.GetChallenge(), passkeyOf(t, f.person, desc.GetChallenge())),
+			"invalid_argument", "EXPIRED")
 		f.untouched()
 	})
 }

@@ -493,7 +493,12 @@ func (f fixedVault) VaultStatus() VaultStatus { return f.v }
 
 func TestSetupStates(t *testing.T) {
 	t.Parallel()
-	soon, past := statusNow.Add(time.Minute), statusNow.Add(-time.Minute)
+	soon, past, afterHold := statusNow.Add(time.Minute), statusNow.Add(-time.Minute), statusNow.Add(-31*time.Minute)
+	awaiting := connectOnlySetup(soon)
+	hold := connectOnlySetup(past)
+	ended := connectOnlySetup(afterHold)
+	confirmed := connectOnlySetup(past)
+	confirmed.AwaitingAddress = false
 	for _, tc := range []struct {
 		name     string
 		setup    *config.Setup
@@ -504,13 +509,21 @@ func TestSetupStates(t *testing.T) {
 		{"none", nil, false, setupNone, false},
 		{"pending install", pendingSetup(guard.SetupInstall, soon), false, setupPending, true},
 		{"recorded", pendingSetup(guard.SetupInstall, soon), true, setupNone, false},
-		{"expired install", pendingSetup(guard.SetupInstall, past), false, setupExpired, true},
+		{"expired install", pendingSetup(guard.SetupInstall, past), false, setupExpired, false},
 		{"expired upgrade is dropped", pendingSetup(guard.SetupUpgrade, past), false, setupNone, false},
 		{"pending upgrade", pendingSetup(guard.SetupUpgrade, soon), false, setupPending, true},
+		{"pending connect-only", &awaiting, false, setupPending, true},
+		{"connect-only hold after expiry", &hold, false, setupPending, false},
+		{"connect-only after the collect window", &ended, false, setupExpired, false},
+		{"confirmed connect-only after expiry", &confirmed, false, setupPending, false},
 	} {
 		v := setupFrom(tc.setup, tc.recorded, statusNow)
 		require.Equal(t, tc.want, v.status.State, tc.name)
 		require.Equal(t, tc.code, v.code != "", tc.name)
+		if !tc.code {
+			require.Empty(t, v.fingerprint, tc.name)
+			require.Empty(t, v.status.Fingerprint, tc.name)
+		}
 		if tc.want == setupExpired {
 			require.Empty(t, v.status.Fingerprint, "a fingerprint only while pending")
 		}

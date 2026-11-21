@@ -94,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Setup codes and portal setup links expire 10 minutes after they are made (they lasted 24 hours). There is no flag that makes one last longer. The connect page shows a countdown and, at zero, only "This link expired. Ask <bot> for a new one." A used connect-only link is refused on open (`ALREADY_USED`), and a link whose newer code for the same agent the engine has already collected is refused on open (`REPLACED`, best effort: the connect service forgets this when it restarts). An expired code is never reprinted: `basalt init --remote` makes a fresh one, and reuses a pending code only within those 10 minutes. Once the person has confirmed a still-live code, the run may finish up to 30 minutes after it expires. The engine polls `CollectAddress` for the code's life plus the 30-minute hold (40 minutes), not for 2 hours then until expiry. The guard's schema version 7, a non-breaking upgrade (`basalt upgrade --agent NAME`), shortens `record_setup`'s `EXPIRY_TOO_FAR` bound to 10 minutes plus 5 minutes of clock skew and refuses `EXPIRED` only 30 minutes after `expiresAt`. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by an upgraded guard: ask the agent for a new link.
 - A write that waits for approval (`waitForApproval` on its first call) is sent to `approval.deliver` plugins when it is held, not when the call answers up to 110 seconds later. The notice carries the same link the call answers with if nobody signs in time, and each held write is still noticed once.
 - `basalt plugin approve` with no code asks for it only at a terminal. With no code and no terminal it is a usage error at once instead of reading stdin.
 - `basalt plugin enable --wait` refuses a negative number; its help shows the real default (0, or 90 with `--approval-id`). The `basalt plugin` usage line names every flag.
@@ -114,6 +115,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Portal setup links expire after 10 minutes and are refused on open when already used or replaced by a newer code, so a link found hours later cannot still walk the setup.
 - The release `SHA256SUMS` is signed with keyless cosign, and the signature is attached to the release as `SHA256SUMS.sigstore.json`. `SHA256SUMS` now also lists the portal checksum, so one signature covers every file. See [docs/install.md](docs/install.md) to check it with `cosign verify-blob`.
 
 ## [0.0.1-alpha.2] - 2026-11-15

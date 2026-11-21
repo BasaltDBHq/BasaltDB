@@ -165,7 +165,7 @@ func supabaseRef(user, host string) string {
 }
 
 // NewSetupID returns a UUIDv7 of now (RFC 9562: 48-bit Unix milliseconds,
-// then random bits) and the code's expiry: that time plus 24 hours,
+// then random bits) and the code's expiry: that time plus 10 minutes,
 // truncated to the second, in the payload's format. random is crypto/rand
 // outside tests.
 func NewSetupID(now time.Time, random io.Reader) (id, expiresAt string, err error) {

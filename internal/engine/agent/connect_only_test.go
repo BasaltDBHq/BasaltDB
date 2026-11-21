@@ -21,9 +21,9 @@ import (
 // The contract's connect-only fixture (api/mcp/setup/setup-code.fixtures.json,
 // "connect-only install of all tables").
 const (
-	connectOnlyFixture = "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDgmxTXGHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-DgAA__8._9xzIw"
+	connectOnlyFixture = "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDg6xTUmHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-DgAA__8.mvDCHA"
 	caseSetupID        = "01a1f78c-52b8-7c3a-9f00-0000000000e1"
-	caseFingerprint    = "d48b ee66 a1d9 d005 1f63"
+	caseFingerprint    = "734b aaea 804e 1065 4148"
 )
 
 // caseDatabase is a collected database through Supabase's pooler.
@@ -166,6 +166,37 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"], "nothing waits for confirmation yet")
 	require.Equal(t, []bool{true}, h.asked)
+}
+
+// After the code expires, status still waits through the collect window and
+// does not reprint the expired link. After the window it is SETUP_EXPIRED.
+func TestConnectOnlyWaitingAfterExpiryOmitsTheCode(t *testing.T) {
+	t.Parallel()
+	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(-time.Minute)), Phase: handoff.PhaseWaiting}}
+	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
+	r, err := c.Status(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, setupPending, r.Setup.State)
+	require.True(t, r.Setup.ConnectOnly)
+	require.Empty(t, r.Setup.Fingerprint)
+	p := findProblem(t, r, problemSetupNotRun)
+	require.Equal(t, connectOnlyExpiredHold, p.Message)
+	require.NotEqual(t, mcp.ActionOpenLink, p.NextSteps[0].Action)
+	require.NotContains(t, p.PersonMessage, connectOnlyFixture)
+	require.NotContains(t, p.PersonMessage, caseFingerprint)
+	require.NotContains(t, p.Message, connectOnlyFixture)
+}
+
+func TestConnectOnlyAfterTheCollectWindowIsExpired(t *testing.T) {
+	t.Parallel()
+	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(-31 * time.Minute)), Phase: handoff.PhaseWaiting}}
+	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
+	r, err := c.Status(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, setupExpired, r.Setup.State)
+	require.Empty(t, r.Setup.Fingerprint)
+	p := findProblem(t, r, problemSetupExpired)
+	require.NotContains(t, p.PersonMessage, connectOnlyFixture)
 }
 
 // Once the probe passed, status names the database and every other tool

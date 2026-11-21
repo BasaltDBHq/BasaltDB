@@ -1080,7 +1080,8 @@ func (r *remoteInit) removeSecret() error {
 // engine's key required, the password in .secret (CONTRACT.md,
 // Connect-only setup codes). While a code waits and has not expired, the
 // same request prints it again and any other is refused, so .secret is
-// never replaced while its code may already have run. After it expired,
+// never replaced before its code expires. After it expired (even inside
+// the 30-minute grace, abandoning a confirmed run still in flight),
 // after the person refused its database, after --forget, or when .secret
 // is gone, the code is a recovery code: AGENT with a new password.
 func (r *remoteInit) runConnectOnly(saved []string) (RemoteInitResult, error) {

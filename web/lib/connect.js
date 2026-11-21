@@ -307,6 +307,32 @@ export function botName(summary) {
   return typeof summary?.agent === "string" && summary.agent !== "" ? summary.agent : "Your bot";
 }
 
+// expiryCountdown is the page's expiry line from the code's expiresAt:
+// "expires in 7 min", in whole minutes, or expired once now is at or past it.
+export function expiryCountdown(expiresAt, nowMs) {
+  if (typeof expiresAt !== "string") return { expired: true, text: "" };
+  const end = Date.parse(expiresAt);
+  if (Number.isNaN(end)) return { expired: true, text: "" };
+  const left = end - nowMs;
+  if (left <= 0) return { expired: true, text: "" };
+  const min = Math.max(1, Math.ceil(left / 60_000));
+  return { expired: false, text: `expires in ${min} min` };
+}
+
+const OPEN_LINK = {
+  EXPIRED: (bot) => `This link expired. Ask ${bot} for a new one.`,
+  ALREADY_USED: (bot) => `This link was already used. Ask ${bot} for a new one.`,
+  REPLACED: (bot) => `This link was replaced by a newer link. Ask ${bot} for a new one.`,
+};
+
+// openLinkMessage is the page with no setup steps for a link the service
+// refused on open, or when the countdown reaches zero.
+export function openLinkMessage(err, bot = "your bot") {
+  if (!(err instanceof Refusal) || !OPEN_LINK[err.reason]) return null;
+  if (typeof err.message === "string" && err.message.includes("Ask ")) return err.message;
+  return OPEN_LINK[err.reason](bot);
+}
+
 // isConnectOnly: a code that names no database; only this page runs it.
 export function isConnectOnly(summary) {
   return !summary?.target;
@@ -899,14 +925,20 @@ function fail(message) {
   show("error");
 }
 
-function fillDetails(s, connectOnly) {
+function fillDetails(s, connectOnly, nowMs, expires) {
   const facts = $("facts");
   clear(facts);
-  const fact = (label, value) => {
+  if (expires) expires.node = null;
+  const fact = (label, value, id) => {
     if (!value) return;
     const row = el("li");
     row.appendChild(el("strong", "", label + ": "));
-    row.appendChild(el("span", "", value));
+    const val = el("span", "", value);
+    if (id) {
+      val.id = id;
+      if (expires) expires.node = val;
+    }
+    row.appendChild(val);
     facts.appendChild(row);
   };
   fact("Agent", s.agent ? `${s.agent} (role ${s.role})` : "");
@@ -914,7 +946,8 @@ function fillDetails(s, connectOnly) {
   fact("Changes rows in", strings(s.write).join(", "));
   fact("Reads", strings(s.read).join(", "));
   fact("Engine fingerprint", typeof s.engineFingerprint === "string" ? s.engineFingerprint : "");
-  fact("Code expires", typeof s.expiresAt === "string" ? s.expiresAt : "");
+  const left = expiryCountdown(s.expiresAt, nowMs);
+  fact("Code expires", left.expired ? "" : left.text, "code-expires-value");
   const lines = $("summary-lines");
   clear(lines);
   for (const line of strings(s.lines)) lines.appendChild(el("li", "", line));
@@ -948,6 +981,7 @@ export function start(env) {
     loop = { cancelled: false, offered: false };
     return loop;
   };
+  const expires = {};
   let screen = "s-code";
   let included = null; // the ticked tables, when the tables had ticks
   let labels = null;
@@ -965,6 +999,23 @@ export function start(env) {
   };
   const bot = () => botName(flow.summary);
 
+  // paintExpiry refreshes the countdown. At zero, before the person has
+  // confirmed the code, it shows only the expired page and no setup steps.
+  // After "Yes, same code" the run may finish past expiresAt, so it is left alone.
+  const paintExpiry = () => {
+    if (!flow.summary) return false;
+    const left = expiryCountdown(flow.summary.expiresAt, flow.now());
+    if (expires.node && !left.expired) expires.node.textContent = left.text;
+    if (left.expired && (flow.step === "bot" || flow.step === "code")) {
+      fail(OPEN_LINK.EXPIRED(bot()));
+      return true;
+    }
+    return false;
+  };
+  if (env.sleep === defaultSleep && typeof setInterval === "function") {
+    const id = setInterval(() => { if (paintExpiry()) clearInterval(id); }, 1000);
+  }
+
   // ---- 1: is this your bot? ----
   const describe = async (code) => {
     setText("code-status", "Reading the setup code…");
@@ -976,9 +1027,14 @@ export function start(env) {
       setText("bot-name", name);
       setText("bot-wants", WANTS[s.kind]);
       setText("fingerprint", typeof s.fingerprint === "string" ? s.fingerprint : "");
-      fillDetails(s, flow.connectOnly);
+      fillDetails(s, flow.connectOnly, flow.now(), expires);
       go("s-bot");
     } catch (err) {
+      const open = openLinkMessage(err, "your bot");
+      if (open) {
+        fail(open);
+        return;
+      }
       go("s-code");
       setText("code-status", refusalText(err));
     }
@@ -995,6 +1051,7 @@ export function start(env) {
   });
 
   $("same-code").addEventListener("click", () => {
+    if (paintExpiry()) return;
     flow.confirmBot();
     showPasskey();
   });
@@ -1587,9 +1644,9 @@ export function start(env) {
   });
 
   const code = readCode(location.hash.replace(/^#/, ""));
-  if (code) return { flow, ready: describe(code) };
+  if (code) return { flow, ready: describe(code), paintExpiry };
   go("s-code");
-  return { flow, ready: Promise.resolve() };
+  return { flow, ready: Promise.resolve(), paintExpiry };
 }
 
 // Only in a browser: the tests load this module without a document.

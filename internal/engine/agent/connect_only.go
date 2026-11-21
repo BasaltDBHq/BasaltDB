@@ -44,6 +44,10 @@ const (
 // address the service lost.
 const connectOnlyWaiting = "Waiting for the setup on the connect page. If you already approved it there, open the same link again and approve once more: your bot will connect."
 
+// connectOnlyExpiredHold is the same wait after the code has expired but
+// the collect window is still open: the expired link is not reprinted.
+const connectOnlyExpiredHold = "Waiting for a setup already started on the connect page. The setup link has expired, so it cannot be opened again. If you already approved it there, your bot will connect."
+
 // connectPortal is where a connect-only code is pasted when its link does
 // not fit the link budget.
 const connectPortal = "portal.basaltvault.app/connect"
@@ -52,7 +56,22 @@ const connectPortal = "portal.basaltvault.app/connect"
 // the portal when the link does not fit), pastes the database's connection
 // string there only, and the page waits for the bot; the agent ends its
 // turn and checks status after.
+// connectOnlyWaitingMessage is the SETUP_NOT_RUN message while a
+// connect-only setup waits for its address: the live-link wording, or the
+// hold wording once the code has expired.
+func connectOnlyWaitingMessage(code string) string {
+	if code == "" {
+		return connectOnlyExpiredHold
+	}
+	return connectOnlyWaiting
+}
+
 func connectOnlySteps(b *Steps, code, fingerprint string, budget int) (string, []mcp.Link) {
+	if code == "" {
+		b.EndTurn("End your turn: a setup already started on the connect page may still finish.")
+		b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+		return connectOnlyExpiredHold, nil
+	}
 	if !setupCode.MatchString(code) || fingerprint == "" {
 		b.fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil

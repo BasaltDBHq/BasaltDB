@@ -822,8 +822,9 @@ func versions(vs []int) string {
 // setupView is the agent's setup from the laptop as status reports it.
 type setupView struct {
 	status SetupStatus
-	// code and fingerprint are the pending code's, also once it expired
-	// (status shows the fingerprint only while pending).
+	// code and fingerprint are the pending code's while it is still live
+	// (status shows the fingerprint only while pending). An expired code
+	// is never reprinted, including during the collect-window hold.
 	code, fingerprint string
 	// awaiting: a connect-only code whose engine waits for the database's
 	// address; refused: the person refused the one it collected; confirmed:
@@ -858,7 +859,7 @@ func (v setupView) addProblem(ps *problems) {
 			func(b *Steps) string { return setupExpiredSteps(b, ps.cmds) })
 	case v.status.State != setupPending:
 	case v.awaiting:
-		ps.addLinked(problemSetupNotRun, connectOnlyWaiting,
+		ps.addLinked(problemSetupNotRun, connectOnlyWaitingMessage(v.code),
 			func(b *Steps) (string, []mcp.Link) {
 				return connectOnlySteps(b, v.code, v.fingerprint, ps.connectBudget)
 			})
@@ -904,7 +905,10 @@ func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
 
 // setupFrom is the pending setup's state: PENDING until it expires, then
 // EXPIRED for an INSTALL code; an expired AGENT or UPGRADE code is dropped
-// (NONE here), as is a recorded one.
+// (NONE here), as is a recorded one. A connect-only code still waiting for
+// its address stays PENDING through the collect window (the code's life
+// plus the 30-minute hold), so the engine can pick up a setup that
+// finished after expiresAt; the expired code is not reprinted.
 func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if p == nil || recorded {
 		return setupView{status: SetupStatus{State: setupNone}}
@@ -921,6 +925,11 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if expired && confirmed {
 		expired = false
 	}
+	// Still collecting during the hold after the code expires.
+	hold := connectOnly && p.AwaitingAddress && err == nil && now.Before(expires.Add(setupcode.CollectWindow-setupcode.Lifetime))
+	if expired && hold {
+		expired = false
+	}
 	if expired && p.Kind != guard.SetupInstall && !p.AwaitingAddress {
 		return setupView{status: SetupStatus{State: setupNone}}
 	}
@@ -930,6 +939,10 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	}
 	if expired {
 		v.status.State, v.status.Fingerprint = setupExpired, ""
+	}
+	if err == nil && !now.Before(expires) {
+		// An expired code is never reprinted, even while we still collect.
+		v.code, v.fingerprint, v.status.Fingerprint = "", "", ""
 	}
 	return v
 }

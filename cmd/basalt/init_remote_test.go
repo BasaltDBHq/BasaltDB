@@ -233,7 +233,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 	created, err := p.CreatedAt()
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), created, time.Minute)
-	require.Equal(t, created.Add(24*time.Hour).Truncate(time.Second).Format(time.RFC3339), p.ExpiresAt)
+	require.Equal(t, created.Add(setupcode.Lifetime).Truncate(time.Second).Format(time.RFC3339), p.ExpiresAt)
 
 	// The result.
 	require.Equal(t, "lead_bot", r.res.Agent)
@@ -554,6 +554,9 @@ func TestInitRemoteReplacesAnExpiredCode(t *testing.T) {
 	again := remote(t, cfg, "--agent", "bot", "--write", "public.leads")
 	require.False(t, again.res.Reused)
 	require.NotEqual(t, first.res.SetupID, again.res.SetupID)
+	require.NotEqual(t, first.res.Code, again.res.Code)
+	require.NotEqual(t, first.res.Fingerprint, again.res.Fingerprint)
+	require.NotContains(t, again.stdout+again.stderr, first.res.Code, "an expired code is never reprinted")
 }
 
 func TestInitRemoteRefusesASymlinkedCredential(t *testing.T) {

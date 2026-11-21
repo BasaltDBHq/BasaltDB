@@ -25,6 +25,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,6 +45,11 @@ import (
 // minutes).
 const ChallengeLife = 15 * time.Minute
 
+// OpenGrace is how long after expiresAt CheckSetup and RunSetup still take
+// a code the page opened while it was live (the contract's 30 minutes, the
+// grace record_setup also allows).
+const OpenGrace = 30 * time.Minute
+
 // maxPasskeyLabel is the longest passkey picker label, in bytes.
 const maxPasskeyLabel = 64
 
@@ -53,7 +60,11 @@ type Server struct {
 	skew   atomic.Int64 // nanoseconds the service's clock is ahead
 	secret []byte
 	holds  holds
-	dial   func(ctx context.Context, url string) (*pgx.Conn, error)
+	// opened maps each code DescribeSetup answered (spaces removed) to its
+	// expiresAt.
+	openedMu sync.Mutex
+	opened   map[string]time.Time
+	dial     func(ctx context.Context, url string) (*pgx.Conn, error)
 	// collectsRefused and reportsRefused count the CollectAddress and
 	// ReportReach calls answered HANDOFF_UNKNOWN.
 	collectsRefused, reportsRefused atomic.Int64
@@ -106,12 +117,36 @@ func (s *Server) request(code string) setup.Request {
 	return setup.Request{Code: code, Now: s.Now(), ConnectPage: true}
 }
 
+// afterOpen is the request for CheckSetup and RunSetup: a code the page
+// opened while live is checked with a clock just before its expiresAt for
+// OpenGrace after it, so a confirmed run may finish late.
+func (s *Server) afterOpen(code string) setup.Request {
+	req := s.request(code)
+	s.openedMu.Lock()
+	exp, ok := s.opened[strings.Join(strings.Fields(code), "")]
+	s.openedMu.Unlock()
+	if ok && !req.Now.Before(exp) && !req.Now.After(exp.Add(OpenGrace)) {
+		req.Now = exp.Add(-time.Nanosecond)
+	}
+	return req
+}
+
+func (s *Server) noteOpen(code string, expires time.Time) {
+	s.openedMu.Lock()
+	defer s.openedMu.Unlock()
+	if s.opened == nil {
+		s.opened = map[string]time.Time{}
+	}
+	s.opened[strings.Join(strings.Fields(code), "")] = expires
+}
+
 // DescribeSetup is the call that needs no database.
 func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.DescribeSetupRequest]) (*connect.Response[connectv1.DescribeSetupResponse], error) {
 	d, err := setup.Describe(s.request(r.Msg.GetCode()))
 	if err != nil {
 		return nil, refuse(err)
 	}
+	s.noteOpen(r.Msg.GetCode(), d.ExpiresAt)
 	ch := PasskeyChallenge{Challenge: make([]byte, 32), UserID: make([]byte, 16)}
 	for _, b := range [][]byte{ch.Challenge, ch.UserID} {
 		if _, err := rand.Read(b); err != nil {
@@ -141,7 +176,7 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
-	req := s.request(r.Msg.GetCode())
+	req := s.afterOpen(r.Msg.GetCode())
 	c, err := setup.Check(ctx, conn, req)
 	var se *setup.Error
 	if errors.As(err, &se) && se.Code == codeUsed {
@@ -202,7 +237,7 @@ const (
 // contract, it checks the challenge and the passkey before it connects.
 func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunSetupRequest]) (*connect.Response[connectv1.RunSetupResponse], error) {
 	m := r.Msg
-	req := s.request(m.GetCode())
+	req := s.afterOpen(m.GetCode())
 	// The page's ticks: every RunSetup sends them (empty for a code
 	// without ticks), so pkg/setup checks them for every code.
 	req.Included = &setup.Included{Tables: m.GetIncludedTables()}

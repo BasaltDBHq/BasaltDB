@@ -45,7 +45,7 @@ Send one message with:
 2. The setup fingerprint.
 3. The `personMessage` text, or this: "On your own computer, not this server, install basalt from https://github.com/BasaltDBHq/BasaltDB/releases, then run `basalt init --setup-code <code>`. Check that it shows the same fingerprint. Never paste your database password here. Tell me when it says Done."
 
-Then end your turn. The code works for 24 hours and once.
+Then end your turn. The code works for 10 minutes and once.
 
 ## 4. Start the engine
 

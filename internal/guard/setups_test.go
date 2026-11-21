@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	setupLifetime = 24 * time.Hour
+	setupLifetime = 10 * time.Minute
 	setupSkew     = 5 * time.Minute
+	setupGrace    = 30 * time.Minute
 )
 
 // newVerifier is the SCRAM-SHA-256 verifier of password, as a setup code
@@ -276,7 +277,7 @@ func TestRecordSetup(t *testing.T) {
 
 	// An UPGRADE is recorded under the admin's name.
 	now := dbNow(t, d)
-	up := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour)}
+	up := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute)}
 	seq, err = guard.RecordSetup(ctx, d.Admin, d.Names, up)
 	require.NoError(t, err)
 	require.Equal(t, admin, scalarOf[string](t, d.Admin, `SELECT agent::text FROM basalt_meta.ledger WHERE seq = $1`, seq))
@@ -317,7 +318,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 		// UPGRADE still runs.
 		later := guard.Setup{
 			ID: uuidAt(t, dbNow(t, d).Add(2*time.Second)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: dbNow(t, d).Add(time.Hour),
+			GuardVersion: guard.LatestVersion(), ExpiresAt: dbNow(t, d).Add(5 * time.Minute),
 		}
 		require.NoError(t, record(later))
 		older := installSetup(t, d, "other")
@@ -326,21 +327,27 @@ func TestRecordSetupRefusals(t *testing.T) {
 		require.NoError(t, record(older))
 	})
 	t.Run("expired", func(t *testing.T) {
-		now := dbNow(t, d)
-		s := guard.Setup{
-			ID: uuidAt(t, now.Add(-2*time.Hour)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(-time.Second),
+		now := dbNow(t, d).Truncate(time.Millisecond) // the setup id's precision
+		// Each code expires 10 minutes after its setup id, so only the
+		// grace decides.
+		at := func(expires time.Time) guard.Setup {
+			return guard.Setup{
+				ID: uuidAt(t, expires.Add(-setupLifetime)), Kind: guard.SetupUpgrade,
+				GuardVersion: guard.LatestVersion(), ExpiresAt: expires,
+			}
 		}
-		requireRefused(t, record(s), guard.SetupExpired)
-		// Expiry has no skew: a code is expired from expiresAt on.
-		s.ExpiresAt = now
-		requireRefused(t, record(s), guard.SetupExpired)
+		// Past expiresAt but inside the grace: a confirmed run may finish late.
+		require.NoError(t, record(at(now.Add(-time.Second))))
+		require.NoError(t, record(at(now.Add(-setupGrace+time.Minute))))
+		// Past the grace the database refuses it, whatever the client checked.
+		requireRefused(t, record(at(now.Add(-setupGrace-time.Minute))), guard.SetupExpired)
+		requireRefused(t, record(at(now.Add(-24*time.Hour))), guard.SetupExpired)
 	})
 	t.Run("setup id in the future", func(t *testing.T) {
 		now := dbNow(t, d)
 		s := guard.Setup{
 			ID: uuidAt(t, now.Add(setupSkew+time.Minute)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour),
+			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute),
 		}
 		requireRefused(t, record(s), guard.SetupIDInFuture)
 		// Within the skew it passes.
@@ -354,18 +361,18 @@ func TestRecordSetupRefusals(t *testing.T) {
 			ExpiresAt: now.Add(setupLifetime + setupSkew + time.Minute),
 		}
 		requireRefused(t, record(s), guard.SetupExpiryTooFar)
-		// More than 24 hours after the setup id's time, though near now.
-		s.ID = uuidAt(t, now.Add(-2*time.Hour))
-		s.ExpiresAt = now.Add(setupLifetime - time.Hour)
+		// More than Lifetime after the setup id's time, though near now.
+		s.ID = uuidAt(t, now.Add(-20*time.Minute))
+		s.ExpiresAt = now
 		requireRefused(t, record(s), guard.SetupExpiryTooFar)
-		s.ExpiresAt = now.Add(setupLifetime - 2*time.Hour)
+		s.ExpiresAt = now.Add(setupLifetime - 20*time.Minute)
 		require.NoError(t, record(s))
 	})
 	t.Run("invalid input", func(t *testing.T) {
 		now := dbNow(t, d)
 		base := guard.Setup{
 			ID: uuidAt(t, now), Kind: guard.SetupInstall, Agent: "bot",
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour),
+			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute),
 		}
 		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_stranger NOLOGIN`)
 		// A superuser is a member of every role, agents included.
@@ -406,21 +413,22 @@ func TestRecordSetupRefusals(t *testing.T) {
 		var now time.Time
 		require.NoError(t, d.Admin.QueryRow(ctx, `SELECT now()`).Scan(&now))
 		_, err = d.Admin.Exec(ctx, `SELECT basalt_meta.record_setup($1::uuid, 'INSTALL', $2::name, $3::int, $4::timestamptz)`,
-			uuidAt(t, now), d.Names.Agents(), guard.LatestVersion(), now.Add(time.Hour))
+			uuidAt(t, now), d.Names.Agents(), guard.LatestVersion(), now.Add(5*time.Minute))
 		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	})
 	t.Run("expired inside a long transaction", func(t *testing.T) {
 		// now() is fixed when the transaction starts; the expiry check
 		// reads the clock, so waiting inside the transaction does not
-		// stretch a code's life.
+		// stretch the grace.
 		err := pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
 			var start, later time.Time
 			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&start); err != nil {
 				return err
 			}
+			expires := start.Truncate(time.Millisecond).Add(-setupGrace + time.Second)
 			s := guard.Setup{
-				ID: uuidAt(t, start), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
-				ExpiresAt: start.Add(time.Second),
+				ID: uuidAt(t, expires.Add(-setupLifetime)), Kind: guard.SetupUpgrade,
+				GuardVersion: guard.LatestVersion(), ExpiresAt: expires,
 			}
 			if _, err := tx.Exec(ctx, `SELECT pg_sleep(1.5)`); err != nil {
 				return err
@@ -428,7 +436,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&later); err != nil {
 				return err
 			}
-			require.True(t, later.Before(s.ExpiresAt), "now() did not move")
+			require.True(t, later.Before(s.ExpiresAt.Add(setupGrace)), "now() did not move")
 			_, err := guard.RecordSetup(ctx, tx, d.Names, s)
 			return err
 		})
@@ -469,7 +477,7 @@ func TestAgentCannotRecordOrWriteSetups(t *testing.T) {
 	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, theirs)
 	require.NoError(t, err)
 	now := dbNow(t, d)
-	up := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour)}
+	up := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(5 * time.Minute)}
 	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, up)
 	require.NoError(t, err)
 

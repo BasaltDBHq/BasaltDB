@@ -54,6 +54,31 @@ func TestInitMCPLineDefaultConfigUnchanged(t *testing.T) {
 	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", "/workspace/basalt/engine.json"}, mcpArgs(f, "linux", "basalt", h))
 }
 
+func TestRemoteMCPArgsGoldens(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+
+	// Non-root, no --config: the per-user config basalt mcp finds itself,
+	// but --socket-dir is required because basalt mcp never reads the
+	// socket directory from the config.
+	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	run := filepath.Join(filepath.Dir(user), "run")
+	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
+	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", run},
+		remoteMCPArgs("bot", user, run, "linux", h))
+
+	// Non-root, --config elsewhere: both flags, sockets next to the config.
+	cfg := "/workspace/basalt/engine.json"
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", cfg},
+		remoteMCPArgs("bot", cfg, "/workspace/basalt/run", "linux", h))
+
+	// Root/service, default paths: the agent's OS user talks to the service socket.
+	h.euid = 0
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"},
+		remoteMCPArgs("bot", config.DefaultPath("linux"), config.DefaultSocketDir("linux"), "linux", h))
+}
+
 // root looks only at the system path.
 func TestMCPConfigArgsAsRoot(t *testing.T) {
 	t.Parallel()

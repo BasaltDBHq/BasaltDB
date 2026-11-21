@@ -5,7 +5,7 @@
   "description": "What basalt init --remote --json prints on stdout, exit 0: the setup is pending, not failed (CONTRACT.md, Setup from your laptop). The agent shows personMessage to the person verbatim and follows nextSteps: PERSON RUN_COMMAND (basalt init --setup-code <code> on the person's own computer), PERSON TELL_AGENT, AGENT END_TURN, AGENT CALL_TOOL status. For a connect-only code (connectOnly): PERSON OPEN_LINK of the connect link, AGENT END_TURN, AGENT CALL_TOOL status, and no laptop command. Never a secret: the code carries the verifier, not the password.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["agent", "setupId", "kind", "code", "fingerprint", "expiresAt", "personMessage", "nextSteps"],
+  "required": ["agent", "setupId", "kind", "code", "fingerprint", "expiresAt", "personMessage", "mcpCommand", "nextSteps"],
   "properties": {
     "agent": {
       "type": "string",
@@ -46,6 +46,12 @@
     "personMessage": {
       "type": "string",
       "description": "What the person does, in plain words: install basalt from the official release page on their own computer, run the command, check it shows the same fingerprint (named here), then tell the agent. Says never to paste the database password into the chat. For a connect-only code: open the link, check the fingerprint, paste the database's connection string on that page only; the agent never needs it."
+    },
+    "mcpCommand": {
+      "type": "array",
+      "minItems": 4,
+      "description": "The basalt mcp command the agent registers in its client, as argv. It is basalt mcp --agent <name>, plus --socket-dir whenever the socket directory is not the one basalt mcp uses when no --socket-dir is given (basalt mcp never reads the socket directory from the config), and --config whenever basalt mcp would not find the config by default (CONTRACT.md, Setup from your laptop).",
+      "items": { "type": "string", "minLength": 1 }
     },
     "connectUrl": {
       "type": "string",

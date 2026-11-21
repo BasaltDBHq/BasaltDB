@@ -114,6 +114,7 @@ func remoteWith(t *testing.T, run func(*testing.T, ...string) result, cfg string
 	dec := json.NewDecoder(strings.NewReader(r.stdout))
 	dec.DisallowUnknownFields()
 	require.NoError(t, dec.Decode(&r.res))
+	requireRemoteInitSchema(t, r.stdout)
 	p, err := setupcode.Decode(r.res.Code)
 	require.NoError(t, err)
 	r.payload = p
@@ -265,6 +266,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 	require.Equal(t, exitOK, txt.code, txt.stderr)
 	require.Contains(t, txt.stdout, "\n\n"+r.res.Code+"\n\n")
 	require.Contains(t, txt.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
+	require.Contains(t, txt.stdout, "  "+shellJoin(r.res.MCPCommand)+"\n")
 	require.NotContains(t, txt.stdout+txt.stderr, pw)
 }
 
@@ -272,6 +274,8 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 // contract and the catalog.
 func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	t.Helper()
+	require.GreaterOrEqual(t, len(res.MCPCommand), 4)
+	require.Equal(t, []string{"basalt", "mcp", "--agent", res.Agent}, res.MCPCommand[:4])
 	pm := res.PersonMessage
 	require.Contains(t, pm, res.Fingerprint)
 	require.Contains(t, pm, "Never paste your database password")

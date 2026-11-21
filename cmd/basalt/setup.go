@@ -164,15 +164,13 @@ func mcpArgs(f initFlags, goos, bin string, h host) []string {
 	return append(args, mcpConfigArgs(f.configPath, goos, h)...)
 }
 
-// remoteMCPArgs is the mcpCommand of basalt init --remote: mcpArgs, with the
-// default socket dir when basalt mcp would find the config itself (and
-// read the socket directory from it).
+// remoteMCPArgs is the mcpCommand of basalt init --remote: mcpArgs, so it
+// carries --socket-dir whenever the socket directory is not the one
+// basalt mcp uses when no --socket-dir is given (it never reads the socket
+// directory from the config), and --config whenever basalt mcp would not
+// find the config by default.
 func remoteMCPArgs(agent, configPath, socketDir, goos string, h host) []string {
-	f := initFlags{agent: agent, configPath: configPath, socketDir: socketDir}
-	if len(mcpConfigArgs(configPath, goos, h)) == 0 {
-		f.socketDir = config.DefaultSocketDir(goos)
-	}
-	return mcpArgs(f, goos, "basalt", h)
+	return mcpArgs(initFlags{agent: agent, configPath: configPath, socketDir: socketDir}, goos, "basalt", h)
 }
 
 // mcpConfigArgs is --config <path> when basalt mcp, given no --config, would

@@ -58,12 +58,15 @@ func TestRemoteMCPArgsGoldens(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
 
-	// Non-root, no --config: the per-user config basalt mcp finds itself.
+	// Non-root, no --config: the per-user config basalt mcp finds itself,
+	// but --socket-dir is required because basalt mcp never reads the
+	// socket directory from the config.
 	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	run := filepath.Join(filepath.Dir(user), "run")
 	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
 	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"},
-		remoteMCPArgs("bot", user, filepath.Join(filepath.Dir(user), "run"), "linux", h))
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", run},
+		remoteMCPArgs("bot", user, run, "linux", h))
 
 	// Non-root, --config elsewhere: both flags, sockets next to the config.
 	cfg := "/workspace/basalt/engine.json"

@@ -85,7 +85,9 @@ func decodeRemoteResult(t *testing.T, stdout string) RemoteInitResult {
 }
 
 // Non-root init --remote without --config prints and returns
-// `basalt mcp --agent NAME` with no extra flags.
+// `basalt mcp --agent NAME --socket-dir <user config dir>/run` and no
+// --config: basalt mcp finds the per-user config, but never the socket
+// directory.
 func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	t.Parallel()
 	skipIfSystemConfig(t)
@@ -97,11 +99,12 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	r := remoteNoDBOn(t, h, true, args...)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	res := decodeRemoteResult(t, r.stdout)
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, res.MCPCommand)
+	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
+	want := []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", socketDir}
+	require.Equal(t, want, res.MCPCommand)
 	txt := remoteNoDBOn(t, h, false, args...)
 	require.Equal(t, exitOK, txt.code, txt.stderr)
-	require.Contains(t, txt.stdout, "  basalt mcp --agent bot\n")
-	require.NotContains(t, txt.stdout, "--socket-dir")
+	require.Contains(t, txt.stdout, "  "+shellJoin(want)+"\n")
 	require.NotContains(t, txt.stdout, "--config")
 }
 

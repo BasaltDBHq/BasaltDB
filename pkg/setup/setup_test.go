@@ -651,3 +651,33 @@ func TestDescribeRefusesTheInvalidFixtures(t *testing.T) {
 		require.Equal(t, f.Refusal, codeOf(t, err), f.Name)
 	}
 }
+
+// TestCheckAsksOnlyAboutTheAgentsRLSTables: the connect page's row-level
+// security questions are the agent's own tables. A table the agents group
+// can already SELECT through PUBLIC, with RLS as the only barrier, is not
+// asked about when the code lists no read tables, and an answer naming it
+// is refused.
+func TestCheckAsksOnlyAboutTheAgentsRLSTables(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	d.Init(t, guard.AgentSpec{Name: "other", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}})
+	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
+		GRANT SELECT ON public.payroll TO PUBLIC`)
+	code := newCode(t, d, nil) // bot writes public.leads and reads nothing
+
+	checked, err := setup.Check(ctx, d.Admin, request(code))
+	require.NoError(t, err)
+	var asked []string
+	for _, q := range checked.Questions.RowSecurity {
+		asked = append(asked, q.Table)
+	}
+	require.Equal(t, []string{"public.leads"}, asked)
+
+	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{Answers: setup.Answers{AllRows: []string{"public.leads", "public.payroll"}}})
+	require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, err))
+	var payroll int
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_policy WHERE polrelid = 'public.payroll'::regclass`).Scan(&payroll))
+	require.Zero(t, payroll)
+}

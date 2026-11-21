@@ -268,22 +268,22 @@ func TestPublicThroughAnIntermediate(t *testing.T) {
 }
 
 // The public roots the binary carries count whatever the system's store
-// holds, and with no store at all: a real Mozilla root is public, and pins
+// holds, and with no store at all: a mozilla Mozilla root is public, and pins
 // of test CAs still work. Not parallel: it swaps the store.
 func TestPublicRootsWithoutAStore(t *testing.T) {
 	defer trustprofile.SetSystemRootsForTest(nil)()
-	var real *x509.Certificate
+	var mozilla *x509.Certificate
 	for r := range bundle.Roots() {
 		if c, err := x509.ParseCertificate(r.Certificate); err == nil && r.Constraint == nil {
-			real = c
+			mozilla = c
 			break
 		}
 	}
-	require.NotNil(t, real)
-	require.True(t, trustprofile.IsPublic(real, nil))
-	seen := trustpin.Check([]*x509.Certificate{real}, "db.example.com", time.Now())
+	require.NotNil(t, mozilla)
+	require.True(t, trustprofile.IsPublic(mozilla, nil))
+	seen := trustpin.Check([]*x509.Certificate{mozilla}, "db.example.com", time.Now())
 	require.True(t, seen.Public)
-	_, err := trustprofile.NewPin("203.0.113.7", real, true)
+	_, err := trustprofile.NewPin("203.0.113.7", mozilla, true)
 	require.ErrorIs(t, err, trustprofile.ErrPublic)
 
 	ca, cert := trustprofiletest.Chain(t, "other.example.com")

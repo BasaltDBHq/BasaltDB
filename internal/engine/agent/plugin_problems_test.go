@@ -163,3 +163,10 @@ func TestNoPluginProblemWithoutOne(t *testing.T) {
 		}
 	}
 }
+
+type listedPlugins struct {
+	fakePlugins
+	entries []PluginEntry
+}
+
+func (l listedPlugins) PluginEntries(string) []PluginEntry { return l.entries }

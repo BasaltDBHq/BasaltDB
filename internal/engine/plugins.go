@@ -510,6 +510,22 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 	return out
 }
 
+// PluginEntries implements agent.PluginLister: the enabled entries that list
+// name, for status.plugins.
+func (ep *enginePlugins) PluginEntries(name string) []agent.PluginEntry {
+	ep.mu.Lock()
+	configured := slices.Clone(ep.configured)
+	ep.mu.Unlock()
+	var out []agent.PluginEntry
+	for _, p := range configured {
+		if slices.Contains(p.Agents, name) {
+			k := p.Key()
+			out = append(out, agent.PluginEntry{Name: k.Name, Instance: k.Instance})
+		}
+	}
+	return out
+}
+
 // DeliverLinks is the agent.LinkDeliverer of the agent named name: its
 // notices go to the approval.deliver entries served to it.
 func (ep *enginePlugins) DeliverLinks(name string) agent.LinkDeliverer {

@@ -50,7 +50,7 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 
 ### Schema version 6: trust pins
 
-[Pinning on first use](setup.md#pinning-on-first-use), file `016_trust_pins.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`; `basalt init` cannot record a pin there (it says so and goes on), and `status` has no record to compare a pin with. Idempotent.
+[Pinning on first use](trust.md#pinning-on-first-use), file `016_trust_pins.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`; `basalt init` cannot record a pin there (it says so and goes on), and `status` has no record to compare a pin with. Idempotent.
 
 | Object | Change |
 |---|---|

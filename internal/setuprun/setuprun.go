@@ -23,23 +23,20 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/engineaddr"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
 // Refusal codes this package adds to setupcode's (setupcode.Refusal).
 const (
-	CodeEngineURLInvalid = "ENGINE_URL_INVALID"
-	CodeEngineKeyMissing = "ENGINE_KEY_MISSING"
-	CodeEngineRevoked    = "ENGINE_REVOKED"
-	CodeTargetMismatch   = "TARGET_MISMATCH"
-	CodeTablesMissing    = "TABLES_MISSING"
-	CodeAnswersInvalid   = "ANSWERS_INVALID"
-	CodePasskeyRequired  = "PASSKEY_REQUIRED"
-	CodePasskeyInvalid   = "PASSKEY_INVALID"
-	CodePasskeyMissing   = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
-	CodeNoTables         = "NO_TABLES"
+	CodeEngineRevoked   = "ENGINE_REVOKED"
+	CodeTargetMismatch  = "TARGET_MISMATCH"
+	CodeTablesMissing   = "TABLES_MISSING"
+	CodeAnswersInvalid  = "ANSWERS_INVALID"
+	CodePasskeyRequired = "PASSKEY_REQUIRED"
+	CodePasskeyInvalid  = "PASSKEY_INVALID"
+	CodePasskeyMissing  = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
+	CodeNoTables        = "NO_TABLES"
 	// CodeTablesChanged: the tables changed since they were listed.
 	CodeTablesChanged = "TABLES_CHANGED"
 	// CodeClassesChanged: a column's class stored now is not the one the
@@ -71,9 +68,6 @@ type Setup struct {
 	Names   guard.Names
 	ID      uuid.UUID
 	Expires time.Time
-	// EngineURL is the address to record with the code's engine key, in
-	// its written form; "" when none was given.
-	EngineURL string
 	// tables are, for an agent.allTables code, what Prepare read from the
 	// database: the agent's write and read-only tables, and those left out.
 	tables guard.SchemaTables
@@ -149,19 +143,11 @@ func errTablesChanged() error {
 }
 
 // New decodes code and applies the checks that need no database, in the
-// contract's order (step 1): the engine address's rules, the codec,
-// CONNECT_ONLY unless connectPage (the laptop command refuses a code
-// without target before the clock checks; the connect service runs it),
-// this clock and this binary's guard (setupcode.CheckLocal), then
-// ENGINE_KEY_MISSING.
-func New(code string, now time.Time, engineURL string, connectPage bool) (*Setup, error) {
-	if engineURL != "" {
-		u, err := engineaddr.Parse(engineURL)
-		if err != nil {
-			return nil, &RefusalError{Code: CodeEngineURLInvalid, Message: "the engine address: " + err.Error(), Err: err}
-		}
-		engineURL = u
-	}
+// contract's order (step 1): the codec, CONNECT_ONLY unless connectPage
+// (the laptop command refuses a code without target before the clock
+// checks; the connect service runs it), then this clock and this binary's
+// guard (setupcode.CheckLocal).
+func New(code string, now time.Time, connectPage bool) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
@@ -174,16 +160,7 @@ func New(code string, now time.Time, engineURL string, connectPage bool) (*Setup
 	if err := setupcode.CheckLocal(p, now, guard.LatestVersion()); err != nil {
 		return nil, err
 	}
-	if engineURL != "" && p.Engine == nil {
-		return nil, refuse(CodeEngineKeyMissing, fmt.Sprintf("ENGINE_KEY_MISSING: this setup code carries no engine key, so basalt cannot record the engine address. "+
-			"Ask %s to check basalt status (its key file may be refused) and make a new code", AgentWord(p)))
-	}
-	s, err := forPayload(p)
-	if err != nil {
-		return nil, err
-	}
-	s.EngineURL = engineURL
-	return s, nil
+	return forPayload(p)
 }
 
 // forPayload is the Setup of a decoded payload, without checks.
@@ -531,25 +508,22 @@ func rowCount(n int64) string {
 
 // Plan builds the SQL with the person's answers (step 6): the migrations up
 // to the code's guard.to, the role (taken over only when it is a plain
-// agent), the grants, the policies on allRows, attach, the engine and the
-// engines to revoke, and record_setup last. An answer about a table or an
-// engine p did not ask about is refused.
-func (p *Prepared) Plan(ctx context.Context, allRows, revoke []string) (guard.Script, error) {
+// agent), the grants, the policies on allRows, attach, the engine, and
+// record_setup last. An answer about a table p did not ask about is
+// refused.
+func (p *Prepared) Plan(ctx context.Context, allRows []string) (guard.Script, error) {
 	policies, err := p.policies(allRows)
 	if err != nil {
 		return guard.Script{}, err
 	}
-	if err := p.checkRevoke(revoke); err != nil {
-		return guard.Script{}, err
-	}
-	script, err := p.plan(ctx, policies, revoke)
+	script, err := p.plan(ctx, policies)
 	if err != nil {
 		return guard.Script{}, MissingTablesHint(err, p.Conn.Config().Database)
 	}
 	return script, nil
 }
 
-func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable, revoke []string) (guard.Script, error) {
+func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable) (guard.Script, error) {
 	opts := guard.InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
 	agent := ""
 	if p.P.Agent != nil {
@@ -567,15 +541,15 @@ func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable, revoke
 	if err != nil {
 		return guard.Script{}, err
 	}
-	script.Statements = append(script.Statements, p.engineStatements(revoke)...)
+	script.Statements = append(script.Statements, p.engineStatements()...)
 	script.Statements = append(script.Statements, record)
 	return script, nil
 }
 
 // RefuseAnswers refuses any answer to a setup that asks nothing: an
 // UPGRADE code with nothing to do.
-func RefuseAnswers(allRows, revoke []string) error {
-	if len(allRows) > 0 || len(revoke) > 0 {
+func RefuseAnswers(allRows []string) error {
+	if len(allRows) > 0 {
 		return refuse(CodeAnswersInvalid, "the answers reply to questions this setup does not ask: it has nothing to do")
 	}
 	return nil

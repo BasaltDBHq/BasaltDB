@@ -25,8 +25,8 @@ import { relayTransport } from "./relay.js";
 
 export const SAME_ORIGIN = "SAME_ORIGIN";
 
-// The browser's network calls. Only the transports (this file, relay.js,
-// direct.js and channel.js) reach the network; the pages call them.
+// The browser's network calls. Only the transports (this file, relay.js
+// and channel.js) reach the network; the pages call them.
 const windowFetch = (path, init) => window.fetch(path, init);
 export const browserFetch = windowFetch;
 export const browserSocket = (url) => new window.WebSocket(url);

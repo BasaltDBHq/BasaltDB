@@ -202,7 +202,7 @@ func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.A
 	site := pages.New(links.Portal, quietLog())
 	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, site, nil)
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, site)
 	require.NotNil(t, ev.client)
 	relay.add("bot", store, ev.client.Unregister)
 	ctx, cancel := context.WithCancel(context.Background())

@@ -2,14 +2,13 @@
 // secrets in a session, Handshake, Frames, Limits): the portal page runs
 // Noise_NNpsk0_P256_AESGCM_SHA256 as the initiator over a WebSocket, then
 // speaks the pages API in padded, encrypted frames. Nothing here knows which
-// socket carries the session; the transports (relay.js, direct.js) open
-// the socket and say which transport the prologue names. Every
+// socket carries the session; the transport (relay.js) opens the socket
+// and says which transport the prologue names. Every
 // primitive is WebCrypto. The shared vectors (api/mcp/vault/testdata) check
 // it against the Go engine in channel.test.mjs.
 
 import { b64urlDecode, b64urlEncode, utf8 } from "./codec.js";
 
-export const DIRECT = "DIRECT";
 export const RELAY = "RELAY";
 
 const subtle = () => globalThis.crypto.subtle;
@@ -565,12 +564,10 @@ function waitOpen(ws, ms) {
 }
 
 // openChannel opens a socket with connect() and runs the handshake on it
-// for the link of secret on transport. expectEngineId, when set (DIRECT:
-// the pin), must be the id of the key message 2 carries; another key closes
-// with HANDSHAKE_FAILED. connect gets the link's token as its base64url
-// text (the relay's socket path) and nothing else of the link. It resolves
-// with the session.
-export async function openChannel(connect, { transport, secret, expectEngineId = "", handshakeMs = HANDSHAKE_MS, now = () => Date.now() }) {
+// for the link of secret on transport. connect gets the link's token as
+// its base64url text (the relay's socket path) and nothing else of the
+// link. It resolves with the session.
+export async function openChannel(connect, { transport, secret, handshakeMs = HANDSHAKE_MS, now = () => Date.now() }) {
   const keys = await linkKeys(secret);
   const started = now();
   const left = () => Math.max(0, handshakeMs - (now() - started));
@@ -581,9 +578,6 @@ export async function openChannel(connect, { transport, secret, expectEngineId =
     const hs = await startHandshake(transport, keys);
     ws.send(hs.message);
     const welcome = await finishHandshake(hs, await reader.next(left()));
-    if (expectEngineId !== "" && welcome.engineId !== expectEngineId) {
-      throw new ChannelError("ENGINE_KEY_CHANGED", "this address now answers with a different engine than the one this device pinned");
-    }
     return new Session(ws, reader, await sessionKeys(welcome), welcome);
   } catch (err) {
     const e = err instanceof ChannelError ? err : new ChannelError("HANDSHAKE_FAILED");

@@ -81,9 +81,8 @@ test("the pages use the same-origin transport off the portal, and the relay on i
 });
 
 // The transports: transport.js holds the browser's network calls and hands
-// them to the link session (channel.js), the relay transport (relay.js) and
-// the direct transport (direct.js), which take them as arguments.
-const TRANSPORTS = new Set(["transport.js", "channel.js", "relay.js", "direct.js"]);
+// them to the link session (channel.js), the relay transport (relay.js), which take them as arguments.
+const TRANSPORTS = new Set(["transport.js", "channel.js", "relay.js"]);
 
 test("no page reaches the engine except through the transport", () => {
   const dir = new URL("./", import.meta.url);

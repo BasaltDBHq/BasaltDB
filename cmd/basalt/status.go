@@ -256,7 +256,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if !eng.Unknown {
 		vaultReport, vaultID = localVault(cfg.Config, stateDir)
 	}
-	key, directServed := runningEngineKey(eng, vaultReport, vaultID, cfg.Config)
+	key := runningEngineKey(eng, vaultReport, vaultID)
 	r, err := agent.LocalStatus{
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
 		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, ConnectBudget: cfg.ConnectLinkBudget(), Setup: a.Setup,
@@ -269,8 +269,8 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 			p, err := ledger.Passkeys(ctx, pool)
 			return p, postgres.MapError(err)
 		},
-		EngineKey: key, DirectServed: directServed,
-		Trust: engine.TrustOf(pool),
+		EngineKey: key,
+		Trust:     engine.TrustOf(pool),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			r, err := guard.EngineRecord(ctx, pool, id)
 			return r, postgres.MapError(err)
@@ -287,24 +287,23 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 }
 
 // runningEngineKey is the engine id a running engine serves with, read
-// from its key file ("" when the file is refused), and whether it has a
-// direct listener: what status.engineRecord needs (CONTRACT.md,
-// Configuration and status). Nil for an engine that is down or whose key
-// file this user cannot read: the report then has no engineRecord.
-func runningEngineKey(eng engineOut, report, identity *agent.VaultStatus, cfg config.Config) (*string, bool) {
+// from its key file ("" when the file is refused): what
+// status.engineRecord needs (CONTRACT.md, Configuration and status). Nil
+// for an engine that is down or whose key file this user cannot read: the
+// report then has no engineRecord.
+func runningEngineKey(eng engineOut, report, identity *agent.VaultStatus) *string {
 	var id string
 	switch {
 	case !eng.Reachable:
-		return nil, false
+		return nil
 	case identity != nil:
 		id = identity.EngineID
 	case report != nil:
 		id = report.EngineID
 	default:
-		return nil, false
+		return nil
 	}
-	addr, err := cfg.Direct()
-	return &id, id != "" && err == nil && addr != ""
+	return &id
 }
 
 // statusAgent is the named agent, or the config's only one.
@@ -454,18 +453,15 @@ func writeStatus(w io.Writer, s statusOut) {
 	}
 }
 
-// engineRecordWords is status.engineRecord in words (CONTRACT.md, Direct
-// transport): this engine's key as the agent's database records it.
+// engineRecordWords is status.engineRecord in words (CONTRACT.md, Vault
+// channel, Engine keys): this engine's key as the agent's database records
+// it.
 func engineRecordWords(r agent.EngineRecordStatus) string {
-	at := "no address"
-	if r.URL != "" {
-		at = strings.TrimPrefix(r.URL, "https://")
-	}
 	switch r.State {
 	case "RECORDED":
-		return fmt.Sprintf("RECORDED in the agent's database, %s (since %s)", at, r.RecordedAt)
+		return fmt.Sprintf("RECORDED in the agent's database (since %s)", r.RecordedAt)
 	case "REVOKED":
-		return fmt.Sprintf("REVOKED %s (portal links stop working; approvals go on through long links)", r.RevokedAt)
+		return fmt.Sprintf("REVOKED %s (shown in status; the relay does not enforce it yet, so links already handed over may still work)", r.RevokedAt)
 	case "NOT_RECORDED":
 		return "NOT_RECORDED (the agent's database does not hold this engine's key)"
 	}

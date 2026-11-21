@@ -213,9 +213,7 @@ export function showEngine(session) {
   const engine = session?.engine;
   if (!engine) return;
   const fp = engineFingerprint(engine.engineId);
-  $("engine").textContent = engine.address
-    ? `Through your engine at ${engine.address}, fingerprint ${fp}, pinned on this device.`
-    : `Through the BasaltDB Vault to the engine with fingerprint ${fp}. Before you sign, check that basalt status shows the same fingerprint.`;
+  $("engine").textContent = `Through the BasaltDB Vault to the engine with fingerprint ${fp}. Before you sign, check that basalt status shows the same fingerprint.`;
   $("engine").hidden = false;
 }
 

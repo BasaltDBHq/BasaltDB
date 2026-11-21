@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
@@ -147,6 +148,24 @@ type hostileWire struct {
 	seen map[vaulttest.Direction]int
 	edit func(m vaulttest.Message, n int, kept []vaulttest.Message) []vaulttest.Delivery
 	kept []vaulttest.Message
+	// closes are the codes the page closed its socket with, as the Vault
+	// tells the engine.
+	closes []websocket.StatusCode
+}
+
+func (h *hostileWire) onClose(_ vaulttest.SessionInfo, dir vaulttest.Direction, code websocket.StatusCode) (websocket.StatusCode, bool) {
+	if dir == vaulttest.ToEngine {
+		h.mu.Lock()
+		h.closes = append(h.closes, code)
+		h.mu.Unlock()
+	}
+	return code, true
+}
+
+func (h *hostileWire) closedWith(code websocket.StatusCode) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Contains(h.closes, code)
 }
 
 func (h *hostileWire) tamper(m vaulttest.Message) []vaulttest.Delivery {
@@ -170,7 +189,8 @@ func flip(m vaulttest.Message) []vaulttest.Delivery {
 // A Vault that alters the session makes the page stop and show nothing
 // from the engine: a changed message 2 fails the handshake, and a frame
 // that is tampered, replayed or reflected closes the session with
-// FRAME_INVALID before the page reads anything from it.
+// FRAME_INVALID (4008; a bad message 2, HANDSHAKE_FAILED, 4007) before the
+// page reads anything from it.
 func TestPortalChannelClientRefusesAHostileVault(t *testing.T) {
 	t.Parallel()
 	forward := func(m vaulttest.Message) []vaulttest.Delivery { return []vaulttest.Delivery{vaulttest.Forward(m)} }
@@ -180,26 +200,28 @@ func TestPortalChannelClientRefusesAHostileVault(t *testing.T) {
 		// at is the step that fails; the steps before it went through.
 		at   string
 		code string
+		// close is the code the page closes its socket with.
+		close websocket.StatusCode
 	}{
-		"a changed message 2": {gets: 1, at: "open", code: "UNAVAILABLE", edit: func(m vaulttest.Message, n int, _ []vaulttest.Message) []vaulttest.Delivery {
+		"a changed message 2": {gets: 1, at: "open", code: "UNAVAILABLE", close: 4007, edit: func(m vaulttest.Message, n int, _ []vaulttest.Message) []vaulttest.Delivery {
 			if m.Dir == vaulttest.ToPage && n == 0 {
 				return flip(m)
 			}
 			return forward(m)
 		}},
-		"a tampered frame": {gets: 1, at: "get1", code: "FRAME_INVALID", edit: func(m vaulttest.Message, n int, _ []vaulttest.Message) []vaulttest.Delivery {
+		"a tampered frame": {gets: 1, at: "get1", code: "FRAME_INVALID", close: 4008, edit: func(m vaulttest.Message, n int, _ []vaulttest.Message) []vaulttest.Delivery {
 			if m.Dir == vaulttest.ToPage && n == 1 {
 				return flip(m)
 			}
 			return forward(m)
 		}},
-		"the page's own frame reflected back to it": {gets: 1, at: "get1", code: "FRAME_INVALID", edit: func(m vaulttest.Message, n int, _ []vaulttest.Message) []vaulttest.Delivery {
+		"the page's own frame reflected back to it": {gets: 1, at: "get1", code: "FRAME_INVALID", close: 4008, edit: func(m vaulttest.Message, n int, _ []vaulttest.Message) []vaulttest.Delivery {
 			if m.Dir == vaulttest.ToEngine && n == 1 {
 				return []vaulttest.Delivery{{SID: m.Session.SID, Dir: vaulttest.ToPage, Data: m.Data}}
 			}
 			return forward(m)
 		}},
-		"an earlier response replayed": {gets: 2, at: "get2", code: "FRAME_INVALID", edit: func(m vaulttest.Message, n int, kept []vaulttest.Message) []vaulttest.Delivery {
+		"an earlier response replayed": {gets: 2, at: "get2", code: "FRAME_INVALID", close: 4008, edit: func(m vaulttest.Message, n int, kept []vaulttest.Message) []vaulttest.Delivery {
 			if m.Dir == vaulttest.ToPage && n == 2 {
 				for _, k := range kept {
 					if k.Dir == vaulttest.ToPage {
@@ -222,6 +244,8 @@ func TestPortalChannelClientRefusesAHostileVault(t *testing.T) {
 			require.Contains(t, steps, "error")
 			require.Equal(t, c.code, steps["error"].Code, steps["error"])
 			require.NotContains(t, steps, c.at, "the page used nothing from a broken session")
+			require.Eventually(t, func() bool { return h.closedWith(c.close) }, 5*time.Second, 5*time.Millisecond,
+				"the page closes with %d", c.close)
 			if c.at == "open" {
 				require.Equal(t, "RelayError", steps["error"].Name)
 				require.Contains(t, steps["error"].PersonMessage, "HANDSHAKE_FAILED")
@@ -238,5 +262,5 @@ func TestPortalChannelClientRefusesAHostileVault(t *testing.T) {
 // the session as h says.
 func newHostileVaultSession(t *testing.T, h *hostileWire) *vaultSession {
 	t.Helper()
-	return newVaultSessionWith(t, &wire{}, vaulttest.Options{Tamper: h.tamper})
+	return newVaultSessionWith(t, &wire{}, vaulttest.Options{Tamper: h.tamper, OnSessionClose: h.onClose})
 }

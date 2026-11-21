@@ -25,7 +25,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -218,6 +218,9 @@ async function loadRequest(hash) {
   return { req, relay: { path: paths.relay, secret, id, session } };
 }
 
+// ENGINE_BUTTONS are the controls that send the engine a request.
+const ENGINE_BUTTONS = ["reveal", "scope-line", "widen", "reject"];
+
 // finish relays the signed response when the page came from a short link,
 // and otherwise (or when the relay fails) shows the code to paste.
 async function finish(response, relay) {
@@ -226,7 +229,7 @@ async function finish(response, relay) {
       const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
       showDone(revertDone(result));
       // The revert is signed: nothing else goes to the engine.
-      relay.session.close();
+      endSession(relay.session, ENGINE_BUTTONS);
       settle(result?.batched ? "Signed" : "Reverted", "ok");
       return;
     } catch (err) {
@@ -301,7 +304,7 @@ async function reject(state) {
     return;
   }
   // The engine revoked the link with the reject: the session is done.
-  relay.session.close();
+  endSession(relay.session, ENGINE_BUTTONS);
   $("reject-note").hidden = true;
   $("sheet-dim").hidden = true;
   showDone(rejectDone(note.trim() !== "", req.binding.requestedBy));

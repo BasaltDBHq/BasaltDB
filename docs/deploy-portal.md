@@ -99,11 +99,11 @@ Then check the edge function: a pinned address appears in `connect-src` only for
 ```sh
 H='__Host-basalt-engines'
 curl -sI -H "Cookie: $H=https://engine.example.com" "https://portal.basaltvault.app/approvals/$ID" | grep -iE 'content-security-policy|cache-control|vary'
-# connect-src 'self' https://engine.example.com wss://engine.example.com; Cache-Control: no-store; Vary: Cookie
+# connect-src wss://relay.basaltvault.app 'self' https://engine.example.com wss://engine.example.com; Cache-Control: no-store; Vary: Cookie
 curl -sI -H "Cookie: $H=https:" "https://portal.basaltvault.app/approvals/$ID" | grep -i content-security-policy
-# the default: no connect-src
+# the default: connect-src wss://relay.basaltvault.app
 curl -sI "https://portal.basaltvault.app/engines/add?address=https%3A%2F%2Fengine.example.com" | grep -i content-security-policy
-# connect-src 'self' https://engine.example.com
+# connect-src wss://relay.basaltvault.app 'self' https://engine.example.com
 ```
 
 ## Changing the portal

@@ -138,6 +138,13 @@ class RelaySession {
     this.channel = channel;
   }
 
+  // hide ends the channel when the page is hidden: no session outlives the
+  // page being shown. A page restored from the back-forward cache opens a
+  // new one with its next request.
+  hide() {
+    this.channel?.close();
+  }
+
   close() {
     this.closed = true;
     this.channel?.close();
@@ -145,7 +152,7 @@ class RelaySession {
 }
 
 // onPageHide runs fn when the page is hidden for good or put in the
-// back-forward cache: the session never outlives the page.
+// back-forward cache.
 function onPageHide(fn) {
   globalThis.window?.addEventListener("pagehide", fn);
 }
@@ -164,7 +171,7 @@ export function relayTransport({ socket, open = openChannel, pageHide = onPageHi
         throw openFailure(err);
       }
       const session = new RelaySession(channel, connect);
-      pageHide(() => session.close());
+      pageHide(() => session.hide());
       return session;
     },
   };

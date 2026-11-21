@@ -219,6 +219,16 @@ export function showEngine(session) {
   $("engine").hidden = false;
 }
 
+// endSession closes a finished page's session to the engine and disables
+// the buttons that would still send it a request.
+export function endSession(session, buttons) {
+  session.close();
+  for (const id of buttons) {
+    const b = $(id);
+    if (b) b.disabled = true;
+  }
+}
+
 // openSession opens transport's session for link, saying so on the page
 // while a RELAY session connects through the Vault.
 export async function openSession(transport, link) {

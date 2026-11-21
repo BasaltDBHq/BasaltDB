@@ -310,9 +310,12 @@ test("a closed session sends nothing, and the pages do not retry it", async () =
   assert.equal(opened[0].ch.requests.length, 0);
 });
 
-test("hiding the page closes the session", async () => {
+test("hiding the page ends its channel; a page shown again opens a new one", async () => {
   const { session, opened, hide } = await sessionWith(() => fakeChannel(ENGINE, () => ok()));
   hide();
   assert.ok(opened[0].ch.closed);
-  await assert.rejects(session.request("GET", PATH, { "basalt-link-secret": SECRET }), (e) => e.code === "CLOSED");
+  assert.equal(opened.length, 1, "nothing is opened while the page is hidden");
+  await session.request("GET", PATH, { "basalt-link-secret": SECRET });
+  assert.equal(opened.length, 2);
+  assert.equal(opened[0].ch.requests.length, 0);
 });

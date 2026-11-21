@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -161,7 +161,7 @@ async function finish(response, relay) {
       await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
       // The approval is finished: nothing else goes to the engine.
-      relay.session.close();
+      endSession(relay.session, ENGINE_BUTTONS);
       setPill("state", "Approved", "ok");
       return;
     } catch (err) {
@@ -203,6 +203,9 @@ async function approve(rp, req, summary, relay) {
 }
 
 const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
+
+// ENGINE_BUTTONS are the controls that send the engine a request.
+const ENGINE_BUTTONS = ["reveal"];
 
 function renderLines(state) {
   const longLink = state.relay === null;

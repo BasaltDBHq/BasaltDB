@@ -129,12 +129,18 @@ var headLine = regexp.MustCompile(`^(?:` + strings.Join([]string{
 // where a host serves the page under a looser header (the portal's _headers
 // falls back to 'self'). It does not block workers or script elements
 // (script-src 'self'). Only connect-src may differ: 'self' or 'none', except
-// on the connect page, whose one source is the connect service. No other
-// page may name it.
+// on the connect page, whose one source is the connect service, and on the
+// approval and revert pages, which add the Vault to 'self' for a short
+// link's session on the portal. No other page may name either.
 var (
 	cspLine        = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$`)
 	connectCSPLine = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://connect\.basaltvault\.app; base-uri 'none'; form-action 'none'">$`)
+	relayCSPLine   = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' wss://relay\.basaltvault\.app; base-uri 'none'; form-action 'none'">$`)
 )
+
+// relayPages are the pages that open a short link's session through the
+// Vault on the portal.
+var relayPages = map[string]bool{"approve/index.html": true, "revert/index.html": true}
 
 const connectPage = "connect/index.html"
 
@@ -179,8 +185,11 @@ func pageShape(page, html string) error {
 		after
 	)
 	want := cspLine
-	if page == connectPage {
+	switch {
+	case page == connectPage:
 		want = connectCSPLine
+	case relayPages[page]:
+		want = relayCSPLine
 	}
 	state := before
 	csp := 0

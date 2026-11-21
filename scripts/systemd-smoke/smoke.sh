@@ -165,12 +165,40 @@ sudo install -o root -g root -m 0755 "$work/basalt" "$basalt"
 
 step "basalt init installs the engine service"
 sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$agent_user"
+# The hosted runner has no desktop, so no administrator dialog: basalt init
+# says so and stops before it reaches the database, never falling back to
+# running the engine as this user.
+[ ! -e /usr/bin/pkexec ] || sudo mv /usr/bin/pkexec /usr/bin/pkexec.smoke-aside
+if "$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes </dev/null >"$work/nodialog.out" 2>&1; then
+	cat "$work/nodialog.out" >&2
+	fail "basalt init went on without an administrator dialog"
+fi
+grep -q "cannot be shown here" "$work/nodialog.out" || {
+	cat "$work/nodialog.out" >&2
+	fail "basalt init did not say there is no administrator dialog"
+}
+! grep -q "guard installed" "$work/nodialog.out" || fail "basalt init reached the database without an administrator dialog"
+[ ! -e /etc/systemd/system/basalt-engine.service ] || fail "a unit was installed without an administrator dialog"
+# A stand-in pkexec answers yes through sudo, so the real install script
+# runs as root; it takes only the arguments basalt init passes.
+sudo tee /usr/bin/pkexec >/dev/null <<'EOF'
+#!/bin/sh
+[ "$1" = --disable-internal-agent ] || exit 127
+shift
+exec sudo -n "$@"
+EOF
+sudo chmod 0755 /usr/bin/pkexec
 # Its output is the setup SQL (the password redacted): shown only on failure.
 "$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes </dev/null >"$work/init.out" 2>&1 || {
 	cat "$work/init.out" >&2
 	fail "basalt init"
 }
 wait_for "the engine's agent socket" sudo test -S "/run/basalt/$agent.sock"
+# A first install starts the unit twice (the dialog's script, then the
+# restart after sudo writes the config), and the steps below restart it
+# several times within seconds: clear systemd's start-rate count so its
+# default limit (5 starts in 10s) measures the steps, not the install.
+sudo systemctl reset-failed "$engine_unit"
 for d in /opt/basalt /opt/basalt/run; do
 	got=$(stat -c '%U:%G %a' "$d") || fail "basalt service install did not make $d"
 	[ "$got" = "root:root 755" ] || fail "$d is $got, not root:root 755"

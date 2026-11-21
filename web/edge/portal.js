@@ -7,7 +7,7 @@
 // pages (internal/websec); a test fails on drift. The function sets all of
 // them on the answer it builds, so they never depend on the static host
 // applying _headers to a function's answer.
-export const DEFAULT_CSP = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+export const DEFAULT_CSP = "default-src 'self'; connect-src wss://relay.basaltvault.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 export const DEFAULT_HEADERS = Object.freeze({
   "Content-Security-Policy": DEFAULT_CSP,
   "X-Frame-Options": "DENY",

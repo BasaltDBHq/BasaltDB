@@ -2,7 +2,7 @@
 // it knows which transport carries a request (design: vault channel,
 // section 4.1):
 //
-//   transport.kind                              SAME_ORIGIN, UNAVAILABLE (later RELAY)
+//   transport.kind                              SAME_ORIGIN or RELAY
 //   transport.open(link) -> Promise<session>    link: { page, id, secret }
 //   session.request(method, path, headers, body)
 //     -> Promise<{ status, headers, body }>
@@ -21,13 +21,12 @@
 // the session stays open; later requests carry the new secret.
 
 import { PORTAL } from "./codec.js";
-import { RelayError } from "./local.js";
+import { relayTransport } from "./relay.js";
 
 export const SAME_ORIGIN = "SAME_ORIGIN";
-export const UNAVAILABLE = "UNAVAILABLE";
 
-// The browser's network calls. Only the transports (this file and
-// channel.js) reach the network; the pages call them.
+// The browser's network calls. Only the transports (this file, relay.js
+// and channel.js) reach the network; the pages call them.
 const windowFetch = (path, init) => window.fetch(path, init);
 export const browserFetch = windowFetch;
 export const browserSocket = (url) => new window.WebSocket(url);
@@ -73,29 +72,11 @@ export function sameOriginTransport(fetchFn = windowFetch) {
   };
 }
 
-// UNREACHABLE is what a short link on the portal tells the person while
-// the portal page has no way to reach their engine: the long link carries
-// the request in the page itself.
-export const UNREACHABLE =
-  "This page cannot reach your engine from the portal yet. Ask the agent for the long link (list_pending gives it), " +
-  "or run basalt approve or basalt revert with --open on your own computer.";
-
-// unreachableTransport opens no session: every open rejects with
-// UNREACHABLE, which the page shows.
-export function unreachableTransport() {
-  return {
-    kind: UNAVAILABLE,
-    open: async () => {
-      throw new RelayError("cannot reach the engine from the portal", "UNAVAILABLE", 0, { personMessage: UNREACHABLE });
-    },
-  };
-}
-
-// pageTransport is the transport the approval and revert pages use: on the
-// engine's own local pages, the same origin; on the portal, none yet (the
-// relay transport comes with its own task), so a short link there says to
-// use the long link.
+// pageTransport is the transport the approval and revert pages use, chosen
+// by the page's own origin (CONTRACT.md, Link secrets in a session): on the
+// portal, RELAY through the Vault, and never a fetch or a socket to
+// localhost; on the engine's own local pages, the same origin.
 export function pageTransport(loc = globalThis.window?.location) {
-  if (loc?.origin === PORTAL) return unreachableTransport();
+  if (loc?.origin === PORTAL) return relayTransport({ socket: browserSocket });
   return sameOriginTransport();
 }

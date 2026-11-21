@@ -167,7 +167,7 @@ func EngineDirs(goos string) []Dir {
 }
 
 func (s Spec) args() []string {
-	return []string{s.Binary, "engine", "--config", s.ConfigPath}
+	return []string{s.Binary, "engine", "--config", s.ConfigPath, "--supervise"}
 }
 
 // SystemdUnit renders the Linux unit. The engine gets /run/basalt for its

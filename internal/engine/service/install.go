@@ -249,8 +249,12 @@ func linuxInstall(sys System, s Spec) ([]Step, error) {
 		run("systemctl", "daemon-reload"),
 	)
 	if installed {
-		// Already running: restart so it reads the new config.
-		steps = append(steps, run("systemctl", "enable", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
+		// Already running: restart so it reads the new config. reset-failed
+		// first clears systemd's start-rate count, so a restart right after
+		// the first install's starts (the dialog's, an engine waiting for its
+		// config) is never refused for starting too often.
+		steps = append(steps, run("systemctl", "enable", SystemdUnitName),
+			run("systemctl", "reset-failed", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
 	} else {
 		steps = append(steps, run("systemctl", "enable", "--now", SystemdUnitName))
 	}

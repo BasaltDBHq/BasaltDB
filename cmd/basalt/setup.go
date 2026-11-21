@@ -43,6 +43,9 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 	}
 	if asService {
 		if err := installService(c, f, dsn); err != nil {
+			if isDialogStop(err) {
+				return fmt.Errorf("the guard is installed but the engine service is not (run basalt init again): %w", err)
+			}
 			return fmt.Errorf("the guard is installed but the engine service is not (run basalt init again, or with --no-service): %w", err)
 		}
 		if err := servicePin(c, f); err != nil {
@@ -89,7 +92,10 @@ func chooseService(c *cliIO, f initFlags) (bool, error) {
 		return false, errServiceUnanswered
 	}
 	question := fmt.Sprintf("Install the engine as a background service? This creates the OS user %s", f.engineUser)
-	if c.host.Euid() != 0 {
+	switch {
+	case needsDialog(c, f):
+		question += " and asks for your password twice: in the system's administrator dialog, then in this terminal."
+	case c.host.Euid() != 0:
 		question += " and needs your password once."
 	}
 	return c.confirmYes(question)
@@ -378,6 +384,9 @@ func elevateInstall(c *cliIO, f initFlags, dsn string) error {
 		return applyServiceInstall(c, bin, f.configPath, f.engineUser,
 			f.agentInstall(dsn), false)
 	}
+	if err := dialogInstall(c, f); err != nil {
+		return err
+	}
 	fmt.Fprintln(c.stderr, "basalt: installing the engine service with sudo:")
 	return c.host.Sudo(c.ctx, serviceInstallArgs(f, bin), dsn+"\n", c.stderr, c.stderr)
 }
@@ -399,6 +408,108 @@ func checkedExecutable(c *cliIO) (string, error) {
 // mayInstallService reports whether this init can go on to install the
 // engine service (or print its plan): then the binary is checked before
 // anything else, so a refusal leaves the database as it was.
+// needsDialog: init runs as the person on a person-operated engine and the
+// engine service is not installed yet, so the first install goes through
+// the system's administrator dialog (CONTRACT.md, The administrator
+// dialog). An engine set up for a bot (--operated-by=agent) keeps sudo
+// alone: its person often has no desktop session there.
+func needsDialog(c *cliIO, f initFlags) bool {
+	return c.host.Euid() != 0 && f.operatedBy != OperatedByAgent &&
+		!c.host.System(io.Discard, io.Discard).Exists(service.UnitPath(c.goos))
+}
+
+// checkDialog stops init before it asks for the admin connection when the
+// first install needs the administrator dialog and none can be shown, or
+// the binary cannot go into the dialog's script.
+func checkDialog(c *cliIO, f initFlags) error {
+	if !needsDialog(c, f) {
+		return nil
+	}
+	if err := dialogFits(c.goos, f); err != nil {
+		return err
+	}
+	if err := c.host.DialogAvailable(c.goos); err != nil {
+		return noDialog(err)
+	}
+	_, _, err := dialogScript(c)
+	return err
+}
+
+// dialogScript is the first install's fixed script for the running
+// binary, with every link resolved and checked as root would run it.
+func dialogScript(c *cliIO) (bin, script string, err error) {
+	bin, err = c.host.ResolvedExecutable()
+	if err != nil {
+		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
+	}
+	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
+		return "", "", err
+	}
+	script, err = service.InstallScript(c.goos, bin)
+	return bin, script, err
+}
+
+// dialogInstall installs the engine service on a first install through the
+// system's administrator dialog, which only the person can answer: a script
+// built from constants creates the engine's OS user and system folders,
+// writes the unit that runs the engine supervised from the system config,
+// and starts it. No agent, flag, environment or folder of init's reaches it.
+func dialogInstall(c *cliIO, f initFlags) error {
+	if !needsDialog(c, f) {
+		return nil
+	}
+	if err := dialogFits(c.goos, f); err != nil {
+		return err
+	}
+	if err := c.host.DialogAvailable(c.goos); err != nil {
+		return noDialog(err)
+	}
+	bin, script, err := dialogScript(c)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
+		service.DefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
+	if err := c.host.AdminDialog(c.ctx, c.goos, script, c.stderr); err != nil {
+		if errors.Is(err, service.ErrNoDialog) {
+			return noDialog(err)
+		}
+		return err
+	}
+	return nil
+}
+
+// dialogFits refuses what the first install's fixed script cannot follow:
+// it always installs the engine as its default OS user, from the system
+// config.
+func dialogFits(goos string, f initFlags) error {
+	if user := service.DefaultUser(goos); f.engineUser != user {
+		return fmt.Errorf("%w: --engine-user %s: a first install creates the engine's OS user %s; drop --engine-user", errUsage, f.engineUser, user)
+	}
+	if path := config.DefaultPath(goos); f.configPath != path {
+		return fmt.Errorf("%w: --config %s: the engine service reads %s", errUsage, f.configPath, path)
+	}
+	return nil
+}
+
+// dialogEngineArgs is the command the first install's unit runs.
+func dialogEngineArgs(goos, bin string) []string {
+	return []string{bin, "engine", "--config", config.DefaultPath(goos), "--supervise"}
+}
+
+// noDialog is init's stop when no administrator dialog can be shown: it
+// never falls back to running the engine as the person's user.
+func noDialog(err error) error {
+	return fmt.Errorf("basalt init installs the engine service through the system's administrator dialog, which only you can answer, and it cannot be shown here (%w). "+
+		"Run basalt init again in a desktop session on this machine; basalt does not run the engine as your user instead", err)
+}
+
+// isDialogStop: the administrator dialog was not shown, was cancelled, or
+// its script stopped.
+func isDialogStop(err error) bool {
+	return errors.Is(err, service.ErrNoDialog) || errors.Is(err, service.ErrDialogCancelled) || errors.Is(err, service.ErrDialogScript)
+}
+
 func mayInstallService(c *cliIO, f initFlags) bool {
 	return !f.noService && !f.pathsGiven && (f.yes || f.dryRun || c.interactive)
 }

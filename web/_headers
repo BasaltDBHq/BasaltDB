@@ -3,10 +3,13 @@
 # Strict-Transport-Security is portal-only (the engine serves plain http). It
 # is set on portal.basaltvault.app, so includeSubDomains covers only that host's
 # subdomains, not the rest of basaltvault.app; no preload.
-# connect-src, script-src and the rest fall back to default-src 'self': the
-# pages load only their own modules and fetch only their own origin.
+# The CSP is internal/websec PortalCSP: the engine's policy plus one
+# connect-src, the Vault (wss://relay.basaltvault.app), which carries a short
+# link's session to its engine. Nothing else: the portal pages never fetch
+# their own origin or any other. script-src and the rest fall back to
+# default-src 'self': the pages load only their own modules.
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; connect-src wss://relay.basaltvault.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff

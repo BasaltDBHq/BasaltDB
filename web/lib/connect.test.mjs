@@ -21,6 +21,8 @@ import {
   answersFor,
   call,
   compareCheckCodes,
+  fingerprintText,
+  trustRootFrom,
   databaseView,
   passkeyCheckCode,
   readCode,
@@ -224,9 +226,10 @@ function connectOnlyCheck(extra = {}) {
   };
 }
 
-function refusalBody(code, reason, message, retryAfterSeconds) {
+function refusalBody(code, reason, message, retryAfterSeconds, trustRoot) {
   const debug = { reason, message };
   if (retryAfterSeconds) debug.retryAfterSeconds = retryAfterSeconds;
+  if (trustRoot) debug.trustRoot = trustRoot;
   return JSON.stringify({ code, message, details: [{ type: "basalt.connect.v1.Refusal", value: "AAAA", debug }] });
 }
 
@@ -440,11 +443,12 @@ test("the flow refuses a step out of order", async () => {
   assert.equal(flow.holdsConnectionString, false);
 });
 
-test("the page names no connection as made and links the waitlist plainly", () => {
+test("the page names no connection as made and links the waitlist and the Cloud SQL docs plainly", () => {
   const text = HTML.replace(/<[^>]+>/g, " ");
   assert.doesNotMatch(text, /\bconnected\b/i);
   assert.match(HTML, new RegExp(`<a href="${WAITLIST.replace(/[.#/]/g, "\\$&")}" target="_blank" rel="noopener noreferrer">Join the list</a>`));
-  assert.equal((HTML.match(/<a /g) ?? []).length, 1, "one link, the waitlist");
+  assert.match(HTML, /<a href="https:\/\/cloud\.google\.com\/sql\/docs\/postgres\/manage-ssl-instance" target="_blank" rel="noopener noreferrer">How to find it<\/a>/);
+  assert.equal((HTML.match(/<a /g) ?? []).length, 2, "two plain links: the waitlist, and where Cloud SQL shows its certificate authority");
   assert.doesNotMatch(HTML, /<form|<iframe|style="/);
   assert.match(HTML, /<input id="database-url" class="text" type="password" autocomplete="off"/);
 });
@@ -1105,4 +1109,117 @@ test("a poll answer that arrives after Back neither brings its ticket back nor o
   assert.equal(flow.holdsTicket, false);
   assert.equal(flow.holdsConnectionString, false);
   assert.deepEqual(methods(), ["DescribeSetup", "CheckSetup", "HandoffStatus"]);
+});
+
+// ---- A certificate authority to trust (CONTRACT.md, Trusting a certificate authority on the page) ----
+
+const ROOT = { subject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc,C=US", sha256: "ab".repeat(32), expiresAt: "2035-01-31T00:00:00Z" };
+const NOT_VERIFIED = "The database's TLS certificate could not be verified, so the password was not sent. Use a host with a certificate from a public authority, or use the laptop command.";
+
+test("a refusal's certificate authority is read only when every part is well formed", () => {
+  const r = refusalFrom(400, refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, ROOT));
+  assert.deepEqual(r.trustRoot, ROOT);
+  assert.equal(fingerprintText(ROOT.sha256), Array(32).fill("AB").join(":"));
+  for (const [name, t] of Object.entries({
+    "upper-case fingerprint": { ...ROOT, sha256: "AB".repeat(32) },
+    "short fingerprint": { ...ROOT, sha256: "ab".repeat(31) },
+    "empty subject": { ...ROOT, subject: "" },
+    "long subject": { ...ROOT, subject: "x".repeat(513) },
+    "not a date": { ...ROOT, expiresAt: "soon" },
+    "not UTC": { ...ROOT, expiresAt: "2035-01-31T00:00:00+01:00" },
+    "not an object": "ab",
+  })) {
+    assert.equal(trustRootFrom("CERTIFICATE_NOT_VERIFIED", t), null, name);
+  }
+  assert.equal(trustRootFrom("LOGIN_FAILED", ROOT), null, "only the certificate refusals carry one");
+  assert.deepEqual(trustRootFrom("TRUST_ROOT_MISMATCH", ROOT), ROOT);
+});
+
+// A target code's CheckSetup refused with a certificate authority: the
+// question first, nothing sent until the answer; Trust sends its SHA-256
+// with CheckSetup and RunSetup.
+function trustService(first = ROOT) {
+  let checks = 0;
+  return service({
+    DescribeSetup: () => ({ body: { summary: summary("INSTALL"), challenge: challenge() } }),
+    CheckSetup: (req) => (++checks === 1 || req.trustRoot !== first.sha256
+      ? { status: 400, body: refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, first) }
+      : { body: { questions: [], database: { host: "34.120.1.2", port: 5432, database: "app" } } }),
+    RunSetup: () => ({ body: { warnings: [], passkeys: [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }] } }),
+  });
+}
+
+test("an unknown certificate authority: the question with its subject, SHA-256 and expiry, then Trust and continue", async () => {
+  guardStorage();
+  const nodes = fakeDocument();
+  const { calls, fetchFn, methods } = trustService();
+  const { flow } = await toPaste(nodes, env(fetchFn));
+  await paste(nodes, "postgresql://admin:Marker-7f3a9c@34.120.1.2:5432/app");
+  assert.equal(shown(nodes), "s-trust");
+  assert.equal(nodes["trust-text"].textContent,
+    `34.120.1.2 presents a certificate authority Basalt does not know: ${ROOT.subject}, SHA-256 ${fingerprintText(ROOT.sha256)}, valid until 2035-01-31. Check it against your provider's console. Trust it for this host only?`);
+  assert.equal(calls.filter((c) => c.method === "CheckSetup").length, 1, "nothing more is sent before the answer");
+  assert.equal(calls[1].body.trustRoot, undefined);
+  assert.equal(flow.holdsConnectionString, true, "kept while the page asks");
+  assert.doesNotMatch(everything(nodes), /Marker-7f3a9c/);
+
+  await nodes["trust-go"].click();
+  assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
+  assert.equal(shown(nodes), "s-tables");
+  await nodes["tables-next"].click();
+  await nodes.approve.click();
+  const run = calls.at(-1);
+  assert.equal(run.method, "RunSetup");
+  assert.equal(run.body.trustRoot, ROOT.sha256);
+  assert.equal(shown(nodes), "s-done");
+  assert.equal(flow.holdsConnectionString, false);
+  assert.ok(!methods().includes("HandoffStatus"));
+});
+
+test("Cancel drops the string and sends nothing", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = trustService();
+  const { flow } = await toPaste(nodes, env(fetchFn));
+  await paste(nodes, "postgresql://admin:Marker-7f3a9c@34.120.1.2:5432/app");
+  const sent = calls.length;
+  await nodes["trust-cancel"].click();
+  assert.equal(shown(nodes), "s-paste");
+  assert.equal(calls.length, sent);
+  assert.equal(flow.holdsConnectionString, false);
+  assert.equal(flow.step, "paste");
+});
+
+test("a subject the server chose is shown as text only", async () => {
+  const nodes = fakeDocument();
+  const evil = { ...ROOT, subject: '<img src=x onerror="alert(1)">' };
+  const { fetchFn } = trustService(evil);
+  await toPaste(nodes, env(fetchFn));
+  await paste(nodes, "postgresql://admin:pw@34.120.1.2:5432/app");
+  assert.equal(shown(nodes), "s-trust");
+  assert.match(nodes["trust-text"].textContent, /<img src=x onerror="alert\(1\)">/);
+  assert.equal(nodes["trust-text"].children.length, 0);
+});
+
+test("a certificate authority that changed: asked again with the refusal's message; a refusal without one goes back to paste", async () => {
+  const nodes = fakeDocument();
+  const changed = { ...ROOT, sha256: "cd".repeat(32) };
+  let checks = 0;
+  const { fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: summary("INSTALL"), challenge: challenge() } }),
+    CheckSetup: () => {
+      checks++;
+      if (checks === 1) return { status: 400, body: refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, ROOT) };
+      if (checks === 2) return { status: 400, body: refusalBody("failed_precondition", "TRUST_ROOT_MISMATCH", "It changed.", 0, changed) };
+      return { status: 400, body: refusalBody("failed_precondition", "TRUST_ROOT_MISMATCH", "It changed.") };
+    },
+  });
+  const { flow } = await toPaste(nodes, env(fetchFn));
+  await paste(nodes, "postgresql://admin:pw@34.120.1.2:5432/app");
+  await nodes["trust-go"].click();
+  assert.equal(shown(nodes), "s-trust");
+  assert.equal(nodes["trust-error"].textContent, "It changed.");
+  assert.match(nodes["trust-text"].textContent, /CD:CD/);
+  await nodes["trust-go"].click();
+  assert.equal(shown(nodes), "s-paste");
+  assert.equal(flow.holdsConnectionString, false);
 });

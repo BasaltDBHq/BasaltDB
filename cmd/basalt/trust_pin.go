@@ -17,7 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/trustdir"
-	"github.com/basaltdbhq/basaltdb/internal/trustpin"
+	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -229,26 +229,7 @@ func (c *cliIO) repin(t pinTarget, configPath string) string {
 
 // withoutProfile is set without the operator profile name.
 func withoutProfile(set *trustprofile.Set, name string) *trustprofile.Set {
-	return replacing(set, name, nil)
-}
-
-// replacing is set with the operator profile name left out and add, when
-// not nil, in its place.
-func replacing(set *trustprofile.Set, name string, add *trustprofile.Profile) *trustprofile.Set {
-	var ops, builtin []*trustprofile.Profile
-	for _, l := range set.Profiles() {
-		switch {
-		case l.Origin == trustprofile.Operator && l.Name == name:
-		case l.Origin == trustprofile.Operator:
-			ops = append(ops, l.Profile)
-		default:
-			builtin = append(builtin, l.Profile)
-		}
-	}
-	if add != nil {
-		ops = append(ops, add)
-	}
-	return trustprofile.NewSet(builtin, ops, set.Refused())
+	return set.Replacing(name, nil)
 }
 
 // trustRootFlag adds --trust-root to fs.
@@ -361,6 +342,6 @@ func (c *cliIO) trustInMemory(choice pinChoice, admin, configPath string) (strin
 	if err != nil {
 		return "", err
 	}
-	pgdial.SetTrust(func() *trustprofile.Set { return replacing(trustdir.Set(configPath), p.Name, p) })
+	pgdial.SetTrust(func() *trustprofile.Set { return trustdir.Set(configPath).Replacing(p.Name, p) })
 	return withVerifyFull(admin), nil
 }

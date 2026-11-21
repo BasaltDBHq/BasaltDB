@@ -480,7 +480,13 @@ type CheckSetupRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Code  string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
 	// The admin connection string the person pasted.
-	DatabaseUrl   string `protobuf:"bytes,2,opt,name=database_url,json=databaseUrl,proto3" json:"database_url,omitempty"`
+	DatabaseUrl string `protobuf:"bytes,2,opt,name=database_url,json=databaseUrl,proto3" json:"database_url,omitempty"`
+	// The SHA-256 of the certificate authority the person trusted on the page
+	// (a Refusal's trust_root), 64 lowercase hex digits. Only for a host no
+	// trust profile covers whose certificate does not verify: the service then
+	// logs in only if the server presents that same chain top, and the hold
+	// carries it to the engine. Empty otherwise.
+	TrustRoot     string `protobuf:"bytes,3,opt,name=trust_root,json=trustRoot,proto3" json:"trust_root,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -525,6 +531,13 @@ func (x *CheckSetupRequest) GetCode() string {
 func (x *CheckSetupRequest) GetDatabaseUrl() string {
 	if x != nil {
 		return x.DatabaseUrl
+	}
+	return ""
+}
+
+func (x *CheckSetupRequest) GetTrustRoot() string {
+	if x != nil {
+		return x.TrustRoot
 	}
 	return ""
 }
@@ -1116,7 +1129,9 @@ type RunSetupRequest struct {
 	// Mark the rest as not personal: PUBLIC for every column of the included
 	// tables that has no class in the transaction, sent when the entries
 	// would pass the 500 cap.
-	RestPublic    bool `protobuf:"varint,8,opt,name=rest_public,json=restPublic,proto3" json:"rest_public,omitempty"`
+	RestPublic bool `protobuf:"varint,8,opt,name=rest_public,json=restPublic,proto3" json:"rest_public,omitempty"`
+	// As in CheckSetupRequest: the chain top the person trusted on the page.
+	TrustRoot     string `protobuf:"bytes,9,opt,name=trust_root,json=trustRoot,proto3" json:"trust_root,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1205,6 +1220,13 @@ func (x *RunSetupRequest) GetRestPublic() bool {
 		return x.RestPublic
 	}
 	return false
+}
+
+func (x *RunSetupRequest) GetTrustRoot() string {
+	if x != nil {
+		return x.TrustRoot
+	}
+	return ""
 }
 
 // The browser's answer to navigator.credentials.create, as in the passkey
@@ -1528,7 +1550,12 @@ type CollectAddressResponse struct {
 	Address *Target `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	// PREVIEW (CheckSetup's hold: probe and report only) or SET_UP (RunSetup's
 	// hold: probe, ask the person, log in after yes).
-	Phase         string `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Phase string `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	// The SHA-256 of the certificate authority the person trusted on the page
+	// for this host, 64 lowercase hex digits; empty when the server's
+	// certificate verified without it. The engine pins it only when the chain
+	// it reads itself has the same top.
+	TrustRoot     string `protobuf:"bytes,3,opt,name=trust_root,json=trustRoot,proto3" json:"trust_root,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1577,6 +1604,13 @@ func (x *CollectAddressResponse) GetPhase() string {
 	return ""
 }
 
+func (x *CollectAddressResponse) GetTrustRoot() string {
+	if x != nil {
+		return x.TrustRoot
+	}
+	return ""
+}
+
 type ReportReachRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// As in CollectAddressRequest.
@@ -1589,8 +1623,8 @@ type ReportReachRequest struct {
 	Address *Target `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
 	// REACHABLE or UNREACHABLE.
 	Result string `protobuf:"bytes,5,opt,name=result,proto3" json:"result,omitempty"`
-	// UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED or
-	// TIMEOUT.
+	// UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED,
+	// TIMEOUT or TRUST_ROOT_MISMATCH.
 	Reason string `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
 	// ECDSA P-256 over the basalt-connect-reach.1 context (CONTRACT.md,
 	// Connect, The reach check), 64 bytes r and s, base64url.
@@ -1847,8 +1881,8 @@ type Reach struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// REACHABLE or UNREACHABLE.
 	Result string `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
-	// UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED or
-	// TIMEOUT.
+	// UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED,
+	// TIMEOUT or TRUST_ROOT_MISMATCH.
 	Reason string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	// RFC 3339 UTC: the report's time.
 	ReportedAt    string `protobuf:"bytes,3,opt,name=reported_at,json=reportedAt,proto3" json:"reported_at,omitempty"`
@@ -2006,8 +2040,12 @@ type Refusal struct {
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// Set when trying again later can work.
 	RetryAfterSeconds int32 `protobuf:"varint,3,opt,name=retry_after_seconds,json=retryAfterSeconds,proto3" json:"retry_after_seconds,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// CERTIFICATE_NOT_VERIFIED for a host no trust profile covers, and
+	// TRUST_ROOT_MISMATCH: the top of the chain the server presents, read with
+	// the TLS handshake alone, before any password is sent.
+	TrustRoot     *TrustRoot `protobuf:"bytes,4,opt,name=trust_root,json=trustRoot,proto3" json:"trust_root,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Refusal) Reset() {
@@ -2059,6 +2097,80 @@ func (x *Refusal) GetRetryAfterSeconds() int32 {
 		return x.RetryAfterSeconds
 	}
 	return 0
+}
+
+func (x *Refusal) GetTrustRoot() *TrustRoot {
+	if x != nil {
+		return x.TrustRoot
+	}
+	return nil
+}
+
+// A certificate authority a database server presents: the top of its chain
+// (the root when the server sends it, else the highest certificate it
+// sends).
+type TrustRoot struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Its subject, RFC 2253, at most 512 characters. The server chooses it:
+	// the page shows it as text only.
+	Subject string `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	// The SHA-256 of its DER bytes, 64 lowercase hex digits.
+	Sha256 string `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	// RFC 3339 UTC: its notAfter.
+	ExpiresAt     string `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrustRoot) Reset() {
+	*x = TrustRoot{}
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrustRoot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrustRoot) ProtoMessage() {}
+
+func (x *TrustRoot) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrustRoot.ProtoReflect.Descriptor instead.
+func (*TrustRoot) Descriptor() ([]byte, []int) {
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *TrustRoot) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *TrustRoot) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *TrustRoot) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
 }
 
 var file_basalt_connect_v1_connect_proto_extTypes = []protoimpl.ExtensionInfo{
@@ -2126,10 +2238,12 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x05 \x01(\tR\texpiresAt\x12\x10\n" +
-	"\x03mac\x18\x06 \x01(\tR\x03mac\"P\n" +
+	"\x03mac\x18\x06 \x01(\tR\x03mac\"o\n" +
 	"\x11CheckSetupRequest\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12'\n" +
-	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\"\xd9\x03\n" +
+	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\x12\x1d\n" +
+	"\n" +
+	"trust_root\x18\x03 \x01(\tR\ttrustRoot\"\xd9\x03\n" +
 	"\x12CheckSetupResponse\x129\n" +
 	"\tquestions\x18\x01 \x03(\v2\x1b.basalt.connect.v1.QuestionR\tquestions\x12%\n" +
 	"\x0epasskey_needed\x18\x02 \x01(\bR\rpasskeyNeeded\x12\x14\n" +
@@ -2175,7 +2289,7 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x06Answer\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05table\x18\x02 \x01(\tR\x05table\x12\x16\n" +
-	"\x06choice\x18\x03 \x01(\tR\x06choice\"\x9f\x03\n" +
+	"\x06choice\x18\x03 \x01(\tR\x06choice\"\xbe\x03\n" +
 	"\x0fRunSetupRequest\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12'\n" +
 	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\x123\n" +
@@ -2185,7 +2299,9 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x0fincluded_tables\x18\x06 \x03(\tR\x0eincludedTables\x12K\n" +
 	"\x0ecolumn_classes\x18\a \x03(\v2$.basalt.connect.v1.ColumnClassChangeR\rcolumnClasses\x12\x1f\n" +
 	"\vrest_public\x18\b \x01(\bR\n" +
-	"restPublic\"\x9f\x02\n" +
+	"restPublic\x12\x1d\n" +
+	"\n" +
+	"trust_root\x18\t \x01(\tR\ttrustRoot\"\x9f\x02\n" +
 	"\x13PasskeyRegistration\x12#\n" +
 	"\rcredential_id\x18\x01 \x01(\tR\fcredentialId\x12(\n" +
 	"\x10client_data_json\x18\x02 \x01(\tR\x0eclientDataJson\x12-\n" +
@@ -2210,10 +2326,12 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\bsetup_id\x18\x01 \x01(\tR\asetupId\x12*\n" +
 	"\x11engine_public_key\x18\x02 \x01(\tR\x0fenginePublicKey\x12\x12\n" +
 	"\x04time\x18\x03 \x01(\tR\x04time\x12\x1c\n" +
-	"\tsignature\x18\x04 \x01(\tR\tsignature\"i\n" +
+	"\tsignature\x18\x04 \x01(\tR\tsignature\"\x88\x01\n" +
 	"\x16CollectAddressResponse\x129\n" +
 	"\aaddress\x18\x01 \x01(\v2\x19.basalt.connect.v1.TargetB\x04\x88\xaa\x19\x01R\aaddress\x12\x14\n" +
-	"\x05phase\x18\x02 \x01(\tR\x05phase\"\xf8\x01\n" +
+	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x1d\n" +
+	"\n" +
+	"trust_root\x18\x03 \x01(\tR\ttrustRoot\"\xf8\x01\n" +
 	"\x12ReportReachRequest\x12\x19\n" +
 	"\bsetup_id\x18\x01 \x01(\tR\asetupId\x12*\n" +
 	"\x11engine_public_key\x18\x02 \x01(\tR\x0fenginePublicKey\x12\x12\n" +
@@ -2239,11 +2357,18 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x13OfferAddressRequest\x12\x1c\n" +
 	"\x06ticket\x18\x01 \x01(\tB\x04\x88\xaa\x19\x01R\x06ticket\",\n" +
 	"\x14OfferAddressResponse\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05state\"k\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\"\xa8\x01\n" +
 	"\aRefusal\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12.\n" +
-	"\x13retry_after_seconds\x18\x03 \x01(\x05R\x11retryAfterSeconds2\xac\x05\n" +
+	"\x13retry_after_seconds\x18\x03 \x01(\x05R\x11retryAfterSeconds\x12;\n" +
+	"\n" +
+	"trust_root\x18\x04 \x01(\v2\x1c.basalt.connect.v1.TrustRootR\ttrustRoot\"\\\n" +
+	"\tTrustRoot\x12\x18\n" +
+	"\asubject\x18\x01 \x01(\tR\asubject\x12\x16\n" +
+	"\x06sha256\x18\x02 \x01(\tR\x06sha256\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\tR\texpiresAt2\xac\x05\n" +
 	"\fSetupService\x12b\n" +
 	"\rDescribeSetup\x12'.basalt.connect.v1.DescribeSetupRequest\x1a(.basalt.connect.v1.DescribeSetupResponse\x12Y\n" +
 	"\n" +
@@ -2267,7 +2392,7 @@ func file_basalt_connect_v1_connect_proto_rawDescGZIP() []byte {
 	return file_basalt_connect_v1_connect_proto_rawDescData
 }
 
-var file_basalt_connect_v1_connect_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_basalt_connect_v1_connect_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_basalt_connect_v1_connect_proto_goTypes = []any{
 	(*DescribeSetupRequest)(nil),      // 0: basalt.connect.v1.DescribeSetupRequest
 	(*DescribeSetupResponse)(nil),     // 1: basalt.connect.v1.DescribeSetupResponse
@@ -2296,7 +2421,8 @@ var file_basalt_connect_v1_connect_proto_goTypes = []any{
 	(*OfferAddressRequest)(nil),       // 24: basalt.connect.v1.OfferAddressRequest
 	(*OfferAddressResponse)(nil),      // 25: basalt.connect.v1.OfferAddressResponse
 	(*Refusal)(nil),                   // 26: basalt.connect.v1.Refusal
-	(*descriptorpb.FieldOptions)(nil), // 27: google.protobuf.FieldOptions
+	(*TrustRoot)(nil),                 // 27: basalt.connect.v1.TrustRoot
+	(*descriptorpb.FieldOptions)(nil), // 28: google.protobuf.FieldOptions
 }
 var file_basalt_connect_v1_connect_proto_depIdxs = []int32{
 	2,  // 0: basalt.connect.v1.DescribeSetupResponse.summary:type_name -> basalt.connect.v1.SetupSummary
@@ -2315,26 +2441,27 @@ var file_basalt_connect_v1_connect_proto_depIdxs = []int32{
 	3,  // 13: basalt.connect.v1.CollectAddressResponse.address:type_name -> basalt.connect.v1.Target
 	3,  // 14: basalt.connect.v1.ReportReachRequest.address:type_name -> basalt.connect.v1.Target
 	23, // 15: basalt.connect.v1.HandoffStatusResponse.reach:type_name -> basalt.connect.v1.Reach
-	27, // 16: basalt.connect.v1.sensitive:extendee -> google.protobuf.FieldOptions
-	0,  // 17: basalt.connect.v1.SetupService.DescribeSetup:input_type -> basalt.connect.v1.DescribeSetupRequest
-	5,  // 18: basalt.connect.v1.SetupService.CheckSetup:input_type -> basalt.connect.v1.CheckSetupRequest
-	13, // 19: basalt.connect.v1.SetupService.RunSetup:input_type -> basalt.connect.v1.RunSetupRequest
-	17, // 20: basalt.connect.v1.SetupService.CollectAddress:input_type -> basalt.connect.v1.CollectAddressRequest
-	19, // 21: basalt.connect.v1.SetupService.ReportReach:input_type -> basalt.connect.v1.ReportReachRequest
-	21, // 22: basalt.connect.v1.SetupService.HandoffStatus:input_type -> basalt.connect.v1.HandoffStatusRequest
-	24, // 23: basalt.connect.v1.SetupService.OfferAddress:input_type -> basalt.connect.v1.OfferAddressRequest
-	1,  // 24: basalt.connect.v1.SetupService.DescribeSetup:output_type -> basalt.connect.v1.DescribeSetupResponse
-	6,  // 25: basalt.connect.v1.SetupService.CheckSetup:output_type -> basalt.connect.v1.CheckSetupResponse
-	15, // 26: basalt.connect.v1.SetupService.RunSetup:output_type -> basalt.connect.v1.RunSetupResponse
-	18, // 27: basalt.connect.v1.SetupService.CollectAddress:output_type -> basalt.connect.v1.CollectAddressResponse
-	20, // 28: basalt.connect.v1.SetupService.ReportReach:output_type -> basalt.connect.v1.ReportReachResponse
-	22, // 29: basalt.connect.v1.SetupService.HandoffStatus:output_type -> basalt.connect.v1.HandoffStatusResponse
-	25, // 30: basalt.connect.v1.SetupService.OfferAddress:output_type -> basalt.connect.v1.OfferAddressResponse
-	24, // [24:31] is the sub-list for method output_type
-	17, // [17:24] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	16, // [16:17] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	27, // 16: basalt.connect.v1.Refusal.trust_root:type_name -> basalt.connect.v1.TrustRoot
+	28, // 17: basalt.connect.v1.sensitive:extendee -> google.protobuf.FieldOptions
+	0,  // 18: basalt.connect.v1.SetupService.DescribeSetup:input_type -> basalt.connect.v1.DescribeSetupRequest
+	5,  // 19: basalt.connect.v1.SetupService.CheckSetup:input_type -> basalt.connect.v1.CheckSetupRequest
+	13, // 20: basalt.connect.v1.SetupService.RunSetup:input_type -> basalt.connect.v1.RunSetupRequest
+	17, // 21: basalt.connect.v1.SetupService.CollectAddress:input_type -> basalt.connect.v1.CollectAddressRequest
+	19, // 22: basalt.connect.v1.SetupService.ReportReach:input_type -> basalt.connect.v1.ReportReachRequest
+	21, // 23: basalt.connect.v1.SetupService.HandoffStatus:input_type -> basalt.connect.v1.HandoffStatusRequest
+	24, // 24: basalt.connect.v1.SetupService.OfferAddress:input_type -> basalt.connect.v1.OfferAddressRequest
+	1,  // 25: basalt.connect.v1.SetupService.DescribeSetup:output_type -> basalt.connect.v1.DescribeSetupResponse
+	6,  // 26: basalt.connect.v1.SetupService.CheckSetup:output_type -> basalt.connect.v1.CheckSetupResponse
+	15, // 27: basalt.connect.v1.SetupService.RunSetup:output_type -> basalt.connect.v1.RunSetupResponse
+	18, // 28: basalt.connect.v1.SetupService.CollectAddress:output_type -> basalt.connect.v1.CollectAddressResponse
+	20, // 29: basalt.connect.v1.SetupService.ReportReach:output_type -> basalt.connect.v1.ReportReachResponse
+	22, // 30: basalt.connect.v1.SetupService.HandoffStatus:output_type -> basalt.connect.v1.HandoffStatusResponse
+	25, // 31: basalt.connect.v1.SetupService.OfferAddress:output_type -> basalt.connect.v1.OfferAddressResponse
+	25, // [25:32] is the sub-list for method output_type
+	18, // [18:25] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	17, // [17:18] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_basalt_connect_v1_connect_proto_init() }
@@ -2348,7 +2475,7 @@ func file_basalt_connect_v1_connect_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_basalt_connect_v1_connect_proto_rawDesc), len(file_basalt_connect_v1_connect_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   28,
 			NumExtensions: 1,
 			NumServices:   1,
 		},

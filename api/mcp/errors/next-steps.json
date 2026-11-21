@@ -159,6 +159,7 @@
     { "code": "CONFIRM_DATABASE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "DATABASE_REFUSED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "DATABASE_UNREACHABLE_FROM_BOT", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "TRUST_ROOT_MISMATCH", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "ADDRESS_INVALID", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "SETUP_NOT_FOUND", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "CLOCK_SKEW", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }] },

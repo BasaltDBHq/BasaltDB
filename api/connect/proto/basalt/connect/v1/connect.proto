@@ -129,6 +129,12 @@ message CheckSetupRequest {
   string code = 1;
   // The admin connection string the person pasted.
   string database_url = 2 [(sensitive) = true];
+  // The SHA-256 of the certificate authority the person trusted on the page
+  // (a Refusal's trust_root), 64 lowercase hex digits. Only for a host no
+  // trust profile covers whose certificate does not verify: the service then
+  // logs in only if the server presents that same chain top, and the hold
+  // carries it to the engine. Empty otherwise.
+  string trust_root = 3;
 }
 
 message CheckSetupResponse {
@@ -249,6 +255,8 @@ message RunSetupRequest {
   // tables that has no class in the transaction, sent when the entries
   // would pass the 500 cap.
   bool rest_public = 8;
+  // As in CheckSetupRequest: the chain top the person trusted on the page.
+  string trust_root = 9;
 }
 
 // The browser's answer to navigator.credentials.create, as in the passkey
@@ -307,6 +315,11 @@ message CollectAddressResponse {
   // PREVIEW (CheckSetup's hold: probe and report only) or SET_UP (RunSetup's
   // hold: probe, ask the person, log in after yes).
   string phase = 2;
+  // The SHA-256 of the certificate authority the person trusted on the page
+  // for this host, 64 lowercase hex digits; empty when the server's
+  // certificate verified without it. The engine pins it only when the chain
+  // it reads itself has the same top.
+  string trust_root = 3;
 }
 
 message ReportReachRequest {
@@ -320,8 +333,8 @@ message ReportReachRequest {
   Target address = 4 [(sensitive) = true];
   // REACHABLE or UNREACHABLE.
   string result = 5;
-  // UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED or
-  // TIMEOUT.
+  // UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED,
+  // TIMEOUT or TRUST_ROOT_MISMATCH.
   string reason = 6;
   // ECDSA P-256 over the basalt-connect-reach.1 context (CONTRACT.md,
   // Connect, The reach check), 64 bytes r and s, base64url.
@@ -354,8 +367,8 @@ message HandoffStatusResponse {
 message Reach {
   // REACHABLE or UNREACHABLE.
   string result = 1;
-  // UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED or
-  // TIMEOUT.
+  // UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED,
+  // TIMEOUT or TRUST_ROOT_MISMATCH.
   string reason = 2;
   // RFC 3339 UTC: the report's time.
   string reported_at = 3;
@@ -379,4 +392,21 @@ message Refusal {
   string message = 2;
   // Set when trying again later can work.
   int32 retry_after_seconds = 3;
+  // CERTIFICATE_NOT_VERIFIED for a host no trust profile covers, and
+  // TRUST_ROOT_MISMATCH: the top of the chain the server presents, read with
+  // the TLS handshake alone, before any password is sent.
+  TrustRoot trust_root = 4;
+}
+
+// A certificate authority a database server presents: the top of its chain
+// (the root when the server sends it, else the highest certificate it
+// sends).
+message TrustRoot {
+  // Its subject, RFC 2253, at most 512 characters. The server chooses it:
+  // the page shows it as text only.
+  string subject = 1;
+  // The SHA-256 of its DER bytes, 64 lowercase hex digits.
+  string sha256 = 2;
+  // RFC 3339 UTC: its notAfter.
+  string expires_at = 3;
 }

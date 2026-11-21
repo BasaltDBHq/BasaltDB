@@ -342,6 +342,7 @@
                 "CONFIRM_DATABASE",
                 "DATABASE_REFUSED",
                 "DATABASE_UNREACHABLE_FROM_BOT",
+                "TRUST_ROOT_MISMATCH",
                 "ADDRESS_INVALID",
                 "SETUP_NOT_FOUND",
                 "CLOCK_SKEW",

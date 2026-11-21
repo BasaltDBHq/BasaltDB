@@ -4,6 +4,9 @@
 // on first use). It sends Postgres's SSLRequest and completes a TLS
 // handshake that does not verify the certificate, only to read it, then
 // closes the connection: no startup message, no user name, no password.
+// The engine and the connect service share it, so a certificate authority
+// the person trusted on the connect page is checked the same way on both
+// sides (Approved; CONTRACT.md, Pinning from the connect page).
 package trustpin
 
 import (
@@ -135,4 +138,62 @@ func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 // hostnameFailed reports whether leaf fails for host on the name alone.
 func hostnameFailed(leaf *x509.Certificate, host string, target *x509.HostnameError) bool {
 	return errors.As(leaf.VerifyHostname(host), target)
+}
+
+// maxSubject is the most of a chain top's subject Subject returns: the
+// server chooses it.
+const maxSubject = 512
+
+// Subject is the subject of s's top, RFC 2253, cut to 512 characters.
+func (s Seen) Subject() string {
+	sub := s.Top.Subject.String()
+	if r := []rune(sub); len(r) > maxSubject {
+		sub = string(r[:maxSubject])
+	}
+	return sub
+}
+
+// ErrMismatch: the chain's top is not the certificate the person approved.
+var ErrMismatch = errors.New("the server presents another certificate authority than the one approved")
+
+// ErrNotPinnable: the chain does not verify against its own top, with or
+// without the host name, so no pin can hold it.
+var ErrNotPinnable = errors.New("the server's certificate does not verify against the top of its own chain")
+
+// ValidSHA256 reports whether fp is a SHA-256 as an approval carries it:
+// 64 lowercase hex digits.
+func ValidSHA256(fp string) bool {
+	if len(fp) != sha256HexLen {
+		return false
+	}
+	for _, c := range fp {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// sha256HexLen is a SHA-256 in hex.
+const sha256HexLen = 64
+
+// Approved is what chain proves for host against approved, the SHA-256 the
+// person approved: the pin for its top (verify: ca when the leaf does not
+// name the host), only when that top's SHA-256 is approved (ErrMismatch,
+// also for a malformed approved) and the chain verifies against it
+// (ErrNotPinnable). The approval is never trusted on its own: the chain is
+// the caller's own reading.
+func Approved(chain []*x509.Certificate, host string, now time.Time, approved string) (Seen, *trustprofile.Profile, error) {
+	s := Check(chain, host, now)
+	if !ValidSHA256(approved) || s.SHA256 != approved {
+		return s, nil, ErrMismatch
+	}
+	if !s.Full && !s.NameOnly {
+		return s, nil, ErrNotPinnable
+	}
+	pin, err := trustprofile.NewPin(host, s.Top, !s.Full)
+	if err != nil {
+		return s, nil, err
+	}
+	return s, pin.Profile, nil
 }

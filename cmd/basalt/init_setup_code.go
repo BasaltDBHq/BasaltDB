@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ func parseInitSetupCode(c *cliIO, args []string) (setupCodeFlags, error) {
 	fs.StringVar(&f.engineURL, "engine-url", "", "your tunnel's address for the agent's engine (https://<host>[:<port>]), recorded with the engine's key")
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
-		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
+		"on agent tables where row-level security hides every row: ask (a checklist at a terminal, one line from piped input), all-rows adds a policy letting the agent see them all, none adds none, or a list such as us.*,public.orders adds it on those tables only")
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
@@ -209,11 +210,11 @@ func (l *laptopSetup) nothingToDo(n setup.NothingToDo) {
 // rowSecurity answers the row-level security questions as basalt init does
 // (agentPolicies): the tables the person lets the agent see all rows of.
 func (l *laptopSetup) rowSecurity(questions []setup.RowSecurityQuestion) ([]string, error) {
-	texts := make([]string, 0, len(questions))
+	asks := make([]rlsAsk, 0, len(questions))
 	for _, q := range questions {
-		texts = append(texts, q.Text)
+		asks = append(asks, rlsAsk{Table: q.Table, Rows: q.Rows, Text: q.Text})
 	}
-	yes, err := rlsAnswers(l.c, l.f.agentRLS, l.f.yes || l.f.dryRun, texts)
+	yes, err := rlsAnswers(l.c, l.f.agentRLS, l.f.yes || l.f.dryRun, l.desc.AgentWord, l.ownTables(), asks)
 	if err != nil {
 		return nil, err
 	}
@@ -373,3 +374,14 @@ func sameEffectiveTarget(admin string, t setupcode.Target) error {
 
 // sameDatabase compares by database identity (setuprun.SameDatabase).
 func sameDatabase(want, got setupcode.Target) bool { return setuprun.SameDatabase(want, got) }
+
+// ownTables are the agent's tables for the --agent-rls list: its named
+// tables, and one placeholder per schema of an allTables code, so that
+// schema.* names it.
+func (l *laptopSetup) ownTables() []string {
+	own := append(slices.Clone(l.desc.Write), l.desc.Read...)
+	for _, s := range l.desc.AllTablesSchemas {
+		own = append(own, s+".*")
+	}
+	return own
+}

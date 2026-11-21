@@ -334,7 +334,7 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		t.Parallel()
 		d, cred, args := setup(t)
 		h := newFakeHost(t)
-		r := initRun(t, d, h, "linux", false, "y\n", args...)
+		r := initRun(t, d, h, "linux", false, "none\ny\n", args...)
 		require.Equal(t, exitOK, r.code, r.stderr)
 		require.NotContains(t, r.stderr, "hides its rows")
 		require.Contains(t, r.stderr, "row-level security is on for public.leads and no policy lets")
@@ -355,11 +355,73 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		require.Zero(t, payroll, "a table not granted to the agent is never touched")
 	})
 
+	t.Run("a list on the flag", func(t *testing.T) {
+		t.Parallel()
+		d, cred, args := setup(t)
+		h := newFakeHost(t)
+		args = append(args, "--read", "public.lead_notes")
+		// An unknown entry is a usage error before anything is written.
+		r := initRun(t, d, h, "linux", false, "", append(args, "--agent-rls", "public.leads,public.nope")...)
+		require.Equal(t, exitUsage, r.code, r.stderr)
+		require.Contains(t, r.stderr, "public.nope")
+		require.Zero(t, agentPolicyCount(t, d))
+		// Only the listed table gets a policy; the other warns.
+		r = initRun(t, d, h, "linux", false, "y\n", append(args, "--agent-rls", "public.leads")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "hides its rows")
+		require.Equal(t, 200, agentRows(t, cred, "public.leads"))
+		require.Zero(t, agentRows(t, cred, "public.lead_notes"))
+		require.Equal(t, 1, agentPolicyCount(t, d))
+		// schema.* covers the rest, and it applies with --yes too.
+		r = initRun(t, d, h, "linux", false, "", append(args, "--yes", "--agent-rls", "public.*")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Equal(t, 60, agentRows(t, cred, "public.lead_notes"))
+		require.Equal(t, 2, agentPolicyCount(t, d))
+	})
+
+	t.Run("one line on piped input", func(t *testing.T) {
+		t.Parallel()
+		d, cred, args := setup(t)
+		h := newFakeHost(t)
+		args = append(args, "--read", "public.lead_notes")
+		// The list is printed on stderr, grouped by schema, with row counts.
+		r := initRun(t, d, h, "linux", false, "bad answer\n", args...)
+		require.Equal(t, exitUsage, r.code, r.stderr)
+		require.Contains(t, r.stderr, "public (2 tables, 260 rows)")
+		require.Contains(t, r.stderr, "public.leads  200 rows")
+		require.Contains(t, r.stderr, "--agent-rls form")
+		require.Zero(t, agentPolicyCount(t, d))
+		r = initRun(t, d, h, "linux", false, "public.nope\n", args...)
+		require.Equal(t, exitUsage, r.code, r.stderr)
+		require.Zero(t, agentPolicyCount(t, d))
+		// A list.
+		r = initRun(t, d, h, "linux", false, "public.leads\ny\n", args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Equal(t, 1, agentPolicyCount(t, d))
+		// An empty line is all (the default).
+		r = initRun(t, d, h, "linux", false, "\ny\n", args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Equal(t, 60, agentRows(t, cred, "public.lead_notes"))
+		require.Equal(t, 2, agentPolicyCount(t, d))
+	})
+
+	t.Run("end of input is all", func(t *testing.T) {
+		t.Parallel()
+		d, cred, args := setup(t)
+		// No line at all for the question: all. --yes asks nothing else.
+		r := initRun(t, d, newFakeHost(t), "linux", false, "", append(args, "--agent-rls", "ask", "--dry-run")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Zero(t, agentPolicyCount(t, d), "a dry run changes nothing")
+		r = initRun(t, d, newFakeHost(t), "linux", false, "\ny\n", args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Equal(t, 200, agentRows(t, cred, "public.leads"))
+	})
+
 	t.Run("bad flag", func(t *testing.T) {
 		t.Parallel()
 		r := cli(t, nil, "", "init", "--agent", "bot", "--agent-rls", "some")
 		require.Equal(t, exitUsage, r.code)
-		require.Contains(t, r.stderr, "must be ask, all-rows or none")
+		require.Contains(t, r.stderr, "must be ask, all-rows, none or a list")
 		r = cli(t, nil, "", "init", "--agent", "bot", "--agent-rls", "ALL_ROWS")
 		require.Equal(t, exitUsage, r.code, "flag values are lowercase kebab-case")
 	})

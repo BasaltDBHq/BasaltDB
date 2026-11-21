@@ -123,7 +123,15 @@ basalt init --agent demo_bot \
 
    It then prints the MCP command to use in step 5.
 
-If init asks `... hides its rows with row-level security. Let demo_bot see all 30 rows of this table? [y/N]`, row-level security is on for that table and no policy lets the agent see rows. Answer `y` to add a policy for the agent role only; with `n` the agent reads zero rows. Supabase can turn row-level security on for every new table, so this can happen with the demo tables too.
+If some of the agent's tables have row-level security on and no policy lets the agent see rows, init shows a checklist of those tables grouped by schema, every table checked. Arrow keys move, `→` and `←` open and close a schema, Space toggles a table, `a` toggles the whole schema under the cursor, Enter confirms. A checked table gets a policy for the agent role only; an unchecked table stays hidden and the agent reads zero rows from it. Supabase can turn row-level security on for every new table, so this can happen with the demo tables too.
+
+Without a terminal (a script or a non-interactive run, with the answers piped in), init prints the same tables grouped by schema on stderr and reads one line from stdin: `all`, `none`, or a list of `schema.table` and `schema.*` separated by commas. An empty line or the end of input means `all`. The line comes after the admin connection string (when it is not in `BASALT_ADMIN_DATABASE_URL`) and before the `Run this SQL as ...? [y/N]` answer:
+
+```sh
+printf 'us.*,global.user_router\ny\n' | BASALT_ADMIN_DATABASE_URL=... basalt init --agent bot --write us.orders --no-service
+```
+
+To skip the line, give the list as the flag: `--agent-rls=us.*,global.user_router` (also `all-rows` and `none`). A name that matches no table with hidden rows stops init with a usage error before anything is written. With `--yes` or `--dry-run` the line is not read and the answer is `none` unless you pass `--agent-rls=all-rows` or a list.
 
 Port 8787 must be free while init waits for the passkey and afterwards for the engine. If it is taken, init says so; `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it.
 
@@ -258,7 +266,7 @@ On macOS `--user` works the same way when started as root (a launchd job you wri
 ## If something is off
 
 - `tables ... not found in database`: step 3 did not run in this database, or the connection string points at another one. Init checks first and changes nothing.
-- The agent reads zero rows from a table that has rows: row-level security is on with no policy for the agent. Run step 4 again and answer `y` to the row-level security question, or add `--agent-rls=all-rows`.
+- The agent reads zero rows from a table that has rows: row-level security is on with no policy for the agent. Run step 4 again and leave the table checked in the row-level security checklist, or add `--agent-rls=all-rows` (or `--agent-rls=schema.table`).
 - `/mcp` shows the server failed, or the connection closes at once: the engine admits only the OS user that ran `init` (`--os-user`, you by default). Start the client as that user. The engine log is `/Library/Logs/Basalt/engine.log` on macOS and `journalctl -u basalt-engine` on Linux.
 - `guard schema vN is older than this build's vM`: run the `basalt init` command from step 4 again with the same flags. It keeps the agent's password.
 - If `basalt init` or `basalt service install` says the binary is not owned by root: the engine service will only run a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy, or use `--no-service`.

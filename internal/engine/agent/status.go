@@ -1140,7 +1140,7 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 	out := &EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
 	if e.RevokedAt != nil {
 		out.State, out.RevokedAt = engineRevoked, e.RevokedAt.UTC().Format(time.RFC3339)
-		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key: its portal links stop working and its portal sessions are refused",
+		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the relay does not enforce the revocation yet, so links already handed over may still work",
 			engineRevokedSteps)
 	}
 	return out
@@ -1149,9 +1149,9 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 // engineRevokedSteps: the agent asks whether the person revoked this engine
 // on purpose. Until a new key is recorded the agent hands over long links.
 func engineRevokedSteps(b *Steps) string {
-	b.AskPerson("Tell the person this engine's key is revoked in their database, so portal links stop working. Ask whether they revoked it on purpose, and show the message.")
+	b.AskPerson("Tell the person this engine's key is revoked in their database. Ask whether they revoked it on purpose, and show the message.")
 	b.EndTurn("End your turn: the person answers next.")
-	return "This engine's key is revoked in your database. Its portal links stop working; approvals go on through long links. " +
+	return "This engine's key is revoked in your database. Status shows it; the relay does not enforce it yet, so a link this engine already handed over may still work. " +
 		"Did you revoke it on purpose? If you replaced the engine, the agent makes a new key with basalt engine rotate-key and gives you a new setup code."
 }
 

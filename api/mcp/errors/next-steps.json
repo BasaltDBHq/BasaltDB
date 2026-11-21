@@ -166,7 +166,6 @@
     { "code": "ENGINE_AS_ROOT", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "DEV_LOCAL_PAGES", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
     { "code": "ENGINE_REVOKED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }] },
-    { "code": "DIRECT_NOT_SERVED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
     { "code": "LEDGER_REINSTALLED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "LOCK_FILE_UNUSABLE", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "CERTIFICATE_NOT_VERIFIED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },

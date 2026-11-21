@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,17 +18,49 @@ import (
 func TestForegroundNext(t *testing.T) {
 	t.Parallel()
 	f := initFlags{
-		agent: "bot", configPath: "/home/iman/basalt/engine.json", socketDir: "/home/iman/basalt/run", osUser: "iman",
+		agent: "bot", configPath: "/home/dev/basalt/engine.json", socketDir: "/home/dev/basalt/run", osUser: "iman",
 	}
 	require.Equal(t, `next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):
-  basalt engine --config /home/iman/basalt/engine.json
+  basalt engine --config /home/dev/basalt/engine.json
 then add this MCP server to the agent's client, running as OS user iman (docs/mcp-clients.md):
-  basalt mcp --agent bot --socket-dir /home/iman/basalt/run
-`, foregroundNext(f, "linux"))
+  basalt mcp --agent bot --socket-dir /home/dev/basalt/run --config /home/dev/basalt/engine.json
+`, foregroundNext(f, "linux", newFakeHost(t)))
 
 	f.configPath, f.socketDir = "/Users/me/Library/Application Support/basalt/engine.json", config.DefaultSocketDir("darwin")
-	require.Contains(t, foregroundNext(f, "darwin"), "basalt engine --config '/Users/me/Library/Application Support/basalt/engine.json'")
-	require.True(t, strings.HasSuffix(foregroundNext(f, "darwin"), "  basalt mcp --agent bot\n"), "the default socket dir needs no flag")
+	h := newFakeHost(t)
+	require.Contains(t, foregroundNext(f, "darwin", h), "basalt engine --config '/Users/me/Library/Application Support/basalt/engine.json'")
+	require.True(t, strings.HasSuffix(foregroundNext(f, "darwin", h), "  basalt mcp --agent bot --config '/Users/me/Library/Application Support/basalt/engine.json'\n"),
+		"the default socket dir needs no flag, a config basalt mcp would not find does")
+}
+
+// With the config where basalt mcp looks with no --config, the line is the
+// one it always was.
+func TestInitMCPLineDefaultConfigUnchanged(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	f := initFlags{agent: "bot", osUser: "iman", configPath: config.DefaultPath("linux"), socketDir: config.DefaultSocketDir("linux")}
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, mcpArgs(f, "linux", "basalt", h))
+
+	// The per-user config init left, found by basalt mcp itself.
+	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
+	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
+	f.configPath = user
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, mcpArgs(f, "linux", "basalt", h))
+
+	// Any other config is named, as an absolute path.
+	f.configPath = "/workspace/basalt/engine.json"
+	f.socketDir = "/workspace/basalt/run"
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", "/workspace/basalt/engine.json"}, mcpArgs(f, "linux", "basalt", h))
+}
+
+// root looks only at the system path.
+func TestMCPConfigArgsAsRoot(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.euid = 0
+	require.Nil(t, mcpConfigArgs(config.DefaultPath("linux"), "linux", h))
+	require.Equal(t, []string{"--config", "/srv/b/engine.json"}, mcpConfigArgs("/srv/b/engine.json", "linux", h))
 }
 
 func TestServiceInstallArgsKeepTheCredentialOffTheCommandLine(t *testing.T) {

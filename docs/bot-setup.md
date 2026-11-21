@@ -55,7 +55,7 @@ Start the engine on this server while you wait. The engine runs as you here. Use
 basalt engine --config <path to engine.json>
 ```
 
-Keep it running in the background: use a supervisor, `tmux` or whatever this server uses, or install it as a system service (see below). Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`.
+Keep it running in the background: use a supervisor, `tmux` or whatever this server uses, or install it as a system service (see below). On a bot computer with no service manager, do not start it at all: see "Bot computers with no service manager" below. Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`.
 
 ### Run it as a system service (Linux)
 
@@ -90,7 +90,46 @@ To keep the engine up across reboots on a Linux server with systemd, install it 
 
 Run `sudo basalt init --remote` again with the same flags when you need a new code, then restart the service as in step 3, so the engine reads the new config.
 
-Without systemd (a container, or a server where you cannot use `sudo`), skip this. Run `basalt engine --config <path to engine.json>` as the user who ran step 2, under a supervisor you already have: a systemd user unit (`systemctl --user`, with `loginctl enable-linger`), `tmux`, or whatever this server uses. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies. Make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there.
+Without systemd, skip this. On a bot computer that keeps only some folders through a reboot, follow "Bot computers with no service manager" below. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies; make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there.
+
+### Bot computers with no service manager
+
+Some bot computers have no systemd, no cron and no Docker, and start nothing at boot. A reboot or "Update Bot's Computer" wipes every process and every folder except the ones the host keeps (on the computers we have seen, `/workspace` and `/home`). Basalt copes with that: the first Basalt tool call after a restart starts the engine, with nothing for you or the person to do. Set it up like this, as your own user (not root):
+
+1. Pick one folder that survives, for example `/workspace/basalt`. Put the `basalt` binary there too, so it survives with everything else:
+
+   ```sh
+   mkdir -p /workspace/basalt/bin
+   cp "$(command -v basalt)" /workspace/basalt/bin/basalt
+   ```
+
+2. Make the setup code as step 2 says, with `--config` in that folder:
+
+   ```sh
+   /workspace/basalt/bin/basalt init --remote --operated-by=agent --vault=off \
+     --config /workspace/basalt/engine.json \
+     --agent NAME --write schema.table,… --read schema.table,… \
+     --database-url 'postgresql://postgres.<ref>@<host>:6543/postgres'
+   ```
+
+   The config, the engine's key and the state go under `/workspace/basalt`: `engine.json`, `state/` and, for the sockets, `run/`. Send the code to the person as step 3 says.
+
+3. Register this MCP server in your agent app, with the binary's full path and both folders:
+
+   ```sh
+   /workspace/basalt/bin/basalt mcp --agent NAME --socket-dir /workspace/basalt/run --config /workspace/basalt/engine.json
+   ```
+
+   `--config` is how `basalt mcp` finds the engine's config when the engine is down, so that it can start it.
+
+What happens from then on:
+
+- You do not start the engine yourself. When a tool call finds the engine down (after a reboot, after an update, or after the engine stopped), `basalt mcp` starts it in the background and waits up to 15 seconds for it. The first call after a restart is a few seconds slower. The engine then stays up until the next restart, and a crash is restarted by a small parent process, so you notice at most a short retry.
+- It only does this for an engine that runs as you, from a config you own. If it cannot start the engine it answers at once with the reason and the engine's log, `/workspace/basalt/state/engine.log`, and `status` shows the problem `ENGINE_START_FAILED`. Show the person its `personMessage`.
+- `status` says why the engine is running: `engine.startedBy` is `HAND` (someone ran it), `MCP` (the first call after a restart started it) or `CRASH` (it was restarted after a crash). When the restarts kept failing, `status` shows the problem `ENGINE_GAVE_UP` and `engine.lastStop` says why and when.
+- If your database runs on this computer too, it is gone after a restart as well, and Basalt does not start it. The engine waits for it and reconnects when it is back.
+
+The limit: nothing runs between a restart and your next session. The engine starts only when you make a Basalt call. A person who approves a held write from their phone in that time finds the page waiting, and the approval takes effect when your next session starts the engine. Tell the person that before they rely on it.
 
 ## 5. Check the setup
 

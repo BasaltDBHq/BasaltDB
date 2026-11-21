@@ -6,11 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -60,6 +65,12 @@ const (
 	problemSetupNotFound      = "SETUP_NOT_FOUND"
 	problemClockSkew          = "CLOCK_SKEW"
 	problemEngineAsRoot       = "ENGINE_AS_ROOT"
+	// problemEngineStartFailed: basalt mcp tried to start the engine and
+	// could not (CONTRACT.md, MCP tools, status).
+	problemEngineStartFailed = "ENGINE_START_FAILED"
+	// problemEngineGaveUp: the supervisor gave up restarting a crashing
+	// engine (status engine.lastStop).
+	problemEngineGaveUp = "ENGINE_GAVE_UP"
 )
 
 // status.engineRecord.state (CONTRACT.md, Configuration and status).
@@ -253,6 +264,18 @@ func executablePath() string {
 type EngineStatus struct {
 	Reachable bool   `json:"reachable"`
 	Build     string `json:"build,omitempty"`
+	// StartedBy is why this engine started: HAND, MCP or CRASH.
+	StartedBy string `json:"startedBy,omitempty"`
+	// LastStop is why a supervisor gave up on the engine, from an engine
+	// that does not answer; the engine itself never reports it.
+	LastStop *LastStop `json:"lastStop,omitempty"`
+}
+
+// LastStop is status.engine.lastStop: the supervisor gave up restarting the
+// engine for Reason at At.
+type LastStop struct {
+	Reason string    `json:"reason"`
+	At     time.Time `json:"at"`
 }
 
 // GuardStatus is status.guard.
@@ -336,6 +359,7 @@ func (s *Service) Status(ctx context.Context) (StatusReport, error) {
 // engine, LocalStatus's for basalt status on an engine run as the person.
 type statusDeps struct {
 	name, operatedBy, build   string
+	startedBy                 string
 	pagesBase, pagesOrigin    string
 	sameUser, engineReachable bool
 	engineUnknown             bool
@@ -372,7 +396,7 @@ type statusDeps struct {
 
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
-		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
+		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, startedBy: s.StartedBy, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
@@ -445,7 +469,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	s.cmds = s.cmds.OperatedBy(s.operatedBy)
 	r := StatusReport{
 		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
-		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build},
+		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: startedByEnum(s.startedBy)},
 		Pages:  PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
 		Update: s.update,
 	}
@@ -521,6 +545,15 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
 func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
+	return EngineDownStatusAfterStart(name, cmds, cfg, cfgErr, build, now, "")
+}
+
+// EngineDownStatusAfterStart is EngineDownStatus for a basalt mcp that tried
+// to start the engine: startFailure, when not empty, is why it could not
+// ("basalt mcp could not start the engine: <reason>. Its log is <path>."),
+// shown as the problem ENGINE_START_FAILED before ENGINE_UNREACHABLE, whose
+// steps stay.
+func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure string) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
@@ -537,9 +570,18 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr err
 		// The engine cannot start on this config: say what to edit.
 		msg += "; engine.json: " + cfgErr.Error()
 	}
+	if startFailure != "" {
+		ps.add(problemEngineStartFailed, startFailure,
+			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
+	}
 	ps.add(problemEngineUnreachable, msg,
 		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	if cfg != nil {
+		if stop, ok := ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
+			r.Engine.LastStop = &stop
+			ps.add(problemEngineGaveUp, "the engine stopped and was not restarted: "+stop.Reason,
+				func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
+		}
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
 		r.Enforcement = enforcement(cfg.OperatedBy, !cfg.Service())
 		if base, err := cfg.PagesBase(); err == nil {
@@ -1113,4 +1155,53 @@ func directNotServedSteps(b *Steps, cmds Commands, url string) string {
 	}
 	return "Your database records " + host + " for this engine, but the engine has no listener for your tunnel to forward to. " +
 		"On the engine's machine, run this, then restart the engine: " + command
+}
+
+// startedByEnum is the status enum of a --started-by value ("" for none).
+func startedByEnum(v string) string {
+	switch v {
+	case "hand", "mcp", "crash":
+		return strings.ToUpper(v)
+	}
+	return ""
+}
+
+// lastStopFile is what the engine's supervisor writes in the state
+// directory when it gives up (cmd/basalt, basalt engine --supervise).
+const lastStopFile = "last-stop.json"
+
+// maxLastStopBytes bounds what is read of it; maxReasonRunes what is shown.
+const (
+	maxLastStopBytes = 4096
+	maxReasonRunes   = 300
+)
+
+// ReadLastStop reads why the supervisor gave up, from dir (the state
+// directory): ok is false when there is no usable record. It is read as
+// text and shown, never trusted for anything else.
+func ReadLastStop(dir string) (LastStop, bool) {
+	// Not a symlink, and never blocking on a pipe someone left there.
+	f, err := os.OpenFile(filepath.Join(dir, lastStopFile), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return LastStop{}, false
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return LastStop{}, false
+	}
+	var stop LastStop
+	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&stop); err != nil || stop.Reason == "" {
+		return LastStop{}, false
+	}
+	if r := []rune(stop.Reason); len(r) > maxReasonRunes {
+		stop.Reason = string(r[:maxReasonRunes])
+	}
+	stop.Reason = strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return ' '
+	}, stop.Reason)
+	stop.At = stop.At.UTC()
+	return stop, true
 }

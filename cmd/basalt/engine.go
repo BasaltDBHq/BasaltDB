@@ -47,7 +47,21 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	runAs := fs.String("user", "", "start as root, then run as this OS user before reading the config (a container without systemd)")
 	pluginDebug := fs.Bool("plugin-debug", false, "show local plugins' stderr on this terminal (a foreground engine only; never logged)")
+	supervised := fs.Bool("supervise", false, "run the engine as a child and restart it when it crashes")
+	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp or crash (set by basalt mcp and --supervise)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
+		return exitUsage
+	}
+	if !slices.Contains([]string{startedByHand, startedByMCP, startedByCrash}, *startedBy) {
+		_, _ = fmt.Fprintf(io.err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
+		return exitUsage
+	}
+	if *supervised && *runAs != "" {
+		_, _ = fmt.Fprintln(io.err, "basalt engine: --supervise runs as the engine's own user; drop --user")
+		return exitUsage
+	}
+	if *supervised && *pluginDebug {
+		_, _ = fmt.Fprintln(io.err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
 		return exitUsage
 	}
 	if *runAs != "" {
@@ -61,12 +75,16 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	*configPath = configOrFallback(h, fs, *configPath)
 	// Started as root without --user, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
+	if *supervised {
+		return runSupervise(ctx, enginePath(*configPath), *startedBy, io, h)
+	}
 	cfg, err := loadEngineConfigAs(h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
 	log := engineLog(io.err)
 	run := func(ctx context.Context, o engine.RestartOptions) error {
+		o.StartedBy = *startedBy
 		if *pluginDebug {
 			o.PluginStderr = io.err
 		}
@@ -259,11 +277,18 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 		}
 		path = config.SocketPath(*socketDir, *name)
 	}
-	fallback, err := engineDownServer(shimAgent(*name, path), enginePath(*configPath), engineLog(io.err))
+	log := engineLog(io.err)
+	down, err := engineDown(shimAgent(*name, path), enginePath(*configPath), log)
 	if err != nil {
 		return fail(io.err, "mcp", err)
 	}
-	if err := shim.Serve(ctx, path, fallback, io.in, io.out); err != nil {
+	opts := shim.Options{}
+	if exe, err := shimExecutable(); err == nil {
+		var failure func() string
+		opts.Start, failure = engineStarter(enginePath(*configPath), path, down.Config, h.Euid(), exe, log)
+		down.StartFailure = failure
+	}
+	if err := shim.ServeWith(ctx, path, down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), io.in, io.out, opts); err != nil {
 		return fail(io.err, "mcp", err)
 	}
 	return exitOK
@@ -278,11 +303,19 @@ func shimAgent(name, socket string) string {
 	return strings.TrimSuffix(filepath.Base(socket), ".sock")
 }
 
-// engineDownServer is what basalt mcp answers while the engine is down. The
-// config is read when the shim's OS user may (same-user mode); a service's
-// config is the engine user's alone, and then operatedBy is PERSON and the
-// engine starts with the service manager.
+// engineDownServer is what basalt mcp answers while the engine is down.
 func engineDownServer(name, configPath string, log *slog.Logger) (agent.EngineDownServer, error) {
+	down, err := engineDown(name, configPath, log)
+	if err != nil {
+		return agent.EngineDownServer{}, err
+	}
+	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), nil
+}
+
+// engineDown is what basalt mcp answers with while the engine is down, with
+// the config it could read, as the agent's own user (the shim never runs as
+// root).
+func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
 	var cfg *config.Config
 	c, cfgErr := config.Load(configPath)
 	if cfgErr == nil {
@@ -290,15 +323,25 @@ func engineDownServer(name, configPath string, log *slog.Logger) (agent.EngineDo
 	}
 	cmds, err := shimCommands(name, configPath, cfg)
 	if err != nil {
-		return agent.EngineDownServer{}, err
+		return agent.EngineDown{}, err
 	}
-	down := agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now}
-	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), nil
+	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now}, nil
 }
 
-// shimCommands are the agent's commands as far as the shim knows them: the
-// saved init flags and the foreground engine when it could read a same-user
-// config.
+// shimExecutable is the path of this binary as a starter runs it: the
+// symlink resolved when it can be (a link in ~/.local/bin to a rebuilt
+// path), else the path as the OS gave it, which the starter then finds gone.
+func shimExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		return resolved, nil
+	}
+	return exe, nil
+}
+
 func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, error) {
 	if !config.ValidAgentName(name) {
 		name = fallbackAgentName

@@ -1,0 +1,247 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"syscall"
+	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/server"
+)
+
+// The values of --started-by: who started this engine.
+const (
+	startedByHand  = "hand"
+	startedByMCP   = "mcp"
+	startedByCrash = "crash"
+)
+
+const (
+	// fastCrash is how long a child must stay up for its exit not to count
+	// as a fast crash.
+	fastCrash = 10 * time.Second
+	// maxFastCrashes in a row make the supervisor give up.
+	maxFastCrashes = 5
+	// childStopWait is how long a child gets after SIGTERM before SIGKILL.
+	childStopWait = 30 * time.Second
+	lastStopFile  = engine.LastStopFile
+	superviseLock = "supervise.lock"
+)
+
+// restartBackoff is the wait before restart n (counting from the first
+// restart after a run of at least fastCrash); it stays at the last value.
+var restartBackoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second}
+
+// errAnotherEngine is what a child's wait returns when the child failed
+// because another engine holds the config's engine lock.
+var errAnotherEngine = errors.New("another engine already runs for this config")
+
+type superviseOptions struct {
+	// firstStartedBy is the --started-by of the first child; every restart
+	// is startedByCrash.
+	firstStartedBy string
+	// start runs one child and returns what waits for its exit.
+	start func(ctx context.Context, startedBy string) (wait func() error, err error)
+	// sleep waits d, and is false when ctx is done first.
+	sleep func(ctx context.Context, d time.Duration) bool
+	now   func() time.Time
+	log   *slog.Logger
+	// lastStop records why the supervisor gave up.
+	lastStop func(reason string)
+}
+
+// supervise runs children until one stops cleanly, ctx is done, the
+// children keep crashing, or another engine runs. The error is the reason
+// it gave up.
+func supervise(ctx context.Context, o superviseOptions) error {
+	startedBy := o.firstStartedBy
+	fast, restarts := 0, 0
+	for {
+		began := o.now()
+		err := runChild(ctx, o, startedBy)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return nil //nolint:nilerr // a stop signal ends the child; that is the clean stop, not a crash
+		}
+		if errors.Is(err, errAnotherEngine) {
+			o.log.Info(errAnotherEngine.Error())
+			return nil
+		}
+		if o.now().Sub(began) < fastCrash {
+			fast++
+		} else {
+			fast, restarts = 0, 0
+		}
+		if fast >= maxFastCrashes {
+			reason := fmt.Sprintf("the engine crashed %d times within %s; last: %v", maxFastCrashes, fastCrash, err)
+			o.log.Error("giving up", "reason", reason)
+			o.lastStop(reason)
+			return errors.New(reason)
+		}
+		wait := restartBackoff[min(restarts, len(restartBackoff)-1)]
+		restarts++
+		o.log.Warn("the engine exited; restarting it", "err", err, "in", wait)
+		if !o.sleep(ctx, wait) {
+			return nil
+		}
+		startedBy = startedByCrash
+	}
+}
+
+func runChild(ctx context.Context, o superviseOptions, startedBy string) error {
+	wait, err := o.start(ctx, startedBy)
+	if err != nil {
+		return err
+	}
+	return wait()
+}
+
+// runSupervise is basalt engine --supervise: one supervisor per config,
+// restarting the engine as a child of this process.
+func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h host) int {
+	cfg, err := loadEngineConfigAs(h.Euid(), configPath)
+	if err != nil {
+		return fail(io.err, "engine", err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return fail(io.err, "engine", err)
+	}
+	// An update can drop empty folders; the engine makes its own too.
+	if err := os.MkdirAll(cfg.SocketDir, privateDirMode); err != nil {
+		return fail(io.err, "engine", err)
+	}
+	release, err := config.LockFile(filepath.Join(cfg.SocketDir, superviseLock))
+	if errors.Is(err, config.ErrLocked) {
+		_, _ = fmt.Fprintln(io.err, "basalt engine: another basalt engine --supervise runs for this config")
+		return exitOK
+	}
+	if err != nil {
+		return fail(io.err, "engine", err)
+	}
+	defer release()
+
+	log := engineLog(io.err)
+	stateDir := cfg.StateDirFor(runtime.GOOS)
+	lockPath := engine.LockPath(cfg.SocketDir)
+	o := superviseOptions{
+		firstStartedBy: startedBy,
+		start:          childStarter(exe, configPath, lockPath, stateDir, io, log),
+		sleep:          sleepCtx,
+		now:            time.Now,
+		log:            log,
+		lastStop:       func(reason string) { writeLastStop(stateDir, reason, time.Now(), log) },
+	}
+	if err := supervise(ctx, o); err != nil {
+		return fail(io.err, "engine", err)
+	}
+	return exitOK
+}
+
+const privateDirMode = 0o700
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// childStarter runs the engine as exe engine --config ... --started-by ...
+// with this process's output. A child that stays up for fastCrash clears
+// the last give-up; one that fails because another engine holds the lock
+// reports errAnotherEngine.
+func childStarter(exe, configPath, lockPath, stateDir string, io stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
+	return func(ctx context.Context, startedBy string) (func() error, error) {
+		cmd := exec.CommandContext(ctx, exe, "engine", "--config", configPath, "--started-by", startedBy)
+		cmd.Stdout, cmd.Stderr = io.out, io.err
+		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+		cmd.WaitDelay = childStopWait
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		stable := time.AfterFunc(fastCrash, func() { clearLastStop(stateDir, log) })
+		return func() error {
+			err := cmd.Wait()
+			stable.Stop()
+			if err != nil && ctx.Err() == nil {
+				// The child has exited, so a live holder is another engine.
+				if anotherEngineRuns(lockPath) {
+					return errAnotherEngine
+				}
+			}
+			return err
+		}, nil
+	}
+}
+
+type lastStop struct {
+	Reason string    `json:"reason"`
+	At     time.Time `json:"at"`
+}
+
+func writeLastStop(stateDir, reason string, at time.Time, log *slog.Logger) {
+	raw, err := json.Marshal(lastStop{Reason: reason, At: at.UTC()})
+	if err == nil {
+		err = os.MkdirAll(stateDir, privateDirMode)
+	}
+	if err == nil {
+		err = writeFileAtomic(filepath.Join(stateDir, lastStopFile), raw)
+	}
+	if err != nil {
+		log.Warn("could not record why the engine stopped", "err", err)
+	}
+}
+
+func clearLastStop(stateDir string, log *slog.Logger) {
+	if err := os.Remove(filepath.Join(stateDir, lastStopFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn("could not remove the record of why the engine stopped", "err", err)
+	}
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, config.FileMode); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// anotherEngineRuns is true when the engine lock is held at every one of a
+// few looks. A real engine holds it all the time; a probe by someone else
+// (basalt status, a starting basalt mcp) holds it for a moment and reads as
+// a holder, so one look that finds it free means no engine runs.
+func anotherEngineRuns(lockPath string) bool {
+	return heldAtEveryLook(func() bool {
+		_, up, _ := server.Running(lockPath)
+		return up
+	}, time.Sleep)
+}
+
+func heldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
+	const looks, gap = 3, 70 * time.Millisecond
+	for i := range looks {
+		if !held() {
+			return false
+		}
+		if i < looks-1 {
+			sleep(gap)
+		}
+	}
+	return true
+}

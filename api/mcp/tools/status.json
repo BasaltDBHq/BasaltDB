@@ -43,6 +43,21 @@
           "build": {
             "type": "string",
             "description": "The engine's build version; the shim's when the engine is down."
+          },
+          "startedBy": {
+            "type": "string",
+            "enum": ["HAND", "MCP", "CRASH"],
+            "description": "Why this engine started: HAND (a person or a service manager ran it), MCP (basalt mcp found the engine down and started it) or CRASH (the supervisor restarted it after a crash). Reported by a running engine only."
+          },
+          "lastStop": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reason", "at"],
+            "description": "Reported by basalt mcp when the engine does not answer and its supervisor gave up restarting it (the problem ENGINE_GAVE_UP): why, and when. Removed once an engine has stayed up for 10 seconds.",
+            "properties": {
+              "reason": { "type": "string", "description": "The supervisor's reason; exit statuses and counts, never a secret." },
+              "at": { "type": "string", "format": "date-time", "description": "RFC 3339 UTC." }
+            }
           }
         }
       },
@@ -279,6 +294,8 @@
               "type": "string",
               "enum": [
                 "ENGINE_UNREACHABLE",
+                "ENGINE_START_FAILED",
+                "ENGINE_GAVE_UP",
                 "DATABASE_UNREACHABLE",
                 "TOO_MANY_CONNECTIONS",
                 "CREDENTIAL_REJECTED",

@@ -71,8 +71,8 @@ var supabaseRoot2025PEM []byte
 // region and key type (114 on 21 November 2026). AWS adds a root when it
 // opens a region, so make check-provider-roots compares it with the
 // published file. It holds no root for the China or GovCloud regions, which
-// AWS publishes separately, so those hosts still verify only against the
-// system's authorities.
+// AWS publishes separately: hosts there are matched and get this bundle,
+// which cannot verify them, so they need the person's own sslrootcert.
 //
 //go:embed rds-global-bundle.pem
 var rdsBundlePEM []byte

@@ -51,7 +51,14 @@ const (
 	// versionSetupCodeLife shortens setup-code life to 10 minutes and
 	// gives record_setup's EXPIRED a 30-minute grace: schema/017.
 	versionSetupCodeLife
+	// versionEngineAddressRemoved drops the engine address with the direct
+	// transport: record_engine takes the key alone: schema/018.
+	versionEngineAddressRemoved
 )
+
+// EngineAddressRemovedVersion is the basalt_meta version whose
+// record_engine takes the key alone.
+const EngineAddressRemovedVersion = versionEngineAddressRemoved
 
 // TrustPinsVersion is the basalt_meta version that records trust pins. A
 // guard below it has no record to compare a pin with.
@@ -65,7 +72,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1, versionEngineAddressRemoved: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine
@@ -79,7 +86,13 @@ var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, version
 // nothing to compare a pin with; everything is served as before.
 // versionSetupCodeLife: without it record_setup still uses the 24-hour
 // bound and refuses EXPIRED with no grace; every tool is served as before.
-var nonBreakingVersions = map[int]bool{versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true, versionSetupCodeLife: true}
+// versionEngineAddressRemoved: the engine reads only an engine's key and
+// revocation from agent_engines, which a guard without it has too; only
+// basalt init records an engine, after the migrations.
+var nonBreakingVersions = map[int]bool{
+	versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true, versionSetupCodeLife: true,
+	versionEngineAddressRemoved: true,
+}
 
 // guardFiles is how many schema files version 1 has: 001 to 011.
 const guardFiles = 11

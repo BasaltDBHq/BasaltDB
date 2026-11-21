@@ -43,7 +43,6 @@ func TestVaultSchemas(t *testing.T) {
 		"channel-key-file.schema.json",
 		"close-codes.schema.json",
 		"control-message.schema.json",
-		"direct-engine.schema.json",
 		"frame-message.schema.json",
 		"handshake-payload.schema.json",
 		"receipt.schema.json",

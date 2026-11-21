@@ -360,3 +360,19 @@ func TestRootChanged(t *testing.T) {
 	require.Contains(t, got.Error(), "basalt trust pin --host "+host+" --port 5432")
 	require.NoError(t, rootChangedVia(context.Background(), "postgres://u:pw@"+host+":5432/postgres?sslmode=verify-full", err, first.dial))
 }
+
+// A certificate from an authority this machine trusts that fails on the
+// name is never pinned, with or without --trust-root: the fix is the host
+// name. Not parallel: it swaps the system's store.
+func TestTrustPinRefusesPublicAuthorities(t *testing.T) {
+	const ip = "203.0.113.7"
+	s := newPinServer(t, "other.example.com")
+	store := x509.NewCertPool()
+	store.AddCert(s.ca)
+	defer trustprofile.SetSystemRootsForTest(store)()
+	cfg := trustConfig(t)
+	r := runPin(t, s, nil, "--config", cfg, "--host", ip, "--trust-root", trustprofile.DERSHA256(s.ca))
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "failed on the name")
+	require.Nil(t, trustdir.Set(cfg).For(ip))
+}

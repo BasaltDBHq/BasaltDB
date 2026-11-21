@@ -109,9 +109,20 @@ type Seen struct {
 	// NameOnly: the chain verifies against Top but not for the host name
 	// (a certificate that does not name it): only verify: ca can pin it.
 	NameOnly bool
+	// Public: Top is, or the chain chains to, an authority in the system's
+	// trust store (System implies it). Such a chain is never pinned: a
+	// failure there is the name's, and a pin with verify: ca would accept
+	// anything that authority issues as the host.
+	Public bool
 }
 
-// Check is what chain, leaf first, proves for host.
+// Pinnable reports whether the chain can be pinned: it verifies against
+// its own top (with the name, or without it) and nothing of it is public.
+func (s Seen) Pinnable() bool { return !s.Public && (s.Full || s.NameOnly) }
+
+// Check is what chain, leaf first, proves for host, against the system's
+// trust store (trustprofile.SystemRoots) and, for Public, the public roots
+// the binary carries as well (trustprofile.PublicRoots).
 func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 	top := chain[len(chain)-1]
 	s := Seen{Top: top, SHA256: trustprofile.DERSHA256(top)}
@@ -119,9 +130,14 @@ func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 	for _, c := range chain[1:] {
 		inter.AddCert(c)
 	}
-	opts := x509.VerifyOptions{DNSName: host, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	system, serr := trustprofile.SystemRoots()
+	if serr != nil || system == nil {
+		system = x509.NewCertPool() // PublicRoots still answer for the public authorities
+	}
+	opts := x509.VerifyOptions{DNSName: host, Roots: system, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	_, err := chain[0].Verify(opts)
 	s.System = err == nil
+	s.Public = s.System || publicChain(chain, inter, now, system)
 	opts.Roots = x509.NewCertPool()
 	opts.Roots.AddCert(top)
 	_, err = chain[0].Verify(opts)
@@ -133,6 +149,24 @@ func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 		s.NameOnly = err == nil && hostnameFailed(chain[0], host, &hostErr)
 	}
 	return s
+}
+
+// publicChain reports whether the leaf chains, without the name, to a
+// public root or a root of system, or any certificate of chain is, or
+// chains to, one (trustprofile.IsPublic).
+func publicChain(chain []*x509.Certificate, inter *x509.CertPool, now time.Time, system *x509.CertPool) bool {
+	for _, roots := range []*x509.CertPool{trustprofile.PublicRoots(), system} {
+		opts := x509.VerifyOptions{Roots: roots, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
+		if _, err := chain[0].Verify(opts); err == nil {
+			return true
+		}
+	}
+	for _, c := range chain {
+		if trustprofile.IsPublic(c, system) {
+			return true
+		}
+	}
+	return false
 }
 
 // hostnameFailed reports whether leaf fails for host on the name alone.
@@ -155,6 +189,10 @@ func (s Seen) Subject() string {
 
 // ErrMismatch: the chain's top is not the certificate the person approved.
 var ErrMismatch = errors.New("the server presents another certificate authority than the one approved")
+
+// ErrPublic: the chain is, or chains to, an authority in the system's
+// trust store, so it is never pinned (Seen.Public).
+var ErrPublic = trustprofile.ErrPublic
 
 // ErrNotPinnable: the chain does not verify against its own top, with or
 // without the host name, so no pin can hold it.
@@ -181,10 +219,14 @@ const sha256HexLen = 64
 // person approved: the pin for its top (verify: ca when the leaf does not
 // name the host), only when that top's SHA-256 is approved (ErrMismatch,
 // also for a malformed approved) and the chain verifies against it
-// (ErrNotPinnable). The approval is never trusted on its own: the chain is
-// the caller's own reading.
+// (ErrNotPinnable). A public chain is never pinned (ErrPublic), whatever
+// the approval. The approval is never trusted on its own: the chain is the
+// caller's own reading.
 func Approved(chain []*x509.Certificate, host string, now time.Time, approved string) (Seen, *trustprofile.Profile, error) {
 	s := Check(chain, host, now)
+	if s.Public {
+		return s, nil, ErrPublic
+	}
 	if !ValidSHA256(approved) || s.SHA256 != approved {
 		return s, nil, ErrMismatch
 	}

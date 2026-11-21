@@ -71,6 +71,11 @@ var errPinDeclined = errors.New("not pinned")
 // errAgentPin: an agent runs this, so nothing is pinned.
 var errAgentPin = errors.New("an agent never pins a certificate")
 
+// errPublicPin: the certificate is, or chains to, an authority the system
+// trusts and failed on the name: nothing is pinned (CONTRACT.md, Pinning on
+// first use, Public authorities).
+var errPublicPin = errors.New("no pin for a public authority's certificate")
+
 // errNoPinNeeded: the host's certificate verifies already, or a profile
 // covers the host.
 var errNoPinNeeded = errors.New("no pin needed")
@@ -101,6 +106,11 @@ func (c *cliIO) askPin(t pinTarget, trustRoot, configPath, repinning string, age
 	seen := trustpin.Check(chain, t.host, c.now())
 	if seen.System {
 		return pinChoice{}, errNoPinNeeded
+	}
+	if seen.Public {
+		return pinChoice{}, fmt.Errorf("%w: the certificate %s presents comes from an authority this machine already trusts, "+
+			"but it does not verify for %s, so it failed on the name; a pin would trust everything that authority issues, so none is made. "+
+			"Connect with the host name the certificate names", errPublicPin, t.host, t.host)
 	}
 	if !seen.Full && !seen.NameOnly {
 		return pinChoice{}, fmt.Errorf("the certificate chain %s presents does not verify even against its own top certificate "+
@@ -260,6 +270,10 @@ func (c *cliIO) initPin(dsn, trustRoot, configPath string, agentOperated bool) (
 		if trustRoot != "" {
 			return pinChoice{}, false, fmt.Errorf("%w: --trust-root is given, but %s needs no pin: its certificate verifies already", errUsage, t.host)
 		}
+	case errors.Is(err, errPublicPin) && trustRoot != "":
+		return pinChoice{}, false, fmt.Errorf("%w: --trust-root is refused: %w", errUsage, err)
+	case errors.Is(err, errPublicPin):
+		fmt.Fprintf(c.stderr, "basalt: %s\n", terminalText(err.Error()))
 	case errors.Is(err, errPinDeclined):
 		fmt.Fprintf(c.stderr, "basalt: nothing pinned for %s; its certificate is not verified\n", terminalText(t.host))
 	case errors.Is(err, errAgentPin) && trustRoot != "":

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/x509roots/fallback/bundle"
 
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -194,4 +195,101 @@ func TestValidSHA256AndSubject(t *testing.T) {
 	long := *ca
 	long.Subject = pkix.Name{CommonName: strings.Repeat("é", 600)}
 	require.Len(t, []rune(trustpin.Seen{Top: &long}.Subject()), 512)
+}
+
+// A chain from an authority in the system's trust store is never pinned,
+// whatever is approved: with the name it needs no pin, and without it a
+// verify: ca pin would accept anything that authority issues as the host.
+// It covers a top that is a store root and a leaf that chains to one (the
+// root not sent). Not parallel: it swaps the system's store.
+func TestPublicChainsAreNeverPinned(t *testing.T) {
+	ca, cert := trustprofiletest.Chain(t, "other.example.com")
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	store := x509.NewCertPool()
+	store.AddCert(ca)
+	defer trustprofile.SetSystemRootsForTest(store)()
+
+	for name, chain := range map[string][]*x509.Certificate{
+		"the top is a store root": {leaf, ca},
+		"the leaf chains to one":  {leaf},
+	} {
+		seen := trustpin.Check(chain, "db.example.com", time.Now())
+		require.True(t, seen.Public, name)
+		require.False(t, seen.System, name)
+		require.False(t, seen.Pinnable(), name)
+		_, pin, err := trustpin.Approved(chain, "db.example.com", time.Now(), seen.SHA256)
+		require.ErrorIs(t, err, trustpin.ErrPublic, name)
+		require.Nil(t, pin, name)
+	}
+	seen := trustpin.Check([]*x509.Certificate{leaf, ca}, "other.example.com", time.Now())
+	require.True(t, seen.System)
+	require.True(t, seen.Public, "a chain that verifies needs no pin either")
+}
+
+// issue makes a certificate for name signed by parent (self-signed when
+// parent is nil), a CA when ca.
+func issue(t *testing.T, name string, ca bool, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: name},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+	}
+	if ca {
+		tmpl.IsCA, tmpl.BasicConstraintsValid, tmpl.KeyUsage = true, true, x509.KeyUsageCertSign
+	} else {
+		tmpl.DNSNames, tmpl.ExtKeyUsage, tmpl.KeyUsage = []string{name}, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, x509.KeyUsageDigitalSignature
+	}
+	if parent == nil {
+		parent, parentKey = tmpl, key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, &key.PublicKey, parentKey)
+	require.NoError(t, err)
+	c, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	return c, key
+}
+
+// A leaf from an intermediate of a store root, with the root not sent, is
+// public: the top is the intermediate. Not parallel: it swaps the store.
+func TestPublicThroughAnIntermediate(t *testing.T) {
+	root, rootKey := issue(t, "root", true, nil, nil)
+	inter, interKey := issue(t, "inter", true, root, rootKey)
+	leaf, _ := issue(t, "other.example.com", false, inter, interKey)
+	store := x509.NewCertPool()
+	store.AddCert(root)
+	defer trustprofile.SetSystemRootsForTest(store)()
+	seen := trustpin.Check([]*x509.Certificate{leaf, inter}, "db.example.com", time.Now())
+	require.True(t, seen.NameOnly)
+	require.True(t, seen.Public)
+	require.False(t, seen.Pinnable())
+}
+
+// The public roots the binary carries count whatever the system's store
+// holds, and with no store at all: a mozilla Mozilla root is public, and pins
+// of test CAs still work. Not parallel: it swaps the store.
+func TestPublicRootsWithoutAStore(t *testing.T) {
+	defer trustprofile.SetSystemRootsForTest(nil)()
+	var mozilla *x509.Certificate
+	for r := range bundle.Roots() {
+		if c, err := x509.ParseCertificate(r.Certificate); err == nil && r.Constraint == nil {
+			mozilla = c
+			break
+		}
+	}
+	require.NotNil(t, mozilla)
+	require.True(t, trustprofile.IsPublic(mozilla, nil))
+	seen := trustpin.Check([]*x509.Certificate{mozilla}, "db.example.com", time.Now())
+	require.True(t, seen.Public)
+	_, err := trustprofile.NewPin("203.0.113.7", mozilla, true)
+	require.ErrorIs(t, err, trustprofile.ErrPublic)
+
+	ca, cert := trustprofiletest.Chain(t, "other.example.com")
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	seen = trustpin.Check([]*x509.Certificate{leaf, ca}, "203.0.113.7", time.Now())
+	require.False(t, seen.Public, "with no store, a private CA is still pinnable")
+	require.True(t, seen.Pinnable())
 }

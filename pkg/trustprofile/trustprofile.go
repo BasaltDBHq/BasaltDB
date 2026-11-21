@@ -179,6 +179,9 @@ func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error)) (*
 	if err != nil {
 		return nil, err
 	}
+	if err := checkNotPublic(s, origin, files); err != nil {
+		return nil, err
+	}
 	p := &Profile{Spec: s, Origin: origin, Files: files}
 	p.pool = sync.OnceValue(func() *x509.CertPool { return withSystem(p.Certificates()) })
 	p.own = sync.OnceValue(func() *x509.CertPool {

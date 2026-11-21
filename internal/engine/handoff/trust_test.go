@@ -262,3 +262,19 @@ func TestPreviewReuseNeedsTheSamePin(t *testing.T) {
 		require.Equal(t, setUp, h.prober.pins[1], name)
 	}
 }
+
+// A chain from an authority in the system's store is never pinned from the
+// page either: the probe is TLS_NOT_VERIFIED, with nothing pinned and no
+// login. Not parallel: it swaps the system's store.
+func TestApproveRefusesPublicAuthorities(t *testing.T) {
+	s := newTrustServer(t, "other.example.com")
+	store := x509.NewCertPool()
+	store.AddCert(s.leaf)
+	defer trustprofile.SetSystemRootsForTest(store)()
+	pin, err := s.prober.Approve(context.Background(), db, publicIP, s.fingerprint())
+	r, ok := ReachOf(err)
+	require.True(t, ok, "%v", err)
+	require.Equal(t, ReasonTLSNotVerified, r.Reason)
+	require.Nil(t, pin.Profile)
+	require.Equal(t, int32(1), s.dials.Load(), "the handshake alone")
+}

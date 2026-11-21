@@ -21,6 +21,7 @@ require (
 	github.com/wasilibs/go-pgquery v0.0.0-20261106060434-4301e51f8dbf
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261115193255-739070949446
+	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
 	golang.org/x/text v0.44.0

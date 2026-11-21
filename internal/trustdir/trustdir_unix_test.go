@@ -114,6 +114,7 @@ func TestAddRefuses(t *testing.T) {
 		"not a CA":      {"internal", []string{"internal.example.com"}, leafPEM},
 		"public suffix": {"internal", []string{"com"}, pem},
 		"cloud apex":    {"internal", []string{"amazonaws.com"}, pem},
+		"private entry": {"internal", []string{"github.io"}, pem},
 		"empty match":   {"internal", nil, pem},
 		"bad name":      {"../x", []string{"internal.example.com"}, pem},
 		"not PEM":       {"internal", []string{"internal.example.com"}, []byte("hello")},

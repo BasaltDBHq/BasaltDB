@@ -138,18 +138,29 @@ func TrustOfConfig(cfg *pgconn.Config) (trustprofile.Applied, []trustprofile.Ref
 func CertificateNotVerified(err error) bool { return trustprofile.CertificateNotVerified(err) }
 
 // WithCertificateHint is err, when it is a certificate of dsn's host that
-// did not verify, with what to do: add the host's CA as a trust profile, or
-// name it with sslrootcert. Any other err is returned as it is.
+// did not verify, with what can fix it: the host's CA as a trust profile;
+// or, when the connection names its own roots or does not use verify-full
+// (no profile applies then), the connection string's sslrootcert. Any
+// other err is returned as it is.
 func WithCertificateHint(dsn string, err error) error {
 	if !CertificateNotVerified(err) {
 		return err
 	}
-	host := "the database's host"
+	a := trustprofile.Applied{Host: "the database's host", Applies: trustprofile.AppliesSystem}
 	if cfg, perr := pgconn.ParseConfig(dsn); perr == nil && cfg.Host != "" {
-		host = cfg.Host
+		a = trustprofile.Explain(cfg, Trust())
+	}
+	switch a.Applies {
+	case trustprofile.AppliesRootCert:
+		return fmt.Errorf("%w; the certificate of %s does not verify against the roots the connection names (sslrootcert, PGSSLROOTCERT or "+
+			"~/.postgresql/root.crt), and no trust profile applies while it names them: fix that root file", err, a.Host)
+	case trustprofile.AppliesNotVerified:
+		return fmt.Errorf("%w; the certificate of %s does not verify, and trust profiles apply only with sslmode=verify-full: "+
+			"name its CA with sslrootcert=<CA file> in the connection string", err, a.Host)
+	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
 	return fmt.Errorf("%w; the certificate of %s does not verify: add its CA with basalt trust add --name NAME --match '=%s' --ca <CA file>, "+
-		"or name it with sslrootcert=<CA file> in the connection string", err, host, host)
+		"or name it with sslrootcert=<CA file> in the connection string", err, a.Host, a.Host)
 }
 
 // apply sets DefaultMode unless dsn names a mode itself (pgx has already

@@ -92,6 +92,7 @@ func trustList(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	set := trustdir.Set(*configPath)
 	v := trustListView{TrustDir: trustdir.Path(*configPath), Refused: set.Refused(), Agents: trustAgents(c, *configPath)}
 	for _, l := range set.Profiles() {
@@ -205,10 +206,11 @@ func trustAdd(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	if *name == "" || *match == "" || *caFile == "" {
 		return c.fail(fmt.Errorf("%w: --name, --match and --ca are required: %s", errUsage, trustUsage))
 	}
-	if err := c.refuseAgentTrust(*configPath); err != nil {
+	if err := c.refuseAgentTrust("add", *configPath); err != nil {
 		return c.fail(err)
 	}
 	ca, err := readCAFile(*caFile)
@@ -258,8 +260,14 @@ func trustRemove(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	if *name == "" {
 		return c.fail(fmt.Errorf("%w: --name is required: basalt trust remove --name N", errUsage))
+	}
+	// Removing a profile that disables or narrows a built-in brings the
+	// built-in's roots back, so an agent never removes one either.
+	if err := c.refuseAgentTrust("remove", *configPath); err != nil {
+		return c.fail(err)
 	}
 	if err := trustdir.Remove(*configPath, *name); err != nil {
 		if errors.Is(err, trustdir.ErrNotFound) && trustprofile.BuiltInSet().Named(*name) != nil {
@@ -281,6 +289,7 @@ func trustDisable(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	if *name == "" {
 		return c.fail(fmt.Errorf("%w: --name is required: basalt trust disable --name N", errUsage))
 	}
@@ -297,21 +306,24 @@ func trustDisable(c *cliIO, args []string) int {
 	return exitOK
 }
 
-// refuseAgentTrust refuses basalt trust add when an agent marker is set or
-// the engine is operatedBy AGENT: an agent never adds a root.
-func (c *cliIO) refuseAgentTrust(configPath string) error {
-	marker := c.agentMarker()
-	operated := false
-	if cfg, err := loadEngineConfig(c, configPath); err == nil {
-		operated = cfg.AgentOperated()
+// refuseAgentTrust refuses basalt trust sub when an agent marker is set or
+// the engine is operatedBy AGENT: an agent never adds a root, and never
+// removes a profile (which can bring a built-in's roots back). An
+// engine.json that exists and cannot be read is refused too.
+func (c *cliIO) refuseAgentTrust(sub, configPath string) error {
+	if marker := c.agentMarker(); marker != "" {
+		return fmt.Errorf("trust %s is refused: %s is set, so an agent is running it, and an agent never changes which root certificates "+
+			"are trusted. Nothing was written. The person runs it in a terminal of their own", sub, marker)
 	}
+	cfg, err := loadEngineConfig(c, configPath)
 	switch {
-	case marker != "":
-		return fmt.Errorf("trust add is refused: %s is set, so an agent is running it, and an agent never adds a root certificate. "+
-			"Nothing was written. The person runs it in a terminal of their own", marker)
-	case operated:
-		return errors.New("trust add is refused: this engine is operatedBy AGENT, so an agent could have run it, and an agent never adds a " +
-			"root certificate. Nothing was written. Name the root in the agent's connection string with sslrootcert instead")
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("trust %s is refused: %s cannot be read (%w), so whether an agent operates this engine is not known. Nothing was written", sub, configPath, err)
+	case cfg.AgentOperated():
+		return fmt.Errorf("trust %s is refused: this engine is operatedBy AGENT, so an agent could have run it, and an agent never changes which "+
+			"root certificates are trusted. Nothing was written. Name the root in the agent's connection string with sslrootcert instead", sub)
 	}
 	return nil
 }

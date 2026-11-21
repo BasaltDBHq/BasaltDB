@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -40,8 +41,9 @@ type Listed struct {
 // Set is the profiles that decide which roots verify a host: the built-in
 // ones, the operator's, and the operator files that were refused. An
 // operator profile with a built-in's name replaces it, or turns it off when
-// disabled. A refused operator file changes nothing: the built-in of that
-// name still applies.
+// disabled. A refused operator file named after a built-in (<name>.json)
+// keeps that built-in off, since the file may have meant to disable or
+// narrow it: a refusal never brings roots back.
 type Set struct {
 	operator, builtin []*Profile
 	listed            []Listed
@@ -53,6 +55,10 @@ type Set struct {
 // same name keep the first.
 func NewSet(builtin, operator []*Profile, refused []Refused) *Set {
 	s := &Set{refused: slices.Clone(refused)}
+	off := map[string]bool{}
+	for _, r := range refused {
+		off[strings.TrimSuffix(filepath.Base(r.File), jsonExt)] = true
+	}
 	ops := map[string]*Profile{}
 	for _, p := range uniqueByName(operator) {
 		ops[p.Name] = p
@@ -66,6 +72,8 @@ func NewSet(builtin, operator []*Profile, refused []Refused) *Set {
 	for _, p := range uniqueByName(builtin) {
 		op, over := ops[p.Name]
 		switch {
+		case off[p.Name] && !over:
+			s.listed = append(s.listed, Listed{Profile: p, State: Disabled})
 		case over && op.Disabled:
 			s.listed = append(s.listed, Listed{Profile: p, State: Disabled})
 		case over:

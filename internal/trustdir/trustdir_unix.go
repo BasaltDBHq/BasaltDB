@@ -73,6 +73,10 @@ func profileFile(name string) bool {
 // by the config directory's owner) when create is set and it is missing,
 // with the owner its files must have (or root).
 func Open(configPath string, create bool) (*service.TrustedDir, int, error) {
+	configPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, 0, err
+	}
 	cfgDir := filepath.Dir(configPath)
 	trusted, err := owner(cfgDir)
 	if err != nil {

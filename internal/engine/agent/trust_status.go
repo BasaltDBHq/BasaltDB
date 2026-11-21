@@ -64,11 +64,11 @@ type TrustRootStatus struct {
 }
 
 // trustStatus is status.trust, adding TRUST_PROFILE_REFUSED for each
-// refused file and TRUST_ROOT_EXPIRING for roots in use that expire soon;
-// nil without a reporter.
-func (s statusDeps) trustStatus(ps *problems) *TrustStatus {
+// refused file and TRUST_ROOT_EXPIRING for roots in use that expire soon,
+// and the report it read; nil without a reporter.
+func (s statusDeps) trustStatus(ps *problems) (*TrustStatus, *TrustReport) {
 	if s.trust == nil {
-		return nil
+		return nil, nil
 	}
 	rep := s.trust()
 	for _, r := range rep.Refused {
@@ -77,7 +77,7 @@ func (s statusDeps) trustStatus(ps *problems) *TrustStatus {
 	a := rep.Applied
 	out := &TrustStatus{Host: a.Host, Applies: string(a.Applies)}
 	if a.Profile == nil {
-		return out
+		return out, &rep
 	}
 	certs := a.Profile.Certificates()
 	slices.SortStableFunc(certs, func(x, y *x509.Certificate) int { return x.NotAfter.Compare(y.NotAfter) })
@@ -86,15 +86,15 @@ func (s statusDeps) trustStatus(ps *problems) *TrustStatus {
 		out.Roots = append(out.Roots, TrustRootStatus{Subject: c.Subject.String(), SHA256: trustprofile.Fingerprint(c), NotAfter: c.NotAfter.UTC()})
 	}
 	s.addTrustExpiring(ps, a, certs)
-	return out
+	return out, &rep
 }
 
 func (s statusDeps) addTrustRefused(ps *problems, r trustprofile.Refused) {
 	ps.add(problemTrustProfileRefused, "the trust profile file "+r.File+" is refused: "+r.Reason,
 		func(b *Steps) string {
 			b.RunCommand(s.cmds.TrustList(), "See why the file is refused, then fix it or remove it with basalt trust remove.")
-			return "Basalt refused the trust profile file " + r.File + ": " + r.Reason + ". It does not apply; the built-in profiles and the " +
-				"other files still do. To see it, run: " + s.cmds.TrustList()
+			return "Basalt refused the trust profile file " + r.File + ": " + r.Reason + ". It does not apply, and a built-in profile of the same " +
+				"name stays off until it is fixed; the other files still apply. To see it, run: " + s.cmds.TrustList()
 		})
 }
 
@@ -132,15 +132,38 @@ func (s statusDeps) addTrustExpiring(ps *problems, a trustprofile.Applied, sorte
 }
 
 // addCertificateNotVerified is CERTIFICATE_NOT_VERIFIED for a database
-// whose certificate does not verify, naming the host and the two fixes.
-func (s statusDeps) addCertificateNotVerified(ps *problems, err error) {
+// whose certificate does not verify, naming the host and the fix that can
+// work: a trust profile when the system's authorities or a profile
+// verified it, the connection string's own roots when it names them, and
+// verify-full when its sslmode is weaker (no profile applies then).
+func (s statusDeps) addCertificateNotVerified(ps *problems, err error, trust *TrustReport) {
 	s.log.Error("status: the database's certificate does not verify", "err", err)
-	host := "the database"
-	if s.trust != nil {
-		host = cmp.Or(s.trust().Applied.Host, host)
+	a := trustprofile.Applied{Host: "the database", Applies: trustprofile.AppliesSystem}
+	if trust != nil {
+		a = trust.Applied
+		a.Host = cmp.Or(a.Host, "the database")
+	}
+	host := a.Host
+	msg := "the certificate of " + host + " does not verify, so the agent cannot connect"
+	switch a.Applies {
+	case trustprofile.AppliesRootCert, trustprofile.AppliesNotVerified:
+		why := "the agent's connection string names its own roots (sslrootcert, PGSSLROOTCERT or ~/.postgresql/root.crt), and they do not " +
+			"verify it; a trust profile does not apply while it names them. Fix or remove that root file"
+		if a.Applies == trustprofile.AppliesNotVerified {
+			why = "its sslmode is below verify-full, so trust profiles do not apply. Name the CA with sslrootcert in the agent's connection string"
+		}
+		ps.add(problemCertificateNotVerified, msg,
+			func(b *Steps) string {
+				b.RunCommand(s.cmds.TrustList(), "See what verifies the database's certificate, then fix the root its connection string names.")
+				b.TellAgent("Tell the agent when it is done.")
+				return "The certificate of your database " + host + " does not verify: " + why + ". To see what verifies it, run: " +
+					s.cmds.TrustList() + "\nThen tell the agent."
+			})
+		return
+	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
 	add := s.cmds.TrustAdd(host)
-	ps.add(problemCertificateNotVerified, "the certificate of "+host+" does not verify, so the agent cannot connect",
+	ps.add(problemCertificateNotVerified, msg,
 		func(b *Steps) string {
 			b.RunCommand(add, "Save your database provider's CA certificate as "+strings.TrimPrefix(TrustCAFile, "./")+
 				", then run this on the engine's machine (or name the CA with sslrootcert in the agent's connection string).")

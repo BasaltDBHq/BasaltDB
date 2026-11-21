@@ -125,13 +125,13 @@ func TestOperatorReplacesAndDisables(t *testing.T) {
 	require.NoError(t, err)
 	set = trustprofile.NewSet(trustprofile.BuiltIns(), []*trustprofile.Profile{off}, []trustprofile.Refused{{File: "supabase.json", Reason: "bad"}})
 	require.Nil(t, set.For(rdsHost))
-	require.Equal(t, "supabase", name(set.For(supabaseHost)), "a refused operator file leaves the built-in")
+	require.Nil(t, set.For(supabaseHost), "a refused file named after a built-in keeps the built-in off")
 	states := map[string]trustprofile.State{}
 	for _, l := range set.Profiles() {
 		states[string(l.Origin)+"/"+l.Name] = l.State
 	}
 	require.Equal(t, map[string]trustprofile.State{
-		"OPERATOR/aws-rds": trustprofile.Disabled, "BUILT_IN/aws-rds": trustprofile.Disabled, "BUILT_IN/supabase": trustprofile.Active,
+		"OPERATOR/aws-rds": trustprofile.Disabled, "BUILT_IN/aws-rds": trustprofile.Disabled, "BUILT_IN/supabase": trustprofile.Disabled,
 	}, states)
 	require.Len(t, set.Refused(), 1)
 

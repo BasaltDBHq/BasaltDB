@@ -48,10 +48,17 @@ func Add(configPath, name string, match []string, ca []byte) (*trustprofile.Prof
 		if exists(d, trustprofile.FileName(name)) {
 			return fmt.Errorf("%w (%s)", ErrExists, name)
 		}
+		if exists(d, pemName) {
+			return fmt.Errorf("%w: %s is in trust.d already (another profile may name it); remove it first", ErrExists, pemName)
+		}
 		if err := d.WriteFile(pemName, ca, fileMode, fileOwner(trusted)); err != nil {
 			return err
 		}
-		return d.WriteFile(trustprofile.FileName(name), raw, fileMode, fileOwner(trusted))
+		if err := d.WriteFile(trustprofile.FileName(name), raw, fileMode, fileOwner(trusted)); err != nil {
+			_ = d.Remove(pemName)
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -91,7 +98,13 @@ func Remove(configPath, name string) error {
 		if err == nil {
 			_ = json.Unmarshal(raw, &s) // a profile that does not parse names no roots files
 		}
-		keep := otherRoots(d, name, trusted)
+		keep, err := otherRoots(d, name, trusted)
+		if errors.Is(err, errKeepRoots) {
+			return d.Remove(file)
+		}
+		if err != nil {
+			return err
+		}
 		if err := d.Remove(file); err != nil {
 			return err
 		}
@@ -108,11 +121,12 @@ func Remove(configPath, name string) error {
 }
 
 // otherRoots are the roots files the other profiles in d name, which
-// Remove keeps.
-func otherRoots(d *service.TrustedDir, name string, trusted int) []string {
+// Remove keeps. A profile file that cannot be read keeps every file: Remove
+// then deletes only the profile's JSON.
+func otherRoots(d *service.TrustedDir, name string, trusted int) ([]string, error) {
 	names, err := d.Names()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
 	for _, n := range names {
@@ -122,14 +136,18 @@ func otherRoots(d *service.TrustedDir, name string, trusted int) []string {
 		raw, err := Read(d, n, trusted, trustprofile.MaxProfileBytes)
 		var s trustprofile.Spec
 		if err != nil || json.Unmarshal(raw, &s) != nil {
-			continue
+			return nil, errKeepRoots
 		}
 		for _, r := range s.Roots {
 			out = append(out, r.File)
 		}
 	}
-	return out
+	return out, nil
 }
+
+// errKeepRoots: another profile file cannot be read, so Remove cannot tell
+// which roots files it names and keeps them all.
+var errKeepRoots = errors.New("another profile cannot be read")
 
 func exists(d *service.TrustedDir, name string) bool {
 	f, err := d.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)

@@ -62,5 +62,5 @@ func CheckOperatorMatch(m string) error {
 
 func publicSuffixError(m string) error {
 	return fmt.Errorf("match entry %q is a public suffix on its own, so its roots would verify everyone's hosts under it; "+
-		"name your database's own domain (db.example.com, or a longer suffix such as <region>.rds.amazonaws.com)", m)
+		"name your database's own host (=db.example.com) or a domain only you control", m)
 }

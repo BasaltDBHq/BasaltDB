@@ -14,13 +14,19 @@ import (
 // names with --config (the default config otherwise), with the built-in
 // ones, read again for each connection (CONTRACT.md, Trust profiles).
 func useTrustDir(args []string) {
-	pgdial.SetTrust(trustdir.Source(configArg(args, config.DefaultPath(runtime.GOOS))))
+	path, given := configArg(args)
+	if !given {
+		// As the person commands find their config (configOrFallback): the
+		// per-user config init left when nothing is installed system-wide.
+		path = perUserConfigFallback(osHost{}, config.DefaultPath(runtime.GOOS))
+	}
+	pgdial.SetTrust(trustdir.Source(path))
 }
 
 // configArg is the value of the last -config or --config flag in args,
-// before a "--", or def.
-func configArg(args []string, def string) string {
-	path := def
+// before a "--", and whether there is one.
+func configArg(args []string) (string, bool) {
+	path, given := "", false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -32,11 +38,11 @@ func configArg(args []string, def string) string {
 		}
 		switch {
 		case inline:
-			path = value
+			path, given = value, true
 		case i+1 < len(args):
-			path = args[i+1]
+			path, given = args[i+1], true
 			i++
 		}
 	}
-	return path
+	return path, given
 }

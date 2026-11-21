@@ -109,7 +109,7 @@ func TestStatusTrustRefused(t *testing.T) {
 			n++
 			require.Equal(t, "WARNING", p.Severity)
 			require.Contains(t, p.Message, "/etc/basalt/trust.d/")
-			require.Contains(t, p.PersonMessage, "built-in profiles")
+			require.Contains(t, p.PersonMessage, "stays off until it is fixed")
 		}
 	}
 	require.Equal(t, 2, n)
@@ -175,5 +175,22 @@ func trustStatusCases(operatedBy string) map[string]statusCase {
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem},
 				trustprofile.Refused{File: "/etc/basalt/trust.d/a.json", Reason: "it is writable by group or others"}))
 		}},
+	}
+}
+
+// When the connection names its own roots, or does not use verify-full, a
+// trust profile cannot help: CERTIFICATE_NOT_VERIFIED says what can.
+func TestStatusCertificateNotVerifiedOwnRoots(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})
+	for applies, want := range map[trustprofile.Applies]string{ //nolint:exhaustive // only the two states a profile cannot fix
+		trustprofile.AppliesRootCert:    "names its own roots",
+		trustprofile.AppliesNotVerified: "below verify-full",
+	} {
+		r := trustLocal(t, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: "db.example.com", Applies: applies}))
+		p := findProblem(t, r, problemCertificateNotVerified)
+		require.Contains(t, p.PersonMessage, want, applies)
+		require.Equal(t, "basalt trust list", p.NextSteps[0].Command, applies)
+		require.NotContains(t, p.PersonMessage, "trust add", applies)
 	}
 }

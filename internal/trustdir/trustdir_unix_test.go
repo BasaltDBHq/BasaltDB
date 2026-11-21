@@ -86,6 +86,10 @@ func TestAddLoadRemove(t *testing.T) {
 
 	_, err = trustdir.Add(cfg, "internal", []string{"other.example.com"}, pem)
 	require.ErrorIs(t, err, trustdir.ErrExists)
+	require.NoError(t, os.WriteFile(filepath.Join(trustdir.Path(cfg), "taken.pem"), pem, 0o644))
+	_, err = trustdir.Add(cfg, "taken", []string{"other.example.com"}, pem)
+	require.ErrorIs(t, err, trustdir.ErrExists, "a roots file of that name is never overwritten")
+	require.NoError(t, os.Remove(filepath.Join(trustdir.Path(cfg), "taken.pem")))
 
 	require.NoError(t, trustdir.Remove(cfg, "internal"))
 	require.ErrorIs(t, trustdir.Remove(cfg, "internal"), trustdir.ErrNotFound)
@@ -184,8 +188,8 @@ func TestLoadRefuses(t *testing.T) {
 	}
 	require.Equal(t, []string{"good"}, names(ops))
 	require.ElementsMatch(t, []string{"groupw.json", "pemw.json", "mismatch.json", "misnamed.json", "supabase.json", "link.json", "hard.json"}, refusedFiles(refused))
-	require.Equal(t, "supabase", trustdir.Set(cfg).For("x.y.supabase.co").Name, "the refused replacement leaves the built-in")
-	require.Equal(t, trustprofile.BuiltIn, trustdir.Set(cfg).For("x.y.supabase.co").Origin)
+	require.Nil(t, trustdir.Set(cfg).For("x.y.supabase.co"), "a refused file named after a built-in keeps it off")
+	require.Equal(t, "aws-rds", trustdir.Set(cfg).For("db.x.eu-west-1.rds.amazonaws.com").Name)
 }
 
 // A trust.d writable by group or others is refused whole, and named.

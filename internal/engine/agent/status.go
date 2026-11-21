@@ -499,7 +499,8 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	}
 	s.addPortalProblem(&ps)
 	s.addPluginProblems(&ps)
-	r.Trust = s.trustStatus(&ps)
+	var trust *TrustReport
+	r.Trust, trust = s.trustStatus(&ps)
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {
@@ -520,7 +521,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	case err != nil:
 		r.Guard = GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()}
 		if !explained {
-			s.addUnreachable(&ps, err)
+			s.addUnreachable(&ps, err, trust)
 		}
 	default:
 		r.Guard = guardStatusDTO(st)
@@ -766,9 +767,9 @@ func noPasskeySteps(b *Steps, cmds Commands) string {
 
 // addUnreachable is the problem of a guard read that failed: the database
 // refused the credential, or cannot be reached.
-func (s statusDeps) addUnreachable(ps *problems, err error) {
+func (s statusDeps) addUnreachable(ps *problems, err error, trust *TrustReport) {
 	if trustprofile.CertificateNotVerified(err) {
-		s.addCertificateNotVerified(ps, err)
+		s.addCertificateNotVerified(ps, err, trust)
 		return
 	}
 	te := ToolError(err)

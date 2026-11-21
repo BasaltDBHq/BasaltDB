@@ -54,10 +54,10 @@ func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, agent string, own []str
 	case quiet:
 		names := make([]string, len(asks))
 		for i, a := range asks {
-			names[i] = a.Table
+			names[i] = terminalText(a.Table)
 		}
 		fmt.Fprintf(c.stderr, "basalt: %s can see all rows of %s (row-level security hid them); pass --agent-rls=none to skip this, or --agent-rls=schema.table,... to pick tables\n",
-			agent, strings.Join(names, ", "))
+			terminalText(agent), strings.Join(names, ", "))
 		return fill(out, true), nil
 	case c.terminal != nil:
 		return checklistAnswers(c, agent, asks, entries)

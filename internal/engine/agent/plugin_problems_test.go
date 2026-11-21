@@ -59,8 +59,8 @@ func TestStatusShowsTwoPersonSteps(t *testing.T) {
 			require.Equal(t, "PERSON", st.Actor)
 			require.Equal(t, "RUN_COMMAND", st.Action)
 		}
-		require.Equal(t, "basalt plugin check acme-ner --instance client_x --config /srv/basalt/engine.json", p.NextSteps[0].Command)
-		require.Equal(t, "basalt plugin disable acme-ner --instance client_x --config /srv/basalt/engine.json", p.NextSteps[1].Command)
+		require.Equal(t, "basalt plugin check acme-ner --instance client_x", p.NextSteps[0].Command)
+		require.Equal(t, "basalt plugin disable acme-ner --instance client_x", p.NextSteps[1].Command)
 		require.Contains(t, p.PersonMessage, p.NextSteps[0].Command)
 		require.NotContains(t, p.PersonMessage+p.Message, "acme-ner/default", "another agent's entry is not shown")
 	}
@@ -77,7 +77,7 @@ func TestStatusShowsTwoPersonSteps(t *testing.T) {
 // an agent-operated one, where personMessage names no command.
 func TestStatusShowsApprovalSteps(t *testing.T) {
 	t.Parallel()
-	const enable = "basalt plugin enable acme-ner --instance client_x --approve-with-passkey --json --config /srv/basalt/engine.json"
+	const enable = "basalt plugin enable acme-ner --instance client_x --approve-with-passkey --json"
 	for _, c := range []struct {
 		code    string
 		actions []string
@@ -92,12 +92,12 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 		{
 			ProblemPluginApprovalExpired,
 			[]string{"RUN_COMMAND", "RUN_COMMAND"},
-			[]string{enable, "basalt plugin remove acme-ner --instance client_x --config /srv/basalt/engine.json"},
+			[]string{enable, "basalt plugin remove acme-ner --instance client_x"},
 		},
 		{
 			ProblemPluginApprovalMismatch,
 			[]string{"ASK_PERSON", "RUN_COMMAND", "RUN_COMMAND"},
-			[]string{"", enable, "basalt plugin disable acme-ner --instance client_x --config /srv/basalt/engine.json"},
+			[]string{"", enable, "basalt plugin disable acme-ner --instance client_x"},
 		},
 	} {
 		for _, operatedBy := range []string{"", "AGENT"} {
@@ -139,7 +139,7 @@ func TestStatusShowsConfigInvalid(t *testing.T) {
 		require.Equal(t, "engine.json changed", p.Message)
 		require.Len(t, p.NextSteps, 1)
 		require.Equal(t, "RUN_COMMAND", p.NextSteps[0].Action)
-		require.Equal(t, "basalt plugin list --config /srv/basalt/engine.json", p.NextSteps[0].Command)
+		require.Equal(t, "basalt plugin list", p.NextSteps[0].Command)
 		require.Contains(t, p.PersonMessage, "keeps running as before")
 		if operatedBy == "AGENT" {
 			require.Equal(t, "AGENT", p.NextSteps[0].Actor)

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/next-step.v1.json",
   "title": "Next step",
-  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. Commands are complete (--agent, ids filled in, and --config with the absolute engine config path unless it is the default the CLI finds by itself) and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps.",
+  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. Commands are complete (--agent, ids filled in; no command names the engine config, which the CLI finds by itself) and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps.",
   "type": "object",
   "additionalProperties": false,
   "required": ["actor", "action", "text"],

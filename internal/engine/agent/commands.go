@@ -19,13 +19,11 @@ import (
 )
 
 // Commands builds the commands the person runs, for one agent: complete and
-// copy-pasteable, never carrying a credential value (AE-3). The engine's
-// config path is named with --config only when it is not the default the
-// CLI finds by itself on this platform.
+// copy-pasteable, never carrying a credential value (AE-3). A command never
+// names the engine config: the CLI finds it by itself.
 type Commands struct {
 	agent      string
-	flags      string // --agent NAME [--config PATH]
-	configFlag string // --config PATH, or empty at the default
+	flags      string // --agent NAME
 	configPath string
 	goos       string
 	initArgs   []string
@@ -49,7 +47,7 @@ const (
 // (AE-15). Anything else is refused.
 var savedInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
-	"socket-dir": true, "os-user": true, "engine-user": true, "credential-file": true,
+	"os-user": true, "engine-user": true,
 	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true, "direct-addr": true,
 	flagAllTables: true,
 }
@@ -81,10 +79,6 @@ func NewCommands(agent, configPath, goos string, initArgs []string) (Commands, e
 	}
 	c := Commands{agent: agent, goos: goos, configPath: configPath, initArgs: append([]string(nil), initArgs...)}
 	c.flags = "--agent " + agent
-	if configPath != "" && configPath != config.DefaultPath(goos) {
-		c.configFlag = "--config " + shellQuote(configPath)
-		c.flags += " " + c.configFlag
-	}
 	return c, nil
 }
 
@@ -161,7 +155,7 @@ func (c Commands) OperatedBy(operatedBy string) Commands {
 // AgentOperated reports whether the engine's operatedBy is AGENT.
 func (c Commands) AgentOperated() bool { return c.agentOperated }
 
-// Flags are "--agent NAME [--config PATH]", to put after a basalt verb.
+// Flags are "--agent NAME", to put after a basalt verb.
 func (c Commands) Flags() string { return c.flags }
 
 // Approve opens a held write's approval page.
@@ -196,9 +190,6 @@ func (c Commands) Init(change string) string {
 	parts := []string{cmdBasalt, "init"}
 	if !c.hasAgentFlag() {
 		parts = append(parts, "--agent", c.agent)
-	}
-	if c.configFlag != "" {
-		parts = append(parts, c.configFlag)
 	}
 	for _, a := range c.initArgs {
 		parts = append(parts, shellQuote(a))
@@ -318,9 +309,6 @@ func (c Commands) InitRemote(change string) string {
 	if !c.hasAgentFlag() {
 		parts = append(parts, "--agent", c.agent)
 	}
-	if c.configFlag != "" {
-		parts = append(parts, c.configFlag)
-	}
 	for i := 0; i < len(c.initArgs); i++ {
 		a := c.initArgs[i]
 		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
@@ -397,7 +385,7 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// trust is `basalt trust <sub> <args...> [--config PATH]`, with sudo for a
+// trust is `basalt trust <sub> <args...>`, with sudo for a
 // service engine, whose trust.d belongs to its own user.
 func (c Commands) trust(sub string, args ...string) string {
 	parts := []string{cmdBasalt, "trust", sub}
@@ -405,9 +393,6 @@ func (c Commands) trust(sub string, args ...string) string {
 		parts = append([]string{"sudo"}, parts...)
 	}
 	parts = append(parts, args...)
-	if c.configFlag != "" {
-		parts = append(parts, c.configFlag)
-	}
 	return strings.Join(parts, " ")
 }
 

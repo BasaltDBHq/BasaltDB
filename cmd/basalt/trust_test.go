@@ -30,7 +30,7 @@ func runTrustWith(t *testing.T, env map[string]string, args ...string) trustRun 
 	t.Helper()
 	var out, errb bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(k string) string { return env[k] })
-	code := runTrust(c, args)
+	code := runTrust(c, takePathFlags(c, runTrust, args))
 	return trustRun{code, out.String(), errb.String()}
 }
 
@@ -149,7 +149,7 @@ func TestTrustPerUserAndRelativeConfig(t *testing.T) {
 	var out, errb bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
 	c.host = &fakeHost{euid: os.Geteuid(), configDir: base}
-	require.Equal(t, exitOK, runTrust(c, []string{"add", "--name", "internal", "--match", "=db.internal.example.com", "--ca", ca}), errb.String())
+	require.Equal(t, exitOK, runTrust(c, takePathFlags(c, runTrust, []string{"add", "--name", "internal", "--match", "=db.internal.example.com", "--ca", ca})), errb.String())
 	require.FileExists(t, filepath.Join(trustdir.Path(userCfg), "internal.json"))
 
 	t.Chdir(filepath.Dir(userCfg))

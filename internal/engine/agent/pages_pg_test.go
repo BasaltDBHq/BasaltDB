@@ -140,7 +140,7 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	require.Equal(t, pageOrigin+"/approvals/"+id+"#s="+secret, link, "the short link carries its secret in the fragment")
 	msg := str(t, ap["personMessage"])
 	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public·leads.\nApprove it with your passkey here:\n\n"+link+
-		"\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"\nExpires "), msg)
+		"\n\nOr run: basalt approve --agent bot --open "+id+"\nExpires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, ap))
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
@@ -343,7 +343,7 @@ func TestRevertPageErrorCarriesThePersonsSteps(t *testing.T) {
 	require.Len(t, perr.NextSteps, 1)
 	require.Equal(t, mcp.ActorPerson, perr.NextSteps[0].Actor)
 	require.Equal(t, mcp.ActionRunCommand, perr.NextSteps[0].Action)
-	require.Equal(t, "basalt revert --agent bot --config /etc/basalt-test/engine.json --run "+runID+" --open", perr.NextSteps[0].Command)
+	require.Equal(t, "basalt revert --agent bot --run "+runID+" --open", perr.NextSteps[0].Command)
 }
 
 func TestListPendingReissuesTheLink(t *testing.T) {

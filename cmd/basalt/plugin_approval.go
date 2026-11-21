@@ -880,7 +880,10 @@ type approvedJSON struct {
 func pluginApprove(c *cliIO, args []string) int {
 	fs := c.flags("plugin approve")
 	agentName := fs.String("agent", "", "the agent that opened the approval (default: the one whose database holds it)")
-	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file")
+	configPath, cfgErr := c.findConfig()
+	if cfgErr != nil {
+		return c.fail(cfgErr)
+	}
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 	if err := fs.Parse(positionalLast(fs, args)); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
@@ -895,10 +898,10 @@ func pluginApprove(c *cliIO, args []string) int {
 	}
 	var e *pluginEnv
 	var err error
-	if c.pluginViaSocket(*configPath) {
+	if c.pluginViaSocket(configPath) {
 		e, err = socketPluginEnv(c)
 	} else {
-		e, err = loadPluginEnv(c, fs, *configPath)
+		e, err = loadPluginEnv(c, configPath)
 	}
 	if err != nil {
 		return c.fail(err)

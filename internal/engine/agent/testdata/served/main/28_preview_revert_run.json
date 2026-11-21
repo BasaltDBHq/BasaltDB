@@ -1,6 +1,6 @@
 {
   "body": {
-    "command": "basalt revert --agent bot --config /etc/basalt-test/engine.json --run <id-1> --open",
+    "command": "basalt revert --agent bot --run <id-1> --open",
     "items": [
       {
         "action": "RESTORE",

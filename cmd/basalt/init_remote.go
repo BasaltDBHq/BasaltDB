@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -116,7 +117,7 @@ type remoteFlags struct {
 	agent, write, read, prefix, configPath, databaseURL string
 	timeout                                             time.Duration
 	operatedBy                                          OperatedBy
-	newCode, json, configGiven                          bool
+	newCode, json                                       bool
 	// trustRoot is --trust-root: the pin's answer without a terminal.
 	trustRoot string
 	// allTables is --all-tables: every table in public, in place of
@@ -251,7 +252,6 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs.BoolVar(&f.newCode, "new-code", false, "make a new code (and a new agent password) even when one is pending")
 	fs.BoolVar(&f.allTables, flagAllTables, false, "give the agent every table in schema public the admin role owns, in place of --write and --read")
 	fs.BoolVar(&f.forget, "forget", false, "drop the agent's pending setup from the connect page and make a new code for it")
-	fs.StringVar(&f.configPath, "config", config.DefaultPath(c.goos), "engine config file")
 	fs.BoolVar(&f.json, "json", false, "print the result as JSON (remote-init-result.schema.json)")
 	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default on with --operated-by=agent, else off)")
 	fs.StringVar(&f.directAddr, flagDirectAddr, "", directAddrUsage)
@@ -260,13 +260,12 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 		return f, err
 	}
 	f.trustRoot = *trustRoot
+	f.configPath = cmp.Or(c.paths.config, c.systemConfig())
 	var directGiven bool
 	f.given = map[string]bool{}
 	fs.Visit(func(fl *flag.Flag) {
 		f.given[fl.Name] = true
 		switch fl.Name {
-		case "config":
-			f.configGiven = true
 		case flagDirectAddr:
 			directGiven = true
 		}
@@ -428,13 +427,15 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 }
 
 // paths finds the config, the agent's entry, its credential file and the
-// settings of a new config. Without --config and not as root, the config
-// lives in the user's own config directory, as init's foreground setup.
-// With --config and not as root, the sockets live next to that config.
+// settings of a new config. Not as root, the config lives in the user's own
+// config directory, as init's foreground setup, with the sockets next to it.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
 	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum(), DirectAddr: r.f.directAddr})
-	if !r.f.configGiven && r.c.host.Euid() != 0 {
+	if r.c.host.Euid() != 0 && r.c.paths.config == "" {
+		if _, err := r.c.findConfig(); err != nil {
+			return err
+		}
 		base, err := r.c.host.UserConfigDir()
 		if err != nil {
 			return err
@@ -443,10 +444,10 @@ func (r *remoteInit) paths() error {
 		r.f.configPath = filepath.Join(dir, "engine.json")
 		r.settings.SocketDir = filepath.Join(dir, "run")
 	}
-	if r.f.configPath != config.DefaultPath(r.c.goos) {
-		if r.f.configGiven && r.c.host.Euid() != 0 {
+	if r.f.configPath != r.c.systemConfig() {
+		if r.c.paths.config != "" && r.c.host.Euid() != 0 {
 			// Not root, the system socket directory is not writable: keep
-			// the sockets next to the config the person chose.
+			// the sockets next to a config in another place.
 			r.settings.SocketDir = filepath.Join(dir, "run")
 		}
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
@@ -475,7 +476,7 @@ func (r *remoteInit) paths() error {
 		return err
 	}
 	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.agent)); err != nil {
-		return fmt.Errorf("%w; pass --config in a shorter directory", err)
+		return fmt.Errorf("%w; use a shorter agent name", err)
 	}
 	asRoot := r.c.host.Euid() == 0
 	if asRoot {
@@ -677,7 +678,7 @@ func readCredentialIfAny(files credFiles, path string) (*credential, error) {
 		// The file is the running engine's credential: never treat it as
 		// absent, or a new one would overwrite it.
 		return nil, fmt.Errorf("the credential file %s was written by basalt init for a connection string with a %s= parameter, "+
-			"which basalt init --remote can't target; it was left as is. Use another --agent name, or another --config", path, pe.Param)
+			"which basalt init --remote can't target; it was left as is. Use another --agent name", path, pe.Param)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("the credential file %s: %w", path, err)
@@ -1281,7 +1282,7 @@ func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) (Re
 // the text output names.
 func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
 	res.osUser = r.osUser
-	res.MCPCommand = remoteMCPArgs(r.f.agent, r.f.configPath, r.settings.SocketDir, r.c.goos, r.c.host)
+	res.MCPCommand = mcpArgs(r.f.agent, mcpBinary(r.c.host))
 	fmt.Fprint(r.c.stderr, temporaryBinaryWarning(res.MCPCommand[0], os.TempDir()))
 	return res
 }

@@ -32,13 +32,21 @@ func parseUpgrade(c *cliIO, args []string) (upgradeFlags, error) {
 	var f upgradeFlags
 	fs := c.flags("upgrade")
 	fs.StringVar(&f.agent, "agent", "", "the agent whose database's guard to upgrade")
-	fs.StringVar(&f.configPath, "config", config.DefaultPath(c.goos), "engine config file")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask before running the SQL")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print what the upgrade does and its SQL, and run nothing")
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
-	f.configPath = configOrFallback(c.host, fs, f.configPath)
+	var err error
+	if f.configPath, err = c.findConfig(); err != nil {
+		return f, err
+	}
+	if f.agent == "" {
+		// --agent is needed only when the engine serves more than one.
+		if names, err := c.configuredAgents(f.configPath); err == nil && len(names) == 1 {
+			f.agent = names[0]
+		}
+	}
 	if !config.ValidAgentName(f.agent) {
 		return f, fmt.Errorf("%w: --agent is required (the agent whose database's guard to upgrade)", errUsage)
 	}
@@ -122,7 +130,7 @@ func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	conn, err := connect(c.ctx, dsn)
 	if err != nil {
 		return agentGuard{}, fmt.Errorf("the agent's credential does not log in, so the guard cannot be checked (%w); basalt status %s says what to do",
-			err, statusFlags(f, c.goos))
+			err, statusFlags(f))
 	}
 	defer conn.Close(c.ctx)
 	if seen.guard, err = guard.AgentStatus(c.ctx, conn, guard.Migrations()); err != nil {
@@ -171,12 +179,8 @@ func configAgentOf(c *cliIO, agentName, configPath string) (engineConfig, config
 	return engineConfig{}, config.Agent{}, errAgentNotInConfig(agentName, configPath)
 }
 
-func statusFlags(f upgradeFlags, goos string) string {
-	out := "--agent " + f.agent
-	if f.configPath != config.DefaultPath(goos) {
-		out += " --config " + shellQuote(f.configPath)
-	}
-	return out
+func statusFlags(f upgradeFlags) string {
+	return "--agent " + f.agent
 }
 
 // checkUpgradable refuses, before the admin connection string is asked

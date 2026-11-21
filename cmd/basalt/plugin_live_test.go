@@ -111,7 +111,7 @@ func (e *liveEngine) agent(args ...string) result {
 	e.t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(k string) string { return agentEnv[k] })
-	code := runPlugin(c, append(args, "--config", e.configPath))
+	code := runPlugin(c, takePathFlags(c, runPlugin, append(args, "--config", e.configPath)))
 	return result{code, stdout.String(), stderr.String()}
 }
 

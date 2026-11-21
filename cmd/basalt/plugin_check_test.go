@@ -316,27 +316,11 @@ func (e *pluginEngine) runAuthor(env map[string]string, args ...string) result {
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(k string) string { return env[k] })
 	c.host = e.host
-	code := runPlugin(c, args)
+	code := runPlugin(c, takePathFlags(c, runPlugin, args))
 	r := result{code, stdout.String(), stderr.String()}
 	require.NotContains(e.t, r.stdout+r.stderr, "PRIVATE KEY", "no key material in any output")
 	require.NotContains(e.t, r.stdout+r.stderr, "BEGIN")
 	return r
-}
-
-// The author commands never read the engine config, so --config is a usage
-// error for both.
-func TestAuthorCommandsTakeNoConfig(t *testing.T) {
-	t.Parallel()
-	e := newPluginEngine(t)
-	cfg := filepath.Join(e.base, "engine.json")
-	for _, args := range [][]string{
-		{"keygen", "--out", filepath.Join(e.base, "k"), "--config", cfg},
-		{"sign", e.base, "--key", filepath.Join(e.base, "k.key"), "--config", cfg},
-	} {
-		r := e.runAuthor(nil, args...)
-		require.Equal(t, exitUsage, r.code, r.stderr)
-		require.Contains(t, r.stderr, "config")
-	}
 }
 
 // TestKeygenAndSign: keygen and sign are author commands, allowed under an

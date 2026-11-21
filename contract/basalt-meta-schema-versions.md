@@ -34,7 +34,7 @@ Non-breaking (AE-11): on a guard without it the agent and its plugins are served
 
 ### Schema version 5: plugin approvals
 
-[Plugin approval](plugins-approval.md#plugin-approval), file `015_plugin_approvals.sql`, following the revert pattern. The next free version after 4; if another migration takes 5 first, this one takes the next free number and every "schema version 5" in this file moves with it. **Non-breaking** (AE-11): on a guard without it the agent and its other plugins are served as before, with `GUARD_UPGRADE_AVAILABLE`; an entry that requires approval is withheld from that agent (`PLUGIN_UNAVAILABLE`, [Plugin approvals at engine start](plugins-approval.md#plugin-approvals-at-engine-start)), and `basalt plugin add` and `enable` refuse to open an approval there (`PLUGIN_REFUSED` `GUARD_OUTDATED`) with the upgrade step: `basalt upgrade` for the agent, or on an agent-operated engine an `UPGRADE` [setup code](setup-from-laptop.md#the-setup-code) finished on the person's own computer, as every admin step there. No other admin step is added. New installs get it with the rest. Idempotent.
+[Plugin approval](plugins-approval.md#plugin-approval), file `015_plugin_approvals.sql`, following the revert pattern. The next free version after 4; if another migration takes 5 first, this one takes the next free number and every "schema version 5" in this file moves with it. **Non-breaking** (AE-11): on a guard without it the agent and its other plugins are served as before, with `GUARD_UPGRADE_AVAILABLE`; an entry that requires approval is withheld from that agent (`PLUGIN_UNAVAILABLE`, [Plugin approvals at engine start](plugins-approval.md#plugin-approvals-at-engine-start)), and `basalt plugin add` and `enable` refuse to open an approval there (`PLUGIN_REFUSED` `GUARD_OUTDATED`) with the upgrade step: `basalt upgrade` for the agent, or on an agent-operated engine an `UPGRADE` [setup code](setup.md#the-setup-code) finished on the person's own computer, as every admin step there. No other admin step is added. New installs get it with the rest. Idempotent.
 
 | Object | Change |
 |---|---|
@@ -50,7 +50,7 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 
 ### Schema version 6: trust pins
 
-[Pinning on first use](setup-from-laptop.md#pinning-on-first-use), file `016_trust_pins.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`; `basalt init` cannot record a pin there (it says so and goes on), and `status` has no record to compare a pin with. Idempotent.
+[Pinning on first use](setup.md#pinning-on-first-use), file `016_trust_pins.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`; `basalt init` cannot record a pin there (it says so and goes on), and `status` has no record to compare a pin with. Idempotent.
 
 | Object | Change |
 |---|---|
@@ -59,7 +59,7 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 
 ### Schema version 7: shorter setup-code life
 
-[Valid for 10 minutes, single use (CO-13)](setup-from-laptop.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed, since that guard has no grace. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by a guard at this version: the person asks for a new link; `basalt upgrade` applies the new `record_setup`. New installs get it with the rest. Idempotent.
+[Valid for 10 minutes, single use (CO-13)](setup.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed, since that guard has no grace. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by a guard at this version: the person asks for a new link; `basalt upgrade` applies the new `record_setup`. New installs get it with the rest. Idempotent.
 
 | Object | Change |
 |---|---|

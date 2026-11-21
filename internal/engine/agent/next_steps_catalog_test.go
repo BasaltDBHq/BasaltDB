@@ -624,8 +624,9 @@ func requireCommand(t *testing.T, command, config, where string) {
 	if serviceManager.MatchString(command) {
 		return
 	}
-	// basalt plugin writes engine.json, root's on a service engine.
-	if rest, ok := strings.CutPrefix(command, "sudo "); ok && strings.HasPrefix(rest, "basalt plugin ") {
+	// basalt plugin writes engine.json, and basalt trust trust.d, root's on
+	// a service engine.
+	if rest, ok := strings.CutPrefix(command, "sudo "); ok && (strings.HasPrefix(rest, "basalt plugin ") || strings.HasPrefix(rest, "basalt trust ")) {
 		command = rest
 	}
 	require.True(t, strings.HasPrefix(command, "basalt "), "%s: %q", where, command)
@@ -642,9 +643,9 @@ func requireCommand(t *testing.T, command, config, where string) {
 	if command == "basalt portal verify" { // reads public pages only: no agent, no config
 		return
 	}
-	// A plugin entry is the engine's, not one agent's: basalt plugin takes
-	// no --agent.
-	if !strings.HasPrefix(command, "basalt plugin ") {
+	// A plugin entry or a trust profile is the engine's, not one agent's:
+	// basalt plugin and basalt trust take no --agent.
+	if !strings.HasPrefix(command, "basalt plugin ") && !strings.HasPrefix(command, "basalt trust ") {
 		require.Regexp(t, `--agent[ =]bot`, command, where)
 	}
 	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)

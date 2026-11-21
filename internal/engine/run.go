@@ -760,6 +760,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 			return r, postgres.MapError(err)
 		},
 		DirectServed: env.direct != nil,
+		Trust:        TrustOf(pool),
 		Database:     agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
 		Receipts:     env.receipts,
 		Finisher:     finisher,

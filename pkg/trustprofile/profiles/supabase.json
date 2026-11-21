@@ -1,0 +1,12 @@
+{
+  "name": "supabase",
+  "match": ["supabase.co", "supabase.com"],
+  "roots": [
+    {"file": "supabase-2021.pem", "sha256": "700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7"},
+    {"file": "supabase-2025.pem", "sha256": "5865d2b26f6128e5795a13ae58b6543599bdb82d808f7f62e3c9a8d7e8527970"}
+  ],
+  "source": [
+    "https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt",
+    "https://raw.githubusercontent.com/supabase/cli/develop/apps/cli/src/command-internal/supabase-ca-templates/prod-ca-2025.ts"
+  ]
+}

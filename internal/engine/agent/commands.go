@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Commands builds the commands the person runs, for one agent: complete and
@@ -393,4 +394,53 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// trust is `basalt trust <sub> <args...> [--config PATH]`, with sudo for a
+// service engine, whose trust.d belongs to its own user.
+func (c Commands) trust(sub string, args ...string) string {
+	parts := []string{cmdBasalt, "trust", sub}
+	if !c.foreground {
+		parts = append([]string{"sudo"}, parts...)
+	}
+	parts = append(parts, args...)
+	if c.configFlag != "" {
+		parts = append(parts, c.configFlag)
+	}
+	return strings.Join(parts, " ")
+}
+
+// TrustList is basalt trust list.
+func (c Commands) TrustList() string { return c.trust("list") }
+
+// TrustCAFile is the CA file TrustAdd names: the person saves their
+// provider's CA certificate there, or puts its path in its place.
+const TrustCAFile = "./ca.pem"
+
+// TrustAdd is basalt trust add for host alone (=host), the profile named
+// after the host, its CA read from TrustCAFile.
+func (c Commands) TrustAdd(host string) string {
+	return c.trust("add", "--name", trustName(host), "--match", shellQuote("="+trustprofile.NormalizeHost(host)), "--ca", TrustCAFile)
+}
+
+// trustName is a profile name for host: its letters and digits, the rest
+// as dashes, up to the longest name.
+func trustName(host string) string {
+	const maxName = 63
+	var b strings.Builder
+	for _, r := range trustprofile.NormalizeHost(host) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	name := strings.Trim(b.String(), "-")
+	if len(name) > maxName {
+		name = strings.TrimRight(name[:maxName], "-")
+	}
+	if name == "" {
+		return "database"
+	}
+	return name
 }

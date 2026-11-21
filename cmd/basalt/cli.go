@@ -200,7 +200,7 @@ func (c *cliIO) confirmYes(question string) (bool, error) {
 func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	conn, err := pgdial.Connect(ctx, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, fmt.Errorf("connect: %w", pgdial.WithCertificateHint(dsn, err))
 	}
 	return conn, nil
 }

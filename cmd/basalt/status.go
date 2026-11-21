@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
@@ -27,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
@@ -268,6 +270,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 			return p, postgres.MapError(err)
 		},
 		EngineKey: key, DirectServed: directServed,
+		Trust: engine.TrustOf(pool),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			r, err := guard.EngineRecord(ctx, pool, id)
 			return r, postgres.MapError(err)
@@ -420,6 +423,9 @@ func writeStatus(w io.Writer, s statusOut) {
 	fmt.Fprintf(w, "  Database:   %s on %s\n", s.Database.Name, s.Database.Host)
 	fmt.Fprintf(w, "  Guard:      %s\n", guardWords(s.Guard))
 	fmt.Fprintf(w, "  Passkeys:   %s\n", passkeyWords(s.Passkeys))
+	if s.Trust != nil {
+		fmt.Fprintf(w, "  Trust:      %s\n", trustWords(*s.Trust))
+	}
 	if s.Ledger != nil {
 		fmt.Fprintf(w, "  Ledger:     %s\n", ledgerWords(*s.Ledger))
 	}
@@ -594,4 +600,24 @@ func connectOnlyStatus(c *cliIO, cfg config.Config, a config.Agent, cmds agent.C
 	}
 	eng.Build = r.Engine.Build
 	return statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: cfg.StateDirFor(c.goos)}, nil
+}
+
+// trustWords is status.trust in words: what verifies the database's
+// certificate.
+func trustWords(t agent.TrustStatus) string {
+	if t.Applies != string(trustprofile.AppliesProfile) {
+		return appliesWords(t.Applies)
+	}
+	origin := "built-in"
+	if t.Origin == string(trustprofile.Operator) {
+		origin = "trust.d"
+	}
+	w := fmt.Sprintf("profile %s (%s), %d root", t.Profile, origin, t.RootCount)
+	if t.RootCount != 1 {
+		w += "s"
+	}
+	if len(t.Roots) > 0 {
+		w += ", the first to expire on " + t.Roots[0].NotAfter.Format(time.DateOnly)
+	}
+	return w
 }

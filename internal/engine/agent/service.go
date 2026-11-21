@@ -127,6 +127,10 @@ type Deps struct {
 	// is whether the engine has a direct listener (directAddr is not off).
 	EngineRecord EngineRecordReader
 	DirectServed bool
+	// Trust says what verifies the agent's database certificate now (status
+	// trust, problems TRUST_ROOT_EXPIRING and TRUST_PROFILE_REFUSED); status
+	// leaves trust out when nil.
+	Trust TrustReporter
 	// Database names the database the agent's credential connects to, as
 	// status names a connect-only setup's database ("<host>:<port>, database
 	// <db>"); empty when unknown.

@@ -269,3 +269,15 @@ func (d *TrustedDir) Rename(from, to string) error {
 	}
 	return nil
 }
+
+// Names are the names of the entries in the directory, read through its
+// descriptor, in no set order.
+func (d *TrustedDir) Names() ([]string, error) {
+	dfd, err := unix.Openat(d.fd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: opOpen, Path: d.path, Err: err}
+	}
+	f := os.NewFile(uintptr(dfd), d.path)
+	defer f.Close()
+	return f.Readdirnames(-1)
+}

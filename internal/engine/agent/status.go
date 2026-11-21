@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
@@ -208,7 +209,10 @@ type StatusReport struct {
 	// EngineRecord is the engine's own key in the agent's database; absent
 	// when the engine is down.
 	EngineRecord *EngineRecordStatus `json:"engineRecord,omitempty"`
-	Problems     []Problem           `json:"problems"`
+	// Trust is what verifies the agent's database certificate; absent when
+	// the engine is down.
+	Trust    *TrustStatus `json:"trust,omitempty"`
+	Problems []Problem    `json:"problems"`
 	// Update is set when a newer release is out (CONTRACT.md, Update
 	// notice).
 	Update *UpdateInfo `json:"update,omitempty"`
@@ -379,6 +383,7 @@ type statusDeps struct {
 	engineKey    *string
 	engineRecord EngineRecordReader
 	directServed bool
+	trust        TrustReporter
 	// database names the credential's database (Deps.Database).
 	database string
 	cmds     Commands
@@ -402,7 +407,7 @@ func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, startedBy: s.StartedBy, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
-		engineRecord: s.EngineRecord, directServed: s.DirectServed, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		engineRecord: s.EngineRecord, directServed: s.DirectServed, trust: s.Trust, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
 }
@@ -444,10 +449,12 @@ type LocalStatus struct {
 	EngineKey    *string
 	EngineRecord EngineRecordReader
 	DirectServed bool
-	Probe        Probe
-	Passkeys     func(context.Context) ([]passkey.Credential, error)
-	Log          *slog.Logger
-	Now          func() time.Time
+	// Trust: see Deps.Trust.
+	Trust    TrustReporter
+	Probe    Probe
+	Passkeys func(context.Context) ([]passkey.Credential, error)
+	Log      *slog.Logger
+	Now      func() time.Time
 }
 
 // Report is the status report. It panics on a missing probe, passkey
@@ -463,7 +470,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
 		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
-		engineKey: l.EngineKey, engineRecord: l.EngineRecord, directServed: l.DirectServed,
+		engineKey: l.EngineKey, engineRecord: l.EngineRecord, directServed: l.DirectServed, trust: l.Trust,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
@@ -492,6 +499,8 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	}
 	s.addPortalProblem(&ps)
 	s.addPluginProblems(&ps)
+	var trust *TrustReport
+	r.Trust, trust = s.trustStatus(&ps)
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {
@@ -512,7 +521,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	case err != nil:
 		r.Guard = GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()}
 		if !explained {
-			s.addUnreachable(&ps, err)
+			s.addUnreachable(&ps, err, trust)
 		}
 	default:
 		r.Guard = guardStatusDTO(st)
@@ -758,7 +767,11 @@ func noPasskeySteps(b *Steps, cmds Commands) string {
 
 // addUnreachable is the problem of a guard read that failed: the database
 // refused the credential, or cannot be reached.
-func (s statusDeps) addUnreachable(ps *problems, err error) {
+func (s statusDeps) addUnreachable(ps *problems, err error, trust *TrustReport) {
+	if trustprofile.CertificateNotVerified(err) {
+		s.addCertificateNotVerified(ps, err, trust)
+		return
+	}
 	te := ToolError(err)
 	switch te.Reason {
 	case reasonCredentialRejected:

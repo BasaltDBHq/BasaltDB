@@ -69,8 +69,8 @@ test-systemd: ## A plugin under its systemd unit, isolation checked live (throwa
 	@bash scripts/systemd-smoke/smoke.sh
 
 .PHONY: check-provider-roots
-check-provider-roots: ## Download where each embedded provider roots file is published (Supabase's download URL and its CLI's source, AWS's RDS bundle) and compare with the pinned SHA-256 (needs the network; not in CI)
-	@go test -tags providerroots -run '^TestProviderRootsCurrent$$' -count=1 -v ./internal/providerca/
+check-provider-roots: ## Download each built-in trust profile's source (one per roots file) and compare with the file's pinned SHA-256 (needs the network; not in CI)
+	@go test -tags providerroots -run '^TestProviderRootsCurrent$$' -count=1 -v ./pkg/trustprofile/
 
 .PHONY: test-cover
 test-cover: bin/gotestsum ## Tests with coverage.out

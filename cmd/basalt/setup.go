@@ -45,11 +45,19 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 		if err := installService(c, f, dsn); err != nil {
 			return fmt.Errorf("the guard is installed but the engine service is not (run basalt init again, or with --no-service): %w", err)
 		}
+		if err := servicePin(c, f); err != nil {
+			return err
+		}
 		return offerClaude(c, f)
 	}
 	f, err = perUserPaths(c, f)
 	if err != nil {
 		return err
+	}
+	if f.pin != nil {
+		if err := c.writePin(*f.pin, f.configPath); err != nil {
+			return fmt.Errorf("the guard is installed but the pin is not written (run %s): %w", pinCommand(f.pin.pinTarget, f.configPath, c.goos), err)
+		}
 	}
 	f.initArgs = f.savedArgs(c.goos)
 	cmds, err := f.commands(c.goos)
@@ -595,4 +603,30 @@ func warnAgentIsPerson(c *cliIO, f initFlags) {
 			return
 		}
 	}
+}
+
+// servicePin writes the accepted pin to the service engine's trust.d: in
+// this process as root, else with one sudo basalt trust pin, which reads
+// the chain again and pins it only when it is the one the person accepted
+// (--trust-root).
+func servicePin(c *cliIO, f initFlags) error {
+	if f.pin == nil {
+		return nil
+	}
+	if c.host.Euid() == 0 {
+		return c.writePin(*f.pin, f.configPath)
+	}
+	bin, err := checkedExecutable(c)
+	if err != nil {
+		return err
+	}
+	args := []string{
+		bin, "trust", "pin", "--host", f.pin.host, "--port", strconv.Itoa(f.pin.port),
+		"--trust-root", f.pin.sha256, "--config", f.configPath,
+	}
+	fmt.Fprintln(c.stderr, "basalt: pinning the database's certificate for the engine service with sudo:")
+	if err := c.host.Sudo(c.ctx, args, "", c.stderr, c.stderr); err != nil {
+		return fmt.Errorf("the engine service is installed but the pin is not written (run sudo %s): %w", pinCommand(f.pin.pinTarget, f.configPath, c.goos), err)
+	}
+	return nil
 }

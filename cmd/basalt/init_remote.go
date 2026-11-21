@@ -117,6 +117,8 @@ type remoteFlags struct {
 	timeout                                             time.Duration
 	operatedBy                                          OperatedBy
 	newCode, json, configGiven                          bool
+	// trustRoot is --trust-root: the pin's answer without a terminal.
+	trustRoot string
 	// allTables is --all-tables: every table in public, in place of
 	// --write and --read. forget is --forget, one-shot, never saved.
 	allTables, forget bool
@@ -253,9 +255,11 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs.BoolVar(&f.json, "json", false, "print the result as JSON (remote-init-result.schema.json)")
 	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default on with --operated-by=agent, else off)")
 	fs.StringVar(&f.directAddr, flagDirectAddr, "", directAddrUsage)
+	trustRoot := trustRootFlag(fs)
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	f.trustRoot = *trustRoot
 	var directGiven bool
 	f.given = map[string]bool{}
 	fs.Visit(func(fl *flag.Flag) {
@@ -1178,6 +1182,11 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if err != nil {
 		return err
 	}
+	// Before any probe sends a login: offer to pin a chain no authority
+	// here verifies, so the probes below can reach verify-full with it.
+	if err := r.pin(); err != nil {
+		return err
+	}
 	dsn, applied := hardenedCredential(r.c.ctx, r.c.probe, dsn)
 	fmt.Fprint(r.c.stderr, applied.line())
 	path := r.credFile
@@ -1185,6 +1194,19 @@ func (r *remoteInit) writeCredential(p plan) error {
 		path += pendingSuffix
 	}
 	return r.files.write(path, []byte(dsn+"\n"))
+}
+
+// pin offers to pin the database's chain (initPin) and writes the pin to
+// the engine's trust.d on yes.
+func (r *remoteInit) pin() error {
+	if r.base == nil {
+		return nil
+	}
+	choice, ok, err := r.c.initPin(r.base.String(), r.f.trustRoot, r.f.configPath)
+	if err != nil || !ok {
+		return err
+	}
+	return r.c.writePin(choice, r.f.configPath)
 }
 
 // writeConfig upserts the agent and prints the vault value it wrote.

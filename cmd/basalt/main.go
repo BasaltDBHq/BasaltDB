@@ -60,7 +60,7 @@ func commands() []command {
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
 		{"plugin", "Add, enable, check and remove plugins; sign your own (list | add | enable | disable | check | trust | remove | keygen | sign)", withIO(runPlugin)},
-		{"trust", "List and change which root certificates verify a database host (list | add | remove | disable)", withIO(runTrust)},
+		{"trust", "List and change which root certificates verify a database host (list | add | pin | remove | disable)", withIO(runTrust)},
 		{"crash", "List, show or file the crash reports saved on this machine (list | show <id> | report <id>)", withIO(runCrash)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},

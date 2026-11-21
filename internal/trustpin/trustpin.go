@@ -74,7 +74,7 @@ func Fetch(ctx context.Context, dial Dial, host string, port int) ([]*x509.Certi
 	cfg := &tls.Config{
 		// Only to read the chain: Check verifies it, and nothing but the
 		// handshake is sent on this connection.
-		InsecureSkipVerify: true, //nolint:gosec // the chain is read, not trusted; Check verifies it before anything is sent
+		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS12,
 	}
 	if _, err := netip.ParseAddr(host); err != nil {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -71,6 +72,10 @@ type cliIO struct {
 	// engine tells service mode from same-user mode and finds the person
 	// socket (log, approve, revert); tests replace it.
 	engine engineAccess
+	// fetchChain reads the chain a database presents with the TLS
+	// handshake alone, before a pin is offered (fetchChain outside tests;
+	// nil offers no pin).
+	fetchChain func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// tunnelProbe fetches an engine address's /v1/engine for basalt tunnel
 	// (engineProbe outside tests).
 	tunnelProbe func(ctx context.Context, url string) (probeAnswer, error)
@@ -84,6 +89,7 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		dial:        connect,
 		engine:      osEngineAccess(runtime.GOOS),
 		tunnelProbe: engineProbe,
+		fetchChain:  fetchChain,
 		width:       func() int { return terminalWidth(std.out) },
 	}
 	c.probe = probeLogin(c)
@@ -200,6 +206,9 @@ func (c *cliIO) confirmYes(question string) (bool, error) {
 func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	conn, err := pgdial.Connect(ctx, dsn)
 	if err != nil {
+		if changed := rootChanged(ctx, dsn, err); changed != nil {
+			return nil, fmt.Errorf("connect: %w", changed)
+		}
 		return nil, fmt.Errorf("connect: %w", pgdial.WithCertificateHint(dsn, err))
 	}
 	return conn, nil

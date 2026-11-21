@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -36,6 +37,10 @@ type initFlags struct {
 	agentRLS                                                 AgentRLSMode
 	spec                                                     guard.AgentSpec
 	dryRun, yes, showSQL, skipPasskey, addPasskey, noService bool
+	// trustRoot is --trust-root; pin is the database chain's top the
+	// person accepted, which setupEngine writes to the engine's trust.d.
+	trustRoot string
+	pin       *pinChoice
 	// operatedBy is --operated-by; operatedByGiven is true when it was passed.
 	operatedBy      OperatedBy
 	operatedByGiven bool
@@ -122,6 +127,22 @@ func runInit(c *cliIO, args []string) int {
 	if _, err := guard.AgentConnString(admin, role, ""); err != nil {
 		return c.fail(err)
 	}
+	// Before the admin connection sends anything: offer to pin a chain no
+	// authority here verifies (only the TLS handshake reaches the server).
+	if !f.dryRun {
+		if f.operatedBy == OperatedByAgent && f.trustRoot != "" {
+			return c.fail(fmt.Errorf("%w: --trust-root is refused with --operated-by=agent: an agent never pins a certificate", errUsage))
+		}
+		if f.operatedBy != OperatedByAgent {
+			choice, ok, err := c.initPin(admin, f.trustRoot, f.configPath)
+			if err != nil {
+				return c.fail(err)
+			}
+			if ok {
+				f.pin = &choice
+			}
+		}
+	}
 	conn, err := c.dial(c.ctx, admin)
 	if err != nil {
 		return c.fail(err)
@@ -199,6 +220,11 @@ func runInit(c *cliIO, args []string) int {
 		if err != nil {
 			return c.fail(err)
 		}
+	}
+	if f.pin != nil {
+		// The pin applies with verify-full only, and its chain verified.
+		dsn = withVerifyFull(dsn)
+		recordPin(c, conn, *f.pin)
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
 	warnRLSBlind(c, conn, role, f.spec)
@@ -423,9 +449,11 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 			manyAgentsHelp+"\nRun init again with a new --agent NAME for each database you add.\n\nflags:\n")
 		fs.PrintDefaults()
 	}
+	trustRoot := trustRootFlag(fs)
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	f.trustRoot = *trustRoot
 	var originGiven, directGiven bool
 	fs.Visit(func(fl *flag.Flag) {
 		switch fl.Name {
@@ -707,4 +735,32 @@ func printWarningLines(w io.Writer, warnings []string) {
 	for _, warning := range warnings {
 		fmt.Fprintf(w, "basalt: warning: %s\n", warning)
 	}
+}
+
+// withVerifyFull is dsn with sslmode=verify-full ("" stays ""): a pinned
+// chain verified for the host, and a profile applies with verify-full only.
+func withVerifyFull(dsn string) string {
+	if dsn == "" {
+		return dsn
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	q.Set(paramSSLMode, sslVerifyFull)
+	u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
+	return u.String()
+}
+
+// recordPin records the pin on the admin connection
+// (basalt_meta.record_trust_pin): the ledger keeps it, and status compares
+// the engine's pin with it. A failure is said, not fatal: the pin is the
+// engine's file, the record is only for audit.
+func recordPin(c *cliIO, conn guard.Querier, p pinChoice) {
+	if err := guard.RecordTrustPin(c.ctx, conn, p.host, p.port, p.sha256); err != nil {
+		fmt.Fprintf(c.stderr, "basalt: the pin for %s is not recorded in the ledger: %s\n", terminalText(p.host), terminalText(err.Error()))
+		return
+	}
+	fmt.Fprintf(c.stderr, "basalt: recorded the pin for %s:%d in the ledger\n", terminalText(p.host), p.port)
 }

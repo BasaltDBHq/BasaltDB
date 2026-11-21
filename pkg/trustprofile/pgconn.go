@@ -29,7 +29,7 @@ func Trust(cfg *pgconn.Config, set *Set) {
 			// As pgx does for sslmode=verify-ca: the chain is checked here,
 			// against the pin's roots alone, and the name is not.
 			t.InsecureSkipVerify = true
-			t.VerifyPeerCertificate = chainTo(p.OwnPool())
+			t.VerifyConnection = chainTo(p.OwnPool())
 		default:
 			t.RootCAs = p.Pool()
 		}
@@ -100,19 +100,13 @@ func CertificateNotVerified(err error) bool {
 }
 
 // chainTo verifies the server's chain against roots alone, the host name
-// not checked.
-func chainTo(roots *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
-	return func(raw [][]byte, _ [][]*x509.Certificate) error {
-		if len(raw) == 0 {
+// not checked. It is a VerifyConnection, which runs on every handshake, a
+// resumed session's included.
+func chainTo(roots *x509.CertPool) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		certs := cs.PeerCertificates
+		if len(certs) == 0 {
 			return &tls.CertificateVerificationError{Err: errors.New("the server sent no certificate")}
-		}
-		certs := make([]*x509.Certificate, 0, len(raw))
-		for _, b := range raw {
-			c, err := x509.ParseCertificate(b)
-			if err != nil {
-				return &tls.CertificateVerificationError{Err: err}
-			}
-			certs = append(certs, c)
 		}
 		inter := x509.NewCertPool()
 		for _, c := range certs[1:] {

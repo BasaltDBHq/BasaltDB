@@ -170,6 +170,16 @@ func trustStatusCases(operatedBy string) map[string]statusCase {
 			p := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, caExpiring(t, statusNow.Add(24*time.Hour)))
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}))
 		}},
+		problemTrustRootChanged: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			r, _ := pinnedStatus(t, operatedBy, true, "")
+			return r
+		}},
+		problemTrustPinMismatch: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			r, _ := pinnedStatus(t, operatedBy, false, pinSHAOther)
+			return r
+		}},
 		problemTrustProfileRefused: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem},
@@ -193,4 +203,62 @@ func TestStatusCertificateNotVerifiedOwnRoots(t *testing.T) {
 		require.Equal(t, "basalt trust list", p.NextSteps[0].Command, applies)
 		require.NotContains(t, p.PersonMessage, "trust add", applies)
 	}
+}
+
+// pinSHAOther is a fingerprint no test pin holds.
+const pinSHAOther = "5f9b77951a7aa1303f9b58eea9bfa89e358cfdc15f9786ff10d4930a722c9ae2"
+
+// pinnedStatus is the status of an agent whose database is pinned: with
+// certErr the connection fails on the certificate and the database now
+// presents another root; recorded, when set, is the ledger's pin.
+func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string) (StatusReport, *x509.Certificate) {
+	t.Helper()
+	const host = "db.internal.example.com"
+	pinnedCA := caExpiring(t, statusNow.Add(400*24*time.Hour))
+	p := trustprofiletest.Profile(t, trustprofile.Operator, trustprofile.PinName(host), []string{"=" + host}, pinnedCA)
+	now := caExpiring(t, statusNow.Add(500*24*time.Hour))
+	probe := &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	if certErr {
+		probe = &fakeProbe{err: fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})}
+	}
+	rep := func() TrustReport {
+		r := TrustReport{
+			Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}, Port: 5432,
+			Presented: func(context.Context) (*x509.Certificate, error) { return now, nil },
+		}
+		if recorded != "" {
+			r.Recorded = func(context.Context) (string, bool, error) { return recorded, true, nil }
+		}
+		return r
+	}
+	return trustStatusOf(t, operatedBy, probe, rep), now
+}
+
+// A pinned database presenting another root is TRUST_ROOT_CHANGED, naming
+// both fingerprints and basalt trust pin, not CERTIFICATE_NOT_VERIFIED.
+func TestStatusTrustRootChanged(t *testing.T) {
+	t.Parallel()
+	r, now := pinnedStatus(t, "", true, "")
+	p := findProblem(t, r, problemTrustRootChanged)
+	require.Equal(t, "ERROR", p.Severity)
+	require.Contains(t, p.Message, trustprofile.Fingerprint(now))
+	require.Contains(t, p.Message, "pinned to")
+	require.Equal(t, "sudo basalt trust pin --host db.internal.example.com --port 5432", p.NextSteps[0].Command)
+	for _, q := range r.Problems {
+		require.NotEqual(t, problemCertificateNotVerified, q.Code)
+	}
+}
+
+// The ledger recording another pin is TRUST_PIN_MISMATCH; the same pin, or
+// none recorded, is no problem.
+func TestStatusTrustPinMismatch(t *testing.T) {
+	t.Parallel()
+	r, _ := pinnedStatus(t, "", false, pinSHAOther)
+	p := findProblem(t, r, problemTrustPinMismatch)
+	require.Equal(t, "WARNING", p.Severity)
+	require.Contains(t, p.Message, pinSHAOther)
+	require.True(t, r.Ready)
+
+	r, _ = pinnedStatus(t, "", false, "")
+	require.Empty(t, r.Problems, "no record is no problem")
 }

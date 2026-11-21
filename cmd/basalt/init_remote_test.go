@@ -84,6 +84,7 @@ func cliNoDBEnv(t *testing.T, probe func(context.Context, string) error, env map
 		})
 	c.agentLogin = refusedLogin
 	c.probe = probe
+	c.fetchChain = nil // no network: the example hosts are never dialed
 	c.host = systemSocketHost(t)
 	code := runInit(c, args[1:])
 	return result{code, stdout.String(), stderr.String()}

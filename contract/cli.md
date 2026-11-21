@@ -50,7 +50,7 @@ The rules below hold for every job, whichever page runs the SQL.
 
 ### `basalt mcp`
 
-`basalt mcp [--agent NAME]`. Run by the MCP client. It finds the config ([Config discovery](#config-discovery)), connects to the agent's socket and serves MCP on stdio. When the engine is down it starts it (`basalt engine --config <the path it found> --supervise --started-by mcp`) and, while it waits, answers `status` from the config.
+`basalt mcp [--agent NAME]`. Run by the MCP client. It finds the config ([Config discovery](#config-discovery)), connects to the agent's socket and serves MCP on stdio. When the engine is down it answers `status` from the config. It starts the engine itself (`basalt engine --config <the path it found> --supervise --started-by mcp`) only for a same-user config, never a service engine's ([`basalt mcp` starts a same-user engine](next-steps.md#next-steps)); a service engine is the service manager's to start.
 
 ### Auto-open
 

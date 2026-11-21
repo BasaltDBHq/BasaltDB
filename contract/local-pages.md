@@ -12,7 +12,7 @@ Persona 1 (a person-operated engine). The engine serves the setup, approval, rev
 |---|---|
 | `GET /healthz` | `200 ok`; the probe |
 | `GET /approvals/{approvalId}`, `GET /reverts/{revertId}` | The approval or revert page. A fragment `#1.<request>` is the long link: the page reads the request from it and checks its id equals the path's. A fragment `#s=<secret>` is the short link: the page reads the request from the engine, sending the secret in the `basalt-link-secret` header |
-| `GET /passkeys/register` | The registration page. Removed as a page of its own: a passkey is registered on the setup page, in a setup job. `basalt init`'s own page server and its hand-back route `POST /api/v1/passkeys/register` are removed |
+| `GET /passkeys/register` | The registration page, which the setup page uses to register a passkey in a setup job. `basalt init`'s own page server and its hand-back route `POST /api/v1/passkeys/register` are removed |
 | `GET /passkeys/check`, `GET /passkeys/forget` | The passkey management page (M4.1, [Passkey management](passkey-management.md#passkey-management)); it reads its request from the fragment and refuses one whose mode is not its path's |
 | `GET /lib/*.js`, `GET /style.css` | The pages' scripts and style; nothing else under `web/` is served |
 | `GET /api/v1/approvals/{approvalId}` | The approval request, the JSON the long link carries: [`approval-request.schema.json`](../api/mcp/approval/approval-request.schema.json), with `columns` for display only (see below the table). Needs the link's secret |

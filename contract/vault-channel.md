@@ -1,5 +1,7 @@
 ## Vault channel
 
+**Target.** The direct transport is removed ([Removed](cli.md#removed)): the relay (`RELAY`) is the only transport. Every passage below about `DIRECT`, a pinned engine address or the direct listener is removed with it.
+
 Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine with no inbound port reaches the person's browser through the hosted Vault (`relay.basaltvault.app`, VC-20). The engine dials out, the portal page dials in, and the two run an end-to-end encrypted session keyed by the short link's secret, inside which the page speaks the same pages API the engine serves on loopback. The Vault pairs sockets and forwards opaque bytes.
 
 **The Vault is untrusted.** Neither the engine nor the page depends on it being honest. A Vault that drops, delays, duplicates, reorders, replays, truncates, reflects or alters any message can make a session fail, never make either side accept something. It never holds a key that opens a session (VC-4). The Vault service is closed source (VC-13, VC-18): this section is the whole protocol it must speak, and its internals (hosting, storage, its own rate numbers) are not part of the contract. Schemas, the close-code registry and the vector format: [`api/mcp/vault/`](../api/mcp/vault/).

@@ -283,7 +283,9 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 	if err != nil {
 		return fail(io.err, "mcp", err)
 	}
-	opts := shim.Options{}
+	// Links to the engine's own local pages open in the browser on a
+	// person-operated engine; the engine says which in its hello answer.
+	opts := shim.Options{Open: h.OpenURL}
 	if exe, err := shimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = engineStarter(enginePath(*configPath), path, down.Config, h.Euid(), exe, log)

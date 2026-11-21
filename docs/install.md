@@ -87,6 +87,8 @@ Basalt checks the database's certificate whenever it can. Supabase and Amazon RD
 basalt trust add --name mydb --match '=db.example.com' --ca ./ca.pem
 ```
 
+Or let Basalt read it from the server and pin it for that one host, as SSH does: `basalt init` asks on first use, and `basalt trust pin --host db.example.com` asks any time. It shows the certificate's SHA-256; check it against your provider's console (Cloud SQL: `gcloud sql ssl server-ca-certs list`) before you say yes. Without a terminal, pass `--trust-root <SHA-256>`. If the database later presents another CA, `basalt status` says `TRUST_ROOT_CHANGED` with both fingerprints, and `basalt trust pin` accepts the new one.
+
 `--match` takes one host (`=db.example.com`) or a domain whose hosts it covers (`example.com`), never a bare public suffix such as `com`. Use `sudo` when the engine runs as a service. The engine uses the profile from its next connection; no restart. `basalt trust list` shows every profile, its roots' fingerprints and expiry dates, and which one verifies each agent's database. `basalt status` warns 90 days before a root in use expires. Naming the CA with `sslrootcert=/path/ca.pem` in the connection string still works and wins over any profile.
 
 ### Connections

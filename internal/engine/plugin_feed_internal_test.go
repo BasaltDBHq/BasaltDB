@@ -779,6 +779,7 @@ func feedKindCases(run, task, approvalID, revertID uuid.UUID) []feedKindCase {
 		{kind: "ENGINE_RECORDED", detail: map[string]any{}},
 		{kind: "ENGINE_REVOKED", detail: map[string]any{}},
 		{kind: "PIN_SET_ASIDE", detail: map[string]any{}},
+		{kind: "TRUST_PIN_RECORDED", detail: map[string]any{"host": "db.example.com", "port": 5432}},
 		{kind: "PASSKEY_REVOKED", detail: map[string]any{}},
 		{kind: "ROWS_REVEALED", detail: map[string]any{}},
 		{kind: "PLUGIN_ENABLED", detail: map[string]any{"name": "zz-other", "instance": "default"}},

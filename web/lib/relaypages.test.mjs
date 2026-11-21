@@ -144,3 +144,11 @@ test("registration and the plugin page never use the relay", () => {
     assert.doesNotMatch(src, /pageTransport|relay\.js|relayTransport/, f);
   }
 });
+
+test("each page shows the receipt against the item and the binding it signed", () => {
+  for (const [f, kind, idField] of [["approve.js", "APPROVAL", "approvalId"], ["revert.js", "REVERT", "revertId"]]) {
+    const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
+    assert.ok(src.includes(`await showReceipt(result, relay.session, { kind: "${kind}", itemId: response.${idField}, rowsHash: binding.rowsHash });`), f);
+    assert.match(src, /async function finish\(response, relay, binding\)/, f);
+  }
+});

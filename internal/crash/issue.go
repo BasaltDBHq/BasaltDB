@@ -13,7 +13,7 @@ const IssueBase = "https://github.com/BasaltDBHq/BasaltDB/issues/new"
 // past about 8 KB; this leaves room for proxies and terminals.
 const maxURL = 6000
 
-const trimmedNote = "...stack trimmed to fit the link; the full text is in `basalt crash show`..."
+const trimmedNote = "...stack trimmed to fit the link; the full text is in the saved report..."
 
 // Title is the issue title: the command and what happened.
 func (rep Report) Title() string {
@@ -31,7 +31,7 @@ func (rep Report) Title() string {
 // body is the issue text with stack as the stack's text.
 func (rep Report) body(stack string) string {
 	var b strings.Builder
-	b.WriteString("Saved by `basalt crash report`. It holds what `basalt crash show " + rep.ID + "` prints and nothing else.\n\n")
+	b.WriteString("Crash report " + rep.ID + ", saved by basalt. It holds the saved report and nothing else.\n\n")
 	b.WriteString("| | |\n|---|---|\n")
 	row := func(k, v string) {
 		if v != "" {

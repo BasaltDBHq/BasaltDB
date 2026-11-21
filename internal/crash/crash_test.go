@@ -242,3 +242,20 @@ func TestIssueURLWithinCutsTheStackToTheLimit(t *testing.T) {
 	whole, _ := rep.IssueURL()
 	require.Greater(t, len(whole), 1800)
 }
+
+func TestIssueURLWithinFitsTheBudgetForTheWorstReport(t *testing.T) {
+	t.Parallel()
+	// Every field at its bound, and a stack of characters that each become
+	// three characters in the link.
+	rep := Report{
+		ID: strings.Repeat("a", 36), Version: strings.Repeat("v", maxField), Command: strings.Repeat("c", 40),
+		OS: strings.Repeat("o", maxField), Arch: strings.Repeat("a", maxField), GoVersion: strings.Repeat("g", maxField),
+		ErrorCode: strings.Repeat("E", maxField), Message: strings.Repeat("é", maxMessage/2),
+		Stack: strings.Repeat("é <>&\n", 3000),
+	}
+	for _, limit := range []int{1800} {
+		link, trimmed := rep.IssueURLWithin(limit)
+		require.True(t, trimmed)
+		require.LessOrEqual(t, len(link), limit)
+	}
+}

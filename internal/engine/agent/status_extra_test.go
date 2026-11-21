@@ -39,7 +39,7 @@ func TestStatusShowsTheSavedCrashReportAndItsLink(t *testing.T) {
 	newest, err := rec.Save(crash.Input{Command: "write", Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte("main.g()\n\t/src/b.go:2 +0x2\n")})
 	require.NoError(t, err)
 
-	r, _ := extraStatus(t, func(d *Deps) { d.CrashDir = dir })
+	r, _ := extraStatus(t, func(d *Deps) { d.CrashDirs = []string{dir} })
 	require.NotNil(t, r.Crash)
 	require.Equal(t, newest.ID, r.Crash.ID, "the newest report")
 	require.Equal(t, "write", r.Crash.Command)
@@ -56,14 +56,14 @@ func TestStatusCrashLinkIsCutToTheLinkBudget(t *testing.T) {
 	rec := crash.Recorder{Dir: dir, Version: "v1", Scrub: crash.NewScrubber("", "", nil), Now: func() time.Time { return statusNow }}
 	_, err := rec.Save(crash.Input{Command: "query", Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
 	require.NoError(t, err)
-	r, _ := extraStatus(t, func(d *Deps) { d.CrashDir = dir })
+	r, _ := extraStatus(t, func(d *Deps) { d.CrashDirs = []string{dir} })
 	require.NotNil(t, r.Crash)
 	require.LessOrEqual(t, len(r.Crash.IssueURL), 1800)
 }
 
 func TestStatusLeavesCrashOutWhenNoneIsSaved(t *testing.T) {
 	t.Parallel()
-	r, raw := extraStatus(t, func(d *Deps) { d.CrashDir = filepath.Join(t.TempDir(), "none") })
+	r, raw := extraStatus(t, func(d *Deps) { d.CrashDirs = []string{filepath.Join(t.TempDir(), "none")} })
 	require.Nil(t, r.Crash)
 	require.NotContains(t, raw, `"crash"`)
 	require.NoError(t, os.MkdirAll(t.TempDir(), 0o700))

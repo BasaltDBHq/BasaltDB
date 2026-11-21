@@ -24,7 +24,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
@@ -756,7 +755,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Vault:         env.vault,
 		Portal:        env.portal,
 		Plugins:       env.plugins,
-		CrashDir:      filepath.Join(env.stateDir, crash.DirName),
+		CrashDirs:     crashDirs(env.stateDir),
 		Access:        func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
 		Update:        env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {

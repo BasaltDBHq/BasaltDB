@@ -383,7 +383,7 @@ type statusDeps struct {
 	vault                     VaultReporter
 	portal                    PortalReporter
 	plugins                   PluginReporter
-	crashDir                  string
+	crashDirs                 []string
 	linkBudget                int
 	access                    AccessReader
 	update                    *UpdateInfo
@@ -417,7 +417,7 @@ func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, startedBy: s.StartedBy, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
-		crashDir: s.CrashDir, linkBudget: s.LinkBudget, access: s.Access,
+		crashDirs: s.CrashDirs, linkBudget: s.LinkBudget, access: s.Access,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, trust: s.Trust, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}

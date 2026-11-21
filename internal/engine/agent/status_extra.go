@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 
@@ -67,18 +68,22 @@ type AccessReader func(ctx context.Context) (pgcatalog.Access, error)
 
 // crashStatus is the newest report in the crash directory, or nil.
 func (s statusDeps) crashStatus() *CrashStatus {
-	if s.crashDir == "" {
-		return nil
-	}
-	reports := crash.List(s.crashDir)
+	reports := crash.List(s.crashDirs...)
 	if len(reports) == 0 {
 		return nil
 	}
 	rep := reports[0]
 	link, _ := rep.IssueURLWithin(s.linkBudget)
+	path := ""
+	for _, d := range s.crashDirs {
+		if p := filepath.Join(d, rep.ID+".json"); fileExists(p) {
+			path = p
+			break
+		}
+	}
 	return &CrashStatus{
 		ID: rep.ID, Time: rep.Time.UTC().Format("2006-01-02T15:04:05Z"), Version: rep.Version, Command: rep.Command,
-		Path: filepath.Join(s.crashDir, rep.ID+".json"), IssueURL: link,
+		Path: path, IssueURL: link,
 	}
 }
 
@@ -132,4 +137,9 @@ func (s statusDeps) pluginHealth() []PluginHealth {
 		out = append(out, h)
 	}
 	return out
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

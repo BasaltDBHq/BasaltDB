@@ -212,7 +212,7 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 
 // TestInitWarnsWhenRLSHidesRows: init warns about each agent table where
 // row-level security hides every row from the agent role (Supabase can
-// turn RLS on for new tables), adds no policy for it, and stays quiet
+// turn RLS on for new tables), adds no policy for it with --agent-rls=none, and stays quiet
 // once a policy lets the role see rows. basalt log warns the same.
 func TestInitWarnsWhenRLSHidesRows(t *testing.T) {
 	t.Parallel()
@@ -225,7 +225,7 @@ func TestInitWarnsWhenRLSHidesRows(t *testing.T) {
 	require.NotContains(t, r.stderr, "row-level security", "RLS off")
 
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
-	path := initAgent(t, d, cfgPath)
+	path := filepath.Join(filepath.Dir(cfgPath), "agents", "bot.url")
 	role := d.Names.Prefix + "_agent_bot"
 	require.Contains(t, initOut(t, d, cfgPath),
 		"basalt: warning: row-level security is on for public.leads and no policy lets "+role+
@@ -275,7 +275,7 @@ func agentPolicyCount(t *testing.T, d *guardtest.DB) int {
 // per agent table RLS hides (row count shown, default no); yes adds the
 // agent policy and the agent sees the rows; no leaves 0 rows and the
 // warning; re-init asks only about new blind tables; without a terminal
-// or with --yes nothing is added unless --agent-rls=all-rows; tables not
+// with --yes every table is added unless --agent-rls=none or a list; tables not
 // granted to the agent are never touched (decision "Agent RLS", Nov 12).
 func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 	t.Parallel()
@@ -338,11 +338,28 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		require.Equal(t, exitOK, r.code, r.stderr)
 		require.NotContains(t, r.stderr, "hides its rows")
 		require.Contains(t, r.stderr, "row-level security is on for public.leads and no policy lets")
-		r = initRun(t, d, h, "linux", true, "", append(args, "--yes")...)
+		// --yes alone and --yes --agent-rls=none: none adds nothing, prints no line.
+		r = initRun(t, d, h, "linux", true, "", append(args, "--yes", "--agent-rls", "none")...)
 		require.Equal(t, exitOK, r.code, r.stderr)
 		require.NotContains(t, r.stderr, "hides its rows")
+		require.NotContains(t, r.stderr, "can see all rows of")
 		require.Zero(t, agentRows(t, cred, "public.leads"))
 		require.Zero(t, agentPolicyCount(t, d))
+
+		// --dry-run shows the policies in its SQL and changes nothing.
+		r = initRun(t, d, h, "linux", true, "", append(args, "--dry-run")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Contains(t, r.stdout, "CREATE POLICY "+d.Names.Prefix+"_agent_bot ON public.leads AS PERMISSIVE FOR ALL")
+		require.Contains(t, r.stderr, "bot can see all rows of public.leads")
+		require.Zero(t, agentPolicyCount(t, d))
+
+		// --yes alone adds every table and says so.
+		r = initRun(t, d, h, "linux", true, "", append(args, "--yes")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Contains(t, r.stderr, "bot can see all rows of public.leads")
+		require.Contains(t, r.stderr, "--agent-rls=none")
+		require.Equal(t, 200, agentRows(t, cred, "public.leads"))
+		require.Equal(t, 1, agentPolicyCount(t, d))
 
 		r = initRun(t, d, h, "linux", false, "", append(args, "--yes", "--agent-rls", "all-rows")...)
 		require.Equal(t, exitOK, r.code, r.stderr)
@@ -432,7 +449,7 @@ func initOut(t *testing.T, d *guardtest.DB, configPath string) string {
 	t.Helper()
 	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", configPath, "--os-user", "tester", "--yes", "--skip-passkey")
+		"--config", configPath, "--os-user", "tester", "--yes", "--agent-rls", "none", "--skip-passkey")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	return r.stderr
 }

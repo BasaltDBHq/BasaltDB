@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 )
 
@@ -157,7 +158,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 		sleep:          sleepCtx,
 		now:            time.Now,
 		log:            log,
-		lastStop:       func(reason string) { writeLastStop(stateDir, reason, time.Now(), log) },
+		lastStop:       func(reason string) { writeLastStop(stateDir, reason, configPath, time.Now(), log) },
 	}
 	if err := supervise(ctx, o); err != nil {
 		return fail(io.err, "engine", err)
@@ -234,13 +235,8 @@ func childStarter(startedFrom, configPath, lockPath, stateDir string, io stdio, 
 	}
 }
 
-type lastStop struct {
-	Reason string    `json:"reason"`
-	At     time.Time `json:"at"`
-}
-
-func writeLastStop(stateDir, reason string, at time.Time, log *slog.Logger) {
-	raw, err := json.Marshal(lastStop{Reason: reason, At: at.UTC()})
+func writeLastStop(stateDir, reason, configPath string, at time.Time, log *slog.Logger) {
+	raw, err := json.Marshal(laststop.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: laststop.HashEngineJSON(configPath)})
 	if err == nil {
 		err = os.MkdirAll(stateDir, privateDirMode)
 	}

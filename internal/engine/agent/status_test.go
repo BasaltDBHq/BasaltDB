@@ -25,6 +25,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -187,7 +188,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			cmds, err := NewCommands("bot", "", "linux", nil)
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.")
+			r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
 			require.NoError(t, err)
 			return r
 		}},
@@ -1023,7 +1024,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	const why = "basalt mcp could not start the engine: the engine did not start within 15s. Its log is /s/engine.log."
 	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
 
-	r, err := EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, why)
+	r, err := EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, why, "")
 	require.NoError(t, err)
 	require.Equal(t, problemEngineStartFailed, r.Problems[0].Code, "the start failure comes first")
 	require.Equal(t, why, r.Problems[0].Message)
@@ -1042,7 +1043,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Contains(t, te.Message, why)
 
 	// Without a failure nothing is added.
-	r, err = EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, "")
+	r, err = EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, "", "")
 	require.NoError(t, err)
 	require.Equal(t, problemEngineUnreachable, r.Problems[0].Code)
 	require.Len(t, r.Problems, 1)
@@ -1102,4 +1103,69 @@ func TestReadLastStopRefusesASymlinkAndAFifo(t *testing.T) {
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, lastStopFile), 0o600))
 	_, ok = ReadLastStop(dir)
 	require.False(t, ok, "a pipe is not the record and does not block")
+}
+
+func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "engine.json")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
+	at := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	rec, err := json.Marshal(laststop.LastStopFileRecord{
+		Reason: "the engine crashed 5 times within 10s; last: exit status 1",
+		At:     at, EngineSHA256: laststop.HashEngineJSON(cfgPath),
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), rec, 0o600))
+	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
+	now := at.Add(30 * time.Second)
+
+	r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", now, "", cfgPath)
+	require.NoError(t, err)
+	p := findProblem(t, r, problemEngineGaveUp)
+	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1. The next try is at 2026-11-21T08:01:00Z.", p.Message)
+	// lastStop on the wire stays {reason, at}.
+	raw, err := json.Marshal(r.Engine.LastStop)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "engineSha256")
+	require.JSONEq(t, `{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-21T08:00:00Z"}`, string(raw))
+
+	// After the minute, the next-try sentence is gone; the reason stays.
+	r, err = EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", at.Add(time.Minute), "", cfgPath)
+	require.NoError(t, err)
+	p = findProblem(t, r, problemEngineGaveUp)
+	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
+
+	// Editing engine.json ends the hold-off message too.
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v2\n"), 0o600))
+	r, err = EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", now, "", cfgPath)
+	require.NoError(t, err)
+	p = findProblem(t, r, problemEngineGaveUp)
+	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
+}
+
+func TestEngineDownToolNamesHoldOff(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "engine.json")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
+	at := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	rec, err := json.Marshal(laststop.LastStopFileRecord{
+		Reason: "the engine crashed 5 times within 10s; last: exit status 1",
+		At:     at, EngineSHA256: laststop.HashEngineJSON(cfgPath),
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), rec, 0o600))
+	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
+	now := at.Add(30 * time.Second)
+	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, ConfigPath: cfgPath, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}
+
+	_, callErr := down.unreachable("query")(context.Background(), nil)
+	require.Error(t, callErr)
+	require.Contains(t, callErr.Error(), "the engine stopped and was not restarted: the engine crashed 5 times within 10s")
+	require.Contains(t, callErr.Error(), "The next try is at 2026-11-21T08:01:00Z")
 }

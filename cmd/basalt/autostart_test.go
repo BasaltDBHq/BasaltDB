@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 )
 
@@ -284,6 +286,79 @@ func TestEngineStarterEngineRunsButNeverServesThisSocket(t *testing.T) {
 
 	// The engine goes away: the next call starts one.
 	l.Release()
+	require.NoError(t, start(context.Background()))
+	require.EqualValues(t, 1, r.launches.Load())
+}
+
+func writeGiveUp(t *testing.T, stateDir, configPath, reason string, at time.Time) string {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(stateDir, 0o700))
+	rec := laststop.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: laststop.HashEngineJSON(configPath)}
+	raw, err := json.Marshal(rec)
+	require.NoError(t, err)
+	path := filepath.Join(stateDir, engine.LastStopFile)
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+	return path
+}
+
+// After the supervisor gives up, a call in the next minute launches nothing
+// and returns at once, using last-stop.json's at, never the file's mtime.
+func TestEngineStarterHoldsOffAfterGiveUp(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	cfgPath := filepath.Join(filepath.Dir(r.exe), "engine.json")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
+	now := time.Date(2026, 11, 21, 8, 0, 30, 0, time.UTC)
+	at := now.Add(-30 * time.Second)
+	record := writeGiveUp(t, r.cfg.StateDir, cfgPath, "the engine crashed 5 times within 10s; last: exit status 1", at)
+	// A mismatched mtime must not change the hold-off.
+	require.NoError(t, os.Chtimes(record, now.Add(2*time.Hour), now.Add(2*time.Hour)))
+
+	d := r.deps(testEuid, nil)
+	d.now = func() time.Time { return now }
+	start, failure := newEngineStarter(d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+
+	began := time.Now()
+	err := start(context.Background())
+	require.Less(t, time.Since(began), time.Second)
+	require.ErrorContains(t, err, "the supervisor gave up at 2026-11-21T08:00:00Z")
+	require.ErrorContains(t, err, "the engine crashed 5 times within 10s")
+	require.ErrorContains(t, err, "the next try is at 2026-11-21T08:01:00Z")
+	require.EqualValues(t, 0, r.launches.Load(), "a hold-off launches nothing")
+	require.Empty(t, failure(), "hold-off is not ENGINE_START_FAILED")
+}
+
+// After the minute passes, the next call starts a supervisor again.
+func TestEngineStarterTriesAgainAfterHoldOff(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	cfgPath := filepath.Join(filepath.Dir(r.exe), "engine.json")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
+	now := time.Date(2026, 11, 21, 8, 2, 0, 0, time.UTC)
+	writeGiveUp(t, r.cfg.StateDir, cfgPath, "the engine crashed 5 times within 10s; last: exit status 1", now.Add(-2*time.Minute))
+
+	d := r.deps(testEuid, nil)
+	d.now = func() time.Time { return now }
+	start, _ := newEngineStarter(d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+
+	require.NoError(t, start(context.Background()))
+	require.EqualValues(t, 1, r.launches.Load())
+}
+
+// Editing engine.json during the hold-off starts a supervisor at once.
+func TestEngineStarterHoldOffEndsWhenEngineJSONChanges(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	cfgPath := filepath.Join(filepath.Dir(r.exe), "engine.json")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
+	now := time.Date(2026, 11, 21, 8, 0, 30, 0, time.UTC)
+	writeGiveUp(t, r.cfg.StateDir, cfgPath, "the engine crashed 5 times within 10s; last: exit status 1", now.Add(-30*time.Second))
+	require.NoError(t, os.WriteFile(cfgPath, []byte("v2\n"), 0o600))
+
+	d := r.deps(testEuid, nil)
+	d.now = func() time.Time { return now }
+	start, _ := newEngineStarter(d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+
 	require.NoError(t, start(context.Background()))
 	require.EqualValues(t, 1, r.launches.Load())
 }

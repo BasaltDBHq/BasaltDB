@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"runtime"
 	"time"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
 )
@@ -34,6 +36,9 @@ type EngineDown struct {
 	// on its last try ("" when it did not try or it worked): shown in status
 	// as ENGINE_START_FAILED and in the answer to every other call.
 	StartFailure func() string
+	// ConfigPath is the engine.json path, used to end the start hold-off
+	// when that file has changed since the supervisor gave up.
+	ConfigPath string
 }
 
 func (d EngineDown) startFailure() string {
@@ -41,6 +46,22 @@ func (d EngineDown) startFailure() string {
 		return ""
 	}
 	return d.StartFailure()
+}
+
+// gaveUpMessage is the ENGINE_GAVE_UP sentence during a start hold-off, or
+// "" when the hold-off does not apply.
+func (d EngineDown) gaveUpMessage() string {
+	if d.Config == nil {
+		return ""
+	}
+	stop, ok := ReadLastStop(d.Config.StateDirFor(runtime.GOOS))
+	if !ok {
+		return ""
+	}
+	if _, holding := laststop.StartHoldOffUntil(lastStopRecord(stop), d.ConfigPath, d.Now()); !holding {
+		return ""
+	}
+	return engineGaveUpMessage(stop, d.ConfigPath, d.Now())
 }
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
@@ -69,7 +90,7 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
-	return EngineDownStatusAfterStart(d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure())
+	return EngineDownStatusAfterStart(d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
 }
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {
@@ -77,6 +98,8 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 		message := "the basalt engine does not answer on this agent's socket, so " + tool + " cannot run; status still works"
 		if f := d.startFailure(); f != "" {
 			message += ". " + f
+		} else if m := d.gaveUpMessage(); m != "" {
+			message += ". " + m
 		}
 		te, err := d.unreachableError(tool, tool, message)
 		if err != nil {

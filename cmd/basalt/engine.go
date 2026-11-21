@@ -327,7 +327,7 @@ func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, er
 	if err != nil {
 		return agent.EngineDown{}, err
 	}
-	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now}, nil
+	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath}, nil
 }
 
 // shimExecutable is the path of this binary as a starter runs it: the

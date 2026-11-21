@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
@@ -39,10 +41,12 @@ type starterDeps struct {
 	answers func(socket string) bool
 	// wait is how long start waits for the socket to answer.
 	wait time.Duration
+	// now is the clock for the start hold-off; tests replace it.
+	now func() time.Time
 }
 
 func osStarterDeps() starterDeps {
-	return starterDeps{owner: pathOwner, launch: launchDetached, answers: socketAnswers, wait: shim.DefaultStartWait}
+	return starterDeps{owner: pathOwner, launch: launchDetached, answers: socketAnswers, wait: shim.DefaultStartWait, now: time.Now}
 }
 
 func pathOwner(path string) (int, error) {
@@ -120,12 +124,32 @@ type starter struct {
 func (s *starter) stateDir() string { return s.cfg.StateDirFor(runtime.GOOS) }
 
 func (s *starter) failure() string {
+	if _, _, holding := s.holdOff(); holding {
+		return ""
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed == "" {
 		return ""
 	}
 	return fmt.Sprintf("basalt mcp could not start the engine: %s. Its log is %s.", s.failed, filepath.Join(s.stateDir(), engineLogName))
+}
+
+func (s *starter) now() time.Time {
+	if s.deps.now != nil {
+		return s.deps.now()
+	}
+	return time.Now()
+}
+
+// holdOff reports whether last-stop.json still holds off a new start.
+func (s *starter) holdOff() (until time.Time, stop agent.LastStop, ok bool) {
+	stop, ok = agent.ReadLastStop(s.stateDir())
+	if !ok {
+		return time.Time{}, agent.LastStop{}, false
+	}
+	until, ok = laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
+	return until, stop, ok
 }
 
 func (s *starter) record(err error) error {
@@ -140,11 +164,12 @@ func (s *starter) record(err error) error {
 }
 
 // start follows the steps of the contract: the start lock, the engine lock
-// again under it, the log, the detached supervisor, and the wait for the
-// agent's socket to answer. Only the text of the last failure is
-// remembered between calls, and whether an engine that holds its lock
-// failed to serve this socket (then the next calls look once and do not
-// wait again until that engine is gone).
+// again under it, a supervisor holding supervise.lock, the last-stop
+// hold-off, the log, the detached supervisor, and the wait for the agent's
+// socket to answer. Only the text of the last failure is remembered
+// between calls, and whether an engine that holds its lock failed to serve
+// this socket (then the next calls look once and do not wait again until
+// that engine is gone).
 func (s *starter) start(ctx context.Context) error {
 	// An update drops empty folders and resets modes; these are ours.
 	if err := os.MkdirAll(s.cfg.SocketDir, privateDirMode); err != nil {
@@ -175,6 +200,10 @@ func (s *starter) start(ctx context.Context) error {
 		return s.waitSocket(ctx)
 	}
 	s.forgetStuck()
+	if until, stop, ok := s.holdOff(); ok {
+		// The shim treats an error as "try the socket once, do not wait".
+		return fmt.Errorf("the supervisor gave up at %s: %s; the next try is at %s", stop.At.UTC().Format(time.RFC3339), stop.Reason, until.UTC().Format(time.RFC3339))
+	}
 	if _, err := os.Stat(s.exe); err != nil {
 		return s.record(fmt.Errorf("the basalt binary %s is gone", s.exe))
 	}

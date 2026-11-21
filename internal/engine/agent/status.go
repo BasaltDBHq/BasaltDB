@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -276,6 +277,9 @@ type EngineStatus struct {
 type LastStop struct {
 	Reason string    `json:"reason"`
 	At     time.Time `json:"at"`
+	// EngineSHA256 is last-stop.json's engineSha256, used only to decide
+	// the start hold-off; it is never sent in status.
+	EngineSHA256 string `json:"-"`
 }
 
 // GuardStatus is status.guard.
@@ -545,7 +549,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
 func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
-	return EngineDownStatusAfterStart(name, cmds, cfg, cfgErr, build, now, "")
+	return EngineDownStatusAfterStart(name, cmds, cfg, cfgErr, build, now, "", "")
 }
 
 // EngineDownStatusAfterStart is EngineDownStatus for a basalt mcp that tried
@@ -553,7 +557,7 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr err
 // ("basalt mcp could not start the engine: <reason>. Its log is <path>."),
 // shown as the problem ENGINE_START_FAILED before ENGINE_UNREACHABLE, whose
 // steps stay.
-func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure string) (StatusReport, error) {
+func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
@@ -579,7 +583,7 @@ func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, 
 	if cfg != nil {
 		if stop, ok := ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
 			r.Engine.LastStop = &stop
-			ps.add(problemEngineGaveUp, "the engine stopped and was not restarted: "+stop.Reason,
+			ps.add(problemEngineGaveUp, engineGaveUpMessage(stop, configPath, now),
 				func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 		}
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
@@ -1189,19 +1193,32 @@ func ReadLastStop(dir string) (LastStop, bool) {
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return LastStop{}, false
 	}
-	var stop LastStop
-	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&stop); err != nil || stop.Reason == "" {
+	var rec laststop.LastStopFileRecord
+	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&rec); err != nil || rec.Reason == "" {
 		return LastStop{}, false
 	}
-	if r := []rune(stop.Reason); len(r) > maxReasonRunes {
-		stop.Reason = string(r[:maxReasonRunes])
+	if r := []rune(rec.Reason); len(r) > maxReasonRunes {
+		rec.Reason = string(r[:maxReasonRunes])
 	}
-	stop.Reason = strings.Map(func(r rune) rune {
+	rec.Reason = strings.Map(func(r rune) rune {
 		if unicode.IsPrint(r) {
 			return r
 		}
 		return ' '
-	}, stop.Reason)
-	stop.At = stop.At.UTC()
-	return stop, true
+	}, rec.Reason)
+	return LastStop{Reason: rec.Reason, At: rec.At.UTC(), EngineSHA256: rec.EngineSHA256}, true
+}
+
+// engineGaveUpMessage is the ENGINE_GAVE_UP status message: the supervisor's
+// reason, and when the next try happens during the hold-off.
+func engineGaveUpMessage(stop LastStop, configPath string, now time.Time) string {
+	msg := "the engine stopped and was not restarted: " + stop.Reason
+	if until, ok := laststop.StartHoldOffUntil(lastStopRecord(stop), configPath, now); ok {
+		msg += ". The next try is at " + until.UTC().Format(time.RFC3339) + "."
+	}
+	return msg
+}
+
+func lastStopRecord(stop LastStop) laststop.LastStopFileRecord {
+	return laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}
 }

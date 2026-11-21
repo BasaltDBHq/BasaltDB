@@ -31,7 +31,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
-
 // newCode is a setup code for d's database, made as basalt init --remote
 // makes one: an INSTALL code for agent bot writing public.leads, changed
 // by edit.

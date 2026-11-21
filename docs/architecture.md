@@ -65,7 +65,7 @@ The whole CLI: one file or a few per command (`init.go`, `approve.go`, `revert.g
 
 | Package | What it does |
 |---|---|
-| `vault`, `channel`, `engineaddr` | The engine's one optional outbound connection to the Vault, its encrypted session, and the address grammar for direct links. |
+| `vault`, `channel` | The engine's one optional outbound connection to the Vault, and its encrypted session. |
 | `portalverify` | Checks that the hosted portal serves the same pages as the binary embeds. |
 | `pii`, `logredact` | PII detection primitives, and keeping link secrets out of logs. |
 | `setupcode` | The code that carries an install from the agent's machine to the person's own. |

@@ -302,17 +302,28 @@ func TestStatusLedgerReinstalled(t *testing.T) {
 	}
 }
 
+// removedProblems are catalog problems the engine no longer reports: the
+// direct transport is removed (CONTRACT.md, CLI, Removed), and its row
+// leaves the contract's status problems table, and then the catalog, in
+// the contract's own change.
+var removedProblems = map[string]bool{"DIRECT_NOT_SERVED": true}
+
 func TestEveryStatusProblemHasACase(t *testing.T) {
 	t.Parallel()
 	cases := statusCases()
 	var missing []string
+	reported := 0
 	for _, p := range catalogOf(t).Problems {
+		if removedProblems[p.Code] {
+			continue
+		}
+		reported++
 		if _, ok := cases[p.Code]; !ok {
 			missing = append(missing, p.Code)
 		}
 	}
 	require.Empty(t, missing, "catalog problems without a case in statusCases")
-	require.Len(t, cases, len(catalogOf(t).Problems), "cases without a catalog problem")
+	require.Len(t, cases, reported, "cases without a catalog problem")
 }
 
 func TestEveryStatusProblemObeysTheCatalog(t *testing.T) {

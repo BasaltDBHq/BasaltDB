@@ -270,7 +270,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 			return p, postgres.MapError(err)
 		},
 		EngineKey: key,
-		Trust: engine.TrustOf(pool),
+		Trust:     engine.TrustOf(pool),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			r, err := guard.EngineRecord(ctx, pool, id)
 			return r, postgres.MapError(err)

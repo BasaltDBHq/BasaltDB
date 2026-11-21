@@ -34,7 +34,7 @@ var setupCodeOS = map[string]bool{"darwin": true, "linux": true}
 
 // setupCodeFlags are basalt init --setup-code's flags after parsing.
 type setupCodeFlags struct {
-	code, passkeyLabel string
+	code, passkeyLabel      string
 	agentRLS                AgentRLSMode
 	yes, addPasskey, dryRun bool
 }

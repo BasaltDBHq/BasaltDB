@@ -33,7 +33,7 @@ type initFlags struct {
 	passkeyOrigin, passkeyLabel                                                     string
 	// devLocalPages is --dev-local-pages: an agent-operated engine on local
 	// pages, for development only (CONTRACT.md, Page origins).
-	devLocalPages bool
+	devLocalPages                                            bool
 	agentRLS                                                 AgentRLSMode
 	spec                                                     guard.AgentSpec
 	dryRun, yes, showSQL, skipPasskey, addPasskey, noService bool

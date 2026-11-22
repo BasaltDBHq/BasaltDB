@@ -57,6 +57,7 @@ var checkedCredentialReads = []string{
 	"cmd/basalt/personfiles_unix.go:readCredentialAsRoot:readOwnedCredential",
 	"cmd/basalt/credfiles_unix.go:rootCredFiles.read:readCredentialFrom",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAt",
+	"internal/app/setupbackend/setupbackend.go:Backend.ReadCredential:config.ReadCredential",
 }
 
 // importNames is the names file f imports path under, and whether it

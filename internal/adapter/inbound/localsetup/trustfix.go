@@ -12,9 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -40,10 +37,7 @@ type agentHost struct {
 
 // hostOf reads the agent's host and this engine's pin for it.
 func (s *Service) hostOf(a config.Agent) (agentHost, error) {
-	dsn, err := config.ReadCredential(a.Store.CredentialFile)
-	if err == nil {
-		err = pgdial.CheckForeignDSN(dsn)
-	}
+	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
@@ -181,7 +175,7 @@ func (s *Service) openTrust(ctx context.Context, j agentJob, tc trustCase) (*pgx
 	}
 	conn, err := s.opts.DialPinned(ctx, pinDSN(j.req.DatabaseURL), prof)
 	if err != nil {
-		r := connectError(ctx, err)
+		r := s.connectError(ctx, err)
 		if r.Code == CodeCertificateNotVerified {
 			return nil, refuse(CodeTrustRootMismatch, "The database presents another certificate authority than the one you trusted. Nothing changed; check it again.")
 		}
@@ -201,7 +195,7 @@ func (s *Service) trustPlan(ctx context.Context, tx pgx.Tx, j agentJob, tc trust
 		return fixAnswer(database, []string{fmt.Sprintf("This replaces the certificate BasaltDB trusts for %s.", tc.host)},
 			recordSQL(tc.host, tc.port, tc.seen.SHA256)), nil
 	}
-	recorded, ok, err := guard.RecordedTrustPinTx(ctx, tx, j.names, tc.host, tc.port)
+	recorded, ok, err := s.be.RecordedTrustPinTx(ctx, tx, j.names, tc.host, tc.port)
 	if err != nil {
 		return CheckAnswer{}, setupFailed("read the recorded trust pin", err)
 	}
@@ -272,7 +266,7 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 			}
 			sha = plan.Pinned
 		}
-		if err := guard.RecordTrustPin(ctx, tx, tc.host, tc.port, sha); err != nil {
+		if err := s.be.RecordTrustPin(ctx, tx, tc.host, tc.port, sha); err != nil {
 			return setupFailed("record the trust pin", err)
 		}
 		if !tc.changed {
@@ -285,7 +279,7 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 			}
 			return nil
 		}
-		if _, _, err := trustdir.Pin(s.opts.ConfigPath, tc.host, tc.seen.Top, !tc.seen.Full); err != nil {
+		if _, _, err := s.be.PinFile(s.opts.ConfigPath, tc.host, tc.seen.Top, !tc.seen.Full); err != nil {
 			return refuse(CodeSetupFailed, "This engine could not replace the certificate it trusts; nothing changed.")
 		}
 		return nil

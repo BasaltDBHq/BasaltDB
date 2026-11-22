@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -82,6 +83,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f := &fixture{db: d, config: filepath.Join(t.TempDir(), "engine.json"), now: time.Now()}
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: d.Names.Prefix,
 		Now: func() time.Time { return f.now },
 	})
@@ -272,6 +274,7 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	dir := t.TempDir()
 	dialed := false
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(dir, "engine.json"), Origin: origin, Users: fakeUsers{aliceGroups: []string{"4000"}},
 		Dial: func(context.Context, string) (*pgx.Conn, error) {
 			dialed = true
@@ -320,6 +323,7 @@ func TestAdminStringRefusesKeysOutsideTheAllowlist(t *testing.T) {
 	t.Parallel()
 	dialed := false
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
 		Dial: func(context.Context, string) (*pgx.Conn, error) {
 			dialed = true
@@ -371,6 +375,7 @@ func TestAdminStringRefusesKeysOutsideTheAllowlist(t *testing.T) {
 func TestRealInstallRefusesBadSchemasAndPicksBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
 		Users: okUsers{}, Dial: func(context.Context, string) (*pgx.Conn, error) { return nil, errors.New("not here") },
 	})
@@ -721,6 +726,7 @@ func TestRunNeverFinishesWithACredentialForAnotherTarget(t *testing.T) {
 func TestRealInstallRefusesBadLabelsBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
 		Users: okUsers{}, Dial: func(context.Context, string) (*pgx.Conn, error) { return nil, errors.New("not here") },
 	})
@@ -830,6 +836,7 @@ func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
 	ctx := context.Background()
 	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, nickname text)`)
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
 		SampleColumn: func(_ context.Context, _ *pgx.Conn, col classify.Column) (classify.Sample, error) {
@@ -889,6 +896,7 @@ func newPinFixture(t *testing.T) *pinFixture {
 	require.NoError(t, err)
 	p := &pinFixture{fixture: f, ca: ca, adminURL: "postgres://admin:" + mustPassword(t, f.db.URL) + "@" + pinHost + ":5432/app"}
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
 		Dial: func(context.Context, string) (*pgx.Conn, error) {
@@ -1072,6 +1080,7 @@ func TestRealInstallARunAfterAFailedCommitRecordsThePinAgain(t *testing.T) {
 	require.NoError(t, err)
 	p.profiles = func() *trustprofile.Set { return trustdir.Set(p.config) }
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: p.config, Origin: origin, Users: fakeUsers{}, Prefix: p.db.Names.Prefix,
 		Now:      func() time.Time { return p.now },
 		Dial:     func(ctx context.Context, _ string) (*pgx.Conn, error) { return pgdial.Connect(ctx, p.db.URL) }, // verifies through the pin
@@ -1117,6 +1126,7 @@ func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T
 	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
 	cut := true
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
 		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
@@ -1185,7 +1195,7 @@ CREATE CONSTRAINT TRIGGER refuse_at_commit AFTER INSERT ON basalt_meta.passkeys 
 
 func TestInstallRefusesADatabaseNameToConfirm(t *testing.T) {
 	t.Parallel()
-	svc, err := localsetup.New(localsetup.Options{ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: fakeUsers{}, Prefix: "basalt"})
+	svc, err := localsetup.New(localsetup.Options{Backend: setupbackend.Backend{}, ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: fakeUsers{}, Prefix: "basalt"})
 	require.NoError(t, err)
 	req := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: unusedAdminURL, ConfirmName: "app"}
 	_, err = svc.Check(context.Background(), req)

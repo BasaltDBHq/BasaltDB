@@ -245,7 +245,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	gate := newCallGate()
 	if cfg.VaultEnabled() {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
-		dispatch = gatedDispatcher{gate: gate, next: sessionPages}
+		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault, env.receipts = ev, ev.receipts()
@@ -545,7 +545,7 @@ func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, r
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != SetupOrigin {
 		return nil
 	}
-	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
+	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil

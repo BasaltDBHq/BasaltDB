@@ -105,7 +105,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	live := newRelayLinks(quietLog())
 	site := pages.New(links.Portal, quietLog())
 	site.Add(svc)
-	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}, stateDir, time.Now, quietLog(), live, site)
+	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
 	require.NotNil(t, ev.client)
 	live.add("bot", secrets, ev.client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())

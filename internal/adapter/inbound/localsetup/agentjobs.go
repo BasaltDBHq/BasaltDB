@@ -12,9 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
@@ -56,7 +55,7 @@ type agentJob struct {
 	req    Request
 	agent  config.Agent
 	role   string
-	names  guard.Names
+	names  guardmodel.Names
 	target setupcode.Target
 	// host is the admin string's host and port, lowercase: a PASSKEY_ADD
 	// challenge is bound to it.
@@ -84,7 +83,7 @@ func (s *Service) configuredAgent(agent, osUser string) (config.Agent, string, e
 		// serves these jobs (engine.setupJobs), and this holds it here too.
 		return config.Agent{}, "", refuse(CodeJobUnavailable, "An engine running as root never takes the admin connection string on this page.")
 	}
-	role, err := (guard.Names{Prefix: s.opts.Prefix}).Agent(agent)
+	role, err := (guardmodel.Names{Prefix: s.opts.Prefix}).Agent(agent)
 	if err != nil {
 		return config.Agent{}, "", refuse(CodeInvalidArgument, "This setup link names an agent whose name cannot be used. Ask the agent for a new link.")
 	}
@@ -146,7 +145,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if err := checkFields(req, run); err != nil {
 		return agentJob{}, err
 	}
-	host, err := checkAdminURL(req.DatabaseURL, role)
+	host, err := s.checkAdminURL(req.DatabaseURL, role)
 	if err != nil {
 		return agentJob{}, err
 	}
@@ -169,7 +168,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if !setuprun.SameDatabase(want, got) {
 		return agentJob{}, refuse(CodeTargetMismatch, fmt.Sprintf("This admin connection string is for another database than the agent %s uses. Use the admin connection string of the agent's own database; nothing changed.", req.Agent))
 	}
-	j := agentJob{req: req, agent: a, role: role, names: guard.Names{Prefix: s.opts.Prefix}, target: want, host: host, missing: missing}
+	j := agentJob{req: req, agent: a, role: role, names: guardmodel.Names{Prefix: s.opts.Prefix}, target: want, host: host, missing: missing}
 	if req.Job != JobRemove {
 		return j, nil
 	}
@@ -296,7 +295,7 @@ type agentPlan struct {
 	lines []string
 	notes []string
 	// UPDATE
-	script            guard.Script
+	script            setuprun.Script
 	installed, latest int
 	// REMOVE
 	remove  setuprun.RemovePlan
@@ -325,7 +324,7 @@ func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, datab
 // installedPrefix is the prefix of the guard in the database, "" when it
 // has none; another prefix than this engine's is PREFIX_MISMATCH.
 func (s *Service) installedPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	prefix, err := guard.InstalledPrefix(ctx, tx)
+	prefix, err := s.be.InstalledPrefix(ctx, tx)
 	if err != nil {
 		return "", setupFailed("read the guard prefix", err)
 	}
@@ -343,7 +342,7 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 	if err != nil {
 		return 0, err
 	}
-	installed, err := guard.InstalledVersion(ctx, tx)
+	installed, err := s.be.InstalledVersion(ctx, tx)
 	if err != nil {
 		return 0, setupFailed("read the guard version", err)
 	}
@@ -355,8 +354,8 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 
 // agentRole refuses a database without the agent's role: it is not the
 // agent's database.
-func agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database string) error {
-	exists, err := guard.AgentRoleExists(ctx, tx, j.names, j.req.Agent)
+func (s *Service) agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database string) error {
+	exists, err := s.be.AgentRoleExists(ctx, tx, j.names, j.req.Agent)
 	if err != nil {
 		return setupFailed("read the agent role", err)
 	}
@@ -373,20 +372,20 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	if err != nil {
 		return agentPlan{}, err
 	}
-	if err := usable(ctx, tx); err != nil {
+	if err := s.usable(ctx, tx); err != nil {
 		return agentPlan{}, err
 	}
-	latest := guard.LatestVersion()
+	latest := s.be.LatestVersion()
 	switch {
 	case installed > latest:
 		return agentPlan{}, refuse(CodeGuardNewer, fmt.Sprintf("The guard in the database %s (version %d) is newer than this engine (version %d): update BasaltDB on this computer instead. Nothing changed.", database, installed, latest))
 	case installed == latest:
 		return agentPlan{}, refuse(CodeGuardCurrent, fmt.Sprintf("The guard in the database %s is up to date (version %d); there is nothing to update.", database, installed))
 	}
-	if err := agentRole(ctx, tx, j, database); err != nil {
+	if err := s.agentRole(ctx, tx, j, database); err != nil {
 		return agentPlan{}, err
 	}
-	script, err := guard.PlanInit(ctx, tx, guard.InitOptions{Names: j.names})
+	script, err := s.be.PlanInit(ctx, tx, setuprun.InitOptions{Names: j.names})
 	if err != nil {
 		return agentPlan{}, setupFailed("plan the update", err)
 	}
@@ -532,7 +531,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	answer.Lines = []string{fmt.Sprintf("Basalt removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
 	answer.EngineRemoved = gone
 	if demoKept {
-		answer.Warnings = append(answer.Warnings, "the sample schema "+demo.Schema+" stays: another object depends on it")
+		answer.Warnings = append(answer.Warnings, "the sample schema "+s.be.DemoSchema()+" stays: another object depends on it")
 	}
 	return answer, nil
 }

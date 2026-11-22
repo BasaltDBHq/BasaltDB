@@ -250,6 +250,27 @@ func a() { s, _ := cfg.ReadCredential("p"); pd.CheckForeignDSN(s) }
 import . "`+configImport+`"
 func a() { ReadCredentialAt(d, "n"); readOwnedCredential("p", 0, "") }
 `), false), "another package's readOwnedCredential is not this one's")
+	require.Equal(t, map[string]bool{"x.go:a:config.ReadCredentialAt": true}, credentialReadsIn("x.go", parse(`package main
+import (
+	"`+configImport+`"
+	"`+appImport+`"
+)
+func a() { s, _, _ := config.ReadCredentialAt(d, "n"); app.CheckForeignDSN(s) }
+`), false), "app re-exports pgdial.CheckForeignDSN: a call through it checks the read")
+	require.Equal(t, map[string]bool{"x.go:a:config.ReadCredential": true}, credentialReadsIn("x.go", parse(`package main
+import (
+	"`+configImport+`"
+	engine "`+appImport+`"
+)
+func a() { s, _ := config.ReadCredential("p"); engine.CheckForeignDSN(s) }
+`), false))
+	require.Equal(t, map[string]bool{"x.go:a:config.ReadCredential": false}, credentialReadsIn("x.go", parse(`package main
+import (
+	"`+configImport+`"
+	"example.com/other/app"
+)
+func a() { s, _ := config.ReadCredential("p"); app.CheckForeignDSN(s) }
+`), false), "another package's app.CheckForeignDSN is not the engine's")
 	require.Empty(t, credentialReadsIn("x.go", parse(`package main
 func a() { var m reader; m.ReadCredential("p"); x.readOwnCredential("p") }
 `), true))

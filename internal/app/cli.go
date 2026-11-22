@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 
 	"github.com/jackc/pgx/v5"
 
@@ -47,23 +48,40 @@ var (
 	ErrOSDialogCancelled = osservice.ErrDialogCancelled
 	ErrOSNoDialog        = osservice.ErrNoDialog
 
-	OSApply           = osservice.Apply
-	OSDefaultUser     = osservice.DefaultUser
-	OSDialogCommand   = osservice.DialogCommand
-	OSDialogError     = osservice.DialogError
-	OSDialogPaths     = osservice.DialogPaths
-	OSEntryFor        = osservice.EntryFor
-	OSHostFor         = osservice.HostFor
-	OSInstallPlan     = osservice.InstallPlan
-	OSInstallScript   = osservice.InstallScript
-	OSLookupUID       = osservice.LookupUID
-	OSOpenTrustedDir  = osservice.OpenTrustedDir
-	OSOpenTrustedFile = osservice.OpenTrustedFile
-	OSRemoveScript    = osservice.RemoveScript
-	OSResetScript     = osservice.ResetScript
-	OSSettle          = osservice.Settle
-	OSUnitPath        = osservice.UnitPath
+	OSApply         = osservice.Apply
+	OSDefaultUser   = osservice.DefaultUser
+	OSDialogCommand = osservice.DialogCommand
+	OSDialogError   = osservice.DialogError
+	OSDialogPaths   = osservice.DialogPaths
+	OSEntryFor      = osservice.EntryFor
+	OSHostFor       = osservice.HostFor
+	OSInstallPlan   = osservice.InstallPlan
+	OSInstallScript = osservice.InstallScript
+	OSRemoveScript  = osservice.RemoveScript
+	OSResetScript   = osservice.ResetScript
+	OSSettle        = osservice.Settle
+	OSUnitPath      = osservice.UnitPath
 )
+
+// The owner and trust checks are functions, not variables, so nothing can
+// swap them at run time.
+
+// OSLookupUID is the uid of the OS user name, or -1 when there is no such
+// user.
+func OSLookupUID(name string) int { return osservice.LookupUID(name) }
+
+// OSOpenTrustedDir opens dir for root, refusing a directory on the way that
+// someone other than root or owner could swap (osservice.OpenTrustedDir).
+func OSOpenTrustedDir(dir string, owner int, create bool) (*OSTrustedDir, error) {
+	return osservice.OpenTrustedDir(dir, owner, create)
+}
+
+// OSOpenTrustedFile opens path read-only for root: its directory as
+// OSOpenTrustedDir does, the file itself never through a symlink
+// (osservice.OpenTrustedFile).
+func OSOpenTrustedFile(path string, owner int) (*os.File, error) {
+	return osservice.OpenTrustedFile(path, owner)
+}
 
 // The last-stop record the supervisor writes and the autostart reads.
 type LastStopRecord = laststop.LastStopFileRecord
@@ -128,11 +146,17 @@ func GuardSetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, err
 
 // Database connections.
 var (
-	CheckForeignDSN        = pgdial.CheckForeignDSN
-	CertificateNotVerified = pgdial.CertificateNotVerified
 	WithCertificateHint    = pgdial.WithCertificateHint
 	CurrentTrustProfileSet = pgdial.Trust
 )
+
+// CheckForeignDSN refuses a connection string with parameters that make the
+// driver read a file (ErrForeignDSN).
+func CheckForeignDSN(dsn string) error { return pgdial.CheckForeignDSN(dsn) }
+
+// CertificateNotVerified reports whether err is a server certificate that
+// did not verify.
+func CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }
 
 // Connect opens one connection, usable through a transaction pooler.
 func Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {

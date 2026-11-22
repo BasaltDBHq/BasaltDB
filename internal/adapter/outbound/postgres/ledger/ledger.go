@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
@@ -30,75 +29,6 @@ var ErrInvalidParams = errors.New("invalid list params")
 var ChangeSortSpec = pagination.SortSpec{
 	Default: "-id",
 	Allowed: map[string]struct{}{"id": {}, "-id": {}},
-}
-
-// ChangeListParams lists change records. RunID uuid.Nil means every run.
-// The handler applies pagination defaults and the clamp before calling.
-type ChangeListParams struct {
-	pagination.Params
-	RunID uuid.UUID
-}
-
-// Change is one change record (CONTRACT.md "The change record").
-type Change struct {
-	ID           uuid.UUID
-	At           time.Time
-	Agent        string
-	RunID        uuid.NullUUID
-	TaskID       uuid.NullUUID
-	Intent       string
-	Op           string
-	Table        string
-	Statement    string
-	Params       json.RawMessage
-	Rows         int
-	CascadedRows int
-	DurationMs   *int
-	Status       string
-	Code         string
-	Reason       string
-	// ActorKind is AGENT, or PERSON for a revert (M3).
-	ActorKind string
-	// RevertID is the revert a REVERT change carried out.
-	RevertID uuid.NullUUID
-	// RevertedBy lists the revert changes that restored rows of this one.
-	RevertedBy []uuid.UUID
-	// LargeValues names the statement or params left out of an agent's read
-	// (ListChangesMarked; CONTRACT.md, Large values); nil on the person's.
-	LargeValues []largevalue.Entry
-}
-
-// RowChange is one row a change wrote, cascades included. Key, Before and
-// After are nil when Redacted (the agent cannot SELECT the table) or
-// Pruned (older than 30 days).
-type RowChange struct {
-	Seq      int64
-	Table    string
-	Op       string
-	Key      map[string]any
-	Before   map[string]any
-	After    map[string]any
-	Cascaded bool
-	Redacted bool
-	Pruned   bool
-	// BasedOn is the version of the row the run had read (M1.5), nil when
-	// the run never read it (BlindWrite) or for an insert or cascaded row.
-	BasedOn    *BasedOn
-	BlindWrite bool
-	// LargeValues names the values left out of an agent's read
-	// (RowChangesMarked), and KeyLeftOut, BeforeLeftOut and AfterLeftOut
-	// the images left out whole: absent on the wire, never null.
-	LargeValues                             []largevalue.Entry
-	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool
-	// Marks summarize the values over 1 MiB of the person's read, for the
-	// CLI to print after them (largevalue.Summary).
-	Marks largevalue.Marks
-}
-
-// BasedOn is the row version a write was based on (CONTRACT.md).
-type BasedOn struct {
-	Version  string    `json:"version"`
-	ChangeID uuid.UUID `json:"changeId"`
 }
 
 // ListChanges returns one page of the calling agent's change records.

@@ -2,7 +2,6 @@ package ledger
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -29,45 +27,9 @@ const (
 // agent's approvals.
 var ErrApprovalNotFound = errors.New("approval not found")
 
-// Approval is one of the calling agent's held writes.
-type Approval struct {
-	ID          uuid.UUID
-	RunID       uuid.UUID
-	TaskID      uuid.NullUUID
-	Intent      string
-	Statement   string
-	Params      json.RawMessage
-	Assigned    []string
-	Rows        int
-	Status      string
-	CreatedAt   time.Time
-	ExpiresAt   time.Time
-	ApprovedAt  *time.Time
-	BindingText string
-	Lines       []string
-	// LargeValues names the statement or params left out of an agent's
-	// list (CONTRACT.md, Large values): Statement is then empty, Params nil.
-	LargeValues []largevalue.Entry
-	// LinesLeftOut says an agent's read left the lines out because the
-	// request is too large for a link (withRequest): Lines are then the
-	// lines' heads. LinesCost is the lines' cost in the budget's unit, 0 on
-	// a read with no budget.
-	LinesLeftOut bool
-	LinesCost    int64
-}
-
 // ApprovalSortSpec whitelists the approval list sort: by id, newest first
 // by default, as change records.
 var ApprovalSortSpec = ChangeSortSpec
-
-// ApprovalListParams lists held writes that can still be approved or
-// applied. RunID uuid.Nil means every run; Status "" means PENDING and
-// APPROVED.
-type ApprovalListParams struct {
-	pagination.Params
-	RunID  uuid.UUID
-	Status string
-}
 
 // colApprovalID is the approval id column of basalt_meta.agent_approvals.
 const colApprovalID = "approval_id"

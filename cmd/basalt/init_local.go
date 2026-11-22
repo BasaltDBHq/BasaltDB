@@ -61,6 +61,7 @@ func runInitLocal(c *cliIO, args []string) int {
 		return changeLink(c, job)
 	case engineRemoved:
 		return removeEngineService(c)
+	case engineWaiting:
 	}
 	link, err := localsetup.Link(engine.SetupOrigin, job)
 	if err != nil {

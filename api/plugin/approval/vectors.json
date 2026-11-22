@@ -1,5 +1,5 @@
 {
-  "description": "Plugin approval vectors (CONTRACT.md, Plugins, What a plugin approval binds and The plugin approval page). Each binding and settings text is the jsonb text Postgres 16 returned for it, byte for byte; challenge is base64url (no padding) of sha256 of the binding text. expect gives what the page derives from the two texts alone: whether the settings text hashes to settingsSha256, then the level, whether the tick is shown, and the page's sentences in the order the contract fixes. A settings mismatch shows an error and no approve button. response is the JSON of a basalt-plugin.1. code (response.schema.json); its byte fields are placeholders, not a real assertion, and the test carries it as the code and back. resultExample is a basalt plugin add --json output (result.schema.json) on a person-operated engine that serves the local pages. TestPluginApprovalVectors checks all of it.",
+  "description": "Plugin approval vectors (CONTRACT.md, Plugins, What a plugin approval binds and The plugin approval page). Each binding and settings text is the jsonb text Postgres 16 returned for it, byte for byte; challenge is base64url (no padding) of sha256 of the binding text. expect gives what the page derives from the two texts alone: whether the settings text hashes to settingsSha256, then the level, whether the tick is shown, and the page's sentences in the order the contract fixes. A settings mismatch shows an error and no approve button. response is the JSON of a basalt-plugin.1. code (response.schema.json); its byte fields are placeholders, not a real assertion, and the test carries it as the code and back. TestPluginApprovalVectors checks all of it.",
   "vectors": [
     {
       "name": "level-1-known-local",
@@ -138,54 +138,5 @@
     "authenticatorData": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "clientDataJson": "e30",
     "signature": "MAYCAQECAQE"
-  },
-  "resultExample": {
-    "name": "local-ner",
-    "instance": "client_x",
-    "approvals": [
-      {
-        "database": {
-          "host": "localhost",
-          "name": "app"
-        },
-        "agents": [
-          "product_b"
-        ],
-        "approvalId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d",
-        "expiresAt": "2026-11-20T10:00:00.5Z",
-        "url": "http://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w"
-      }
-    ],
-    "personMessage": "product_b asks you to approve the plugin local-ner 0.3.1.\nNobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values.\nApprove it with your passkey only if you know who made it:\n\nhttp://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w\n\nExpires 2026-11-20 10:00 UTC. The plugin starts once the engine restarts.",
-    "links": [
-      {
-        "label": "Review and approve the plugin",
-        "url": "http://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w"
-      }
-    ],
-    "nextSteps": [
-      {
-        "actor": "PERSON",
-        "action": "OPEN_LINK",
-        "text": "Open the link, read the page, and approve the plugin with your passkey if you want it.",
-        "url": "http://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w"
-      },
-      {
-        "actor": "PERSON",
-        "action": "TELL_AGENT",
-        "text": "Tell the agent once you approved it."
-      },
-      {
-        "actor": "AGENT",
-        "action": "END_TURN",
-        "text": "End your turn: the person approves on the page."
-      },
-      {
-        "actor": "PERSON",
-        "action": "RUN_COMMAND",
-        "text": "Once basalt plugin list shows the approval signed, restart the engine so it starts the plugin.",
-        "command": "basalt engine --config /home/me/.config/basalt/engine.json"
-      }
-    ]
   }
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -203,7 +204,7 @@ func catalogCases() map[string]catalogCase {
 			return s.prepareTimeout(tool, action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
 		}
 	}
-	return map[string]catalogCase{
+	cases := map[string]catalogCase{
 		caseKey("INTENT_REQUIRED", "", ""): {"write", map[string]any{"sql": "DELETE FROM leads WHERE id = 1"}, pgFail("BS001", "INTENT_REQUIRED", "")},
 		caseKey("STALE_READ", "", ""): {
 			"write", writeArgs0,
@@ -401,6 +402,8 @@ func catalogCases() map[string]catalogCase {
 
 		caseKey("INTERNAL", "", ""): {"query", queryArgs0, plain(errors.New("boom"))},
 	}
+	maps.Copy(cases, pluginCatalogCases())
+	return cases
 }
 
 func plainFunc(f func() error) func(*testing.T, *Service) error {
@@ -427,18 +430,13 @@ func entryKey(e mcpcontract.ErrorSteps) string { return caseKey(e.Code, e.Reason
 
 // TestEveryCatalogErrorHasACase walks the catalog: an error entry without a
 // case fails, so a new code or reason cannot ship without guidance, and a
-// case without an entry is stale. PLUGIN_REFUSED is the one code no MCP tool
-// returns: the basalt plugin commands do, and their tests check each reason
-// against the catalog (cmd/basalt).
+// case without an entry is stale.
 func TestEveryCatalogErrorHasACase(t *testing.T) {
 	t.Parallel()
 	cases := catalogCases()
 	seen := map[string]bool{}
 	var missing []string
 	for _, e := range catalogOf(t).Errors {
-		if e.Code == "PLUGIN_REFUSED" {
-			continue
-		}
 		seen[entryKey(e)] = true
 		if _, ok := cases[entryKey(e)]; !ok {
 			missing = append(missing, entryKey(e))
@@ -525,10 +523,7 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 		}
 		// basalt init prints the link the person opens and never takes the
 		// admin connection string (CONTRACT.md, basalt init); on an
-		// agent-operated engine it names --remote. basalt plugin enable
-		// (opening a plugin approval with the agent's own credential),
-		// disable and remove edit engine.json, and list reads it: machine
-		// steps too (CONTRACT.md, Plugin approval).
+		// agent-operated engine it names --remote.
 		if strings.HasPrefix(st.Command, "basalt init") {
 			require.Regexp(t, initCommand, st.Command, where)
 			require.Equal(t, operatedBy == mcpcontract.OperatedByAgent, strings.Contains(st.Command, " --remote"),
@@ -537,7 +532,7 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 		}
 		require.Equal(t, mcpcontract.OperatedByAgent, operatedBy, "%s: on a person-operated engine the agent runs only basalt init: %q", where, st.Command)
 		machine := serviceManager.MatchString(st.Command) ||
-			strings.HasPrefix(st.Command, "basalt engine ") || agentPluginCommand.MatchString(st.Command)
+			strings.HasPrefix(st.Command, "basalt engine ")
 		require.True(t, machine, "%s: an AGENT command is basalt init, the engine's start or basalt plugin enable, disable or remove: %q", where, st.Command)
 		if variant {
 			require.NotContains(t, personMessage, st.Command, "%s: personMessage names no command on the agent's machine", where)
@@ -618,11 +613,6 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, wher
 // (LOCK_FILE_UNUSABLE).
 var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 
-// agentPluginCommand is a basalt plugin command an agent may run as a
-// machine step on an agent-operated engine: list only reads engine.json
-// (PLUGIN_CONFIG_INVALID), the others edit it.
-var agentPluginCommand = regexp.MustCompile(`^basalt plugin (enable|disable|remove|list)( |$)`)
-
 // initCommand is the agent's basalt init as a step names it.
 var initCommand = regexp.MustCompile(`^basalt init --agent bot( --remote)?$`)
 
@@ -631,11 +621,6 @@ func requireCommand(t *testing.T, command, where string) {
 	require.NotEmpty(t, command, where)
 	if serviceManager.MatchString(command) {
 		return
-	}
-	// basalt plugin writes engine.json, and basalt trust trust.d, root's on
-	// a service engine.
-	if rest, ok := strings.CutPrefix(command, "sudo "); ok && (strings.HasPrefix(rest, "basalt plugin ") || strings.HasPrefix(rest, "basalt trust ")) {
-		command = rest
 	}
 	require.True(t, strings.HasPrefix(command, "basalt "), "%s: %q", where, command)
 	if strings.HasPrefix(command, "basalt init") {
@@ -648,13 +633,7 @@ func requireCommand(t *testing.T, command, where string) {
 	if strings.HasPrefix(command, "basalt engine ") { // the foreground engine names its config itself
 		return
 	}
-	// The plugin steps, which the plugin epic replaces, are the only other
-	// basalt command a step names. A plugin entry is the engine's, not one
-	// agent's: basalt plugin takes no --agent.
-	require.True(t, strings.HasPrefix(command, "basalt plugin "), "%s: a step names no other basalt command: %q", where, command)
-	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
-	// Only the foreground engine names its config: every other command finds it.
-	require.NotContains(t, command, "--config", where)
+	require.Fail(t, "a step names no other basalt command", "%s: %q", where, command)
 }
 
 func requireToolArguments(t *testing.T, st mcp.NextStep, kase catalogCase, where string) {

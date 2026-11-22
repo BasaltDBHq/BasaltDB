@@ -44,7 +44,7 @@ type command struct {
 
 func commands() []command {
 	return []command{
-		{"engine", "Run the engine service in the foreground (or list | revoke the recorded engines)", runEngine},
+		{"engine", "Run the engine service in the foreground (or revoke a recorded engine)", runEngine},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
 		{"init", "Install the guard in Postgres and add an agent to the engine config", withIO(runInit)},
@@ -58,7 +58,6 @@ func commands() []command {
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
-		{"plugin", "Add, enable, check and remove plugins (list | add | enable | disable | check | remove)", withIO(runPlugin)},
 		{"trust", "List and change which root certificates verify a database host (list | add | pin | remove | disable)", withIO(runTrust)},
 		{"crash", "List, show or file the crash reports saved on this machine (list | show <id> | report <id>)", withIO(runCrash)},
 		{"version", "Print the version", runVersion},

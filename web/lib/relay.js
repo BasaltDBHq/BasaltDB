@@ -103,7 +103,7 @@ class RelaySession {
     this.usedAt = now();
     this.closed = false;
     this.transport = RELAY;
-    this.engine = { engineId: channel.engineId, fingerprint: fingerprint(channel.engineId) };
+    this.engine = { engineId: channel.engineId, engineKey: channel.engineKey, fingerprint: fingerprint(channel.engineId) };
     this.queue = Promise.resolve();
   }
 

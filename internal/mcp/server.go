@@ -265,6 +265,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage, sess *ses
 	var req struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
+		Meta      json.RawMessage `json:"_meta"`
 	}
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, &RPCError{Code: rpcErrInvalidParams, Message: fmt.Sprintf("invalid params: %v", err)}
@@ -278,7 +279,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage, sess *ses
 	}
 	// One result budget for every read the call makes (CONTRACT.md,
 	// QUERY_TIMEOUT SIZE_LIMIT).
-	out, err := s.call(ctx, tool, req.Arguments)
+	out, err := s.call(withMeta(ctx, req.Meta), tool, req.Arguments)
 	if err == nil {
 		res := toolResult(out, false)
 		s.addNotice(res, sess)

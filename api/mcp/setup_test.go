@@ -600,11 +600,12 @@ func contractConnectLink(t *testing.T) map[string]bool {
 
 func TestResolveOperatorSteps(t *testing.T) {
 	t.Parallel()
-	c, err := mcpcontract.LoadNextSteps()
-	require.NoError(t, err)
-	e, ok := c.ErrorEntry("PLUGIN_REFUSED", "DATABASE_UNREACHABLE", "")
-	require.True(t, ok)
-	require.Equal(t, mcpcontract.ActorOperator, e.Steps[1].Actor)
+	// No catalog entry has an OPERATOR step since the person runs no
+	// command; Resolve still turns one into the operator's actor.
+	e := mcpcontract.ErrorSteps{Steps: []mcpcontract.StepKind{
+		{Actor: mcpcontract.ActorAgent, Action: "ASK_PERSON"},
+		{Actor: mcpcontract.ActorOperator, Action: mcpcontract.ActionRunCommand},
+	}}
 
 	for operatedBy, actor := range map[string]string{
 		mcpcontract.OperatedByAgent:  mcpcontract.ActorAgent,

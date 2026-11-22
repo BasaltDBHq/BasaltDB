@@ -46,14 +46,14 @@
       "code": 4006,
       "name": "LINK_REFUSED",
       "sentBy": ["ENGINE"],
-      "when": "Handshake message 1 for a token the engine does not hold, an expired or revoked link, a token other than SESSION_OPEN's, a tag that fails (wrong psk), or an invalid ephemeral key (checked after the tag). All answer alike. On DIRECT, also a link whose agent's database does not record the session's address. Also open sessions of a link the engine revokes or that expires.",
+      "when": "Handshake message 1 for a token the engine does not hold, an expired or revoked link, a token other than SESSION_OPEN's, a tag that fails (wrong psk), or an invalid ephemeral key (checked after the tag). All answer alike. Also open sessions of a link the engine revokes or that expires.",
       "pageShows": "LINK_GONE"
     },
     {
       "code": 4007,
       "name": "HANDSHAKE_FAILED",
       "sentBy": ["PAGE"],
-      "when": "An engine ephemeral key that is not a valid uncompressed P-256 point; message 2 that does not decrypt, whose payload fails its schema, or whose signature fails; on DIRECT, an engine key other than the pinned one.",
+      "when": "An engine ephemeral key that is not a valid uncompressed P-256 point; message 2 that does not decrypt, whose payload fails its schema, or whose signature fails.",
       "pageShows": "BROKEN"
     },
     {
@@ -88,21 +88,21 @@
       "code": 4012,
       "name": "TIMEOUT",
       "sentBy": ["PAGE", "ENGINE", "VAULT"],
-      "when": "The handshake did not finish in 10 seconds, the session was idle 5 minutes, or it reached 30 minutes or its link's expiry; on DIRECT, the engine could not read its record in 5 seconds.",
+      "when": "The handshake did not finish in 10 seconds, the session was idle 5 minutes, or it reached 30 minutes or its link's expiry.",
       "pageShows": "TRY_LATER"
     },
     {
       "code": 4013,
       "name": "ENGINE_REVOKED",
       "sentBy": ["ENGINE"],
-      "when": "The engine's key is revoked in the database of the session's agent (M4.1, CONTRACT.md, Direct transport), on either transport; the engine serves that agent no session. Comes outside the session, so anyone on the path can send it: on DIRECT the page says the engine may be revoked and changes no pin unless the person confirms.",
+      "when": "The engine's key is revoked in the database of the session's agent (CONTRACT.md, Vault channel, Engine revocation): the engine closes that agent's open sessions with it when it reads the revocation, and serves that agent no session after. Comes outside the session, so anyone on the path can send it: the page only shows that the engine is offline.",
       "pageShows": "ENGINE_OFFLINE"
     },
     {
       "code": 4014,
       "name": "ENGINE_SHUTDOWN",
       "sentBy": ["ENGINE"],
-      "when": "The engine is stopping, or its keys were rotated.",
+      "when": "The engine is stopping.",
       "pageShows": "ENGINE_OFFLINE"
     }
   ]

@@ -3,8 +3,8 @@
 // Noise_NNpsk0_P256_AESGCM_SHA256 as the initiator over a WebSocket, then
 // speaks the pages API in padded, encrypted frames. Nothing here knows which
 // socket carries the session; the transport (relay.js) opens the socket
-// and says which transport the prologue names. Every
-// primitive is WebCrypto. The shared vectors (api/mcp/vault/testdata) check
+// and names the transport for the prologue, which is RELAY, the only one.
+// Every primitive is WebCrypto. The shared vectors (api/mcp/vault/testdata) check
 // it against the Go engine in channel.test.mjs.
 
 import { b64urlDecode, b64urlEncode, utf8 } from "./codec.js";
@@ -371,9 +371,11 @@ function checkHeader(msg, type) {
   if (msg[1] !== type) throw new ChannelError("PROTOCOL");
 }
 
-// startHandshake makes message 1 for keys (linkKeys) on transport. e is the
-// page's ephemeral key pair, made fresh unless a test passes one.
+// startHandshake makes message 1 for keys (linkKeys) on transport, which
+// must be RELAY. e is the page's ephemeral key pair, made fresh unless a
+// test passes one.
 export async function startHandshake(transport, keys, e = null) {
+  if (transport !== RELAY) throw new Error(`unknown transport ${JSON.stringify(transport)}`);
   const pair = e ?? (await subtle().generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]));
   const ePub = await publicPoint(pair.privateKey);
   const s = await SymmetricState.init(prologue(transport, keys.tokenText));

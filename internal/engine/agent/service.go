@@ -162,6 +162,10 @@ type Deps struct {
 	// credential, for the plugin approval routes of the pages; optional,
 	// and those routes know no plugin approval of this agent when nil.
 	PluginApprovals PluginApprovalStore
+	// PluginRequests serve request_plugin with the engine-kept plugin
+	// entries of a service engine; nil on any other engine, where the tool
+	// is refused (CONTRACT.md, MCP tools, request_plugin).
+	PluginRequests PluginRequests
 	// Classes are the agent's PII classes for describe; optional, and
 	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
 	// column.

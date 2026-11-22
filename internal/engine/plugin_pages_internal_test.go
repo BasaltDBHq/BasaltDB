@@ -46,6 +46,9 @@ type pluginPages struct {
 	origin string
 	// offset moves the services' clock forward.
 	offset atomic.Int64
+	// secrets holds the short links every service checks, as the agent's
+	// own request_plugin issues them.
+	secrets *links.Secrets
 }
 
 func (p *pluginPages) do(method, path string, headers map[string]string, body string) (int, map[string]any) {
@@ -61,12 +64,13 @@ func (p *pluginPages) do(method, path string, headers map[string]string, body st
 	return rec.Code, out
 }
 
-// issue asks for a short link as basalt plugin add does: no Origin.
-func (p *pluginPages) issue(id uuid.UUID, binding string) (int, map[string]any) {
+// link is the secret of a short link for id, issued as request_plugin
+// issues one, in process.
+func (p *pluginPages) link(id uuid.UUID) string {
 	p.t.Helper()
-	body, err := json.Marshal(map[string]string{"proof": links.IssueProof(binding)})
+	secret, err := p.secrets.Issue(id, time.Now().Add(time.Hour))
 	require.NoError(p.t, err)
-	return p.do(http.MethodPost, "/api/v1/plugins/"+id.String()+"/links", map[string]string{"Content-Type": "application/json"}, string(body))
+	return secret
 }
 
 func (p *pluginPages) get(id uuid.UUID, secret string) (int, map[string]any) {
@@ -83,18 +87,9 @@ func (p *pluginPages) approve(id uuid.UUID, secret string, resp approval.PluginA
 	}, string(body))
 }
 
-// secretOf is the secret of a short link the routes issued for id.
-func (p *pluginPages) secretOf(id uuid.UUID, out map[string]any) string {
-	p.t.Helper()
-	url, _ := out["url"].(string)
-	secret, ok := strings.CutPrefix(url, p.origin+"/plugins/"+id.String()+"#s=")
-	require.True(p.t, ok, "the short link is the plugin page on the local origin: %q", url)
-	return secret
-}
-
 // TestPluginRoutesAgainstGuard runs the plugin approval page's three routes
-// through the engine's agent services against real guards: a short link is
-// issued only to proof of the binding text, the page reads the request and
+// through the engine's agent services against real guards: the page reads
+// the request with the short link's secret and
 // relays the person's signature, and Postgres records PLUGIN_APPROVED for
 // every agent the approval names. A named agent that did not open it, and
 // an agent of another database, never answer for it.
@@ -110,7 +105,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
 
-	p := &pluginPages{t: t, origin: "http://localhost:8787"}
+	p := &pluginPages{t: t, origin: "http://localhost:8787", secrets: links.NewSecrets(time.Now, rand.Reader)}
 	p.srv = pages.New(p.origin, quietLog())
 	clock := func() time.Time { return time.Now().Add(time.Duration(p.offset.Load())) }
 	// The agents that cannot answer are added first, so a lookup that
@@ -119,7 +114,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 		pg := newPGAgent(t, a.URL, 2)
 		p.srv.Add(pg.service(func(dp *agent.Deps) {
 			dp.Name, dp.Now = strings.TrimPrefix(a.Role, d.Names.Prefix+"_agent_"), clock
-			dp.PagesOrigin, dp.Links = p.origin, links.NewSecrets(time.Now, rand.Reader)
+			dp.PagesOrigin, dp.Links = p.origin, p.secrets
 			dp.PluginApprovals = pg.store
 		}))
 	}
@@ -129,21 +124,12 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 		guard.PluginSettings{TimeoutMs: &timeout})
 	require.NoError(t, err)
 
-	// No link without proof of the binding text: answered as an unknown id.
-	status, out := p.issue(opened.ID, opened.BindingText+" ")
-	require.Equal(t, http.StatusNotFound, status, out)
-	require.Equal(t, "NOT_FOUND", out["code"])
-	status, out = p.issue(uuid.Must(uuid.NewV7()), opened.BindingText)
-	require.Equal(t, http.StatusNotFound, status, out)
-
-	status, out = p.issue(opened.ID, opened.BindingText)
-	require.Equal(t, http.StatusOK, status, out)
-	secret := p.secretOf(opened.ID, out)
+	secret := p.link(opened.ID)
 
 	// No request without the link's secret.
-	status, _ = p.get(opened.ID, "")
+	status, _ := p.get(opened.ID, "")
 	require.Equal(t, http.StatusNotFound, status)
-	status, out = p.get(opened.ID, secret)
+	status, out := p.get(opened.ID, secret)
 	require.Equal(t, http.StatusOK, status, out)
 	raw, err := json.Marshal(out)
 	require.NoError(t, err)
@@ -182,15 +168,11 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.Equal(t, http.StatusConflict, status, out)
 	require.Equal(t, "APPROVAL_INVALID", out["code"])
 	require.Equal(t, "This plugin approval is already signed. The plugin starts within a few seconds of the signature.", out["personMessage"])
-	status, out = p.issue(opened.ID, opened.BindingText)
-	require.Equal(t, http.StatusConflict, status, out)
 
 	// A newer approval of the same entry cancels the pending one.
 	first, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.2", bot.Role), guard.PluginSettings{})
 	require.NoError(t, err)
-	status, out = p.issue(first.ID, first.BindingText)
-	require.Equal(t, http.StatusOK, status, out)
-	firstSecret := p.secretOf(first.ID, out)
+	firstSecret := p.link(first.ID)
 	second, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.3", bot.Role), guard.PluginSettings{})
 	require.NoError(t, err)
 	status, out = p.get(first.ID, firstSecret)
@@ -199,9 +181,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.Contains(t, out["personMessage"], "A newer approval for this plugin replaced this one")
 
 	// Past its expiry: 410, and nothing can be approved.
-	status, out = p.issue(second.ID, second.BindingText)
-	require.Equal(t, http.StatusOK, status, out)
-	secondSecret := p.secretOf(second.ID, out)
+	secondSecret := p.link(second.ID)
 	p.offset.Store(int64(25 * time.Hour))
 	status, out = p.get(second.ID, secondSecret)
 	require.Equal(t, http.StatusGone, status, out)
@@ -214,7 +194,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	p.offset.Store(0)
 	theirs, err := guard.OpenPluginApproval(ctx, other.Conn, pluginApprovalDetail("0.3.1", other.Role), guard.PluginSettings{})
 	require.NoError(t, err)
-	status, out = p.issue(theirs.ID, theirs.BindingText)
+	status, out = p.get(theirs.ID, p.link(theirs.ID))
 	require.Equal(t, http.StatusOK, status, out)
 	require.Equal(t, other.Role, theirsRequestedBy(t, theirs.BindingText))
 }
@@ -233,13 +213,16 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	pool, err := postgres.NewPool(context.Background(), old.URL, 1)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
+	secrets := links.NewSecrets(time.Now, rand.Reader)
 	srv.Add(pg.service(func(dp *agent.Deps) {
-		dp.PagesOrigin, dp.Links, dp.PluginApprovals = origin, links.NewSecrets(time.Now, rand.Reader), pg.store
+		dp.PagesOrigin, dp.Links, dp.PluginApprovals = origin, secrets, pg.store
 		dp.Probe = postgres.Probe{Q: pool, Migrations: guard.Migrations()}
 	}))
-	body := `{"proof":"` + links.IssueProof("{}") + `"}`
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/plugins/"+uuid.Must(uuid.NewV7()).String()+"/links", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	id := uuid.Must(uuid.NewV7())
+	secret, err := secrets.Issue(id, time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/plugins/"+id.String(), http.NoBody)
+	req.Header.Set(links.SecretHeader, secret)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())

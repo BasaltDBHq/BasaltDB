@@ -18,7 +18,7 @@ func loadEngineConfig(c *cliIO, path string) (engineConfig, error) {
 
 // loadEngineConfigAs reads the engine config at path for a process with
 // effective uid euid: config.Load, or as root the hardened read
-// (loadConfigAsRoot). basalt engine started as root without --user reads
+// (loadConfigAsRoot). basalt engine started as root reads
 // its config here too.
 func loadEngineConfigAs(euid int, path string) (engineConfig, error) {
 	if euid != 0 {

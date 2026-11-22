@@ -358,22 +358,30 @@ func TestResponderAnswersOnce(t *testing.T) {
 func TestTransportIsBoundInThePrologue(t *testing.T) {
 	t.Parallel()
 	lk := mustLink(t)
-	_, m1, err := WriteHello(TransportDirect, lk)
+	_, m1, err := WriteHello(TransportRelay, lk)
 	require.NoError(t, err)
 	_, err = ReadHello(m1, relayCheck(lk))
-	require.ErrorIs(t, err, ErrLinkRefused)
-	_, err = ReadHello(m1, HelloCheck{Transport: TransportDirect, Lookup: holding(lk)})
 	require.NoError(t, err)
 
-	_, _, err = WriteHello("CARRIER_PIGEON", lk)
-	require.Error(t, err)
-	_, err = ReadHello(m1, HelloCheck{Transport: "CARRIER_PIGEON", Lookup: holding(lk)})
-	require.Error(t, err)
-	_, err = ReadHello(m1, HelloCheck{Transport: TransportDirect})
+	// A message 1 whose prologue names another transport fails the tag.
+	page, err := ecdh.P256().GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	other, err := writeHelloRawPoint("DIRECT", lk.Token, lk.PSK, page.PublicKey().Bytes())
+	require.NoError(t, err)
+	_, err = ReadHello(other, relayCheck(lk))
+	require.ErrorIs(t, err, ErrLinkRefused)
+
+	for _, word := range []Transport{"DIRECT", "CARRIER_PIGEON", ""} {
+		_, _, err = WriteHello(word, lk)
+		require.Error(t, err, "only RELAY is a transport: %q", word)
+		_, err = ReadHello(m1, HelloCheck{Transport: word, SessionToken: &lk.Token, Lookup: holding(lk)})
+		require.Error(t, err, "only RELAY is a transport: %q", word)
+	}
+	_, err = ReadHello(m1, HelloCheck{Transport: TransportRelay, SessionToken: &lk.Token})
 	require.Error(t, err, "a lookup is required")
 	_, err = ReadHello(m1, HelloCheck{Transport: TransportRelay, Lookup: holding(lk)})
-	require.Error(t, err, "RELAY needs SESSION_OPEN's token")
-	_, err = ReadHello(m1, HelloCheck{Transport: TransportDirect, Lookup: holding(mustLink(t))})
+	require.Error(t, err, "SESSION_OPEN's token is required")
+	_, err = ReadHello(m1, HelloCheck{Transport: TransportRelay, SessionToken: &lk.Token, Lookup: holding(mustLink(t))})
 	require.ErrorIs(t, err, ErrLinkRefused, "a token the engine does not hold")
 }
 
@@ -390,7 +398,7 @@ func TestEngineChecksTagBeforePoint(t *testing.T) {
 	offCurve[len(offCurve)-1] ^= 1
 
 	run := func(link LinkKeys) ([]string, error) {
-		_, m1, err := writeHelloRawPoint(TransportRelay, lk.Token, link.PSK, offCurve)
+		m1, err := writeHelloRawPoint(TransportRelay, lk.Token, link.PSK, offCurve)
 		require.NoError(t, err)
 		var steps []string
 		_, err = readHello(m1, relayCheck(lk), func(step string) { steps = append(steps, step) })
@@ -406,15 +414,15 @@ func TestEngineChecksTagBeforePoint(t *testing.T) {
 
 // writeHelloRawPoint is a page's message 1 with any 65 bytes as e, as a
 // hostile page could send.
-func writeHelloRawPoint(transport Transport, token LinkToken, psk PSK, ePub []byte) (*symmetricState, []byte, error) {
+func writeHelloRawPoint(transport Transport, token LinkToken, psk PSK, ePub []byte) ([]byte, error) {
 	ss := newSymmetricState(prologue(transport, token))
 	ss.mixKeyAndHash(psk[:])
 	ss.mixE(ePub)
 	tag, err := ss.encryptAndHash(nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return ss, concat([]byte{wireVersion, typeHello}, token[:], ePub, tag), nil
+	return concat([]byte{wireVersion, typeHello}, token[:], ePub, tag), nil
 }
 
 func TestHandshakeErasesItsChainingKeys(t *testing.T) {
@@ -509,9 +517,9 @@ func TestDeadTokensRunTheTagCheck(t *testing.T) {
 	}
 	want := []string{"header", "token", "tag"}
 
-	_, unknown, err := WriteHello(TransportDirect, other)
+	_, unknown, err := WriteHello(TransportRelay, other)
 	require.NoError(t, err)
-	got, err := steps(unknown, HelloCheck{Transport: TransportDirect, Lookup: holding(lk)})
+	got, err := steps(unknown, HelloCheck{Transport: TransportRelay, SessionToken: &other.Token, Lookup: holding(lk)})
 	require.ErrorIs(t, err, ErrLinkRefused)
 	require.Equal(t, want, got, "an unknown token")
 
@@ -527,8 +535,8 @@ func TestDeadTokensRunTheTagCheck(t *testing.T) {
 	require.ErrorIs(t, err, ErrLinkRefused)
 	require.Equal(t, want, got, "a live token with a wrong psk")
 
-	_, zeroPSK, err := WriteHello(TransportDirect, LinkKeys{Token: other.Token})
+	_, zeroPSK, err := WriteHello(TransportRelay, LinkKeys{Token: other.Token})
 	require.NoError(t, err)
-	_, err = ReadHello(zeroPSK, HelloCheck{Transport: TransportDirect, Lookup: holding(lk)})
+	_, err = ReadHello(zeroPSK, HelloCheck{Transport: TransportRelay, SessionToken: &other.Token, Lookup: holding(lk)})
 	require.ErrorIs(t, err, ErrLinkRefused, "a valid tag under the zero psk opens nothing")
 }

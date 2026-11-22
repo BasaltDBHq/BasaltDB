@@ -18,7 +18,7 @@ Tags are semver with a leading `v`. Release tags **MUST** start with `v` (e.g. `
 | Beta / RC | `v0.2.0-beta.1`, `v1.0.0-rc.1` | When we say so |
 | Stable | `v1.0.0` | No prerelease suffix |
 
-`go install …@latest` **ignores prereleases**. Once a release exists, pin its tag, for example `@v0.0.1-alpha`. `install.sh` with no argument (`latest`) includes prereleases; GitHub `/releases/latest` does not.
+`go install …@latest` **ignores prereleases**. Once a release exists, pin its tag, for example `@v0.1.0-alpha`. `install.sh` with no argument (`latest`) includes prereleases; GitHub `/releases/latest` does not.
 
 ## How to cut a release
 
@@ -119,10 +119,10 @@ Publish scripts (`npm-publish.sh`, `mcp-registry-publish.sh`) also refuse a non-
 After a tag, people can install from Homebrew (`brew install basaltdbhq/tap/basaltdb`), a Release archive or package, anonymous [install.sh](../install.sh), or `go install`. The [install guide](install.md) is the user-facing path. Pin the tag (`v0.0.1-alpha.2` below is an example):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BasaltDBHq/BasaltDB/master/install.sh | sh -s v0.0.1-alpha.2
+curl -fsSL https://raw.githubusercontent.com/BasaltDBHq/BasaltDB/master/install.sh | sh -s v0.1.0-alpha
 
-curl -fsSL -o basaltdb.tgz https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
-curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/SHA256SUMS
+curl -fsSL -o basaltdb.tgz https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.1.0-alpha/basaltdb_0.1.0-alpha_linux_amd64.tar.gz
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.1.0-alpha/SHA256SUMS
 ```
 
 ## go install
@@ -133,10 +133,10 @@ curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-al
 # from a clone
 CGO_ENABLED=0 go install ./cmd/basalt
 
-CGO_ENABLED=0 go install github.com/basaltdbhq/basaltdb/cmd/basalt@v0.0.1-alpha
+CGO_ENABLED=0 go install github.com/basaltdbhq/basaltdb/cmd/basalt@v0.1.0-alpha
 ```
 
-`@latest` will not pick an alpha tag. Pin the tag, for example `@v0.0.1-alpha`.
+`@latest` will not pick an alpha tag. Pin the tag, for example `@v0.1.0-alpha`.
 
 Release binaries embed the tag via `-ldflags`. `go install` uses the module version from build info when ldflags did not override it.
 

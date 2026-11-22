@@ -189,12 +189,20 @@ grep -q "cannot be shown here" "$work/nodialog.out" || {
 ! grep -q "guard installed" "$work/nodialog.out" || fail "basalt init reached the database without an administrator dialog"
 [ ! -e /etc/systemd/system/basalt-engine.service ] || fail "a unit was installed without an administrator dialog"
 # A stand-in pkexec answers yes through sudo, so the real install script
-# runs as root; it takes only the arguments basalt init passes.
+# runs as root; it takes only the arguments basalt init passes. Like a
+# person between the dialog and the sudo prompt, it then waits until the
+# engine, started with no engine.json yet, answers on its setup address.
 sudo tee /usr/bin/pkexec >/dev/null <<'EOF'
 #!/bin/sh
 [ "$1" = --disable-internal-agent ] || exit 127
 shift
-exec sudo -n "$@"
+sudo -n "$@" || exit
+for _ in $(seq 100); do
+	curl -sf http://127.0.0.1:8787/healthz >/dev/null && exit 0
+	sleep 0.1
+done
+echo "pkexec stand-in: the engine with no config never answered on 127.0.0.1:8787" >&2
+exit 1
 EOF
 sudo chmod 0755 /usr/bin/pkexec
 # Its output is the setup SQL (the password redacted): shown only on failure.
@@ -208,6 +216,13 @@ wait_for "the engine's agent socket" sudo test -S "/run/basalt/$agent.sock"
 # several times within seconds: clear systemd's start-rate count so its
 # default limit (5 starts in 10s) measures the steps, not the install.
 sudo systemctl reset-failed "$engine_unit"
+# Started by the dialog before engine.json existed, the engine waited for it
+# and served only its setup page: no exit on the missing file, no crash loop.
+if sudo journalctl --no-pager -o cat -u "$engine_unit" | grep -E 'engine.json: no such file|crashed [0-9]+ times' >&2; then
+	fail "the engine exited on its missing config instead of waiting for it"
+fi
+sudo journalctl --no-pager -o cat -u "$engine_unit" | grep -q 'no engine config yet: serving only the setup page' ||
+	fail "the engine started with no config did not serve its setup page"
 for d in /opt/basalt /opt/basalt/run; do
 	got=$(stat -c '%U:%G %a' "$d") || fail "basalt service install did not make $d"
 	[ "$got" = "root:root 755" ] || fail "$d is $got, not root:root 755"

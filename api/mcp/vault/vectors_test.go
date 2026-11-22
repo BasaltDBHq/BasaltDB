@@ -434,9 +434,9 @@ func TestGenerateVaultVectors(t *testing.T) {
 	writeVectors(t, fileLinkDerivation, genLinkDerivation())
 	writeVectors(t, fileEngineID, genEngineID(keys))
 	writeVectors(t, filePadding, genPadding())
-	handshakes, relay, direct := genHandshake(keys)
+	handshakes, relay, another := genHandshake(keys)
 	writeVectors(t, fileHandshake, handshakes)
-	writeVectors(t, fileFrame, genFrames(keys, relay, direct))
+	writeVectors(t, fileFrame, genFrames(keys, relay, another))
 	writeVectors(t, fileSignature, genSignatures(keys, relay))
 	writeVectors(t, fileReceipt, genReceipts(keys))
 }
@@ -640,7 +640,9 @@ func genWelcome(s handshakeSetup, payload func(h []byte) []byte) ([]byte, sessio
 	return m2, keys, m1
 }
 
-func genHandshake(keys vectorKeys) (f vectorFile[handshakeCase], relay, direct sessionKeys) {
+// genHandshake returns the cases, the keys of the relay session and those of
+// another relay session (for the spliced frame), which has no case.
+func genHandshake(keys vectorKeys) (f vectorFile[handshakeCase], relay, another sessionKeys) {
 	f = vectorFile[handshakeCase]{
 		Kind:        "HANDSHAKE",
 		Description: "Noise_NNpsk0_P256_AESGCM_SHA256 between the page (initiator) and the engine (responder), with the psk and linkToken from the link secret and the prologue basalt-vault-prologue.1\\n + transport + \\n + linkToken (base64url). In psk mode every e token is MixHash and MixKey of the 65-byte point. sig signs basalt-vault-session-sig.1\\n + h after e, ee; message 2's payload is the JSON {\"engineKey\",\"sig\"} in that order. refusedBy ENGINE: the engine reads message1 and closes; message2 is empty. refusedBy PAGE: the page writes message1 itself (it must match) and closes on message2. ACCEPT: both sides run, and the engine writes message2 with the pinned sig.",
@@ -664,9 +666,9 @@ func genHandshake(keys vectorKeys) (f vectorFile[handshakeCase], relay, direct s
 		return sk
 	}
 	relaySetup := handshakeSetup{transportRelay, keys.relaySecret, scalar("page ephemeral relay"), scalar("engine ephemeral relay")}
-	directSetup := handshakeSetup{transportDirect, secretOf("direct link"), scalar("page ephemeral direct"), scalar("engine ephemeral direct")}
+	anotherSetup := handshakeSetup{transportRelay, secretOf("another relay link"), scalar("page ephemeral another relay"), scalar("engine ephemeral another relay")}
 	relay = accept("a relay session", relaySetup)
-	direct = accept("a direct session", directSetup)
+	_, another, _ = genWelcome(anotherSetup, honest)
 
 	lk := mustLink(keys.relaySecret)
 	other := mustLink(keys.otherLink)
@@ -688,8 +690,6 @@ func genHandshake(keys vectorKeys) (f vectorFile[handshakeCase], relay, direct s
 	compressed[0] = 0x02
 	compressedM1, _ := writeMessage1(transportRelay, lk.token, lk.psk, compressed)
 	engineRefuses("a valid tag over a compressed-point prefix", compressedM1, errLinkRefused)
-	otherTransport, _ := writeMessage1(transportDirect, lk.token, lk.psk, pagePub(relaySetup))
-	engineRefuses("message 1 made for the direct transport", otherTransport, errLinkRefused)
 	version := bytes.Clone(goodM1)
 	version[0] = 0x02
 	engineRefuses("version 2", version, errVersion)
@@ -751,7 +751,7 @@ func genHandshake(keys vectorKeys) (f vectorFile[handshakeCase], relay, direct s
 		m[headerLen+pointLen-1] ^= 1
 		return m
 	}(), errTooLarge)
-	return f, relay, direct
+	return f, relay, another
 }
 
 const vectorItemID = "0192f3a0-7c1e-7b2a-9c4d-5e6f708192a3"
@@ -768,10 +768,10 @@ func responseJSON(id int, body string, more bool) string {
 	return fmt.Sprintf(`{"type":"RESPONSE","id":%d,"status":200,"headers":{"content-type":"application/json"},"body":%q,"more":%t}`, id, body, more)
 }
 
-func genFrames(keys vectorKeys, relay, direct sessionKeys) vectorFile[frameCase] {
+func genFrames(keys vectorKeys, relay, another sessionKeys) vectorFile[frameCase] {
 	f := vectorFile[frameCase]{
 		Kind:        "FRAME",
-		Description: "Frames of the relay session in handshake.json (and one of its direct session): 0x01 0x03 || AES-256-GCM(key, nonce 4 zero bytes || counter big-endian, ad the 2 header bytes, padded plaintext). key and counter are the receiver's own. A receiver checks the size (TOO_LARGE over 32786), the version (UNSUPPORTED_VERSION), the type (PROTOCOL), then decrypts and unpads (FRAME_INVALID).",
+		Description: "Frames of the relay session in handshake.json (and one of another relay session, for the splice): 0x01 0x03 || AES-256-GCM(key, nonce 4 zero bytes || counter big-endian, ad the 2 header bytes, padded plaintext). key and counter are the receiver's own. A receiver checks the size (TOO_LARGE over 32786), the version (UNSUPPORTED_VERSION), the type (PROTOCOL), then decrypts and unpads (FRAME_INVALID).",
 	}
 	add := func(name, dir string, key []byte, counter uint64, content string, frame []byte, expect string) {
 		f.Cases = append(f.Cases, frameCase{Name: name, Direction: dir, Key: hx(key), Counter: counter, Content: content, Frame: hx(frame), Expect: expect})
@@ -803,7 +803,7 @@ func genFrames(keys vectorKeys, relay, direct sessionKeys) vectorFile[frameCase]
 	refuse("reordered: the second frame first", pageToEngine, k1, 0, second, errFrameInvalid)
 	refuse("replayed: the first frame again", pageToEngine, k1, 1, first, errFrameInvalid)
 	refuse("reflected: the engine's frame sent back to it", pageToEngine, k1, 0, firstResp, errFrameInvalid)
-	spliced := sealFrame(direct.pageToEngine, 0, pad([]byte(getReq)))
+	spliced := sealFrame(another.pageToEngine, 0, pad([]byte(getReq)))
 	refuse("spliced: a frame from another session", pageToEngine, k1, 0, spliced, errFrameInvalid)
 	refuse("a tampered tag", pageToEngine, k1, 0, flipLast(first), errFrameInvalid)
 	tampered := bytes.Clone(first)

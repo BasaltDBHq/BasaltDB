@@ -121,13 +121,10 @@ func (c CloseError) Error() string { return "vault channel: " + c.String() }
 // Transport is the socket a session runs over; it is part of the prologue.
 type Transport string
 
-// The transports (CONTRACT.md, Vault channel; DIRECT is M4.1's).
-const (
-	TransportRelay  Transport = "RELAY"
-	TransportDirect Transport = "DIRECT"
-)
+// TransportRelay is the only transport (CONTRACT.md, Vault channel).
+const TransportRelay Transport = "RELAY"
 
-func (t Transport) valid() bool { return t == TransportRelay || t == TransportDirect }
+func (t Transport) valid() bool { return t == TransportRelay }
 
 // redacted is what every secret-holding value prints as.
 const redacted = "[redacted]"

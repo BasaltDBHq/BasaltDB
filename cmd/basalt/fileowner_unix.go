@@ -8,6 +8,15 @@ import (
 	"syscall"
 )
 
+// infoOwnerUID is the uid that owns the file fi describes.
+func infoOwnerUID(fi os.FileInfo) (int, bool) {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return int(st.Uid), true
+}
+
 // fileOwnerUID is the uid that owns path.
 func fileOwnerUID(path string) (int, error) {
 	fi, err := os.Stat(path)

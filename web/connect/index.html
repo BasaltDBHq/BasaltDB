@@ -23,7 +23,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/connect.js" integrity="sha384-YjbU1kuJUK0n9OwWcgjfo8kJSoKGROonJEWlELwTl7Up6kQRXiUzAmf+RJF/NGhL"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-erotFmgqMWWjERJAjYzo1f0QRr3WNgv5rrTHytgWthtmQs0yD1AtiousQUFxP/lu"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
@@ -163,14 +163,17 @@
       <div id="label-tables" class="label-tables"></div>
       <p id="unlabeled-warn" class="strip warn"></p>
       <p id="labels-error" class="strip bad" role="alert" hidden></p>
+      <fieldset id="rest-choice" class="box rest-choice">
+        <legend>Columns you didn't label:</legend>
+        <label class="tick"><input id="rest-leave" name="rest-choice" type="radio" value="leave" checked> Leave them unlabeled for now</label>
+        <label class="tick"><input id="rest-mark" name="rest-choice" type="radio" value="mark"> Mark them as not personal</label>
+      </fieldset>
       <div id="rest-confirm" class="box stack" role="alertdialog" aria-labelledby="rest-question" hidden>
         <p id="rest-question"></p>
         <button id="rest-yes" type="button">Mark them</button>
         <button id="rest-no" type="button" class="secondary">Cancel</button>
       </div>
       <button id="labels-next" type="button">Continue</button>
-      <button id="labels-rest" type="button" class="secondary">Mark the rest as not personal</button>
-      <button id="labels-skip" type="button" class="secondary">Skip: decide later</button>
     </section>
 
     <section id="s-approve" class="screen" hidden>

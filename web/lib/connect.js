@@ -1212,12 +1212,17 @@ export function start(env) {
     setText("unlabeled-warn", `Columns without a label aren't masked: ${bot()} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
     show("labels-error", false);
     show("rest-confirm", false);
+    $("rest-mark").checked = labelMode === "rest";
+    $("rest-leave").checked = labelMode !== "rest";
     restCount();
     go("s-labels");
   };
 
+  // restCount shows the choice for the columns left unlabeled only while
+  // there are some.
   const restCount = () => {
-    $("labels-rest").disabled = labels.unlabeled(tablesNow()).length === 0;
+    show("rest-choice", labels.unlabeled(tablesNow()).length > 0);
+    show("rest-confirm", false);
   };
 
   const labelRow = (c) => sharedLabelRow(c, labels, restCount);
@@ -1228,17 +1233,20 @@ export function start(env) {
     return text !== "";
   };
 
+  // Continue keeps the labels the person picked; with "Mark them as not
+  // personal" it first asks, with the count of what it marks.
   $("labels-next").addEventListener("click", () => {
     if (labelsProblem(labels.problem(tablesNow()))) return;
+    if (!$("rest-choice").hidden && $("rest-mark").checked) {
+      setText("rest-question", restQuestion(labels.unlabeled(tablesNow())));
+      show("rest-confirm");
+      return;
+    }
     labelMode = "changes";
     showApprove();
   });
 
-  $("labels-rest").addEventListener("click", () => {
-    if (labelsProblem(labels.problem(tablesNow()))) return;
-    setText("rest-question", restQuestion(labels.unlabeled(tablesNow())));
-    show("rest-confirm");
-  });
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", () => show("rest-confirm", false));
 
   $("rest-yes").addEventListener("click", () => {
     show("rest-confirm", false);
@@ -1247,12 +1255,6 @@ export function start(env) {
   });
 
   $("rest-no").addEventListener("click", () => show("rest-confirm", false));
-
-  $("labels-skip").addEventListener("click", () => {
-    show("labels-error", false);
-    labelMode = "skip";
-    showApprove();
-  });
 
   // ---- 6: approve ----
   const showApprove = () => {
@@ -1265,7 +1267,7 @@ export function start(env) {
     if (!c.alreadyRan && n > 0) parts.push(`${n} ${n === 1 ? "table" : "tables"}`);
     if (labelsApply() && labelMode !== "skip") {
       const k = labels.changes(tablesNow()).length;
-      parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
+      if (k > 0) parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
       if (labelMode === "rest" && labels.unlabeled(tablesNow()).length > 0) parts.push("the rest not personal");
     }
     setText("ap-counts", parts.join(" · "));

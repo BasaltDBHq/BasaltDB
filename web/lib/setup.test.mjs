@@ -570,7 +570,7 @@ test("Back to the tables and a new access: the approval shows and runs the new c
   leads.checked = false;
   leads.fire("change");
   await nodes["tables-next"].click();
-  await nodes["labels-skip"].click();
+  await nodes["labels-next"].click();
   assert.equal(screenOf(nodes), "s-approve");
   assert.match(nodes["ap-facts"].textContent, /Changes rows in: orders/);
   nodes.back.click();
@@ -578,7 +578,7 @@ test("Back to the tables and a new access: the approval shows and runs the new c
   nodes.back.click();
   find(nodes.tables.children[0], (n) => n.value === "READ").click();
   await nodes["tables-next"].click();
-  await nodes["labels-skip"].click();
+  await nodes["labels-next"].click();
   assert.match(nodes["ap-facts"].textContent, /Reads: orders, logs/);
   await nodes.approve.click();
   assert.deepEqual(e.bodies.at(-1).body.tables, [{ table: "public.orders", access: "READ" }, { table: "public.logs", access: "READ" }]);
@@ -609,7 +609,7 @@ test("a run refused because the tables changed goes back to the string", async (
   const e = fakeEngine({ answer: (path) => path === RUN_PATH ? new Response(JSON.stringify({ code: "TABLES_CHANGED", message: "A table changed." }), { status: 409 }) : null });
   await toTables(nodes, e);
   await nodes["tables-next"].click();
-  await nodes["labels-skip"].click();
+  await nodes["labels-next"].click();
   await nodes.approve.click();
   await settle();
   assert.equal(screenOf(nodes), "s-paste");
@@ -636,7 +636,9 @@ test("the approval after Mark the rest says the rest are not personal", async ()
   const pick = find(nodes["label-tables"], (n) => n.tagName === "SELECT" && n.attrs["aria-label"] === "Label for orders.email");
   pick.value = "SECRET";
   pick.fire("change");
-  nodes["labels-rest"].click();
+  nodes["rest-mark"].checked = true;
+  nodes["rest-mark"].fire("change");
+  await nodes["labels-next"].click();
   assert.match(nodes["rest-question"].textContent, /Mark 2 columns in 2 tables as not personal\?/);
   await nodes["rest-yes"].click();
   assert.equal(screenOf(nodes), "s-approve");
@@ -663,9 +665,37 @@ test("Mark the rest leaves out a suggested column the person did not accept, on 
   leads.checked = false;
   leads.fire("change");
   await nodes["tables-next"].click();
-  nodes["labels-rest"].click();
+  assert.equal(nodes["rest-leave"].checked, true, "leaving them unlabeled is the default");
+  nodes["rest-mark"].checked = true;
+  nodes["rest-mark"].fire("change");
+  await nodes["labels-next"].click();
   assert.match(nodes["rest-question"].textContent, /Left out: orders\.email, suggested as personal or secret/);
   await nodes["rest-yes"].click();
   assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => c.column), ["note", "line"]);
   assert.equal(e.bodies.at(-1).body.restPublic, undefined);
+});
+
+test("Continue with the default choice keeps the picked labels and marks nothing else; the choice hides with nothing left unlabeled", async () => {
+  const nodes = fakePage();
+  const e = fakeEngine();
+  await toTables(nodes, e);
+  const leads = find(nodes.tables.children[2], (n) => n.tagName === "INPUT");
+  leads.checked = false;
+  leads.fire("change");
+  await nodes["tables-next"].click();
+  assert.equal(nodes["rest-choice"].hidden, false);
+  const pick = (col) => find(nodes["label-tables"], (n) => n.tagName === "SELECT" && n.attrs["aria-label"] === `Label for ${col}`);
+  pick("orders.note").value = "SECRET";
+  pick("orders.note").fire("change");
+  await nodes["labels-next"].click();
+  assert.equal(screenOf(nodes), "s-approve", "no confirm with the default choice");
+  assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => [c.column, c.class]), [["note", "SECRET"]]);
+  assert.equal(e.bodies.at(-1).body.restPublic, undefined);
+
+  nodes.back.click();
+  for (const col of ["orders.email", "logs.line"]) {
+    pick(col).value = "SECRET";
+    pick(col).fire("change");
+  }
+  assert.equal(nodes["rest-choice"].hidden, true, "nothing left unlabeled: no choice");
 });

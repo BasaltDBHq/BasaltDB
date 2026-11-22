@@ -960,12 +960,17 @@ export function startReal(link, env) {
     setText("unlabeled-warn", `Columns without a label aren't masked: ${agent} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
     show("labels-error", false);
     show("rest-confirm", false);
+    $("rest-mark").checked = install.labelMode === "rest";
+    $("rest-leave").checked = install.labelMode !== "rest";
     restCount();
     go("s-labels");
   };
+  // restCount shows the choice for the columns left unlabeled only while
+  // "Mark them as not personal" would mark some.
   const restCount = () => {
     const p = install.restPlan();
-    $("labels-rest").disabled = p.rest.length === 0 && !p.restPublic;
+    show("rest-choice", p.rest.length > 0 || p.restPublic);
+    show("rest-confirm", false);
   };
   const labelsProblem = (text) => {
     setText("labels-error", text);
@@ -976,24 +981,23 @@ export function startReal(link, env) {
     install.setLabelMode(mode);
     if (await recheck("labels-error")) showApprove();
   };
+  // Continue keeps the labels the person picked; with "Mark them as not
+  // personal" it first asks, naming what it leaves out or also marks.
   $("labels-next").addEventListener("click", () => {
     if (labelsProblem(install.labelsProblem())) return;
+    if (!$("rest-choice").hidden && $("rest-mark").checked) {
+      setText("rest-question", install.restQuestion());
+      show("rest-confirm");
+      return;
+    }
     return labelsDone("changes");
   });
-  $("labels-rest").addEventListener("click", () => {
-    if (labelsProblem(install.labelsProblem())) return;
-    setText("rest-question", install.restQuestion());
-    show("rest-confirm");
-  });
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", () => show("rest-confirm", false));
   $("rest-yes").addEventListener("click", () => {
     show("rest-confirm", false);
     return labelsDone("rest");
   });
   $("rest-no").addEventListener("click", () => show("rest-confirm", false));
-  $("labels-skip").addEventListener("click", () => {
-    show("labels-error", false);
-    return labelsDone("skip");
-  });
 
   // ---- 5: approve: exactly what the last check was made for ----
   const showApprove = () => {

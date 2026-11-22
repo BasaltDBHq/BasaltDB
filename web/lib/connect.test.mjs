@@ -606,15 +606,21 @@ test("a connect-only INSTALL: the code, the passkey, the reach check, ticks, lab
   select("users.email").fire("change");
   select("users.phone").value = "IDENTIFIER:PHONE";
   select("users.phone").fire("change");
-  await nodes["labels-rest"].click();
+  // The choice for the columns left unlabeled: leave them, by default.
+  assert.equal(nodes["rest-choice"].hidden, false);
+  assert.equal(nodes["rest-leave"].checked, true);
+  assert.equal(nodes["rest-mark"].checked, false);
+  nodes["rest-mark"].checked = true;
+  nodes["rest-mark"].fire("change");
+  await nodes["labels-next"].click();
   assert.match(nodes["labels-error"].textContent, /country of the phone numbers in users\.phone/);
   const region = find(nodes["label-tables"], (n) => n.tagName === "INPUT" && /users\.phone/.test(n.getAttribute("aria-label") ?? ""));
   assert.equal(region.hidden, false);
   region.value = "de";
   region.fire("input");
-  // Mark the rest: the count first (logs.at, in a folded table), then the
-  // approval.
-  await nodes["labels-rest"].click();
+  // Mark them as not personal: the count first (logs.at, in a folded
+  // table), then the approval.
+  await nodes["labels-next"].click();
   assert.equal(nodes["rest-confirm"].hidden, false);
   assert.equal(nodes["rest-question"].textContent, "Mark 1 column in 1 table as not personal?");
   await nodes["rest-yes"].click();

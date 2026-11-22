@@ -181,9 +181,12 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
 		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
 	}
-	if cfg.Service() {
-		// A service engine keeps plugin entries of its own, added over the
-		// person socket, and runs them once approved.
+	keepsPlugins := keepsPluginEntries(cfg)
+	if keepsPlugins {
+		// A service engine, and an agent-operated one on the bot's computer,
+		// keeps plugin entries of its own, added with request_plugin, and
+		// runs them once approved (CONTRACT.md, Plugin approval in service
+		// mode, Plugin approval through the portal).
 		pluginOpts.kept = openKeptStore(cfg, env.stateDir, pluginLog)
 	}
 	plugins := newEnginePlugins(cfg, configPath, pluginOpts, pluginLog)
@@ -196,8 +199,8 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.plugins = plugins
 		env.deliverer = plugins.DeliverLinks
 	}
-	if cfg.Service() {
-		env.requests = &pluginRequests{uids: agentUIDs, admitted: cfg.PersonUIDs}
+	if keepsPlugins {
+		env.requests = &pluginRequests{uids: agentUIDs, admitted: pluginCallers(cfg, uint32(os.Geteuid()))}
 	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
@@ -332,7 +335,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { _ = ev.client.Run(vaultCtx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
-	if cfg.Service() {
+	if keepsPlugins {
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
 			env.requests.kept.Store(kept)
 			// Ends a disable could not write are tried again now.
@@ -388,6 +391,26 @@ func upgradeOrReload(up UpgradeFunc, reload <-chan struct{}, reloading chan stru
 // agentOSUIDs is the uid of every configured agent's OS user, by agent
 // name. An OS user that does not resolve stops the engine: the person
 // socket must never mistake an agent's user for the person (fail closed).
+// keepsPluginEntries reports whether the engine keeps plugin entries of
+// its own: a service engine, and an agent-operated engine that runs as the
+// agent's own OS user (the bot's computer). A person-operated engine that
+// runs as the person's own OS user keeps none (SAME_USER_MODE).
+func keepsPluginEntries(cfg config.Config) bool {
+	return cfg.Service() || cfg.AgentOperated()
+}
+
+// pluginCallers are the OS users whose agents may change plugins: on a
+// service engine the person's (personUids); on an agent-operated engine
+// that runs as the agent's own OS user, that user, which every agent of the
+// engine runs as. An agent-operated service engine admits nobody here:
+// request_plugin refuses it AGENT_OPERATED before it asks.
+func pluginCallers(cfg config.Config, euid uint32) []uint32 {
+	if cfg.Service() {
+		return cfg.PersonUIDs
+	}
+	return []uint32{euid}
+}
+
 func agentOSUIDs(agents []config.Agent, lookup func(string) (uint32, error)) (map[string]uint32, error) {
 	out := make(map[string]uint32, len(agents))
 	for _, a := range agents {

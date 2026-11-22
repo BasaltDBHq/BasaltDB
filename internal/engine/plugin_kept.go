@@ -826,6 +826,11 @@ func (s *keptPlugins) listed(p config.Plugin, source string, scope person.Scope,
 		l.Health = s.health(k, source == person.SourceEngine)
 	}
 	mode, trustMode := plugin.ModeService, plugin.ModeService
+	if !s.cfg.Service() {
+		// An agent-operated engine on the bot's computer: its config
+		// entries are same-user ones.
+		mode, trustMode = plugin.ModeSameUser, plugin.ModeSameUser
+	}
 	var v plugin.Verified
 	var root string
 	var err error

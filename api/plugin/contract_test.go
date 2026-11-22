@@ -689,8 +689,11 @@ const (
 	sentNameCue         = "It also sees values from your database that appear in that text."
 	sentUsedFor         = "Used for: <agents>."
 	sentAskedBy         = "Asked by <agent>."
-	sentFingerprint     = "Fingerprint: <fingerprint>"
-	computerBasaltRuns  = "the computer Basalt runs on"
+	sentFingerprint     = "Plugin fingerprint: <fingerprint>"
+	// sentPortalSameUser is the portal page's one sentence not derived
+	// from the binding (CONTRACT.md, Plugin approval through the portal).
+	sentPortalSameUser = "Basalt runs on the agent's own computer, as the same user as the agent. Your approval decides whether Basalt runs this plugin. It cannot stop the agent from reading what Basalt can."
+	computerBasaltRuns = "the computer Basalt runs on"
 )
 
 // hookSentence is what each hook sees, in plain words; hookLabel names that
@@ -1203,7 +1206,7 @@ func TestPluginApprovalVectors(t *testing.T) {
 		sentChangeIsolation, sentHooksAdded, sentHooksRemoved, sentNamesAdded, sentValuesAdded, sentNamesRemoved,
 		sentValuesRemoved, sentEgressAdded, sentEgressRemoved, sentAgentsAdded, sentAgentsRemoved, sentSettingsChanged,
 		sentLevel1, sentLevel2, sentLevel3, sentTick, sentRemote, sentRemoteOnward, sentOwnUser, sentSameAccess,
-		sentNoNetwork, sentEgressLimit, sentNameCue, sentUsedFor, sentAskedBy, sentFingerprint,
+		sentNoNetwork, sentEgressLimit, sentNameCue, sentUsedFor, sentAskedBy, sentFingerprint, sentPortalSameUser,
 	}
 	for _, m := range []map[string]string{hookSentence, hookLabel} {
 		for _, s := range m {

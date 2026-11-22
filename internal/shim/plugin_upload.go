@@ -99,7 +99,8 @@ func asToolError(err error, te **mcp.ToolError) bool {
 }
 
 // uploadsPlugins reports whether the engine said in its hello answer that a
-// person operates it and gave its local page origin: only then is a plugin
+// person operates it and gave its local page origin, or that an agent
+// operates it (its approval link is the portal's): only then is a plugin
 // uploaded for it. An engine that has not answered the hello yet gets none.
 func (s *session) uploadsPlugins() bool {
 	t := time.NewTimer(helloWait)
@@ -109,5 +110,11 @@ func (s *session) uploadsPlugins() bool {
 	case <-t.C:
 		return false
 	}
-	return s.engine.OperatedBy == mcpcontract.OperatedByPerson && s.engine.PagesOrigin != ""
+	switch s.engine.OperatedBy {
+	case mcpcontract.OperatedByPerson:
+		return s.engine.PagesOrigin != ""
+	case mcpcontract.OperatedByAgent:
+		return true
+	}
+	return false
 }

@@ -21,7 +21,7 @@ var connectSrc = regexp.MustCompile(`connect-src ([^;"]+)`)
 // The approve, revert and plugin pages of a short link read the request from the
 // engine and post the signature back (same origin), so their meta CSP must
 // allow connect-src 'self'; a browser blocks the fetch otherwise. On the
-// portal the approve and revert pages reach the engine through the Vault
+// portal the approve, revert and plugin pages reach the engine through the Vault
 // instead, so theirs adds wss://relay.basaltvault.app and nothing else. So must
 // the registration page, which posts the passkey back to basalt init when
 // init serves it. The passkey management page never fetches and keeps
@@ -30,7 +30,7 @@ func TestPageCSPConnectSrc(t *testing.T) {
 	cases := map[string]string{
 		"approve/index.html":  "'self' wss://relay.basaltvault.app",
 		"revert/index.html":   "'self' wss://relay.basaltvault.app",
-		"plugin/index.html":   "'self'",
+		"plugin/index.html":   "'self' wss://relay.basaltvault.app",
 		"register/index.html": "'self'",
 		// The setup page posts the job to the engine's own setup routes.
 		"setup/index.html":    "'self'",

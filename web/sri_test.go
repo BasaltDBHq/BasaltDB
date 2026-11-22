@@ -130,7 +130,7 @@ var headLine = regexp.MustCompile(`^(?:` + strings.Join([]string{
 // falls back to 'self'). It does not block workers or script elements
 // (script-src 'self'). Only connect-src may differ: 'self' or 'none', except
 // on the connect page, whose one source is the connect service, and on the
-// approval and revert pages, which add the Vault to 'self' for a short
+// approval, revert and plugin approval pages, which add the Vault to 'self' for a short
 // link's session on the portal. No other page may name either.
 var (
 	cspLine        = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$`)
@@ -140,7 +140,7 @@ var (
 
 // relayPages are the pages that open a short link's session through the
 // Vault on the portal.
-var relayPages = map[string]bool{"approve/index.html": true, "revert/index.html": true}
+var relayPages = map[string]bool{"approve/index.html": true, "revert/index.html": true, "plugin/index.html": true}
 
 const connectPage = "connect/index.html"
 

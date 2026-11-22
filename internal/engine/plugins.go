@@ -201,6 +201,12 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 			ep.groupErr = ep.agentsInEngineGroup(cfg)
 			ep.startCfg = ep.reloadKept(cfg, configPath)
 		}
+	} else if o.kept != nil {
+		// An agent-operated engine on the bot's computer: its engine-kept
+		// entries run as its own children, as every local plugin does in
+		// same-user mode, and its config entries change while it runs.
+		ep.kept = o.kept
+		ep.startCfg = ep.reloadKept(cfg, configPath)
 	}
 	configured := configuredPlugins(ep.startCfg)
 	ep.configured = configured

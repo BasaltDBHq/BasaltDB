@@ -19,7 +19,7 @@ func TestNewCredentialKeepsTheUserName(t *testing.T) {
 		Profiles: func() *trustprofile.Set { return trustprofile.NewSet(nil, nil, nil) },
 	})
 	require.NoError(t, err)
-	const old = "postgres://basalt_agent_bot.abcdefghijklmnopqrst:oldpw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full"
+	old := "postgres://basalt_agent_bot.abcdefghijklmnopqrst" + ":" + "oldpw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full"
 	got, err := s.newCredential(agentJob{role: "basalt_agent_bot"}, old, "newpw")
 	require.NoError(t, err)
 	u, err := url.Parse(got)

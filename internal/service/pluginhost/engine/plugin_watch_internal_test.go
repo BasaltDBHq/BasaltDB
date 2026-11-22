@@ -470,7 +470,7 @@ func TestAddApproveRemoveLeavesNothing(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	pk := l.person(t)
 	runs := &child.Runs{Dir: filepath.Join(t.TempDir(), "plugin-runs")}
-	lp := f.live(l, Options{Dialer: dial.Dialer{Runs: runs}})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{Runs: runs}})
 
 	round := func() {
 		f.cfg.Plugins = []config.Plugin{p}

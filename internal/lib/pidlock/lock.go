@@ -1,4 +1,6 @@
-package httpserver
+// Package pidlock is the engine's pidfile lock: one exclusive flock held for
+// the server's lifetime, and a probe for whether one is held.
+package pidlock
 
 import "fmt"
 

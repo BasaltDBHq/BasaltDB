@@ -16,10 +16,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/app"
-	"github.com/basaltdbhq/basaltdb/internal/app/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
 
 const testEuid = 1234
@@ -30,7 +30,7 @@ type starterRig struct {
 	launches atomic.Int32
 	// engineLock is held by the "engine" a launch starts.
 	mu    sync.Mutex
-	locks []*httpserver.Lock
+	locks []*pidlock.Lock
 	args  []string
 	// listeners are the fake engines' sockets.
 	listeners []net.Listener
@@ -77,10 +77,10 @@ func (r *starterRig) deps(owner int, launchErr error) starterDeps {
 			go func() {
 				time.Sleep(100 * time.Millisecond)
 				// A probe by someone else holds the lock for a moment: try again.
-				var l *httpserver.Lock
+				var l *pidlock.Lock
 				for range 100 {
 					var err error
-					if l, err = httpserver.AcquireLock(app.LockPath(r.cfg.SocketDir)); err == nil {
+					if l, err = pidlock.AcquireLock(app.LockPath(r.cfg.SocketDir)); err == nil {
 						break
 					}
 					time.Sleep(10 * time.Millisecond)
@@ -266,7 +266,7 @@ func TestEngineStarterRefusesASymlinkedLog(t *testing.T) {
 func TestEngineStarterEngineRunsButNeverServesThisSocket(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	l, err := httpserver.AcquireLock(app.LockPath(r.cfg.SocketDir))
+	l, err := pidlock.AcquireLock(app.LockPath(r.cfg.SocketDir))
 	require.NoError(t, err)
 	t.Cleanup(l.Release)
 	d := r.deps(testEuid, nil)

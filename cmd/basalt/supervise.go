@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
-	"github.com/basaltdbhq/basaltdb/internal/app/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
 
 // The values of --started-by: who started this engine.
@@ -280,7 +280,7 @@ func writeFileAtomic(path string, data []byte) error {
 // a holder, so one look that finds it free means no engine runs.
 func anotherEngineRuns(lockPath string) bool {
 	return heldAtEveryLook(func() bool {
-		_, up, _ := httpserver.Running(lockPath)
+		_, up, _ := pidlock.Running(lockPath)
 		return up
 	}, time.Sleep)
 }

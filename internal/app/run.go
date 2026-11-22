@@ -37,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -135,7 +136,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err := ensureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
 		return err
 	}
-	lock, err := httpserver.AcquireLock(LockPath(cfg.SocketDir))
+	lock, err := pidlock.AcquireLock(LockPath(cfg.SocketDir))
 	if err != nil {
 		return err
 	}

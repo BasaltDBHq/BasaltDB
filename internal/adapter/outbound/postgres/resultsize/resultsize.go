@@ -11,22 +11,39 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync/atomic"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-)
 
-// MaxBytes bounds what one call's reads cost, summed over their rows: the
-// 16 MiB the shim accepts in one line.
-const MaxBytes = 16 << mibShift
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+)
 
 // mibShift turns bytes into MiB.
 const mibShift = 20
 
+// MaxBytes bounds what one call's reads cost, summed over their rows.
+const MaxBytes = budget.MaxBytes
+
 // ErrSizeLimit is a read stopped because the call's reads came to more than
 // MaxBytes.
-var ErrSizeLimit = fmt.Errorf("the query result is larger than %d MiB", MaxBytes>>mibShift)
+var ErrSizeLimit = budget.ErrSizeLimit
+
+// Budget is one call's budget.
+type Budget = budget.Budget
+
+// With returns ctx carrying a new budget of MaxBytes for one call.
+func With(ctx context.Context) context.Context { return budget.With(ctx) }
+
+// WithMax returns ctx carrying a new budget of max bytes.
+func WithMax(ctx context.Context, maxBytes int64) context.Context {
+	return budget.WithMax(ctx, maxBytes)
+}
+
+// Ensure returns ctx with a budget: its own when it has one, else a new one.
+func Ensure(ctx context.Context) context.Context { return budget.Ensure(ctx) }
+
+// From returns ctx's budget, nil when it has none.
+func From(ctx context.Context) *Budget { return budget.From(ctx) }
 
 // valueOverhead is what one value costs the engine beyond its bytes: its
 // map entry and Go value in the row, and its key, quotes and comma in the
@@ -39,51 +56,6 @@ const valueOverhead = 128
 // the text of the MCP content, where the backslash doubles (\\u00XX): 7
 // bytes for 1.
 const jsonEscapeCost = 6
-
-// Budget is one call's budget. Reads of the call may run concurrently.
-type Budget struct {
-	used atomic.Int64
-	max  int64
-}
-
-type budgetKey struct{}
-
-// With returns ctx carrying a new budget of MaxBytes for one call.
-func With(ctx context.Context) context.Context {
-	return WithMax(ctx, MaxBytes)
-}
-
-// WithMax returns ctx carrying a new budget of max bytes: With's, or a
-// small one in tests.
-func WithMax(ctx context.Context, maxBytes int64) context.Context {
-	return context.WithValue(ctx, budgetKey{}, &Budget{max: maxBytes})
-}
-
-// Ensure returns ctx with a budget: its own when it has one, else a new one.
-func Ensure(ctx context.Context) context.Context {
-	if From(ctx) != nil {
-		return ctx
-	}
-	return With(ctx)
-}
-
-// From returns ctx's budget, nil when it has none.
-func From(ctx context.Context) *Budget {
-	b, _ := ctx.Value(budgetKey{}).(*Budget)
-	return b
-}
-
-// Charge adds cost to b and reports ErrSizeLimit once the total is over
-// MaxBytes. A nil budget charges nothing.
-func (b *Budget) Charge(cost int) error {
-	if b == nil {
-		return nil
-	}
-	if b.used.Add(int64(cost)) > b.max {
-		return ErrSizeLimit
-	}
-	return nil
-}
 
 // RowCost is what one row costs: valueOverhead per column, each column's
 // name (the JSON answer repeats it per row), and its values' bytes with what
@@ -132,7 +104,7 @@ func (r *budgetRows) Next() bool {
 	}
 	fds, raw := r.FieldDescriptions(), r.RawValues()
 	cost := RowCost(fds, raw)
-	if int64(cost) > r.budget.max {
+	if int64(cost) > r.budget.Max() {
 		r.err = rowTooLarge(cost, fds, raw)
 		r.cancel()
 		r.Rows.Close()
@@ -362,5 +334,5 @@ func Size(n int) string {
 // agent, such as a held write's preview lines on their way back to
 // Postgres (CONTRACT.md, Large values, rule 6).
 func Unbudgeted(ctx context.Context) context.Context {
-	return context.WithValue(ctx, budgetKey{}, (*Budget)(nil))
+	return budget.Without(ctx)
 }

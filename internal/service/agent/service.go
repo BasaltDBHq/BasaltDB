@@ -283,18 +283,6 @@ type PasskeyLister interface {
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 }
 
-// ErrorMap holds the error values of the adapters the agent tells apart to
-// map a failure to the contract's tool error. A nil value matches nothing.
-type ErrorMap struct {
-	// InvalidParams is the ledger's, InvalidIntent the guard's: values the
-	// agent maps to INVALID_ARGUMENT.
-	InvalidParams error
-	InvalidIntent error
-	// RowTooLarge says whether err is one row over the result budget on its
-	// own, with its message.
-	RowTooLarge func(err error) (message string, ok bool)
-}
-
 // PIIObserver adds the PII values of rows the agent is about to get to the
 // engine's dictionary. An error means a value could not be added: the rows
 // are not returned (fail closed). It never logs a value.
@@ -365,7 +353,7 @@ func NewService(d Deps) *Service {
 	if d.Delivery.Links == nil {
 		d.Delivery.Links = links.NewSecrets(time.Now, rand.Reader)
 	}
-	if d.Core.Commands.agent == "" {
+	if d.Core.Commands.AgentName() == "" {
 		// A name and no config path cannot fail.
 		d.Core.Commands, _ = NewCommands(d.Core.Name, "", "", d.Core.ServiceManager)
 	}

@@ -1,4 +1,4 @@
-package agent
+package agentkit
 
 import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -29,7 +29,7 @@ func ConnectLink(code string, budget int) string {
 // link. lead says what is pending; it names the Basalt Vault, a hosted
 // service, as what the link uses.
 func ConnectMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
-	return newMessage().
+	return NewMessage().
 		Text(lead+" Open this link and follow the page, and check that it shows the setup fingerprint "+fingerprint+". The link uses Basalt Vault, a hosted service, to run the setup once:").
 		Link(LabelConnect, url).
 		Text("Then tell the agent it is done. Never paste your database password into this chat.").
@@ -46,7 +46,7 @@ const ConnectStepText = "Open the link on your own computer or phone, check that
 // database's connection string, which the agent never needs. No laptop
 // command.
 func ConnectOnlyMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
-	return newMessage().
+	return NewMessage().
 		Text(lead+" Open this link, check that it shows the setup fingerprint "+fingerprint+", and follow the page. It uses Basalt Vault, a hosted service:").
 		Link(LabelConnect, url).
 		Text("The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat.").

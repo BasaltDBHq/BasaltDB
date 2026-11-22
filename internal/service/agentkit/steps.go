@@ -1,4 +1,4 @@
-package agent
+package agentkit
 
 import (
 	"errors"
@@ -51,7 +51,7 @@ func (b *Steps) CallTool(tool string, args map[string]any, text string) *Steps {
 // that is above zero.
 func (b *Steps) RepeatCall(tool string, args map[string]any, waitSeconds int, text string) *Steps {
 	if waitSeconds < 0 || waitSeconds > MaxWaitSeconds {
-		return b.fail(fmt.Errorf("wait of %d seconds is outside 0 to %d", waitSeconds, MaxWaitSeconds))
+		return b.Fail(fmt.Errorf("wait of %d seconds is outside 0 to %d", waitSeconds, MaxWaitSeconds))
 	}
 	return b.add(NextStep{
 		Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool, Tool: tool, Arguments: args,
@@ -69,7 +69,7 @@ func (b *Steps) ReviseCall(tool string, args map[string]any, text string) *Steps
 // most maxRows rows.
 func (b *Steps) RetrySmallerBatches(maxRows int, text string) *Steps {
 	if maxRows < 1 || maxRows > MaxRetryRows {
-		return b.fail(fmt.Errorf("maxRows %d is outside 1 to %d", maxRows, MaxRetryRows))
+		return b.Fail(fmt.Errorf("maxRows %d is outside 1 to %d", maxRows, MaxRetryRows))
 	}
 	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRetrySmallerBatches, MaxRows: maxRows}, text)
 }
@@ -92,7 +92,7 @@ func (b *Steps) Stop(text string) *Steps {
 // OpenLink adds a PERSON step: open url.
 func (b *Steps) OpenLink(url, text string) *Steps {
 	if url == "" {
-		return b.fail(errors.New("OPEN_LINK needs a url"))
+		return b.Fail(errors.New("OPEN_LINK needs a url"))
 	}
 	return b.add(NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, URL: url}, text)
 }
@@ -107,7 +107,7 @@ func (b *Steps) OpenGivenLink(text string) *Steps {
 // RunCommand adds a PERSON step: run command in a terminal.
 func (b *Steps) RunCommand(command, text string) *Steps {
 	if command == "" {
-		return b.fail(errors.New("RUN_COMMAND needs a command"))
+		return b.Fail(errors.New("RUN_COMMAND needs a command"))
 	}
 	return b.add(NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionRunCommand, Command: command}, text)
 }
@@ -119,7 +119,7 @@ func (b *Steps) RunCommand(command, text string) *Steps {
 // connection string (CO-9).
 func (b *Steps) AgentRunCommand(command, text string) *Steps {
 	if command == "" {
-		return b.fail(errors.New("RUN_COMMAND needs a command"))
+		return b.Fail(errors.New("RUN_COMMAND needs a command"))
 	}
 	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Command: command}, text)
 }
@@ -140,16 +140,16 @@ func (b *Steps) SendRequest(f *links.RequestFile) *Steps {
 	if f == nil {
 		return b
 	}
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionSendRequest}, sendRequestText(f))
+	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionSendRequest}, SendRequestText(f))
 }
 
-// withSendRequest puts the SEND_REQUEST step for f in front of steps; steps
+// WithSendRequest puts the SEND_REQUEST step for f in front of steps; steps
 // as they are when f is nil.
-func withSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
+func WithSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
 	if f == nil {
 		return steps
 	}
-	return append([]NextStep{agentStep(toolresult.ActionSendRequest, sendRequestText(f))}, steps...)
+	return append([]NextStep{AgentStep(toolresult.ActionSendRequest, SendRequestText(f))}, steps...)
 }
 
 // The SEND_REQUEST step's text, with and without blocks to paste.
@@ -160,7 +160,8 @@ const (
 		"exactly text). An agent that cannot send files does not show the link: ask the person."
 )
 
-func sendRequestText(f *links.RequestFile) string {
+// SendRequestText is the SEND_REQUEST step's text, with and without blocks to paste.
+func SendRequestText(f *links.RequestFile) string {
 	if f.Blocks == nil {
 		return sendRequestFileOnly
 	}
@@ -188,17 +189,17 @@ func (b *Steps) add(s NextStep, text string) *Steps {
 		return b
 	}
 	if s.Tool == "" && (s.Action == toolresult.ActionCallTool || s.Action == toolresult.ActionReviseCall) {
-		return b.fail(fmt.Errorf("%s needs a tool", s.Action))
+		return b.Fail(fmt.Errorf("%s needs a tool", s.Action))
 	}
 	if err := checkLength("text", text, MaxStepTextLength, true); err != nil {
-		return b.fail(fmt.Errorf("%s: %w", s.Action, err))
+		return b.Fail(fmt.Errorf("%s: %w", s.Action, err))
 	}
 	s.Text = text
 	b.steps = append(b.steps, s)
 	return b
 }
 
-func (b *Steps) fail(err error) *Steps {
+func (b *Steps) Fail(err error) *Steps {
 	if b.err == nil {
 		b.err = err
 	}

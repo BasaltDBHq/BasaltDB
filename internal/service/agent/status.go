@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -37,8 +35,6 @@ import (
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
 // The engine answers it with what it reads from the agent's database; the
 // shim answers it with EngineDownStatus when the engine socket does not.
-
-const toolStatus = "status"
 
 // Problem codes of the status tool (api/mcp/errors/next-steps.json, problems).
 const (
@@ -348,18 +344,6 @@ type LedgerStatus struct {
 	RecordsKeptDays int   `json:"recordsKeptDays"`
 }
 
-// Problem is one entry of status.problems.
-type Problem struct {
-	Code          string `json:"code"`
-	Severity      string `json:"severity"`
-	Message       string `json:"message"`
-	PersonMessage string `json:"personMessage,omitempty"`
-	// Links are the URLs of PersonMessage, with labels (present exactly when
-	// it holds a URL).
-	Links     []toolresult.Link `json:"links,omitempty"`
-	NextSteps []NextStep        `json:"nextSteps"`
-}
-
 // Status is the status tool: whether the agent is served and each problem
 // with its steps. It never fails on what it reads: an unreachable database
 // or a missing guard is a problem in the result, not an error. It never
@@ -505,13 +489,13 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		v := s.vault.VaultStatus()
 		r.Vault = &v
 	}
-	ps := problems{cmds: s.cmds, connectBudget: s.connectBudget}
+	ps := Problems{Cmds: s.cmds, ConnectBudget: s.connectBudget}
 	if s.devLocalPages {
-		ps.add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
+		ps.Add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
 			func(b *Steps) string { return devLocalPagesSteps(b, s.cmds) })
 	}
 	if !s.engineReachable && !s.engineUnknown {
-		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
+		ps.Add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
 	}
 	s.addPortalProblem(&ps)
@@ -521,7 +505,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {
-		ps.add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
+		ps.Add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
 			func(b *Steps) string { return lockFileSteps(b, path) })
 	}
 	if known {
@@ -566,7 +550,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	case s.engineKey != nil:
 		r.EngineRecord = s.engineRecordStatus(ctx, *s.engineKey, readable, &ps)
 	}
-	list, err := ps.sorted()
+	list, err := ps.Sorted()
 	if err != nil {
 		return StatusReport{}, err
 	}
@@ -598,22 +582,22 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds Commands, cfg
 	if cfg != nil {
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
 	}
-	ps := problems{cmds: cmds}
+	ps := Problems{Cmds: cmds}
 	msg := "the engine does not answer, so no tool but status works"
 	if config.IsOldCredentialFile(cfgErr) {
 		// The engine cannot start on this config: say what to edit.
 		msg += "; engine.json: " + cfgErr.Error()
 	}
 	if startFailure != "" {
-		ps.add(problemEngineStartFailed, startFailure,
+		ps.Add(problemEngineStartFailed, startFailure,
 			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	}
-	ps.add(problemEngineUnreachable, msg,
+	ps.Add(problemEngineUnreachable, msg,
 		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	if cfg != nil {
 		if stop, ok := ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
 			r.Engine.LastStop = &stop
-			ps.add(problemEngineGaveUp, engineGaveUpMessage(host, stop, configPath, now),
+			ps.Add(problemEngineGaveUp, engineGaveUpMessage(host, stop, configPath, now),
 				func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 		}
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
@@ -627,7 +611,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds Commands, cfg
 			setup.addProblem(&ps)
 		}
 	}
-	list, err := ps.sorted()
+	list, err := ps.Sorted()
 	if err != nil {
 		return StatusReport{}, err
 	}
@@ -700,7 +684,7 @@ const reinstalledAsk = "Show the person this notice and ask whether someone on t
 // addReinstalled is LEDGER_REINSTALLED when the ledger or the engine's kept
 // copy records a reinstall. A guard older than version 36 records none; a
 // read that fails is logged and adds nothing.
-func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
+func (s statusDeps) addReinstalled(ctx context.Context, ps *Problems) {
 	msg, ok, err := s.probe.ReinstallNotice(ctx, MaxPersonMessageLength)
 	if err != nil {
 		s.log.Error("status: read the reinstalls", "err", err)
@@ -709,7 +693,7 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
 	if !ok {
 		return
 	}
-	ps.add(problemLedgerReinstalled, "the guard was installed again and a pin of the old ledger was set aside; the tools keep working",
+	ps.Add(problemLedgerReinstalled, "the guard was installed again and a pin of the old ledger was set aside; the tools keep working",
 		func(b *Steps) string {
 			b.AskPerson(reinstalledAsk)
 			return msg
@@ -719,7 +703,7 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
 // passkeys counts the active passkeys that can sign the agent's links:
 // those registered on the origin of its pages (pagesPasskeys); none is
 // NO_PASSKEY. A count that fails is logged and leaves active out.
-func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone bool) PasskeysStatus {
+func (s statusDeps) countPasskeys(ctx context.Context, ps *Problems, setupDone bool) PasskeysStatus {
 	all, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
@@ -732,7 +716,7 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone b
 		if len(all) > 0 {
 			msg = "no passkey is registered on " + origin + ", where this agent's links open, so held writes and reverts cannot be signed"
 		}
-		ps.add(problemNoPasskey, msg, func(b *Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
+		ps.Add(problemNoPasskey, msg, func(b *Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
 	}
 	out := PasskeysStatus{Registered: n > 0, Active: &n}
 	for _, k := range keys {
@@ -800,9 +784,9 @@ func passkeySummary(keys []PasskeyStatus) string {
 // page's Update link when the engine serves it (its Update check adds a
 // passkey on the person's device), else noPasskeySteps.
 func noPasskeyProblemSteps(b *Steps, cmds Commands) string {
-	if !cmds.AgentOperated() && cmds.updateLink != "" {
+	if !cmds.AgentOperated() && cmds.UpdateLinkURL() != "" {
 		// The setup page's Update check adds a passkey on this device.
-		b.OpenLink(cmds.updateLink, "Show the person this link: its page adds a passkey on their device.")
+		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page adds a passkey on their device.")
 		b.EndTurn("End your turn; the person adds the passkey on that page.")
 		return nothingSignableLead + " Open the link the agent gives you and add a passkey there."
 	}
@@ -827,7 +811,7 @@ func noPasskeySteps(b *Steps, cmds Commands) string {
 
 // addUnreachable is the problem of a guard read that failed: the database
 // refused the credential, or cannot be reached.
-func (s statusDeps) addUnreachable(ctx context.Context, ps *problems, err error, trust *TrustReport) {
+func (s statusDeps) addUnreachable(ctx context.Context, ps *Problems, err error, trust *TrustReport) {
 	if trustprofile.CertificateNotVerified(err) {
 		s.addCertificateNotVerified(ctx, ps, err, trust)
 		return
@@ -835,20 +819,20 @@ func (s statusDeps) addUnreachable(ctx context.Context, ps *problems, err error,
 	te := s.errs.ToolError(err)
 	switch te.Reason {
 	case reasonCredentialRejected:
-		ps.add(problemCredentialRejected, "the database refuses the agent's credential",
+		ps.Add(problemCredentialRejected, "the database refuses the agent's credential",
 			func(b *Steps) string { return fixSteps(b, s.cmds, reasonCredentialRejected) })
 	case reasonTooManyConnections:
-		ps.add(problemTooManyConnections, "the agent's role has used all the database connections it is allowed",
+		ps.Add(problemTooManyConnections, "the agent's role has used all the database connections it is allowed",
 			func(b *Steps) string {
 				b.AskPerson(tooManyConnectionsAsk)
 				return tooManyConnectionsMessage(s.cmds)
 			})
 	case reasonGuardMissing:
-		ps.add(problemGuardMissing, "the guard is not installed in this database",
+		ps.Add(problemGuardMissing, "the guard is not installed in this database",
 			func(b *Steps) string { return fixSteps(b, s.cmds, reasonGuardMissing) })
 	default:
 		s.log.Error("status: read the guard", "err", err)
-		ps.add(problemDatabaseUnreachable, "the database cannot be reached",
+		ps.Add(problemDatabaseUnreachable, "the database cannot be reached",
 			func(b *Steps) string {
 				b.AskPerson("Tell the person the database cannot be reached and ask them to check that Postgres is running.")
 				return databaseUnreachableMessage
@@ -856,17 +840,17 @@ func (s statusDeps) addUnreachable(ctx context.Context, ps *problems, err error,
 	}
 }
 
-func addGuardProblem(ps *problems, st guardmodel.Status) {
+func addGuardProblem(ps *Problems, st guardmodel.Status) {
 	switch st.State {
 	case guardmodel.GuardMissing:
-		ps.add(problemGuardMissing, "the guard is not installed in this database; no tool but status works",
-			func(b *Steps) string { return fixSteps(b, ps.cmds, reasonGuardMissing) })
+		ps.Add(problemGuardMissing, "the guard is not installed in this database; no tool but status works",
+			func(b *Steps) string { return fixSteps(b, ps.Cmds, reasonGuardMissing) })
 	case guardmodel.GuardOutdated:
-		ps.add(problemGuardOutdated, fmt.Sprintf("the guard misses breaking migrations %s; no tool but status works until it is upgraded", versions(st.MissingBreaking)),
-			func(b *Steps) string { return fixSteps(b, ps.cmds, reasonGuardOutdated) })
+		ps.Add(problemGuardOutdated, fmt.Sprintf("the guard misses breaking migrations %s; no tool but status works until it is upgraded", versions(st.MissingBreaking)),
+			func(b *Steps) string { return fixSteps(b, ps.Cmds, reasonGuardOutdated) })
 	case guardmodel.GuardUpgradeAvailable:
-		ps.add(problemUpgradeAvailable, fmt.Sprintf("the guard misses non-breaking migrations %s; every tool works", versions(st.MissingNonBreaking)),
-			func(b *Steps) string { return upgradeSteps(b, ps.cmds) })
+		ps.Add(problemUpgradeAvailable, fmt.Sprintf("the guard misses non-breaking migrations %s; every tool works", versions(st.MissingNonBreaking)),
+			func(b *Steps) string { return upgradeSteps(b, ps.Cmds) })
 	}
 }
 
@@ -908,32 +892,32 @@ func (v setupView) blocks() bool {
 	return v.explainsGuard() || (v.confirmed && v.status.State == setupPending)
 }
 
-func (v setupView) addProblem(ps *problems) {
+func (v setupView) addProblem(ps *Problems) {
 	switch {
 	case v.refused:
-		ps.add(problemDatabaseRefused, "the person said the database the setup reached is not theirs; a new setup code is needed",
-			func(b *Steps) string { return databaseRefusedSteps(b, ps.cmds) })
+		ps.Add(problemDatabaseRefused, "the person said the database the setup reached is not theirs; a new setup code is needed",
+			func(b *Steps) string { return databaseRefusedSteps(b, ps.Cmds) })
 	case v.status.State == setupExpired:
-		ps.add(problemSetupExpired, "the agent's setup code expired before it was used; a new one is needed",
-			func(b *Steps) string { return setupExpiredSteps(b, ps.cmds) })
+		ps.Add(problemSetupExpired, "the agent's setup code expired before it was used; a new one is needed",
+			func(b *Steps) string { return setupExpiredSteps(b, ps.Cmds) })
 	case v.status.State != setupPending:
 	case v.awaiting:
-		ps.addLinked(problemSetupNotRun, connectOnlyWaitingMessage(v.code),
+		ps.AddLinked(problemSetupNotRun, connectOnlyWaitingMessage(v.code),
 			func(b *Steps) (string, []toolresult.Link) {
-				return connectOnlySteps(b, v.code, v.fingerprint, ps.connectBudget)
+				return connectOnlySteps(b, v.code, v.fingerprint, ps.ConnectBudget)
 			})
 	case v.confirmed:
-		ps.add(problemSetupNotFound, "the database the person confirmed does not record this setup: "+v.database,
-			func(b *Steps) string { return setupNotFoundSteps(b, ps.cmds, v.database) })
+		ps.Add(problemSetupNotFound, "the database the person confirmed does not record this setup: "+v.database,
+			func(b *Steps) string { return setupNotFoundSteps(b, ps.Cmds, v.database) })
 	case v.status.Kind == guardmodel.SetupInstall:
-		ps.addLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
+		ps.AddLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
 			func(b *Steps) (string, []toolresult.Link) {
-				return setupPendingSteps(b, ps.cmds, v.code, v.fingerprint, true, ps.connectBudget)
+				return setupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, true, ps.ConnectBudget)
 			})
 	default:
-		ps.addLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
+		ps.AddLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
 			func(b *Steps) (string, []toolresult.Link) {
-				return setupPendingSteps(b, ps.cmds, v.code, v.fingerprint, false, ps.connectBudget)
+				return setupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, false, ps.ConnectBudget)
 			})
 	}
 }
@@ -1015,77 +999,6 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 func connectOnlyCode(code string) bool {
 	p, err := setupcode.Decode(code)
 	return err == nil && p.ConnectOnly()
-}
-
-// problems collects status problems, each built from its catalog entry.
-type problems struct {
-	cmds Commands
-	// connectBudget: see Deps.ConnectBudget.
-	connectBudget int
-	list          []Problem
-	err           error
-}
-
-// add builds the problem code with the steps steps returns along with the
-// person's message.
-func (ps *problems) add(code, message string, steps func(*Steps) string) {
-	ps.addLinked(code, message, func(b *Steps) (string, []toolresult.Link) { return steps(b), nil })
-}
-
-// addLinked is add for a message that carries links.
-func (ps *problems) addLinked(code, message string, steps func(*Steps) (string, []toolresult.Link)) {
-	entry, ok := problemEntry(code)
-	if !ok {
-		ps.fail(fmt.Errorf("no catalog entry for status problem %s", code))
-		return
-	}
-	b := NewSteps()
-	person, ls := steps(b)
-	list, err := b.Build()
-	if err != nil {
-		ps.fail(fmt.Errorf("status problem %s: %w", code, err))
-		return
-	}
-	person = fitToSteps(person, list)
-	if err := CheckPersonMessage(person); err != nil {
-		ps.fail(fmt.Errorf("status problem %s: %w", code, err))
-		return
-	}
-	ps.list = append(ps.list, Problem{Code: code, Severity: entry.Severity, Message: message, PersonMessage: person, Links: ls, NextSteps: list})
-}
-
-func (ps *problems) fail(err error) {
-	if ps.err == nil {
-		ps.err = err
-	}
-}
-
-// sorted is the problems, errors first, or the first that could not be built.
-func (ps *problems) sorted() ([]Problem, error) {
-	if ps.err != nil {
-		return nil, ps.err
-	}
-	out := append([]Problem{}, ps.list...)
-	slices.SortStableFunc(out, func(a, b Problem) int {
-		return cmp.Compare(severityRank(a.Severity), severityRank(b.Severity))
-	})
-	return out, nil
-}
-
-func severityRank(s string) int {
-	if s == mcpcontract.SeverityError {
-		return 0
-	}
-	return 1
-}
-
-func problemEntry(code string) (mcpcontract.ProblemSteps, bool) {
-	for _, p := range catalog().Problems {
-		if p.Code == code {
-			return p, true
-		}
-	}
-	return mcpcontract.ProblemSteps{}, false
 }
 
 // --- the tool ---
@@ -1192,7 +1105,7 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 // problem ENGINE_REVOKED. Without the engine's
 // key (the key file is refused) or a readable guard of version 33 or later,
 // the state is UNKNOWN and no problem is added.
-func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *problems) *EngineRecordStatus {
+func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *Problems) *EngineRecordStatus {
 	unknown := &EngineRecordStatus{State: engineUnknown}
 	if engineID == "" || !guardReadable || s.engineRecord == nil {
 		return unknown
@@ -1210,7 +1123,7 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 	out := &EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
 	if e.RevokedAt != nil {
 		out.State, out.RevokedAt = engineRevoked, e.RevokedAt.UTC().Format(time.RFC3339)
-		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the engine does not act on it, so the links it handed over keep working until they expire",
+		ps.Add(problemEngineRevoked, "the agent's database revoked this engine's key; the engine does not act on it, so the links it handed over keep working until they expire",
 			engineRevokedSteps)
 	}
 	return out

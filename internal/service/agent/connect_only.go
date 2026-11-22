@@ -33,9 +33,6 @@ const (
 	argAnswer           = "answer"
 	answerYes           = "YES"
 	answerNo            = "NO"
-	// reasonDatabaseNotConfirmed: the engine collected the database's
-	// address and the person has not confirmed it yet.
-	reasonDatabaseNotConfirmed = "DATABASE_NOT_CONFIRMED"
 	// The states of confirm_database's result.
 	confirmedState = "CONFIRMED"
 	refusedState   = "REFUSED"
@@ -75,7 +72,7 @@ func connectOnlySteps(b *Steps, code, fingerprint string, budget int) (string, [
 		return connectOnlyExpiredHold, nil
 	}
 	if !setupCode.MatchString(code) || fingerprint == "" {
-		b.fail(errors.New("a pending setup needs its code and fingerprint"))
+		b.Fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil
 	}
 	url := ConnectLink(code, budget)
@@ -197,17 +194,6 @@ func trustRootMismatchSteps(b *Steps, code string, budget int, db handoff.Addres
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 	return "The setup ran, but " + db.Name() + " shows the agent's machine another certificate authority than the one you trusted on the connect page, so the agent trusts nothing and does not sign in. " +
 		"Open the same link again and check the certificate against your provider's console. If it changes again, something between the agent's machine and your database may be in the way."
-}
-
-// DatabaseNotConfirmedError refuses a tool while the collected database
-// waits for the person's confirmation (UNAVAILABLE DATABASE_NOT_CONFIRMED).
-type DatabaseNotConfirmedError struct {
-	SetupID  string
-	Database handoff.Address
-}
-
-func (e *DatabaseNotConfirmedError) Error() string {
-	return "the agent's database waits for the person's confirmation; no tool but status and confirm_database works until then"
 }
 
 // --- the result of confirm_database ---
@@ -381,9 +367,9 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 		v := c.Vault.VaultStatus()
 		r.Vault = &v
 	}
-	ps := problems{cmds: cmds, connectBudget: c.ConnectBudget}
+	ps := Problems{Cmds: cmds, ConnectBudget: c.ConnectBudget}
 	r.Setup = connectOnlyProblems(st, &ps, c.Now())
-	list, err := ps.sorted()
+	list, err := ps.Sorted()
 	if err != nil {
 		return StatusReport{}, err
 	}
@@ -392,7 +378,7 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 }
 
 // connectOnlyProblems is status.setup for st, with its problem added to ps.
-func connectOnlyProblems(st handoff.State, ps *problems, now time.Time) SetupStatus {
+func connectOnlyProblems(st handoff.State, ps *Problems, now time.Time) SetupStatus {
 	s := st.Setup
 	v := setupFrom(&s, false, now)
 	out := v.status
@@ -402,7 +388,7 @@ func connectOnlyProblems(st handoff.State, ps *problems, now time.Time) SetupSta
 	case st.Phase == handoff.PhaseConfirm && st.Database != nil:
 		db := *st.Database
 		out.State, out.Fingerprint, out.Database = setupConfirmDatabase, "", &db
-		ps.add(problemConfirmDatabase, "the setup reached "+db.Name()+"; the person confirms it is their database before the agent uses it",
+		ps.Add(problemConfirmDatabase, "the setup reached "+db.Name()+"; the person confirms it is their database before the agent uses it",
 			func(b *Steps) string { return confirmDatabaseSteps(b, s.SetupID, db) })
 	case st.Phase != handoff.PhaseWaiting:
 		// Confirmed, or engine.json changed: the engine builds the agent
@@ -410,23 +396,23 @@ func connectOnlyProblems(st handoff.State, ps *problems, now time.Time) SetupSta
 	case st.Expired:
 		v.addProblem(ps)
 	case st.Problem == handoff.ProblemAddressInvalid:
-		ps.add(problemAddressInvalid, "the database address the connect page handed over was refused",
-			func(b *Steps) string { return addressInvalidSteps(b, ps.cmds) })
+		ps.Add(problemAddressInvalid, "the database address the connect page handed over was refused",
+			func(b *Steps) string { return addressInvalidSteps(b, ps.Cmds) })
 	case st.Problem == handoff.ProblemTrustRootMismatch && st.Database != nil:
 		db := *st.Database
-		ps.add(problemTrustRootMismatch, db.Name()+" presents another certificate authority to this machine than the one the person trusted on the connect page; nothing was pinned",
-			func(b *Steps) string { return trustRootMismatchSteps(b, s.Code, ps.connectBudget, db) })
+		ps.Add(problemTrustRootMismatch, db.Name()+" presents another certificate authority to this machine than the one the person trusted on the connect page; nothing was pinned",
+			func(b *Steps) string { return trustRootMismatchSteps(b, s.Code, ps.ConnectBudget, db) })
 	case st.Problem == handoff.ProblemUnreachable && st.Database != nil:
 		db := *st.Database
-		ps.add(problemUnreachableFromBot, "this machine cannot reach "+db.Name(),
-			func(b *Steps) string { return unreachableFromBotSteps(b, s.Code, ps.connectBudget, db) })
+		ps.Add(problemUnreachableFromBot, "this machine cannot reach "+db.Name(),
+			func(b *Steps) string { return unreachableFromBotSteps(b, s.Code, ps.ConnectBudget, db) })
 	default:
 		v.addProblem(ps)
 		switch st.Problem {
 		case handoff.ProblemClockSkew:
-			ps.add(problemClockSkew, "the clock of this machine is more than 5 minutes off; the address cannot be collected until it is set right", clockSkewSteps)
+			ps.Add(problemClockSkew, "the clock of this machine is more than 5 minutes off; the address cannot be collected until it is set right", clockSkewSteps)
 		case handoff.ProblemEngineAsRoot:
-			ps.add(problemEngineAsRoot, "the engine runs as root, so it does not collect this agent's database address", engineAsRootSteps)
+			ps.Add(problemEngineAsRoot, "the engine runs as root, so it does not collect this agent's database address", engineAsRootSteps)
 		}
 	}
 	return out
@@ -473,9 +459,9 @@ func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
 		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: l.LatestGuardVersion()},
 		Pages:  PagesStatus{Served: l.PagesOrigin != "", URL: base},
 	}
-	ps := problems{cmds: cmds, connectBudget: l.ConnectBudget}
+	ps := Problems{Cmds: cmds, ConnectBudget: l.ConnectBudget}
 	if !l.EngineRunning && !l.EngineUnknown {
-		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
+		ps.Add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	}
 	if l.Collected != nil {
@@ -485,7 +471,7 @@ func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
 		r.Setup = v.status
 		v.addProblem(&ps)
 	}
-	list, err := ps.sorted()
+	list, err := ps.Sorted()
 	if err != nil {
 		return StatusReport{}, err
 	}

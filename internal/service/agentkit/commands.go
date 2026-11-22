@@ -1,4 +1,4 @@
-package agent
+package agentkit
 
 import (
 	"fmt"
@@ -99,6 +99,9 @@ func (c Commands) engineRemoved() bool { return c.removed != nil && c.removed() 
 // UpdateLinkURL is the setup page's UPDATE link UpdateLink set, or "".
 func (c Commands) UpdateLinkURL() string { return c.updateLink }
 
+// AgentName is the agent the commands are for.
+func (c Commands) AgentName() string { return c.agent }
+
 // AgentOperated reports whether the engine's operatedBy is AGENT.
 func (c Commands) AgentOperated() bool { return c.agentOperated }
 
@@ -139,12 +142,12 @@ func (c Commands) foregroundEngine() string {
 	if path == "" {
 		path = config.DefaultPath(c.goos)
 	}
-	return "basalt engine --config " + shellQuote(path)
+	return "basalt engine --config " + ShellQuote(path)
 }
 
-// shellQuote quotes s for a POSIX shell when it needs it. A leading = is
+// ShellQuote quotes s for a POSIX shell when it needs it. A leading = is
 // quoted too: zsh expands =cmd to a path.
-func shellQuote(s string) string {
+func ShellQuote(s string) string {
 	if s != "" && !strings.HasPrefix(s, "=") &&
 		strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./:=@") == "" {
 		return s

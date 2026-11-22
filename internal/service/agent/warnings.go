@@ -169,8 +169,8 @@ func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
 // suits them, in a warning and in status, on the page basalt init links to.
 func upgradeSteps(b *Steps, cmds Commands) string {
 	b.AskPerson("Tell the person the guard can be updated when it suits them, and ask whether to do it now.")
-	if cmds.updateLink != "" && !cmds.AgentOperated() {
-		b.OpenLink(cmds.updateLink, "On the person's yes, show them this link: nothing stops, and the agent needs no restart.")
+	if cmds.UpdateLinkURL() != "" && !cmds.AgentOperated() {
+		b.OpenLink(cmds.UpdateLinkURL(), "On the person's yes, show them this link: nothing stops, and the agent needs no restart.")
 		return "The guard in this database can be updated. Everything works as it is; when it suits you, open the link the agent gives you to update it."
 	}
 	b.AgentRunCommand(cmds.Init(), "On the person's yes, run this and show them the link it prints: nothing stops, and the agent needs no restart.")

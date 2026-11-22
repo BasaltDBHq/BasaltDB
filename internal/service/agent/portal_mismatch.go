@@ -6,7 +6,7 @@ package agent
 // found the portal serving pages other than the ones this build embeds
 // (CONTRACT.md, CLI, basalt portal verify). A check that could not run, or
 // no check yet, adds nothing.
-func (s statusDeps) addPortalProblem(ps *problems) {
+func (s statusDeps) addPortalProblem(ps *Problems) {
 	if s.portal == nil {
 		return
 	}
@@ -15,7 +15,7 @@ func (s statusDeps) addPortalProblem(ps *problems) {
 		return
 	}
 	when := f.CheckedAt.UTC().Format("2006-01-02")
-	ps.add(problemPortalMismatch, "the portal serves pages that differ from this build ("+f.Summary+", checked "+when+")",
+	ps.Add(problemPortalMismatch, "the portal serves pages that differ from this build ("+f.Summary+", checked "+when+")",
 		func(b *Steps) string { return portalMismatchSteps(b, f.Summary, when) })
 }
 

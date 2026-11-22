@@ -24,6 +24,8 @@ package pgdial
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -84,6 +86,38 @@ func ConnConfigTrusting(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, err
 		set = Trust()
 	}
 	trustprofile.Trust(&cfg.Config, set)
+	return cfg, nil
+}
+
+// ConnConfigPinned is ConnConfig for a login that trusts one pinned
+// certificate authority for its host and nothing else: p's roots are the
+// only roots (the system's authorities do not count), whatever roots the
+// string or the environment names (sslrootcert, PGSSLROOTCERT). dsn must be
+// sslmode=verify-full, as the setup page builds it; the pin is then checked
+// as basalt trust pin makes it (the host name too, or the chain alone for a
+// profile with verify: ca).
+func ConnConfigPinned(dsn string, p *trustprofile.Profile) (*pgx.ConnConfig, error) {
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	apply(dsn, cfg)
+	tlsConfigs := []*tls.Config{cfg.TLSConfig}
+	for _, fb := range cfg.Fallbacks {
+		tlsConfigs = append(tlsConfigs, fb.TLSConfig)
+	}
+	for _, t := range tlsConfigs {
+		if t == nil || t.InsecureSkipVerify {
+			return nil, errors.New("pgdial: a pinned login needs sslmode=verify-full")
+		}
+		t.RootCAs = nil // a root the string or the environment named is not the pin
+	}
+	trustprofile.Trust(&cfg.Config, trustprofile.NewSet(nil, []*trustprofile.Profile{p}, nil))
+	if !p.VerifiesCA() {
+		for _, t := range tlsConfigs {
+			t.RootCAs = p.OwnPool()
+		}
+	}
 	return cfg, nil
 }
 

@@ -25,7 +25,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -212,22 +212,33 @@ async function loadRequest(hash) {
   const secret = linkSecret(hash);
   // Every later call for this link (scope, Show values, Reject, the relay)
   // uses the same session; a widen changes the secret, not the session.
-  const session = await pageTransport().open({ page: "reverts", id, secret });
+  const session = await openSession(pageTransport(), { page: "reverts", id, secret });
   const req = await checkRevertRequest(await fetchRequest(session, paths.request, secret));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
   return { req, relay: { path: paths.relay, secret, id, session } };
 }
 
+// ENGINE_BUTTONS are the controls that send the engine a request.
+const ENGINE_BUTTONS = ["reveal", "scope-line", "widen", "reject"];
+
 // finish relays the signed response when the page came from a short link,
 // and otherwise (or when the relay fails) shows the code to paste.
-async function finish(response, relay) {
+async function finish(response, relay, binding) {
   if (relay !== null) {
     try {
       const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
       showDone(revertDone(result));
+      await showReceipt(result, relay.session, { kind: "REVERT", itemId: response.revertId, rowsHash: binding.rowsHash });
+      // The revert is signed: nothing else goes to the engine.
+      endSession(relay.session, ENGINE_BUTTONS);
       settle(result?.batched ? "Signed" : "Reverted", "ok");
       return;
     } catch (err) {
+      if (!pastesCode(relay.session)) {
+        showRelayFailed(relayFailure(err, "revert"));
+        settle("Not signed", "bad");
+        return;
+      }
       showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
     }
   }
@@ -258,6 +269,7 @@ async function sign(rp, state) {
         signature: new Uint8Array(r.signature),
       },
       relay,
+      state.req.binding,
     );
   } catch (err) {
     $("sign").disabled = nothingToSign(state.req.binding) !== null || state.expired;
@@ -298,6 +310,8 @@ async function reject(state) {
     $("reject-status").textContent = err?.reason === "LINK_RESET" ? RESET_MESSAGE : personText(err) || `The engine did not take the reject: ${err.message}`;
     return;
   }
+  // The engine revoked the link with the reject: the session is done.
+  endSession(relay.session, ENGINE_BUTTONS);
   $("reject-note").hidden = true;
   $("sheet-dim").hidden = true;
   showDone(rejectDone(note.trim() !== "", req.binding.requestedBy));
@@ -532,6 +546,7 @@ async function main() {
   const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired, shown: new Map(), revealDone: false, valuesHidden: false };
   render(state);
   $("main").hidden = false;
+  showEngine(relay?.session);
   setInterval(() => {
     showExpiry(state.req.binding.expiresAt);
   }, EXPIRY_TICK_MS);

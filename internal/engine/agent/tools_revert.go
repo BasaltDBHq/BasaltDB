@@ -101,7 +101,6 @@ type revertPreviewResult struct {
 	ScopeID       string          `json:"scopeId"`
 	Rows          int             `json:"rows"`
 	Skipped       int             `json:"skipped"`
-	Command       string          `json:"command"`
 	Items         []revertLineDTO `json:"items"`
 	NextCursor    string          `json:"nextCursor,omitempty"`
 	PersonMessage string          `json:"personMessage,omitempty"`
@@ -166,7 +165,7 @@ func (h handlers) previewRevert(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, err
 	}
 	out := revertPreviewResult{
-		Scope: string(p.Scope.Kind), ScopeID: p.Scope.ID.String(), Rows: p.Rows, Skipped: p.Skipped, Command: p.Command,
+		Scope: string(p.Scope.Kind), ScopeID: p.Scope.ID.String(), Rows: p.Rows, Skipped: p.Skipped,
 		Items: make([]revertLineDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
 		PersonMessage: p.PersonMessage, NextSteps: p.NextSteps,
 	}

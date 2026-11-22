@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"flag"
 	"fmt"
 	"net"
 	"net/url"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -183,30 +181,28 @@ func (c *cliIO) writePin(choice pinChoice, configPath string) error {
 }
 
 // pinCommand is the basalt trust pin command the person runs for t.
-func pinCommand(t pinTarget, configPath string, goos string) string {
-	cmd := "basalt trust pin --host " + shellQuote(t.host) + " --port " + strconv.Itoa(t.port)
-	if configPath != config.DefaultPath(goos) {
-		cmd += " --config " + shellQuote(configPath)
-	}
-	return cmd
+func pinCommand(t pinTarget) string {
+	return "basalt trust pin --host " + shellQuote(t.host) + " --port " + strconv.Itoa(t.port)
 }
 
 // trustPin is basalt trust pin --host H [--port P] [--trust-root SHA256].
 func trustPin(c *cliIO, args []string) int {
 	fs := c.flags("trust pin")
-	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file; the pin goes in its trust.d")
 	host := fs.String("host", "", "the database host to pin, as the connection string names it")
 	port := fs.Int("port", defaultPGPort, "the database port")
 	trustRoot := fs.String("trust-root", "", "without a terminal: the SHA-256 of the certificate to pin, which must match what the server presents")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*configPath = configOrFallback(c.host, fs, *configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return c.fail(err)
+	}
 	if *host == "" {
 		return c.fail(fmt.Errorf("%w: --host is required: basalt trust pin --host H [--port P]", errUsage))
 	}
 	t := pinTarget{host: trustprofile.NormalizeHost(*host), port: *port}
-	choice, err := c.askPin(t, *trustRoot, *configPath, c.repin(t, *configPath), false)
+	choice, err := c.askPin(t, *trustRoot, configPath, c.repin(t, configPath), false)
 	switch {
 	case errors.Is(err, errNoPinNeeded):
 		fmt.Fprintf(c.stdout, "basalt: %s needs no pin: its certificate verifies already\n", t.host)
@@ -216,7 +212,7 @@ func trustPin(c *cliIO, args []string) int {
 	case err != nil:
 		return c.fail(err)
 	}
-	if err := c.writePin(choice, *configPath); err != nil {
+	if err := c.writePin(choice, configPath); err != nil {
 		return c.fail(err)
 	}
 	fmt.Fprintln(c.stderr, "basalt: the engine uses it from its next connection; no restart is needed")
@@ -240,12 +236,6 @@ func (c *cliIO) repin(t pinTarget, configPath string) string {
 // withoutProfile is set without the operator profile name.
 func withoutProfile(set *trustprofile.Set, name string) *trustprofile.Set {
 	return set.Replacing(name, nil)
-}
-
-// trustRootFlag adds --trust-root to fs.
-func trustRootFlag(fs *flag.FlagSet) *string {
-	return fs.String("trust-root", "", "without a terminal: the SHA-256 of the certificate authority to pin for a database whose certificate "+
-		"verifies against no authority this machine trusts; it must match what the server presents")
 }
 
 // initPin is the pin an init offers for dsn's host before anything else
@@ -278,10 +268,10 @@ func (c *cliIO) initPin(dsn, trustRoot, configPath string, agentOperated bool) (
 		fmt.Fprintf(c.stderr, "basalt: nothing pinned for %s; its certificate is not verified\n", terminalText(t.host))
 	case errors.Is(err, errAgentPin) && trustRoot != "":
 		return pinChoice{}, false, fmt.Errorf("%w: --trust-root is refused: an agent never pins a certificate; the person runs %s",
-			errUsage, pinCommand(t, configPath, c.goos))
+			errUsage, pinCommand(t))
 	case errors.Is(err, errAgentPin):
 		fmt.Fprintf(c.stderr, "basalt: %s presents a certificate no authority here verifies, and an agent never pins one. "+
-			"The person checks it and pins it on this machine:\n  %s\n", terminalText(t.host), pinCommand(t, configPath, c.goos))
+			"The person checks it and pins it on this machine:\n  %s\n", terminalText(t.host), pinCommand(t))
 	case errors.Is(err, errUsage):
 		return pinChoice{}, false, err
 	}
@@ -344,18 +334,4 @@ func namesOwnRoots(dsn string) bool {
 		return false
 	}
 	return cfg.TLSConfig == nil || cfg.TLSConfig.RootCAs != nil
-}
-
-// trustInMemory makes this process's connections trust choice for its
-// host, without writing it, and returns admin with sslmode=verify-full: the
-// admin connection then verifies against the certificate the person just
-// accepted before it sends the admin's login (verify: ca, the chain only,
-// for a name-only pin).
-func (c *cliIO) trustInMemory(choice pinChoice, admin, configPath string) (string, error) {
-	p, err := trustdir.PinProfile(choice.host, choice.top, choice.caOnly)
-	if err != nil {
-		return "", err
-	}
-	pgdial.SetTrust(func() *trustprofile.Set { return trustdir.Set(configPath).Replacing(p.Name, p) })
-	return withVerifyFull(admin), nil
 }

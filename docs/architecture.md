@@ -6,7 +6,7 @@ A five-minute map of the code for someone new to it. The exact behaviour of ever
 
 BasaltDB is one Go binary, `basalt` (`cmd/basalt`), plus a schema installed in the person's Postgres. The same binary plays three roles.
 
-- **Person CLI.** What a person types: `basalt init`, `log`, `approve`, `revert`, `status`, `upgrade`, `uninstall`. These live in `cmd/basalt`.
+- **Person CLI.** What a person types: `basalt init`, `approve`, `revert`, `passkey`. These live in `cmd/basalt`.
 - **Engine.** `basalt engine` is a long-running service on the agent's machine, running as its own OS user. It serves each agent over a Unix socket, checks the agent's SQL, and holds that agent's scoped Postgres credential. It is the first filter, not the boundary. Code: `internal/engine`.
 - **MCP shim.** `basalt mcp --agent NAME` is the process an MCP client starts. It only relays stdio to the engine's socket. It holds no credential and parses no SQL. Code: `internal/shim`.
 
@@ -42,7 +42,7 @@ The whole CLI: one file or a few per command (`init.go`, `approve.go`, `revert.g
 
 | Package | What it does |
 |---|---|
-| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local approval and revert pages), `person` (the person socket for the CLI), `config`, `service`, `privdrop`, `peercred`, `upkeep`, `piidict`. |
+| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local approval and revert pages), `person` (the person socket for the CLI), `config`, `service`, `peercred`, `upkeep`, `piidict`. |
 | `mcp` | A minimal MCP server over JSON-RPC 2.0. Used by the engine and its tests. |
 | `shim` | The `basalt mcp` relay. |
 | `sqlguard` | Parses one agent statement with libpg_query and classifies or refuses it. |

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   ChannelError,
+  checkReceipt,
   CLOSE,
   engineIdOf,
   finishHandshake,
@@ -19,6 +20,7 @@ import {
   sealFrame,
   startHandshake,
   unpad,
+  verifySigned,
 } from "./channel.js";
 
 const subtle = globalThis.crypto.subtle;
@@ -55,6 +57,14 @@ for (const c of cases("link-derivation.json", "LINK_DERIVATION")) {
 test("a secret that is not 16 bytes is refused before any socket", async () => {
   for (const s of ["", "AAAA", "AAAAAAAAAAAAAAAAAAAAAAAA", "not base64url!!!!!!!!!"]) {
     assert.equal(await outcome(() => linkKeys(s)), "LINK");
+  }
+});
+
+test("message 1 is made only for the RELAY transport", async () => {
+  const keys = await linkKeys(load("handshake.json").cases[0].secret);
+  assert.equal((await startHandshake(RELAY, keys)).message.length, 99);
+  for (const t of ["DIRECT", "relay", "", undefined]) {
+    await assert.rejects(startHandshake(t, keys), /unknown transport/);
   }
 });
 
@@ -236,4 +246,37 @@ test("the handshake times out", async () => {
   await untilSent(ws);
   await assert.rejects(opening, (e) => e.code === "TIMEOUT");
   assert.equal(ws.closed, CLOSE.TIMEOUT);
+});
+
+// Every signing context: the page's verifier accepts the vectors' valid
+// signatures and refuses another context, key, message or encoding.
+for (const c of cases("signature.json", "SIGNATURE")) {
+  test(`signature: ${c.name}`, async () => {
+    const ok = await verifySigned(c.publicKey, c.context, fromHex(c.message), c.sig);
+    assert.equal(ok ? "ACCEPT" : "REFUSE", c.expect);
+  });
+}
+
+// Receipts, checked against the key the verifier expects (CONTRACT.md,
+// Receipts): a receipt signed by another key, naming another engine, or off
+// the closed schema is refused.
+for (const c of cases("receipt.json", "RECEIPT")) {
+  test(`receipt: ${c.name}`, async () => {
+    const payload = await checkReceipt(c.token, c.engineKey);
+    assert.equal(payload === null ? "REFUSE" : "ACCEPT", c.expect);
+    if (c.expect !== "ACCEPT") return;
+    assert.equal(payload.engineId, await engineIdOf(c.engineKey));
+    if (c.payloadJson !== undefined) assert.deepEqual(payload, JSON.parse(c.payloadJson));
+  });
+}
+
+test("a receipt token in another shape is refused", async () => {
+  const key = cases("receipt.json", "RECEIPT")[0].engineKey;
+  for (const token of ["", "basalt-receipt.1.", "basalt-receipt.2.a.b", "basalt-receipt.1.a.b.c", "basalt-receipt.1.!!.AA", null]) {
+    assert.equal(await checkReceipt(token, key), null, String(token));
+  }
+});
+
+test("the fingerprint is the engine id's first 16 characters in four groups of four", () => {
+  assert.equal(fingerprint("R68WFYxAcGgIjMENS5Oqrw"), "R68W FYxA cGgI jMEN");
 });

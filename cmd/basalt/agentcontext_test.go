@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -34,11 +33,7 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"init", []string{"init", "--agent", "bot", "--write", "public.leads", "--yes"}, "basalt init --remote --agent NAME"},
-		{"init with a usage error", []string{"init", "--write", "public.leads"}, "basalt init --remote --agent NAME"},
-		{"init operated by agent", []string{"init", "--agent", "bot", "--write", "public.leads", "--operated-by", "agent", "--yes"}, "basalt init --remote --agent NAME"},
 		{"setup code", []string{"init", "--setup-code", "basalt-setup.1.x.y", "--yes"}, "Give the person this command instead of running it"},
-		{"uninstall", []string{"uninstall", "--yes"}, "Give the person this command instead of running it"},
 	}
 	for _, marker := range agentMarkers {
 		for _, tc := range cases {
@@ -62,9 +57,7 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 func TestAgentContextAdminEnvSaysRotate(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"init", "--agent", "bot", "--write", "public.leads", "--yes"},
 		{"init", "--setup-code", "basalt-setup.1.x.y"},
-		{"upgrade", "--agent", "bot"},
 	} {
 		t.Run(args[0]+" "+args[1], func(t *testing.T) {
 			t.Parallel()
@@ -108,47 +101,9 @@ func TestAgentContextNeedsAMarker(t *testing.T) {
 func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 	t.Parallel()
 	r := cliOn(t, newFakeHost(t), map[string]string{envAdminURL: leakedAdmin}, "",
-		"init", "--remote", "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://postgres@db.example.com:5432/app",
-		"--config", filepath.Join(t.TempDir(), "engine.json"))
+		"init", "--remote", "--agent", "bot", "--config", filepath.Join(t.TempDir(), "engine.json"))
 	require.Contains(t, r.stderr, remoteAdminEnvSet)
 	require.NotContains(t, r.stdout+r.stderr, "hunter2")
-}
-
-// TestInitHelpForAnAgent: an agent reading basalt init's help sees only the
-// agent-led setup; a person at a terminal sees every mode.
-func TestInitHelpForAnAgent(t *testing.T) {
-	t.Parallel()
-	for name, env := range map[string]map[string]string{"no terminal": nil, "marker": {"CODEX_SANDBOX": "seatbelt"}} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			r := cliOn(t, newFakeHost(t), env, "", "init", "-h")
-			require.Equal(t, exitOK, r.code, r.stderr)
-			require.Equal(t, agentInitUsage, r.stderr)
-			requireAgentLed(t, "init -h", r.stderr)
-		})
-	}
-
-	person := personCLI(t, nil, "init", "-h")
-	require.Equal(t, exitOK, person.code, person.stderr)
-	require.Contains(t, person.stderr, "usage: basalt init --agent NAME")
-	for _, want := range []string{"--remote", "--setup-code", "-operated-by"} {
-		require.Contains(t, person.stderr, want)
-	}
-
-	marked := personCLI(t, map[string]string{"GEMINI_CLI": "1"}, "init", "-h")
-	require.Equal(t, agentInitUsage, marked.stderr, "a marker wins over a terminal")
-}
-
-// personCLI is cliOn for a person at a terminal.
-func personCLI(t *testing.T, env map[string]string, args ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(k string) string { return env[k] })
-	c.host = newFakeHost(t)
-	c.interactive = true
-	code := guardCommands[args[0]](c, args[1:])
-	return result{code, stdout.String(), stderr.String()}
 }
 
 func TestAgentNotInConfigNamesTheAgentLedSetup(t *testing.T) {
@@ -224,7 +179,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", engine.Instructions)
 	for name, text := range map[string]string{
-		"agentInitUsage": agentInitUsage, "agentsHelp": agentsHelp, "hintAgentInit": hintAgentInit,
+		"agentsHelp":         agentsHelp,
 		"hintAgentSetupCode": hintAgentSetupCode, "hintAgentPerson": hintAgentPerson,
 		"adminEnvLeaked": adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
 	} {

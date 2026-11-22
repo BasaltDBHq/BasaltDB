@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -147,7 +147,7 @@ async function loadRequest(hash) {
   const secret = linkSecret(hash);
   // Every later call for this link (Show values, the relay) uses the same
   // session.
-  const session = await pageTransport().open({ page: "approvals", id, secret });
+  const session = await openSession(pageTransport(), { page: "approvals", id, secret });
   const req = await checkApprovalRequest(await fetchRequest(session, paths.request, secret));
   if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
   return { req, relay: { path: paths.relay, secret, session } };
@@ -155,14 +155,22 @@ async function loadRequest(hash) {
 
 // finish relays the signed response when the page came from a short link,
 // and otherwise (or when the relay fails) shows the code to paste.
-async function finish(response, relay) {
+async function finish(response, relay, binding) {
   if (relay !== null) {
     try {
-      await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
+      const result = await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
+      await showReceipt(result, relay.session, { kind: "APPROVAL", itemId: response.approvalId, rowsHash: binding.rowsHash });
+      // The approval is finished: nothing else goes to the engine.
+      endSession(relay.session, ENGINE_BUTTONS);
       setPill("state", "Approved", "ok");
       return;
     } catch (err) {
+      if (!pastesCode(relay.session)) {
+        showRelayFailed(relayFailure(err, "approval"));
+        setPill("state", "Not approved", "bad");
+        return;
+      }
       showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt approve.`);
     }
   }
@@ -193,6 +201,7 @@ async function approve(rp, req, summary, relay) {
         signature: new Uint8Array(r.signature),
       },
       relay,
+      req.binding,
     );
   } catch (err) {
     gate(req, summary);
@@ -201,6 +210,9 @@ async function approve(rp, req, summary, relay) {
 }
 
 const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
+
+// ENGINE_BUTTONS are the controls that send the engine a request.
+const ENGINE_BUTTONS = ["reveal"];
 
 function renderLines(state) {
   const longLink = state.relay === null;
@@ -264,6 +276,7 @@ async function main() {
   }
   const summary = summarize(req.lines);
   renderSummary(req, summary);
+  showEngine(relay?.session);
   const state = { req, relay, shown: new Map() };
   renderLines(state);
   wireReveal(rp, state);

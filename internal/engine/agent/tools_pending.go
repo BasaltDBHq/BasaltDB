@@ -40,7 +40,6 @@ type pendingDTO struct {
 	ExpiresAt       string             `json:"expiresAt"`
 	ApprovalURL     string             `json:"approvalUrl"`
 	RequestFile     *links.RequestFile `json:"requestFile,omitempty"`
-	ApproveCommand  string             `json:"approveCommand"`
 	Headline        string             `json:"headline"`
 	PersonMessage   string             `json:"personMessage"`
 	NextSteps       []mcp.NextStep     `json:"nextSteps,omitempty"`
@@ -55,7 +54,7 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 		Kind:       KindApproval,
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
-		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile, ApproveCommand: p.Notice.ApproveCommand,
+		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile,
 		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 		LargeValues: p.LargeValues,
 	}

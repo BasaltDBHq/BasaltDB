@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -41,7 +42,7 @@ func laptopRun(t *testing.T, admin, stdin string, now time.Time, args ...string)
 	if !now.IsZero() {
 		c.now = func() time.Time { return now }
 	}
-	code := runInit(c, args)
+	code := runInit(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -56,16 +57,36 @@ func portalPasskey(t *testing.T, db string) (*passkeytest.Authenticator, string)
 
 // installed runs an INSTALL code made by basalt init --remote through
 // basalt init --setup-code, registering a portal passkey, and returns the
-// bot's run.
+// bot's run. tables are the agent's saved table flags (--write=...).
 func installed(t *testing.T, d *guardtest.DB, dbURL, cfg string, tables ...string) remoteRun {
 	t.Helper()
-	args := append([]string{"--agent", "bot", "--prefix", d.Names.Prefix, "--database-url", dbURL}, tables...)
-	install := remoteDBRun(t, cfg, args...)
+	install := codeFor(t, d, dbURL, cfg, tables...)
 	require.Equal(t, "INSTALL", install.res.Kind)
 	_, reg := portalPasskey(t, dbName(t, d))
 	r := laptopRun(t, d.URL, reg+"\n", time.Time{}, "--setup-code", install.res.Code, "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	return install
+}
+
+// codeFor is basalt init --remote's code for the bot in database d, which
+// the person confirmed on the connect page and which does not record the
+// setup yet: an INSTALL code with the credential's password. tables are
+// the agent's saved table flags (--write=...).
+func codeFor(t *testing.T, d *guardtest.DB, dbURL, cfg string, tables ...string) remoteRun {
+	t.Helper()
+	pw, err := setupcode.NewPassword()
+	require.NoError(t, err)
+	seedCredential(t, withDB(t), cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", pw), append([]string{"--prefix=" + d.Names.Prefix}, tables...)...)
+	return remoteDBRun(t, cfg, "--agent", "bot")
+}
+
+// saveTables replaces the agent's saved table flags in engine.json, as a
+// change of its tables does.
+func saveTables(t *testing.T, cfg string, d *guardtest.DB, tables ...string) {
+	t.Helper()
+	editConfig(t, cfg, func(c *config.Config) {
+		c.Agents[0].InitArgs = append([]string{"--agent=bot", "--prefix=" + d.Names.Prefix}, tables...)
+	})
 }
 
 // agentLogsIn reports whether the agent's credential file logs in and its
@@ -101,8 +122,7 @@ func TestInitSetupCodeInstallsFromTheLaptop(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	install := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--read", "public.payroll",
-		"--prefix", d.Names.Prefix, "--database-url", dbURL)
+	install := codeFor(t, d, dbURL, cfg, "--write=public.leads", "--read=public.payroll")
 	require.False(t, agentLogsIn(t, install.credFile, install.res.SetupID), "the role does not exist yet")
 
 	person, reg := portalPasskey(t, dbName(t, d))
@@ -142,7 +162,8 @@ func TestInitSetupCodeInstallsFromTheLaptop(t *testing.T) {
 func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	install := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
+	seedCredential(t, noDB(t), cfg, "bot", agentDSN(t, "postgres://u@db.example.com:5432/app", guard.DefaultPrefix, "bot", "0123abcd"), "--write=public.leads")
+	install := remote(t, cfg, "--agent", "bot")
 	expires, err := install.payload.ExpiresTime()
 	require.NoError(t, err)
 	connectOnly := remote(t, connectOnlyConfig(t), connectOnlyArgs...)
@@ -159,16 +180,14 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 		"not a code":      {time.Time{}, "hello", "basalt: This is not a Basalt setup code.\n"},
 		"connect-only, before the clock": {
 			expires.Add(48 * time.Hour), connectOnly.res.Code,
-			"basalt: This setup code is for the connect page: open the link bot sent, or ask it for a code for this command " +
-				"(basalt init --remote --database-url <the database, without password>).\n",
+			"basalt: This setup code is for the connect page: open the link bot sent.\n",
 		},
 		"damaged": {time.Time{}, damaged(install.res.Code), "basalt: This setup code is damaged; copy it again.\n"},
 		"wrapped and wrong host": {
 			time.Time{},
 			install.res.Code[:40] + "\n  " + install.res.Code[40:],
 			"basalt: This setup code is for database app of db.example.com:5432 (the agent connects there). Your admin connection string points at database app of 127.0.0.1:1. " +
-				"Either run this command with the admin connection string of db.example.com:5432, or ask bot for a new code for the database you meant " +
-				"(basalt init --remote --new-code --database-url postgres://admin@127.0.0.1:1/app).\n",
+				"Either run this command with the admin connection string of db.example.com:5432, or ask bot for a new code for the database you meant.\n",
 		},
 	} {
 		r := laptopRun(t, admin, "", tc.now, "--setup-code", tc.code, "--yes")
@@ -203,7 +222,7 @@ func TestInitSetupCodeUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
 	c.goos = "windows"
-	require.Equal(t, exitError, runInit(c, []string{"--setup-code", "x"}))
+	require.Equal(t, exitError, runInit(c, takePathFlags(c, runInit, []string{"--setup-code", "x"})))
 	require.Contains(t, stderr.String(), "macOS and Linux only")
 
 	require.True(t, isSetupCode([]string{"--setup-code=x"}))
@@ -242,7 +261,7 @@ func TestSetupTargetMatchesByDatabaseIdentity(t *testing.T) {
 	require.EqualError(t, err, "This setup code is for database postgres of Supabase project abcdefghijklmnopqrst (the agent connects there). "+
 		"Your admin connection string points at database postgres of Supabase project zzzzzzzzzzzzzzzzzzzz. "+
 		"Either run this command with the admin connection string of Supabase project abcdefghijklmnopqrst, or ask lead_bot for a new code "+
-		"for the database you meant (basalt init --remote --new-code --database-url postgres://postgres@db.zzzzzzzzzzzzzzzzzzzz.supabase.co:5432/postgres).")
+		"for the database you meant.")
 
 	// The URL rules of basalt init, and a host the parameters would change.
 	require.ErrorIs(t, checkSetupTarget(p, "host=db user=postgres"), guard.ErrAdminURLForm)
@@ -255,7 +274,7 @@ func TestInitSetupCodeWrongDatabaseChangesNothing(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
 	other := guardtest.New(t).WithDemo(t)
-	install := remoteDBRun(t, tempConfig(t), "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--database-url", dbURL)
+	install := codeFor(t, d, dbURL, tempConfig(t), "--write=public.leads")
 
 	r := laptopRun(t, other.URL, "", time.Time{}, "--setup-code", install.res.Code, "--yes")
 	require.Equal(t, exitError, r.code)
@@ -269,12 +288,14 @@ func TestInitSetupCodeRefusesAnAgentRoleThatIsNotPlain(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	install := installed(t, d, dbURL, cfg, "--write", "public.leads")
+	install := installed(t, d, dbURL, cfg, "--write=public.leads")
 	role := d.Names.Prefix + "_agent_bot"
 
-	// Someone gave the agent's role CREATEDB; the bot asks for a new password.
-	d.Exec(t, "ALTER ROLE "+role+" CREATEDB")
-	rotate := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	// Someone gave the agent's role CREATEDB and another password; the
+	// database refuses the bot's credential, so it asks for a new password.
+	d.Exec(t, "ALTER ROLE "+role+" CREATEDB PASSWORD 'not-the-bots'")
+	clearSetup(t, cfg)
+	rotate := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	require.NotEmpty(t, rotate.payload.Agent.Verifier)
 
@@ -285,19 +306,40 @@ func TestInitSetupCodeRefusesAnAgentRoleThatIsNotPlain(t *testing.T) {
 	require.Contains(t, r.stderr, "is not a plain agent role")
 	require.Contains(t, r.stderr, "Nothing changed")
 
-	// The old password still logs in; the new one does not, and the setup
-	// is not recorded.
-	require.True(t, agentLogsIn(t, install.credFile, install.res.SetupID))
+	// The new password does not log in, and the setup is not recorded.
+	require.FileExists(t, install.credFile)
 	require.False(t, agentLogsIn(t, install.credFile+pendingSuffix, rotate.res.SetupID))
 	setups, err := guard.SetupsFor(context.Background(), d.Admin, uuid.MustParse(rotate.res.SetupID), "")
 	require.NoError(t, err)
 	require.Empty(t, setups)
 }
 
+// Someone dropped the agent's role: the database refuses the bot's
+// credential, the next basalt init --remote makes an AGENT code with a new
+// password, and that code runs as an INSTALL, creating the role, instead
+// of a ROLE_MISSING dead end.
+func TestInitSetupCodeRecreatesADroppedRole(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	cfg := tempConfig(t)
+	install := installed(t, d, dbURL, cfg, "--write=public.leads")
+	role := d.Names.Prefix + "_agent_bot"
+	d.Exec(t, "DROP OWNED BY "+role+"; DROP ROLE "+role)
+	clearSetup(t, cfg)
+
+	rotate := remoteDBRun(t, cfg, "--agent", "bot")
+	require.Equal(t, "AGENT", rotate.res.Kind)
+	require.NotEmpty(t, rotate.payload.Agent.Verifier)
+	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", rotate.res.Code, "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "This creates the agent bot (role "+role+").")
+	require.True(t, agentLogsIn(t, install.credFile+pendingSuffix, rotate.res.SetupID), "the new password logs in")
+}
+
 func TestInitSetupCodeRollsBackEverything(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
-	install := remoteDBRun(t, tempConfig(t), "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--database-url", dbURL)
+	install := codeFor(t, d, dbURL, tempConfig(t), "--write=public.leads")
 	l, err := newLaptopSetup(&cliIO{ctx: context.Background(), now: time.Now}, setupCodeFlags{code: install.res.Code, yes: true, agentRLS: AgentRLSNone})
 	require.NoError(t, err)
 	l.c = newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
@@ -341,11 +383,12 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	install := installed(t, d, dbURL, cfg, "--write", "public.leads", "--read", "public.payroll")
+	install := installed(t, d, dbURL, cfg, "--write=public.leads", "--read=public.payroll")
 	role := d.Names.Prefix + "_agent_bot"
 	d.Exec(t, "ALTER ROLE "+role+" SET statement_timeout = '15s'")
 
-	change := remoteDBRun(t, cfg, "--agent", "bot", "--read", "public.leads", "--prefix", d.Names.Prefix)
+	saveTables(t, cfg, d, "--read=public.leads")
+	change := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", change.res.Kind)
 	require.Empty(t, change.payload.Agent.Verifier)
 	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", change.res.Code, "--yes")
@@ -357,7 +400,8 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 	// A statement_timeout set for this database only wins over the
 	// role's: the summary shows it.
 	d.Exec(t, "ALTER ROLE "+role+" IN DATABASE "+pgx.Identifier{dbName(t, d)}.Sanitize()+" SET statement_timeout = '5s'")
-	again := remoteDBRun(t, cfg, "--agent", "bot", "--read", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	again := remoteDBRun(t, cfg, "--agent", "bot")
+	require.NotEqual(t, change.res.SetupID, again.res.SetupID)
 	r = laptopRun(t, d.URL, "", time.Time{}, "--setup-code", again.res.Code, "--dry-run")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, "statement timeout 30000 ms (5000 ms set for this database only, which takes precedence), at most 8 connections.")
@@ -382,7 +426,7 @@ func TestInitSetupCodeYesOnlyTheAgentsRLSTables(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	installed(t, d, dbURL, cfg, "--write", "public.leads")
+	installed(t, d, dbURL, cfg, "--write=public.leads")
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
 		GRANT SELECT ON public.payroll TO PUBLIC`)
@@ -394,8 +438,9 @@ func TestInitSetupCodeYesOnlyTheAgentsRLSTables(t *testing.T) {
 		return n
 	}
 
-	// No --write list: the empty list must not mean every table the role can read.
-	change := remoteDBRun(t, cfg, "--agent", "bot", "--read", "public.leads", "--prefix", d.Names.Prefix)
+	// No write list: the empty list must not mean every table the role can read.
+	saveTables(t, cfg, d, "--read=public.leads")
+	change := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", change.res.Kind)
 	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", change.res.Code, "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
@@ -412,11 +457,11 @@ func TestInitSetupCodeUpgrade(t *testing.T) {
 	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	installed(t, d, dbURL, cfg, "--write", "public.leads")
+	installed(t, d, dbURL, cfg, "--write=public.leads")
 	latest := guard.LatestVersion()
 	d.Exec(t, fmt.Sprintf(`DELETE FROM basalt_meta.schema_version WHERE version = %d`, latest))
 
-	upgrade := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix)
+	upgrade := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "UPGRADE", upgrade.res.Kind)
 	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", upgrade.res.Code, "--dry-run")
 	require.Equal(t, exitOK, r.code, r.stderr)
@@ -435,10 +480,10 @@ func TestInitSetupCodeUpgradeWithNothingToUpgrade(t *testing.T) {
 	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	installed(t, d, dbURL, cfg, "--write", "public.leads")
+	installed(t, d, dbURL, cfg, "--write=public.leads")
 	latest := guard.LatestVersion()
 	d.Exec(t, fmt.Sprintf(`DELETE FROM basalt_meta.schema_version WHERE version = %d`, latest))
-	upgrade := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix)
+	upgrade := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "UPGRADE", upgrade.res.Kind)
 	// Someone upgraded the guard since the code was made.
 	d.Exec(t, fmt.Sprintf(`INSERT INTO basalt_meta.schema_version (version) VALUES (%d)`, latest))

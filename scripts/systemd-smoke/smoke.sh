@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Runs a plugin under its real systemd unit and checks the unit's isolation
 # from inside and outside it: basalt init installs the engine service, a
-# signed local plugin (./probe) is trusted, added and enabled with sudo, and
-# the engine is restarted. Then:
+# signed local plugin (./probe) is trusted and installed by hand as a config
+# entry (its copy under /opt/basalt/plugins and its entry in engine.json, as
+# root), basalt service install writes its unit, and the engine is
+# restarted. Then:
 #   - the install made the plugin base /opt/basalt and its run/ as root's;
 #   - the plugin, from inside its unit, finds no network (empty egress), no
 #     chmod, a read-only copy, a /tmp of its own, the engine's directories and
@@ -15,15 +17,15 @@
 #   - Fedora's stock service.d/10-timeout-abort.conf is applied by systemd and
 #     the engine still connects; a drop-in that turns the network back on is
 #     applied by systemd and the engine refuses the plugin until it is gone;
-#   - basalt plugin remove deletes the unit, the user and the socket directory;
 #   - under the engine unit's own sandbox settings, the engine's user writes a
 #     program into its state directory, starts it, and reaches it on a Unix
 #     socket (./spawn), as an engine that runs a plugin itself would;
-#   - with no sudo after the install, an agent adds an unsigned plugin over
-#     the person socket, a test passkey (./signer) signs its approval, the
-#     agent relays the code, and the engine runs it within seconds as its own
-#     child, as the engine's user inside the engine's unit, with no restart;
-#     disable stops it and ends the approval, and remove deletes the copy.
+#
+# Not covered here since basalt plugin is gone: removing a config entry's
+# unit, user and socket directory (there is no command for it), and an agent
+# adding a plugin through request_plugin, which this setup's agent cannot do
+# (it has its own OS user, which is not the person's); the engine's
+# tests cover that path.
 #
 # It changes the machine as root (users, units, /opt/basalt, /etc/basalt), so
 # it runs only on a throwaway CI runner with systemd and passwordless sudo:
@@ -117,10 +119,21 @@ run_has() {
 	grep -qx "$1" <<<"$log"
 }
 
-status_out() { "$basalt" status --agent "$agent" 2>&1 || true; }
+# status_out is the agent's status tool through basalt mcp (basalt status is
+# removed), called as the OS user basalt init named for the agent: the
+# person running this script, as on a person's own computer.
+status_out() {
+	printf '%s\n%s\n' \
+		'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+		'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' |
+		timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
+}
+# unavailable: the status tool names PLUGIN_UNAVAILABLE, or gave no result
+# at all (a basalt mcp call that failed is never read as healthy).
 unavailable() {
 	local out
 	out=$(status_out)
+	grep -q '"id":2,"result"' <<<"$out" || return 0
 	grep -q "PLUGIN_UNAVAILABLE" <<<"$out"
 }
 connected() { run_has 'probe initialized' && ! unavailable; }
@@ -165,19 +178,70 @@ sudo install -o root -g root -m 0755 "$work/basalt" "$basalt"
 
 step "basalt init installs the engine service"
 sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$agent_user"
-# Its output is the setup SQL (the password redacted): shown only on failure.
-"$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes </dev/null >"$work/init.out" 2>&1 || {
-	cat "$work/init.out" >&2
+# The hosted runner has no desktop, so no administrator dialog: basalt init
+# says so and stops, never falling back to running the engine as this user.
+# It never reads the admin connection string, which this job's environment
+# holds: the setup page takes it.
+[ ! -e /usr/bin/pkexec ] || sudo mv /usr/bin/pkexec /usr/bin/pkexec.smoke-aside
+if "$basalt" init --demo >"$work/nodialog.out" 2>&1 </dev/null; then
+	cat "$work/nodialog.out" >&2
+	fail "basalt init went on without an administrator dialog"
+fi
+grep -q "cannot be shown here" "$work/nodialog.out" || {
+	cat "$work/nodialog.out" >&2
+	fail "basalt init did not say there is no administrator dialog"
+}
+[ ! -e /etc/systemd/system/basalt-engine.service ] || fail "a unit was installed without an administrator dialog"
+# A stand-in pkexec answers yes through sudo, so the real install script
+# runs as root; it takes only the arguments basalt init passes.
+sudo tee /usr/bin/pkexec >/dev/null <<'EOF'
+#!/bin/sh
+[ "$1" = --disable-internal-agent ] || exit 127
+shift
+exec sudo -n "$@"
+EOF
+sudo chmod 0755 /usr/bin/pkexec
+# init installs the service, waits for the engine's setup page and prints
+# the link (then the agent's MCP line); there is no browser to open here.
+"$basalt" init --demo >"$work/init.out" 2>"$work/init.err" </dev/null || {
+	cat "$work/init.out" "$work/init.err" >&2
 	fail "basalt init"
 }
+link=$(head -1 "$work/init.out")
+case $link in http://localhost:8787/setup/\#1.*) ;; *) cat "$work/init.out" >&2; fail "basalt init printed no setup link" ;; esac
+grep -qx "basalt mcp --agent $agent" "$work/init.out" || fail "basalt init printed no MCP line for $agent"
+if sudo test -e /etc/basalt/engine.json; then fail "an engine.json exists before the setup page ran"; fi
+# The person's part of the page: the check, a passkey, the run.
+CGO_ENABLED=0 go build -trimpath -o "$work/setup" ./scripts/systemd-smoke/setup
+printf '%s\n' "$BASALT_ADMIN_DATABASE_URL" | "$work/setup" "$link" >"$work/setup.out" || fail "the setup page's install"
+[ "$(cat "$work/setup.out")" = "$agent" ] || fail "the setup set up $(cat "$work/setup.out"), not $agent"
 wait_for "the engine's agent socket" sudo test -S "/run/basalt/$agent.sock"
+# The engine wrote its own files, as its own user, for no one else to read.
+for f in /etc/basalt/engine.json "/etc/basalt/agents/$agent.url"; do
+	got=$(sudo stat -c '%U %a' "$f") || fail "the setup did not write $f"
+	[ "$got" = "basalt 600" ] || fail "$f is $got, not basalt 600"
+done
+# The steps below restart the engine several times within seconds: clear
+# systemd's start-rate count so its default limit (5 starts in 10s)
+# measures the steps, not the install.
+sudo systemctl reset-failed "$engine_unit"
+# Started by the dialog before engine.json existed, the engine waited for it
+# and served only its setup page: no exit on the missing file, no crash loop.
+if sudo journalctl --no-pager -o cat -u "$engine_unit" | grep -E 'engine.json: no such file|crashed [0-9]+ times' >&2; then
+	fail "the engine exited on its missing config instead of waiting for it"
+fi
+sudo journalctl --no-pager -o cat -u "$engine_unit" | grep -q 'no engine config yet: serving only the setup page' ||
+	fail "the engine started with no config did not serve its setup page"
 for d in /opt/basalt /opt/basalt/run; do
 	got=$(stat -c '%U:%G %a' "$d") || fail "basalt service install did not make $d"
 	[ "$got" = "root:root 755" ] || fail "$d is $got, not root:root 755"
 	echo "$d: $got"
 done
 
-step "sign the plugin, trust its key, add and enable it"
+step "sign the plugin, trust its key, install it by hand as a config entry"
+# Signing is the plugin SDK's basalt-plugin, not the basalt binary; trusting a
+# key is placing its public file in the root-owned trust store.
+plugin_tool="github.com/basaltdbhq/basalt-plugin-go/cmd/basalt-plugin@${BASALT_PLUGIN_SDK_REF:-cbf5a09dddfebe69a8e3efd6ba704c76418f00d6}"
 sum=$(sha256sum "$work/src/bin/$name" | cut -d' ' -f1)
 cat >"$work/src/basalt-plugin.json" <<EOF
 {
@@ -190,14 +254,30 @@ cat >"$work/src/basalt-plugin.json" <<EOF
   "network": { "egress": [] }
 }
 EOF
-keys=$("$basalt" plugin keygen --out "$work/keys")
+keys=$(go run "$plugin_tool" keygen --out "$work/keys")
 key_id=$(echo "$keys" | awk '$1 == "key" && $2 == "id" {print $3}')
 pub=$(echo "$keys" | awk '$1 == "public" && $2 == "key" {print $3}')
 [ -n "$key_id" ] && [ -n "$pub" ] || fail "keygen printed: $keys"
-"$basalt" plugin sign "$work/src" --key "$work/keys/$key_id.key"
-echo y | sudo "$basalt" plugin trust "$pub"
-echo y | sudo "$basalt" plugin add "$work/src" --agents "$agent"
-echo y | sudo "$basalt" plugin enable "$name"
+go run "$plugin_tool" sign "$work/src" --key "$work/keys/$key_id.key"
+sudo install -d -o root -g root -m 0755 /opt/basalt/plugin-trust
+sudo install -o root -g root -m 0644 "$pub" "/opt/basalt/plugin-trust/$key_id.pem"
+# The installed copy: <root>/<name>/<instance>/<manifest sha256>/, root's,
+# directories 0755, the command 0755 and every other file 0644.
+manifest_sha=$(sha256sum "$work/src/basalt-plugin.json" | cut -d' ' -f1)
+copy_dir=/opt/basalt/plugins/$name/default/$manifest_sha
+for d in /opt/basalt/plugins "/opt/basalt/plugins/$name" "/opt/basalt/plugins/$name/default" "$copy_dir" "$copy_dir/bin"; do
+	sudo install -d -o root -g root -m 0755 "$d"
+done
+sudo install -o root -g root -m 0644 "$work/src/basalt-plugin.json" "$work/src/basalt-plugin.json.sig" "$copy_dir/"
+sudo install -o root -g root -m 0755 "$work/src/bin/$name" "$copy_dir/bin/$name"
+# The entry in engine.json, which keeps its owner and mode.
+config_owner=$(sudo stat -c '%U:%G' /etc/basalt/engine.json)
+config_mode=$(sudo stat -c '%a' /etc/basalt/engine.json)
+sudo cat /etc/basalt/engine.json | jq --arg n "$name" --arg s "$manifest_sha" --arg a "$agent" \
+	'.plugins = [{"name": $n, "instance": "default", "manifestSha256": $s, "enabled": true, "agents": [$a]}]' >"$work/engine.json"
+sudo install -o "${config_owner%%:*}" -g "${config_owner##*:}" -m "$config_mode" "$work/engine.json" /etc/basalt/engine.json
+# basalt service install writes every local config entry's unit.
+installed=$(sudo "$basalt" service install 2>&1) || fail "basalt service install: $installed"
 touch "$marker"
 run=$(systemctl show -p InvocationID --value "$unit")
 restart_engine
@@ -259,10 +339,15 @@ echo "basalt: $got"
 
 step "the engine connects and records network ENFORCED"
 wait_for "the engine to initialize the plugin" connected
-plugins=$("$basalt" log --agent "$agent" 2>&1 >/dev/null | grep '^Plugins:' || true)
+# The agent's ledger records the plugin served (basalt log is removed: the
+# admin reads the ledger table itself).
+plugins=$(psql "$BASALT_ADMIN_DATABASE_URL" -XAtq -v ON_ERROR_STOP=1 -c \
+	"SELECT concat_ws(' ', detail->>'name', detail->>'version', detail->>'signerKeyId', detail->'endpoint'->>'kind',
+	        detail->'isolation'->>'files', detail->'isolation'->>'network')
+	   FROM basalt_meta.ledger WHERE kind = 'PLUGIN_ENABLED' AND detail->>'name' = '$name' ORDER BY seq DESC LIMIT 1" || true)
 echo "$plugins"
-grep -qF "$name/default 0.1.0 (signer $key_id, LOCAL, files OS_USER, network ENFORCED)" <<<"$plugins" ||
-	fail "basalt log does not record the plugin served with network ENFORCED"
+[ "$plugins" = "$name 0.1.0 $key_id LOCAL OS_USER ENFORCED" ] ||
+	fail "the ledger does not record the plugin served with network ENFORCED"
 
 step "Fedora's stock drop-in: systemd applies it and the engine still connects"
 sudo mkdir -p "$(dirname "$fedora_dropin")"
@@ -316,11 +401,6 @@ restart_engine
 run=$(new_run "$run")
 wait_for "the engine to initialize the plugin again" connected
 
-step "remove: the unit, the user and the socket directory go"
-echo y | sudo "$basalt" plugin remove "$name"
-[ ! -e "/etc/systemd/system/$unit" ] || fail "the unit file is still there"
-id "$user" >/dev/null 2>&1 && fail "the plugin's user $user is still there"
-sudo test ! -e "/opt/basalt/run/$user" || fail "the socket directory is still there"
 sudo rm -f "$fedora_dropin"
 sudo systemctl daemon-reload
 
@@ -393,67 +473,5 @@ sudo rm -f "$spawn_bin"
 sudo test -S "/run/basalt/$agent.sock" || fail "the engine's agent socket is gone after the spawn check"
 left=$(sudo ls -A /var/lib/basalt)
 grep -q '^spawn-' <<<"$left" && fail "the spawn check left its copy in the state directory"
-
-step "service mode: an agent adds a plugin without sudo, a passkey approves it, the engine runs it"
-# The person's passkey, registered as basalt init --add-passkey would.
-CGO_ENABLED=0 go build -trimpath -o "$work/signer" ./scripts/systemd-smoke/signer
-"$work/signer" -key "$work/passkey.json" register
-# The same probe, unsigned (no .sig): the passkey approval decides.
-mkdir -p "$work/kept/bin"
-cp "$work/src/bin/$name" "$work/kept/bin/$name"
-cp "$work/src/basalt-plugin.json" "$work/kept/"
-engine_pid=$(systemctl show -p MainPID --value "$engine_unit")
-config_before=$(sudo sha256sum /etc/basalt/engine.json)
-# From here on every plugin command is the agent's, run as the person with
-# no sudo; sudo only reads root's and the engine's files for the checks.
-# Its own instance: the running engine still counts the sudo entry it
-# started with, removed above, as engine.json's until it restarts.
-kept_inst=kept
-add=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin add "$work/kept" --agents "$agent" --instance "$kept_inst" --json) || fail "plugin add: $add"
-echo "$add"
-url=$(jq -r '.approvals[0].url' <<<"$add")
-approval_id=$(jq -r '.approvals[0].approvalId' <<<"$add")
-case "$url" in http*/plugins/"$approval_id"*) ;; *) fail "add gave no approval link: $url" ;; esac
-sudo test -f /var/lib/basalt/plugins.json || fail "the engine keeps no entries file"
-sudo test -d "/var/lib/basalt/plugins/$name/$kept_inst" || fail "the engine keeps no copy"
-[ "$(sudo sha256sum /etc/basalt/engine.json)" = "$config_before" ] || fail "engine.json changed"
-# Withheld until the signature: the approval is PENDING, and for a few
-# seconds (the engine checks about once a second) no plugin process runs
-# from the engine's copies.
-kept_state() {
-	BASALT_AGENT_CONTEXT=1 "$basalt" plugin list --json |
-		jq -r --arg n "$name" --arg i "$kept_inst" '.plugins[] | select(.name == $n and .instance == $i) | .approval.agents[0].state'
-}
-kept_pending() { [ "$(kept_state)" = PENDING ]; }
-wait_for "the approval to show PENDING" kept_pending
-for _ in $(seq 1 6); do
-	pgrep -f "/var/lib/basalt/plugins/$name/$kept_inst/" >/dev/null && fail "the plugin runs before its approval is signed"
-	sleep 0.5
-done
-[ "$(kept_state)" = PENDING ] || fail "the approval is not PENDING before the signature: $(kept_state)"
-code=$("$work/signer" -key "$work/passkey.json" code "$url")
-BASALT_AGENT_CONTEXT=1 "$basalt" plugin approve "$code" --json
-waited=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin enable "$name" --instance "$kept_inst" --approval-id "$approval_id" --wait 60 --json) ||
-	fail "the plugin does not run: $waited"
-echo "$waited"
-[ "$(jq -r .state <<<"$waited")" = RUNNING ] || fail "the wait ended $(jq -r .state <<<"$waited")"
-kept_pid=$(pgrep -f "/var/lib/basalt/plugins/$name/$kept_inst/" | head -1 || true)
-[ -n "$kept_pid" ] || fail "no plugin process runs from the engine's copy"
-kept_uid=$(awk '/^Uid:/ {print $2}' "/proc/$kept_pid/status")
-[ "$kept_uid" = "$(id -u basalt)" ] || fail "the plugin runs as uid $kept_uid, not the engine's user"
-grep -q "/$engine_unit" "/proc/$kept_pid/cgroup" || fail "the plugin is not in the engine's unit: $(cat "/proc/$kept_pid/cgroup")"
-echo "the plugin runs as the engine's user (uid $kept_uid) in $engine_unit"
-[ "$(systemctl show -p MainPID --value "$engine_unit")" = "$engine_pid" ] || fail "the engine restarted"
-
-BASALT_AGENT_CONTEXT=1 "$basalt" plugin disable "$name" --instance "$kept_inst"
-kept_gone() { ! kill -0 "$kept_pid" 2>/dev/null; }
-wait_for "the plugin to stop" kept_gone
-listed=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin list --json)
-[ "$(jq -r --arg n "$name" '.plugins[] | select(.name == $n and .instance == "kept") | .approval.agents[0].state' <<<"$listed")" = ENDED ] ||
-	fail "disable did not end the approval: $listed"
-BASALT_AGENT_CONTEXT=1 "$basalt" plugin remove "$name" --instance "$kept_inst"
-sudo test ! -e "/var/lib/basalt/plugins/$name/$kept_inst" || fail "remove left the copy"
-[ "$(systemctl show -p MainPID --value "$engine_unit")" = "$engine_pid" ] || fail "the engine restarted"
-[ "$(sudo sha256sum /etc/basalt/engine.json)" = "$config_before" ] || fail "engine.json changed"
 
 step "PASS"

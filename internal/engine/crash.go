@@ -28,8 +28,7 @@ func (env agentEnv) onPanic(tool string, v any, stack []byte) string {
 	return rep.ID
 }
 
-// crashDirs are the directories status.crash reads: the same three
-// basalt crash list read, so a panic of the engine process itself (saved
+// crashDirs are the directories status.crash reads, so a panic of the engine process itself (saved
 // under the default state directory or the person's config directory) shows
 // as well as a tool call's (under stateDir).
 func crashDirs(stateDir string) []string {

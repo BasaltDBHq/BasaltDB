@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 )
 
 // ErrReload is what Serve and Run return after they stopped to serve the
@@ -57,8 +55,7 @@ func (o HandoffOptions) now() func() time.Time {
 // request cannot be signed.
 var errNoEngineKey = errors.New("the engine key file is refused (vault.state KEY_ERROR): the address cannot be collected until it is fixed")
 
-// rootCollector is the collector of an engine started as root without
-// --user: root trusts nothing the agent's OS user could redirect, and the
+// rootCollector is the collector of an engine started as root: root trusts nothing the agent's OS user could redirect, and the
 // YES would write that user's credential, so it never collects. The agent
 // is served degraded with the problem ENGINE_AS_ROOT; the engine's other
 // agents are served as usual.
@@ -124,7 +121,7 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 // no credential, no connection, status and confirm_database only, and the
 // collect loop. Its runtime closes nothing.
 func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, a.InitArgs)
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
 	if err != nil {
 		return agentRuntime{}, err
 	}
@@ -135,7 +132,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	switch {
 	case env.asRoot:
 		collector = rootCollector{}
-		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine with --user, or as the agent's OS user")
+		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine as the agent's OS user")
 	case env.keys != nil:
 		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now())
 	}
@@ -164,13 +161,6 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{
 		tools: co.Tools(),
-		info: person.AgentInfo{Status: func(ctx context.Context) (json.RawMessage, error) {
-			r, err := co.Status(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(r)
-		}},
 		run:   pending.Run,
 		close: func() {},
 	}, nil

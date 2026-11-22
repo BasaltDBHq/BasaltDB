@@ -187,13 +187,18 @@ const HEAD_LINE = new RegExp("^(?:" + [
 // serves the page under a looser header (the portal's _headers falls back to
 // 'self'). It does not block workers or script elements (script-src 'self').
 // Only connect-src may differ: 'self' or 'none', except on the connect page,
-// whose one source is the connect service (CONTRACT.md, The connect page).
-// No other page may name it.
+// whose one source is the connect service (CONTRACT.md, The connect page),
+// and on the approval and revert pages, which add the Vault to 'self' for
+// a short link's session on the portal (CONTRACT.md, The page's socket).
+// No other page may name either.
 export const CONNECT_PAGE = "connect/index.html";
 export const CONNECT_SERVICE = "https://connect.basaltvault.app";
+export const RELAY_PAGES = Object.freeze(["approve/index.html", "revert/index.html"]);
+export const RELAY_ORIGIN = "wss://relay.basaltvault.app";
 const cspLine = (connectSrc) => new RegExp(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src ${connectSrc}; base-uri 'none'; form-action 'none'">$`);
 const CSP_LINE = cspLine("'(?:self|none)'");
 const CONNECT_CSP_LINE = cspLine(CONNECT_SERVICE.replace(/[.]/g, "\\."));
+const RELAY_CSP_LINE = cspLine(`'self' ${RELAY_ORIGIN.replace(/[.]/g, "\\.")}`);
 const CSP_PREFIX = '<meta http-equiv="Content-Security-Policy"';
 // A tag the body may not hold: one that loads a script, sets page metadata,
 // or frames or embeds another document (an <iframe srcdoc> would run markup
@@ -219,7 +224,7 @@ function pageHead(page, html) {
 // one sri block (the preloads, then one module script), and no BODY_TAG
 // after </head>.
 function pageShape(page, html, rel) {
-  const want = rel === CONNECT_PAGE ? CONNECT_CSP_LINE : CSP_LINE;
+  const want = rel === CONNECT_PAGE ? CONNECT_CSP_LINE : RELAY_PAGES.includes(rel) ? RELAY_CSP_LINE : CSP_LINE;
   let state = "before";
   let csp = 0;
   for (let line of pageHead(page, html).split("\n")) {
@@ -290,7 +295,7 @@ export function verify(root, files, page) {
 // The portal's root pages, index.html and 404.html, load no script, so they
 // have no sri block. Cloudflare Pages serves 404.html at any unknown path,
 // whatever its depth, so they name the stylesheet by its absolute path. The
-// engine embeds them for basalt portal verify but never serves them.
+// engine embeds them for the portal check (make portal-verify) but never serves them.
 // STATIC_CSP_LINE allows no script at all; STATIC_STYLE_LINE is the only
 // link they may hold.
 const STATIC_CSP_LINE = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">`;

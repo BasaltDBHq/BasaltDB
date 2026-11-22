@@ -250,28 +250,8 @@ func shown(s string, n int) string { return clip(plainText(s), n) }
 
 // approvalMessage is the personMessage of a held write at the link handed
 // over: lead says what happened, tail lines follow the link.
-func approvalMessage(lead string, pick handOver, command string, tail ...string) (string, []mcp.Link) {
-	return fitCommand(
-		func(c commandPhrases) (string, []mcp.Link) { return buildApprovalMessage(lead, pick, c, tail) },
-		commandPhrases{orRun: "Or run: " + command},
-		commandPhrases{orRun: "Or run the approve command the agent shows you."},
-	)
-}
-
-// commandPhrases is the line of a message that offers the approve command,
-// after the link.
-type commandPhrases struct{ orRun string }
-
-// fitCommand builds a message with the full command and, when that breaks
-// the 500-character limit (a long --config path), again with a line that
-// sends the person to the command in the step the agent shows. The full
-// command stays in approval.approveCommand and in the step.
-func fitCommand(build func(commandPhrases) (string, []mcp.Link), full, short commandPhrases) (string, []mcp.Link) {
-	text, ls := build(full)
-	if CheckPersonMessage(text) == nil {
-		return text, ls
-	}
-	return build(short)
+func approvalMessage(lead string, pick handOver, tail ...string) (string, []mcp.Link) {
+	return buildApprovalMessage(lead, pick, tail)
 }
 
 // commandElsewhere stands for a command a message would offer when the
@@ -303,7 +283,7 @@ func fitToSteps(message string, steps []NextStep) string {
 	return fitMessage(message, commands...)
 }
 
-func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []string) (string, []mcp.Link) {
+func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []mcp.Link) {
 	msg := newMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
@@ -313,7 +293,7 @@ func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []s
 	default:
 		msg.Text("Approve it with your passkey here:")
 	}
-	msg.Link(labelApprove, pick.URL).Text(c.orRun)
+	msg.Link(labelApprove, pick.URL)
 	for _, line := range tail {
 		msg.Text(line)
 	}

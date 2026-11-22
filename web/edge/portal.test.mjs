@@ -58,7 +58,7 @@ test("the approval and revert pages pass through to the static host untouched", 
 
 test("the connect page gets its own policy, the same for everyone, never stored", async () => {
   assert.equal(CONNECT_SERVICE, PAGE_SERVICE);
-  assert.equal(CONNECT_CSP, DEFAULT_CSP.replace("default-src 'self'; ", `default-src 'self'; connect-src ${CONNECT_SERVICE}; `));
+  assert.equal(CONNECT_CSP, DEFAULT_CSP.replace(/connect-src [^;]*;/, `connect-src ${CONNECT_SERVICE};`));
   const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(CONNECT_HTML)[1];
   assert.match(meta, new RegExp(`; connect-src ${CONNECT_SERVICE.replace(/[.]/g, "\\.")};`));
   for (const path of ["/connect", "/connect/"]) {

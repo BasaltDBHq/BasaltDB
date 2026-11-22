@@ -64,7 +64,7 @@ func (f *fakeHandoff) Confirm(_ context.Context, id string, db handoff.Address, 
 
 func connectOnlyServer(t *testing.T, operatedBy string, h Handoff) ConnectOnly {
 	t.Helper()
-	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--all-tables=true", "--operated-by=agent"})
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	return ConnectOnly{
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
@@ -268,7 +268,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 // waiting one with its connect link.
 func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	waiting := connectOnlySetup(statusNow.Add(time.Hour))
 	refused := waiting

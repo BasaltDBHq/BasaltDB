@@ -122,7 +122,7 @@ type Deps struct {
 	// that do not serve it (problems PLUGIN_UNAVAILABLE and
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
-	// CrashDirs are the directories basalt crash list read, for
+	// CrashDirs are the directories crash reports are saved in, for
 	// status.crash; Access
 	// lists the agent role's tables, for status.access. Each is left out of
 	// status when nil or empty.
@@ -162,6 +162,10 @@ type Deps struct {
 	// credential, for the plugin approval routes of the pages; optional,
 	// and those routes know no plugin approval of this agent when nil.
 	PluginApprovals PluginApprovalStore
+	// PluginRequests serve request_plugin with the engine-kept plugin
+	// entries of a service engine; nil on any other engine, where the tool
+	// is refused (CONTRACT.md, MCP tools, request_plugin).
+	PluginRequests PluginRequests
 	// Classes are the agent's PII classes for describe; optional, and
 	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
 	// column.
@@ -238,9 +242,9 @@ func NewService(d Deps) *Service {
 	if d.Links == nil {
 		d.Links = links.NewSecrets(time.Now, rand.Reader)
 	}
-	if d.Commands.flags == "" {
-		// A name and no config path or init arguments cannot fail.
-		d.Commands, _ = NewCommands(d.Name, "", "", nil)
+	if d.Commands.agent == "" {
+		// A name and no config path cannot fail.
+		d.Commands, _ = NewCommands(d.Name, "", "")
 	}
 	d.Commands = d.Commands.OperatedBy(d.OperatedBy)
 	if d.LinkBudget <= 0 {

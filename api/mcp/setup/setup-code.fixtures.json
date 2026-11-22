@@ -228,8 +228,22 @@
       ]
     },
     {
-      "name": "agent change refused: the role does not exist",
+      "name": "agent with a new password runs as an install: the role does not exist",
       "code": "basalt-setup.1.TFFfT9s-FP0uV7z97BAnbQBLfYj661oYpVv_STBNyEmuU1MnDrZDO1C_--ROm_CLZZ3jc8-55wOksY3wwBkBh77vbivgEDPBqvRK0hKLa3pVpoLeyDim8b9TpUBgr9rAzqeThzUQ6CxKdQQOhXBCeyDgha3RA_-AnXEeOIiDozHFnpbYeis0ZVFnjEYbub4ThXAYlaYJWsZ64NlwkBKohD9DwKEzztcWHRD4-2GJMggXZYWy3qmXvW5a071a5-FEoO6FrYIBaU0DnGUEvAn3iUDRK31OGw2jGAiIGtuz2VY0YZhGUT0XJgQ5WOUR-A_o-kKrMgpQMPHp-dwajw5-ErAoqk_c0jSdaNUf7A2tkgotcFiNl_mcrmY5TYbZxSC-yfj3zd3_y8l2uox3d6u9n683w2-bfDS6aL_-mr7czIbJ8T7bDtJrqbFYbN-_5PeP-2z25B9elTlUSd31jyM-eK8vW7kuJ6ulnozThV40t_818-3lUe60n4wHlcqZuJ5P3w6jsEgvPDbY-rVq0PR-7oCnoeMTATx2yqLLQ3dJnGSUMcrSdZxxlnDGnuD0OwAA__8.-67baw",
+      "now": "2026-11-13T06:07:11Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_crm"
+        ],
+        "setups": []
+      },
+      "binaryGuardVersion": 16
+    },
+    {
+      "name": "agent change refused: the role does not exist",
+      "code": "basalt-setup.1.TFBNb9UwEPwvc7Yj-4W-gm89IMQBDuidQKjaxJvUNP7A3qiVqvx35IdAzxdrNbOzM_OGJddIAmcVGstePns4GEvWj_eLnnl6r-_nkfSHxRht_j8_QuE5pM5--PTx6wUKpfISXuEwUaNNoCBUVxa4NzzlJnCgl6aN5l3PnKTSpu1Qct64Dm0vNFHjYc6xa-UqcOe7d6OCJ7lCcCi5yVq5QeHfwjdeuvA0e17Wp_DreYspl9-1CQ6Fdafqu4Gl5ghnzwqS-38oTHvYrmmHu8FAgVZOV7OJYj-2MfnHKfcgLzUIw_1A2actzEOHuomb8TFl4YafCpXJ33DnHAul8BdrQsKRk1xC5LzLlwY39kIPBX4toXJ76EWdzOmsrdV2vJizsydn7XccfwIAAP__.gD8-Uw",
       "now": "2026-11-13T06:07:11Z",
       "database": {
         "prefix": "basalt",

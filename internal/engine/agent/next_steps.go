@@ -370,20 +370,19 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 	b.SendRequest(n.RequestFile)
 	switch te.Reason {
 	case reasonHeld:
-		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Open the link, review the rows and approve with your passkey.")
+		b.OpenLink(n.ApprovalURL, "Open the link, review the rows and approve with your passkey.")
 		b.RepeatCall(toolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(DefaultApprovalWait.Seconds())))
 	case reasonHeldNoPages:
-		b.RunCommand(n.ApproveCommand, "Run this to open the approval page, then approve with your passkey.")
+		b.OpenLink(n.ApprovalURL, "Open the link, review the rows and approve with your passkey.")
 		b.RepeatCall(toolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(DefaultApprovalWait.Seconds())))
 	case reasonNoPasskey:
+		b.AgentRunCommand(s.Commands.Init(), "Nobody can approve yet: run this once and show the person the link it prints, where they register a passkey.")
 		if s.Commands.AgentOperated() {
-			// The person registers a portal passkey on their own computer
-			// with a setup code (RI-6).
-			b.AgentRunCommand(s.Commands.InitRemote(""), "Nobody can approve yet: run this once to make a setup code that registers a passkey, then follow what it prints.")
+			// The person registers a portal passkey on the connect page,
+			// and the agent follows what init prints (RI-6).
 			break
 		}
-		b.RunCommand(s.Commands.Init("--add-passkey"), "Register a passkey first: approvals are signed with one.")
-		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Then open the link and approve the held write.")
+		b.OpenLink(n.ApprovalURL, "Then open the link and approve the held write.")
 		b.EndTurn("End your turn: the person acts next.")
 	case reasonWaitEnded:
 		s.openHeldLink(b, n, "Open the link and approve with your passkey.")
@@ -432,7 +431,7 @@ func revertInvalidSteps(b *Steps, te *mcp.ToolError, f failure) {
 		b.CallTool(toolRevertPlan, map[string]any{argRevertID: id, "pending": true}, "Read the plan's pending lines again and send only those.")
 	case reasonPlanNotSigned:
 		b.CallTool(toolRevertPlan, map[string]any{argRevertID: id}, "Read the plan: it is not signed yet.")
-		b.EndTurn("The person signs the plan with basalt revert; end your turn and apply it when they say they signed.")
+		b.EndTurn("The person signs the plan on the revert page; end your turn and apply it when they say they signed.")
 	case reasonPlanFinished:
 		b.CallTool(toolRevertPlan, map[string]any{argRevertID: id}, "Read the plan's final state.")
 		b.Stop("The revert is applied: do not send more lines.")
@@ -445,49 +444,25 @@ func revertInvalidSteps(b *Steps, te *mcp.ToolError, f failure) {
 
 var deniedTable = regexp.MustCompile(`permission denied for (?:table|relation) (\S+)`)
 
-// permissionDeniedSteps names the grant that would give the agent the
-// access it lacked: init with the saved flags plus the table.
+// permissionDeniedSteps: the agent asks, and only when the person tells it
+// to add the access, in a later turn, runs basalt init, whose link opens the
+// page where the person grants it (RI-16). The message names the table
+// Postgres named, never a command.
 func (s *Service) permissionDeniedSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	b.Stop("The agent role may not do this: do not retry or look for another route.")
-	flag := flagWrite
+	access := "write"
 	if f.tool == toolQuery {
-		flag = flagRead
+		access = "read"
 	}
-	table := ""
+	what := "access to what it asked for"
 	if m := deniedTable.FindStringSubmatch(te.Message); m != nil {
-		table = m[1]
+		what = access + " access to " + shown(m[1], maxTableChars)
 	}
-	if s.Commands.AgentOperated() {
-		return s.remotePermissionSteps(b, flag, table)
-	}
-	b.AskPerson("Tell the person which access is missing and ask them to grant it.")
-	command, what := s.Commands.Init("--dry-run"), "access to what it asked for"
-	// Only a schema-qualified plain name can be added to the access list
-	// safely; Postgres usually names the table without its schema, and then
-	// the person sees the plan and adds the table themselves.
-	if grant, err := s.Commands.Grant(flag, table); err == nil {
-		command, what = grant, flag+" access to "+shown(table, maxTableChars)
-	}
-	b.RunCommand(command, "Show the person this command: it gives the agent the missing access, and init asks for the admin connection string itself.")
-	b.TellAgent("Tell the agent once the access is granted.")
-	return fmt.Sprintf("The agent was denied %s. If it should have it, run the command the agent shows you, then tell the agent.", what)
-}
-
-// remotePermissionSteps: on an agent-operated engine the agent asks, and
-// only when the person tells it to add the access, in a later turn, makes a
-// setup code with the table added (RI-16).
-func (s *Service) remotePermissionSteps(b *Steps, flag, table string) string {
 	b.AskPerson("Tell the person which access is missing and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the access once you decide it should have it.")
 	b.EndTurn("End your turn: the person decides.")
-	command, what := s.Commands.InitRemote(""), "access to what it asked for"
-	text := "When the person tells you to add it, run this with the table added to --" + flag + ", then follow what it prints."
-	if grant, err := s.Commands.RemoteGrant(flag, table); err == nil {
-		command, what = grant, flag+" access to "+shown(table, maxTableChars)
-		text = "When the person tells you to add it, run this to make a setup code, then follow what it prints."
-	}
-	b.AgentRunCommand(command, text)
-	return fmt.Sprintf("The agent was denied %s. If it should have it, tell the agent: it gives you a setup code to run on your own computer.", what)
+	b.AgentRunCommand(s.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the access.")
+	return fmt.Sprintf("The agent was denied %s. If it should have it, tell the agent: it gives you a link where you grant it.", what)
 }
 
 func notFoundSteps(b *Steps, te *mcp.ToolError, f failure) string {
@@ -503,7 +478,7 @@ func notFoundSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	case reasonApproval:
 		b.CallTool(toolListPending, map[string]any{}, "List your pending approvals to find the right approvalId.")
 	case reasonRevert:
-		b.AskPerson("Ask the person for the revert id that basalt revert printed; this agent prepared no revert with that id.")
+		b.AskPerson("Ask the person which revert they mean; this agent prepared no revert with that id.")
 	case reasonLink:
 		b.TellAgent("Ask the agent for the link again.")
 		return "This link is incomplete, expired or was replaced by a newer one. Ask the agent for the link again."
@@ -576,7 +551,7 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 		}
 		return confirmDatabaseSteps(b, dn.SetupID, dn.Database)
 	case reasonPagesOff:
-		b.CallTool(toolListPending, map[string]any{}, "Read the held writes: each has the command the person runs, since this engine serves no pages.")
+		b.CallTool(toolListPending, map[string]any{}, "Read the held writes: each has the link the person opens, since this engine serves no pages.")
 		return ""
 	}
 	b.fail(fmt.Errorf("UNAVAILABLE has no reason %q", te.Reason))
@@ -600,57 +575,63 @@ func tooManyConnectionsMessage(cmds Commands) string {
 		cmds.agent, guard.AgentConnectionLimit)
 }
 
-// fixes are the person's command and what it fixes for the machine problems
-// of the guard and the credential, shared by the UNAVAILABLE errors and the
-// status problems of the same name.
-var fixes = map[string]struct {
-	command func(Commands) string
-	problem string
-}{
-	reasonCredentialRejected: {
-		func(c Commands) string { return c.Init("--rotate-password") },
-		"The database refused the agent's credential (its password changed or was never right); this sets a new one and prints the restart command.",
-	},
-	reasonGuardMissing:  {func(c Commands) string { return c.Init("") }, "The guard is not installed in this database (or was removed); this installs it again with the saved flags."},
-	reasonGuardOutdated: {Commands.Upgrade, "The guard in this database is older than this engine needs; this upgrades it."},
+// fixes are what the person is told for the machine problems of the guard
+// and the credential, shared by the UNAVAILABLE errors and the status
+// problems of the same name. basalt init fixes each: its link opens the
+// setup page, or the connect page on an agent-operated engine, for that job.
+var fixes = map[string]string{
+	reasonCredentialRejected: "The database refuses the agent's credential (its password changed or was never right), so the agent needs a new one.",
+	reasonGuardMissing:       "Basalt's guard is not installed in this database (or was removed), so the agent cannot work.",
+	reasonGuardOutdated:      "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is updated.",
 }
 
-// remoteFixes are the setup codes that fix the same machine problems on an
-// agent-operated engine, where the admin connection string never comes
-// (CO-9): the change to init --remote and what the person is told.
-var remoteFixes = map[string]struct{ change, problem string }{
-	reasonCredentialRejected: {"--new-code", "The database refuses the agent's credential, so the agent needs a new password."},
-	reasonGuardMissing:       {"", "Basalt's guard is not installed in this database (or was removed), so the agent cannot work."},
-	reasonGuardOutdated:      {"", "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is upgraded."},
-}
-
-// fixSteps: the person runs the fix for reason, then tells the agent; the
-// agent stops until then. On an agent-operated engine the agent makes a
-// setup code for it instead (RI-17 for CREDENTIAL_REJECTED).
+// fixSteps: the agent runs basalt init, whose link the person opens to fix
+// reason; the person tells the agent when it is done and the agent stops
+// until then. On an agent-operated engine the agent follows what init
+// prints instead (RI-17 for CREDENTIAL_REJECTED).
 func fixSteps(b *Steps, cmds Commands, reason string) string {
-	if cmds.AgentOperated() {
-		fix, ok := remoteFixes[reason]
-		if !ok {
-			b.fail(fmt.Errorf("no fix for %s", reason))
-			return ""
-		}
-		return remoteSetupSteps(b, cmds, fix.change, fix.problem)
-	}
-	fix, ok := fixes[reason]
+	problem, ok := fixes[reason]
 	if !ok {
 		b.fail(fmt.Errorf("no fix for %s", reason))
 		return ""
 	}
-	return personFix(b, fix.command(cmds), fix.problem)
+	if cmds.AgentOperated() {
+		return remoteSetupSteps(b, cmds, problem)
+	}
+	if reason == reasonGuardOutdated && cmds.updateLink != "" {
+		b.OpenLink(cmds.updateLink, "Show the person this link: its page updates the guard once they type the admin connection string there.")
+		b.TellAgent("Tell the agent when it is done.")
+		b.Stop("Do not retry until the person says it is fixed.")
+		return problem + " Open the link the agent gives you, follow the page, then tell the agent."
+	}
+	b.AgentRunCommand(cmds.Init(), initStepText)
+	b.TellAgent("Tell the agent when it is done.")
+	b.Stop("Do not retry until the person says it is fixed.")
+	return problem + " " + initPersonText
 }
 
+// initStepText is the text of the agent's basalt init step: it prints the
+// one link the person opens (CONTRACT.md, basalt init).
+const initStepText = "Run this once and show the person the link it prints; they fix it on that page."
+
+// passkeyInitText is the text of the agent's basalt init step for a passkey
+// the database does not accept.
+const passkeyInitText = "Run this once and show the person the link it prints, where they register the passkey they use."
+
+// askAgentForRegisterLinkText is a page's step for a passkey the database does not
+// accept: the page cannot run basalt init, so the person asks the agent.
+const askAgentForRegisterLinkText = "Ask the agent for a link to register the passkey you use."
+
+// initPersonText tells the person what follows the agent's basalt init.
+const initPersonText = "The agent gives you a link: open it, follow the page, then tell the agent."
+
 // remoteSetupSteps: on an agent-operated engine, the agent runs basalt init
-// --remote --json now; what it prints (a setup code, its personMessage and
-// nextSteps) replaces the rest of these steps (RI-2). The person's message
-// names no command on the agent's machine.
-func remoteSetupSteps(b *Steps, cmds Commands, change, problem string) string {
-	b.AgentRunCommand(cmds.InitRemote(change), "Run this once to make a setup code, then show the person its personMessage and follow its nextSteps.")
-	return problem + " The agent gives you a setup code: run the basalt init --setup-code command it shows on your own computer, then tell the agent."
+// now; what it prints (the connect link, its personMessage and nextSteps)
+// replaces the rest of these steps (RI-2). The person's message names no
+// command on the agent's machine.
+func remoteSetupSteps(b *Steps, cmds Commands, problem string) string {
+	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the link it prints and follow its steps.")
+	return problem + " " + initPersonText
 }
 
 // engineUnreachableSteps: the person starts the engine; on an agent-operated
@@ -696,10 +677,9 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 		s.openApprovalAgain(b, n, "Approve again on the page; the code did not verify.")
 		lead = "The approval code did not verify, so nothing was applied."
 	case reasonPasskeyRevoked:
-		b.RunCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts.")
-		b.RunCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else.")
+		b.AgentRunCommand(s.Commands.Init(), passkeyInitText)
 		s.openApprovalAgain(b, n, "Then approve the held write with that passkey.")
-		lead = "That passkey is not accepted here (unknown or revoked), so nothing was applied. Check your passkeys, register one if needed, then approve again."
+		lead = "That passkey is not accepted here (unknown or revoked), so nothing was applied. The agent gives you a link to register the passkey you use; then approve again."
 	default:
 		return te
 	}
@@ -722,10 +702,10 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 // budget, or the hash link, whose request file the agent already sent.
 func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
 	if s.PagesOrigin != "" || isPageAddress(n.ApprovalURL) {
-		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier. "+text)
+		b.OpenGivenLink("Open the short link the agent gave you earlier. " + text)
 		return
 	}
-	b.OpenLink(n.ApprovalURL, n.ApproveCommand, text)
+	b.OpenLink(n.ApprovalURL, text)
 }
 
 // approvalAgainMessage is the personMessage of an APPROVAL_INVALID that sends
@@ -734,9 +714,9 @@ func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
 // file the agent already sent).
 func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []mcp.Link) {
 	if s.PagesOrigin != "" {
-		return pointBackMessage(lead, n.ApproveCommand)
+		return pointBackMessage(lead)
 	}
-	return approvalMessage(lead, handOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true}, n.ApproveCommand)
+	return approvalMessage(lead, handOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true})
 }
 
 // SetupError is a call refused because the agent's setup from the laptop has
@@ -778,62 +758,51 @@ func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
 		b.CallTool(toolStatus, map[string]any{}, "Call status: its setup problem says what the person or you do next.")
 		return ""
 	}
-	person, ls := setupPendingSteps(b, se.Code, se.Fingerprint, true, s.ConnectBudget)
+	person, ls := setupPendingSteps(b, s.Commands, se.Code, se.Fingerprint, true, s.ConnectBudget)
 	te.Links = ls
 	return person
 }
 
-// setupExpiredSteps: a new setup code is made on the engine's machine, by
-// whoever operates it; basalt init --remote never asks for the admin.
+// setupExpiredSteps: the agent runs basalt init again for a new link.
 func setupExpiredSteps(b *Steps, cmds Commands) string {
-	command := cmds.InitRemote("--new-code")
-	b.MachineCommand(cmds, command, "Make a new setup code on the agent's machine with this, then follow the steps it prints.",
-		"Run this once to make a new setup code, then show the person its personMessage and follow its nextSteps.")
-	b.EndTurn("End your turn: the person runs the new code next.")
-	if cmds.AgentOperated() {
-		return "The setup code for this agent expired before it was used. The agent gives you a new one: " +
-			"run the basalt init --setup-code command it shows on your own computer, then tell the agent."
-	}
-	return "The setup code for this agent expired before it was used. On the agent's machine, run this to make a new one, then follow the steps it prints: " + command
+	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
+	b.EndTurn("End your turn: the person opens the new link next.")
+	return "The setup link for this agent expired before it was used. " + initPersonText
 }
 
-// setupPendingSteps: the person runs the pending setup code on their own
-// computer, checking it shows fingerprint. An INSTALL code blocks the tools
+// setupPendingSteps: the person finishes the pending setup on the connect
+// page, checking it shows fingerprint. An INSTALL code blocks the tools
 // (blocking), so the agent ends its turn and checks status after; an AGENT
-// or UPGRADE code does not. The message names the command, not the code
-// itself, which is in the step and runs to 1500 characters.
+// or UPGRADE code does not.
 //
-// With a connect link (budget is not 0 and the whole link fits it) the link
-// comes first and the command second, and the message says the link uses
-// Basalt Vault, a hosted service (CONTRACT.md, Next steps with the connect
-// link). The links are those of the message.
-func setupPendingSteps(b *Steps, code, fingerprint string, blocking bool, budget int) (string, []mcp.Link) {
+// With a connect link (budget is not 0 and the whole link fits it) the
+// person opens it, and the message says the link uses Basalt Vault, a
+// hosted service (CONTRACT.md, Next steps with the connect link). Without
+// one there is no page to hand over: the agent runs basalt init, which
+// prints the link. The links are those of the message.
+func setupPendingSteps(b *Steps, cmds Commands, code, fingerprint string, blocking bool, budget int) (string, []mcp.Link) {
 	if !setupCode.MatchString(code) || fingerprint == "" {
 		b.fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil
 	}
 	url := ConnectLink(code, budget)
 	if url != "" {
-		b.OpenLink(url, "", ConnectStepText)
+		b.OpenLink(url, ConnectStepText)
+	} else {
+		b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they finish the setup.")
 	}
-	b.RunCommand(SetupCode(code), "On your own computer, not the agent's machine, run this and check it shows the same setup fingerprint.")
 	b.TellAgent("Tell the agent when it is done.")
+	lead := "A change to this agent's setup is waiting for you."
+	if blocking {
+		b.EndTurn("End your turn: the person acts next.")
+		b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+		lead = "This agent's setup has not run yet."
+	}
 	if url != "" {
-		lead := "A change to this agent's setup is waiting for you."
-		if blocking {
-			b.EndTurn("End your turn: the person acts next.")
-			b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
-			lead = "This agent's setup has not run yet."
-		}
 		return ConnectMessage(lead, url, fingerprint)
 	}
-	check := " Check that it shows the setup fingerprint " + fingerprint + ", then tell the agent. Never paste your database password into this chat."
-	if !blocking {
-		return "A change to this agent's setup is waiting for you. On your own computer, run the basalt init --setup-code command the agent shows you." + check, nil
-	}
-	b.EndTurn("End your turn: the person acts next.")
-	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
-	return "This agent's setup has not run yet. On your own computer, run the basalt init --setup-code command the agent shows you." + check, nil
+	return lead + " The agent gives you a link: open it, check that it shows the setup fingerprint " + fingerprint +
+		", and follow the page, then tell the agent. Never paste your database password into this chat.", nil
 }
 
 // sanitizeIdent quotes a column name for the SQL a step suggests: in double

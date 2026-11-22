@@ -20,7 +20,7 @@ Built on `master`:
 Not built yet:
 
 - **The portal page does not open a Vault session yet.** The page-side client (`web/`) is still to come, so a portal short link cannot complete an approval end to end today. Leave the Vault off unless you are testing it.
-- `basalt engine rotate-key`, and the engine id on portal pages.
+- The engine id on portal pages.
 
 ## What leaves your machine
 
@@ -61,7 +61,7 @@ basalt init --agent NAME --vault=off
 
 - `--vault=on|off` sets it. Init prints the value it wrote and why, for example `basalt: vault: off (--vault=off)`.
 - **A rerun keeps your choice.** `basalt init` with no `--vault` leaves the value in `engine.json` as it is and prints `kept from engine.json`. The default only applies when the file has no value yet, or when a rerun changes `--operated-by`.
-- **Defaults.** `basalt init` for a person-operated engine defaults to off. `basalt init --remote` defaults to on with `--operated-by=agent`, and to off otherwise.
+- **Defaults.** `basalt init` for a person-operated engine defaults to off. `basalt init --remote` turns it on for a new engine; a rerun keeps the value in `engine.json`.
 - **`--vault=on` needs the portal's pages.** The Vault carries portal links, and a passkey registered for `localhost` cannot sign on the portal, so the engine uses the Vault only when `pagesUrl` is `https://portal.basaltvault.app`. `--vault=on` with anything else is a usage error (exit code 2). Plain `basalt init` takes only a local origin or the hosted console for `--passkey-origin`, so it cannot turn the Vault on: use `basalt init --remote`.
 - **Restart the engine after a change.** The engine reads `vault` when it starts. After you turn it off, the engine closes its socket when it restarts, and the Vault drops any token it still holds when that token expires. Links already handed out through the Vault stop working.
 

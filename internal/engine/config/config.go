@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,11 +110,11 @@ type Config struct {
 	// origins). Every personMessage then carries DevLocalPagesWarning.
 	DevLocalPages bool `json:"devLocalPages,omitempty"`
 	// Mode is ModeService when basalt init installed the background
-	// service, else ModeSameUser (also when empty). Only ModeService opens
-	// the person socket.
+	// service, else ModeSameUser (also when empty).
 	Mode Mode `json:"mode,omitempty" validate:"omitempty,oneof=SERVICE SAME_USER"`
-	// PersonUIDs are the OS users the person socket admits (owner decision
-	// SM-2): the person(s) recorded at basalt init. Empty admits nobody.
+	// PersonUIDs are the person(s) recorded at basalt init (owner decision
+	// SM-2): an agent changes plugins (request_plugin) only while it runs
+	// as one of them. Empty admits nobody.
 	PersonUIDs []uint32 `json:"personUids,omitempty" validate:"unique"`
 	// Vault is ON when the engine dials out to the Vault for portal link
 	// sessions (CONTRACT.md, Vault channel); OFF, or empty, when it does
@@ -178,7 +179,7 @@ type Mode string
 // Modes.
 const (
 	// ModeService: the engine runs as its own OS user under systemd or
-	// launchd, and the person reaches it over the person socket.
+	// launchd; the person's commands that read its files run with sudo.
 	ModeService Mode = "SERVICE"
 	// ModeSameUser: the person runs the engine as themselves and the CLI
 	// reads the config and the credential directly.
@@ -190,14 +191,9 @@ func (c Config) Service() bool {
 	return c.Mode == ModeService
 }
 
-// PersonSocketName is the person socket's name in the socket directory,
-// <SocketDir>/person.sock; no agent may take it.
+// PersonSocketName is a reserved socket name, <SocketDir>/person.sock (the
+// person socket's, now removed); no agent may take it.
 const PersonSocketName = "person"
-
-// PersonSocketPath is the person socket in socket directory dir.
-func PersonSocketPath(dir string) string {
-	return SocketPath(dir, PersonSocketName)
-}
 
 // AgentOperated reports whether the agent runs this engine's machine steps.
 func (c Config) AgentOperated() bool { return c.OperatedBy == mcpcontract.OperatedByAgent }
@@ -212,8 +208,9 @@ type Agent struct {
 	// Stores).
 	Store Store `json:"store"`
 	// InitArgs are the flags basalt init was run with for this agent (never
-	// the admin connection string, a password or a one-shot flag), so a
-	// step can name the init command again. See agent.NewCommands.
+	// the admin connection string, a password or a one-shot flag). init
+	// reads them back on a re-run; no step names them (CONTRACT.md, Next
+	// steps), and they go with the CLI cut.
 	InitArgs []string `json:"initArgs,omitempty"`
 	// Setup is the pending setup code basalt init --remote made for this
 	// agent; nil when none is pending.
@@ -256,6 +253,10 @@ type Setup struct {
 	// database is not theirs (confirm_database NO): the next basalt init
 	// --remote makes a recovery code.
 	Refused bool `json:"refused,omitempty"`
+	// AddressInvalid is set next to AwaitingAddress once the engine refused
+	// the address the connect service handed over (ADDRESS_INVALID): the
+	// next basalt init --remote forgets the setup and makes a recovery code.
+	AddressInvalid bool `json:"addressInvalid,omitempty"`
 }
 
 // ConnectOnly reports whether s is a connect-only setup: its engine
@@ -340,7 +341,7 @@ func newValidator() *validator.Validate {
 // the guard applies to role names (lowercase letters, digits and '_',
 // starting with a letter, basalt_agent_<name> within 63 bytes), so a name
 // the engine accepts is one basalt init can create a role for. "person" is
-// the person socket's and is refused.
+// reserved and refused.
 func ValidAgentName(name string) bool {
 	return name != PersonSocketName && guard.ValidAgentName(name)
 }
@@ -550,4 +551,47 @@ func readSmall(path string, open func(string) (*os.File, error)) ([]byte, error)
 		return nil, errors.New("file " + path + " is larger than 1 MiB")
 	}
 	return raw, nil
+}
+
+// UserDirName is the per-user config directory under the person's config
+// directory (os.UserConfigDir: ~/Library/Application Support on macOS,
+// $XDG_CONFIG_HOME or ~/.config on Linux).
+const UserDirName = "basalt"
+
+// UserPath is engine.json in the person's own config directory, where a
+// bot computer's setup leaves it. userConfigDir is os.UserConfigDir.
+func UserPath(userConfigDir string) string {
+	return filepath.Join(userConfigDir, UserDirName, "engine.json")
+}
+
+// BothConfigsError is Discover's error when engine.json exists at the
+// system path and at the user's path: which one is meant is not for the
+// command to guess.
+type BothConfigsError struct{ System, User string }
+
+func (e *BothConfigsError) Error() string {
+	return fmt.Sprintf("found two engine configs, %s and %s: remove the one you do not use", e.System, e.User)
+}
+
+// Discover is the engine.json every command but basalt engine uses: the
+// one at system, else the one at user, else system (so the error a missing
+// config gives names the path init would create). A system path that
+// cannot be inspected for any reason but its absence counts as found: a
+// service engine's config this person cannot read is still the config. An
+// empty user skips the user path. Both found is a *BothConfigsError.
+func Discover(system, user string) (string, error) {
+	_, serr := os.Stat(system)
+	haveSystem := !errors.Is(serr, fs.ErrNotExist)
+	haveUser := false
+	if user != "" {
+		_, uerr := os.Stat(user)
+		haveUser = uerr == nil
+	}
+	switch {
+	case haveSystem && haveUser:
+		return "", &BothConfigsError{System: system, User: user}
+	case haveUser:
+		return user, nil
+	}
+	return system, nil
 }

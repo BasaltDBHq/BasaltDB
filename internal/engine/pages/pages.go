@@ -125,9 +125,6 @@ type PluginApprovals interface {
 	// submit_plugin_approval, which verifies it, and returns when Postgres
 	// recorded the approval.
 	RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error)
-	// IssuePluginLink issues a new short link for the approval to a caller
-	// that shows proof of its binding text (links.IssueProof).
-	IssuePluginLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
@@ -138,6 +135,9 @@ type Server struct {
 	files  fs.FS
 	mu     sync.RWMutex
 	agents []Agent
+	// setup runs the setup page's UPDATE and REMOVE (SetSetup); nil
+	// refuses every setup request JOB_UNAVAILABLE without reading it.
+	setup SetupJobs
 }
 
 // New returns the pages for origin, the approval page's origin, which a
@@ -156,6 +156,11 @@ func (s *Server) Add(a Agent) {
 	defer s.mu.Unlock()
 	s.agents = append(s.agents, a)
 }
+
+// SetSetup serves the setup page's jobs for this engine's agents
+// (CONTRACT.md, The local setup page): the only routes that read the admin
+// connection string. Call it before Handler.
+func (s *Server) SetSetup(jobs SetupJobs) { s.setup = jobs }
 
 // Handler routes the pages, their files and the relay.
 func (s *Server) Handler() http.Handler {
@@ -187,10 +192,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.postRevertReveal)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
+	mux.HandleFunc("GET "+SetupPagePath+"{$}", serveSetupPage)
+	if s.setup != nil {
+		st := setupRoutes{origin: s.origin, jobs: s.setup, log: s.log.With("component", "setup")}
+		mux.HandleFunc("POST "+SetupCheckPath, st.check)
+		mux.HandleFunc("POST "+SetupRunPath, st.run)
+	} else {
+		mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
+	}
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
-	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/links", s.postPluginLink)
-	return mux
+	return refuseDatabaseURL(s.origin, mux)
 }
 
 // libFile serves the pages' scripts, lib/*.js, and nothing else there.
@@ -556,14 +569,6 @@ func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reply(w, pluginApprovedDTO{ApprovalID: id.String(), Status: "APPROVED", ApprovedAt: at.UTC()})
-}
-
-func (s *Server) postPluginLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
-		return asPlugins(func(ctx context.Context, p PluginApprovals) (string, error) {
-			return p.IssuePluginLink(ctx, id, proof)
-		})(ctx, a)
-	})
 }
 
 // issueLink issues a short link for the CLI, to a caller that shows proof

@@ -68,7 +68,13 @@ func TestPortalHeadersMatchEngine(t *testing.T) {
 	}
 	hsts := portal["Strict-Transport-Security"]
 	delete(portal, "Strict-Transport-Security")
+	// The CSP is the engine's with the portal's connect-src, the Vault.
+	require.Equal(t, websec.PortalCSP, portal["Content-Security-Policy"], "web/_headers CSP drifted from websec.PortalCSP")
+	engine["Content-Security-Policy"] = websec.PortalCSP
 	require.Equal(t, engine, portal, "web/_headers /* block drifted from internal/websec")
+	for name, values := range websec.ExpectedPortal() {
+		require.Equal(t, values[0], portal[name], name)
+	}
 	require.Equal(t, "max-age=31536000; includeSubDomains", hsts)
 	require.Equal(t, map[string]string{"Content-Type": "text/javascript"}, rules["/*.js"])
 	require.Len(t, rules, 2, "unexpected extra rules in web/_headers")
@@ -102,8 +108,23 @@ func TestPortalCSPHasNoInlineOrRemoteSources(t *testing.T) {
 	csp := parseHeadersFile(t, portalHeadersFile)["/*"]["Content-Security-Policy"]
 	require.NotContains(t, csp, "unsafe-inline")
 	require.NotContains(t, csp, "unsafe-eval")
-	require.NotContains(t, csp, "connect-src", "connect-src falls back to default-src 'self'")
+	// connect-src names the Vault and nothing else: no scheme, no wildcard,
+	// no other host, not even 'self'.
+	m := regexp.MustCompile(`(?:^|; )connect-src ([^;]*)(?:;|$)`).FindAllStringSubmatch(csp, -1)
+	require.Len(t, m, 1, "one connect-src")
+	require.Equal(t, "wss://relay.basaltvault.app", m[0][1])
+	require.NotRegexp(t, regexp.MustCompile(`https?:|\*`), csp)
+	require.Equal(t, 1, strings.Count(csp, "wss:"), "the Vault is the only remote source")
+}
+
+// The engine's own pages fetch their own origin and never open the Vault:
+// their policy has no connect-src (it falls back to default-src 'self').
+func TestEngineCSPHasNoConnectSrc(t *testing.T) {
+	t.Parallel()
+	csp := websec.Expected().Get("Content-Security-Policy")
+	require.NotContains(t, csp, "connect-src")
 	require.NotRegexp(t, regexp.MustCompile(`https?:|wss?:|\*`), csp)
+	require.Equal(t, strings.Replace(csp, "default-src 'self'; ", "default-src 'self'; connect-src wss://relay.basaltvault.app; ", 1), websec.PortalCSP)
 }
 
 func TestPortalPagesHaveNoInlineScriptsOrHandlers(t *testing.T) {

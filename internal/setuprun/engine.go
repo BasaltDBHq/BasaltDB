@@ -53,7 +53,7 @@ func (s *Setup) readEngine(ctx context.Context, q guard.Querier) (EngineState, e
 	}
 	if r := st.Recorded; r != nil && r.RevokedAt != nil {
 		return EngineState{}, refuse(CodeEngineRevoked, fmt.Sprintf("ENGINE_REVOKED: engine %s was revoked in this database on %s. A revoked engine is never recorded again: "+
-			"ask %s to run basalt engine rotate-key and make a new code", channel.FingerprintOf(st.ID), UTCMinute(*r.RevokedAt), AgentWord(s.P)))
+			"ask %s to set the engine up again from the start and make a new code", channel.FingerprintOf(st.ID), UTCMinute(*r.RevokedAt), AgentWord(s.P)))
 	}
 	return st, nil
 }
@@ -72,7 +72,7 @@ func (p *Prepared) EngineLines() []string {
 	}
 	agent := AgentWord(p.P)
 	line := fmt.Sprintf("This records engine %s for %s.", channel.FingerprintOf(p.Engine.ID), agent)
-	out := []string{line, fmt.Sprintf("Check that %s's basalt status shows the same engine fingerprint.", agent)}
+	out := []string{line, fmt.Sprintf("Check that %s's status tool shows the same engine fingerprint (vault.fingerprint).", agent)}
 	if v := p.Engine.LastRevoked; v != nil {
 		out = append(out, fmt.Sprintf("This database revoked engine %s on %s. Recording a new engine trusts the agent's server again: "+
 			"do it only if you rebuilt or replaced that server.", channel.FingerprintOf(v.ID), UTCMinute(*v.RevokedAt)))

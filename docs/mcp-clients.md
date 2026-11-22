@@ -7,10 +7,10 @@ BasaltDB serves each agent over MCP from the engine, a service running as its ow
 Run `basalt init --agent NAME --write schema.table,...` with the admin connection string (`BASALT_ADMIN_DATABASE_URL` or the hidden prompt). After the guard and the passkey it asks once:
 
 ```
-Install the engine as a background service? This creates the OS user _basalt and needs your password once. [Y/n]
+Install the engine as a background service? This creates the OS user _basalt and asks for your password twice: in the system's administrator dialog, then in this terminal. [Y/n]
 ```
 
-- **Yes** (the default): init runs one `sudo basalt service install ... --agent NAME --credential-stdin`, which creates the engine's OS user (`basalt` on Linux, `_basalt` on macOS), writes the engine config and the agent's credential into the service's own directories (`/etc/basalt` with state in `/var/lib/basalt` and sockets in `/run/basalt` on Linux; `/Library/Application Support/Basalt` on macOS), owned by that user with mode 0600, and installs and starts the systemd unit or launchd daemon (or restarts it when it is already installed). The credential goes to sudo on stdin, never on a command line. Init then checks that the engine answers on the agent's socket and prints the MCP command. The agent's OS user cannot read the credential.
+- **Yes** (the default): on a first install, init first asks for your password in the system's administrator dialog (macOS's own, or `pkexec` on Linux), which runs a fixed script: it creates the engine's OS user and the system folders, and installs and starts the unit that runs `basalt engine --config <system path> --supervise`. With no dialog (an SSH session, a machine without a desktop) init stops before it reaches the database, and never runs the engine as you instead. Then init runs one `sudo basalt service install ... --agent NAME --credential-stdin`, which creates the engine's OS user (`basalt` on Linux, `_basalt` on macOS), writes the engine config and the agent's credential into the service's own directories (`/etc/basalt` with state in `/var/lib/basalt` and sockets in `/run/basalt` on Linux; `/Library/Application Support/Basalt` on macOS), owned by that user with mode 0600, and installs and starts the systemd unit or launchd daemon (or restarts it when it is already installed). The credential goes to sudo on stdin, never on a command line. Init then checks that the engine answers on the agent's socket and prints the MCP command. The agent's OS user cannot read the credential.
 - **No**, or `--no-service`: init writes the config and credential under your config directory (`~/.config/basalt` on Linux, `~/Library/Application Support/basalt` on macOS) and prints the one command that runs the engine in the foreground as you. Giving `--config`, `--socket-dir` or `--credential-file` also means you run the engine yourself. That is same-user mode: writes are still guarded in Postgres, but the agent's OS user can read its credential file.
 - **No terminal** (answers piped in) and neither `--yes` nor `--no-service`: init stops before writing anything and asks you to pass one of them. It never picks same-user mode for you.
 
@@ -32,7 +32,7 @@ Most MCP clients take a command and its arguments. Add one server per agent, run
 ```
 
 - Use the absolute path of `basalt` (`which basalt`) if the client does not inherit your `PATH`.
-- If `init` used a non-default `--socket-dir`, add `"--socket-dir", "DIR"` to `args`, or pass the socket directly with `"--socket", "DIR/NAME.sock"`.
+- `basalt mcp` finds the engine config by itself (the system path, else the one `basalt init` leaves in your config directory) and reads the socket directory from it. `--agent NAME` is the only flag, and it is needed only when the engine serves more than one agent. When both configs exist, `basalt mcp` stops and names both.
 - Do not put a database URL in the client config. The agent never holds one.
 
 The client then lists twelve tools: `run_start`, `describe`, `query`, `write`, `run_history`, `list_runs`, `list_pending`, `preview_revert`, `request_revert`, `status`, `revert_plan` and `apply_revert_batch`. A session usually starts a run with an intent, reads with `query` inside that run, and writes with `write` and an intent.
@@ -69,8 +69,6 @@ One MCP server serves one agent, and one agent uses one database. No server rout
     }
   }
   ```
-
-When the engine's config is not where `basalt mcp` looks by itself (the system path, or the per-user one `basalt init` leaves in your config directory), the line `basalt init` prints carries `--config <absolute path>`, and `--socket-dir` when the sockets are not in the default place. Keep them when you register the server: with the config, `basalt mcp` can answer `status` and, for an engine that runs as you, start it when it is down. [Bot computers with no service manager](bot-setup.md#bot-computers-with-no-service-manager) shows a full line.
 
 The MCP tools `status` and `describe` never name another agent or its database. `describe` names this agent's own database (name and host). To see every agent and its database, run `basalt status` in your own terminal.
 

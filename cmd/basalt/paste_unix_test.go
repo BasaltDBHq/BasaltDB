@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -217,54 +216,12 @@ func TestApproveOpenTakesALongCode(t *testing.T) {
 	c.host = h
 	go term.typeIn(strings.Repeat(" ", overLineLimit) + code + "\n")
 	exit, _ := inTime(t, func() (int, error) {
-		return guardCommands["approve"](c, []string{"--agent", "bot", "--config", localConfig(t, cred), "--open", id}), nil
+		return runGuard(c, append([]string{"approve"}, []string{"--agent", "bot", "--config", localConfig(t, cred), "--open", id}...)), nil
 	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "waiting for your signature on the approval page")
 	require.Contains(t, stderr.String(), "approval "+id+" signed")
 	require.Equal(t, 1, count(t, d, `SELECT count(approval_id)::int FROM basalt_meta.approvals WHERE approved_at IS NOT NULL`))
-}
-
-func TestInitPromptTakesALongCode(t *testing.T) {
-	t.Parallel()
-	term := newTerminal(t)
-	var stderr bytes.Buffer
-	c := ptyIO(term, io.Discard, &stderr)
-	person, err := passkeytest.New(passkey.Production)
-	require.NoError(t, err)
-	req, err := passkey.NewRegistrationRequest(fixedRand(), "app", "BasaltDB · app")
-	require.NoError(t, err)
-	resp, err := person.Register(req, nil)
-	require.NoError(t, err)
-	code, err := resp.Code()
-	require.NoError(t, err)
-	// Leading spaces (trimmed, as a terminal paste may carry them) make the
-	// line longer than the limit whatever the code's own length.
-	pasted := strings.Repeat(" ", overLineLimit) + code
-	go term.typeIn(pasted + "\n")
-	cred, err := inTime(t, func() (passkey.Credential, error) { return readRegistration(c, req, passkey.Production, nil) })
-	require.NoError(t, err)
-	require.Equal(t, person.Credential().ID, cred.ID)
-	require.Contains(t, stderr.String(), "Paste the code the page shows: ")
-}
-
-// TestInitPromptTakesAPairingCode: with the hand-back on, the person types
-// the short code at a terminal, after a wrong one, and init keeps their
-// registration over one another program posted first.
-func TestInitPromptTakesAPairingCode(t *testing.T) {
-	t.Parallel()
-	term := newTerminal(t)
-	var stderr bytes.Buffer
-	c := ptyIO(term, io.Discard, &stderr)
-	h, personBody, person := handBackFixture(t)
-	rogueBody, _ := registrationBody(t, h.req)
-	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", rogueBody).Code)
-	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", personBody).Code)
-	go term.typeIn("0000-0000\n" + strings.ToLower(pairingOf(t, h.req, person.Credential())) + "\n")
-	cred, err := inTime(t, func() (passkey.Credential, error) { return readRegistration(c, h.req, handBackRP, h) })
-	require.NoError(t, err)
-	require.Equal(t, person.Credential().ID, cred.ID)
-	require.Contains(t, stderr.String(), "basalt: that code doesn't match; check the page")
 }
 
 func TestPastedWithoutATerminalReadsALine(t *testing.T) {
@@ -321,39 +278,9 @@ func TestPasskeyCheckPromptTakesALongCode(t *testing.T) {
 		_, _ = io.WriteString(term.master, "n\n") // keep the phone's passkey
 	}()
 	exit, _ := inTime(t, func() (int, error) {
-		return runPasskey(c, []string{"check", "--credential-file", credFile, "--pages-url", links.Portal}), nil
+		return runPasskey(c, takePathFlags(c, runPasskey, []string{"check", "--credential-file", credFile, "--pages-url", links.Portal})), nil
 	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the page showed: ")
 	require.Contains(t, stdout.String(), "found on this device")
-}
-
-func TestRevertPromptTakesALongCode(t *testing.T) {
-	t.Parallel()
-	d, person, cred, run := revertSetup(t)
-	term := newTerminal(t)
-	var stdout bytes.Buffer
-	stderr := &lockedBuffer{}
-	c := ptyIO(term, &stdout, stderr)
-	go func() {
-		var frag string
-		deadline := time.Now().Add(30 * time.Second)
-		for frag == "" && time.Now().Before(deadline) {
-			if m := revertLink.FindStringSubmatch(stderr.String()); m != nil {
-				frag = m[1]
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if frag == "" {
-			t.Error("basalt revert printed no link")
-			return
-		}
-		term.typeIn(strings.Repeat(" ", overLineLimit) + signRevertLink(t, person, frag) + "\n")
-	}()
-	exit, _ := inTime(t, func() (int, error) {
-		return runRevert(c, []string{"--run", run.String(), "--credential-file", cred}), nil
-	})
-	require.Equal(t, exitOK, exit, stderr.String())
-	require.Contains(t, stderr.String(), "Paste the code the revert page showed: ")
-	require.Equal(t, "open", leadStatusOf(t, d, 40))
 }

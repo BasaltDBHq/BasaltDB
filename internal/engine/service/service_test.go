@@ -137,7 +137,7 @@ func TestSystemdUnit(t *testing.T) {
 	for _, want := range []string{
 		"User=basalt\n",
 		"Group=basalt\n",
-		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json\n",
+		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json --supervise\n",
 		"RuntimeDirectory=basalt\n",
 		"RuntimeDirectoryMode=0755\n",
 		"StateDirectory=basalt\n",
@@ -154,7 +154,7 @@ func TestSystemdUnit(t *testing.T) {
 
 	spaced := linuxSpec()
 	spaced.ConfigPath = `/etc/my basalt/engine "x".json`
-	require.Contains(t, service.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json"`)
+	require.Contains(t, service.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise`)
 	require.Contains(t, service.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
 }
 
@@ -163,7 +163,7 @@ func TestLaunchdDaemon(t *testing.T) {
 	plist := service.LaunchdDaemon(darwinSpec())
 	for _, want := range []string{
 		"<string>dev.basaltdb.engine</string>",
-		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>",
+		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
 		"<key>UserName</key>\n\t<string>_basalt</string>",
 		"<key>GroupName</key>\n\t<string>_basalt</string>",
 		"<key>KeepAlive</key>\n\t<true/>",
@@ -445,6 +445,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 		"mkdir -m 0700 -o basalt /etc/basalt/agents",
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
+		"systemctl reset-failed basalt-engine.service",
 		"systemctl restart basalt-engine.service",
 		"mkdir -m 0755 -o root /opt/basalt",
 		"mkdir -m 0755 -o root /opt/basalt/run",
@@ -469,8 +470,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
 }
 
-// basalt engine --user makes the directories a container has no service
-// manager to make, with the modes the unit gives them.
+// The install makes the directories with the modes the unit gives them.
 func TestEngineDirsMatchTheUnit(t *testing.T) {
 	dirs := service.EngineDirs("linux")
 	require.Len(t, dirs, 2)

@@ -129,7 +129,7 @@ basalt init --agent demo_bot \
 2. It prints a short summary of the setup SQL (pass `--show-sql` to print the SQL), then `Run this SQL as postgres? [y/N]`. Type `y`.
 3. `basalt: guard installed; agent role basalt_agent_demo_bot`
 4. It prints a `http://localhost:8787/passkeys/register#...` link. Open it, press the button, confirm with your passkey, copy the `basalt-passkey.1....` code the page shows, and paste it at `Paste the code the page shows:`. Then `basalt: passkey registered for localhost`.
-5. `Install the engine as a background service? This creates the OS user _basalt and needs your password once. [Y/n]` Press Enter. (On Linux the user is `basalt`.) Init runs one `sudo`, installs and starts the service, then checks it:
+5. `Install the engine as a background service? This creates the OS user _basalt and asks for your password twice: in the system's administrator dialog, then in this terminal. [Y/n]` Press Enter. (On Linux the user is `basalt`.) On a first install the system's administrator dialog asks for your password and installs the service (without a desktop session init stops here); then init runs one `sudo` for the agent's config and credential, restarts the service, then checks it:
 
    `basalt: engine running as _basalt; it answered on /Library/Application Support/Basalt/run/demo_bot.sock` (on Linux, `/run/basalt/demo_bot.sock`)
 
@@ -233,7 +233,7 @@ Once a day `basalt` looks at the public release list of BasaltDBHq/BasaltDB (not
 
 Upgrade the binary the way you installed it: `brew upgrade basaltdbhq/tap/basaltdb`, or install the new release over the old one at the same path (for the service, the root-owned copy it runs, for example `sudo install -o root -m 0755 basalt /usr/local/libexec/basalt`).
 
-The engine restarts onto the new binary by itself, with or without the service, and in a container started with `basalt engine --user`:
+The engine restarts onto the new binary by itself, with or without the service, and in a container:
 
 - It looks at the path it was started from every 5 seconds. Once the new file has stopped changing, it runs `basalt version` on it, and when it started from a root-owned binary it checks the new one is root-owned too.
 - It waits for a moment when no agent call is running (up to 2 minutes), stops taking calls, closes its sockets and runs the new binary in the same process: same process id, same OS user, same files. Its log says `a new basalt binary is installed` and then `restarting onto the upgraded binary`.
@@ -246,34 +246,13 @@ To restart it by hand anyway:
 
 You do not restart your agent's MCP client. `basalt mcp`, the process the client started, only relays to the engine and keeps running; it waits up to 15 seconds for the engine to come back. A call the engine turned away because it was restarting was not run, so `basalt mcp` sends it to the new engine. A read the engine was answering when it stopped (`query`, `describe`, `list_pending`, `list_runs`, `run_history`, `status`) is sent once more to the new engine. A `write`, an approval or a revert that may have started is never sent twice: the agent is told the call may or may not have run, and it reads before it writes again.
 
-Then, if `basalt status --agent NAME` says the guard can be upgraded, run `basalt upgrade --agent NAME`; the engine serves again without a restart.
+Then, if the agent's `status` says the guard can be updated, ask the agent for the update link and run the update on that page; the engine serves again without a restart.
 
 How the pieces talk, for reference: the client starts `basalt mcp` over stdio; it dials the engine's Unix socket for that agent and forwards each message. The engine holds the credential and talks to Postgres. When the engine is down, `basalt mcp` answers `status` and the tool list itself and every other call with `ENGINE_UNREACHABLE`.
 
 ## Containers without systemd
 
-A container usually has no service manager: PID 1 is your process or a small init such as `tini`, so `basalt init` cannot install the engine service there. Run the engine as its own OS user with `basalt engine --user` instead, started as root by the container's entrypoint:
-
-```sh
-tini -- basalt engine --user basalt --config /etc/basalt/engine.json
-```
-
-Before it reads anything, the engine:
-
-1. Refuses to go on unless it runs as root or already as `basalt`, and refuses `--user root` and a user whose group, or one of whose groups, is root's (gid 0).
-2. Refuses a `basalt` binary anyone but root could change (the same check as `basalt service install`, step 1).
-3. Makes `/run/basalt` (`0755`, for the sockets) and `/var/lib/basalt` (`0700`, its state), owned by `basalt`, as the systemd unit would.
-4. Sets the supplementary groups, the group and the user to `basalt`'s, sets the umask to `0077` and, on Linux, `no_new_privs`, then checks that every thread runs as `basalt` with no capability left and that root cannot be taken back.
-
-Only then does it open `engine.json`, the agent's credential, the sockets and the pages port. Its first log line is `basalt engine: dropped root; running as basalt (uid ..., gid ...); no_new_privs set`. A failed step stops it with nothing read.
-
-**What does not apply.** The systemd unit's sandbox (`ProtectSystem`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, the kernel and cgroup protections) and its memory limits (`MemoryHigh`, `MemoryMax`, see [Engine memory](#engine-memory)) do not exist without systemd. The engine keeps `GOMEMLIMIT`; set a memory limit on the container yourself. In a container, **the OS user split is what protects the credential**: the config and the credential are `0600` files of `basalt`, and the agent must run as another OS user, best in another container that mounts only the socket directory.
-
-**Setup.** Until `basalt init` sets up a container itself, run it once as the engine's user with explicit paths, so the files it writes are that user's: `basalt init --agent NAME --os-user AGENT_USER --config /etc/basalt/engine.json --socket-dir /run/basalt ...`. The `--os-user` must exist in the engine's container with the uid the agent runs as, and `/etc/basalt` must exist, owned by `basalt`, mode `0750`. Init then prints the foreground start command; use `basalt engine --user basalt --config /etc/basalt/engine.json` as the container's command instead.
-
-[`examples/compose`](../examples/compose/README.md) is a tested `docker compose` setup: Postgres, the engine, and an agent container that shares only the socket volume.
-
-On macOS `--user` works the same way when started as root (a launchd job you write yourself), with `/Library/Application Support/Basalt/run` and `.../state` as the directories, but macOS has no `no_new_privs`. The engine runs no other program, so there is nothing for it to stop.
+A container usually has no service manager: PID 1 is your process or a small init such as `tini`, so `basalt init` cannot install the engine service there. BasaltDB has no container setup of its own: run `basalt engine --config /etc/basalt/engine.json` as an OS user other than the agent's, with that user's files (`0600` config and credential) only that user can read. The systemd unit's sandbox and memory limits do not exist without systemd; set a memory limit on the container yourself.
 
 ## If something is off
 
@@ -286,12 +265,13 @@ On macOS `--user` works the same way when started as root (a launchd job you wri
 
 ## Remove everything
 
+Ask the agent to remove BasaltDB. It gives you a link to the setup page. The page shows the SQL and, once you type the admin connection string there, drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles in one transaction, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. Then remove the service:
+
 ```sh
-basalt uninstall
 sudo basalt service uninstall
 ```
 
-`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds. `basalt uninstall` also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data`.
+`service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds.
 
 ### What `service uninstall` leaves behind
 
@@ -306,7 +286,7 @@ sudo basalt service uninstall
 
 The socket directory (`/run/basalt` on Linux, `/Library/Application Support/Basalt/run` on macOS) holds only sockets and the engine's lock. It goes away on Linux when the service stops; on macOS it sits inside the config directory and goes with it.
 
-Once you have run `basalt uninstall`, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
+Once the setup page removed BasaltDB, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
 
 On Linux:
 

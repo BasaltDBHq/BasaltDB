@@ -762,17 +762,17 @@ func passkeySummary(keys []PasskeyStatus) string {
 	return msg + ". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it."
 }
 
-// noPasskeySteps: the person registers a passkey; on an agent-operated
-// engine, with a setup code the agent makes (RI-6: the person's computer
-// registers a portal passkey when none is active).
+// noPasskeySteps: the agent runs basalt init, whose link opens the page
+// where the person registers a passkey; on an agent-operated engine the
+// connect page (RI-6: the person's computer registers a portal passkey when
+// none is active).
 func noPasskeySteps(b *Steps, cmds Commands) string {
 	const lead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
 	if cmds.AgentOperated() {
-		return remoteSetupSteps(b, cmds, "", lead)
+		return remoteSetupSteps(b, cmds, lead)
 	}
-	cmd := cmds.Init("--add-passkey")
-	b.RunCommand(cmd, "Register a passkey: held writes and reverts are signed with one.")
-	return lead + " Run: " + cmd
+	b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they register a passkey: held writes and reverts are signed with one.")
+	return lead + " The agent gives you a link to register one."
 }
 
 // addUnreachable is the problem of a guard read that failed: the database
@@ -878,12 +878,12 @@ func (v setupView) addProblem(ps *problems) {
 	case v.status.Kind == guard.SetupInstall:
 		ps.addLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
 			func(b *Steps) (string, []mcp.Link) {
-				return setupPendingSteps(b, v.code, v.fingerprint, true, ps.connectBudget)
+				return setupPendingSteps(b, ps.cmds, v.code, v.fingerprint, true, ps.connectBudget)
 			})
 	default:
 		ps.addLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
 			func(b *Steps) (string, []mcp.Link) {
-				return setupPendingSteps(b, v.code, v.fingerprint, false, ps.connectBudget)
+				return setupPendingSteps(b, ps.cmds, v.code, v.fingerprint, false, ps.connectBudget)
 			})
 	}
 }
@@ -1049,7 +1049,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // Admit refuses a tool call the agent cannot be served yet (CONTRACT.md,
 // Next steps, Startup failures): its INSTALL setup code has not run, or
 // the guard is not installed or misses a breaking migration. It reads the
-// guard on every call, so basalt upgrade needs no engine restart. status is
+// guard on every call, so a guard update needs no engine restart. status is
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
 	if v, known := s.statusDeps().setupGate(ctx); known && v.blocks() {
@@ -1154,7 +1154,7 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 	out := &EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
 	if e.RevokedAt != nil {
 		out.State, out.RevokedAt = engineRevoked, e.RevokedAt.UTC().Format(time.RFC3339)
-		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the relay does not enforce the revocation yet, so links already handed over may still work",
+		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the engine hands over no relay short link for it and has ended the ones it handed over",
 			engineRevokedSteps)
 	}
 	return out
@@ -1165,8 +1165,8 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 func engineRevokedSteps(b *Steps) string {
 	b.AskPerson("Tell the person this engine's key is revoked in their database. Ask whether they revoked it on purpose, and show the message.")
 	b.EndTurn("End your turn: the person answers next.")
-	return "This engine's key is revoked in your database. Status shows it; the relay does not enforce it yet, so a link this engine already handed over may still work. " +
-		"Did you revoke it on purpose? If you replaced the engine, the agent makes a new key with basalt engine rotate-key and gives you a new setup code."
+	return "This engine's key is revoked in your database. Status shows it; this engine no longer hands over portal short links for it, and the ones it handed over stop working. " +
+		"Did you revoke it on purpose? If you replaced the engine, the agent sets it up again and gives you a new link."
 }
 
 // startedByEnum is the status enum of a --started-by value ("" for none).

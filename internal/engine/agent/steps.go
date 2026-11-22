@@ -88,20 +88,19 @@ func (b *Steps) Stop(text string) *Steps {
 	return b.add(NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionStop}, text)
 }
 
-// OpenLink adds a PERSON step: open url; command, when not empty, opens the
-// same page from a terminal.
-func (b *Steps) OpenLink(url, command, text string) *Steps {
+// OpenLink adds a PERSON step: open url.
+func (b *Steps) OpenLink(url, text string) *Steps {
 	if url == "" {
 		return b.fail(errors.New("OPEN_LINK needs a url"))
 	}
-	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, URL: url, Command: command}, text)
+	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, URL: url}, text)
 }
 
 // OpenGivenLink adds a PERSON step with no url: open the short link the
 // agent handed over earlier, which the engine no longer has (it keeps only
-// its hash); command, when not empty, opens the same page from a terminal.
-func (b *Steps) OpenGivenLink(command, text string) *Steps {
-	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Command: command}, text)
+// its hash).
+func (b *Steps) OpenGivenLink(text string) *Steps {
+	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink}, text)
 }
 
 // RunCommand adds a PERSON step: run command in a terminal.
@@ -112,9 +111,11 @@ func (b *Steps) RunCommand(command, text string) *Steps {
 	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Command: command}, text)
 }
 
-// AgentRunCommand adds an AGENT step: run command on the engine's machine.
-// Only an agent-operated engine returns one (CONTRACT.md, Next steps), and
-// never with a command that needs the admin connection string (CO-9).
+// AgentRunCommand adds an AGENT step: run command on the engine's machine:
+// basalt init, which prints the link the person opens, or, on an
+// agent-operated engine, a machine step such as the engine's start
+// (CONTRACT.md, Next steps). Never a command that needs the admin
+// connection string (CO-9).
 func (b *Steps) AgentRunCommand(command, text string) *Steps {
 	if command == "" {
 		return b.fail(errors.New("RUN_COMMAND needs a command"))

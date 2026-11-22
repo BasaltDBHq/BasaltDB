@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -28,13 +27,7 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	h := newFakeHost(t)
 	cfg := filepath.Join(h.configDir, perUserDirName, "engine.json")
-	r := cliOn(t, h, map[string]string{envAdminURL: d.URL}, "",
-		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", cfg, "--os-user", "tester", "--yes", "--skip-passkey")
-	require.Equal(t, exitOK, r.code, r.stderr)
-
-	logged := cliOn(t, h, nil, "", "log", "--agent", "bot")
-	require.Equal(t, exitOK, logged.code, logged.stderr)
+	initAgent(t, d, cfg)
 
 	id := uuid.NewString()
 	// Each of these answers from the agent's own ledger, which only the
@@ -44,7 +37,6 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 		want string
 	}{
 		{[]string{"approve", "--agent", "bot", "--show", id}, "is not a held write of this agent"},
-		{[]string{"revert", "--agent", "bot", "--status", id}, "prepared with this agent's credential"},
 	} {
 		got := cliOn(t, h, nil, "", tc.args...)
 		require.Equal(t, exitError, got.code, "%v: %s", tc.args, got.stderr)
@@ -61,18 +53,9 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.Equal(t, exitError, chk.code, chk.stderr)
 	require.Contains(t, chk.stderr, "no active passkey; register one")
 	require.NotContains(t, chk.stderr, config.DefaultPath(runtime.GOOS))
-	list := cliOn(t, h, nil, "", "access", "--agent", "bot")
-	require.Equal(t, exitOK, list.code, list.stderr)
-	require.Contains(t, list.stdout, "Can write\n  public.leads")
-	// The commands access prints name the per-user config.
-	require.Contains(t, list.stdout, "--config "+cfg)
-
-	up := cliOn(t, h, map[string]string{envAdminURL: d.URL}, "", "upgrade", "--agent", "bot", "--dry-run")
-	require.Equal(t, exitOK, up.code, up.stderr)
-	require.Contains(t, up.stderr, "the guard is up to date", "upgrade did not reach the agent's database")
 
 	// The same commands do not fall back when root runs them.
-	root := cliOn(t, systemSocketHost(t), nil, "", "log", "--agent", "bot")
+	root := cliOn(t, systemSocketHost(t), nil, "", "passkey", "list", "--agent", "bot")
 	require.NotEqual(t, exitOK, root.code)
 }
 
@@ -98,54 +81,6 @@ func TestEngineFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.Contains(t, run("--config", filepath.Join(h.configDir, "x.json")), "x.json")
 }
 
-// The engine run with --user looks for the per-user config in the home of the
-// user it dropped to, not in the HOME it inherited from root.
-func TestUserConfigDirIn(t *testing.T) {
-	t.Parallel()
-	got, err := userConfigDirIn("linux", "/home/bot", "")
-	require.NoError(t, err)
-	require.Equal(t, "/home/bot/.config", got)
-	got, err = userConfigDirIn("darwin", "/Users/bot", "")
-	require.NoError(t, err)
-	require.Equal(t, "/Users/bot/Library/Application Support", got)
-	_, err = userConfigDirIn("linux", "", "")
-	require.Error(t, err)
-}
-
-// With XDG_CONFIG_HOME set, the directory init uses (os.UserConfigDir) and the
-// one engine --user looks in are the same, off macOS. A relative value is
-// refused by init (os.UserConfigDir errors) and engine --user falls back to
-// the home; macOS ignores the variable.
-func TestUserConfigDirInHonorsXDGLikeInit(t *testing.T) {
-	t.Parallel()
-	got, err := userConfigDirIn("linux", "/home/bot", "/srv/cfg")
-	require.NoError(t, err)
-	require.Equal(t, "/srv/cfg", got)
-	got, err = userConfigDirIn("linux", "/home/bot", "relative/cfg")
-	require.NoError(t, err)
-	require.Equal(t, "/home/bot/.config", got)
-	got, err = userConfigDirIn("darwin", "/Users/bot", "/srv/cfg")
-	require.NoError(t, err)
-	require.Equal(t, "/Users/bot/Library/Application Support", got)
-}
-
-// init (the real host's UserConfigDir) and engine --user (the dropped user's
-// directory) resolve one directory when XDG_CONFIG_HOME is set.
-func TestInitAndEngineUserAgreeOnTheConfigDirWithXDG(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("macOS ignores XDG_CONFIG_HOME")
-	}
-	me, err := user.Current()
-	require.NoError(t, err)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	initDir, err := osHost{}.UserConfigDir()
-	require.NoError(t, err)
-	engineDir, err := engineUserHost{host: osHost{}, name: me.Username}.UserConfigDir()
-	require.NoError(t, err)
-	require.Equal(t, initDir, engineDir)
-	require.Equal(t, os.Getenv("XDG_CONFIG_HOME"), engineDir)
-}
-
 // basalt mcp without --config reads the per-user config a rootless bot's init
 // left, so status names the foreground engine command of that config.
 func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
@@ -163,13 +98,12 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	run := func(args ...string) string {
 		var out, errOut bytes.Buffer
 		in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}` + "\n"
-		args = append(args, "--socket", filepath.Join(h.configDir, "none.sock"))
 		code := runMCPOn(context.Background(), args, stdio{in: strings.NewReader(in), out: &out, err: &errOut}, h)
 		require.Equal(t, exitOK, code, errOut.String())
 		return out.String()
 	}
 	require.Contains(t, run("--agent", "bot"), "basalt engine --config ")
 	require.Contains(t, run("--agent", "bot"), path)
-	// An explicit --config is not replaced by the fallback.
-	require.NotContains(t, run("--agent", "bot", "--config", filepath.Join(h.configDir, "other.json")), path)
+	// The one agent the config serves needs no --agent.
+	require.Contains(t, run(), path)
 }

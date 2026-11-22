@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
@@ -52,6 +51,11 @@ type cliIO struct {
 	// width is the terminal's width in columns, 0 when stdout is no
 	// terminal; tests set it.
 	width func() int
+	// systemConfigPath replaces the system path of engine.json in tests
+	// (empty: config.DefaultPath(goos)).
+	systemConfigPath string
+	// paths point commands at temporary files in tests.
+	paths pathOverrides
 	// goos is the platform whose paths and service manager init uses.
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,
@@ -65,12 +69,7 @@ type cliIO struct {
 	// probe tries a login bound to fail, to confirm a credential's TLS
 	// protection (hardenedCredential); probeLogin outside tests.
 	probe func(ctx context.Context, dsn string) error
-	// handoff reaches the connect service and the collected database when
-	// basalt status collects while the engine is down; the zero value is
-	// the contract's, and tests give their own.
-	handoff engine.HandoffOptions
-	// engine tells service mode from same-user mode and finds the person
-	// socket (log, approve, revert); tests replace it.
+	// engine tells service mode from same-user mode; tests replace it.
 	engine engineAccess
 	// fetchChain reads the chain a database presents with the TLS
 	// handshake alone, before a pin is offered (fetchChain outside tests;
@@ -183,6 +182,12 @@ func (c *cliIO) adminURL() (string, error) {
 	if v := c.getenv(envAdminURL); v != "" {
 		return v, nil
 	}
+	return c.promptAdminURL()
+}
+
+// promptAdminURL asks for the admin connection string with a hidden
+// prompt; it never reads the environment.
+func (c *cliIO) promptAdminURL() (string, error) {
 	fmt.Fprint(c.stderr, "Admin connection string (used once, never stored): ")
 	if c.terminal != nil {
 		b, err := term.ReadPassword(int(c.terminal.Fd()))
@@ -200,16 +205,6 @@ func (c *cliIO) confirm(question string) (bool, error) {
 		return false, err
 	}
 	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
-}
-
-// confirmYes asks a yes/no question whose default (an empty answer) is yes.
-func (c *cliIO) confirmYes(question string) (bool, error) {
-	fmt.Fprintf(c.stderr, "%s [Y/n] ", question)
-	answer, err := c.line()
-	if err != nil {
-		return false, err
-	}
-	return answer == "" || strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
 }
 
 // connect opens one connection, usable through a transaction pooler

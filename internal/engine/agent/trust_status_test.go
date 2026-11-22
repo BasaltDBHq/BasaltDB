@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -42,7 +43,7 @@ func caExpiring(t *testing.T, notAfter time.Time) *x509.Certificate {
 
 func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) StatusReport {
 	t.Helper()
-	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	r, err := LocalStatus{
 		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
@@ -79,7 +80,8 @@ func TestStatusTrust(t *testing.T) {
 	require.Equal(t, "WARNING", w.Severity)
 	require.Contains(t, w.Message, trustprofile.Fingerprint(soon))
 	require.Contains(t, w.Message, soon.NotAfter.Format(time.DateOnly))
-	require.Equal(t, "basalt trust list", w.NextSteps[0].Command)
+	require.Equal(t, mcp.ActionAskPerson, w.NextSteps[0].Action)
+	require.Equal(t, "basalt init --agent bot", w.NextSteps[1].Command, "the setup page adds the new root")
 	require.True(t, r.Ready)
 
 	fine := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, later)
@@ -117,7 +119,8 @@ func TestStatusTrustRefused(t *testing.T) {
 }
 
 // A database whose certificate does not verify is CERTIFICATE_NOT_VERIFIED,
-// naming the host and basalt trust add, not DATABASE_UNREACHABLE.
+// naming the host and the agent's basalt init, whose page trusts the
+// certificate, not DATABASE_UNREACHABLE.
 func TestStatusCertificateNotVerified(t *testing.T) {
 	t.Parallel()
 	host := "db.internal.example.com"
@@ -126,16 +129,13 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	p := findProblem(t, r, problemCertificateNotVerified)
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, host)
-	require.Equal(t, "basalt trust add --name db-internal-example-com --match '=db.internal.example.com' --ca ./ca.pem", p.NextSteps[0].Command)
+	require.Equal(t, NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
+	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	require.Contains(t, p.PersonMessage, "sslrootcert")
 	for _, q := range r.Problems {
 		require.NotEqual(t, problemDatabaseUnreachable, q.Code)
 	}
 	require.False(t, r.Ready)
-
-	cmds, cerr := NewCommands("bot", "/srv/basalt/engine.json", "linux", nil)
-	require.NoError(t, cerr)
-	require.Equal(t, "sudo basalt trust add --name db-x-y --match '=db.x.y' --ca ./ca.pem --config /srv/basalt/engine.json", cmds.TrustAdd("DB.X.Y."))
 }
 
 // trustStatusOf is the engine's status with rep as its trust reporter.
@@ -147,7 +147,7 @@ func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep TrustR
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	d.Trust = rep
-	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
@@ -200,8 +200,8 @@ func TestStatusCertificateNotVerifiedOwnRoots(t *testing.T) {
 		r := trustLocal(t, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: "db.example.com", Applies: applies}))
 		p := findProblem(t, r, problemCertificateNotVerified)
 		require.Contains(t, p.PersonMessage, want, applies)
-		require.Equal(t, "basalt trust list", p.NextSteps[0].Command, applies)
-		require.NotContains(t, p.PersonMessage, "trust add", applies)
+		require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command, applies)
+		require.NotContains(t, p.PersonMessage, "basalt ", applies)
 	}
 }
 
@@ -235,7 +235,8 @@ func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string
 }
 
 // A pinned database presenting another root is TRUST_ROOT_CHANGED, naming
-// both fingerprints and basalt trust pin, not CERTIFICATE_NOT_VERIFIED.
+// both fingerprints and the agent's basalt init, whose page pins the new
+// one, not CERTIFICATE_NOT_VERIFIED.
 func TestStatusTrustRootChanged(t *testing.T) {
 	t.Parallel()
 	r, now := pinnedStatus(t, "", true, "")
@@ -243,7 +244,8 @@ func TestStatusTrustRootChanged(t *testing.T) {
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, trustprofile.Fingerprint(now))
 	require.Contains(t, p.Message, "pinned to")
-	require.Equal(t, "sudo basalt trust pin --host db.internal.example.com --port 5432", p.NextSteps[0].Command)
+	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
+	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	for _, q := range r.Problems {
 		require.NotEqual(t, problemCertificateNotVerified, q.Code)
 	}

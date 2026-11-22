@@ -145,11 +145,8 @@ func (cn *conn) handshake(ctx context.Context, ss *session, msg []byte) error {
 		link = l
 		return psk, ok
 	}
-	check := channel.HelloCheck{Transport: cn.transport, Lookup: lookup}
-	if cn.transport == channel.TransportRelay {
-		token := ss.token
-		check.SessionToken = &token
-	}
+	token := ss.token
+	check := channel.HelloCheck{Transport: cn.transport, SessionToken: &token, Lookup: lookup}
 	resp, err := channel.ReadHello(msg, check)
 	if err != nil {
 		code := channel.ErrLinkRefused
@@ -333,7 +330,7 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 			after.run()
 			if err != nil {
 				cn.c.opts.Log.Debug("vault session: answer", "err", err)
-				cn.endAsync(ss.id, channel.ErrProtocol)
+				cn.endAsync(ss.id, answerCloseCode(err))
 				return
 			}
 		}
@@ -406,7 +403,7 @@ func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	if old == token {
 		return
 	}
-	cn.endLink(old)
+	cn.endLink(old, channel.ErrLinkRefused)
 }
 
 // respond sends resp as a RESPONSE and as many CONTINUEs as its body needs,
@@ -514,12 +511,27 @@ func (cn *conn) idleCheck(id sid, e *established) {
 }
 
 // end ends session id with code: it stops what the session runs and tells
-// the Vault. A session already ended is told again, harmlessly.
+// the Vault. A session another path already ended (its worker, a timer, a
+// revoked link) is left alone: that path told the Vault, with its own code,
+// and a second SESSION_CLOSE would only name a session the Vault dropped.
 func (cn *conn) end(ctx context.Context, id sid, code channel.CloseError) error {
-	if ss := cn.sessions.take(id); ss != nil {
-		ss.stop()
+	ss := cn.sessions.take(id)
+	if ss == nil {
+		return nil // already ended, and the Vault told, by whoever took it
 	}
+	ss.stop()
 	return cn.closeSession(ctx, id, code)
+}
+
+// answerCloseCode is the code a session ends with when its answer could not
+// be sent: the code the error carries (FRAME_INVALID when the read loop
+// refused a frame first, which fails the session's channel), else PROTOCOL.
+func answerCloseCode(err error) channel.CloseError {
+	var ce channel.CloseError
+	if errors.As(err, &ce) {
+		return ce
+	}
+	return channel.ErrProtocol
 }
 
 // endAsync is end from outside the read loop (a worker, a timer, a revoked
@@ -536,10 +548,10 @@ func (cn *conn) endAsync(id sid, code channel.CloseError) {
 	}
 }
 
-// endLink ends every session of token with LINK_REFUSED: its link was
-// revoked or expired.
-func (cn *conn) endLink(token channel.LinkToken) {
+// endLink ends every session of token with code: LINK_REFUSED for a link
+// revoked or expired, ENGINE_REVOKED for one whose engine was revoked.
+func (cn *conn) endLink(token channel.LinkToken, code channel.CloseError) {
 	for _, id := range cn.sessions.ofToken(token) {
-		cn.endAsync(id, channel.ErrLinkRefused)
+		cn.endAsync(id, code)
 	}
 }

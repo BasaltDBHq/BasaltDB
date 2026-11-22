@@ -1,0 +1,10 @@
+{
+  "job": {
+    "job": "INSTALL",
+    "agent": "demo_bot",
+    "osUser": "alice",
+    "demo": true
+  },
+  "link": "http://localhost:8787/setup/#1.eyJqb2IiOiJJTlNUQUxMIiwiYWdlbnQiOiJkZW1vX2JvdCIsIm9zVXNlciI6ImFsaWNlIiwiZGVtbyI6dHJ1ZX0",
+  "origin": "http://localhost:8787"
+}

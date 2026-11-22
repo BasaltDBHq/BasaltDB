@@ -24,7 +24,7 @@ func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, 
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", configPath, "linux", nil)
+	cmds, err := NewCommands("bot", configPath, "linux")
 	require.NoError(t, err)
 	if foreground {
 		cmds = cmds.Foreground()
@@ -37,16 +37,28 @@ func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, 
 
 func samplePluginProblem(code string) fakePlugins {
 	return fakePlugins{
-		"bot":   {{Code: code, Name: "acme-ner", Instance: "client_x", Message: "plugin acme-ner/client_x is not ready (EXITED)"}},
-		"other": {{Code: code, Name: "acme-ner", Instance: "default", Message: "plugin acme-ner/default is not ready"}},
+		"bot":   {{Code: code, Name: "acme-ner", Instance: "client_x", Message: "plugin acme-ner/client_x is not ready (EXITED)", EngineKept: true}},
+		"other": {{Code: code, Name: "acme-ner", Instance: "default", Message: "plugin acme-ner/default is not ready", EngineKept: true}},
 	}
 }
 
-// PLUGIN_UNAVAILABLE gives the person two steps: basalt plugin check and
-// basalt plugin disable for the entry, with --instance and --config when
-// they are not the defaults, and sudo for disable on a service engine. It
-// is an ERROR: the agent is not ready.
-func TestStatusShowsTwoPersonSteps(t *testing.T) {
+// requireRequestPlugin checks st calls request_plugin for acme-ner/client_x.
+func requireRequestPlugin(t *testing.T, st NextStep, remove bool) {
+	t.Helper()
+	require.Equal(t, "AGENT", st.Actor)
+	require.Equal(t, "CALL_TOOL", st.Action)
+	require.Equal(t, toolRequestPlugin, st.Tool)
+	want := map[string]any{"name": "acme-ner", "instance": "client_x"}
+	if remove {
+		want["remove"] = true
+	}
+	require.Equal(t, want, st.Arguments)
+}
+
+// PLUGIN_UNAVAILABLE and PLUGIN_NOT_TRUSTED ask the person whether to
+// remove the plugin, then remove it through request_plugin; no command.
+// They are ERRORs: the agent is not ready.
+func TestStatusShowsRemoveSteps(t *testing.T) {
 	t.Parallel()
 	for _, code := range []string{ProblemPluginUnavailable, ProblemPluginNotTrusted} {
 		r := pluginStatus(t, "", "/srv/basalt/engine.json", true, samplePluginProblem(code))
@@ -55,50 +67,25 @@ func TestStatusShowsTwoPersonSteps(t *testing.T) {
 		require.Equal(t, "ERROR", p.Severity)
 		require.Equal(t, "plugin acme-ner/client_x is not ready (EXITED)", p.Message)
 		require.Len(t, p.NextSteps, 2)
-		for _, st := range p.NextSteps {
-			require.Equal(t, "PERSON", st.Actor)
-			require.Equal(t, "RUN_COMMAND", st.Action)
-		}
-		require.Equal(t, "basalt plugin check acme-ner --instance client_x --config /srv/basalt/engine.json", p.NextSteps[0].Command)
-		require.Equal(t, "basalt plugin disable acme-ner --instance client_x --config /srv/basalt/engine.json", p.NextSteps[1].Command)
-		require.Contains(t, p.PersonMessage, p.NextSteps[0].Command)
+		require.Equal(t, "ASK_PERSON", p.NextSteps[0].Action)
+		requireRequestPlugin(t, p.NextSteps[1], true)
+		require.NotContains(t, p.PersonMessage, "basalt ")
 		require.NotContains(t, p.PersonMessage+p.Message, "acme-ner/default", "another agent's entry is not shown")
 	}
-
-	r := pluginStatus(t, "", "", false, fakePlugins{"bot": {{Code: ProblemPluginUnavailable, Name: "acme-ner", Instance: "default", Message: "plugin acme-ner/default is not ready"}}})
-	p := findProblem(t, r, ProblemPluginUnavailable)
-	require.Equal(t, "basalt plugin check acme-ner", p.NextSteps[0].Command)
-	require.Equal(t, "sudo basalt plugin disable acme-ner", p.NextSteps[1].Command)
 }
 
-// No reporter, or no problem for this agent: no plugin problem.
-// An entry withheld for an approval reason gets the contract's steps: the
-// commands are the person's on a person-operated engine and the agent's on
-// an agent-operated one, where personMessage names no command.
+// An entry withheld for an approval reason gets the contract's steps,
+// the same on both personas: the agent opens a new approval with
+// request_plugin; personMessage names no command.
 func TestStatusShowsApprovalSteps(t *testing.T) {
 	t.Parallel()
-	const enable = "basalt plugin enable acme-ner --instance client_x --approve-with-passkey --json --config /srv/basalt/engine.json"
 	for _, c := range []struct {
 		code    string
 		actions []string
-		cmds    []string
 	}{
-		{
-			// No restart: the engine starts the plugin once it is signed.
-			ProblemPluginAwaitingApproval,
-			[]string{"OPEN_LINK", "RUN_COMMAND"},
-			[]string{"", enable},
-		},
-		{
-			ProblemPluginApprovalExpired,
-			[]string{"RUN_COMMAND", "RUN_COMMAND"},
-			[]string{enable, "basalt plugin remove acme-ner --instance client_x --config /srv/basalt/engine.json"},
-		},
-		{
-			ProblemPluginApprovalMismatch,
-			[]string{"ASK_PERSON", "RUN_COMMAND", "RUN_COMMAND"},
-			[]string{"", enable, "basalt plugin disable acme-ner --instance client_x --config /srv/basalt/engine.json"},
-		},
+		{ProblemPluginAwaitingApproval, []string{"OPEN_LINK", "CALL_TOOL"}},
+		{ProblemPluginApprovalExpired, []string{"ASK_PERSON", "CALL_TOOL"}},
+		{ProblemPluginApprovalMismatch, []string{"ASK_PERSON", "CALL_TOOL"}},
 	} {
 		for _, operatedBy := range []string{"", "AGENT"} {
 			r := pluginStatus(t, operatedBy, "/srv/basalt/engine.json", true, samplePluginProblem(c.code))
@@ -107,29 +94,18 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 			require.Len(t, p.NextSteps, len(c.actions), c.code)
 			for i, st := range p.NextSteps {
 				require.Equal(t, c.actions[i], st.Action, c.code)
-				require.Equal(t, c.cmds[i], st.Command, c.code)
-				if st.Action == "RUN_COMMAND" {
-					want := "PERSON"
-					if operatedBy == "AGENT" {
-						want = "AGENT"
-					}
-					require.Equal(t, want, st.Actor, c.code)
-				}
+				require.Empty(t, st.Command, c.code)
 			}
+			requireRequestPlugin(t, p.NextSteps[1], false)
 			require.Contains(t, p.PersonMessage, "acme-ner/client_x")
 			require.NotContains(t, p.PersonMessage, "acme-ner/default", "another agent's entry is not shown")
-			if operatedBy == "AGENT" {
-				require.NotContains(t, p.PersonMessage, "basalt ", "the agent runs the commands")
-			} else {
-				require.Contains(t, p.PersonMessage, enable)
-			}
+			require.NotContains(t, p.PersonMessage, "basalt ")
 		}
 	}
 }
 
 // engine.json that the running engine cannot read is a WARNING naming no
-// entry, with basalt plugin list to see what is wrong: the person's on a
-// person-operated engine, the agent's on an agent-operated one.
+// entry: the person fixes the edit.
 func TestStatusShowsConfigInvalid(t *testing.T) {
 	t.Parallel()
 	for _, operatedBy := range []string{"", "AGENT"} {
@@ -138,16 +114,9 @@ func TestStatusShowsConfigInvalid(t *testing.T) {
 		require.Equal(t, "WARNING", p.Severity)
 		require.Equal(t, "engine.json changed", p.Message)
 		require.Len(t, p.NextSteps, 1)
-		require.Equal(t, "RUN_COMMAND", p.NextSteps[0].Action)
-		require.Equal(t, "basalt plugin list --config /srv/basalt/engine.json", p.NextSteps[0].Command)
+		require.Equal(t, "ASK_PERSON", p.NextSteps[0].Action)
 		require.Contains(t, p.PersonMessage, "keeps running as before")
-		if operatedBy == "AGENT" {
-			require.Equal(t, "AGENT", p.NextSteps[0].Actor)
-			require.NotContains(t, p.PersonMessage, "basalt ")
-		} else {
-			require.Equal(t, "PERSON", p.NextSteps[0].Actor)
-			require.Contains(t, p.PersonMessage, p.NextSteps[0].Command)
-		}
+		require.NotContains(t, p.PersonMessage, "basalt ")
 	}
 }
 

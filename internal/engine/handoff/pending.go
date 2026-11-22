@@ -38,15 +38,14 @@ const (
 	// authority to this machine than the one the person trusted on the
 	// connect page; nothing is pinned.
 	ProblemTrustRootMismatch = "TRUST_ROOT_MISMATCH"
-	// ProblemEngineAsRoot: the engine runs as root without --user, so it
+	// ProblemEngineAsRoot: the engine runs as root, so it
 	// does not collect.
 	ProblemEngineAsRoot = "ENGINE_AS_ROOT"
 )
 
-// ErrEngineAsRoot is the collector of an engine started as root without
-// --user: it never collects a connect-only setup's address (problem
+// ErrEngineAsRoot is the collector of an engine started as root: it never collects a connect-only setup's address (problem
 // ENGINE_AS_ROOT).
-var ErrEngineAsRoot = errors.New("the engine runs as root without --user, so it does not collect the database's address")
+var ErrEngineAsRoot = errors.New("the engine runs as root, so it does not collect the database's address")
 
 // The collect cadence (CONTRACT.md, The engine and a connect-only code):
 // every 15 seconds while the setup waits for an address or cannot reach
@@ -101,6 +100,9 @@ type Files interface {
 	ConfirmSetup(id string) error
 	// RefuseSetup replaces awaitingAddress with refused in pending setup id.
 	RefuseSetup(id string) error
+	// MarkAddressInvalid sets addressInvalid in pending setup id: the next
+	// basalt init --remote forgets it and makes a recovery code.
+	MarkAddressInvalid(id string) error
 }
 
 // State is what status reports about the connect-only setup.
@@ -380,6 +382,17 @@ func (p *Pending) step(ctx context.Context) {
 	switch {
 	case errors.Is(err, ErrAddressInvalid):
 		p.o.Log.Warn("the collected address is refused", "setupId", setup.SetupID)
+		if !setup.AddressInvalid {
+			if err := p.o.Files.MarkAddressInvalid(setup.SetupID); err != nil {
+				p.o.Log.Warn("record the refused address in engine.json", "setupId", setup.SetupID, "err", err)
+			} else {
+				p.mu.Lock()
+				if p.st.Setup.SetupID == setup.SetupID {
+					p.st.Setup.AddressInvalid = true
+				}
+				p.mu.Unlock()
+			}
+		}
 		p.waiting(ProblemAddressInvalid, nil)
 		return
 	case errors.Is(err, ErrTrustRootMismatch):

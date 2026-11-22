@@ -117,7 +117,7 @@ nonce-example = counter 0x0102030405060708 gives 000000000102030405060708
 - The protocol name is 31 bytes, so `h` starts as the name padded with one zero byte to 32 bytes, and `ck = h`.
 - Because the pattern has a `psk` token (Noise section 9.2), every `e` token is followed by `MixKey(e.public_key)` as well as `MixHash(e.public_key)`, on both sides, for both ephemeral keys.
 
-**Prologue.** The UTF-8 bytes of `basalt-vault-prologue.1\n` + the transport word + `\n` + `linkToken` as its 22-character base64url text (not the raw bytes), with nothing after it. The transport word for the relay is `RELAY`. `MixHash(prologue)` is the first step. Each side builds the prologue from what it knows itself (the page from its transport and its link; the engine from the socket the session came on and the token it looked up), so a session moved to another link or transport fails. The engine code still accepts a second transport word, `DIRECT`, for the removed direct transport; the vectors keep two `DIRECT` cases: one accepted direct session, and one message 1 made for the direct transport that a relay session refuses (transport separation). Their removal is tracked separately.
+**Prologue.** The UTF-8 bytes of `basalt-vault-prologue.1\n` + the transport word + `\n` + `linkToken` as its 22-character base64url text (not the raw bytes), with nothing after it. The transport word is `RELAY`, the only one: the word stays in the prologue so a later transport would get its own, and a message 1 built with any other word fails its tag check. `MixHash(prologue)` is the first step. Each side builds the prologue from what it knows itself (the page from its link; the engine from the token it looked up), so a session moved to another link fails.
 
 **Message 1, page to engine** (tokens `psk, e`). Exactly 99 bytes:
 
@@ -176,7 +176,7 @@ Every failure from step 3 to step 5 closes with `LINK_REFUSED`, alike, so a prob
 | 4001 | `UNSUPPORTED_VERSION` | page, engine, Vault | A version byte or `AUTH` version other than 1 |
 | 4002 | `AUTH_FAILED` | Vault | Engine socket: bad key header, or bad or late `AUTH` |
 | 4003 | `REPLACED` | Vault | Engine socket: a newer authenticated socket for the same id |
-| 4004 | `LINK_UNKNOWN` | Vault | No engine registered the token, or it expired |
+| 4004 | `LINK_UNKNOWN` | Vault | No engine registered the token, it expired, or it was unregistered |
 | 4005 | `ENGINE_OFFLINE` | Vault | The token's engine has no socket |
 | 4006 | `LINK_REFUSED` | engine | Message 1 refused, or a link revoked or expired mid-session |
 | 4007 | `HANDSHAKE_FAILED` | page | Message 2 refused |
@@ -185,7 +185,7 @@ Every failure from step 3 to step 5 closes with `LINK_REFUSED`, alike, so a prob
 | 4010 | `RATE_LIMITED` | engine, Vault | Too many handshakes, requests or connections |
 | 4011 | `SESSION_LIMIT` | engine, Vault | Too many open sessions for the link or the engine |
 | 4012 | `TIMEOUT` | page, engine, Vault | Handshake over 10 s, idle 5 minutes, or 30 minutes lifetime or link expiry |
-| 4013 | `ENGINE_REVOKED` | engine | Reserved for relay enforcement of a revoked engine (section 8) |
+| 4013 | `ENGINE_REVOKED` | engine | The engine's key is revoked in the database of the session's agent: it closes that agent's open sessions with this code (section 8) |
 | 4014 | `ENGINE_SHUTDOWN` | engine | The engine is stopping |
 
 ```constants close-codes
@@ -221,7 +221,7 @@ offset  length  field
 
 The ciphertext is Noise's `EncryptWithAd` under the direction's key and counter, with the **two header bytes as associated data**.
 
-**Nonces.** Each direction has its own key (`k1` or `k2`) and an implicit counter starting at 0 and increasing by 1 per frame. The nonce is 4 zero bytes followed by the 8-byte big-endian counter and is never sent: the receiver uses its own count. So a frame dropped, repeated, reordered, reflected to its sender or taken from another session does not decrypt, and the receiver closes with `FRAME_INVALID` and drops the session. There is no rekey; the session limits end a session long before a counter could wrap.
+**Nonces.** Each direction has its own key (`k1` or `k2`) and an implicit counter starting at 0 and increasing by 1 per frame. The nonce is 4 zero bytes followed by the 8-byte big-endian counter and is never sent: the receiver uses its own count. So a frame dropped, repeated, reordered, reflected to its sender or taken from another session does not decrypt, and the receiver closes with `FRAME_INVALID` and drops the session. When a refused frame fails the session's channel while a worker is still answering the request before it, the worker cannot seal its answer: the session ends once, with the close code the frame's error carries (`FRAME_INVALID`), not with a second close of its own. There is no rekey; the session limits end a session long before a counter could wrap.
 
 **Padding.** The plaintext is `len` (4 bytes, big-endian) `||` content (`len` bytes) `||` zero bytes up to `max(1024, the next power of two >= 4 + len)` bytes, at most 32768. Content is therefore at most 32764 bytes per frame, so every Noise message stays under 65535 bytes. A receiver refuses (`FRAME_INVALID`) a plaintext whose size is not exactly that bucket for its `len`, a `len` over 32764, and any non-zero padding byte. Sizes on the wire are then 1024, 2048, ... 32768 bytes plus 18 (2 header, 16 tag): one frame leaks a size bucket, not a row count. Pinned by `padding.json`.
 
@@ -241,6 +241,8 @@ The ciphertext is Noise's `EncryptWithAd` under the direction's key and counter,
 - `GET /api/v1/reverts/{revertId}` and `POST /api/v1/reverts/{revertId}/apply`;
 - `POST /api/v1/reverts/{revertId}/scope` and `POST /api/v1/reverts/{revertId}/reject`;
 - `POST` `.../reveal` on an approval or a revert (reading rows hidden from the agent).
+
+A `reject` revokes the revert's link, so its session ends with `LINK_REFUSED` once the answer went out.
 
 The path's id must be the item of the session's link, and the request header `basalt-link-secret` must be that link's secret (its `sha256` and its `linkToken` both match); otherwise `404`. Request headers are lowercase; a request carries `basalt-link-secret` and `origin` (`https://portal.basaltvault.app`), and on `POST` `content-type: application/json`; any other header is answered `400`. The engine hands the request to the same handlers as on loopback, with the same checks and statuses. When a revert's scope is widened, its link is rotated inside the open session: later requests carry the new secret and the old one is answered `404`.
 
@@ -351,7 +353,7 @@ A receipt checked only against a key that came with it (the session's own `engin
 
 **Known limits, as built.**
 
-- Engine revocation is status-only. Today a person revokes an engine's key with `basalt engine revoke` (a portal passkeys page for it is planned), the engine reports `REVOKED` in its status, and the problem is shown. The engine does not yet stop handing over relay links, revoke its live links or close its relay sessions for a revoked key, and the relay does not refuse a revoked engine: until relay enforcement lands, a person who revokes an engine should treat any relay link it handed over as live. A revoked engine on a compromised server can ignore all of it; it still cannot sign anything a person did not.
+- Engine revocation is enforced by the engine, not by the relay. A person revokes an engine's key in their own database (today with `basalt engine revoke`; a portal passkeys page for it is planned). The engine reads its record in that database at start, at every heartbeat and at each relay session, and reports `REVOKED` in its status. When it finds the key revoked for a database, it stops handing over relay links for that database's agents, revokes their live links, unregisters their tokens at the relay, and closes their open sessions with `ENGINE_REVOKED`; a session opened afterwards is refused at message 1 with `LINK_REFUSED`. It leaves the relay when every database it serves has revoked the key. The relay holds no engine record and does nothing for this beyond forwarding the engine's `UNREGISTER_LINK` and `SESSION_CLOSE`. Limits: the engine's state is in memory only, so after a restart whose first read of the record fails, it serves the relay as for a key not revoked until a later read succeeds (it fails open); and a revoked engine on a compromised server can ignore all of it, though it still cannot sign anything a person did not.
 - An old signing key stays valid at the relay after a rotation or revocation: the relay never reads the person's database, so whoever holds the old key can still authenticate as the old engine id. It gives them only the old id's routing; its links were revoked.
 - The relay may lose its token binding (restart, failover). The engine re-registers live links after every `READY` and, on `LINK_CONFLICT` for a link it holds, revokes that link.
 - The engine counts handshakes per token before it looks the token up, and runs a dead token's tag check under a zero `psk`, to keep the answer and the time the same. The rate check runs before the token lookup, and the contract says the same.
@@ -379,7 +381,7 @@ The vectors are shared by the Go engine and the page's JavaScript: both read the
 | `api/mcp/vault/testdata/link-derivation.json` | `LINK_DERIVATION` | `linkToken` and `psk` from a link secret (4 cases) |
 | `api/mcp/vault/testdata/engine-id.json` | `ENGINE_ID` | Engine id and fingerprint from a key; refusal of a compressed point, explicit parameters, a trailing byte, a truncated key, an off-curve point and a P-384 key (8 cases) |
 | `api/mcp/vault/testdata/padding.json` | `PADDING` | The bucket for each content length, and refusal of non-zero padding, a wrong bucket, a length past the end or over 32764 (11 cases) |
-| `api/mcp/vault/testdata/handshake.json` | `HANDSHAKE` | Prologue, message 1 and 2 bytes, `h` and both session keys; refusal of a wrong `psk`, an unknown token, a tampered tag, an off-curve or compressed point, a message 1 for another transport word, version and length faults, reflected messages, a tampered message 2, a signature by another key or under the receipt context, a compressed engine key, an unknown payload field, an oversize message 2, and the order of checks (27 cases) |
+| `api/mcp/vault/testdata/handshake.json` | `HANDSHAKE` | Prologue, message 1 and 2 bytes, `h` and both session keys; refusal of a wrong `psk`, an unknown token, a tampered tag, an off-curve or compressed point, a wrong `psk` on message 2, version and length faults, reflected messages, a tampered message 2, a signature by another key or under the receipt context, a compressed engine key, an unknown payload field, an oversize message 2, and the order of checks (25 cases) |
 | `api/mcp/vault/testdata/frame.json` | `FRAME` | Request and response frames, padding buckets, a frame that fills the largest bucket and its continuation; refusal of reordered, replayed, reflected and spliced frames, a tampered tag or body, a truncated frame, bad padding, version and type faults, an oversize frame, and the order of checks (22 cases) |
 | `api/mcp/vault/testdata/signature.json` | `SIGNATURE` | One valid signature for every context of section 2, and refusal of a signature under another context, another key, other bytes, an ASN.1 DER encoding and a zero signature; a high-S signature is accepted (14 cases) |
 | `api/mcp/vault/testdata/receipt.json` | `RECEIPT` | A valid approval and revert receipt; refusal of another engine's signature, a key claiming another id, a changed `rowsHash`, the session context, a missing field, an unknown field and `format` 2 (10 cases) |
@@ -396,7 +398,7 @@ The first command runs the vectors against a test-only Go reference (`api/mcp/va
 ## 10. Out of scope
 
 - **Phase 1b is design only and is not built:** pairing, envelopes sealed to the box key, device codes, a pending list, notifications and accounts. The box key exists in the key file but nothing uses it. Nothing in this document describes behavior you can test for those.
-- **The direct transport** is removed. The code still keeps the `DIRECT` prologue word and two vector cases (see section 3); their removal is tracked separately.
+- **The direct transport** is removed, in the code and in the vectors. Nothing here describes it beyond saying so.
 - **The relay service itself:** its source, hosting, storage and operations. Only the protocol it speaks and what it is allowed to see are in scope.
 - **Postgres and the guard schema,** and the WebAuthn ceremony: Postgres verifies the passkey signature over the binding of the rows, which this channel only carries.
 - **The setup service** that uses two of the signing contexts is a separate service and not part of this channel.

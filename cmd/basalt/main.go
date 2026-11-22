@@ -44,23 +44,15 @@ type command struct {
 
 func commands() []command {
 	return []command{
-		{"engine", "Run the engine service in the foreground (or list | revoke the recorded engines)", runEngine},
+		{"engine", "Run the engine service in the foreground (or revoke a recorded engine)", runEngine},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
-		{"init", "Install the guard in Postgres and add an agent to the engine config", withIO(runInit)},
-		{"log", "Show an agent's change records", withIO(runLog)},
-		{"access", "List the tables an agent can read, can write and is not granted", withIO(runAccess)},
+		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
-		{"portal", "Check the hosted portal's pages against this binary's copy (verify)", withIO(runPortal)},
 		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
-		{"status", "Show what is ready for an agent and what to fix, with the commands", withIO(runStatus)},
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
-		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
-		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
-		{"plugin", "Add, enable, check and remove plugins; sign your own (list | add | enable | disable | check | trust | remove | keygen | sign)", withIO(runPlugin)},
 		{"trust", "List and change which root certificates verify a database host (list | add | pin | remove | disable)", withIO(runTrust)},
-		{"crash", "List, show or file the crash reports saved on this machine (list | show <id> | report <id>)", withIO(runCrash)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},
 	}

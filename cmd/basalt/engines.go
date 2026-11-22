@@ -3,10 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -23,124 +20,21 @@ const minEnginePrefix = 8
 // version 33 has no engines table or view.
 const sqlUndefinedTable = "42P01"
 
-// runEngineRecords: basalt engine list | revoke (CONTRACT.md, CLI, and
-// basalt_meta "Version 33"). The engines recorded in the person's database
-// and their revocation; basalt engine with no subcommand runs the engine.
+// runEngineRecords: basalt engine revoke (CONTRACT.md, CLI, and
+// basalt_meta "Version 33"). An engine recorded in the person's database is
+// revoked; basalt engine with no subcommand runs the engine.
 func runEngineRecords(c *cliIO, args []string) int {
 	switch args[0] {
-	case "list":
-		return engineList(c, args[1:])
 	case "revoke":
 		return engineRevoke(c, args[1:])
 	}
-	return c.fail(fmt.Errorf("%w: unknown engine command %q (list, revoke)", errUsage, args[0]))
+	return c.fail(fmt.Errorf("%w: unknown engine command %q (revoke)", errUsage, args[0]))
 }
 
 // isEngineRecordsCommand reports whether basalt engine's arguments name a
 // subcommand rather than the engine's own flags.
 func isEngineRecordsCommand(args []string) bool {
-	return len(args) > 0 && (args[0] == "list" || args[0] == "revoke")
-}
-
-// engineDTO is one engine in basalt engine list --json: public data only.
-type engineDTO struct {
-	EngineID    string     `json:"engineId"`
-	Fingerprint string     `json:"fingerprint"`
-	RecordedAt  time.Time  `json:"recordedAt"`
-	RevokedAt   *time.Time `json:"revokedAt"`
-	Self        bool       `json:"self"`
-}
-
-func engineFromDomain(e guard.RecordedEngine, self string) engineDTO {
-	return engineDTO{
-		EngineID: e.ID, Fingerprint: channel.FingerprintOf(e.ID),
-		RecordedAt: e.RecordedAt, RevokedAt: e.RevokedAt, Self: self != "" && e.ID == self,
-	}
-}
-
-func engineList(c *cliIO, args []string) int {
-	fs, af := addAgentFlags(c, "engine list")
-	admin := fs.Bool("admin", false, "read with the admin connection string (on your own computer, which has no agent credential)")
-	asJSON := fs.Bool("json", false, "print the engines as JSON")
-	if err := parse(fs, args); err != nil {
-		return c.fail(err)
-	}
-	conn, self, err := engineListConn(c, af, *admin)
-	if err != nil {
-		return c.fail(err)
-	}
-	defer conn.Close(c.ctx)
-	engines, err := guard.Engines(c.ctx, conn, *admin)
-	if isUndefinedTable(err) {
-		fmt.Fprintln(c.stderr, "basalt: this database records no engines (its guard is older than version 33; basalt upgrade adds them)")
-		return exitOK
-	}
-	if err != nil {
-		return c.fail(err)
-	}
-	out := make([]engineDTO, 0, len(engines))
-	for _, e := range engines {
-		out = append(out, engineFromDomain(e, self))
-	}
-	if *asJSON {
-		return printJSONValue(c, out)
-	}
-	if len(out) == 0 {
-		fmt.Fprintln(c.stderr, "basalt: no engine recorded; basalt init --setup-code records one")
-		return exitOK
-	}
-	for _, e := range out {
-		fmt.Fprintln(c.stdout, engineLine(e))
-	}
-	return exitOK
-}
-
-// engineListConn connects as the admin, or as the agent the flags name;
-// as the agent it also returns this machine's engine id when its key file
-// loads, so the list can mark it.
-func engineListConn(c *cliIO, af agentFlags, admin bool) (*pgx.Conn, string, error) {
-	if admin {
-		conn, err := connectAdmin(c)
-		return conn, "", err
-	}
-	dsn, err := agentURL(c, *af.agent, *af.credFile, *af.configPath)
-	if err != nil {
-		return nil, "", err
-	}
-	conn, err := connect(c.ctx, dsn)
-	if err != nil {
-		return nil, "", err
-	}
-	return conn, localEngineID(c, *af.configPath), nil
-}
-
-// localEngineID is the engine id of this machine's engine key file, read
-// only when the config loads and this OS user owns the file; "" otherwise.
-func localEngineID(c *cliIO, configPath string) string {
-	cfg, err := loadEngineConfig(c, configPath)
-	if err != nil {
-		return ""
-	}
-	path := filepath.Join(cfg.StateDirFor(c.goos), channel.KeyFileName)
-	if _, err := os.Lstat(path); err != nil || !ownedByMe(path) {
-		return ""
-	}
-	keys, err := channel.LoadKeys(path)
-	if err != nil {
-		return ""
-	}
-	return keys.EngineID()
-}
-
-func engineLine(e engineDTO) string {
-	line := fmt.Sprintf("%s  recorded %s", e.Fingerprint, e.RecordedAt.UTC().Format(dateLayout))
-	if e.RevokedAt != nil {
-		line += "  revoked " + e.RevokedAt.UTC().Format(time.DateTime) + " UTC"
-	}
-	if e.Self {
-		line += "  this engine"
-	}
-	return line
+	return len(args) > 0 && args[0] == "revoke"
 }
 
 func isUndefinedTable(err error) bool {
@@ -173,7 +67,7 @@ func engineRevoke(c *cliIO, args []string) int {
 func revokeEngine(c *cliIO, conn *pgx.Conn, ref string, yes bool) error {
 	engines, err := guard.Engines(c.ctx, conn, true)
 	if isUndefinedTable(err) {
-		return errors.New("this database records no engines (its guard is older than version 33; basalt upgrade adds them)")
+		return errors.New("this database records no engines (its guard is older than version 33; a guard update from the setup page adds them)")
 	}
 	if err != nil {
 		return err
@@ -246,7 +140,7 @@ func findEngine(active []guard.RecordedEngine, ref string) (guard.RecordedEngine
 	}
 	switch len(match) {
 	case 0:
-		return guard.RecordedEngine{}, fmt.Errorf("no engine recorded and not revoked matches %q (give its id, or at least %d of its first characters, as basalt engine list --admin shows it)", ref, minEnginePrefix)
+		return guard.RecordedEngine{}, fmt.Errorf("no engine recorded and not revoked matches %q (give its id, or at least %d of its first characters)", ref, minEnginePrefix)
 	case 1:
 		return match[0], nil
 	}

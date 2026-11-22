@@ -138,8 +138,8 @@ release:
   # Semver prerelease suffix (-alpha / -beta / -rc) → GitHub prerelease.
   prerelease: auto
   mode: replace
-  # The portal manifest the release's pages were built from, so a person can
-  # run basalt portal verify --manifest portal.sha256 against it.
+  # The portal manifest the release's pages were built from, so anyone can
+  # check the hosted portal against it (make portal-verify).
   extra_files:
     - glob: web/portal.sha256
       name_template: portal.sha256

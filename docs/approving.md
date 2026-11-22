@@ -40,7 +40,7 @@ A write can touch rows in tables the agent's role cannot `SELECT`, cascaded rows
 - **What the agent sees.** Nothing about the values. Its tools, its views in `basalt_meta` and its chat show the rows as hidden, as before. The ledger records that you looked (`ROWS_REVEALED`, with counts and hashes only).
 - **Long links.** A long link (a `#2.` link) has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name. The CLI cannot show them either: `basalt approve --show` prints `[values hidden]`; use `--open` for the engine's page.
 
-This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you run `basalt upgrade` (see [next-steps.md](next-steps.md)).
+This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you update the guard from the setup page (see [next-steps.md](next-steps.md)).
 
 ## Reverting from the agent
 
@@ -96,7 +96,7 @@ The short link only works on the machine where the engine runs. An optional host
 
 ## Revoking an engine
 
-If the server is lost or compromised, `basalt engine list --admin` shows the engines your database records, and `basalt engine revoke` revokes one from your own computer. `status` then reports `ENGINE_REVOKED`, and a revoked engine is never recorded again. While the engine is running, `basalt status` shows its record as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); the agent's `status` tool shows it as `engineRecord`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
+If the server is lost or compromised, `basalt engine revoke` revokes the engine your database records, from your own computer. `status` then reports `ENGINE_REVOKED`, and a revoked engine is never recorded again. While the engine is running, `basalt status` shows its record as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); the agent's `status` tool shows it as `engineRecord`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
 
 ## Authenticators
 

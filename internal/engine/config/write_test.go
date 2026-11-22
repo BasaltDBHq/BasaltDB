@@ -95,5 +95,4 @@ func TestUpsertAgentRecordsTheModeAndKeepsThePersons(t *testing.T) {
 func TestNoAgentTakesThePersonSocket(t *testing.T) {
 	t.Parallel()
 	require.False(t, config.ValidAgentName(config.PersonSocketName))
-	require.Equal(t, "/run/basalt/person.sock", config.PersonSocketPath("/run/basalt"))
 }

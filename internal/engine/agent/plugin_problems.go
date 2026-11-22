@@ -86,7 +86,7 @@ func pluginApprovalSteps(b *Steps, p PluginProblem) string {
 	var lead string
 	switch p.Code {
 	case ProblemPluginAwaitingApproval:
-		b.OpenGivenLink("", "Open the plugin approval link the agent gave you, check what the page shows and approve it with your passkey.")
+		b.OpenGivenLink("Open the plugin approval link the agent gave you, check what the page shows and approve it with your passkey.")
 		if p.EngineKept {
 			b.CallTool(toolRequestPlugin, pluginArgs(p, false),
 				"Only when that link is lost or no approval is pending: call this to open a new approval, and hand its link to the person.")

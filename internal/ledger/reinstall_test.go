@@ -83,7 +83,7 @@ func TestReinstallPersonMessage(t *testing.T) {
 	msg, ok := ledger.ReinstallPersonMessage(guard.Reinstalls{List: []guard.Reinstall{r}}, personMessageLimit)
 	require.True(t, ok)
 	require.Equal(t, ledger.ReinstallNotice(withVaultUser(r, strings.Repeat("v", ledger.VaultUserCut)))[0]+
-		"\nRun basalt log to see every report.", msg, "the first line only, the Vault user cut")
+		"\nOlder reports stay in the ledger's install records.", msg, "the first line only, the Vault user cut")
 	require.NotContains(t, msg, "other")
 
 	// Every field at its longest still fits.
@@ -91,7 +91,7 @@ func TestReinstallPersonMessage(t *testing.T) {
 	msg, ok = ledger.ReinstallPersonMessage(guard.Reinstalls{List: []guard.Reinstall{r}}, personMessageLimit)
 	require.True(t, ok)
 	require.LessOrEqual(t, utf8.RuneCountInString(msg), personMessageLimit)
-	require.True(t, strings.HasSuffix(msg, "Run basalt log to see every report."))
+	require.True(t, strings.HasSuffix(msg, "Older reports stay in the ledger's install records."))
 }
 
 func withVaultUser(r guard.Reinstall, v string) guard.Reinstall {

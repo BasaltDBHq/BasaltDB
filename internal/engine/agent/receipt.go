@@ -31,7 +31,7 @@ const (
 
 // The receipt lines without a receipt (CONTRACT.md, Receipts).
 const (
-	noReceiptKeyErrorLine = "No receipt: the engine's key file is refused (basalt status shows KEY_ERROR), so nothing confirms what was signed."
+	noReceiptKeyErrorLine = "No receipt: the engine's key file is refused (Basalt's status reports KEY_ERROR), so nothing confirms what was signed."
 )
 
 // maxReceiptLine bounds the receipt line, so the rest of a personMessage

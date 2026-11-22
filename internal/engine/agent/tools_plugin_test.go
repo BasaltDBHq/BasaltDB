@@ -89,7 +89,7 @@ func openedPlugin() PluginOpened {
 // the fake engine-kept plugins.
 func pluginService(t *testing.T, f *fakePluginRequests) *Service {
 	t.Helper()
-	s := resultService(t, "linux", "", nil)
+	s := resultService(t, "linux", "")
 	s.PluginRequests = f
 	s.Poll = time.Millisecond
 	setApprovals(&s.Deps, keys{n: 1})

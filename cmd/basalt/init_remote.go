@@ -461,7 +461,7 @@ func (r *remoteInit) paths() error {
 			}
 		}
 	}
-	if err := r.restoreForForget(); err != nil {
+	if err := r.restoreSaved(); err != nil {
 		return err
 	}
 	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.agent)); err != nil {
@@ -977,19 +977,23 @@ func (r *remoteInit) pendingConnectOnly() *config.Setup {
 	return r.entry.Setup
 }
 
-// forgetRestores are the saved flags --forget makes its recovery code
-// with, unless the run gives them: the same tables, role and timeout, and
-// the engine's operator (the connect path needs an agent-operated engine).
-var forgetRestores = []string{"prefix", "statement-timeout", "operated-by"}
+// savedRestores are the saved flags a re-run for an agent already in the
+// config makes its code with, unless the run gives them: the same tables,
+// role and timeout, and the engine's operator. A step names only basalt
+// init --agent NAME --remote (CONTRACT.md, Next steps), so a re-run never
+// turns an agent-operated engine into a person-operated one or drops its
+// tables (the connect path needs an agent-operated engine).
+var savedRestores = []string{"prefix", "statement-timeout", "operated-by"}
 
 // tableFlags name the agent's tables; given one, none is restored.
 var tableFlags = []string{"write", "read", flagAllTables}
 
-// restoreForForget gives a --forget run the request the agent's saved flags
-// ask for, for every flag it does not give, and settles what depends on
-// them (the role's names, the operator and the vault it writes).
-func (r *remoteInit) restoreForForget() error {
-	if !r.f.forget || r.entry == nil {
+// restoreSaved gives a re-run for an agent already in the config the
+// request the agent's saved flags ask for, for every flag it does not give,
+// and settles what depends on them (the role's names, the operator and the
+// vault it writes).
+func (r *remoteInit) restoreSaved() error {
+	if r.entry == nil {
 		return nil
 	}
 	saved := r.entry.InitArgs
@@ -997,7 +1001,7 @@ func (r *remoteInit) restoreForForget() error {
 		r.f.write, r.f.read = savedValue(saved, "write"), savedValue(saved, "read")
 		r.f.allTables = savedValue(saved, flagAllTables) == "true"
 	}
-	for _, name := range forgetRestores {
+	for _, name := range savedRestores {
 		v := savedValue(saved, name)
 		if r.f.given[name] || v == "" {
 			continue
@@ -1294,7 +1298,7 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) (Re
 			", and follow the page. The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat."
 	}
 	steps, err := agent.NewSteps().
-		OpenLink(open, "", agent.ConnectOnlyStepText).
+		OpenLink(open, agent.ConnectOnlyStepText).
 		EndTurn("End your turn: the person runs the setup on the connect page. The page waits until this engine has picked up the database's address.").
 		CallTool(toolStatus, map[string]any{}, "Call status to see whether the setup finished, or what the engine needs next.").
 		Build()
@@ -1309,15 +1313,17 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) (Re
 func setupCommand(code string) string { return "basalt init --setup-code " + code }
 
 // setupSteps are the steps of the result: with a connect link (url) the
-// link comes first and the command second, as the catalog's connectLink
-// variant of SETUP_NOT_RUN.
+// link alone, as the catalog's connectLink variant of SETUP_NOT_RUN; the
+// person runs no command. Without one, the laptop command, which goes with
+// the laptop setup code.
 func setupSteps(code, url string) ([]agent.NextStep, error) {
 	b := agent.NewSteps()
 	if url != "" {
-		b.OpenLink(url, "", agent.ConnectStepText)
+		b.OpenLink(url, agent.ConnectStepText)
+	} else {
+		b.RunCommand(setupCommand(code), "On your own computer, not the agent's machine: install basalt from the official release page, run this, and check it shows the same fingerprint.")
 	}
 	return b.
-		RunCommand(setupCommand(code), "On your own computer, not the agent's machine: install basalt from the official release page, run this, and check it shows the same fingerprint.").
 		TellAgent("Tell the agent once the command says Done.").
 		EndTurn("End your turn: the person runs the setup code on their own computer and tells you when it is done.").
 		CallTool(toolStatus, map[string]any{}, "When the person says it is done, call status to check that the setup finished.").

@@ -152,7 +152,7 @@ func TestApprovalWithoutReceiptOnKeyError(t *testing.T) {
 	require.Equal(t, "closed", leadStatus(t, d, 21), "the approval applies all the same")
 	require.NotContains(t, body, "receipt")
 	require.Equal(t, "KEY_ERROR", body["noReceipt"])
-	require.Equal(t, "No receipt: the engine's key file is refused (basalt status shows KEY_ERROR), so nothing confirms what was signed.", body["personMessage"])
+	require.Equal(t, "No receipt: the engine's key file is refused (Basalt's status reports KEY_ERROR), so nothing confirms what was signed.", body["personMessage"])
 }
 
 func requireRevertReceipt(t *testing.T, env agentEnv, r channel.Receipt, id, changeID string) {

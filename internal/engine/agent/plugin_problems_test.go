@@ -24,7 +24,7 @@ func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, 
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", configPath, "linux", nil)
+	cmds, err := NewCommands("bot", configPath, "linux")
 	require.NoError(t, err)
 	if foreground {
 		cmds = cmds.Foreground()

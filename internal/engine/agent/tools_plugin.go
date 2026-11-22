@@ -296,7 +296,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 	}
 	lines = append(lines, lead, pluginLevelLine(level), ask, "", link, "",
 		fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", o.ExpiresAt.UTC().Format(personTime)))
-	steps.OpenLink(link, "", "Open the link, read what the plugin may do and approve it with your passkey.").
+	steps.OpenLink(link, "Open the link, read what the plugin may do and approve it with your passkey.").
 		CallTool(toolRequestPlugin, map[string]any{"approvalId": o.ApprovalID.String()},
 			fmt.Sprintf("Show the person personMessage first. Then, in the same turn, call this once: it returns as soon as the plugin runs, or after %d seconds.", int(DefaultApprovalWait/time.Second)))
 	built, err := steps.Build()
@@ -375,7 +375,7 @@ func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool
 		msg = fmt.Sprintf("The plugin %s waits for your approval. Open the link the agent gave you and approve it with your passkey before %s; tell the agent once you did.",
 			entry, st.ExpiresAt.UTC().Format(personTime))
 		wait := 0
-		steps.OpenGivenLink("", "Open the plugin approval link the agent gave you and approve it with your passkey.").
+		steps.OpenGivenLink("Open the plugin approval link the agent gave you and approve it with your passkey.").
 			TellAgent("Tell the agent once you approved.").
 			EndTurn("Do not wait again in this turn: the person may take long. End your turn with the link and its expiry.").
 			CallTool(toolRequestPlugin, map[string]any{"approvalId": id.String(), "waitForApproval": wait},

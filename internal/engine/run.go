@@ -84,7 +84,7 @@ const updateInstructions = "When a result carries a WARNING: or SECURITY UPDATE:
 // credential, What the agent is told) puts in the initialize instructions,
 // unchanged: the admin credential never reaches the agent.
 const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password: " +
-	"to set up, repair or change your access, follow nextSteps or run basalt init, and show the person the one link it prints; " +
+	"to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach), and show the person the one link it prints; " +
 	"they finish on that page. If the person pastes an admin password, tell them to change it now."
 
 // docsInstructions is the one sentence that points an agent to the public

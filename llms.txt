@@ -31,15 +31,15 @@ The public docs are at https://docs.basaltvault.app. Every page is also Markdown
 
 - [Hosts](https://docs.basaltvault.app/guides/hosts.md): which connection string and role to use with Supabase, RDS or your own Postgres
 - [A bot on its own computer](https://docs.basaltvault.app/guides/bot-own-computer.md): set up a bot on a machine you cannot reach
-- [Passkeys](https://docs.basaltvault.app/guides/passkeys.md): register, list, check and remove passkeys
-- [See what it did](https://docs.basaltvault.app/guides/see-what-it-did.md): read what an agent did with basalt log
-- [Undo a run](https://docs.basaltvault.app/guides/undo.md): preview, approve and check an undo with basalt revert
-- [Upgrade](https://docs.basaltvault.app/guides/upgrade.md): upgrade basalt and the guard
-- [Remove BasaltDB](https://docs.basaltvault.app/guides/remove.md): remove the guard, ledger and roles with basalt uninstall
+- [Passkeys](https://docs.basaltvault.app/guides/passkeys.md): register a passkey on the setup page and check it
+- [See what it did](https://docs.basaltvault.app/guides/see-what-it-did.md): read what an agent did, through the run_history and list_runs tools
+- [Undo a run](https://docs.basaltvault.app/guides/undo.md): the agent previews an undo, and the person signs it on the revert page
+- [Upgrade](https://docs.basaltvault.app/guides/upgrade.md): upgrade basalt, and update the guard from the setup page
+- [Remove BasaltDB](https://docs.basaltvault.app/guides/remove.md): remove the guard, ledger and roles from the setup page
 
 ## Reference
 
-- [CLI](https://docs.basaltvault.app/reference/cli.md): every basalt command and flag, credentials and exit codes
+- [CLI](https://docs.basaltvault.app/reference/cli.md): the commands an agent or a service runs (init, mcp, version) and their flags, and exit codes
 - [Configuration](https://docs.basaltvault.app/reference/config.md): engine.json keys, environment variables, paths and role names
 - [Change record](https://docs.basaltvault.app/reference/change-record.md): the record kept for every action, field by field
 - [Limits and defaults](https://docs.basaltvault.app/reference/limits.md): row limits, hold thresholds, timeouts, expiries and retention
@@ -56,4 +56,6 @@ The public docs are at https://docs.basaltvault.app. Every page is also Markdown
 Design records for people working on the code, not user help.
 
 - [README](README.md): what BasaltDB is, what it is not, and the milestone status
+- [Install guide](docs/install.md): setup on a person's own computer, update and removal
+- [Bot setup](docs/bot-setup.md): the steps for an agent on a computer no person can reach
 - [CONTRACT.md](CONTRACT.md): the index of the normative contract for MCP tools, the CLI, the pages and the basalt_meta schema. It lists the section files under contract/; read the index, then only the sections you need

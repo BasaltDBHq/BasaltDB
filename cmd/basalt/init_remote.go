@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -730,9 +731,9 @@ func (r *remoteInit) inspect(conn agentConn) error {
 var plainTable = regexp.MustCompile(`^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$`)
 
 // grantedTablesSQL lists the tables granted to the session's role itself
-// (not through PUBLIC or another role), outside Basalt's own schemas:
-// whether any grant writes.
-const grantedTablesSQL = `SELECT n.nspname || '.' || c.relname, bool_or(a.privilege_type IN ('INSERT', 'UPDATE', 'DELETE'))
+// (not through PUBLIC or another role), outside Basalt's own schemas, with
+// the privileges granted on each.
+const grantedTablesSQL = `SELECT n.nspname || '.' || c.relname, array_agg(DISTINCT a.privilege_type::text)
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
@@ -740,6 +741,25 @@ WHERE a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = session_u
   AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
   AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'basalt\_meta%'
 GROUP BY 1 ORDER BY 1`
+
+// writePrivileges are what --write grants (guard.planGrants); a table is
+// saved as written only with all of them, as read with SELECT, and not at
+// all otherwise (REFERENCES, TRIGGER or TRUNCATE alone grant no access the
+// flags name), so a saved request never asks for more than was granted.
+var writePrivileges = []string{"SELECT", "INSERT", "UPDATE", "DELETE"}
+
+// grantedAs is how a table with privileges privs is saved: "write",
+// "read" or "" (skipped).
+func grantedAs(privs []string) string {
+	has := func(p string) bool { return slices.Contains(privs, p) }
+	switch {
+	case !slices.ContainsFunc(writePrivileges, func(p string) bool { return !has(p) }):
+		return "write"
+	case has("SELECT"):
+		return "read"
+	}
+	return ""
+}
 
 // learnTables replaces a request for every table in public with the tables
 // the agent's role was granted, once it logs in: the person ticked those on
@@ -758,15 +778,17 @@ func (r *remoteInit) learnTables(q guard.Querier) error {
 	plain := true
 	for rows.Next() {
 		var name string
-		var writes bool
-		if err := rows.Scan(&name, &writes); err != nil {
+		var privs []string
+		if err := rows.Scan(&name, &privs); err != nil {
 			rows.Close()
 			return err
 		}
-		plain = plain && plainTable.MatchString(name)
-		if writes {
+		switch grantedAs(privs) {
+		case "write":
+			plain = plain && plainTable.MatchString(name)
 			write = append(write, name)
-		} else {
+		case "read":
+			plain = plain && plainTable.MatchString(name)
 			read = append(read, name)
 		}
 	}

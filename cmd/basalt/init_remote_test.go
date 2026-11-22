@@ -797,17 +797,37 @@ func TestInitRemoteSavesTheTablesThePersonGranted(t *testing.T) {
 		Guard: setupcode.Guard{To: guard.LatestVersion()}, Agent: &setupcode.Agent{Name: "bot", Write: []string{"public.leads"}, Verifier: verifier},
 	})
 
+	// Grants that name no access the flags save are skipped: REFERENCES
+	// alone, or part of the write privileges (read, with SELECT).
+	role, err := d.Names.Agent("bot")
+	require.NoError(t, err)
+	ident := pgx.Identifier{role}.Sanitize()
+	d.Exec(t, `GRANT REFERENCES, TRIGGER ON public.payroll TO `+ident)
+	d.Exec(t, `GRANT SELECT, INSERT ON public.lead_notes TO `+ident)
+
 	r := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", r.res.Kind)
 	require.Nil(t, r.payload.Agent.AllTables)
 	require.Equal(t, []string{"public.leads"}, r.payload.Agent.Write)
-	require.Empty(t, r.payload.Agent.Read)
+	require.Equal(t, []string{"public.lead_notes"}, r.payload.Agent.Read)
 	args := r.cfg.Agents[0].InitArgs
 	require.Contains(t, args, "--write=public.leads")
 	require.NotContains(t, args, "--"+flagAllTables+"=true")
 
 	again := remoteDBRun(t, cfg, "--agent", "bot")
 	require.True(t, again.res.Reused, "the saved request is the same as the grants")
+}
+
+func TestGrantedAs(t *testing.T) {
+	t.Parallel()
+	for want, privs := range map[string][]string{
+		"write": {"DELETE", "INSERT", "SELECT", "UPDATE"},
+		"read":  {"SELECT", "INSERT", "UPDATE"},
+		"":      {"REFERENCES"},
+	} {
+		require.Equal(t, want, grantedAs(privs), "%v", privs)
+	}
+	require.Empty(t, grantedAs([]string{"INSERT", "UPDATE", "DELETE", "TRIGGER", "TRUNCATE"}), "no SELECT: no access the flags name")
 }
 
 func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {

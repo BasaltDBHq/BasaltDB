@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ADD_AGAIN, MAX_NAMED, checkView, dayMonth, passkeyLine, pinView, portalCount, revokeLines, signalRemoved, unlabeledColumns, usedText } from "./connectupdate.js";
+import { ADD_AGAIN, checkView, dayMonth, passkeyLine, portalCount, revokeLines, signalRemoved, unlabeledColumns, usedText } from "./connectupdate.js";
+import { MAX_NAMED } from "./doctor.js";
 
 const NOW = Date.parse("2026-11-22T12:00:00Z");
 const portal = (id, extra = {}) => ({ credentialId: id, label: id, rpId: "basaltvault.app", createdAt: "2026-11-03T09:00:00Z", ...extra });
@@ -65,18 +66,6 @@ test("removing names the passkey, and warns when it is the site's last", () => {
     "It is the last passkey for this site: until you add one, your agents' held writes and undos wait.",
   ]);
   assert.equal(ADD_AGAIN, "Add a passkey so your agents can be approved again.");
-});
-
-test("the bot's pin: a match, a new certificate, or the plain question", () => {
-  const asking = { subject: "CN=Root", sha256: "ab".repeat(32), expiresAt: "2035-01-31T00:00:00Z" };
-  assert.deepEqual(pinView("ab".repeat(32), asking), { state: "MATCH", fingerprint: Array(32).fill("AB").join(":") });
-  const changed = pinView("cd".repeat(32), asking);
-  assert.equal(changed.state, "CHANGED");
-  assert.equal(changed.now, Array(32).fill("AB").join(":"));
-  assert.equal(changed.was, Array(32).fill("CD").join(":"));
-  assert.equal(changed.detail, "CN=Root, valid until 2035-01-31");
-  for (const bad of ["", "AB".repeat(32), "ab".repeat(31), undefined]) assert.equal(pinView(bad, asking), null, String(bad));
-  assert.equal(pinView("ab".repeat(32), null), null);
 });
 
 test("the browser is told only of a removed portal passkey, where it can be", async () => {

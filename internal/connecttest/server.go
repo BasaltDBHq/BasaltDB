@@ -195,7 +195,14 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 		if d, derr := setup.Describe(req); derr == nil && d.Target == nil {
 			at := setup.ConnDatabase(conn.Config())
 			if !s.otherTarget(d, at) {
-				return connect.NewResponse(&connectv1.CheckSetupResponse{Database: target(at), AlreadyRan: true}), nil
+				who, uerr := setup.ConnectedAs(ctx, conn)
+				if uerr != nil {
+					return nil, refuse(uerr)
+				}
+				return connect.NewResponse(&connectv1.CheckSetupResponse{
+					Database: target(at), AlreadyRan: true, SessionUser: who.User, CurrentDatabase: who.Database,
+					Certificate: certificateOf(conn, r.Msg.GetTrustRoot()),
+				}), nil
 			}
 		}
 	}
@@ -204,6 +211,7 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	}
 	out := &connectv1.CheckSetupResponse{
 		PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil, Database: target(c.Database), Tables: slices.Clone(c.Tables),
+		SessionUser: c.Connected.User, CurrentDatabase: c.Connected.Database, Certificate: certificateOf(conn, r.Msg.GetTrustRoot()),
 	}
 	for _, e := range c.Excluded {
 		out.Excluded = append(out.Excluded, &connectv1.ExcludedTable{Table: e.Table, Owner: e.Owner})
@@ -230,6 +238,18 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 		}
 	}
 	return connect.NewResponse(out), nil
+}
+
+// certificateOf is the confirm step's certificate: the authority the person
+// trusted with a trustRoot, else one this computer's store verified (the
+// stand-in verifies as the service does, with no built-in profile of its own).
+func certificateOf(conn *pgx.Conn, trustRoot string) *connectv1.Certificate {
+	kind := setup.CertificatePublic
+	if trustRoot != "" {
+		kind = setup.CertificateOwn
+	}
+	c := setup.CertificateOf(conn, kind, "")
+	return &connectv1.Certificate{Kind: string(c.Kind), Issuer: c.Issuer}
 }
 
 // codeUsed is the setup package's refusal of a code the database already

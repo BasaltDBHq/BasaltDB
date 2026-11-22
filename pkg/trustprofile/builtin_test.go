@@ -147,3 +147,15 @@ func TestPublished(t *testing.T) {
 	withTrailer := append(append([]byte{}, a...), '\n')
 	require.Equal(t, withTrailer, published(withTrailer), "a PEM file is compared byte for byte")
 }
+
+// TestEveryBuiltInHasAProviderName: the confirm step names each built-in
+// profile's provider as a person knows it.
+func TestEveryBuiltInHasAProviderName(t *testing.T) {
+	t.Parallel()
+	for _, p := range BuiltIns() {
+		require.NotEqual(t, p.Name, ProviderName(p.Name), "%s has no provider name", p.Name)
+	}
+	require.Equal(t, "Amazon RDS", ProviderName("aws-rds"))
+	require.Equal(t, "Supabase", ProviderName("supabase"))
+	require.Equal(t, "pin-db", ProviderName("pin-db"))
+}

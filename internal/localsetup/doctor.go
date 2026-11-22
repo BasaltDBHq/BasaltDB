@@ -78,6 +78,15 @@ type DoctorCertificate struct {
 	Pinned    string     `json:"pinned,omitempty"`
 	Presented *TrustRoot `json:"presented,omitempty"`
 	Recorded  string     `json:"recorded,omitempty"`
+	// PinnedSubject and Database are CHANGED's for the confirm step: the
+	// subject of the pinned certificate, read from its PEM file in
+	// trust.d, and the database the agent's credential names (doctor
+	// reads nothing from the database then).
+	PinnedSubject string `json:"pinnedSubject,omitempty"`
+	Database      string `json:"database,omitempty"`
+	// SameIssuer is CHANGED's: the presented top has the public key of the
+	// pinned certificate, or the pinned certificate signed it (sameIssuer).
+	SameIssuer bool `json:"sameIssuer"`
 }
 
 // DoctorLogin is why the agent could not log in: status's problem code and
@@ -195,7 +204,10 @@ func (s *Service) certificateChanged(ctx context.Context, a config.Agent, out *D
 	if pinHolds(h.pin, seen.SHA256) {
 		return false
 	}
-	out.Certificate = DoctorCertificate{State: StateChanged, Host: h.host, Port: h.port, Pinned: pinnedSHA(h.pin, ""), Presented: presentedRoot(seen)}
+	out.Certificate = DoctorCertificate{
+		State: StateChanged, Host: h.host, Port: h.port, Pinned: pinnedSHA(h.pin, ""), Presented: presentedRoot(seen),
+		PinnedSubject: pinnedSubject(h.pin, ""), Database: h.database, SameIssuer: sameIssuer(h.pin, seen.Top),
+	}
 	return true
 }
 

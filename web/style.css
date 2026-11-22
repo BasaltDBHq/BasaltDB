@@ -489,3 +489,12 @@ pre.sql { white-space: pre-wrap; word-break: break-word; font-size: 0.85em; }
 .connect-page .cert-box p { margin: 0; }
 .connect-page .cert-new { font-weight: 600; overflow-wrap: anywhere; }
 .connect-page .cert-was { color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }
+/* The confirm step, "Is this your database?" (confirm.js). */
+.id-facts { display: flex; flex-direction: column; gap: 6px; }
+.id-facts div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.id-facts span { color: var(--ui-text-2); flex: none; }
+.id-facts strong { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.id-facts strong.same, .ok-line { color: var(--diff-add-fg); }
+.id-facts strong.diff { color: var(--diff-del-fg); }
+.ok-line { font-size: 14px; font-weight: 600; }
+#s-confirm button.link { display: block; margin: 12px auto 0; }

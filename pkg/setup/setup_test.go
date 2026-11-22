@@ -157,6 +157,7 @@ func TestCheckThenRunInstalls(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, checked.NothingToDo)
 	require.True(t, checked.PasskeyNeeded, "no guard yet, so no passkey")
+	require.Equal(t, setup.Connected{Database: d.Admin.Config().Database, User: d.Admin.Config().User}, checked.Connected, "the confirm step names what the server says it reached")
 	require.Len(t, checked.Questions.RowSecurity, 1)
 	q := checked.Questions.RowSecurity[0]
 	require.Equal(t, "public.payroll", q.Table)

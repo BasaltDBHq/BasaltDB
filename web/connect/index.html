@@ -12,8 +12,10 @@
   <link rel="modulepreload" href="../lib/channel.js" integrity="sha384-HIi/NThakfHR3Ddf/e6EZtHZuYpBejq1vUT/wuj/S6ZZIqqwY2TRS7haLNcFjD59">
   <link rel="modulepreload" href="../lib/codec.js" integrity="sha384-UX6eutCsjzfx9tq6BEWC+noLCmXqmmWFjytVp6Oadrl866Nypno7fmHhdJaPXx/n">
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
-  <link rel="modulepreload" href="../lib/connectupdate.js" integrity="sha384-d0oEH2bBuBVJ3cyVc9G2n+FW0EgtH+7fL0LfvWbasECUIN6ro63k0kFWQ6RzyEcj">
+  <link rel="modulepreload" href="../lib/confirm.js" integrity="sha384-7X+7BIAxAlSBTMikcjyLK2s8jPZNc0Qr+4D85wHnEgTwoI5sGeWidOIhXOJ6k7M5">
+  <link rel="modulepreload" href="../lib/connectupdate.js" integrity="sha384-7nv7MQ/IhuKWErN20ZFibzg/+BQZWgdIJ7IxD2WjT8eXEh7IJmGOkJ/qhEKdwXvJ">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
+  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-vxUBEU3mysVgAUIyzGtG/vbzU4GPTAYbPuHwYc5utkJCYPpmzhMqz2KPj5d2PNUa">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
   <link rel="modulepreload" href="../lib/page.js" integrity="sha384-E/H4T4P2W+oxfTMlNHl3QIE2Ai4hDnUpqkAylUF5IdAc1D5/MVj6jQM76WPfTKzO">
   <link rel="modulepreload" href="../lib/pairing.js" integrity="sha384-6grCCjUQYMZrSL6hucAuTs/ZkH6aVHtCg0+od5M65KrEViCGuVrKWkxC/LdIEeqq">
@@ -25,7 +27,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/connect.js" integrity="sha384-eF1MZDCXCmDt4NS/CO/hmAE7RcU3WUJSsVK63gbscNx/rrU8FO8Bmske99DaYsdq"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-bRc1RDkAdqfLisWuMvUWGoKt98poZHc/ETR/7nyoY2I8sZA8Grz49tvxxBy1HDBM"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
@@ -113,37 +115,20 @@
       <p id="disclosure" class="muted small"></p>
     </section>
 
-    <section id="s-trust" class="screen" hidden>
-      <h1>Trust this certificate authority?</h1>
-      <p id="trust-text" class="box"></p>
-      <p class="muted small">Google Cloud SQL shows it with <code>gcloud sql ssl server-ca-certs list</code>. <a href="https://cloud.google.com/sql/docs/postgres/manage-ssl-instance" target="_blank" rel="noopener noreferrer">How to find it</a></p>
-      <p id="trust-error" class="strip bad" role="alert" hidden></p>
-      <button id="trust-go" type="button">Trust and continue</button>
-      <button id="trust-cancel" type="button" class="secondary">Cancel</button>
-    </section>
-
-    <section id="s-pinned" class="screen" hidden>
-      <h1 id="pinned-title"></h1>
-      <div class="box center">
-        <p class="muted">SHA-256</p>
-        <p><output id="pinned-fp" class="fp small-fp" aria-label="Certificate fingerprint"></output></p>
-      </div>
-      <p id="pinned-error" class="strip bad" role="alert" hidden></p>
-      <button id="pinned-go" type="button">Continue</button>
-      <button id="pinned-cancel" type="button" class="secondary">Cancel</button>
-    </section>
-
-    <section id="s-newcert" class="screen" hidden>
-      <h1>Your database has a new certificate</h1>
-      <p class="muted">Check that this matches what your provider shows, then trust it.</p>
-      <div class="box cert-box">
-        <p class="cert-new"><strong>New:</strong> <span id="newcert-now" class="mono"></span></p>
-        <p id="newcert-detail" class="muted small"></p>
-        <p class="cert-was"><span>Was:</span> <span id="newcert-was" class="mono"></span></p>
-      </div>
-      <p id="newcert-error" class="strip bad" role="alert" hidden></p>
-      <button id="newcert-go" type="button">Trust the new certificate</button>
-      <button id="newcert-cancel" type="button" class="secondary">Cancel</button>
+    <section id="s-confirm" class="screen" hidden>
+      <h1 id="confirm-title">Is this your database?</h1>
+      <p id="confirm-sub" class="muted"></p>
+      <div id="confirm-facts" class="box id-facts"></div>
+      <p id="confirm-ok" class="ok-line" hidden></p>
+      <p id="confirm-before" class="muted" hidden></p>
+      <p id="confirm-error" class="strip bad" role="alert" hidden></p>
+      <button id="confirm-go" type="button">Yes, this is it</button>
+      <button id="confirm-back" type="button" class="link">No, go back</button>
+      <details id="confirm-details" class="more" hidden>
+        <summary>Details</summary>
+        <p><output id="confirm-fp" class="mono small" aria-label="Certificate fingerprint"></output></p>
+        <p class="muted small">Your provider's console shows it. Google Cloud SQL: <code>gcloud sql ssl server-ca-certs list</code>. <a href="https://cloud.google.com/sql/docs/postgres/manage-ssl-instance" target="_blank" rel="noopener noreferrer">How to find it</a></p>
+      </details>
     </section>
 
     <section id="s-checking" class="screen" hidden>

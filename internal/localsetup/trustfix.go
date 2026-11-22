@@ -2,6 +2,7 @@ package localsetup
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"slices"
@@ -31,6 +32,8 @@ import (
 type agentHost struct {
 	host string
 	port int
+	// database is the database the agent's credential names.
+	database string
 	// pin is this engine's pin for host, nil when it has none.
 	pin *trustprofile.Profile
 }
@@ -48,7 +51,7 @@ func (s *Service) hostOf(a config.Agent) (agentHost, error) {
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
-	h := agentHost{host: trustprofile.NormalizeHost(pc.Host), port: int(pc.Port)}
+	h := agentHost{host: trustprofile.NormalizeHost(pc.Host), port: int(pc.Port), database: pc.Database}
 	if p := s.opts.Profiles().For(h.host); p != nil && p.Name == trustprofile.PinName(h.host) {
 		h.pin = p
 	}
@@ -63,11 +66,45 @@ func pinHolds(p *trustprofile.Profile, sha string) bool {
 // pinnedSHA is the pin's certificate as one SHA-256: the one the chain
 // presents when the pin holds it, else the pin's first.
 func pinnedSHA(p *trustprofile.Profile, presented string) string {
-	if pinHolds(p, presented) {
-		return presented
+	if c := pinnedCert(p, presented); c != nil {
+		return trustprofile.DERSHA256(c)
 	}
-	if certs := p.Certificates(); len(certs) > 0 {
-		return trustprofile.DERSHA256(certs[0])
+	return ""
+}
+
+// pinnedCert is the pin's certificate pinnedSHA names, as read from its PEM
+// file in trust.d; nil for a pin with none.
+func pinnedCert(p *trustprofile.Profile, presented string) *x509.Certificate {
+	certs := p.Certificates()
+	if i := slices.IndexFunc(certs, func(c *x509.Certificate) bool { return trustprofile.DERSHA256(c) == presented }); i >= 0 {
+		return certs[i]
+	}
+	if len(certs) > 0 {
+		return certs[0]
+	}
+	return nil
+}
+
+// sameIssuer reports whether top, the chain top a pinned host presents now,
+// comes from the authority the pin holds: it has the public key of one of
+// the pin's certificates (the same key, renewed), or one of them signed it.
+// Names are never compared: anyone can give a certificate any name. A
+// provider that rotates its authority to a new key is not the same issuer.
+func sameIssuer(p *trustprofile.Profile, top *x509.Certificate) bool {
+	if top == nil {
+		return false
+	}
+	key := sha256.Sum256(top.RawSubjectPublicKeyInfo)
+	return slices.ContainsFunc(p.Certificates(), func(c *x509.Certificate) bool {
+		return sha256.Sum256(c.RawSubjectPublicKeyInfo) == key || top.CheckSignatureFrom(c) == nil
+	})
+}
+
+// pinnedSubject is the subject of the certificate pinnedSHA names, as the
+// install's refusal gives a subject (trustpin.SubjectOf), "" for none.
+func pinnedSubject(p *trustprofile.Profile, presented string) string {
+	if c := pinnedCert(p, presented); c != nil {
+		return trustpin.SubjectOf(c)
 	}
 	return ""
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/trustdir"
+	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -422,6 +423,9 @@ func TestTrustFixReplacesThePinOfAChangedCertificate(t *testing.T) {
 	require.Equal(t, pinHost, got.Certificate.Host)
 	require.Equal(t, oldSHA, got.Certificate.Pinned)
 	require.Equal(t, newSHA, got.Certificate.Presented.SHA256)
+	require.Equal(t, trustpin.SubjectOf(tf.oldCA), got.Certificate.PinnedSubject, "the old pin's issuer, read from its PEM in trust.d")
+	require.Equal(t, "app", got.Certificate.Database, "the database the agent's credential names")
+	require.False(t, got.Certificate.SameIssuer, "another key under the same name is a new issuer")
 	require.Nil(t, got.Login)
 	require.Equal(t, localsetup.StateUnknown, got.Labels.State, "nothing is read while the certificate changed")
 	require.Equal(t, localsetup.StateUnknown, got.Passkeys.State)

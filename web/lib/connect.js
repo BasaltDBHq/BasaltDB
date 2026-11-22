@@ -19,7 +19,8 @@ import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
 import { startTabs } from "./remove.js";
 import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
-import { ADD_AGAIN, activePasskeys, checkView, passkeyLabel, passkeyLine, pinView, revokeLines, signalRemoved, unlabeledColumns } from "./connectupdate.js";
+import { ADD_AGAIN, activePasskeys, checkView, passkeyLabel, passkeyLine, revokeLines, signalRemoved, unlabeledColumns } from "./connectupdate.js";
+import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
 
 // The pieces the local setup page shares with this one.
 export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText };
@@ -431,10 +432,18 @@ export class Flow {
     return !this.connectOnly && (this.summary?.kind === "AGENT" || this.summary?.kind === "UPGRADE");
   }
 
-  // pin is the trust step for a code that carries the bot's pin: MATCH,
-  // CHANGED or null (CONTRACT.md, The bot's pin).
-  get pin() {
-    return pinView(this.summary?.trustPin, this.asking);
+  // confirm is the confirm step, "Is this your database?" (CONTRACT.md,
+  // The connect page): at the trust step, what the pasted string names and
+  // the certificate authority to trust, with the bot's pin when the code
+  // carries one; after CheckSetup, what the service found when it signed in.
+  confirm() {
+    const bot = botName(this.summary);
+    if (this.step === "trust" && this.asking) {
+      return confirmView({ facts: stringFacts(this.#databaseUrl), asking: this.asking, trustPin: this.summary?.trustPin ?? "", bot });
+    }
+    const t = this.check?.database ?? {};
+    const facts = { database: this.check?.currentDatabase || t.database, host: t.host, port: t.port, user: this.check?.sessionUser ?? "" };
+    return confirmView({ facts, certificate: this.check?.certificate ?? null, bot });
   }
 
   // needsNewPasskey: an INSTALL creates the approval passkey at the passkey
@@ -504,13 +513,9 @@ export class Flow {
     return this.check;
   }
 
-  // trustHost is the host the trust step names.
-  get trustHost() {
-    return hostOf(this.#databaseUrl);
-  }
-
-  // trust is "Trust and continue": CheckSetup again with the certificate
-  // authority the person was shown.
+  // trust is Yes on the confirm step, the person's click: CheckSetup again
+  // with the certificate authority they were shown. Only this sends a
+  // trustRoot.
   async trust() {
     if (this.step !== "trust" || !this.asking) throw new Error("not at the trust step");
     this.#trustRoot = this.asking.sha256;
@@ -518,7 +523,8 @@ export class Flow {
     return this.#checkOrAsk();
   }
 
-  // cancelTrust is "Cancel": the string is dropped, back to the paste step.
+  // cancelTrust is "No, go back": the string is dropped, back to the paste
+  // step.
   cancelTrust() {
     if (this.step !== "trust") throw new Error("not at the trust step");
     this.#databaseUrl = "";
@@ -545,6 +551,11 @@ export class Flow {
       excluded: Array.isArray(out.excluded) ? out.excluded : [],
       columns: Array.isArray(out.columns) ? out.columns : [],
       alreadyRan: out.alreadyRan === true,
+      // The confirm step's: the role the string signed in as, and what
+      // verified the certificate.
+      sessionUser: typeof out.sessionUser === "string" ? out.sessionUser : "",
+      currentDatabase: typeof out.currentDatabase === "string" ? out.currentDatabase : "",
+      certificate: out.certificate && typeof out.certificate === "object" ? out.certificate : null,
       // For a code with a target: every active passkey of the database
       // (CONTRACT.md, Update on the connect page).
       passkeys: activePasskeys(out.passkeys),
@@ -774,11 +785,11 @@ function show(id, on = true) {
 // The screens, in order, with the progress segment each fills and where
 // Back goes. Every screen but the result carries the address-bar strip.
 const SCREENS = [
-  "s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-trust", "s-pinned", "s-newcert", "s-checking", "s-unreach",
+  "s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-confirm", "s-checking", "s-unreach",
   "s-doctor", "s-passkeys", "s-revoke", "s-addpk", "s-tables", "s-labels", "s-approve", "s-done",
 ];
 const PROGRESS = {
-  "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-trust": 3, "s-pinned": 3, "s-newcert": 3, "s-checking": 3, "s-unreach": 3,
+  "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-confirm": 3, "s-checking": 3, "s-unreach": 3,
   "s-doctor": 4, "s-passkeys": 4, "s-revoke": 4, "s-addpk": 4, "s-tables": 4, "s-labels": 5, "s-approve": 6,
 };
 
@@ -1062,46 +1073,36 @@ export function start(env) {
       if (POSTGRES_URL.test(typed.trim())) go("s-checking");
       await flow.checkSetup(typed);
     } catch (err) {
-      if (flow.step === "trust") showTrust("");
+      if (flow.step === "trust") showConfirm("");
       else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err));
       return;
     } finally {
       $("check").disabled = false;
     }
-    await checked();
+    showConfirm("");
   });
 
-  // ---- 3a: a certificate authority to trust ----
-  // The question names the host, and the subject, SHA-256 and expiry the
-  // service read with the TLS handshake alone; all of it as text.
-  // With the bot's pin in the code, the words change: the certificate the
-  // bot trusts, one click; or the new one with the pinned one as Was. The
-  // request is the same either way (CONTRACT.md, The bot's pin).
-  const showTrust = (problem) => {
-    const pin = flow.pin;
-    let name = "s-trust";
-    let error = "trust-error";
-    if (pin?.state === "MATCH") {
-      name = "s-pinned";
-      error = "pinned-error";
-      setText("pinned-title", `This matches the certificate ${bot()} trusts.`);
-      setText("pinned-fp", pin.fingerprint);
-    } else if (pin?.state === "CHANGED") {
-      name = "s-newcert";
-      error = "newcert-error";
-      setText("newcert-now", pin.now);
-      setText("newcert-detail", pin.detail);
-      setText("newcert-was", pin.was);
-    } else {
-      setText("trust-text", trustText(flow.trustHost, flow.asking));
-    }
-    setText(error, problem);
-    show(error, problem !== "");
-    go(name);
+  // ---- 3a: Is this your database? One action: the database, its host,
+  // who the string signs in as and the certificate. For a certificate
+  // authority the provider runs itself (the trust step), Yes is also the
+  // person's trust in it, and it alone sends the trustRoot. The bot's pin
+  // changes only the words (CONTRACT.md, The bot's pin). ----
+  let shownFacts = null; // what the confirm step showed
+  const showConfirm = (problem) => {
+    const view = flow.confirm();
+    shownFacts = view.facts;
+    paintConfirm(document, view);
+    setText("confirm-error", problem);
+    show("confirm-error", problem !== "");
+    go("s-confirm");
   };
-
-  const trustGo = async (button) => {
-    $(button).disabled = true;
+  $("confirm-go").addEventListener("click", async () => {
+    if (screen !== "s-confirm") return;
+    if (flow.step !== "trust") {
+      await checked();
+      return;
+    }
+    $("confirm-go").disabled = true;
     setText("checking-title", "Checking your database…");
     mark("chk-login", "wait", "Signing in to the database");
     mark("chk-tables", "hidden", "");
@@ -1112,22 +1113,22 @@ export function start(env) {
     try {
       await flow.trust();
     } catch (err) {
-      if (flow.step === "trust") showTrust(err.message);
+      if (flow.step === "trust") showConfirm(err.message);
       else showPaste(refusalText(err));
       return;
     } finally {
-      $(button).disabled = false;
+      $("confirm-go").disabled = false;
     }
+    // The step showed what the string names; once signed in, the service
+    // says what it reached. Anything else is asked again.
+    if (factsDiffer(shownFacts, flow.confirm().facts)) return showConfirm("");
     await checked();
-  };
-  const trustCancel = () => {
-    flow.cancelTrust();
+  });
+  $("confirm-back").addEventListener("click", () => {
+    if (screen !== "s-confirm") return;
+    if (flow.step === "trust") flow.cancelTrust();
     showPaste("");
-  };
-  for (const [go2, cancel] of [["trust-go", "trust-cancel"], ["pinned-go", "pinned-cancel"], ["newcert-go", "newcert-cancel"]]) {
-    $(go2).addEventListener("click", () => trustGo(go2));
-    $(cancel).addEventListener("click", trustCancel);
-  }
+  });
 
   // checked shows what CheckSetup found, then the reach check where it
   // applies.
@@ -1615,7 +1616,7 @@ export function start(env) {
       flow.backTo("passkey");
       showPasskey();
     }
-    else if (["s-checking", "s-unreach", "s-tables", "s-trust", "s-pinned", "s-newcert", "s-doctor"].includes(screen)) showPaste("");
+    else if (["s-checking", "s-unreach", "s-tables", "s-confirm", "s-doctor"].includes(screen)) showPaste("");
     else if (screen === "s-passkeys" || screen === "s-addpk") showDoctor();
     else if (screen === "s-revoke") showPasskeys("");
     else if (screen === "s-labels") {

@@ -5,11 +5,9 @@
 // (CONTRACT.md, The Update check), with the portal's passkeys in place of
 // this computer's.
 import { PROD_RP_ID } from "./codec.js";
-import { fingerprintText, tableName } from "./picks.js";
+import { ALL_GOOD, devicesText, NO_PASSKEY, needTitle, unlabeledRow } from "./doctor.js";
+import { tableName } from "./picks.js";
 
-// MAX_NAMED is how many unlabeled columns the row names before "…".
-export const MAX_NAMED = 20;
-const SHA256_HEX = /^[0-9a-f]{64}$/;
 const DAY_MS = 86_400_000;
 const DAYS_PER_WEEK = 7;
 // Up to two weeks the age is said in days, past that in weeks.
@@ -45,35 +43,30 @@ export function portalCount(passkeys) {
 export function checkView(check) {
   const cols = unlabeledColumns(check?.columns);
   const portal = portalCount(check?.passkeys);
-  const devices = plural(portal, "device can approve", "devices can approve");
+  const devices = devicesText(portal);
   const rows = [];
   if (cols.length > 0) {
-    const names = cols.slice(0, MAX_NAMED).map((c) => `${tableName(c.table)}.${c.column}`).join(", ");
-    rows.push({
-      kind: "LABELS", mark: "warn", action: "Label",
-      title: cols.length === 1 ? "1 new column has no label" : `${cols.length} new columns have no label`,
-      text: cols.length > MAX_NAMED ? `${names}, …` : names,
-    });
+    rows.push({ kind: "LABELS", mark: "warn", action: "Label", ...unlabeledRow(cols.length, cols.map((c) => `${tableName(c.table)}.${c.column}`)) });
   }
-  if (portal === 0) {
-    rows.push({ kind: "PASSKEY_ADD", mark: "warn", action: "Add", title: "No passkey can approve", text: "Your agents' larger writes wait until you add one." });
-  }
+  if (portal === 0) rows.push({ kind: "PASSKEY_ADD", mark: "warn", action: "Add", ...NO_PASSKEY });
   const needs = rows.length;
+  const passkeysRow = { kind: "PASSKEYS", mark: "good", title: "Passkeys", text: devices, action: "Manage" };
   if (needs === 0) {
+    const [labelsOk, certOk] = ALL_GOOD.rows;
     return {
       needs,
-      title: "All good",
-      sub: "BasaltDB is running and your agents can connect.",
+      title: ALL_GOOD.title,
+      sub: ALL_GOOD.sub,
       rows: [
-        { kind: "LABELS_OK", mark: "good", title: "Every column has a label", text: "", action: "" },
-        { kind: "CERTIFICATE_OK", mark: "good", title: "Database certificate checked", text: "", action: "" },
-        { kind: "PASSKEYS", mark: "good", title: "Passkeys", text: devices, action: "Manage" },
+        { kind: "LABELS_OK", mark: "good", title: labelsOk, text: "", action: "" },
+        { kind: "CERTIFICATE_OK", mark: "good", title: certOk, text: "", action: "" },
+        passkeysRow,
       ],
       button: "Continue",
     };
   }
-  if (portal > 0) rows.push({ kind: "PASSKEYS", mark: "good", title: "Passkeys", text: devices, action: "Manage" });
-  return { needs, title: needs === 1 ? "1 thing needs you" : `${needs} things need you`, sub: "Everything else is working.", rows, button: "Fix these" };
+  if (portal > 0) rows.push(passkeysRow);
+  return { needs, title: needTitle(needs), sub: "Everything else is working.", rows, button: "Fix these" };
 }
 
 // dayMonth is a time as "3 Nov", in UTC.
@@ -121,21 +114,6 @@ export function revokeLines(p, passkeys) {
 
 // ADD_AGAIN is the add screen after the last portal passkey went.
 export const ADD_AGAIN = "Add a passkey so your agents can be approved again.";
-
-// pinView is the trust step for a code that carries the bot's pin
-// (CONTRACT.md, The bot's pin): "MATCH" when the database presents the
-// certificate the bot trusts, "CHANGED" with both fingerprints when it
-// presents another, null without a readable pin (the plain question).
-export function pinView(trustPin, asking) {
-  if (typeof trustPin !== "string" || !SHA256_HEX.test(trustPin) || !asking) return null;
-  if (asking.sha256 === trustPin) return { state: "MATCH", fingerprint: fingerprintText(asking.sha256) };
-  return {
-    state: "CHANGED",
-    now: fingerprintText(asking.sha256),
-    was: fingerprintText(trustPin),
-    detail: `${asking.subject}, valid until ${asking.expiresAt.slice(0, 10)}`,
-  };
-}
 
 // signalRemoved tells the browser a removed portal passkey is gone
 // (PublicKeyCredential.signalUnknownCredential, feature-detected), as the

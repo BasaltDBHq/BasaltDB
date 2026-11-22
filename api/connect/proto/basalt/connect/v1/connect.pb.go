@@ -591,9 +591,17 @@ type CheckSetupResponse struct {
 	AlreadyRan bool `protobuf:"varint,11,opt,name=already_ran,json=alreadyRan,proto3" json:"already_ran,omitempty"`
 	// Codes with a target: every active passkey of the database, oldest
 	// first, at most 100, for the Update check's passkey list.
-	Passkeys      []*ActivePasskey `protobuf:"bytes,12,rep,name=passkeys,proto3" json:"passkeys,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Passkeys []*ActivePasskey `protobuf:"bytes,12,rep,name=passkeys,proto3" json:"passkeys,omitempty"`
+	// The role the pasted string logged in as (session_user), which the page
+	// shows on its confirm step. Sensitive, as database is.
+	SessionUser string `protobuf:"bytes,13,opt,name=session_user,json=sessionUser,proto3" json:"session_user,omitempty"`
+	// What verified the database's certificate, for the confirm step.
+	Certificate *Certificate `protobuf:"bytes,14,opt,name=certificate,proto3" json:"certificate,omitempty"`
+	// current_database() on the pasted string's login, which the confirm
+	// step names. Sensitive, as database is.
+	CurrentDatabase string `protobuf:"bytes,15,opt,name=current_database,json=currentDatabase,proto3" json:"current_database,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CheckSetupResponse) Reset() {
@@ -710,6 +718,87 @@ func (x *CheckSetupResponse) GetPasskeys() []*ActivePasskey {
 	return nil
 }
 
+func (x *CheckSetupResponse) GetSessionUser() string {
+	if x != nil {
+		return x.SessionUser
+	}
+	return ""
+}
+
+func (x *CheckSetupResponse) GetCertificate() *Certificate {
+	if x != nil {
+		return x.Certificate
+	}
+	return nil
+}
+
+func (x *CheckSetupResponse) GetCurrentDatabase() string {
+	if x != nil {
+		return x.CurrentDatabase
+	}
+	return ""
+}
+
+// The database's certificate as the confirm step shows it.
+type Certificate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// PUBLIC (an authority of the system's store), PROVIDER (a built-in trust
+	// profile), OWN (the certificate authority the person trusted on the
+	// page), NOT_VERIFIED or NONE. The service always verifies, so it answers
+	// PUBLIC, PROVIDER or OWN.
+	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// The issuer's short name: the top authority's common name, else its
+	// organization; the provider's name ("Amazon RDS") for PROVIDER. Text the
+	// database server chose otherwise.
+	Issuer        string `protobuf:"bytes,2,opt,name=issuer,proto3" json:"issuer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Certificate) Reset() {
+	*x = Certificate{}
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Certificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Certificate) ProtoMessage() {}
+
+func (x *Certificate) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Certificate.ProtoReflect.Descriptor instead.
+func (*Certificate) Descriptor() ([]byte, []int) {
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Certificate) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Certificate) GetIssuer() string {
+	if x != nil {
+		return x.Issuer
+	}
+	return ""
+}
+
 // An active passkey's public data, as basalt_meta.agent_passkeys shows it.
 type ActivePasskey struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -727,7 +816,7 @@ type ActivePasskey struct {
 
 func (x *ActivePasskey) Reset() {
 	*x = ActivePasskey{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[7]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +828,7 @@ func (x *ActivePasskey) String() string {
 func (*ActivePasskey) ProtoMessage() {}
 
 func (x *ActivePasskey) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[7]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +841,7 @@ func (x *ActivePasskey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivePasskey.ProtoReflect.Descriptor instead.
 func (*ActivePasskey) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{7}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ActivePasskey) GetCredentialId() string {
@@ -810,7 +899,7 @@ type ColumnLabel struct {
 
 func (x *ColumnLabel) Reset() {
 	*x = ColumnLabel{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[8]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +911,7 @@ func (x *ColumnLabel) String() string {
 func (*ColumnLabel) ProtoMessage() {}
 
 func (x *ColumnLabel) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[8]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +924,7 @@ func (x *ColumnLabel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ColumnLabel.ProtoReflect.Descriptor instead.
 func (*ColumnLabel) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{8}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ColumnLabel) GetTable() string {
@@ -885,7 +974,7 @@ type ColumnClass struct {
 
 func (x *ColumnClass) Reset() {
 	*x = ColumnClass{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[9]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -897,7 +986,7 @@ func (x *ColumnClass) String() string {
 func (*ColumnClass) ProtoMessage() {}
 
 func (x *ColumnClass) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[9]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -910,7 +999,7 @@ func (x *ColumnClass) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ColumnClass.ProtoReflect.Descriptor instead.
 func (*ColumnClass) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{9}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ColumnClass) GetClass() string {
@@ -955,7 +1044,7 @@ type ColumnClassChange struct {
 
 func (x *ColumnClassChange) Reset() {
 	*x = ColumnClassChange{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[10]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -967,7 +1056,7 @@ func (x *ColumnClassChange) String() string {
 func (*ColumnClassChange) ProtoMessage() {}
 
 func (x *ColumnClassChange) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[10]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -980,7 +1069,7 @@ func (x *ColumnClassChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ColumnClassChange.ProtoReflect.Descriptor instead.
 func (*ColumnClassChange) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{10}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ColumnClassChange) GetTable() string {
@@ -1037,7 +1126,7 @@ type ExcludedTable struct {
 
 func (x *ExcludedTable) Reset() {
 	*x = ExcludedTable{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[11]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1049,7 +1138,7 @@ func (x *ExcludedTable) String() string {
 func (*ExcludedTable) ProtoMessage() {}
 
 func (x *ExcludedTable) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[11]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1062,7 +1151,7 @@ func (x *ExcludedTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExcludedTable.ProtoReflect.Descriptor instead.
 func (*ExcludedTable) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{11}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ExcludedTable) GetTable() string {
@@ -1095,7 +1184,7 @@ type Question struct {
 
 func (x *Question) Reset() {
 	*x = Question{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[12]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1107,7 +1196,7 @@ func (x *Question) String() string {
 func (*Question) ProtoMessage() {}
 
 func (x *Question) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[12]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1120,7 +1209,7 @@ func (x *Question) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Question.ProtoReflect.Descriptor instead.
 func (*Question) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{12}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Question) GetKind() string {
@@ -1162,7 +1251,7 @@ type Answer struct {
 
 func (x *Answer) Reset() {
 	*x = Answer{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[13]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1174,7 +1263,7 @@ func (x *Answer) String() string {
 func (*Answer) ProtoMessage() {}
 
 func (x *Answer) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[13]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1187,7 +1276,7 @@ func (x *Answer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Answer.ProtoReflect.Descriptor instead.
 func (*Answer) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{13}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Answer) GetKind() string {
@@ -1239,7 +1328,7 @@ type RunSetupRequest struct {
 
 func (x *RunSetupRequest) Reset() {
 	*x = RunSetupRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[14]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1340,7 @@ func (x *RunSetupRequest) String() string {
 func (*RunSetupRequest) ProtoMessage() {}
 
 func (x *RunSetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[14]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1353,7 @@ func (x *RunSetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunSetupRequest.ProtoReflect.Descriptor instead.
 func (*RunSetupRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{14}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RunSetupRequest) GetCode() string {
@@ -1350,7 +1439,7 @@ type PasskeyRegistration struct {
 
 func (x *PasskeyRegistration) Reset() {
 	*x = PasskeyRegistration{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[15]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1362,7 +1451,7 @@ func (x *PasskeyRegistration) String() string {
 func (*PasskeyRegistration) ProtoMessage() {}
 
 func (x *PasskeyRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[15]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1375,7 +1464,7 @@ func (x *PasskeyRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PasskeyRegistration.ProtoReflect.Descriptor instead.
 func (*PasskeyRegistration) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{15}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PasskeyRegistration) GetCredentialId() string {
@@ -1446,7 +1535,7 @@ type RunSetupResponse struct {
 
 func (x *RunSetupResponse) Reset() {
 	*x = RunSetupResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[16]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1458,7 +1547,7 @@ func (x *RunSetupResponse) String() string {
 func (*RunSetupResponse) ProtoMessage() {}
 
 func (x *RunSetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[16]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1471,7 +1560,7 @@ func (x *RunSetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunSetupResponse.ProtoReflect.Descriptor instead.
 func (*RunSetupResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{16}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RunSetupResponse) GetWarnings() []string {
@@ -1521,7 +1610,7 @@ type RegisteredPasskey struct {
 
 func (x *RegisteredPasskey) Reset() {
 	*x = RegisteredPasskey{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[17]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1533,7 +1622,7 @@ func (x *RegisteredPasskey) String() string {
 func (*RegisteredPasskey) ProtoMessage() {}
 
 func (x *RegisteredPasskey) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[17]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1546,7 +1635,7 @@ func (x *RegisteredPasskey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisteredPasskey.ProtoReflect.Descriptor instead.
 func (*RegisteredPasskey) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{17}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RegisteredPasskey) GetCredentialId() string {
@@ -1588,7 +1677,7 @@ type CollectAddressRequest struct {
 
 func (x *CollectAddressRequest) Reset() {
 	*x = CollectAddressRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[18]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1600,7 +1689,7 @@ func (x *CollectAddressRequest) String() string {
 func (*CollectAddressRequest) ProtoMessage() {}
 
 func (x *CollectAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[18]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1613,7 +1702,7 @@ func (x *CollectAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectAddressRequest.ProtoReflect.Descriptor instead.
 func (*CollectAddressRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{18}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CollectAddressRequest) GetSetupId() string {
@@ -1663,7 +1752,7 @@ type CollectAddressResponse struct {
 
 func (x *CollectAddressResponse) Reset() {
 	*x = CollectAddressResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[19]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1675,7 +1764,7 @@ func (x *CollectAddressResponse) String() string {
 func (*CollectAddressResponse) ProtoMessage() {}
 
 func (x *CollectAddressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[19]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1688,7 +1777,7 @@ func (x *CollectAddressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectAddressResponse.ProtoReflect.Descriptor instead.
 func (*CollectAddressResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{19}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CollectAddressResponse) GetAddress() *Target {
@@ -1736,7 +1825,7 @@ type ReportReachRequest struct {
 
 func (x *ReportReachRequest) Reset() {
 	*x = ReportReachRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[20]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1748,7 +1837,7 @@ func (x *ReportReachRequest) String() string {
 func (*ReportReachRequest) ProtoMessage() {}
 
 func (x *ReportReachRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[20]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1761,7 +1850,7 @@ func (x *ReportReachRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportReachRequest.ProtoReflect.Descriptor instead.
 func (*ReportReachRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{20}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReportReachRequest) GetSetupId() string {
@@ -1821,7 +1910,7 @@ type ReportReachResponse struct {
 
 func (x *ReportReachResponse) Reset() {
 	*x = ReportReachResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[21]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1833,7 +1922,7 @@ func (x *ReportReachResponse) String() string {
 func (*ReportReachResponse) ProtoMessage() {}
 
 func (x *ReportReachResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[21]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1846,7 +1935,7 @@ func (x *ReportReachResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportReachResponse.ProtoReflect.Descriptor instead.
 func (*ReportReachResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{21}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{22}
 }
 
 type HandoffStatusRequest struct {
@@ -1858,7 +1947,7 @@ type HandoffStatusRequest struct {
 
 func (x *HandoffStatusRequest) Reset() {
 	*x = HandoffStatusRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[22]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1870,7 +1959,7 @@ func (x *HandoffStatusRequest) String() string {
 func (*HandoffStatusRequest) ProtoMessage() {}
 
 func (x *HandoffStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[22]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1883,7 +1972,7 @@ func (x *HandoffStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HandoffStatusRequest.ProtoReflect.Descriptor instead.
 func (*HandoffStatusRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{22}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *HandoffStatusRequest) GetTicket() string {
@@ -1914,7 +2003,7 @@ type HandoffStatusResponse struct {
 
 func (x *HandoffStatusResponse) Reset() {
 	*x = HandoffStatusResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[23]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1926,7 +2015,7 @@ func (x *HandoffStatusResponse) String() string {
 func (*HandoffStatusResponse) ProtoMessage() {}
 
 func (x *HandoffStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[23]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1939,7 +2028,7 @@ func (x *HandoffStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HandoffStatusResponse.ProtoReflect.Descriptor instead.
 func (*HandoffStatusResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{23}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *HandoffStatusResponse) GetState() string {
@@ -1993,7 +2082,7 @@ type Reach struct {
 
 func (x *Reach) Reset() {
 	*x = Reach{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[24]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2005,7 +2094,7 @@ func (x *Reach) String() string {
 func (*Reach) ProtoMessage() {}
 
 func (x *Reach) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[24]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2018,7 +2107,7 @@ func (x *Reach) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Reach.ProtoReflect.Descriptor instead.
 func (*Reach) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{24}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Reach) GetResult() string {
@@ -2051,7 +2140,7 @@ type OfferAddressRequest struct {
 
 func (x *OfferAddressRequest) Reset() {
 	*x = OfferAddressRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[25]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2063,7 +2152,7 @@ func (x *OfferAddressRequest) String() string {
 func (*OfferAddressRequest) ProtoMessage() {}
 
 func (x *OfferAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[25]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2076,7 +2165,7 @@ func (x *OfferAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OfferAddressRequest.ProtoReflect.Descriptor instead.
 func (*OfferAddressRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{25}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *OfferAddressRequest) GetTicket() string {
@@ -2096,7 +2185,7 @@ type OfferAddressResponse struct {
 
 func (x *OfferAddressResponse) Reset() {
 	*x = OfferAddressResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2108,7 +2197,7 @@ func (x *OfferAddressResponse) String() string {
 func (*OfferAddressResponse) ProtoMessage() {}
 
 func (x *OfferAddressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2121,7 +2210,7 @@ func (x *OfferAddressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OfferAddressResponse.ProtoReflect.Descriptor instead.
 func (*OfferAddressResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{26}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *OfferAddressResponse) GetState() string {
@@ -2143,7 +2232,7 @@ type CheckRemoveRequest struct {
 
 func (x *CheckRemoveRequest) Reset() {
 	*x = CheckRemoveRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2155,7 +2244,7 @@ func (x *CheckRemoveRequest) String() string {
 func (*CheckRemoveRequest) ProtoMessage() {}
 
 func (x *CheckRemoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2168,7 +2257,7 @@ func (x *CheckRemoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRemoveRequest.ProtoReflect.Descriptor instead.
 func (*CheckRemoveRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{27}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CheckRemoveRequest) GetDatabaseUrl() string {
@@ -2205,7 +2294,7 @@ type CheckRemoveResponse struct {
 
 func (x *CheckRemoveResponse) Reset() {
 	*x = CheckRemoveResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[28]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2217,7 +2306,7 @@ func (x *CheckRemoveResponse) String() string {
 func (*CheckRemoveResponse) ProtoMessage() {}
 
 func (x *CheckRemoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[28]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2230,7 +2319,7 @@ func (x *CheckRemoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRemoveResponse.ProtoReflect.Descriptor instead.
 func (*CheckRemoveResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{28}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CheckRemoveResponse) GetDatabase() string {
@@ -2290,7 +2379,7 @@ type RunRemoveRequest struct {
 
 func (x *RunRemoveRequest) Reset() {
 	*x = RunRemoveRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[29]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2302,7 +2391,7 @@ func (x *RunRemoveRequest) String() string {
 func (*RunRemoveRequest) ProtoMessage() {}
 
 func (x *RunRemoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[29]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2315,7 +2404,7 @@ func (x *RunRemoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunRemoveRequest.ProtoReflect.Descriptor instead.
 func (*RunRemoveRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{29}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *RunRemoveRequest) GetDatabaseUrl() string {
@@ -2353,7 +2442,7 @@ type RunRemoveResponse struct {
 
 func (x *RunRemoveResponse) Reset() {
 	*x = RunRemoveResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[30]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2365,7 +2454,7 @@ func (x *RunRemoveResponse) String() string {
 func (*RunRemoveResponse) ProtoMessage() {}
 
 func (x *RunRemoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[30]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2378,7 +2467,7 @@ func (x *RunRemoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunRemoveResponse.ProtoReflect.Descriptor instead.
 func (*RunRemoveResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{30}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RunRemoveResponse) GetDatabase() string {
@@ -2429,7 +2518,7 @@ type Refusal struct {
 
 func (x *Refusal) Reset() {
 	*x = Refusal{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[31]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2441,7 +2530,7 @@ func (x *Refusal) String() string {
 func (*Refusal) ProtoMessage() {}
 
 func (x *Refusal) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[31]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2454,7 +2543,7 @@ func (x *Refusal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Refusal.ProtoReflect.Descriptor instead.
 func (*Refusal) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{31}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Refusal) GetReason() string {
@@ -2503,7 +2592,7 @@ type TrustRoot struct {
 
 func (x *TrustRoot) Reset() {
 	*x = TrustRoot{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[32]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2515,7 +2604,7 @@ func (x *TrustRoot) String() string {
 func (*TrustRoot) ProtoMessage() {}
 
 func (x *TrustRoot) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[32]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2528,7 +2617,7 @@ func (x *TrustRoot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrustRoot.ProtoReflect.Descriptor instead.
 func (*TrustRoot) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{32}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *TrustRoot) GetSubject() string {
@@ -2568,7 +2657,7 @@ type RevokePasskeyRequest struct {
 
 func (x *RevokePasskeyRequest) Reset() {
 	*x = RevokePasskeyRequest{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[33]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2580,7 +2669,7 @@ func (x *RevokePasskeyRequest) String() string {
 func (*RevokePasskeyRequest) ProtoMessage() {}
 
 func (x *RevokePasskeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[33]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2593,7 +2682,7 @@ func (x *RevokePasskeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokePasskeyRequest.ProtoReflect.Descriptor instead.
 func (*RevokePasskeyRequest) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{33}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RevokePasskeyRequest) GetCode() string {
@@ -2636,7 +2725,7 @@ type RevokePasskeyResponse struct {
 
 func (x *RevokePasskeyResponse) Reset() {
 	*x = RevokePasskeyResponse{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[34]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2648,7 +2737,7 @@ func (x *RevokePasskeyResponse) String() string {
 func (*RevokePasskeyResponse) ProtoMessage() {}
 
 func (x *RevokePasskeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[34]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2661,7 +2750,7 @@ func (x *RevokePasskeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokePasskeyResponse.ProtoReflect.Descriptor instead.
 func (*RevokePasskeyResponse) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{34}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RevokePasskeyResponse) GetRemaining() int32 {
@@ -2749,7 +2838,7 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12'\n" +
 	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\x12\x1d\n" +
 	"\n" +
-	"trust_root\x18\x03 \x01(\tR\ttrustRoot\"\x97\x04\n" +
+	"trust_root\x18\x03 \x01(\tR\ttrustRoot\"\xb3\x05\n" +
 	"\x12CheckSetupResponse\x129\n" +
 	"\tquestions\x18\x01 \x03(\v2\x1b.basalt.connect.v1.QuestionR\tquestions\x12%\n" +
 	"\x0epasskey_needed\x18\x02 \x01(\bR\rpasskeyNeeded\x12\x14\n" +
@@ -2764,7 +2853,13 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	" \x01(\tB\x04\x88\xaa\x19\x01R\x06ticket\x12\x1f\n" +
 	"\valready_ran\x18\v \x01(\bR\n" +
 	"alreadyRan\x12<\n" +
-	"\bpasskeys\x18\f \x03(\v2 .basalt.connect.v1.ActivePasskeyR\bpasskeys\"\xa0\x01\n" +
+	"\bpasskeys\x18\f \x03(\v2 .basalt.connect.v1.ActivePasskeyR\bpasskeys\x12'\n" +
+	"\fsession_user\x18\r \x01(\tB\x04\x88\xaa\x19\x01R\vsessionUser\x12@\n" +
+	"\vcertificate\x18\x0e \x01(\v2\x1e.basalt.connect.v1.CertificateR\vcertificate\x12/\n" +
+	"\x10current_database\x18\x0f \x01(\tB\x04\x88\xaa\x19\x01R\x0fcurrentDatabase\"9\n" +
+	"\vCertificate\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
+	"\x06issuer\x18\x02 \x01(\tR\x06issuer\"\xa0\x01\n" +
 	"\rActivePasskey\x12#\n" +
 	"\rcredential_id\x18\x01 \x01(\tR\fcredentialId\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x13\n" +
@@ -2940,7 +3035,7 @@ func file_basalt_connect_v1_connect_proto_rawDescGZIP() []byte {
 	return file_basalt_connect_v1_connect_proto_rawDescData
 }
 
-var file_basalt_connect_v1_connect_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_basalt_connect_v1_connect_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_basalt_connect_v1_connect_proto_goTypes = []any{
 	(*DescribeSetupRequest)(nil),      // 0: basalt.connect.v1.DescribeSetupRequest
 	(*DescribeSetupResponse)(nil),     // 1: basalt.connect.v1.DescribeSetupResponse
@@ -2949,81 +3044,83 @@ var file_basalt_connect_v1_connect_proto_goTypes = []any{
 	(*PasskeyChallenge)(nil),          // 4: basalt.connect.v1.PasskeyChallenge
 	(*CheckSetupRequest)(nil),         // 5: basalt.connect.v1.CheckSetupRequest
 	(*CheckSetupResponse)(nil),        // 6: basalt.connect.v1.CheckSetupResponse
-	(*ActivePasskey)(nil),             // 7: basalt.connect.v1.ActivePasskey
-	(*ColumnLabel)(nil),               // 8: basalt.connect.v1.ColumnLabel
-	(*ColumnClass)(nil),               // 9: basalt.connect.v1.ColumnClass
-	(*ColumnClassChange)(nil),         // 10: basalt.connect.v1.ColumnClassChange
-	(*ExcludedTable)(nil),             // 11: basalt.connect.v1.ExcludedTable
-	(*Question)(nil),                  // 12: basalt.connect.v1.Question
-	(*Answer)(nil),                    // 13: basalt.connect.v1.Answer
-	(*RunSetupRequest)(nil),           // 14: basalt.connect.v1.RunSetupRequest
-	(*PasskeyRegistration)(nil),       // 15: basalt.connect.v1.PasskeyRegistration
-	(*RunSetupResponse)(nil),          // 16: basalt.connect.v1.RunSetupResponse
-	(*RegisteredPasskey)(nil),         // 17: basalt.connect.v1.RegisteredPasskey
-	(*CollectAddressRequest)(nil),     // 18: basalt.connect.v1.CollectAddressRequest
-	(*CollectAddressResponse)(nil),    // 19: basalt.connect.v1.CollectAddressResponse
-	(*ReportReachRequest)(nil),        // 20: basalt.connect.v1.ReportReachRequest
-	(*ReportReachResponse)(nil),       // 21: basalt.connect.v1.ReportReachResponse
-	(*HandoffStatusRequest)(nil),      // 22: basalt.connect.v1.HandoffStatusRequest
-	(*HandoffStatusResponse)(nil),     // 23: basalt.connect.v1.HandoffStatusResponse
-	(*Reach)(nil),                     // 24: basalt.connect.v1.Reach
-	(*OfferAddressRequest)(nil),       // 25: basalt.connect.v1.OfferAddressRequest
-	(*OfferAddressResponse)(nil),      // 26: basalt.connect.v1.OfferAddressResponse
-	(*CheckRemoveRequest)(nil),        // 27: basalt.connect.v1.CheckRemoveRequest
-	(*CheckRemoveResponse)(nil),       // 28: basalt.connect.v1.CheckRemoveResponse
-	(*RunRemoveRequest)(nil),          // 29: basalt.connect.v1.RunRemoveRequest
-	(*RunRemoveResponse)(nil),         // 30: basalt.connect.v1.RunRemoveResponse
-	(*Refusal)(nil),                   // 31: basalt.connect.v1.Refusal
-	(*TrustRoot)(nil),                 // 32: basalt.connect.v1.TrustRoot
-	(*RevokePasskeyRequest)(nil),      // 33: basalt.connect.v1.RevokePasskeyRequest
-	(*RevokePasskeyResponse)(nil),     // 34: basalt.connect.v1.RevokePasskeyResponse
-	(*descriptorpb.FieldOptions)(nil), // 35: google.protobuf.FieldOptions
+	(*Certificate)(nil),               // 7: basalt.connect.v1.Certificate
+	(*ActivePasskey)(nil),             // 8: basalt.connect.v1.ActivePasskey
+	(*ColumnLabel)(nil),               // 9: basalt.connect.v1.ColumnLabel
+	(*ColumnClass)(nil),               // 10: basalt.connect.v1.ColumnClass
+	(*ColumnClassChange)(nil),         // 11: basalt.connect.v1.ColumnClassChange
+	(*ExcludedTable)(nil),             // 12: basalt.connect.v1.ExcludedTable
+	(*Question)(nil),                  // 13: basalt.connect.v1.Question
+	(*Answer)(nil),                    // 14: basalt.connect.v1.Answer
+	(*RunSetupRequest)(nil),           // 15: basalt.connect.v1.RunSetupRequest
+	(*PasskeyRegistration)(nil),       // 16: basalt.connect.v1.PasskeyRegistration
+	(*RunSetupResponse)(nil),          // 17: basalt.connect.v1.RunSetupResponse
+	(*RegisteredPasskey)(nil),         // 18: basalt.connect.v1.RegisteredPasskey
+	(*CollectAddressRequest)(nil),     // 19: basalt.connect.v1.CollectAddressRequest
+	(*CollectAddressResponse)(nil),    // 20: basalt.connect.v1.CollectAddressResponse
+	(*ReportReachRequest)(nil),        // 21: basalt.connect.v1.ReportReachRequest
+	(*ReportReachResponse)(nil),       // 22: basalt.connect.v1.ReportReachResponse
+	(*HandoffStatusRequest)(nil),      // 23: basalt.connect.v1.HandoffStatusRequest
+	(*HandoffStatusResponse)(nil),     // 24: basalt.connect.v1.HandoffStatusResponse
+	(*Reach)(nil),                     // 25: basalt.connect.v1.Reach
+	(*OfferAddressRequest)(nil),       // 26: basalt.connect.v1.OfferAddressRequest
+	(*OfferAddressResponse)(nil),      // 27: basalt.connect.v1.OfferAddressResponse
+	(*CheckRemoveRequest)(nil),        // 28: basalt.connect.v1.CheckRemoveRequest
+	(*CheckRemoveResponse)(nil),       // 29: basalt.connect.v1.CheckRemoveResponse
+	(*RunRemoveRequest)(nil),          // 30: basalt.connect.v1.RunRemoveRequest
+	(*RunRemoveResponse)(nil),         // 31: basalt.connect.v1.RunRemoveResponse
+	(*Refusal)(nil),                   // 32: basalt.connect.v1.Refusal
+	(*TrustRoot)(nil),                 // 33: basalt.connect.v1.TrustRoot
+	(*RevokePasskeyRequest)(nil),      // 34: basalt.connect.v1.RevokePasskeyRequest
+	(*RevokePasskeyResponse)(nil),     // 35: basalt.connect.v1.RevokePasskeyResponse
+	(*descriptorpb.FieldOptions)(nil), // 36: google.protobuf.FieldOptions
 }
 var file_basalt_connect_v1_connect_proto_depIdxs = []int32{
 	2,  // 0: basalt.connect.v1.DescribeSetupResponse.summary:type_name -> basalt.connect.v1.SetupSummary
 	4,  // 1: basalt.connect.v1.DescribeSetupResponse.challenge:type_name -> basalt.connect.v1.PasskeyChallenge
 	3,  // 2: basalt.connect.v1.SetupSummary.target:type_name -> basalt.connect.v1.Target
-	12, // 3: basalt.connect.v1.CheckSetupResponse.questions:type_name -> basalt.connect.v1.Question
+	13, // 3: basalt.connect.v1.CheckSetupResponse.questions:type_name -> basalt.connect.v1.Question
 	3,  // 4: basalt.connect.v1.CheckSetupResponse.database:type_name -> basalt.connect.v1.Target
-	11, // 5: basalt.connect.v1.CheckSetupResponse.excluded:type_name -> basalt.connect.v1.ExcludedTable
-	8,  // 6: basalt.connect.v1.CheckSetupResponse.columns:type_name -> basalt.connect.v1.ColumnLabel
-	7,  // 7: basalt.connect.v1.CheckSetupResponse.passkeys:type_name -> basalt.connect.v1.ActivePasskey
-	9,  // 8: basalt.connect.v1.ColumnClassChange.was:type_name -> basalt.connect.v1.ColumnClass
-	13, // 9: basalt.connect.v1.RunSetupRequest.answers:type_name -> basalt.connect.v1.Answer
-	4,  // 10: basalt.connect.v1.RunSetupRequest.challenge:type_name -> basalt.connect.v1.PasskeyChallenge
-	15, // 11: basalt.connect.v1.RunSetupRequest.passkey:type_name -> basalt.connect.v1.PasskeyRegistration
-	10, // 12: basalt.connect.v1.RunSetupRequest.column_classes:type_name -> basalt.connect.v1.ColumnClassChange
-	17, // 13: basalt.connect.v1.RunSetupResponse.passkeys:type_name -> basalt.connect.v1.RegisteredPasskey
-	3,  // 14: basalt.connect.v1.CollectAddressResponse.address:type_name -> basalt.connect.v1.Target
-	3,  // 15: basalt.connect.v1.ReportReachRequest.address:type_name -> basalt.connect.v1.Target
-	24, // 16: basalt.connect.v1.HandoffStatusResponse.reach:type_name -> basalt.connect.v1.Reach
-	32, // 17: basalt.connect.v1.Refusal.trust_root:type_name -> basalt.connect.v1.TrustRoot
-	35, // 18: basalt.connect.v1.sensitive:extendee -> google.protobuf.FieldOptions
-	0,  // 19: basalt.connect.v1.SetupService.DescribeSetup:input_type -> basalt.connect.v1.DescribeSetupRequest
-	5,  // 20: basalt.connect.v1.SetupService.CheckSetup:input_type -> basalt.connect.v1.CheckSetupRequest
-	14, // 21: basalt.connect.v1.SetupService.RunSetup:input_type -> basalt.connect.v1.RunSetupRequest
-	18, // 22: basalt.connect.v1.SetupService.CollectAddress:input_type -> basalt.connect.v1.CollectAddressRequest
-	20, // 23: basalt.connect.v1.SetupService.ReportReach:input_type -> basalt.connect.v1.ReportReachRequest
-	22, // 24: basalt.connect.v1.SetupService.HandoffStatus:input_type -> basalt.connect.v1.HandoffStatusRequest
-	25, // 25: basalt.connect.v1.SetupService.OfferAddress:input_type -> basalt.connect.v1.OfferAddressRequest
-	27, // 26: basalt.connect.v1.SetupService.CheckRemove:input_type -> basalt.connect.v1.CheckRemoveRequest
-	29, // 27: basalt.connect.v1.SetupService.RunRemove:input_type -> basalt.connect.v1.RunRemoveRequest
-	33, // 28: basalt.connect.v1.SetupService.RevokePasskey:input_type -> basalt.connect.v1.RevokePasskeyRequest
-	1,  // 29: basalt.connect.v1.SetupService.DescribeSetup:output_type -> basalt.connect.v1.DescribeSetupResponse
-	6,  // 30: basalt.connect.v1.SetupService.CheckSetup:output_type -> basalt.connect.v1.CheckSetupResponse
-	16, // 31: basalt.connect.v1.SetupService.RunSetup:output_type -> basalt.connect.v1.RunSetupResponse
-	19, // 32: basalt.connect.v1.SetupService.CollectAddress:output_type -> basalt.connect.v1.CollectAddressResponse
-	21, // 33: basalt.connect.v1.SetupService.ReportReach:output_type -> basalt.connect.v1.ReportReachResponse
-	23, // 34: basalt.connect.v1.SetupService.HandoffStatus:output_type -> basalt.connect.v1.HandoffStatusResponse
-	26, // 35: basalt.connect.v1.SetupService.OfferAddress:output_type -> basalt.connect.v1.OfferAddressResponse
-	28, // 36: basalt.connect.v1.SetupService.CheckRemove:output_type -> basalt.connect.v1.CheckRemoveResponse
-	30, // 37: basalt.connect.v1.SetupService.RunRemove:output_type -> basalt.connect.v1.RunRemoveResponse
-	34, // 38: basalt.connect.v1.SetupService.RevokePasskey:output_type -> basalt.connect.v1.RevokePasskeyResponse
-	29, // [29:39] is the sub-list for method output_type
-	19, // [19:29] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	18, // [18:19] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	12, // 5: basalt.connect.v1.CheckSetupResponse.excluded:type_name -> basalt.connect.v1.ExcludedTable
+	9,  // 6: basalt.connect.v1.CheckSetupResponse.columns:type_name -> basalt.connect.v1.ColumnLabel
+	8,  // 7: basalt.connect.v1.CheckSetupResponse.passkeys:type_name -> basalt.connect.v1.ActivePasskey
+	7,  // 8: basalt.connect.v1.CheckSetupResponse.certificate:type_name -> basalt.connect.v1.Certificate
+	10, // 9: basalt.connect.v1.ColumnClassChange.was:type_name -> basalt.connect.v1.ColumnClass
+	14, // 10: basalt.connect.v1.RunSetupRequest.answers:type_name -> basalt.connect.v1.Answer
+	4,  // 11: basalt.connect.v1.RunSetupRequest.challenge:type_name -> basalt.connect.v1.PasskeyChallenge
+	16, // 12: basalt.connect.v1.RunSetupRequest.passkey:type_name -> basalt.connect.v1.PasskeyRegistration
+	11, // 13: basalt.connect.v1.RunSetupRequest.column_classes:type_name -> basalt.connect.v1.ColumnClassChange
+	18, // 14: basalt.connect.v1.RunSetupResponse.passkeys:type_name -> basalt.connect.v1.RegisteredPasskey
+	3,  // 15: basalt.connect.v1.CollectAddressResponse.address:type_name -> basalt.connect.v1.Target
+	3,  // 16: basalt.connect.v1.ReportReachRequest.address:type_name -> basalt.connect.v1.Target
+	25, // 17: basalt.connect.v1.HandoffStatusResponse.reach:type_name -> basalt.connect.v1.Reach
+	33, // 18: basalt.connect.v1.Refusal.trust_root:type_name -> basalt.connect.v1.TrustRoot
+	36, // 19: basalt.connect.v1.sensitive:extendee -> google.protobuf.FieldOptions
+	0,  // 20: basalt.connect.v1.SetupService.DescribeSetup:input_type -> basalt.connect.v1.DescribeSetupRequest
+	5,  // 21: basalt.connect.v1.SetupService.CheckSetup:input_type -> basalt.connect.v1.CheckSetupRequest
+	15, // 22: basalt.connect.v1.SetupService.RunSetup:input_type -> basalt.connect.v1.RunSetupRequest
+	19, // 23: basalt.connect.v1.SetupService.CollectAddress:input_type -> basalt.connect.v1.CollectAddressRequest
+	21, // 24: basalt.connect.v1.SetupService.ReportReach:input_type -> basalt.connect.v1.ReportReachRequest
+	23, // 25: basalt.connect.v1.SetupService.HandoffStatus:input_type -> basalt.connect.v1.HandoffStatusRequest
+	26, // 26: basalt.connect.v1.SetupService.OfferAddress:input_type -> basalt.connect.v1.OfferAddressRequest
+	28, // 27: basalt.connect.v1.SetupService.CheckRemove:input_type -> basalt.connect.v1.CheckRemoveRequest
+	30, // 28: basalt.connect.v1.SetupService.RunRemove:input_type -> basalt.connect.v1.RunRemoveRequest
+	34, // 29: basalt.connect.v1.SetupService.RevokePasskey:input_type -> basalt.connect.v1.RevokePasskeyRequest
+	1,  // 30: basalt.connect.v1.SetupService.DescribeSetup:output_type -> basalt.connect.v1.DescribeSetupResponse
+	6,  // 31: basalt.connect.v1.SetupService.CheckSetup:output_type -> basalt.connect.v1.CheckSetupResponse
+	17, // 32: basalt.connect.v1.SetupService.RunSetup:output_type -> basalt.connect.v1.RunSetupResponse
+	20, // 33: basalt.connect.v1.SetupService.CollectAddress:output_type -> basalt.connect.v1.CollectAddressResponse
+	22, // 34: basalt.connect.v1.SetupService.ReportReach:output_type -> basalt.connect.v1.ReportReachResponse
+	24, // 35: basalt.connect.v1.SetupService.HandoffStatus:output_type -> basalt.connect.v1.HandoffStatusResponse
+	27, // 36: basalt.connect.v1.SetupService.OfferAddress:output_type -> basalt.connect.v1.OfferAddressResponse
+	29, // 37: basalt.connect.v1.SetupService.CheckRemove:output_type -> basalt.connect.v1.CheckRemoveResponse
+	31, // 38: basalt.connect.v1.SetupService.RunRemove:output_type -> basalt.connect.v1.RunRemoveResponse
+	35, // 39: basalt.connect.v1.SetupService.RevokePasskey:output_type -> basalt.connect.v1.RevokePasskeyResponse
+	30, // [30:40] is the sub-list for method output_type
+	20, // [20:30] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	19, // [19:20] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_basalt_connect_v1_connect_proto_init() }
@@ -3037,7 +3134,7 @@ func file_basalt_connect_v1_connect_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_basalt_connect_v1_connect_proto_rawDesc), len(file_basalt_connect_v1_connect_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   36,
 			NumExtensions: 1,
 			NumServices:   1,
 		},

@@ -50,6 +50,15 @@ test("each finding is a row with its words and action, in the contract's order",
   assert.equal(one.rows[0].title, "1 new column has no label");
 });
 
+test("a renewed certificate is one row naming the database, its fix the confirm step", () => {
+  const d = { ...good, database: undefined, certificate: { state: "CHANGED", database: "shop_db" }, labels: { state: "UNKNOWN" }, passkeys: { state: "UNKNOWN" } };
+  const v = checkView(d, ORIGIN);
+  assert.deepEqual([v.rows[0].mark, v.rows[0].title, v.rows[0].text, v.rows[0].action], ["!", "shop_db renewed its security certificate", "Your agents are paused until you confirm.", "Check"]);
+  assert.equal(v.title, "1 thing needs you");
+  assert.deepEqual(fixQueue(d, ORIGIN), ["TRUST"]);
+  assert.equal(checkView({ ...d, certificate: { state: "CHANGED" } }, ORIGIN).rows[0].title, "Your database renewed its security certificate");
+});
+
 test("an agent that cannot log in: REPAIR for a refused credential, the message otherwise", () => {
   const off = { database: undefined, guard: { state: "UNKNOWN" }, certificate: { state: "OK" }, labels: { state: "UNKNOWN" }, passkeys: { state: "UNKNOWN" } };
   const v = checkView({ ...off, login: { code: "CREDENTIAL_REJECTED", message: "m" } }, ORIGIN);

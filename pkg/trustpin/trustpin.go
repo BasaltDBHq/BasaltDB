@@ -183,15 +183,23 @@ const maxSubject = 512
 // Subject is the subject of s's top, RFC 2253, with the control characters
 // (C0, C1) and the bidirectional controls removed, cut to 512 characters:
 // the server chooses it, and a person reads it.
-func (s Seen) Subject() string {
+func (s Seen) Subject() string { return SubjectOf(s.Top) }
+
+// SubjectOf is c's subject as Subject gives a chain top's: RFC 2253,
+// cleaned and cut to 512 characters.
+func SubjectOf(c *x509.Certificate) string { return clean(c.Subject.String(), maxSubject) }
+
+// clean is text a server chose with the control characters (C0, C1) and
+// the bidirectional controls removed, cut to max characters.
+func clean(text string, maxChars int) string {
 	r := []rune(strings.Map(func(c rune) rune {
 		if unicode.IsControl(c) || bidiControl(c) {
 			return -1
 		}
 		return c
-	}, s.Top.Subject.String()))
-	if len(r) > maxSubject {
-		r = r[:maxSubject]
+	}, text))
+	if len(r) > maxChars {
+		r = r[:maxChars]
 	}
 	return string(r)
 }

@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // whyFilesNameManifest: a listed file would overwrite the manifest or its
@@ -46,7 +44,7 @@ var (
 // A failure is a *VerifyError; the entry must then not be started, and
 // status shows PLUGIN_NOT_TRUSTED for its agents.
 func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
-	owner, err := pluginpath.Owner(mode)
+	owner, err := requiredOwner(mode)
 	if err != nil {
 		return Verified{}, err
 	}
@@ -263,7 +261,7 @@ func checkContents(dir string, m Manifest, entries []copyEntry, sigOptional bool
 // checkFileHash reads a listed file once, refusing a symlink or anything not
 // regular, and compares its SHA-256 with the manifest's.
 func checkFileHash(p, want string) error {
-	f, err := os.OpenFile(p, noFollowFlags, 0)
+	f, err := os.OpenFile(p, noFollowFlags(), 0)
 	if err != nil {
 		return pathRefusal(p, "cannot be opened, or is a symlink")
 	}

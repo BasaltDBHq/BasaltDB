@@ -324,7 +324,7 @@ func existingPin(d *service.TrustedDir, name, match string, trusted int) (oldPin
 	p, err := trustprofile.Parse(raw, trustprofile.Operator, func(n string) ([]byte, error) { return Read(d, n, trusted, trustprofile.MaxRootFileBytes) })
 	if err != nil || len(p.Match) != 1 || p.Match[0] != match {
 		return oldPin{}, fmt.Errorf("%w: the name %s is taken by a profile that is not the pin for %s (another host's pin, whose name "+
-			"is the same); name the CA with sslrootcert for this host instead", ErrExists, name, match)
+			"is the same); remove that profile from trust.d, then trust this host again", ErrExists, name, match)
 	}
 	out := oldPin{Roots: p.Roots}
 	for _, c := range p.Certificates() {

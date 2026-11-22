@@ -134,7 +134,8 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	require.Contains(t, p.Message, host)
 	require.Equal(t, NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
-	require.Contains(t, p.PersonMessage, "sslrootcert")
+	require.Contains(t, p.PersonMessage, "trust it there")
+	require.NotContains(t, p.PersonMessage, "sslrootcert", "the setup page refuses sslrootcert, so no message suggests it")
 	for _, q := range r.Problems {
 		require.NotEqual(t, problemDatabaseUnreachable, q.Code)
 	}

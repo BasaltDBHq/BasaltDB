@@ -123,15 +123,14 @@ func TestConnConfigTrustingVerifiesASupabaseChain(t *testing.T) {
 	require.ErrorAs(t, hinted, &verify)
 	require.Contains(t, hinted.Error(), "the certificate of db.example.com does not verify: trust its certificate authority on the page basalt init opens")
 	require.NotContains(t, hinted.Error(), "basalt trust")
-	require.Contains(t, hinted.Error(), "sslrootcert")
-	for dsn, want := range map[string]string{
-		"postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full&sslrootcert=system": "fix that root file",
-		"postgres://u:p@db.example.com:5432/postgres?sslmode=verify-ca":                      "only with sslmode=verify-full",
-	} {
-		h := pgdial.WithCertificateHint(dsn, err)
-		require.Contains(t, h.Error(), want, dsn)
-		require.NotContains(t, h.Error(), "basalt init", dsn)
-	}
+	require.NotContains(t, hinted.Error(), "sslrootcert", "the setup page refuses sslrootcert, so no hint suggests it")
+	rootFile := pgdial.WithCertificateHint("postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full&sslrootcert=system", err)
+	require.Contains(t, rootFile.Error(), "fix that root file")
+	require.NotContains(t, rootFile.Error(), "basalt init")
+	weak := pgdial.WithCertificateHint("postgres://u:p@db.example.com:5432/postgres?sslmode=verify-ca", err)
+	require.Contains(t, weak.Error(), "only with sslmode=verify-full")
+	require.Contains(t, weak.Error(), "trust its certificate authority on the page basalt init opens")
+	require.NotContains(t, weak.Error(), "sslrootcert=")
 	plain := errors.New("connection refused")
 	require.Same(t, plain, pgdial.WithCertificateHint("postgres://h/db", plain))
 	require.False(t, pgdial.CertificateNotVerified(errors.New("connection refused")))

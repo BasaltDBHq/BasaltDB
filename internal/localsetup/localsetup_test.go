@@ -313,6 +313,61 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	require.NotContains(t, err.Error(), "db.example")
 }
 
+// The admin string takes only pgdial's connection keys: one that names a
+// file (or anything else) is refused before anything connects or reads it,
+// and the refusal names neither the key's value nor the host.
+func TestAdminStringRefusesKeysOutsideTheAllowlist(t *testing.T) {
+	t.Parallel()
+	dialed := false
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: okUsers{},
+		Dial: func(context.Context, string) (*pgx.Conn, error) {
+			dialed = true
+			return nil, errors.New("not here")
+		},
+	})
+	require.NoError(t, err)
+	const path = "/etc/secretfile-for-the-test"
+	for _, query := range []string{
+		"passfile=" + path,
+		"sslkey=" + path,
+		"sslcert=" + path,
+		"sslrootcert=" + path,
+		"sslcrl=" + path,
+		"sslcrldir=" + path,
+		"sslpassword=" + path,
+		"service=" + path,
+		"servicefile=" + path,
+		"hostaddr=10.0.0.1",
+		"host=" + path,
+		"krbsrvname=" + path,
+		"options=-c%20x%3D" + path,
+		"PASSFILE=" + path,
+		"ssl%6Bey=" + path,
+		"sslmode=require&sslkey=" + path,
+		"sslmode=require;passfile=" + path,
+	} {
+		dialed = false
+		req := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL + "?" + query}
+		_, err := svc.Check(context.Background(), req)
+		refusal(t, err, localsetup.CodeConnectionStringRefused)
+		require.NotContains(t, err.Error(), path, query)
+		require.NotContains(t, err.Error(), "db.example", query)
+		_, err = svc.Run(context.Background(), req)
+		refusal(t, err, localsetup.CodeConnectionStringRefused)
+		require.False(t, dialed, "nothing connects with %s", query)
+	}
+	for _, query := range []string{"sslmode=verify-full", "application_name=app&connect_timeout=5", "channel_binding=require&target_session_attrs=any"} {
+		dialed = false
+		req := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL + "?" + query}
+		_, err := svc.Check(context.Background(), req)
+		var r *localsetup.RefusalError
+		require.True(t, errors.As(err, &r), query)
+		require.NotEqual(t, localsetup.CodeConnectionStringRefused, r.Code, query)
+		require.True(t, dialed, "an allowed key reaches the connection: %s", query)
+	}
+}
+
 func TestRealInstallRefusesBadSchemasAndPicksBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	svc, err := localsetup.New(localsetup.Options{
@@ -981,19 +1036,19 @@ func TestRealInstallBindsTheTrustRootToTheChallenge(t *testing.T) {
 	refusal(t, err, localsetup.CodeChallengeInvalid)
 }
 
-func TestRealInstallPinsOnVerifyFullWhateverModeAndRootTheStringNames(t *testing.T) {
+func TestRealInstallPinsOnVerifyFullWhateverModeTheStringNames(t *testing.T) {
 	t.Parallel()
 	p := newPinFixture(t)
 	ctx := context.Background()
 	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
 	req := p.req()
-	req.DatabaseURL += "?sslmode=verify-ca&sslrootcert=/another/root.pem"
+	req.DatabaseURL += "?sslmode=verify-ca"
 	req.TrustRoot = trustprofile.DERSHA256(p.ca)
 	checked, err := p.svc.Check(ctx, req)
 	require.NoError(t, err)
 	require.Len(t, p.pinnedDSNs, 1)
 	require.Contains(t, p.pinnedDSNs[0], "sslmode=verify-full")
-	require.NotContains(t, p.pinnedDSNs[0], "sslrootcert", "the pin is the root, not one the string names")
+	require.NotContains(t, p.pinnedDSNs[0], "sslrootcert", "the pin is the root")
 	require.NotContains(t, p.pinnedDSNs[0], "verify-ca")
 
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)

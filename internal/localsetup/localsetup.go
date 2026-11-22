@@ -205,25 +205,35 @@ func checkAdminURL(raw, role string) (string, error) {
 	if pw, ok := u.User.Password(); !ok || pw == "" {
 		return "", bad
 	}
+	// The host, port and database come from the URL itself: a parameter
+	// that names another one would make the connection and the target
+	// checks disagree.
+	for key := range u.Query() {
+		switch strings.ToLower(key) {
+		case "host", "hostaddr", "port", "dbname", "service", "servicefile":
+			return "", bad
+		}
+	}
 	if _, err := guard.AgentConnString(raw, role, ""); err != nil {
 		return "", bad
 	}
 	return strings.ToLower(u.Host), nil
 }
 
-// sameTarget: two postgres URLs name the same host and port (compared in
+// sameTarget: two connection strings, as the driver parses them (query
+// parameters included), name the same host and port (the host compared in
 // lowercase) and the same database.
 func sameTarget(a, b string) bool {
-	ua, err := url.Parse(a)
+	ca, err := pgconn.ParseConfig(a)
 	if err != nil {
 		return false
 	}
-	ub, err := url.Parse(b)
+	cb, err := pgconn.ParseConfig(b)
 	if err != nil {
 		return false
 	}
-	return ua.Host != "" && strings.EqualFold(ua.Host, ub.Host) && strings.TrimPrefix(ua.Path, "/") == strings.TrimPrefix(ub.Path, "/") &&
-		strings.TrimPrefix(ua.Path, "/") != ""
+	return ca.Host != "" && strings.EqualFold(ca.Host, cb.Host) && ca.Port == cb.Port &&
+		ca.Database != "" && ca.Database == cb.Database
 }
 
 // connect opens the admin connection; a failure is a fixed refusal.

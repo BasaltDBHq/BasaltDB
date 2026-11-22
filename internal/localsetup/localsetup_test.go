@@ -176,6 +176,14 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 	refusal(t, err, localsetup.CodeJobUnavailable)
 }
 
+// withParam adds a query parameter to a URL.
+func withParam(raw, kv string) string {
+	if strings.Contains(raw, "?") {
+		return raw + "&" + kv
+	}
+	return raw + "?" + kv
+}
+
 func mustPassword(t *testing.T, raw string) string {
 	t.Helper()
 	u, err := url.Parse(raw)
@@ -236,6 +244,8 @@ func TestRefusalsNeverHoldTheAdminString(t *testing.T) {
 		{unreachable.String(), localsetup.CodeDatabaseUnreachable},
 		{noPassword.String(), localsetup.CodeConnectionStringRefused},
 		{"host=localhost password=" + secret, localsetup.CodeConnectionStringRefused},
+		{withParam(f.db.URL, "host=other.example"), localsetup.CodeConnectionStringRefused},
+		{withParam(f.db.URL, "dbname=other"), localsetup.CodeConnectionStringRefused},
 	} {
 		req := f.request()
 		req.DatabaseURL = v.dsn
@@ -391,13 +401,21 @@ func TestRunNeverFinishesWithACredentialForAnotherTarget(t *testing.T) {
 	cred := filepath.Join(filepath.Dir(f.config), "agents", "demo_bot.url")
 
 	// The same role and password, but the credential names another host
-	// or another database than this run's admin string.
-	host := *u
-	host.Host = "localhost.example:" + u.Port()
+	// than this run's admin string: one that reaches the same server under
+	// another name, so it would log in as that role on that database. Only
+	// the target check refuses it.
+	alias := kept
+	switch u.Hostname() {
+	case "127.0.0.1":
+		alias.Host = "localhost:" + u.Port()
+	case "localhost":
+		alias.Host = "127.0.0.1:" + u.Port()
+	default:
+		t.Skipf("the test server's host %s has no second name here", u.Hostname())
+	}
 	db := kept
 	db.Path = "/another_db"
-	for _, other := range []url.URL{host, db} {
-		other.User = kept.User
+	for _, other := range []url.URL{alias, db} {
 		require.NoError(t, config.WriteFile(cred, []byte(other.String()+"\n")))
 		_, err = f.svc.Check(ctx, f.request())
 		refusal(t, err, localsetup.CodeRoleExists)

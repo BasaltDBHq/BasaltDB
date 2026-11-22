@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ const (
 	// database presents.
 	CodeTrustRootMismatch = "TRUST_ROOT_MISMATCH"
 
+	defaultPort   = 5432
 	paramSSLMode  = "sslmode"
 	sslVerifyFull = "verify-full"
 )
@@ -44,7 +46,7 @@ type pin struct {
 // pinnedDial opens the admin connection with the pin's certificate as the
 // only root for its host (pgdial.ConnConfigTrusting).
 func pinnedDial(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
-	cfg, err := pgdial.ConnConfigTrusting(dsn, pgdial.Trust().Replacing(p.Name, p))
+	cfg, err := pgdial.ConnConfigPinned(dsn, p)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,7 @@ func connectError(ctx context.Context, err error) *RefusalError {
 func (s *Service) connectAdmin(ctx context.Context, req Request) (*pgx.Conn, *pin, error) {
 	conn, err := s.opts.Dial(ctx, req.DatabaseURL)
 	if err == nil {
-		return conn, nil, nil
+		return conn, s.keptPin(req), nil
 	}
 	if !pgdial.CertificateNotVerified(err) {
 		return nil, nil, connectError(ctx, err)
@@ -92,7 +94,7 @@ func (s *Service) connectAdmin(ctx context.Context, req Request) (*pgx.Conn, *pi
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err = s.opts.DialPinned(ctx, req.DatabaseURL, p.profile)
+	conn, err = s.opts.DialPinned(ctx, pinDSN(req.DatabaseURL), p.profile)
 	if err != nil {
 		return nil, nil, connectError(ctx, err)
 	}
@@ -102,17 +104,14 @@ func (s *Service) connectAdmin(ctx context.Context, req Request) (*pgx.Conn, *pi
 // readPin reads the chain of the admin string's one host and makes the pin
 // the person's trustRoot names, or the refusal that offers it.
 func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
-	cfg, err := pgconn.ParseConfig(req.DatabaseURL)
-	// A pin is for one host: a string that names several has none. (The
-	// config's Fallbacks are the sslmode's, not other hosts.)
-	if u, perr := url.Parse(req.DatabaseURL); err != nil || perr != nil || cfg.Host == "" || strings.Contains(u.Host, ",") {
+	host, port, ok := hostPort(req.DatabaseURL)
+	if !ok {
 		return nil, notVerified()
 	}
-	host := strings.ToLower(cfg.Host)
-	if pgdial.Trust().For(host) != nil {
+	if s.opts.Profiles().For(host) != nil {
 		return nil, notVerified() // a trust profile decides for this host
 	}
-	chain, err := s.opts.Probe(ctx, host, int(cfg.Port))
+	chain, err := s.opts.Probe(ctx, host, port)
 	if err != nil {
 		return nil, notVerified()
 	}
@@ -133,7 +132,7 @@ func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
 	case err != nil:
 		return nil, refuse(CodeTrustRootMismatch, "The database presents another certificate authority than the one you trusted. Nothing changed; check the setup again.")
 	}
-	return &pin{host: host, port: int(cfg.Port), sha256: seen.SHA256, top: seen.Top, caOnly: !seen.Full, profile: prof}, nil
+	return &pin{host: host, port: port, sha256: seen.SHA256, top: seen.Top, caOnly: !seen.Full, profile: prof}, nil
 }
 
 // write records the pin in the ledger, in the run's transaction, and writes
@@ -149,8 +148,55 @@ func (p *pin) write(ctx context.Context, tx pgx.Tx, configPath string) error {
 	return nil
 }
 
-// withVerifyFull is dsn with sslmode=verify-full, so the pin applies to the
-// agent's connection: a profile applies with verify-full only.
+// keptPin is the pin the person's trustRoot names when this engine's trust.d
+// already holds it, so the connection verified without a new reading: a run
+// that follows a failed commit, which rolled the ledger record back but left
+// the pin. nil when there is no trustRoot or no such pin. The run records it
+// again; writing it finds it there already.
+func (s *Service) keptPin(req Request) *pin {
+	if req.TrustRoot == "" {
+		return nil
+	}
+	host, port, ok := hostPort(req.DatabaseURL)
+	if !ok {
+		return nil
+	}
+	prof := s.opts.Profiles().For(host)
+	if prof == nil || prof.Name != trustprofile.PinName(host) {
+		return nil
+	}
+	for _, c := range prof.Certificates() {
+		if trustprofile.DERSHA256(c) == req.TrustRoot {
+			return &pin{host: host, port: port, sha256: req.TrustRoot, top: c, caOnly: prof.VerifiesCA(), profile: prof}
+		}
+	}
+	return nil
+}
+
+// hostPort is the one host and port a postgres:// string names, the host in
+// lowercase; false for a string that names several hosts or none. It reads
+// the URL alone: a string with an sslrootcert that does not exist must still
+// be pinnable.
+func hostPort(dsn string) (string, int, bool) {
+	u, err := url.Parse(dsn)
+	if err != nil || u.Hostname() == "" || strings.Contains(u.Host, ",") {
+		return "", 0, false
+	}
+	port := defaultPort
+	if p := u.Port(); p != "" {
+		if port, err = strconv.Atoi(p); err != nil {
+			return "", 0, false
+		}
+	}
+	return strings.ToLower(u.Hostname()), port, true
+}
+
+// pinDSN is dsn as the pinned login and the agent's credential use it:
+// sslmode=verify-full, so the pin applies (a profile applies with verify-full
+// only), and no sslrootcert, which would name another root than the pin.
+func pinDSN(dsn string) string { return withVerifyFull(dsn) }
+
+// withVerifyFull is dsn with sslmode=verify-full and no sslrootcert.
 func withVerifyFull(dsn string) string {
 	u, err := url.Parse(dsn)
 	if err != nil {
@@ -158,6 +204,7 @@ func withVerifyFull(dsn string) string {
 	}
 	q := u.Query()
 	q.Set(paramSSLMode, sslVerifyFull)
+	q.Del("sslrootcert")
 	u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
 	return u.String()
 }

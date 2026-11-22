@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/demo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -258,7 +259,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	files := s.files(req.Agent)
 	var warnings, lines []string
 	wrote := false
-	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+	err = inTx(ctx, conn, func(tx pgx.Tx) error {
 		database, err := currentDatabase(ctx, tx)
 		if err != nil {
 			return err
@@ -324,6 +325,14 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		return files.writeCredential(dsn)
 	})
 	if err != nil {
+		var unknown *unknownOutcomeError
+		if errors.As(err, &unknown) {
+			// The commit's answer was lost: the role may exist, and this
+			// credential is its only password. It stays: a run again finds the
+			// role and finishes with it (ownRole), or overwrites it when the
+			// role was never made.
+			return RunAnswer{}, refuse(CodeSetupFailed, "The database did not confirm the setup. Run it again on this page: it finishes if the setup went through, and starts over if it did not.")
+		}
 		if wrote {
 			files.removeCredential() // its role was rolled back
 		}
@@ -439,4 +448,38 @@ func answersOf(req Request) []Answer {
 		return []Answer{}
 	}
 	return req.Answers
+}
+
+// unknownOutcomeError is a COMMIT whose answer was lost: whether it took effect is
+// not known.
+type unknownOutcomeError struct{ err error }
+
+func (u *unknownOutcomeError) Error() string {
+	return "the commit's outcome is unknown: " + u.err.Error()
+}
+
+func (u *unknownOutcomeError) Unwrap() error { return u.err }
+
+// inTx runs fn in a transaction on conn. It is pgx.BeginFunc, except that a
+// commit that fails without the server's answer is an unknownOutcomeError; one the
+// server answered (an error of its own, or a commit that became a rollback)
+// is a known failure, and so is fn's.
+func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+		return err
+	}
+	err = tx.Commit(ctx)
+	var pg *pgconn.PgError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback):
+		return err
+	}
+	return &unknownOutcomeError{err: err}
 }

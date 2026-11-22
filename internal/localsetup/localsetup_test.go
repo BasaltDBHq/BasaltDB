@@ -1,10 +1,12 @@
 package localsetup_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/url"
 	"os"
 	"os/user"
@@ -799,6 +801,8 @@ type pinFixture struct {
 	ca         *x509.Certificate
 	adminURL   string
 	pinnedWith []*trustprofile.Profile
+	pinnedDSNs []string
+	profiles   func() *trustprofile.Set
 }
 
 const pinHost = "db.pin.example"
@@ -816,8 +820,15 @@ func newPinFixture(t *testing.T) *pinFixture {
 		Dial: func(context.Context, string) (*pgx.Conn, error) {
 			return nil, x509.UnknownAuthorityError{}
 		},
-		DialPinned: func(ctx context.Context, _ string, pin *trustprofile.Profile) (*pgx.Conn, error) {
+		Profiles: func() *trustprofile.Set {
+			if p.profiles != nil {
+				return p.profiles()
+			}
+			return trustprofile.NewSet(nil, nil, nil)
+		},
+		DialPinned: func(ctx context.Context, dsn string, pin *trustprofile.Profile) (*pgx.Conn, error) {
 			p.pinnedWith = append(p.pinnedWith, pin)
+			p.pinnedDSNs = append(p.pinnedDSNs, dsn)
 			return pgdial.Connect(ctx, f.db.URL)
 		},
 		Probe: func(_ context.Context, host string, _ int) ([]*x509.Certificate, error) {
@@ -947,4 +958,128 @@ func TestRealInstallBindsTheTrustRootToTheChallenge(t *testing.T) {
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, req)
 	refusal(t, err, localsetup.CodeChallengeInvalid)
+}
+
+func TestRealInstallPinsOnVerifyFullWhateverModeAndRootTheStringNames(t *testing.T) {
+	t.Parallel()
+	p := newPinFixture(t)
+	ctx := context.Background()
+	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	req := p.req()
+	req.DatabaseURL += "?sslmode=verify-ca&sslrootcert=/another/root.pem"
+	req.TrustRoot = trustprofile.DERSHA256(p.ca)
+	checked, err := p.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, p.pinnedDSNs, 1)
+	require.Contains(t, p.pinnedDSNs[0], "sslmode=verify-full")
+	require.NotContains(t, p.pinnedDSNs[0], "sslrootcert", "the pin is the root, not one the string names")
+	require.NotContains(t, p.pinnedDSNs[0], "verify-ca")
+
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = p.svc.Run(ctx, req)
+	require.NoError(t, err)
+	dsn, err := config.ReadCredential(filepath.Join(filepath.Dir(p.config), "agents", "bot.url"))
+	require.NoError(t, err)
+	require.Contains(t, dsn, "sslmode=verify-full")
+	require.NotContains(t, dsn, "sslrootcert", "the agent's credential cannot name another root than the pin")
+	require.NotContains(t, dsn, "verify-ca")
+}
+
+func TestRealInstallARunAfterAFailedCommitRecordsThePinAgain(t *testing.T) {
+	t.Parallel()
+	p := newPinFixture(t)
+	ctx := context.Background()
+	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	sha := trustprofile.DERSHA256(p.ca)
+	// The pin a failed run left in trust.d, whose ledger record was rolled back.
+	_, err := trustdir.PinNew(p.config, pinHost, p.ca, false)
+	require.NoError(t, err)
+	p.profiles = func() *trustprofile.Set { return trustdir.Set(p.config) }
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: p.config, Origin: origin, Users: fakeUsers{}, Prefix: p.db.Names.Prefix,
+		Now:      func() time.Time { return p.now },
+		Dial:     func(ctx context.Context, _ string) (*pgx.Conn, error) { return pgdial.Connect(ctx, p.db.URL) }, // verifies through the pin
+		Profiles: func() *trustprofile.Set { return trustdir.Set(p.config) },
+	})
+	require.NoError(t, err)
+	req := p.req()
+	req.TrustRoot = sha
+	checked, err := svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(checked.Lines, " "), sha)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = svc.Run(ctx, req)
+	require.NoError(t, err)
+	var recorded int
+	require.NoError(t, p.db.Admin.QueryRow(ctx, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'TRUST_PIN_RECORDED' AND detail ->> 'sha256' = $1`, sha).Scan(&recorded))
+	require.Equal(t, 1, recorded)
+
+	// Another trustRoot is not the pin that is there: nothing is recorded for it.
+	other := p.req()
+	other.TrustRoot = strings.Repeat("b", 64)
+	_, err = svc.Check(ctx, other)
+	require.Error(t, err, "the engine already has a config now")
+}
+
+// cutOnCommit is a connection that dies when the commit is sent: the
+// server's answer is never read, so the outcome is unknown.
+type cutOnCommit struct{ net.Conn }
+
+func (c cutOnCommit) Write(b []byte) (int, error) {
+	// A simple query message: 'Q', its length, then the text.
+	if len(b) > 5 && b[0] == 'Q' && bytes.Equal(bytes.ToLower(b[5:]), []byte("commit\x00")) {
+		_ = c.Close()
+		return 0, errors.New("the connection was cut")
+	}
+	return c.Conn.Write(b)
+}
+
+func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	cut := true
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
+		Now: func() time.Time { return f.now },
+		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
+			cfg, err := pgdial.ConnConfig(dsn)
+			if err != nil {
+				return nil, err
+			}
+			if cut {
+				cfg.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+					c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+					return cutOnCommit{c}, err
+				}
+			}
+			return pgx.ConnectConfig(ctx, cfg)
+		},
+	})
+	require.NoError(t, err)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	checked, err := svc.Check(ctx, req)
+	require.NoError(t, err)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = svc.Run(ctx, req)
+	var r *localsetup.RefusalError
+	require.True(t, errors.As(err, &r))
+	require.Equal(t, localsetup.CodeSetupFailed, r.Code)
+	require.Contains(t, r.Message, "did not confirm")
+	cred := filepath.Join(filepath.Dir(f.config), "agents", "bot.url")
+	_, statErr := os.Stat(cred)
+	require.NoError(t, statErr, "the credential of a role that may exist stays")
+
+	// A run again, now that the connection holds: it overwrites the file, the
+	// role was never made.
+	cut = false
+	checked, err = svc.Check(ctx, req)
+	require.NoError(t, err)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = svc.Run(ctx, req)
+	require.NoError(t, err)
+	_, err = config.ReadCredential(cred)
+	require.NoError(t, err)
 }

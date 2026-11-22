@@ -158,6 +158,8 @@ type Options struct {
 	// DialPinned opens the admin connection trusting only the pin's
 	// certificate for its host (pinnedDial outside tests).
 	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (*pgx.Conn, error)
+	// Profiles are the trust profiles in force (pgdial.Trust outside tests).
+	Profiles func() *trustprofile.Set
 	// Probe reads the chain a host presents (trustpin.Fetch outside tests).
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// SampleColumn reads a column's sample for the check's suggestions
@@ -198,6 +200,9 @@ func New(o Options) (*Service, error) {
 	}
 	if o.DialPinned == nil {
 		o.DialPinned = pinnedDial
+	}
+	if o.Profiles == nil {
+		o.Profiles = pgdial.Trust
 	}
 	if o.Probe == nil {
 		o.Probe = probe

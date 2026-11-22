@@ -41,7 +41,7 @@ func (c *cliIO) agentMarker() string {
 const (
 	hintAgentSetupCode = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads."
 	hintAgentPerson    = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads. " +
-		"To set up or upgrade an agent, run basalt init --remote and give the person the setup code it prints."
+		"To set up or change an agent, run basalt init (basalt init --remote on a computer the person cannot reach) and show the person the link it prints."
 )
 
 // agentContextError refuses a command that needs the admin connection
@@ -92,5 +92,5 @@ const remoteAdminEnvSet = envAdminURL + " is set here; basalt init --remote neve
 // errAgentNotInConfig: the config has no such agent. Whoever reads it may be
 // an agent, so it names the agent-led setup only.
 func errAgentNotInConfig(agent, configPath string) error {
-	return fmt.Errorf("agent %q is not in %s; set it up with basalt init --remote --agent %s and give the person the setup code it prints", agent, configPath, agent)
+	return fmt.Errorf("agent %q is not in %s; set it up with basalt init --agent %s on the person's own computer, or basalt init --remote --agent %s on one the person cannot reach, and show the person the link it prints", agent, configPath, agent, agent)
 }

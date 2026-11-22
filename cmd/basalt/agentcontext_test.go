@@ -109,7 +109,7 @@ func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 func TestAgentNotInConfigNamesTheAgentLedSetup(t *testing.T) {
 	t.Parallel()
 	err := errAgentNotInConfig("bot", "/etc/basalt/engine.json")
-	require.EqualError(t, err, `agent "bot" is not in /etc/basalt/engine.json; set it up with basalt init --remote --agent bot and give the person the setup code it prints`)
+	require.EqualError(t, err, `agent "bot" is not in /etc/basalt/engine.json; set it up with basalt init --agent bot on the person's own computer, or basalt init --remote --agent bot on one the person cannot reach, and show the person the link it prints`)
 	requireAgentLed(t, "errAgentNotInConfig", err.Error())
 }
 
@@ -126,43 +126,43 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 // continuation (backslash, newline) joins the next line.
 var initCommand = regexp.MustCompile("(?:basalt\\s+)?\\binit(?:\\s+-[^\\n`\"';]*?)?(?:\\n|`|\"|'|;|\\.\\s|\\.$|$)")
 
-// manualInits are the basalt init commands in text that name --agent
-// without --remote (or --setup-code): an agent that runs one has to ask the
-// person for the admin password.
+// manualInits are the basalt init commands in text that carry a flag which
+// takes the admin connection string out of the page: an agent that runs one
+// has to ask the person for the admin password. Plain basalt init (the
+// person's own computer) and basalt init --remote (one the person cannot
+// reach) are what an agent runs, and are fine.
 func manualInits(text string) []string {
 	text = strings.ReplaceAll(text, "\\\n", " ")
 	var out []string
 	for _, m := range initCommand.FindAllString(text, -1) {
-		if strings.Contains(m, "--agent") && !strings.Contains(m, "--remote") && !strings.Contains(m, "--setup-code") {
+		if strings.Contains(m, "--setup-code") || strings.Contains(m, "--database-url") {
 			out = append(out, strings.TrimSpace(m))
 		}
 	}
 	return out
 }
 
-// requireAgentLed fails when text recommends basalt init with --agent and
-// without --remote to an agent.
+// requireAgentLed fails when text recommends a basalt init that needs the
+// admin connection string outside the setup page.
 func requireAgentLed(t *testing.T, where, text string) {
 	t.Helper()
 	for _, m := range manualInits(text) {
-		t.Errorf("%s recommends %q to an agent: agents only run basalt init --remote", where, m)
+		t.Errorf("%s recommends %q to an agent: the admin connection string is typed only on a setup page", where, m)
 	}
 }
 
 func TestManualInitsCatchesTheManualCommand(t *testing.T) {
 	t.Parallel()
 	for _, text := range []string{
-		"run basalt init --agent bot --write public.leads",
-		"or set that user with basalt init --agent bot --os-user <user>",
-		"Run `basalt init --agent NAME --write schema.table` now.",
-		"run basalt init --write public.leads --agent bot; then start it",
+		"run basalt init --setup-code basalt-setup.1.x.y",
+		"or run basalt init --agent bot --database-url postgres://h/db",
+		"Run `basalt init --setup-code CODE` now.",
 	} {
 		require.NotEmpty(t, manualInits(text), text)
 	}
 	for _, text := range []string{
-		"run basalt init --remote --agent bot --write public.leads",
-		"basalt init --remote --operated-by=agent --vault=off \\\n  --agent NAME --write schema.table",
-		"basalt init --setup-code basalt-setup.1.x.y",
+		"run basalt init --remote --agent bot",
+		"run basalt init --agent bot on the person's own computer",
 		"Use basalt init for that. The agent is --agent bot.",
 		"initArgs --agent bot",
 	} {
@@ -172,8 +172,8 @@ func TestManualInitsCatchesTheManualCommand(t *testing.T) {
 
 // TestAgentFacingTextIsAgentLed greps every surface an agent reads: the MCP
 // instructions, tool schemas and next steps, the engine's own strings, the
-// agent docs and basalt's agent help. None may steer an agent to basalt init
-// without --remote.
+// agent docs and basalt's agent help. None may steer an agent to a basalt
+// init that takes the admin string anywhere but a setup page.
 func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
@@ -194,6 +194,12 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	require.NoError(t, filepath.WalkDir(filepath.Join(root, "api", "mcp"), func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".json" {
 			return err
+		}
+		// The setup code's own schema and fixtures describe the code's
+		// format, not text an agent is told to follow; they go with
+		// --setup-code.
+		if filepath.Base(filepath.Dir(p)) == "setup" {
+			return nil
 		}
 		raw, err := os.ReadFile(p)
 		if err != nil {

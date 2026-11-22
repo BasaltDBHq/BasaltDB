@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The README, `llms.txt` and `docs/` describe the simplified product: the agent runs `basalt init`, the person finishes on the setup page, and no guide asks a person to type a `basalt` command or paste an admin connection string into a terminal. `docs/bot-setup.md` asks the person for nothing but the page they open. The same-user limit of the local setup is written down in the install guide and the README.
 - The MCP initialize instructions tell an agent on a computer the person cannot reach to run `basalt init --remote`.
+- `basalt --help` and the error for an agent missing from the config tell an agent to run `basalt init` on the person's own computer and `basalt init --remote` on one the person cannot reach, and to show the person the link it prints, instead of a setup code.
 
 ### Removed
 

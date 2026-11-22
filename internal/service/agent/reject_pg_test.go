@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -176,7 +177,7 @@ func TestRejectRouteOthersRevertsReadAsUnknown(t *testing.T) {
 	e := newRescopeEnv(t)
 	ctx := context.Background()
 	_, secret := e.request(t)
-	theirs, err := guard.PrepareRevert(ctx, e.helper.Conn, guardmodel.RevertScope{Kind: revert.ScopeTask, ID: e.task}, "x")
+	theirs, err := guard.PrepareRevert(ctx, e.helper.Conn, action.Scope{Kind: revert.ScopeTask, ID: e.task}, "x")
 	require.NoError(t, err)
 	unknown := uuid.Must(uuid.NewV7())
 

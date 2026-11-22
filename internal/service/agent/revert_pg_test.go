@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -105,7 +105,7 @@ func TestRunHistoryShowsRevert(t *testing.T) {
 	})
 	require.False(t, isError)
 
-	prep, err := guard.PrepareRevert(ctx, a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: uuid.MustParse(runID)}, "Undo")
+	prep, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(runID)}, "Undo")
 	require.NoError(t, err)
 	as, err := person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)

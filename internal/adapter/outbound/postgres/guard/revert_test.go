@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -20,7 +21,7 @@ import (
 // one parses with the Go codec and the text is in COLLATE "C" order.
 func previewRevert(t *testing.T, q guard.Querier, kind revert.Scope, id uuid.UUID) []revert.Line {
 	t.Helper()
-	texts, err := guard.PreviewRevert(context.Background(), q, guardmodel.RevertScope{Kind: kind, ID: id})
+	texts, err := guard.PreviewRevert(context.Background(), q, action.Scope{Kind: kind, ID: id})
 	detail, hint, _ := guard.ScopeRefusal(err)
 	require.NoError(t, err, "%s: %s", detail, hint)
 	require.True(t, sort.StringsAreSorted(texts), "lines must be in byte order")
@@ -120,10 +121,10 @@ func TestRevertLinesUpdate(t *testing.T) {
 	byChange := previewRevert(t, a.Conn, revert.ScopeChange, lines[0].ChangeIDs[0])
 	require.Len(t, byChange, 2, "the run is one change")
 
-	got, err := guard.PreviewRevert(ctx, a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())})
+	got, err := guard.PreviewRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())})
 	require.Empty(t, got)
 	requireScopeRefused(t, err, guardmodel.ScopeNotOwnRun)
-	_, err = guard.PreviewRevert(ctx, d.Admin, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID})
+	_, err = guard.PreviewRevert(ctx, d.Admin, action.Scope{Kind: revert.ScopeRun, ID: in.RunID})
 	requireCode(t, err, guardmodel.CodeNotAllowed)
 }
 

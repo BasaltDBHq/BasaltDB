@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
@@ -33,17 +33,17 @@ func RevealNonce(ctx context.Context, q Querier, kind string, id uuid.UUID) ([]b
 // (approval.RevealKey; never the secret). Every proof or key failure is
 // REVERT_INVALID detail RevealRefused and changes nothing. Run it in its
 // own transaction.
-func RevealRevertRows(ctx context.Context, q Querier, revertID uuid.UUID, proof passkey.Assertion, key []byte) (guardmodel.RevealedRevert, error) {
+func RevealRevertRows(ctx context.Context, q Querier, revertID uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
 	b, err := proofJSON(proof)
 	if err != nil {
-		return guardmodel.RevealedRevert{}, err
+		return action.RevealedRevert{}, err
 	}
-	var out guardmodel.RevealedRevert
+	var out action.RevealedRevert
 	// Plain SQL: one function call returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.reveal_revert_rows($1::uuid, $2::jsonb, $3::bytea)`,
 		revertID.String(), b, key).Scan(&out)
 	if err != nil {
-		return guardmodel.RevealedRevert{}, err
+		return action.RevealedRevert{}, err
 	}
 	return out, nil
 }

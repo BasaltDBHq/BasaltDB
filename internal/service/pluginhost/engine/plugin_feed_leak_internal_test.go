@@ -23,6 +23,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -116,13 +117,13 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 
 	// A revert of the update, signed and applied; one of the insert,
 	// rejected with a note.
-	prep, err := guard.PrepareRevert(ctx, c, guardmodel.RevertScope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
+	prep, err := guard.PrepareRevert(ctx, c, action.Scope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
 	require.NoError(t, err)
 	sig, err := pk.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, c, prep.RevertID, sig)
 	require.NoError(t, err)
-	rejected, err := guard.PrepareRevert(ctx, c, guardmodel.RevertScope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
+	rejected, err := guard.PrepareRevert(ctx, c, action.Scope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
 	require.NoError(t, err)
 	_, err = guard.RejectRevert(ctx, c, rejected.RevertID, "not this one "+marker, nil)
 	require.NoError(t, err)

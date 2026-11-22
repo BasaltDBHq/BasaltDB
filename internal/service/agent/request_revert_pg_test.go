@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -89,7 +90,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.NoError(t, err)
 	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
-	var out guardmodel.AppliedRevert
+	var out action.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
 	require.Equal(t, 2, out.Rows)
 	require.Equal(t, "open", leadStatus(t, d, 71))

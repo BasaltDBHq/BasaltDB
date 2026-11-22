@@ -82,7 +82,7 @@ func (l *Person) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, e
 }
 
 // PreviewRevert is guard.PreviewRevert, in a pinned transaction.
-func (l *Person) PreviewRevert(ctx context.Context, s guardmodel.RevertScope) ([]string, error) {
+func (l *Person) PreviewRevert(ctx context.Context, s action.Scope) ([]string, error) {
 	var lines []string
 	err := pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
@@ -93,13 +93,13 @@ func (l *Person) PreviewRevert(ctx context.Context, s guardmodel.RevertScope) ([
 }
 
 // PrepareRevert is guard.PrepareRevertWithin the CLI's time limit.
-func (l *Person) PrepareRevert(ctx context.Context, s guardmodel.RevertScope, intent string) (guardmodel.PreparedRevert, error) {
+func (l *Person) PrepareRevert(ctx context.Context, s action.Scope, intent string) (action.PreparedRevert, error) {
 	return guard.PrepareRevertWithin(ctx, l.db, s, intent, guardmodel.CLIPrepareTimeout)
 }
 
 // ApplyRevert is guard.ApplyRevert, in its own pinned transaction.
-func (l *Person) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guardmodel.AppliedRevert, error) {
-	var out guardmodel.AppliedRevert
+func (l *Person) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
+	var out action.AppliedRevert
 	err := pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
 		out, err = guard.ApplyRevert(ctx, tx, id, a)
@@ -111,13 +111,13 @@ func (l *Person) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assert
 // RescopeRevert narrows the agent's own pending revert id to runs and
 // tables (nil for all) inside the agent's own work, keeping its scope kind
 // and id: guard.RescopeOwn, which never widens.
-func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (guardmodel.PreparedRevert, error) {
+func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (action.PreparedRevert, error) {
 	r, err := FindRevert(ctx, l.db, id)
 	if err != nil {
-		return guardmodel.PreparedRevert{}, err
+		return action.PreparedRevert{}, err
 	}
-	scope := guardmodel.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
-	var out guardmodel.PreparedRevert
+	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
+	var out action.PreparedRevert
 	err = pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
 		out, err = guard.RescopeOwn(ctx, tx, id, scope)
@@ -128,7 +128,7 @@ func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UU
 
 // RejectRevert is guard.RejectRevert with no scope token: it never rejects
 // a revert the person widened.
-func (l *Person) RejectRevert(ctx context.Context, id uuid.UUID, note string) (guardmodel.RejectedRevert, error) {
+func (l *Person) RejectRevert(ctx context.Context, id uuid.UUID, note string) (action.RejectedRevert, error) {
 	return guard.RejectRevert(ctx, l.db, id, note, nil)
 }
 

@@ -30,7 +30,7 @@ func RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (
 		return guardmodel.Script{}, fmt.Errorf("%w: %w", guardmodel.ErrInvalidAgent, err)
 	}
 	render := func(v string) string {
-		return renderSQL(n, fmt.Sprintf(agentAlterRoleSQL, role, quoteLiteral(v), timeoutMs, guardmodel.AgentConnectionLimit))
+		return renderSQL(n, fmt.Sprintf(agentAlterRoleSQL, role, quoteLiteral(v), timeoutMs, setupcode.AgentConnectionLimit))
 	}
 	return guardmodel.Script{Statements: []guardmodel.Statement{adopt, {SQL: render(verifier), Shown: render(redacted)}}}, nil
 }

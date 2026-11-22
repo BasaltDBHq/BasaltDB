@@ -10,8 +10,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -168,5 +168,5 @@ func TestTooManyConnectionsMessageWords(t *testing.T) {
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
 		tooManyConnectionsMessage(cmds))
-	require.Equal(t, 8, guardmodel.AgentConnectionLimit, "the message above and the role SQL state the same limit")
+	require.Equal(t, 8, setupcode.AgentConnectionLimit, "the message above and the role SQL state the same limit")
 }

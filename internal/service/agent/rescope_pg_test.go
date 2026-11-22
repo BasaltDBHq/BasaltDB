@@ -235,8 +235,8 @@ func revertPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() }
 
 // scopeAnswer is the scope route's 200 answer as the page reads it.
 type scopeAnswer struct {
-	Request revert.Request            `json:"request"`
-	Catalog *guardmodel.RevertCatalog `json:"catalog"`
+	Request revert.Request        `json:"request"`
+	Catalog *action.RevertCatalog `json:"catalog"`
 }
 
 // A widen with the person's proof rotates the revert's link to the page's

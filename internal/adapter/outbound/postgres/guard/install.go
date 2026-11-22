@@ -264,7 +264,7 @@ func checkAgentPassword(spec guardmodel.AgentSpec) error {
 // verifier as is.
 func agentRoleStatement(n guardmodel.Names, role string, spec guardmodel.AgentSpec, timeoutMs int64) (guardmodel.Statement, error) {
 	if spec.Password == "" && spec.Verifier == "" {
-		return guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, guardmodel.AgentConnectionLimit))}, nil
+		return guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, setupcode.AgentConnectionLimit))}, nil
 	}
 	tmpl := agentRoleSQL
 	switch {
@@ -274,7 +274,7 @@ func agentRoleStatement(n guardmodel.Names, role string, spec guardmodel.AgentSp
 		tmpl = agentAlterRoleSQL
 	}
 	render := func(verifier string) string {
-		return renderSQL(n, fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, guardmodel.AgentConnectionLimit))
+		return renderSQL(n, fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, setupcode.AgentConnectionLimit))
 	}
 	if spec.Verifier != "" {
 		return guardmodel.Statement{SQL: render(spec.Verifier)}, nil
@@ -617,7 +617,7 @@ func AgentRoles(ctx context.Context, q Querier, n guardmodel.Names) ([]string, e
 		JOIN pg_catalog.pg_roles r ON r.oid = m.member
 		JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
 		WHERE g.rolname = $1 AND pg_catalog.pg_has_role(m.member, m.roleid, 'USAGE')
-		  AND starts_with(r.rolname::text, $2) ORDER BY 1`, n.Agents(), n.Prefix+guardmodel.AgentInfix)
+		  AND starts_with(r.rolname::text, $2) ORDER BY 1`, n.Agents(), n.AgentPrefix())
 	if err != nil {
 		return nil, err
 	}

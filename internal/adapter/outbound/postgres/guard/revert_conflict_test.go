@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -166,7 +167,7 @@ func TestRevertConflictSuite(t *testing.T) {
 				}
 			}
 			if restores == 0 {
-				_, err := guard.PrepareRevert(context.Background(), e.a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo")
+				_, err := guard.PrepareRevert(context.Background(), e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo")
 				requireCode(t, err, guardmodel.CodeNothingToRevert)
 				return
 			}

@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 func TestNamesValidate(t *testing.T) {
@@ -375,7 +376,7 @@ func TestAgentRoleHasConnectionLimit(t *testing.T) {
 					spec := c.spec(t)
 					spec.Name, spec.Write, spec.Read = c.name, appLeads, appLeads
 					initAs(t, admin, d.Names, spec)
-					require.Equal(t, int32(guardmodel.AgentConnectionLimit), scalarOf[int32](t, admin,
+					require.Equal(t, int32(setupcode.AgentConnectionLimit), scalarOf[int32](t, admin,
 						`SELECT rolconnlimit FROM pg_catalog.pg_roles WHERE rolname = $1`, role))
 				})
 			}
@@ -395,10 +396,10 @@ func TestAgentCannotGetPastItsConnectionLimit(t *testing.T) {
 	require.Equal(t, "42501", guardtest.SQLState(err), "insufficient privilege")
 	_, err = a.Conn.Exec(ctx, `ALTER ROLE `+a.Role+` CONNECTION LIMIT 100`)
 	require.Equal(t, "42501", guardtest.SQLState(err), "insufficient privilege")
-	require.Equal(t, int32(guardmodel.AgentConnectionLimit), scalarOf[int32](t, a.Conn,
+	require.Equal(t, int32(setupcode.AgentConnectionLimit), scalarOf[int32](t, a.Conn,
 		`SELECT rolconnlimit FROM pg_catalog.pg_roles WHERE rolname = current_user`))
 
-	for range guardmodel.AgentConnectionLimit - 1 { // a.Conn is the first
+	for range setupcode.AgentConnectionLimit - 1 { // a.Conn is the first
 		a.Connect(t)
 	}
 	c, err := pgdial.Connect(ctx, a.URL)

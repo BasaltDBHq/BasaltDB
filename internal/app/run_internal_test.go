@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 // The engine's pool, basalt status and the setup finisher must fit under
@@ -20,7 +20,7 @@ import (
 func TestAgentPoolFitsTheRoleConnectionLimit(t *testing.T) {
 	t.Parallel()
 	const statusAndFinisher = 2
-	require.Less(t, agentPoolConns+statusAndFinisher, guardmodel.AgentConnectionLimit)
+	require.Less(t, agentPoolConns+statusAndFinisher, setupcode.AgentConnectionLimit)
 }
 
 func TestListenPagesRefusesATakenPort(t *testing.T) {

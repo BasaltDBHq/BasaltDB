@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -133,7 +134,7 @@ func TestPrepareRevertStoresBinding(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id IN (82, 83)`))
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 83`)
 
-	p, err := guard.PrepareRevert(ctx, a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
+	p, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
 	require.NoError(t, err)
 	req := revert.Request{RevertID: p.RevertID, Binding: p.BindingText, Lines: p.Lines}
 	b, err := req.Check()
@@ -160,9 +161,9 @@ func TestPrepareNothingToRevert(t *testing.T) {
 	in := newRun(t, a, "One change")
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 84`))
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 84`)
-	_, err := guard.PrepareRevert(ctx, a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
+	_, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
 	requireCode(t, err, guardmodel.CodeNothingToRevert)
-	_, err = guard.PrepareRevert(ctx, a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "")
+	_, err = guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "")
 	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 }
 
@@ -182,7 +183,7 @@ func TestPrepareBatchedAboveOneCall(t *testing.T) {
 		stmts = append(stmts, fmt.Sprintf(`INSERT INTO public.items SELECT g, 'v' FROM generate_series(%d, %d) g`, i+1, i+10))
 	}
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, stmts...))
-	scope := guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
+	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
 	oneCall, err := guard.PrepareRevert(ctx, a.Conn, scope, "Undo")
 	require.NoError(t, err)
 	require.False(t, oneCall.Batched)

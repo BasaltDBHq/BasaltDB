@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -375,7 +376,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	var r revert.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &r))
 
-	var out guardmodel.AppliedRevert
+	var out action.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, p.signRevertPage(id, secret, env.person), &out))
 	body = requestRevert(t, env.h, map[string]any{"revertId": id, "reissueLink": true})
 	require.Equal(t, "APPLIED", body["status"])

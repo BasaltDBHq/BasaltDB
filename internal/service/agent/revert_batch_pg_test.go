@@ -13,8 +13,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -29,7 +29,7 @@ const planRows = revert.MaxLines + 10
 type batchEnv struct {
 	agentEnv
 	runID uuid.UUID
-	prep  guardmodel.PreparedRevert
+	prep  action.PreparedRevert
 }
 
 func itemsLeft(t *testing.T, d *guardtest.DB, v string) int {
@@ -56,7 +56,7 @@ func newBatchEnv(t *testing.T, pagesOrigin ...string) batchEnv {
 		stmts = append(stmts, fmt.Sprintf(`UPDATE public.items SET v = 'agent' WHERE id BETWEEN %d AND %d`, i+1, i+10))
 	}
 	require.NoError(t, guardtest.Guarded(ctx, e.a.Conn, in, stmts...))
-	prep, err := guard.PrepareRevert(ctx, e.a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
+	prep, err := guard.PrepareRevert(ctx, e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
 	require.NoError(t, err)
 	require.True(t, prep.Batched)
 	return batchEnv{agentEnv: e, runID: in.RunID, prep: prep}
@@ -224,7 +224,7 @@ func TestRevertPlanOfOneCallRevert(t *testing.T) {
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Win a lead"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
 	require.NoError(t, guardtest.Guarded(ctx, e.a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 70`))
-	prep, err := guard.PrepareRevert(ctx, e.a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
+	prep, err := guard.PrepareRevert(ctx, e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
 	require.NoError(t, err)
 	body, isError := e.h.call(t, "revert_plan", map[string]any{"revertId": prep.RevertID.String()})
 	requireToolError(t, body, isError, "INVALID_ARGUMENT", "", "")

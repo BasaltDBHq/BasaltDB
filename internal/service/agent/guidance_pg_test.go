@@ -12,7 +12,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -152,7 +152,7 @@ func TestRedoARevertedRun(t *testing.T) {
 	env := agentHarness(t)
 	ctx := context.Background()
 	runID, _ := winLeads(t, env.h, "91, 92")
-	prep, err := guard.PrepareRevert(ctx, env.a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: uuid.MustParse(runID)}, "Undo")
+	prep, err := guard.PrepareRevert(ctx, env.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(runID)}, "Undo")
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, env.a.Conn, prep.RevertID, signBinding(t, env.person, prep.BindingText))
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestRedoARevertedRun(t *testing.T) {
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Other's work"}
 	require.NoError(t, guard.StartRun(ctx, other.Conn, in))
 	require.NoError(t, guardtest.Guarded(ctx, other.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 93`))
-	otherPrep, err := guard.PrepareRevert(ctx, other.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
+	otherPrep, err := guard.PrepareRevert(ctx, other.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, other.Conn, otherPrep.RevertID, signBinding(t, env.person, otherPrep.BindingText))
 	require.NoError(t, err)

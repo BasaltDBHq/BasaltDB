@@ -12,7 +12,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -51,7 +51,7 @@ func newWidenedPlan(t *testing.T) widenedPlan {
 		stmts = append(stmts, fmt.Sprintf(`UPDATE public.items SET v = 'helper' WHERE id BETWEEN %d AND %d`, i+1, i+10))
 	}
 	require.NoError(t, guardtest.Guarded(ctx, helper.Conn, start(helper), stmts...))
-	prep, err := guard.PrepareRevert(ctx, bot.Conn, guardmodel.RevertScope{Kind: revert.ScopeTask, ID: task}, "Undo the task")
+	prep, err := guard.PrepareRevert(ctx, bot.Conn, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task")
 	require.NoError(t, err)
 	require.False(t, prep.Batched, "bot's own part is ten lines")
 
@@ -66,7 +66,7 @@ func newWidenedPlan(t *testing.T) widenedPlan {
 	require.NoError(t, err)
 	as, err := env.person.Sign(revert.RescopeChallenge(prep.RevertID, nonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	out, err := guard.RescopeRevert(ctx, bot.Conn, guardmodel.RescopeRequest{RevertID: prep.RevertID, Select: every, Proof: &as, RescopeKey: key})
+	out, err := guard.RescopeRevert(ctx, bot.Conn, action.RescopeRequest{RevertID: prep.RevertID, Select: every, Proof: &as, RescopeKey: key})
 	require.NoError(t, err)
 	b, err := revert.ParseBinding(out.BindingText)
 	require.NoError(t, err)

@@ -19,7 +19,6 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -112,7 +111,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			limits := sqlguard.DefaultLimits()
 			writer := postgres.NewStore(zonedPool(t, a.URL, zones[0]), limits, time.Now)
 			run := write(t, writer, `UPDATE public.events SET note = 'tagged' WHERE id IN (1, 2)`)
-			scope := guardmodel.RevertScope{Kind: revert.ScopeRun, ID: run}
+			scope := action.Scope{Kind: revert.ScopeRun, ID: run}
 
 			engine := postgres.NewStore(zonedPool(t, a.URL, zones[1]), limits, time.Now)
 			pv, err := engine.PreviewRevert(ctx, action.Scope(scope), "", 10)
@@ -272,7 +271,7 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 	require.Contains(t, all, `"ratio": 0.30000000000000004`)
 
 	// The engine reverts the direct write without a false conflict.
-	scope := guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
+	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
 	pv, err := engine.PreviewRevert(ctx, action.Scope(scope), "", 10)
 	require.NoError(t, err)
 	requireNoSkip(t, previewTexts(pv))
@@ -360,7 +359,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	require.Equal(t, images(t, d, viaEngine), got)
 	require.Contains(t, strings.Join(got, "\n"), `"body": "\\x00ff41"`)
 
-	scope := guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
+	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
 	prep, err := engine.PrepareRevert(ctx, action.Scope(scope), "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
@@ -384,7 +383,7 @@ func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
 		at = at + interval '1 day', took = took * 2 WHERE id IN (1, 2)`)
 
 	hand := handConn(t, a.URL)
-	scope := guardmodel.RevertScope{Kind: revert.ScopeRun, ID: run}
+	scope := action.Scope{Kind: revert.ScopeRun, ID: run}
 	lines, err := guard.PreviewRevert(ctx, hand, scope)
 	require.NoError(t, err)
 	requireNoSkip(t, lines)

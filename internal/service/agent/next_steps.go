@@ -13,11 +13,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 )
 
@@ -578,7 +577,7 @@ func tooManyConnectionsMessage(cmds Commands) string {
 	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
-		cmds.agent, guardmodel.AgentConnectionLimit)
+		cmds.agent, setupcode.AgentConnectionLimit)
 }
 
 // fixes are what the person is told for the machine problems of the guard

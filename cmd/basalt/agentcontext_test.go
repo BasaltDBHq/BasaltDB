@@ -126,17 +126,18 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 // continuation (backslash, newline) joins the next line.
 var initCommand = regexp.MustCompile("(?:basalt\\s+)?\\binit(?:\\s+-[^\\n`\"';]*?)?(?:\\n|`|\"|'|;|\\.\\s|\\.$|$)")
 
-// manualInits are the basalt init commands in text that carry a flag which
-// takes the admin connection string out of the page: an agent that runs one
-// has to ask the person for the admin password. Plain basalt init (the
+// manualInits are the names in text of the ways to hand the admin connection
+// string to basalt outside a setup page: the --setup-code and --database-url
+// flags and the BASALT_ADMIN_DATABASE_URL= assignment. An agent told to use
+// one has to ask the person for the admin password. Plain basalt init (the
 // person's own computer) and basalt init --remote (one the person cannot
-// reach) are what an agent runs, and are fine.
+// reach) are what an agent runs, and are fine. It is a plain substring check,
+// so a flag on the next line or after "with" is caught too.
 func manualInits(text string) []string {
-	text = strings.ReplaceAll(text, "\\\n", " ")
 	var out []string
-	for _, m := range initCommand.FindAllString(text, -1) {
-		if strings.Contains(m, "--setup-code") || strings.Contains(m, "--database-url") {
-			out = append(out, strings.TrimSpace(m))
+	for _, bad := range []string{"--setup-code", "--database-url", envAdminURL + "="} {
+		if strings.Contains(text, bad) {
+			out = append(out, bad)
 		}
 	}
 	return out
@@ -156,7 +157,9 @@ func TestManualInitsCatchesTheManualCommand(t *testing.T) {
 	for _, text := range []string{
 		"run basalt init --setup-code basalt-setup.1.x.y",
 		"or run basalt init --agent bot --database-url postgres://h/db",
-		"Run `basalt init --setup-code CODE` now.",
+		"Run `basalt init` with --setup-code now.",
+		"basalt init \\\n  --database-url postgres://h/db",
+		"export BASALT_ADMIN_DATABASE_URL=postgres://h/db and run basalt init",
 	} {
 		require.NotEmpty(t, manualInits(text), text)
 	}
@@ -164,7 +167,7 @@ func TestManualInitsCatchesTheManualCommand(t *testing.T) {
 		"run basalt init --remote --agent bot",
 		"run basalt init --agent bot on the person's own computer",
 		"Use basalt init for that. The agent is --agent bot.",
-		"initArgs --agent bot",
+		"BASALT_ADMIN_DATABASE_URL is set where an agent can read it",
 	} {
 		require.Empty(t, manualInits(text), text)
 	}

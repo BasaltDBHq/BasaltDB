@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -706,18 +707,23 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
 		})
 }
 
-// passkeys counts the active passkeys; none is NO_PASSKEY. A count that
-// fails is logged and leaves active out.
+// passkeys counts the active passkeys that can sign the agent's links:
+// those registered on the origin of its pages (pagesPasskeys); none is
+// NO_PASSKEY. A count that fails is logged and leaves active out.
 func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone bool) PasskeysStatus {
-	keys, err := s.passkeys(ctx)
+	all, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
 		return PasskeysStatus{}
 	}
+	keys, origin := pagesPasskeys(all, s.pagesBase)
 	n := len(keys)
 	if n == 0 {
-		ps.add(problemNoPasskey, "no passkey is registered, so held writes and reverts cannot be signed",
-			func(b *Steps) string { return noPasskeySteps(b, s.cmds) })
+		msg := "no passkey is registered, so held writes and reverts cannot be signed"
+		if len(all) > 0 {
+			msg = "no passkey is registered on " + origin + ", where this agent's links open, so held writes and reverts cannot be signed"
+		}
+		ps.add(problemNoPasskey, msg, func(b *Steps) string { return noPasskeySteps(b, s.cmds) })
 	}
 	out := PasskeysStatus{Registered: n > 0, Active: &n}
 	for _, k := range keys {
@@ -733,6 +739,25 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone b
 		out.Summary = passkeySummary(out.Keys)
 	}
 	return out
+}
+
+// pagesPasskeys keeps the passkeys registered on the origin of the pages
+// at base, and returns that origin. A passkey signs only on the origin it
+// was registered on, so a localhost one cannot sign an agent's portal
+// links. A base with no origin keeps every passkey.
+func pagesPasskeys(keys []passkey.Credential, base string) ([]passkey.Credential, string) {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return keys, ""
+	}
+	origin := u.Scheme + "://" + u.Host
+	out := make([]passkey.Credential, 0, len(keys))
+	for _, k := range keys {
+		if k.Relying.Origin == origin {
+			out = append(out, k)
+		}
+	}
+	return out, origin
 }
 
 // passkeySummary says in words how many passkeys are registered and the

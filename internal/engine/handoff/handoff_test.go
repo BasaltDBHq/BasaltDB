@@ -354,6 +354,11 @@ func TestConnStringAndLoginUser(t *testing.T) {
 	require.Equal(t, "postgres://basalt_agent_bot:pw@db.example.com:5432/app?sslmode=verify-full", ConnString(db, "basalt_agent_bot", "pw", false))
 	pooler := Address{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 	require.Equal(t, "basalt_agent_bot.abcdefghijklmnopqrst", LoginUser(pooler, "basalt_agent_bot"))
+	poolerCo := Address{Host: "aws-0-eu-central-1.pooler.supabase.co", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+	require.NoError(t, poolerCo.Check(), "the pooler's .co name is the pooler too")
+	require.Equal(t, "basalt_agent_bot.abcdefghijklmnopqrst", LoginUser(poolerCo, "basalt_agent_bot"))
+	lookalike := Address{Host: "evilpooler.supabase.co", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+	require.Equal(t, "basalt_agent_bot", LoginUser(lookalike, "basalt_agent_bot"))
 	direct := Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 	require.Equal(t, "basalt_agent_bot", LoginUser(direct, "basalt_agent_bot"))
 }

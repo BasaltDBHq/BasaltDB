@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -47,8 +48,10 @@ func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) StatusReport 
 	require.NoError(t, err)
 	r, err := LocalStatus{
 		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
-		Passkeys: func(context.Context) ([]passkey.Credential, error) { return []passkey.Credential{{}}, nil },
-		Log:      slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+		Passkeys: func(context.Context) ([]passkey.Credential, error) {
+			return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
+		},
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
 	}.Report(context.Background())
 	require.NoError(t, err)
 	return r

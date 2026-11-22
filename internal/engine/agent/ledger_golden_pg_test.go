@@ -13,7 +13,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -117,7 +116,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	// Applying with a signature from a key the database does not know.
 	var req revert.Request
 	require.Equal(t, http.StatusOK, c.p.get(revertPath(revertID), secret, &req))
-	forger, err := passkeytest.New(passkey.Production)
+	forger, err := passkeytest.New(e.person.Credential().Relying)
 	require.NoError(t, err)
 	forger.ID = e.person.ID
 	as, err := forger.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)

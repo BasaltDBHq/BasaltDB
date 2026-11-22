@@ -192,7 +192,7 @@
           "active": {
             "type": "integer",
             "minimum": 0,
-            "description": "How many passkeys are active. Absent when the engine is down or the passkeys cannot be read."
+            "description": "How many passkeys are active on the origin of the agent's pages, where its links open: a passkey of another origin cannot sign there and is not counted or listed. Absent when the engine is down or the passkeys cannot be read."
           },
           "keys": {
             "type": "array",

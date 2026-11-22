@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/supabase"
+
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -714,11 +716,6 @@ func roleDrop(ctx context.Context, q Querier, role string) (string, error) {
 	return "GRANT " + ident + " TO CURRENT_USER;\nDROP OWNED BY " + ident + ";\nDROP ROLE " + ident, nil
 }
 
-// supabasePoolerHost is the host suffix of Supabase's pooler (Supavisor),
-// which routes a connection by the project ref after the role name:
-// user "postgres.<ref>" logs in as role postgres of project <ref>.
-const supabasePoolerHost = ".pooler.supabase.com"
-
 // agentQueryKeys are the connection string parameters the agent's
 // connection string keeps from the admin's: where the server is and how
 // to trust it, never who logs in. Every other parameter is dropped, among
@@ -773,7 +770,7 @@ func AgentConnString(adminURL, role, password string) (string, error) {
 		return "", ErrAdminURLParse
 	}
 	user := role
-	if _, ref, ok := strings.Cut(u.User.Username(), "."); ok && strings.HasSuffix(u.Hostname(), supabasePoolerHost) {
+	if _, ref, ok := strings.Cut(u.User.Username(), "."); ok && supabase.PoolerHost(u.Hostname()) {
 		user = role + "." + ref
 	}
 	query := url.Values{}

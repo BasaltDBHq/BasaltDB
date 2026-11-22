@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/supabase"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -28,10 +30,6 @@ const (
 	sslDefault          = "prefer"
 	bindingRequire      = "require"
 )
-
-// supabasePooler is the host suffix of Supabase's pooler (Supavisor), which
-// offers no channel binding.
-const supabasePooler = ".pooler.supabase.com"
 
 // tlsCandidate is one sslmode, with or without channel_binding=require.
 type tlsCandidate struct {
@@ -84,7 +82,7 @@ func hardenedCredential(ctx context.Context, dial func(context.Context, string) 
 	mode := q.Get(paramSSLMode)
 	p := protection{
 		mode: mode, binding: q.Get(paramChannelBinding) == bindingRequire,
-		pooler: strings.HasSuffix(strings.ToLower(u.Hostname()), supabasePooler),
+		pooler: supabase.PoolerHost(u.Hostname()), // no channel binding there
 	}
 	if p.mode == "" {
 		p.mode = sslDefault

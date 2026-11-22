@@ -34,6 +34,13 @@ func TestParseConnURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Target{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}, tg)
 
+	_, tg, err = ParseConnURL("postgresql://postgres.abcdefghijklmnopqrst:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.co:6543/postgres")
+	require.NoError(t, err)
+	require.Equal(t, "abcdefghijklmnopqrst", tg.SupabaseRef, "the pooler's .co name")
+	_, tg, err = ParseConnURL("postgresql://postgres.abcdefghijklmnopqrst@evilpooler.supabase.co:6543/postgres")
+	require.NoError(t, err)
+	require.Empty(t, tg.SupabaseRef, "a look-alike is no pooler")
+
 	_, tg, err = ParseConnURL("postgres://postgres@db.abcdefghijklmnopqrst.supabase.co/postgres")
 	require.NoError(t, err)
 	require.Equal(t, Target{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}, tg)

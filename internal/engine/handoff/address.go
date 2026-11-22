@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/supabase"
+
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
@@ -98,7 +100,7 @@ func (a Address) checkRef() error {
 		return nil
 	}
 	host := strings.ToLower(a.Host)
-	if host == "db."+a.SupabaseRef+supabaseDirect || strings.HasSuffix(host, supabasePooler) {
+	if host == "db."+a.SupabaseRef+supabaseDirect || supabase.PoolerHost(host) {
 		return nil
 	}
 	return ErrAddressInvalid

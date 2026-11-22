@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
@@ -84,7 +85,8 @@ func (k keys) Passkeys(context.Context) ([]passkey.Credential, error) {
 	return testCredentials(k.n), nil
 }
 
-// testKeys are eight fixed-for-the-run P-256 credentials with ids 1..8.
+// testKeys are eight fixed-for-the-run P-256 credentials with ids 1..8,
+// registered on the default local pages.
 var testKeys = sync.OnceValue(func() []passkey.Credential {
 	out := make([]passkey.Credential, 8)
 	for i := range out {
@@ -92,7 +94,9 @@ var testKeys = sync.OnceValue(func() []passkey.Credential {
 		if err != nil {
 			panic(err)
 		}
-		out[i] = passkey.Credential{ID: []byte{byte(i + 1)}, PublicKey: &k.PublicKey}
+		// On the default local pages, where the agent's links open unless a
+		// test sets another pages base.
+		out[i] = passkey.Credential{ID: []byte{byte(i + 1)}, PublicKey: &k.PublicKey, Relying: passkey.Relying{RPID: "localhost", Origin: links.DefaultLocal}}
 	}
 	return out
 })
@@ -912,9 +916,11 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 		require.NoError(t, err)
 		r, err := LocalStatus{
 			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
-			Probe:    &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)},
-			Passkeys: func(context.Context) ([]passkey.Credential, error) { return []passkey.Credential{{}}, nil },
-			Log:      slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+			Probe: &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)},
+			Passkeys: func(context.Context) ([]passkey.Credential, error) {
+				return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
+			},
+			Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
 		}.Report(context.Background())
 		require.NoError(t, err)
 		return r
@@ -994,6 +1000,70 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	none := engineStatus(probe(), 0, nil)(t)
 	require.Empty(t, none.Passkeys.Keys)
 	require.Empty(t, none.Passkeys.Summary)
+}
+
+// originKeys answers Passkeys with one key per origin, ids 1, 2, ...
+type originKeys struct {
+	approvalStore
+	origins []string
+}
+
+func (k originKeys) Passkeys(context.Context) ([]passkey.Credential, error) {
+	out := append([]passkey.Credential(nil), testCredentials(len(k.origins))...) // the shared keys stay as they are
+	for i, o := range k.origins {
+		out[i].Relying = passkey.Relying{Origin: o}
+	}
+	return out, nil
+}
+
+// An agent whose links open on the portal counts only the portal's
+// passkeys: a localhost passkey cannot sign there, so with only that one
+// status says NO_PASSKEY with the steps to register one.
+func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
+	t.Parallel()
+	report := func(t *testing.T, base string, origins ...string) StatusReport {
+		t.Helper()
+		d := deps()
+		d.OperatedBy = mcpcontract.OperatedByAgent
+		d.PagesBase = base
+		d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+		setApprovals(&d, originKeys{origins: origins})
+		d.Now = func() time.Time { return statusNow }
+		cmds, err := NewCommands("bot", "", "linux")
+		require.NoError(t, err)
+		d.Commands = cmds
+		r, err := NewService(d).Status(context.Background())
+		require.NoError(t, err)
+		return r
+	}
+	const local = "http://localhost:8797"
+
+	onlyLocal := report(t, links.Portal, local)
+	require.False(t, onlyLocal.Passkeys.Registered)
+	require.Equal(t, 0, *onlyLocal.Passkeys.Active)
+	require.Empty(t, onlyLocal.Passkeys.Keys)
+	var noKey *Problem
+	for i := range onlyLocal.Problems {
+		if onlyLocal.Problems[i].Code == problemNoPasskey {
+			noKey = &onlyLocal.Problems[i]
+		}
+	}
+	require.NotNil(t, noKey, "a localhost passkey does not count for the portal")
+	require.Contains(t, noKey.Message, "no passkey is registered on "+links.Portal)
+	require.NotEmpty(t, noKey.NextSteps)
+
+	both := report(t, links.Portal, local, links.Portal)
+	require.True(t, both.Passkeys.Registered)
+	require.Equal(t, 1, *both.Passkeys.Active)
+	require.Equal(t, passkey.Bytes{2}, both.Passkeys.Keys[0].CredentialID, "the portal's passkey only")
+	for _, p := range both.Problems {
+		require.NotEqual(t, problemNoPasskey, p.Code)
+	}
+
+	// On local pages it is the other way round.
+	localPages := report(t, local, local, links.Portal)
+	require.Equal(t, 1, *localPages.Passkeys.Active)
+	require.Equal(t, passkey.Bytes{1}, localPages.Passkeys.Keys[0].CredentialID)
 }
 
 // A basalt mcp that tried to start the engine and could not says why in

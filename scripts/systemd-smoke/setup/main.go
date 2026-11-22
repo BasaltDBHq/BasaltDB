@@ -56,12 +56,12 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := post(origin, localsetup.SetupCheckPath, req, &checked); err != nil {
 		return fmt.Errorf("check: %w", err)
 	}
-	if checked.PasskeyNeeded {
-		reg, err := register(origin, checked.Challenge)
+	if checked.PasskeyNeeded && checked.Challenge != nil {
+		reg, err := register(origin, *checked.Challenge)
 		if err != nil {
 			return err
 		}
-		req.Challenge, req.Passkey = &checked.Challenge, &localsetup.Passkey{RegistrationResponse: reg, Label: "smoke"}
+		req.Challenge, req.Passkey = checked.Challenge, &localsetup.Passkey{RegistrationResponse: reg, Label: "smoke"}
 	}
 	var done localsetup.RunAnswer
 	if err := post(origin, localsetup.SetupRunPath, req, &done); err != nil {

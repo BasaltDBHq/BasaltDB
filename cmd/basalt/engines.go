@@ -67,7 +67,7 @@ func engineRevoke(c *cliIO, args []string) int {
 func revokeEngine(c *cliIO, conn *pgx.Conn, ref string, yes bool) error {
 	engines, err := guard.Engines(c.ctx, conn, true)
 	if isUndefinedTable(err) {
-		return errors.New("this database records no engines (its guard is older than version 33; basalt upgrade adds them)")
+		return errors.New("this database records no engines (its guard is older than version 33; a guard update from the setup page adds them)")
 	}
 	if err != nil {
 		return err

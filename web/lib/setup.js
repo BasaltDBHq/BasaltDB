@@ -11,6 +11,33 @@ export const CHECK_PATH = "/api/v1/setup/check";
 export const RUN_PATH = "/api/v1/setup/run";
 export const LINK_PREFIX = "1.";
 
+// JOBS are the jobs this page runs: INSTALL on an engine with no config,
+// UPDATE (the guard's missing migrations) and REMOVE (Basalt out of the
+// agent's database) on one that has it.
+export const JOBS = ["INSTALL", "UPDATE", "REMOVE"];
+
+// JOB_TEXT is each job's fixed words on the page.
+export const JOB_TEXT = {
+  INSTALL: {
+    title: "Set up BasaltDB for your agent",
+    intro: (agent) => `Your agent ${agent} asked to connect to a database. This page sets it up on this computer.`,
+    run: "Set up",
+    done: (agent) => `The agent ${agent} is set up. Tell it to go on; it connects with:`,
+  },
+  UPDATE: {
+    title: "Update BasaltDB's guard",
+    intro: (agent) => `Your agent ${agent} found that the guard in its database is older than BasaltDB on this computer. This page adds the guard's missing migrations, and nothing else.`,
+    run: "Update the guard",
+    done: (agent) => `The guard is updated. Tell the agent ${agent} to go on; it needs no restart.`,
+  },
+  REMOVE: {
+    title: "Remove BasaltDB",
+    intro: (agent) => `This page removes BasaltDB from the database of your agent ${agent}: the guard, the ledger of every action and the agents' roles. Nothing can undo it.`,
+    run: "Remove BasaltDB",
+    done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}.`,
+  },
+};
+
 const PROMPT_TIMEOUT_MS = 120000;
 const MAX_FRAGMENT = 4096;
 const AGENT_NAME = /^[a-z][a-z0-9_]{0,49}$/;
@@ -42,10 +69,11 @@ export function parseSetupLink(hash) {
   if (keys !== "agent,demo,job,osUser") {
     throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
   }
-  if (job.job !== "INSTALL") throw new CodeError("This setup link names a job this page does not run.");
+  if (!JOBS.includes(job.job)) throw new CodeError("This setup link names a job this page does not run.");
   if (typeof job.agent !== "string" || !AGENT_NAME.test(job.agent)) throw new CodeError("This setup link names an agent whose name cannot be used.");
   if (typeof job.osUser !== "string" || !OS_USER.test(job.osUser)) throw new CodeError("This setup link names an OS user that cannot be used.");
   if (typeof job.demo !== "boolean") throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
+  if (job.demo && job.job !== "INSTALL") throw new CodeError("This setup link is damaged. Ask the agent for a new one.");
   return { job: job.job, agent: job.agent, osUser: job.osUser, demo: job.demo };
 }
 
@@ -138,18 +166,25 @@ async function main() {
     $("error").hidden = false;
     return;
   }
-  $("job-agent").textContent = job.agent;
+  const text = JOB_TEXT[job.job];
+  document.title = text.title;
+  $("title").textContent = text.title;
+  $("intro").textContent = text.intro(job.agent);
   $("job-os-user").textContent = job.osUser;
   $("job-demo").hidden = !job.demo;
+  $("remove-confirm").hidden = job.job !== "REMOVE";
   $("main").hidden = false;
   const fetchFn = browserFetch;
   let databaseUrl = "";
   let checked = null;
-  const confirmed = () => $("confirm-os-user").checked;
+  const confirmed = () => $("confirm-os-user").checked && (job.job !== "REMOVE" || $("confirm-remove").checked);
   const sync = () => {
     $("check").disabled = !confirmed() || $("database-url").value === "";
   };
   $("confirm-os-user").addEventListener("change", sync);
+  $("confirm-remove").addEventListener("change", () => {
+    if (checked) $("run").disabled = !confirmed();
+  });
   $("database-url").addEventListener("input", () => {
     checked = null;
     $("review").hidden = true;
@@ -171,8 +206,9 @@ async function main() {
     list("lines", checked.lines);
     list("notes", checked.notes);
     $("sql").textContent = checked.sql;
-    $("run").textContent = checked.passkeyNeeded ? "Create passkey and set up" : "Set up";
+    $("run").textContent = checked.passkeyNeeded ? "Create passkey and set up" : text.run;
     $("review").hidden = false;
+    $("run").disabled = !confirmed();
     sync();
   });
   $("run").addEventListener("click", async () => {
@@ -195,7 +231,7 @@ async function main() {
       databaseUrl = "";
       $("database-url").value = "";
       $("status").textContent = "";
-      showDone(done);
+      showDone(job, done);
     } catch (err) {
       showError(err);
       $("run").disabled = false;
@@ -203,11 +239,12 @@ async function main() {
   });
 }
 
-function showDone(done) {
+function showDone(job, done) {
   $("main").hidden = true;
   $("done").hidden = false;
-  $("done-agent").textContent = done.agent;
-  $("mcp-command").textContent = done.mcpCommand;
+  $("done-text").textContent = JOB_TEXT[job.job].done(done.agent || job.agent);
+  $("mcp-command").textContent = done.mcpCommand || "";
+  $("mcp-command").hidden = job.job !== "INSTALL" || !done.mcpCommand;
   list("done-lines", done.lines || []);
   list("warnings", done.warnings || []);
   const codes = (done.passkeys || []).map((p) => `${p.label || "Passkey"}: ${p.checkCode}`);

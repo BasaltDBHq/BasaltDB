@@ -1049,7 +1049,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // Admit refuses a tool call the agent cannot be served yet (CONTRACT.md,
 // Next steps, Startup failures): its INSTALL setup code has not run, or
 // the guard is not installed or misses a breaking migration. It reads the
-// guard on every call, so basalt upgrade needs no engine restart. status is
+// guard on every call, so a guard update needs no engine restart. status is
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
 	if v, known := s.statusDeps().setupGate(ctx); known && v.blocks() {

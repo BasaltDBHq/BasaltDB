@@ -13,7 +13,7 @@ Breaking (the engine and `basalt log` call `install_id()`). Schema version 1 ide
 | `record_pin_set_aside(bigint, bytea, oid)` | Dropped. Replaced by `record_pin_set_aside(bigint, bytea, uuid)`, which also refuses with detail `NO_INSTALL` |
 | `agent_reinstalls` | Recreated with `pinned_install` and `install` as `uuid` (the grant is kept). Ledger rows are never rewritten: a report recorded at schema version 1 keeps its oids in `detail`, and the view shows each such oid as the uuid `00000000-0000-0000-0000-` followed by the oid in 12 hex digits, which no random id is, so the earlier reports of one install still group together |
 
-`basalt init` and `basalt upgrade` write the install row with the statement of the schema version the guard is at after the migrations, so an install that stops at schema version 1 still writes schema version 1's row. After the upgrade, a pin saved at schema version 1 carries no install id and is settled as [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record) describes: on an unchanged ledger it moves to the new id with the warning, once.
+The install and the guard update ([Setup jobs](setup.md#setup-jobs)) write the install row with the statement of the schema version the guard is at after the migrations, so an install that stops at schema version 1 still writes schema version 1's row. After the upgrade, a pin saved at schema version 1 carries no install id and is settled as [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record) describes: on an unchanged ledger it moves to the new id with the warning, once.
 
 ### Schema version 3: plugin events
 
@@ -59,7 +59,7 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 
 ### Schema version 7: shorter setup-code life
 
-[Valid for 10 minutes, single use (CO-13)](setup.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed, since that guard has no grace. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by a guard at this version: the person asks for a new link; `basalt upgrade` applies the new `record_setup`. New installs get it with the rest. Idempotent.
+[Valid for 10 minutes, single use (CO-13)](setup.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed, since that guard has no grace. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by a guard at this version: the person asks for a new link; the guard update (the setup page's `UPDATE`) applies the new `record_setup`. New installs get it with the rest. Idempotent.
 
 | Object | Change |
 |---|---|

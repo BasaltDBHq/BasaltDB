@@ -246,7 +246,7 @@ To restart it by hand anyway:
 
 You do not restart your agent's MCP client. `basalt mcp`, the process the client started, only relays to the engine and keeps running; it waits up to 15 seconds for the engine to come back. A call the engine turned away because it was restarting was not run, so `basalt mcp` sends it to the new engine. A read the engine was answering when it stopped (`query`, `describe`, `list_pending`, `list_runs`, `run_history`, `status`) is sent once more to the new engine. A `write`, an approval or a revert that may have started is never sent twice: the agent is told the call may or may not have run, and it reads before it writes again.
 
-Then, if `basalt status --agent NAME` says the guard can be upgraded, run `basalt upgrade --agent NAME`; the engine serves again without a restart.
+Then, if the agent's `status` says the guard can be updated, ask the agent for the update link and run the update on that page; the engine serves again without a restart.
 
 How the pieces talk, for reference: the client starts `basalt mcp` over stdio; it dials the engine's Unix socket for that agent and forwards each message. The engine holds the credential and talks to Postgres. When the engine is down, `basalt mcp` answers `status` and the tool list itself and every other call with `ENGINE_UNREACHABLE`.
 
@@ -265,12 +265,13 @@ A container usually has no service manager: PID 1 is your process or a small ini
 
 ## Remove everything
 
+Ask the agent to remove BasaltDB. It gives you a link to the setup page. The page shows the SQL and, once you type the admin connection string there, drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles in one transaction, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. Then remove the service:
+
 ```sh
-basalt uninstall
 sudo basalt service uninstall
 ```
 
-`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds. `basalt uninstall` also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data`.
+`service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds.
 
 ### What `service uninstall` leaves behind
 
@@ -285,7 +286,7 @@ sudo basalt service uninstall
 
 The socket directory (`/run/basalt` on Linux, `/Library/Application Support/Basalt/run` on macOS) holds only sockets and the engine's lock. It goes away on Linux when the service stops; on macOS it sits inside the config directory and goes with it.
 
-Once you have run `basalt uninstall`, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
+Once the setup page removed BasaltDB, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
 
 On Linux:
 

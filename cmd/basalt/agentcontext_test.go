@@ -39,7 +39,6 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 		{"init with a usage error", []string{"init", "--write", "public.leads"}, "basalt init --remote --agent NAME"},
 		{"init operated by agent", []string{"init", "--agent", "bot", "--write", "public.leads", "--operated-by", "agent", "--yes"}, "basalt init --remote --agent NAME"},
 		{"setup code", []string{"init", "--setup-code", "basalt-setup.1.x.y", "--yes"}, "Give the person this command instead of running it"},
-		{"uninstall", []string{"uninstall", "--yes"}, "Give the person this command instead of running it"},
 	}
 	for _, marker := range agentMarkers {
 		for _, tc := range cases {
@@ -65,7 +64,6 @@ func TestAgentContextAdminEnvSaysRotate(t *testing.T) {
 	for _, args := range [][]string{
 		{"init", "--agent", "bot", "--write", "public.leads", "--yes"},
 		{"init", "--setup-code", "basalt-setup.1.x.y"},
-		{"upgrade", "--agent", "bot"},
 	} {
 		t.Run(args[0]+" "+args[1], func(t *testing.T) {
 			t.Parallel()

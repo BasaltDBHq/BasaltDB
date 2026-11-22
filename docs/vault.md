@@ -6,6 +6,8 @@ The protocol is in [CONTRACT.md, Vault channel](../contract/vault-channel.md#vau
 
 For a short statement of what the relay sees, stores and logs, see [relay-privacy.md](relay-privacy.md).
 
+For a reviewer who wants the whole protocol in one document (keys, handshake, frames, receipts, threats, test vectors and open questions), see [security/vault-channel-spec.md](security/vault-channel-spec.md).
+
 ## What is built, and what is not
 
 Built on `master`:

@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
 	"github.com/basaltdbhq/basaltdb/web"
@@ -123,7 +122,7 @@ func Options(base string) portalverify.Options {
 		// connect page): its own policy, never stored.
 		FileHeaders: map[string]http.Header{ConnectPageFile: httpsec.ExpectedConnectPage()},
 	}
-	for _, r := range pages.PortalPages() {
+	for _, r := range web.PortalPages() {
 		o.Routes = append(o.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
 	}
 	return o

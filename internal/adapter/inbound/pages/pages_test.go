@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/web"
 )
 
 // stubAgent knows one approval; RelayApproval records what it relays.
@@ -319,7 +320,7 @@ func TestRedirectsMatchRoutes(t *testing.T) {
 		got[f[0]] = f[1]
 	}
 	want := map[string]string{}
-	for _, r := range pages.PortalPages() {
+	for _, r := range web.PortalPages() {
 		src := r.Path
 		if r.ID {
 			src += "*"

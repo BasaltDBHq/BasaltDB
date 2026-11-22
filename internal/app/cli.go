@@ -1,0 +1,151 @@
+package app
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
+)
+
+// What the commands in cmd/basalt use from the outbound adapters. cmd does
+// not import an adapter (ARCHITECTURE.md); it reaches each through the
+// names here, so this file is the one place the commands' construction of
+// adapters lives.
+
+// The engine service on the operating system.
+type (
+	OSSystem     = osservice.System
+	OSExecSystem = osservice.OSSystem
+	OSSpec       = osservice.Spec
+	OSFile       = osservice.File
+	OSTrustedDir = osservice.TrustedDir
+	OSPluginHost = osservice.PluginHost
+	OSPluginUnit = osservice.PluginEntry
+)
+
+const (
+	OSInstallPrompt = osservice.InstallPrompt
+	OSRemovePrompt  = osservice.RemovePrompt
+	OSResetPrompt   = osservice.ResetPrompt
+	OSUnitName      = osservice.SystemdUnitName
+)
+
+var (
+	ErrOSDialogCancelled = osservice.ErrDialogCancelled
+	ErrOSNoDialog        = osservice.ErrNoDialog
+
+	OSApply           = osservice.Apply
+	OSDefaultUser     = osservice.DefaultUser
+	OSDialogCommand   = osservice.DialogCommand
+	OSDialogError     = osservice.DialogError
+	OSDialogPaths     = osservice.DialogPaths
+	OSEntryFor        = osservice.EntryFor
+	OSHostFor         = osservice.HostFor
+	OSInstallPlan     = osservice.InstallPlan
+	OSInstallScript   = osservice.InstallScript
+	OSLookupUID       = osservice.LookupUID
+	OSOpenTrustedDir  = osservice.OpenTrustedDir
+	OSOpenTrustedFile = osservice.OpenTrustedFile
+	OSRemoveScript    = osservice.RemoveScript
+	OSResetScript     = osservice.ResetScript
+	OSSettle          = osservice.Settle
+	OSUnitPath        = osservice.UnitPath
+)
+
+// The last-stop record the supervisor writes and the autostart reads.
+type LastStopRecord = laststop.LastStopFileRecord
+
+var (
+	LastStopHashEngineJSON    = laststop.HashEngineJSON
+	LastStopStartHoldOffUntil = laststop.StartHoldOffUntil
+)
+
+// The crash reports.
+type (
+	CrashRecorder = crash.Recorder
+	CrashInput    = crash.Input
+)
+
+const (
+	CrashDirName   = crash.DirName
+	CrashKindPanic = crash.KindPanic
+)
+
+var CrashOSScrubber = crash.OSScrubber
+
+// The update notice.
+type (
+	UpdateChecker = updatecheck.Checker
+	UpdateNotice  = updatecheck.Notice
+)
+
+const UpdateDevVersion = updatecheck.DevVersion
+
+var (
+	UpdateCacheDir = updatecheck.CacheDir
+	UpdateDisabled = updatecheck.Disabled
+)
+
+// The Vault states a local status line reports.
+const (
+	VaultStateKeyError = string(vault.StateKeyError)
+	VaultStateOff      = string(vault.StateOff)
+)
+
+// DemoAgent is the sample database's agent name.
+const DemoAgent = demo.Agent
+
+// Querier is what the guard's reads take: a connection or a transaction.
+type Querier = guard.Querier
+
+var (
+	GuardAgentConnString = guard.AgentConnString
+	GuardLatestVersion   = guard.LatestVersion
+)
+
+// GuardAgentVersion is the guard version q's database has, 0 when none.
+func GuardAgentVersion(ctx context.Context, q Querier) (int, error) {
+	return guard.AgentVersion(ctx, q)
+}
+
+// GuardSetupRecorded reports whether the setup with id is recorded.
+func GuardSetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
+	return guard.SetupRecorded(ctx, q, id)
+}
+
+// Database connections.
+var (
+	CheckForeignDSN        = pgdial.CheckForeignDSN
+	CertificateNotVerified = pgdial.CertificateNotVerified
+	WithCertificateHint    = pgdial.WithCertificateHint
+	CurrentTrustProfileSet = pgdial.Trust
+)
+
+// Connect opens one connection, usable through a transaction pooler.
+func Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
+	return pgdial.Connect(ctx, dsn)
+}
+
+// UseTrustDir makes every connection read the trust profiles in the trust.d
+// next to the config at path, again for each connection.
+func UseTrustDir(path string) {
+	pgdial.SetTrust(trustdir.Source(path))
+}
+
+// TrustProfileFor is the profile in the trust.d next to the config at
+// configPath that names host, or nil.
+func TrustProfileFor(configPath, host string) *trustprofile.Profile {
+	return trustdir.Set(configPath).For(host)
+}

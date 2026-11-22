@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
@@ -148,7 +147,7 @@ func (s *starter) holdOff() (until time.Time, stop agent.LastStop, ok bool) {
 	if !ok {
 		return time.Time{}, agent.LastStop{}, false
 	}
-	until, ok = laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
+	until, ok = app.LastStopStartHoldOffUntil(app.LastStopRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
 	return until, stop, ok
 }
 

@@ -1,9 +1,0 @@
-imports internal/adapter/outbound/crash
-imports internal/adapter/outbound/laststop
-imports internal/adapter/outbound/osservice
-imports internal/adapter/outbound/postgres/demo
-imports internal/adapter/outbound/postgres/guard
-imports internal/adapter/outbound/postgres/pgdial
-imports internal/adapter/outbound/trustdir
-imports internal/adapter/outbound/updatecheck
-imports internal/adapter/outbound/vault

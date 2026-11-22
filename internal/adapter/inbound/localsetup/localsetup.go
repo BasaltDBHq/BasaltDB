@@ -20,7 +20,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/service/classify"
@@ -508,13 +507,11 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 // install finish with that role (its engine.json write had failed);
 // anything else is another role of the same name, never taken over.
 func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
-	dsn, err := config.ReadCredential(s.files(j.req.Agent).credential)
+	// ReadCredential accepts only a string that makes the driver read no
+	// file: the folder is the engine's own, but a credential is never
+	// trusted to be well-formed.
+	dsn, err := s.be.ReadCredential(s.files(j.req.Agent).credential)
 	if err != nil {
-		return false
-	}
-	// Only a string that makes the driver read no file: the folder is the
-	// engine's own, but a credential is never trusted to be well-formed.
-	if s.be.CheckForeignDSN(dsn) != nil {
 		return false
 	}
 	// The kept credential must be for the server and database this run's

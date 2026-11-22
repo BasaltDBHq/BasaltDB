@@ -22,8 +22,7 @@ import (
 var fixedNow = time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 
 func dictOptions() pii.DictionaryOptions {
-	o := pii.DefaultDictionaryOptions()
-	o.Now = func() time.Time { return fixedNow }
+	o := pii.DefaultDictionaryOptions(func() time.Time { return fixedNow })
 	return o
 }
 

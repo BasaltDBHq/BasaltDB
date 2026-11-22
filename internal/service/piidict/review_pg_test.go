@@ -34,7 +34,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
+	dict, _ := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
 	require.NoError(t, classes.Load(ctx, pool))
@@ -87,7 +87,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
+	dict, _ := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
 	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
@@ -151,7 +151,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 		GRANT SELECT ON public.slow_v TO `+f.agent.Role)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	limits := sqlguard.DefaultLimits()
 	limits.StatementTimeout = 200 * time.Millisecond
 	log, out := newLog()
@@ -174,7 +174,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	pool, err := postgres.NewPool(context.Background(), f.agent.URL, 1)
 	require.NoError(t, err)
 	pool.Close() // every cycle fails
-	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
+	dict, _ := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	log, out := newLog()
 	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, log)

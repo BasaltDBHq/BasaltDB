@@ -23,7 +23,11 @@ type Backend interface {
 	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
 	Trust() *trustprofile.Set
 	ConnConfigPinned(dsn string, p *trustprofile.Profile) (*pgx.ConnConfig, error)
-	CheckForeignDSN(dsn string) error
+	// ReadCredential reads the agent's connection string at path and
+	// refuses one that makes the driver read a file
+	// (setuprun.ErrForeignCredential), so a root engine never connects
+	// with what another user wrote.
+	ReadCredential(path string) (string, error)
 	ConnectionKeys() []string
 	ConnectionKey(key string) bool
 	CertificateNotVerified(err error) bool

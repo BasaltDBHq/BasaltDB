@@ -4,8 +4,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -24,7 +24,7 @@ func useTrustDir(args []string) {
 			path = config.DefaultPath(runtime.GOOS)
 		}
 	}
-	pgdial.SetTrust(trustdir.Source(path))
+	app.UseTrustDir(path)
 }
 
 // configArg is the value of the last -config or --config flag in args,

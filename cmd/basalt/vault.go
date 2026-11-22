@@ -10,7 +10,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -146,13 +145,13 @@ func localVault(cfg config.Config, stateDir string) (report, identity *agent.Vau
 	}
 	keys, err := app.ReadEngineKeys(path)
 	if err != nil {
-		return &agent.VaultStatus{State: string(vault.StateKeyError)}, nil
+		return &agent.VaultStatus{State: app.VaultStateKeyError}, nil
 	}
 	id := &agent.VaultStatus{EngineID: keys.EngineID(), Fingerprint: keys.Fingerprint()}
 	if cfg.VaultEnabled() {
 		return nil, id
 	}
-	id.State = string(vault.StateOff)
+	id.State = app.VaultStateOff
 	return id, nil
 }
 

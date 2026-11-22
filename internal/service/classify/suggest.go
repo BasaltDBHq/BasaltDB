@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Thresholds of the M5.1 plan, section 3.
@@ -126,7 +126,7 @@ type Options struct {
 // Rank orders classes by how much they protect: SECRET, IDENTIFIER,
 // FREE_TEXT, PUBLIC, then UNCLASSIFIED.
 func Rank(class string) int {
-	return slices.Index([]string{guard.ClassUnclassified, guard.ClassPublic, guard.ClassFreeText, guard.ClassIdentifier, guard.ClassSecret}, class)
+	return slices.Index([]string{guardmodel.ClassUnclassified, guardmodel.ClassPublic, guardmodel.ClassFreeText, guardmodel.ClassIdentifier, guardmodel.ClassSecret}, class)
 }
 
 // Suggest scores one column: a sample validator that passes on enough
@@ -141,17 +141,17 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 		if named {
 			return fromName(hit)
 		}
-		return Suggestion{Class: guard.ClassPublic, Reason: "TYPE:" + col.DataType}
+		return Suggestion{Class: guardmodel.ClassPublic, Reason: "TYPE:" + col.DataType}
 	case s.Unavailable != "":
 		return unsampled(hit, named, "SAMPLE:"+s.Unavailable)
 	}
 	if len(s.Values) == 0 {
 		if !named && internalID(col, k, nil) {
-			return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
+			return Suggestion{Class: guardmodel.ClassPublic, Reason: reasonKey}
 		}
 		return unsampled(hit, named, reasonNoValues)
 	}
-	if named && hit.qualified && hit.class != guard.ClassSecret && shortCodes(s.Values) {
+	if named && hit.qualified && hit.class != guardmodel.ClassSecret && shortCodes(s.Values) {
 		named = false // email_status holding verified, pending: about the value, not the value
 	}
 	if v, ok := validate(k, s.Values, hit, named, opts); ok {
@@ -175,7 +175,7 @@ func unsampled(hit nameHit, named bool, reason string) Suggestion {
 		s.Reason += "; " + reason
 		return s
 	}
-	return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, Reason: reason, NeedsReview: true}
+	return Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, Reason: reason, NeedsReview: true}
 }
 
 // validate runs the sample validators in order, the most protective first.
@@ -197,21 +197,21 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 		valid                func(string) bool
 	}
 	for _, ch := range []check{
-		{"CARD", guard.ClassSecret, "", validCard},
-		{"NIK", guard.ClassSecret, "", validNIK},
-		{"IBAN", guard.ClassIdentifier, guard.EntityOther, validIBAN},
-		{"EMAIL", guard.ClassIdentifier, guard.EntityEmail, validEmail},
+		{"CARD", guardmodel.ClassSecret, "", validCard},
+		{"NIK", guardmodel.ClassSecret, "", validNIK},
+		{"IBAN", guardmodel.ClassIdentifier, guardmodel.EntityOther, validIBAN},
+		{"EMAIL", guardmodel.ClassIdentifier, guardmodel.EntityEmail, validEmail},
 	} {
 		if c := count(ch.valid); enough(c) {
 			return withName(Suggestion{Class: ch.class, EntityType: ch.entity, Reason: sampled(ch.label, c)}, hit, named), true
 		}
 	}
-	namedPhone := named && hit.entity == guard.EntityPhone
+	namedPhone := named && hit.entity == guardmodel.EntityPhone
 	if namedPhone || enough(count(func(v string) bool { _, ok := phoneShape(v, false); return ok })) {
 		r := inferRegion(values, namedPhone, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
 			s := Suggestion{
-				Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region,
+				Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: r.region,
 				Reason: sampled("PHONE", r.valid) + regionNote(r, n),
 			}
 			return withName(s, hit, named), true
@@ -224,20 +224,20 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
 			s := Suggestion{
-				Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
+				Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
 				Reason: sampled("PHONE", r.valid) + " bare digits" + regionNote(r, n),
 			}
 			return withName(s, hit, named), true
 		}
 	}
 	if c := count(validIMEI); enough(c) {
-		return withName(Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, Reason: sampled("IMEI", c)}, hit, named), true
+		return withName(Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, Reason: sampled("IMEI", c)}, hit, named), true
 	}
 	if k != kindText {
 		return Suggestion{}, false
 	}
 	if c := count(startsWithFirstName); c*percent >= nameShare*n {
-		s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName, Reason: sampled("PERSON_NAME", c)}
+		s := Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPersonName, Reason: sampled("PERSON_NAME", c)}
 		return withName(s, hit, named), true
 	}
 	total, spaced := 0, 0
@@ -248,7 +248,7 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 		}
 	}
 	if total > freeTextLen*n && spaced*percent > spacedShare*n {
-		s := Suggestion{Class: guard.ClassFreeText, Reason: fmt.Sprintf("SAMPLE:FREE_TEXT mean %d chars, %d/%d with spaces", total/n, spaced, n)}
+		s := Suggestion{Class: guardmodel.ClassFreeText, Reason: fmt.Sprintf("SAMPLE:FREE_TEXT mean %d chars, %d/%d with spaces", total/n, spaced, n)}
 		return withName(s, hit, named), true
 	}
 	return Suggestion{}, false
@@ -283,7 +283,7 @@ func regionNote(r regionResult, n int) string {
 func byName(hit nameHit, values []string, opts Options) Suggestion {
 	s := fromName(hit)
 	switch hit.entity {
-	case guard.EntityPhone:
+	case guardmodel.EntityPhone:
 		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
 		s.PhoneRegion = r.region
 		s.Reason += fmt.Sprintf("; SAMPLE:PHONE %d/%d", r.valid, len(values)) + regionNote(r, len(values))
@@ -292,8 +292,8 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 	default:
 		return s
 	}
-	if hit.class == guard.ClassFreeText && !slices.ContainsFunc(values, func(v string) bool { return !codeLike(v) || anyValidator(v) }) {
-		return Suggestion{Class: guard.ClassPublic, Reason: s.Reason + "; " + reasonCodes}
+	if hit.class == guardmodel.ClassFreeText && !slices.ContainsFunc(values, func(v string) bool { return !codeLike(v) || anyValidator(v) }) {
+		return Suggestion{Class: guardmodel.ClassPublic, Reason: s.Reason + "; " + reasonCodes}
 	}
 	return s
 }
@@ -303,7 +303,7 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 // counts, and unique numbers of one length are an identifier to review.
 func byShape(col Column, k kind, values []string, opts Options) Suggestion {
 	n := len(values)
-	public := func(reason string) Suggestion { return Suggestion{Class: guard.ClassPublic, Reason: reason} }
+	public := func(reason string) Suggestion { return Suggestion{Class: guardmodel.ClassPublic, Reason: reason} }
 	allDigits := !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) })
 	var st numberStats
 	if allDigits {
@@ -352,12 +352,12 @@ func longValues(values []string, opts Options) (Suggestion, bool) {
 	}
 	if r := inferRegion(long, true, opts.PhoneRegion, opts.CallingCodes); r.valid*percent >= sampleShare*len(long) {
 		return Suggestion{
-			Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
+			Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
 			Reason: fmt.Sprintf("SAMPLE:PHONE %d/%d of the %d values with long digits", r.valid, len(long), n) + regionNote(r, len(long)),
 		}, true
 	}
 	return Suggestion{
-		Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
 		Reason: fmt.Sprintf("SHAPE:%d of %d values hold long digit runs or pass a validator", len(long), n),
 	}, true
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1/connectv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -156,7 +157,7 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 		Prober: handoff.Prober{
 			Resolver: staticResolver{netip.MustParseAddr("8.8.8.8")},
 			Dial:     f.newDial,
-			Profiles: trustdir.Set(f.cfg),
+			Profiles: trustdir.Set(f.cfg), ConnConfig: pgdial.ConnConfigTrusting,
 		},
 		Files: memoryPending{repinFiles: repinFiles{handoffFiles{configPath: f.cfg, agent: "bot"}}, setup: f.setup},
 		Log:   slog.New(slog.DiscardHandler), Now: time.Now,

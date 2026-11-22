@@ -329,7 +329,7 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(f.pool)
 
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
@@ -371,7 +371,7 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
 	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
@@ -399,7 +399,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	log, out := newLog()
 	var slept time.Duration
@@ -443,7 +443,7 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	src := []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}}
 	_, err := NewScanner(dict, src, ScanOptions{}, slog.New(slog.DiscardHandler)).Cycle(ctx)
@@ -464,7 +464,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict).On(f.pool)
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)

@@ -1,6 +1,7 @@
 package setuprun
 
 import (
+	"errors"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
@@ -34,3 +35,7 @@ type ActivePasskey struct {
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 }
+
+// ErrForeignCredential is a credential file's string that makes the driver
+// read a file of its own: it is never connected with.
+var ErrForeignCredential = errors.New("the credential names a file the driver would read")

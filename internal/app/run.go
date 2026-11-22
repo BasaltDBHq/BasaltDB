@@ -252,7 +252,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if ev.keys != nil {
 		env.keys = ev.keys
 	}
-	env.handoff = restart.Handoff
+	env.handoff = wireHandoff(restart.Handoff)
 	// A connect-only agent's setup that changes (the person confirmed its
 	// database) has the engine stop between calls and serve its config
 	// again, as for an upgraded binary.

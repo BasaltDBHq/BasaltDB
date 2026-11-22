@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // maxLoggedNames bounds the column names one log line lists.
@@ -24,13 +26,13 @@ const TickTimeout = time.Minute
 type Watch struct {
 	agent   string
 	classes *Map
-	db      guard.Querier
+	db      Querier
 	log     *slog.Logger
 }
 
 // NewWatch returns the check for agent's map on db. It panics on a missing
 // dependency.
-func NewWatch(agent string, classes *Map, db guard.Querier, log *slog.Logger) *Watch {
+func NewWatch(agent string, classes *Map, db Querier, log *slog.Logger) *Watch {
 	if agent == "" || classes == nil || db == nil || log == nil {
 		panic("piidict: agent, classes, db and logger required")
 	}
@@ -50,7 +52,7 @@ func (w *Watch) Tick(ctx context.Context) error {
 	case reloaded:
 		w.log.Info("pii: classification loaded", "agent", w.agent)
 	}
-	cols, err := guard.PIIUnclassified(ctx, w.db)
+	cols, err := unclassified(ctx, w.db)
 	if err != nil {
 		return errors.Join(append(errs, fmt.Errorf("pii_unclassified: %w", err))...)
 	}
@@ -79,4 +81,17 @@ func nameList(names []string) string {
 		return strings.Join(names, ", ")
 	}
 	return strings.Join(names[:maxLoggedNames], ", ") + ", …"
+}
+
+// unclassified reads basalt_meta.pii_unclassified() as the login role.
+func unclassified(ctx context.Context, db Querier) ([]guardmodel.UnclassifiedColumn, error) {
+	rows, err := db.Query(ctx, "SELECT table_schema, table_name, column_name, data_type, why FROM basalt_meta.pii_unclassified()")
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.UnclassifiedColumn, error) {
+		var c guardmodel.UnclassifiedColumn
+		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Why)
+		return c, err
+	})
 }

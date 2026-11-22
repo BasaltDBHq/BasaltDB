@@ -171,25 +171,27 @@ func TestRulesCatchViolations(t *testing.T) {
 	guard := "package sqlguard\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\ntype Limits struct{}\n"
 	use := func(_, fn string) string { return "\nvar _ = sqlguard." + fn + "\n" }
 	files := map[string]string{
-		"go.mod":                                         "module " + modulePath + "\n",
-		"internal/adapter/outbound/db/db.go":             "package db\n",
-		"internal/core/sqlguard/g.go":                    guard,
-		"internal/core/leaky/l.go":                       "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
-		"internal/core/rnd/r.go":                         "package rnd\n\n" + imp("crypto/rand"),
-		"internal/core/granted/r.go":                     "package granted\n\n" + imp("crypto/rand"),
-		"internal/service/svc/s.go":                      "package svc\n\n" + imp(m+"internal/adapter/outbound/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"internal/adapter/inbound/in/i.go":               "package in\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
-		"internal/adapter/outbound/other/o.go":           "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"internal/adapter/outbound/postgres/store/s.go":  "package store\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "WithRowVersions") + use("", "Other"),
-		"internal/app/a.go":                              "package app\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"cmd/tool/c.go":                                  "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
-		"pkg/facade/p.go":                                "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
-		"pkg/lib2/p.go":                                  "package lib2\n\n" + imp(m+"api/x"),
-		"api/x/x.go":                                     "package x\n",
+		"go.mod":                                        "module " + modulePath + "\n",
+		"internal/adapter/outbound/db/db.go":            "package db\n",
+		"internal/core/sqlguard/g.go":                   guard,
+		"internal/core/leaky/l.go":                      "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
+		"internal/core/rnd/r.go":                        "package rnd\n\n" + imp("crypto/rand"),
+		"internal/core/granted/r.go":                    "package granted\n\n" + imp("crypto/rand"),
+		"internal/service/svc/s.go":                     "package svc\n\n" + imp(m+"internal/adapter/outbound/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"internal/adapter/inbound/in/i.go":              "package in\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
+		"internal/adapter/outbound/other/o.go":          "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
+		"internal/adapter/outbound/postgres/store/s.go": "package store\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "WithRowVersions") + use("", "Other"),
+		"web/w.go":                   "package web\n\n" + imp(m+"internal/service/svc") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
+		"internal/service/svc2/s.go": "package svc2\n\n" + imp(m+"web"),
+		"internal/app/a.go":          "package app\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"cmd/tool/c.go":              "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
+		"pkg/facade/p.go":            "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"pkg/lib2/p.go":              "package lib2\n\n" + imp(m+"api/x"),
+		"api/x/x.go":                 "package x\n",
 		"internal/adapter/outbound/vault/vaulttest/h.go": "package vaulttest\n\n" + imp(m+"internal/service/svc"),
 		"internal/adapter/inbound/in2/i.go":              "package in2\n\n" + imp(m+"internal/adapter/outbound/vault/vaulttest"),
 		"internal/oddball/o.go":                          "package oddball\n",
-		"ARCHITECTURE.md":                                "| `sqlguard` | sql | decision | 1 | - |\n| `leaky` | x | types | 2 | - |\n| `rnd` | x | codec | 3 | `crypto/rand` |\n| `granted` | x | codec | 3 | - |\n",
+		"ARCHITECTURE.md":                                "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -201,16 +203,16 @@ func TestRulesCatchViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][]string{
-		"internal/service/svc":                     {"imports internal/adapter/outbound/db"},
-		"internal/adapter/inbound/in":              {"i.go calls sqlguard.Check"},
-		"internal/adapter/inbound/in2":             {"imports internal/adapter/outbound/vault/vaulttest"},
-		"internal/adapter/outbound/other":          {"o.go calls sqlguard.Check"},
-		"internal/adapter/outbound/postgres/store": {"s.go calls sqlguard.Other"},
-		"cmd/tool":              {"c.go calls sqlguard.Check"},
-		"pkg/facade":            {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
-		"pkg/lib2":              {"imports api/x"},
-		"internal/oddball":      {"package is under internal/ but not in a layer"},
-		"internal/core/granted": {"r.go imports crypto/rand (core must stay pure)"},
+		"internal/service/svc":            {"imports internal/adapter/outbound/db"},
+		"internal/adapter/inbound/in":     {"i.go calls sqlguard.Check"},
+		"internal/adapter/inbound/in2":    {"imports internal/adapter/outbound/vault/vaulttest"},
+		"internal/adapter/outbound/other": {"o.go calls sqlguard.Check"},
+		"web":                             {"imports internal/service/svc", "w.go calls sqlguard.Check"},
+		"cmd/tool":                        {"c.go calls sqlguard.Check"},
+		"pkg/facade":                      {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
+		"pkg/lib2":                        {"imports api/x"},
+		"internal/oddball":                {"package is under internal/ but not in a layer"},
+		"internal/core/granted":           {"r.go imports crypto/rand (core must stay pure)"},
 		"internal/core/leaky": {
 			"l.go calls time.Now (core must stay pure)",
 			"l.go calls time.Since (core must stay pure)",
@@ -239,7 +241,8 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		"internal/core/badrow/a.go":  "package badrow\n",
 		"internal/core/extra/a.go":   "package extra\n",
 		"internal/core/chan/a.go":    "package channel\n",
-		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - |\n| `badrow` | x | types | 4 | - |\n| `extra` | x | codec | 3 | `crypto/rand` |\n| `chan` | x | codec | 3 | `os` |\n| `ghost` | x | types | 2 | - |\n",
+		"internal/core/dec/a.go":     "package dec\n\nfunc Real() {}\n",
+		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand` | - |\n| `dec` | x | decision | 1 | - | `Real`, `Missing` |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
 	})
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
 	if err != nil {
@@ -257,6 +260,9 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		`register row badrow: admitted-by "4"`,
 		`register row extra: extra import "crypto/rand" is not allowed`,
 		`register row chan: extra import "os" is not allowed`,
+		`register row dec: codec function "Missing" is not an exported function`,
+		`register row chan: codec function "Nope" is not an exported function`,
+		`register row badrow: codec functions are listed only for a decision package`,
 	} {
 		if !strings.Contains(all, w) {
 			t.Errorf("checkRegister did not report %q; got:\n%s", w, all)

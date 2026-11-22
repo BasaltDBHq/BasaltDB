@@ -28,12 +28,12 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 	if j.missing {
 		return "", nil // no credential to try: the fix writes a new one
 	}
-	dsn, err := config.ReadCredential(j.agent.Store.CredentialFile)
+	dsn, err := s.be.ReadCredential(j.agent.Store.CredentialFile)
+	if errors.Is(err, setuprun.ErrForeignCredential) {
+		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
+	}
 	if err != nil {
 		return "", refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
-	}
-	if s.be.CheckForeignDSN(dsn) != nil {
-		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
 	}
 	conn, err := s.opts.Dial(ctx, dsn)
 	var pg *pgconn.PgError

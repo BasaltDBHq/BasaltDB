@@ -161,8 +161,8 @@ var errNoLogin = errors.New("the agent cannot log in")
 // alone, and a pinned host presenting another chain top is CHANGED.
 func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (*pgx.Conn, error) {
 	rejected := &DoctorLogin{Code: action.ReasonCredentialRejected, Message: "The database refuses the agent's credential, or this engine has none for it."}
-	dsn, err := config.ReadCredential(a.Store.CredentialFile)
-	if err != nil || s.be.CheckForeignDSN(dsn) != nil {
+	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
+	if err != nil {
 		out.Login = rejected
 		return nil, errNoLogin
 	}

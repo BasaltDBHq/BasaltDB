@@ -37,10 +37,7 @@ type agentHost struct {
 
 // hostOf reads the agent's host and this engine's pin for it.
 func (s *Service) hostOf(a config.Agent) (agentHost, error) {
-	dsn, err := config.ReadCredential(a.Store.CredentialFile)
-	if err == nil {
-		err = s.be.CheckForeignDSN(dsn)
-	}
+	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}

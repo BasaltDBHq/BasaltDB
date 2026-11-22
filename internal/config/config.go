@@ -19,7 +19,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
@@ -349,7 +349,7 @@ func newValidator() *validator.Validate {
 // the engine accepts is one basalt init can create a role for. "person" is
 // reserved and refused.
 func ValidAgentName(name string) bool {
-	return name != PersonSocketName && guard.ValidAgentName(name)
+	return name != PersonSocketName && guardmodel.ValidAgentName(name)
 }
 
 // Load reads and validates the config file at path. Unknown keys are refused.

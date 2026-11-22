@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
@@ -30,11 +31,25 @@ type Backend struct{}
 func (Backend) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	return pgdial.Connect(ctx, dsn)
 }
+
+// ReadCredential reads the agent's connection string and refuses one with
+// parameters that make the driver read a file, in one step: as root, the
+// read is never used without the check.
+func (Backend) ReadCredential(path string) (string, error) {
+	dsn, err := config.ReadCredential(path)
+	if err != nil {
+		return "", err
+	}
+	if pgdial.CheckForeignDSN(dsn) != nil {
+		return "", setuprun.ErrForeignCredential
+	}
+	return dsn, nil
+}
+
 func (Backend) Trust() *trustprofile.Set { return pgdial.Trust() }
 func (Backend) ConnConfigPinned(dsn string, p *trustprofile.Profile) (*pgx.ConnConfig, error) {
 	return pgdial.ConnConfigPinned(dsn, p)
 }
-func (Backend) CheckForeignDSN(dsn string) error      { return pgdial.CheckForeignDSN(dsn) }
 func (Backend) ConnectionKeys() []string              { return pgdial.ConnectionKeys() }
 func (Backend) ConnectionKey(key string) bool         { return pgdial.ConnectionKey(key) }
 func (Backend) CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }

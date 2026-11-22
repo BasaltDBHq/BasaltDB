@@ -83,7 +83,7 @@ Paste it on the setup page only. If you paste it to your agent by mistake, chang
 
 ### Databases signed by their own CA
 
-Supabase and Amazon RDS hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project, and the setup page does not cover them yet. Until it does, run `basalt trust pin --host <host>` on the engine's machine: it reads the CA from the server and asks you to check its SHA-256 against your provider's console.
+Supabase and Amazon RDS hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project. For those, the setup page shows the certificate and asks whether to trust it for that host only. Check the SHA-256 it shows against your provider's console before you say yes.
 
 ### Connections
 

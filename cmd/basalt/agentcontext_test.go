@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -62,6 +63,21 @@ func TestAgentNotInConfigNamesTheAgentLedSetup(t *testing.T) {
 	err := errAgentNotInConfig("bot", "/etc/basalt/engine.json")
 	require.EqualError(t, err, `agent "bot" is not in /etc/basalt/engine.json; set it up with basalt init --agent bot on the person's own computer, or basalt init --remote --agent bot on one the person cannot reach, and show the person the link it prints`)
 	requireAgentLed(t, "errAgentNotInConfig", err.Error())
+}
+
+func TestTopLevelHelpHidesEngine(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	usage(&out)
+	require.NotRegexp(t, `(?m)^\s+engine\s`, out.String())
+	require.Regexp(t, `(?m)^\s+service\s`, out.String())
+
+	// The command is hidden, not gone: it still parses its own flags.
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"engine", "--help"}, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr})
+	require.Equal(t, exitUsage, code)
+	require.Contains(t, stderr.String(), "-config")
+	require.NotContains(t, stderr.String(), "unknown command")
 }
 
 func TestTopLevelHelpTellsAgents(t *testing.T) {

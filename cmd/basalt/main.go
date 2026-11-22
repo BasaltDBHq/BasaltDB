@@ -40,16 +40,18 @@ type stdio struct {
 type command struct {
 	name, summary string
 	run           func(ctx context.Context, args []string, io stdio) int
+	// hidden keeps the command out of the help listing; it still runs.
+	hidden bool
 }
 
 func commands() []command {
 	return []command{
-		{"engine", "Run the engine service in the foreground", runEngine},
-		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
-		{"service", "Install the engine service (install)", runService},
-		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit)},
-		{"version", "Print the version", runVersion},
-		{"help", "Show this help", nil},
+		{"engine", "Run the engine service in the foreground", runEngine, true},
+		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP, false},
+		{"service", "Install the engine service (install)", runService, false},
+		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit), false},
+		{"version", "Print the version", runVersion, false},
+		{"help", "Show this help", nil, false},
 	}
 }
 
@@ -92,6 +94,9 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: basalt <command> [flags]")
 	fmt.Fprintln(w)
 	for _, cmd := range commands() {
+		if cmd.hidden {
+			continue
+		}
 		fmt.Fprintf(w, "  %-10s %s\n", cmd.name, cmd.summary)
 	}
 	fmt.Fprintln(w)

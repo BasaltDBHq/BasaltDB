@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -380,7 +381,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 		SetupID: p.SetupID, Kind: "INSTALL", GuardVersion: guard.LatestVersion(),
 		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,
 	}, a.Setup)
-	_, err = agent.NewCommands(a.Name, cfg, "linux")
+	_, err = agent.NewCommands(a.Name, cfg, "linux", app.AgentServiceManager())
 	require.NoError(t, err, "the agent's entry is one the engine accepts")
 	pages, err := r.cfg.Pages()
 	require.NoError(t, err)

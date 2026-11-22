@@ -62,9 +62,9 @@ func refusingEngine(t *testing.T, socket string, refused int) {
 // machine produces when the engine's refusal and close win the race.
 func relayLosingRace(t *testing.T, socket string, out *strings.Builder, late int) *relay {
 	t.Helper()
-	cmds, err := agent.NewCommands("bot", "", "linux")
+	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
 	require.NoError(t, err)
-	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
+	down := agent.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	dials := 0
 	return &relay{
 		path:     socket,

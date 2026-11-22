@@ -23,33 +23,42 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
-// The agent service takes the adapters it may not import through
-// agent.Host. Importing this package fills it, so every binary that serves
-// or answers for an agent has it before any tool runs.
-func init() { agent.UseHost(agentHost()) }
+// AgentHostDeps are the agent service's dependencies that come from the
+// adapters it may not import: the error values it tells apart, the service
+// manager, the crash directory, the Vault session. Each agent's wiring
+// fills the rest on top of it, and the service refuses a Deps that lacks
+// one.
+func AgentHostDeps() agent.Deps {
+	var d agent.Deps
+	d.Core.ServiceManager = AgentServiceManager()
+	d.Core.Errors = AgentErrors()
+	d.Write.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
+	d.Approval.ErrNotFound = ledger.ErrApprovalNotFound
+	d.Approval.SortSpec = ledger.ApprovalSortSpec
+	d.Revert.ErrNotFound = ledger.ErrRevertNotFound
+	d.Revert.AfterAnswer = vault.AfterAnswer
+	d.Revert.RotateSession = vault.RotateSession
+	d.Delivery.VaultConflict = vault.IsConflict
+	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
+	d.Status.CrashReports = agentCrashReports
+	d.Status.LatestGuardVersion = guard.LatestVersion
+	d.Status.UpdateMessage = agentUpdateMessage
+	d.Status.StartHoldOffUntil = agentStartHoldOffUntil
+	d.Plugin.ApprovalsVersion = guard.PluginApprovalsVersion
+	return d
+}
 
-func agentHost() agent.Host {
-	return agent.Host{
-		StartCommand: osservice.StartCommand,
-		RestartArgs:  osservice.RestartArgs,
-		StartHoldOffUntil: func(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
-			return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
-		},
-		CrashReports: func(dirs ...string) []agent.CrashReport {
-			reports := crash.List(dirs...)
-			out := make([]agent.CrashReport, 0, len(reports))
-			for _, r := range reports {
-				out = append(out, agent.CrashReport{
-					ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
-					IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
-				})
-			}
-			return out
-		},
-		VaultConflict:        vault.IsConflict,
-		ErrVaultNotConnected: vault.ErrNotConnected,
-		AfterAnswer:          vault.AfterAnswer,
-		RotateSession:        vault.RotateSession,
+// AgentServiceManager is the host's service manager, for the agent's
+// commands.
+func AgentServiceManager() agent.ServiceManager {
+	return agent.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
+}
+
+// AgentErrors are the adapters' error values the agent maps to tool errors.
+func AgentErrors() agent.ErrorMap {
+	return agent.ErrorMap{
+		InvalidParams: ledger.ErrInvalidParams,
+		InvalidIntent: guard.ErrInvalidIntent,
 		RowTooLarge: func(err error) (string, bool) {
 			var rl *resultsize.RowTooLargeError
 			if errors.As(err, &rl) {
@@ -57,18 +66,33 @@ func agentHost() agent.Host {
 			}
 			return "", false
 		},
-		ErrRevertNotFound:      ledger.ErrRevertNotFound,
-		ErrApprovalNotFound:    ledger.ErrApprovalNotFound,
-		ErrInvalidParams:       ledger.ErrInvalidParams,
-		ErrInvalidIntent:       guard.ErrInvalidIntent,
-		ApprovalSortSpec:       ledger.ApprovalSortSpec,
-		Record:                 func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) },
-		PluginApprovalsVersion: guard.PluginApprovalsVersion,
-		LatestGuardVersion:     guard.LatestVersion,
-		UpdateMessage: func(n agent.UpdateNotice, exe string) string {
-			return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
-		},
 	}
+}
+
+// AgentEngineHost is what the status of an engine that is down reads from
+// the host.
+func AgentEngineHost() agent.EngineHost {
+	return agent.EngineHost{LatestGuardVersion: guard.LatestVersion, StartHoldOffUntil: agentStartHoldOffUntil}
+}
+
+func agentStartHoldOffUntil(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
+	return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
+}
+
+func agentCrashReports(dirs ...string) []agent.CrashReport {
+	reports := crash.List(dirs...)
+	out := make([]agent.CrashReport, 0, len(reports))
+	for _, r := range reports {
+		out = append(out, agent.CrashReport{
+			ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
+			IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
+		})
+	}
+	return out
+}
+
+func agentUpdateMessage(n agent.UpdateNotice, exe string) string {
+	return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 }
 
 // AgentTools are the tools of svc as the MCP server serves them.

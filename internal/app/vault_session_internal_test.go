@@ -107,7 +107,7 @@ func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.Applie
 
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
-func (a *heldAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }
+func (a *heldAgent) PageFailure(err error) *mcp.ToolError { return AgentErrors().ToolError(err) }
 
 // intentMarker is in the held write's binding: it must never cross the
 // Vault's sockets in the clear.

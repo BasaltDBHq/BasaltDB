@@ -44,9 +44,10 @@ func caExpiring(t *testing.T, notAfter time.Time) *x509.Certificate {
 
 func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) StatusReport {
 	t.Helper()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	r, err := LocalStatus{
+		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
 		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
 		Passkeys: func(context.Context) ([]passkey.Credential, error) {
 			return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
@@ -149,14 +150,14 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep TrustReporter) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.Probe = probe
+	d.Status.OperatedBy = operatedBy
+	d.Status.Probe = probe
 	setApprovals(&d, keys{n: 1})
-	d.Now = func() time.Time { return statusNow }
-	d.Trust = rep
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	d.Status.Trust = rep
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r

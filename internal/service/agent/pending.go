@@ -73,14 +73,14 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
 		return pagination.Page[PendingEntry]{}, err
 	}
-	sort, err := p.ParseSort(theHost().ApprovalSortSpec)
+	sort, err := p.ParseSort(s.deps.Approval.SortSpec)
 	if err != nil {
-		return pagination.Page[PendingEntry]{}, fmt.Errorf("%w: %w", theHost().ErrInvalidParams, err)
+		return pagination.Page[PendingEntry]{}, fmt.Errorf("%w: %w", s.deps.Core.Errors.InvalidParams, err)
 	}
 	var entries []PendingEntry
 	more := false
 	if p.Kind != KindRevert && p.Status != revertApplying {
-		page, err := s.Store.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
+		page, err := s.deps.Approval.Store.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}
@@ -90,7 +90,7 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 		more = page.NextCursor != ""
 	}
 	if p.Kind != KindApproval && p.Status != approvalApproved && p.RunID == uuid.Nil {
-		page, err := s.Store.ListOpenReverts(ctx, action.RevertListParams{Params: p.Params, Status: p.Status})
+		page, err := s.deps.Revert.Store.ListOpenReverts(ctx, action.RevertListParams{Params: p.Params, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}

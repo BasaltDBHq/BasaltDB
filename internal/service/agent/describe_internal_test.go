@@ -155,12 +155,12 @@ func ordersDetail() CatalogDetail {
 func describeService(t *testing.T, cat Catalog, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
-	d.OperatedBy = operatedBy
-	d.Catalog = cat
-	d.Classes = classes
+	d.Core.Commands = cmds
+	d.Status.OperatedBy = operatedBy
+	d.Describe.Catalog = cat
+	d.Describe.Classes = classes
 	return NewService(d)
 }
 
@@ -716,7 +716,7 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 	t.Parallel()
 	cat, _ := ordersCatalog()
 	d := deps()
-	d.Catalog = cat
+	d.Describe.Catalog = cat
 	s := NewService(d)
 	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}} {
 		body, isError := callDescribe(t, s, args)
@@ -800,9 +800,9 @@ func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
 
 func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux")
+	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
 	require.NoError(t, err)
-	s := &Service{Deps: Deps{Commands: cmds}}
+	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds}}}
 	msg := s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
 	require.Contains(t, msg, "another database needs its own agent")
 	require.NotContains(t, msg, "basalt ", "the person runs no command")

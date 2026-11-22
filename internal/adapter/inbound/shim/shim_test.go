@@ -84,9 +84,9 @@ func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client,
 // startShimWith is startShim with the relay's options.
 func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-chan error) {
 	t.Helper()
-	cmds, err := agent.NewCommands("bot", "", "linux")
+	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
 	require.NoError(t, err)
-	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
+	down := agent.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	fallback := app.NewEngineDownServer(down)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
@@ -216,5 +216,22 @@ func answerFirstRequest(srv *mcp.Server, conn net.Conn) {
 			return
 		}
 		_ = srv.ServeLine(context.Background(), conn, line)
+	}
+}
+
+// testServiceManager is a service manager with fixed commands: no shim test
+// reads them.
+func testServiceManager() agent.ServiceManager {
+	return agent.ServiceManager{
+		StartCommand: func(string) string { return "start-the-engine" },
+		RestartArgs:  func(string) []string { return []string{"restart-the-engine"} },
+	}
+}
+
+// testEngineHost is what the engine-down status reads from the host, fixed.
+func testEngineHost() agent.EngineHost {
+	return agent.EngineHost{
+		LatestGuardVersion: func() int { return 1 },
+		StartHoldOffUntil:  func(agent.LastStop, string, time.Time) (time.Time, bool) { return time.Time{}, false },
 	}
 }

@@ -54,7 +54,7 @@ func (noFinisher) Finish(context.Context, string, bool) error { return nil }
 // LoginRefused reports whether err is the database refusing a login (the
 // role does not exist, or has another password).
 func LoginRefused(err error) bool {
-	return err != nil && ToolError(err).Reason == reasonCredentialRejected
+	return err != nil && ErrorMap{}.ToolError(err).Reason == reasonCredentialRejected
 }
 
 // notRecordedFor is how long a held call trusts an earlier call that found

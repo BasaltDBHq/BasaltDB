@@ -304,7 +304,7 @@ func TestReadsRunReadOnly(t *testing.T) {
 	// Past the engine's policy, the database still refuses a write inside a
 	// read: the agent role may INSERT into audit, but not from a read.
 	_, err := h.reader.Read(context.Background(), "SELECT bump()", nil, action.Statement{})
-	te := agent.ToolError(err)
+	te := toolError(err)
 	require.Equal(t, agent.CodeSQLError, te.Code)
 	require.Equal(t, "25006", te.SQLState, "read_only_sql_transaction")
 

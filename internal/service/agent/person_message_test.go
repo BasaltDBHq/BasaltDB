@@ -162,7 +162,7 @@ func TestRevertStateMessagesObeyTheContract(t *testing.T) {
 // sets, word for word as CONTRACT.md has it.
 func TestTooManyConnectionsMessageWords(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("lead_bot", "", "linux")
+	cmds, err := NewCommands("lead_bot", "", "linux", testManager())
 	require.NoError(t, err)
 	require.Equal(t, "The agent lead_bot has used all 8 database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+

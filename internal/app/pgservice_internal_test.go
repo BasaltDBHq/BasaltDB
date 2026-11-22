@@ -35,13 +35,19 @@ func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	}
 }
 
+// testAgentDeps are the dependencies of an agent named name over store: the
+// adapters' ones as the engine wires them, a quiet log and the real clock.
+func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
+	d := AgentHostDeps()
+	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
+	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
+	return d
+}
+
 // service builds the agent service over the store; set fills in the rest of
 // its dependencies (logger, links, relay and so on).
 func (p pgAgent) service(set func(*agent.Deps)) *agent.Service {
-	d := agent.Deps{
-		Name: "bot", Store: p.store,
-		Log: quietLog(), Now: time.Now,
-	}
+	d := testAgentDeps("bot", p.store)
 	if set != nil {
 		set(&d)
 	}

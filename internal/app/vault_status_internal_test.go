@@ -27,10 +27,9 @@ func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 // vaultInStatus is status.vault as an agent's status tool reports ev.
 func vaultInStatus(t *testing.T, ev engineVault) map[string]any {
 	t.Helper()
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Store: onePasskey{},
-		Log: quietLog(), Now: time.Now, Vault: ev,
-	})
+	d := testAgentDeps("bot", onePasskey{})
+	d.Status.Vault = ev
+	svc := agent.NewService(d)
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	raw, err := json.Marshal(r)

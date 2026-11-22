@@ -86,9 +86,9 @@ func describeDBWithUpdate(t *testing.T, update func() *agent.UpdateNotice) descr
 	classifyDescribe(t, d)
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
-		d.Update = update
+		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Describe.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Status.Update = update
 	})).Svc
 	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, db: d, role: a.Role}
 }
@@ -326,8 +326,8 @@ func TestDescribeSearchScale(t *testing.T) {
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Describe.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
 	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
@@ -373,8 +373,8 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	}
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Describe.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
 	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map

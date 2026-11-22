@@ -176,7 +176,7 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 
-	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux")
+	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", serviceManager())
 	require.NoError(t, err)
 	sent := &notices{}
 	var watched *finds
@@ -184,14 +184,15 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 	var blind *agent.BlindCache
 	// As the engine runs it: every read of a call charged to its budget.
 	svc := pgService(t, a.URL, withLimits(limits), withBudget(), withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		watched = &finds{SQLStore: d.Store}
+		watched = &finds{SQLStore: d.Core.Store.(agent.SQLStore)}
 		watchedReverts = &revertFinds{SQLStore: watched}
 		blind = agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 			return guard.RLSBlindTables(ctx, pool, "", tables)
 		})
-		d.Store, d.Notifier = watchedReverts, sent
-		d.Columns = store.NewColumnOrder(pool)
-		d.Commands, d.PagesOrigin, d.Poll, d.RLS, d.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
+		useStore(d, watchedReverts)
+		d.Delivery.Notifier = sent
+		d.Approval.Columns = store.NewColumnOrder(pool)
+		d.Core.Commands, d.Core.PagesOrigin, d.Delivery.Poll, d.Write.RLS, d.Delivery.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
 	})).Svc
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
@@ -310,7 +311,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	forger.ID = person.ID
 	err = relayApproval(e.svc, signLink(t, link, forger))
 	require.Error(t, err)
-	require.Equal(t, "APPROVAL_INVALID", agent.ToolError(err).Code, "%v", err)
+	require.Equal(t, "APPROVAL_INVALID", toolError(err).Code, "%v", err)
 	body, isError = h.call(t, "write", withApproval(map[string]any{"waitForApproval": 0}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
 	require.Contains(t, body["message"], "not approved yet", "a forged signature approves nothing")

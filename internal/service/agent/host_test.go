@@ -20,31 +20,53 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 )
 
-// The tests fill the host as the app does, with the real adapters.
-func init() { UseHost(testHost()) }
+// testDeps are the dependencies the tests take from the adapters, filled as
+// the app does, with the real adapters. A test sets the rest.
+func testDeps() Deps {
+	var d Deps
+	d.Core.ServiceManager = testManager()
+	d.Core.Errors = testErrors()
+	d.Write.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
+	d.Approval.ErrNotFound = ledger.ErrApprovalNotFound
+	d.Approval.SortSpec = ledger.ApprovalSortSpec
+	d.Revert.ErrNotFound = ledger.ErrRevertNotFound
+	d.Revert.AfterAnswer = vault.AfterAnswer
+	d.Revert.RotateSession = vault.RotateSession
+	d.Delivery.VaultConflict = vault.IsConflict
+	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
+	d.Status.CrashReports = func(dirs ...string) []CrashReport {
+		reports := crash.List(dirs...)
+		out := make([]CrashReport, 0, len(reports))
+		for _, r := range reports {
+			out = append(out, CrashReport{
+				ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
+				IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
+			})
+		}
+		return out
+	}
+	d.Status.LatestGuardVersion = guard.LatestVersion
+	d.Status.UpdateMessage = func(n UpdateNotice, exe string) string {
+		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
+	}
+	d.Status.StartHoldOffUntil = testEngineHost().StartHoldOffUntil
+	d.Plugin.ApprovalsVersion = guard.PluginApprovalsVersion
+	return d
+}
 
-func testHost() Host {
-	return Host{
-		StartCommand: osservice.StartCommand,
-		RestartArgs:  osservice.RestartArgs,
-		StartHoldOffUntil: func(stop LastStop, configPath string, now time.Time) (time.Time, bool) {
-			return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
-		},
-		CrashReports: func(dirs ...string) []CrashReport {
-			reports := crash.List(dirs...)
-			out := make([]CrashReport, 0, len(reports))
-			for _, r := range reports {
-				out = append(out, CrashReport{
-					ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
-					IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
-				})
-			}
-			return out
-		},
-		VaultConflict:        vault.IsConflict,
-		ErrVaultNotConnected: vault.ErrNotConnected,
-		AfterAnswer:          vault.AfterAnswer,
-		RotateSession:        vault.RotateSession,
+// useStore binds every port of d that reads the agent's store to s.
+func useStore(d *Deps, s SQLStore) {
+	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
+}
+
+func testManager() ServiceManager {
+	return ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
+}
+
+func testErrors() ErrorMap {
+	return ErrorMap{
+		InvalidParams: ledger.ErrInvalidParams,
+		InvalidIntent: guard.ErrInvalidIntent,
 		RowTooLarge: func(err error) (string, bool) {
 			var rl *resultsize.RowTooLargeError
 			if errors.As(err, &rl) {
@@ -52,16 +74,14 @@ func testHost() Host {
 			}
 			return "", false
 		},
-		ErrRevertNotFound:      ledger.ErrRevertNotFound,
-		ErrApprovalNotFound:    ledger.ErrApprovalNotFound,
-		ErrInvalidParams:       ledger.ErrInvalidParams,
-		ErrInvalidIntent:       guard.ErrInvalidIntent,
-		ApprovalSortSpec:       ledger.ApprovalSortSpec,
-		Record:                 func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) },
-		PluginApprovalsVersion: guard.PluginApprovalsVersion,
-		LatestGuardVersion:     guard.LatestVersion,
-		UpdateMessage: func(n UpdateNotice, exe string) string {
-			return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
+	}
+}
+
+func testEngineHost() EngineHost {
+	return EngineHost{
+		LatestGuardVersion: guard.LatestVersion,
+		StartHoldOffUntil: func(stop LastStop, configPath string, now time.Time) (time.Time, bool) {
+			return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 		},
 	}
 }

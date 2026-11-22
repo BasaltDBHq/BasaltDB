@@ -12,7 +12,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // widenedSentence is what every wait-form answer for a widened revert
@@ -90,7 +89,7 @@ func TestWidenedRevertRefusesBadSignatures(t *testing.T) {
 	ownBinding, binding := e.widen(t, id, agentSecret)
 	refused := func(as passkey.Assertion, reason string) {
 		t.Helper()
-		te := agent.ToolError(relayRevert(e.svc, id, as))
+		te := toolError(relayRevert(e.svc, id, as))
 		require.Equal(t, "REVERT_INVALID", te.Code, "%v", te)
 		require.Equal(t, reason, te.Reason, "%v", te)
 		for _, s := range te.NextSteps {

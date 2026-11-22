@@ -143,9 +143,9 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStor
 		withPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),
 		withDeps(func(d *agent.Deps, _ *pgxpool.Pool) {
 			if wrap != nil {
-				d.Store = wrap(d.Store)
+				useStore(d, wrap(d.Core.Store.(agent.SQLStore)))
 			}
-			d.Notifier, d.PagesOrigin, d.Links, d.Poll = e.sent, pageOrigin, secrets, testPoll
+			d.Delivery.Notifier, d.Core.PagesOrigin, d.Delivery.Links, d.Delivery.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc
 	e.h = harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(e.svc), agent.WithMeta)...)}
 	e.p = newLocalPages(t, agentEnv{svc: e.svc})

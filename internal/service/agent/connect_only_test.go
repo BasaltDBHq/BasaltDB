@@ -64,9 +64,10 @@ func (f *fakeHandoff) Confirm(_ context.Context, id string, db handoff.Address, 
 
 func connectOnlyServer(t *testing.T, operatedBy string, h Handoff) ConnectOnly {
 	t.Helper()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	return ConnectOnly{
+		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
 		ConnectBudget: links.DefaultBudget, Handoff: h,
 		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
@@ -114,7 +115,7 @@ func confirmResultCases() map[string]resultCase {
 	build := func(yes bool) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
 		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 			t.Helper()
-			r, err := confirmResult(handoff.Answer{Confirmed: yes, Database: caseDatabase}, s.Commands)
+			r, err := confirmResult(handoff.Answer{Confirmed: yes, Database: caseDatabase}, s.deps.Core.Commands)
 			require.NoError(t, err)
 			return r.PersonMessage, r.Links, r.NextSteps
 		}
@@ -268,7 +269,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 // waiting one with its connect link.
 func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	waiting := connectOnlySetup(statusNow.Add(time.Hour))
 	refused := waiting
@@ -284,7 +285,7 @@ func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 		cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
 			Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: &tc.setup,
 		}}}
-		r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+		r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 		require.NoError(t, err)
 		require.Equal(t, tc.state, r.Setup.State)
 		require.True(t, r.Setup.ConnectOnly)

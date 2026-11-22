@@ -23,7 +23,7 @@ import (
 // submit_plugin_approval verifies the passkey signature in Postgres.
 
 // PluginApprovalStore is the guard's plugin approvals on the agent's own
-// credential (schema version theHost().PluginApprovalsVersion).
+// credential (schema version Plugin.ApprovalsVersion).
 type PluginApprovalStore interface {
 	// ReadPluginApproval is one plugin approval the role may see, and false
 	// when there is none. Its texts are set only for the role that opened
@@ -56,7 +56,7 @@ func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginAppr
 	if _, err := s.openPluginApproval(ctx, r.ApprovalID); err != nil {
 		return time.Time{}, err
 	}
-	at, err := s.PluginApprovals.SubmitPluginApproval(ctx, guardmodel.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
+	at, err := s.deps.Plugin.Approvals.SubmitPluginApproval(ctx, guardmodel.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
 	if err != nil {
 		return time.Time{}, s.pluginRelayError(ctx, r.ApprovalID, err)
 	}
@@ -70,20 +70,20 @@ func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginAppr
 // see or only sees as a named agent (no binding text, so the opener is
 // asked instead), and a proof that does not match the binding text.
 func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
-	if s.PluginApprovals == nil {
+	if s.deps.Plugin.Approvals == nil {
 		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	if err := s.Admit(ctx); err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
-	st, err := s.Probe.GuardStatus(ctx)
+	st, err := s.deps.Status.Probe.GuardStatus(ctx)
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
-	if !holdsPluginApprovals(st) {
+	if !holdsPluginApprovals(st, s.deps.Plugin.ApprovalsVersion) {
 		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
-	r, ok, err := s.PluginApprovals.ReadPluginApproval(ctx, id)
+	r, ok, err := s.deps.Plugin.Approvals.ReadPluginApproval(ctx, id)
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
@@ -91,7 +91,7 @@ func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmo
 		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	switch {
-	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !s.Now().Before(r.ExpiresAt)):
+	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !s.deps.Core.Now().Before(r.ExpiresAt)):
 		return r, pluginExpired(r.ApprovalID, r.ExpiresAt)
 	case r.Status == guardmodel.PluginApprovalStatusApproved:
 		return r, pluginAlreadyApproved(r.ApprovalID)
@@ -104,11 +104,11 @@ func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmo
 }
 
 // holdsPluginApprovals reports whether a guard has plugin approvals: schema
-// version theHost().PluginApprovalsVersion is installed.
-func holdsPluginApprovals(st guardmodel.Status) bool {
-	return st.Installed >= theHost().PluginApprovalsVersion &&
-		!slices.Contains(st.MissingBreaking, theHost().PluginApprovalsVersion) &&
-		!slices.Contains(st.MissingNonBreaking, theHost().PluginApprovalsVersion)
+// version is installed.
+func holdsPluginApprovals(st guardmodel.Status, version int) bool {
+	return st.Installed >= version &&
+		!slices.Contains(st.MissingBreaking, version) &&
+		!slices.Contains(st.MissingNonBreaking, version)
 }
 
 // The plugin page's answers. They are the page's own (PageError), never
@@ -159,10 +159,10 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 		return err
 	}
 	detail := storeDetail(err)
-	msg := ToolError(err).Message
+	msg := s.deps.Core.Errors.ToolError(err).Message
 	switch {
 	case code == guardmodel.CodeApprovalExpired:
-		r, found, readErr := s.PluginApprovals.ReadPluginApproval(ctx, id)
+		r, found, readErr := s.deps.Plugin.Approvals.ReadPluginApproval(ctx, id)
 		if readErr == nil && found {
 			return pluginExpired(id, r.ExpiresAt)
 		}
@@ -177,7 +177,7 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 	case detail == guardmodel.DetailApprovalNotFound:
 		return ErrNotThisAgent
 	}
-	te := ToolError(err)
+	te := s.deps.Core.Errors.ToolError(err)
 	if te.Reason == reasonPasskeyRevoked {
 		steps, stepErr := NewSteps().
 			TellAgent(askAgentForRegisterLinkText).

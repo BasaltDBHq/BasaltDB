@@ -209,7 +209,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if !widen && held {
 		req.Token = st.token
 	}
-	out, err := s.Store.RescopeRevert(ctx, req, RescopeTimeout)
+	out, err := s.deps.Revert.Store.RescopeRevert(ctx, req, RescopeTimeout)
 	if err != nil {
 		return ScopeResponse{}, s.rescopeError(ctx, r, err)
 	}
@@ -249,14 +249,14 @@ func (s *Service) moveLink(ctx context.Context, id uuid.UUID, in ScopeRequest, e
 // sessions end, and the new token is registered so a later session can
 // open with the new secret.
 func (s *Service) rotateLink(ctx context.Context, id uuid.UUID, secret string, expires time.Time) error {
-	rot, err := s.Links.Rotate(id, secret, expires)
+	rot, err := s.deps.Delivery.Links.Rotate(id, secret, expires)
 	if err != nil {
 		return err
 	}
 	if !rot.Relay {
 		return nil
 	}
-	theHost().RotateSession(ctx, rot.Token)
+	s.deps.Revert.RotateSession(ctx, rot.Token)
 	s.registerRelay(ctx, id, rot.Token, expires)
 	return nil
 }
@@ -265,9 +265,9 @@ func (s *Service) rotateLink(ctx context.Context, id uuid.UUID, secret string, e
 // rescope restarts the hour, owner Q12), registering a relay link again
 // with it. A failure only shortens the link: it is logged.
 func (s *Service) extendLink(ctx context.Context, id uuid.UUID, expires time.Time) {
-	l, relay, err := s.Links.Extend(id, expires)
+	l, relay, err := s.deps.Delivery.Links.Extend(id, expires)
 	if err != nil {
-		s.Log.Warn("extend a rescoped revert's link", "id", id, "err", err)
+		s.deps.Core.Log.Warn("extend a rescoped revert's link", "id", id, "err", err)
 		return
 	}
 	if relay {
@@ -279,8 +279,8 @@ func (s *Service) extendLink(ctx context.Context, id uuid.UUID, expires time.Tim
 // leaves the open session working; a new session for it is refused until
 // the engine registers its links again after its next READY.
 func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel.LinkToken, expires time.Time) {
-	if err := s.Relay.Register(ctx, token, expires); err != nil {
-		s.Log.Warn("the Vault did not register a rotated revert link", "id", id, "err", err)
+	if err := s.deps.Delivery.Relay.Register(ctx, token, expires); err != nil {
+		s.deps.Core.Log.Warn("the Vault did not register a rotated revert link", "id", id, "err", err)
 	}
 }
 
@@ -362,7 +362,7 @@ func widenAgain(nonce []byte) error {
 // reset, and the answer is NOT_FOUND LINK_RESET. The caller holds the
 // revert's lock.
 func (s *Service) heldState(r action.Revert, secret string) (rescoped, bool, error) {
-	st, held := s.rescopes.get(r.ID, secret, s.Now())
+	st, held := s.rescopes.get(r.ID, secret, s.deps.Core.Now())
 	if !held || r.Widened || st.request.Binding == r.BindingText {
 		return st, held, nil
 	}
@@ -379,7 +379,7 @@ func (s *Service) heldState(r action.Revert, secret string) (rescoped, bool, err
 // LINK_RESET, and the page says the agent reset the revert.
 func (s *Service) personScopeGone(r action.Revert) error {
 	s.rescopes.drop(r.ID)
-	if err := s.Links.Reset(r.ID, r.ExpiresAt); err != nil {
+	if err := s.deps.Delivery.Links.Reset(r.ID, r.ExpiresAt); err != nil {
 		return err
 	}
 	te, err := LinkReset()
@@ -400,15 +400,15 @@ func (s *Service) resetToProposal(ctx context.Context, r action.Revert) (action.
 		return action.Revert{}, err
 	}
 	defer release()
-	out, err := s.Store.ResetRevert(ctx, r.ID, RescopeTimeout)
+	out, err := s.deps.Revert.Store.ResetRevert(ctx, r.ID, RescopeTimeout)
 	if err != nil {
 		return action.Revert{}, err
 	}
 	s.rescopes.drop(r.ID)
-	if err := s.Links.Reset(r.ID, out.ExpiresAt); err != nil {
+	if err := s.deps.Delivery.Links.Reset(r.ID, out.ExpiresAt); err != nil {
 		return action.Revert{}, err
 	}
-	return s.Store.FindRevert(ctx, r.ID)
+	return s.deps.Revert.Store.FindRevert(ctx, r.ID)
 }
 
 // retirePersonScope is the agent's reissue of a revert that is no longer
@@ -422,15 +422,15 @@ func (s *Service) retirePersonScope(ctx context.Context, r action.Revert) error 
 		return err
 	}
 	defer release()
-	if !s.rescopes.holdsToken(r.ID, s.Now()) {
+	if !s.rescopes.holdsToken(r.ID, s.deps.Core.Now()) {
 		return nil
 	}
 	s.rescopes.drop(r.ID)
-	return s.Links.Reset(r.ID, r.ExpiresAt)
+	return s.deps.Delivery.Links.Reset(r.ID, r.ExpiresAt)
 }
 
 // CheckResetLink reports whether secret is a link of revert id that the
 // agent's reset revoked (NOT_FOUND reason LINK_RESET on the pages).
 func (s *Service) CheckResetLink(id uuid.UUID, secret string) bool {
-	return s.Links.WasReset(id, secret)
+	return s.deps.Delivery.Links.WasReset(id, secret)
 }

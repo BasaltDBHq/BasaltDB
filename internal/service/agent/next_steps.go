@@ -87,12 +87,12 @@ func (f failure) arg(name string) string {
 // bare. A body that already carries its steps (built where the engine
 // knows the link or the ledger row) keeps them.
 func (s *Service) Failure(tool string, args map[string]any, err error) *toolresult.ToolError {
-	te := rowTooLargeFor(tool, messageTooLarge(tool, err, ToolError(err)))
+	te := rowTooLargeFor(tool, messageTooLarge(tool, err, s.deps.Core.Errors.ToolError(err)))
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		if te.ErrorID == "" {
 			te.ErrorID = uniqueid.New()
 		}
-		s.Log.Error("tool failed", "tool", tool, "code", te.Code, "reason", te.Reason, "error_id", te.ErrorID, "err", err)
+		s.deps.Core.Log.Error("tool failed", "tool", tool, "code", te.Code, "reason", te.Reason, "error_id", te.ErrorID, "err", err)
 	}
 	s.addGuidance(te, failure{tool: tool, args: args, err: err})
 	return te
@@ -105,13 +105,13 @@ func (s *Service) Failure(tool string, args map[string]any, err error) *toolresu
 func (s *Service) addGuidance(te *toolresult.ToolError, f failure) {
 	entry, ok := catalog().ErrorEntry(te.Code, te.Reason, f.tool)
 	if !ok {
-		s.Log.Error("no catalog entry for the error", "code", te.Code, "reason", te.Reason, "tool", f.tool)
+		s.deps.Core.Log.Error("no catalog entry for the error", "code", te.Code, "reason", te.Reason, "tool", f.tool)
 		return
 	}
 	if len(te.NextSteps) == 0 {
 		steps, person, err := s.errorGuidance(te, f)
 		if err != nil {
-			s.Log.Error("cannot build next steps", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
+			s.deps.Core.Log.Error("cannot build next steps", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
 			return
 		}
 		te.NextSteps = steps
@@ -120,10 +120,10 @@ func (s *Service) addGuidance(te *toolresult.ToolError, f failure) {
 		}
 	}
 	if err := CheckPersonMessage(te.PersonMessage); err != nil {
-		s.Log.Error("person message breaks its limit", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
+		s.deps.Core.Log.Error("person message breaks its limit", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
 	}
 	if entry.PersonMessage != (te.PersonMessage != "") {
-		s.Log.Error("person message disagrees with the catalog", "code", te.Code, "reason", te.Reason, "tool", f.tool)
+		s.deps.Core.Log.Error("person message disagrees with the catalog", "code", te.Code, "reason", te.Reason, "tool", f.tool)
 	}
 }
 
@@ -190,7 +190,7 @@ func (s *Service) staleReadSteps(b *Steps, te *toolresult.ToolError, f failure) 
 	if err != nil {
 		// A detail the engine cannot read: the catalog's query step cannot be
 		// filled in, so the agent stops and asks instead of guessing a row.
-		s.Log.Error("stale read detail not understood", "err", err)
+		s.deps.Core.Log.Error("stale read detail not understood", "err", err)
 		b.Stop("Do not write on the old read, and do not retry the write as it is.")
 		b.AskPerson("Tell the person the row changed since you read it, and ask how to go on.")
 		return
@@ -382,8 +382,8 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *toolresult.ToolError) stri
 		b.EndTurn("Do not wait: this link cannot be signed. End your turn, showing approval.personMessage.")
 		b.CallTool(toolListPending, map[string]any{argReissueLink: true}, "Once status shows the Vault connected, call this for a link the person can sign, and show it.")
 	case reasonNoPasskey:
-		b.AgentRunCommand(s.Commands.Init(), "Nobody can approve yet: run this once and show the person the link it prints, where they register a passkey.")
-		if s.Commands.AgentOperated() {
+		b.AgentRunCommand(s.deps.Core.Commands.Init(), "Nobody can approve yet: run this once and show the person the link it prints, where they register a passkey.")
+		if s.deps.Core.Commands.AgentOperated() {
 			// The person registers a portal passkey on the connect page,
 			// and the agent follows what init prints (RI-6).
 			break
@@ -467,7 +467,7 @@ func (s *Service) permissionDeniedSteps(b *Steps, te *toolresult.ToolError, f fa
 	b.AskPerson("Tell the person which access is missing and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the access once you decide it should have it.")
 	b.EndTurn("End your turn: the person decides.")
-	b.AgentRunCommand(s.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the access.")
+	b.AgentRunCommand(s.deps.Core.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the access.")
 	return fmt.Sprintf("The agent was denied %s. If it should have it, tell the agent: it gives you a link where you grant it.", what)
 }
 
@@ -542,11 +542,11 @@ func (s *Service) unavailableSteps(b *Steps, te *toolresult.ToolError, f failure
 	case reasonTooManyConnections:
 		b.RepeatCall(f.tool, nil, 0, "Try the same call once more: a connection may have closed since.")
 		b.AskPerson(tooManyConnectionsAsk)
-		return tooManyConnectionsMessage(s.Commands)
+		return tooManyConnectionsMessage(s.deps.Core.Commands)
 	case reasonCredentialRejected, reasonGuardMissing, reasonGuardOutdated:
-		return fixSteps(b, s.Commands, te.Reason)
+		return fixSteps(b, s.deps.Core.Commands, te.Reason)
 	case reasonEngineUnreachable:
-		return engineUnreachableSteps(b, s.Commands, f.tool)
+		return engineUnreachableSteps(b, s.deps.Core.Commands, f.tool)
 	case reasonSetupPending, reasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case reasonDatabaseNotConfirmed:
@@ -700,7 +700,7 @@ func (s *Service) approvalLinkError(te *toolresult.ToolError, n heldNotice) *too
 		s.openApprovalAgain(b, n, "Approve again on the page; the signature did not verify.")
 		lead = "The approval signature did not verify, so nothing was applied."
 	case reasonPasskeyRevoked:
-		b.AgentRunCommand(s.Commands.Init(), passkeyInitText)
+		b.AgentRunCommand(s.deps.Core.Commands.Init(), passkeyInitText)
 		s.openApprovalAgain(b, n, "Then approve the held write with that passkey.")
 		lead = "That passkey is not accepted here (unknown or revoked), so nothing was applied. The agent gives you a link to register the passkey you use; then approve again."
 	default:
@@ -710,7 +710,7 @@ func (s *Service) approvalLinkError(te *toolresult.ToolError, n heldNotice) *too
 	b.EndTurn("End your turn: the person acts next.")
 	steps, err := b.Build()
 	if err != nil {
-		s.Log.Error("cannot build approval steps", "reason", te.Reason, "err", err)
+		s.deps.Core.Log.Error("cannot build approval steps", "reason", te.Reason, "err", err)
 		return te
 	}
 	te.NextSteps = steps
@@ -770,7 +770,7 @@ var setupCode = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // an expired one is renewed on the engine's machine (an OPERATOR step).
 func (s *Service) setupSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	if te.Reason == reasonSetupExpired {
-		return setupExpiredSteps(b, s.Commands)
+		return setupExpiredSteps(b, s.deps.Core.Commands)
 	}
 	var se *SetupError
 	if !errors.As(f.err, &se) {
@@ -781,7 +781,7 @@ func (s *Service) setupSteps(b *Steps, te *toolresult.ToolError, f failure) stri
 		b.CallTool(toolStatus, map[string]any{}, "Call status: its setup problem says what the person or you do next.")
 		return ""
 	}
-	person, ls := setupPendingSteps(b, s.Commands, se.Code, se.Fingerprint, true, s.ConnectBudget)
+	person, ls := setupPendingSteps(b, s.deps.Core.Commands, se.Code, se.Fingerprint, true, s.deps.Status.ConnectBudget)
 	te.Links = ls
 	return person
 }

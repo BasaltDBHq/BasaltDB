@@ -18,9 +18,9 @@ import (
 func receiptService(t *testing.T, keys *channel.EngineKeys) *Service {
 	t.Helper()
 	now := time.Date(2026, 11, 14, 9, 30, 0, 500, time.UTC)
-	s := &Service{Deps: Deps{Name: "bot", Now: func() time.Time { return now }}}
+	s := &Service{deps: Deps{Core: CoreDeps{Name: "bot", Now: func() time.Time { return now }}}}
 	if keys != nil {
-		s.Receipts = keys
+		s.deps.Delivery.Receipts = keys
 	}
 	return s
 }

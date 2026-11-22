@@ -15,13 +15,13 @@ func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
 	t.Parallel()
 	status := func(update func() *UpdateNotice) (StatusReport, *Service) {
 		d := deps()
-		d.Update = update
-		d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+		d.Status.Update = update
+		d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
-		d.Now = func() time.Time { return statusNow }
-		cmds, err := NewCommands("bot", "", "linux")
+		d.Core.Now = func() time.Time { return statusNow }
+		cmds, err := NewCommands("bot", "", "linux", testManager())
 		require.NoError(t, err)
-		d.Commands = cmds
+		d.Core.Commands = cmds
 		s := NewService(d)
 		r, err := s.Status(context.Background())
 		require.NoError(t, err)

@@ -66,8 +66,8 @@ func noticeService(origin string, budget int) *Service {
 	d := deps()
 	setApprovals(&d, catalogApprovals{})
 	setReverts(&d, catalogReverts{})
-	d.PagesOrigin = origin
-	d.LinkBudget = budget
+	d.Core.PagesOrigin = origin
+	d.Core.LinkBudget = budget
 	return NewService(d)
 }
 
@@ -149,7 +149,7 @@ func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
 
 func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin")
+	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin", testManager())
 	require.NoError(t, err)
 	lines := make([]string, 0, 40)
 	for i := range 40 { // many cascaded tables with long names make a long headline
@@ -158,7 +158,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	lines = append(lines, bigLines(3)...)
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, 1)
-		s.Commands = cmds
+		s.deps.Core.Commands = cmds
 		n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: lines},
 			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issueLink)
 		require.NoError(t, err)
@@ -263,9 +263,9 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	t.Parallel()
 	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux")
+	cmds, err := NewCommands("pbot", long, "linux", testManager())
 	require.NoError(t, err)
-	s := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
+	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
 
 	messages := map[string]string{}
@@ -284,7 +284,7 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	}
 	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
 	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
-	rls := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
+	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)
 	messages["rls warning"] = w.PersonMessage
@@ -339,7 +339,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	require.Equal(t, p.RevertURL, p.NextSteps[1].URL)
 
 	item := PendingItem{Notice: n.ApprovalNotice}
-	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(time.Hour)
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
 	_, _, steps, err := s.itemGuidance(item)
 	require.NoError(t, err)
 	requireSendRequestFirst(t, steps, item.Notice.RequestFile, "list_pending approval")
@@ -362,7 +362,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 
 	n := approvalNoticeOf(t, s, 60, keepLink)
 	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
-	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(time.Hour)
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
 	_, _, steps, err := s.itemGuidance(item)
 	require.NoError(t, err)
 	require.Len(t, steps, 1)
@@ -378,9 +378,9 @@ func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
 	n := approvalNoticeOf(t, s, 60, issueLink)
 	require.NotNil(t, n.RequestFile)
 	item := PendingItem{Notice: n.ApprovalNotice}
-	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(-time.Hour)
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)
 	require.False(t, s.waitsForPerson(item))
-	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.Now().Add(time.Hour)
+	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)
 	require.False(t, s.waitsForPerson(item))
 }
 
@@ -428,7 +428,7 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 			reasonBadSignature:   func() error { return s.badSignature(ctx, big, "the code does not verify") },
 			reasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
 		} {
-			te := ToolError(refuse())
+			te := testErrors().ToolError(refuse())
 			require.Equal(t, CodeRevertInvalid, te.Code, name)
 			requirePersonMessage(t, te.PersonMessage, te.Links)
 			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
@@ -463,7 +463,7 @@ func TestWidenedRevertInvalidNamesNoLink(t *testing.T) {
 	r := revertOf(t, "Undo the bad merge", revertLines(2), false)
 	r.Widened = true
 	for _, origin := range []string{localPages, ""} {
-		te := ToolError(noticeService(origin, links.DefaultBudget).badSignature(ctx, r, "m"))
+		te := testErrors().ToolError(noticeService(origin, links.DefaultBudget).badSignature(ctx, r, "m"))
 		require.Equal(t, mcp.ActionOpenLink, te.NextSteps[0].Action)
 		require.Empty(t, te.NextSteps[0].URL, origin)
 		require.NotContains(t, te.NextSteps[0].Text, "short link the agent gave you", origin)

@@ -116,9 +116,9 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	for _, a := range []*guardtest.Agent{helper, other, bot} {
 		pg := newPGAgent(t, a.URL, 2)
 		p.srv.Add(pg.service(func(dp *agent.Deps) {
-			dp.Name, dp.Now = strings.TrimPrefix(a.Role, d.Names.Prefix+"_agent_"), clock
-			dp.PagesOrigin, dp.Links = p.origin, p.secrets
-			dp.PluginApprovals = pg.store
+			dp.Core.Name, dp.Core.Now = strings.TrimPrefix(a.Role, d.Names.Prefix+"_agent_"), clock
+			dp.Core.PagesOrigin, dp.Delivery.Links = p.origin, p.secrets
+			dp.Plugin.Approvals = pg.store
 		}))
 	}
 
@@ -218,8 +218,8 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	t.Cleanup(pool.Close)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	srv.Add(pg.service(func(dp *agent.Deps) {
-		dp.PagesOrigin, dp.Links, dp.PluginApprovals = origin, secrets, pg.store
-		dp.Probe = agentProbe{store.Probe{Q: pool, Migrations: guard.Migrations()}}
+		dp.Core.PagesOrigin, dp.Delivery.Links, dp.Plugin.Approvals = origin, secrets, pg.store
+		dp.Status.Probe = agentProbe{store.Probe{Q: pool, Migrations: guard.Migrations()}}
 	}))
 	id := uuid.Must(uuid.NewV7())
 	secret, err := secrets.Issue(id, time.Now().Add(time.Hour))

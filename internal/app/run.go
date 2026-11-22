@@ -664,7 +664,7 @@ type agentEnv struct {
 // is no service, and the setup page's UPDATE link for a when the engine
 // serves the setup jobs (setupOrigin).
 func (env agentEnv) commands(a config.Agent) (agent.Commands, error) {
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil {
 		return agent.Commands{}, err
 	}
@@ -784,46 +784,31 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.requests != nil {
 		requests = env.requests
 	}
-	svc := agent.NewService(agent.Deps{
-		PluginRequests: requests,
-		Name:           a.Name,
-		Deliverer:      deliverer,
-		Store:          store,
-		PagesBase:      env.pagesBase,
-		LinkBudget:     env.cfg.LinkBudgetOrDefault(),
-		Commands:       cmds,
-		PagesOrigin:    env.pagesOrigin,
-		Links:          secrets,
-		Relay:          relay,
-		RLS:            blind,
-		Log:            log,
-		Now:            time.Now,
-		OperatedBy:     env.cfg.OperatedBy,
-		DevLocalPages:  env.cfg.DevLocalPages,
-		ConnectBudget:  env.cfg.ConnectLinkBudget(),
-		SameUser:       !env.cfg.Service(),
-		StartedBy:      env.startedBy,
-		Setup:          a.Setup,
-		Probe:          agentProbe{probe},
-		Vault:          env.vault,
-		Portal:         env.portal,
-		Plugins:        env.plugins,
-		CrashDirs:      crashDirs(env.stateDir),
-		Access:         func(ctx context.Context) (agent.CatalogAccess, error) { return agentAccess(ctx, pool) },
-		Update:         agentUpdate(env.updateNotice()),
-		EngineRecord:   readRecord,
-		Trust:          TrustOf(pool),
-		Database:       agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
-		Receipts:       env.receipts,
-		Finisher:       finisher,
-		PII:            observer.On(pool),
-		Catalog:        agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)},
-		Columns:        postgres.NewColumnOrder(budgeted),
-		// The plugin approval routes read and relay on the agent's own
-		// credential, as the approval routes do.
-		PluginApprovals: store,
-		Classes:         storeClasses{BoundMap: classes.On(pool)},
-	})
+	deps := AgentHostDeps()
+	deps.Core.Name, deps.Core.Log, deps.Core.Now = a.Name, log, time.Now
+	deps.Core.Store, deps.Core.Commands = store, cmds
+	deps.Core.PagesBase, deps.Core.PagesOrigin, deps.Core.LinkBudget = env.pagesBase, env.pagesOrigin, env.cfg.LinkBudgetOrDefault()
+	deps.Write.Store, deps.Write.RLS, deps.Write.PII = store, blind, observer.On(pool)
+	deps.Approval.Store, deps.Approval.Columns = store, postgres.NewColumnOrder(budgeted)
+	deps.Revert.Store = store
+	deps.Delivery.Deliverer, deps.Delivery.Links, deps.Delivery.Relay, deps.Delivery.Receipts = deliverer, secrets, relay, env.receipts
+	cc := pool.Config().ConnConfig
+	deps.Status.Passkeys = store
+	deps.Status.OperatedBy, deps.Status.DevLocalPages = env.cfg.OperatedBy, env.cfg.DevLocalPages
+	deps.Status.ConnectBudget, deps.Status.SameUser = env.cfg.ConnectLinkBudget(), !env.cfg.Service()
+	deps.Status.StartedBy, deps.Status.Setup, deps.Status.Probe = env.startedBy, a.Setup, agentProbe{probe}
+	deps.Status.Vault, deps.Status.Portal, deps.Status.Plugins = env.vault, env.portal, env.plugins
+	deps.Status.CrashDirs = crashDirs(env.stateDir)
+	deps.Status.Access = func(ctx context.Context) (agent.CatalogAccess, error) { return agentAccess(ctx, pool) }
+	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, TrustOf(pool)
+	deps.Status.Database = agent.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
+	deps.Status.Finisher = finisher
+	deps.Describe.Catalog = agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)}
+	deps.Describe.Classes = storeClasses{BoundMap: classes.On(pool)}
+	// The plugin approval routes read and relay on the agent's own
+	// credential, as the approval routes do.
+	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests
+	svc := agent.NewService(deps)
 	repin := newRepin(env, a, pool.Config().ConnConfig, log)
 	return agentRuntime{
 		svc: svc,

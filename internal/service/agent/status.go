@@ -131,10 +131,10 @@ type Probe interface {
 	ReinstallNotice(ctx context.Context, limit int) (message string, ok bool, err error)
 }
 
-type noProbe struct{}
+type noProbe struct{ latest func() int }
 
-func (noProbe) GuardStatus(context.Context) (guardmodel.Status, error) {
-	v := theHost().LatestGuardVersion()
+func (p noProbe) GuardStatus(context.Context) (guardmodel.Status, error) {
+	v := p.latest()
 	return guardmodel.Status{State: guardmodel.GuardOK, Installed: v, Build: v}, nil
 }
 
@@ -237,21 +237,21 @@ type UpdateInfo struct {
 
 // updateInfo is the Service's newer release, or nil.
 func (s *Service) updateInfo() *UpdateInfo {
-	if s.Update == nil {
+	if s.deps.Status.Update == nil {
 		return nil
 	}
-	n := s.Update()
+	n := s.deps.Status.Update()
 	if n == nil {
 		return nil
 	}
-	info := NewUpdateInfo(*n, executablePath())
+	info := NewUpdateInfo(*n, executablePath(), s.deps.Status.UpdateMessage)
 	return &info
 }
 
 // NewUpdateInfo is the update field for notice n, with the message for
-// the binary at exe.
-func NewUpdateInfo(n UpdateNotice, exe string) UpdateInfo {
-	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: theHost().UpdateMessage(n, exe)}
+// the binary at exe, as message words it.
+func NewUpdateInfo(n UpdateNotice, exe string, message func(n UpdateNotice, exe string) string) UpdateInfo {
+	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: message(n, exe)}
 }
 
 // UpdateNotice is the text the MCP server appends to a connection's first
@@ -408,15 +408,21 @@ type statusDeps struct {
 	passkeys    func(context.Context) ([]passkey.Credential, error)
 	log         *slog.Logger
 	now         func() time.Time
+	// The host's: how errors map, the guard version this build installs and
+	// the crash reports.
+	errs         ErrorMap
+	latestGuard  func() int
+	crashReports func(dirs ...string) []CrashReport
 }
 
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
-		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, startedBy: s.StartedBy, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
-		crashDirs: s.CrashDirs, linkBudget: s.LinkBudget, access: s.Access,
-		engineRecord: s.EngineRecord, trust: s.Trust, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
+		name: s.deps.Core.Name, operatedBy: s.deps.Status.OperatedBy, build: s.deps.Status.Build, startedBy: s.deps.Status.StartedBy, pagesBase: s.deps.Core.PagesBase, pagesOrigin: s.deps.Core.PagesOrigin,
+		sameUser: s.deps.Status.SameUser, devLocalPages: s.deps.Status.DevLocalPages, connectBudget: s.deps.Status.ConnectBudget, engineReachable: true, vault: s.deps.Status.Vault, portal: s.deps.Status.Portal, plugins: s.deps.Status.Plugins,
+		crashDirs: s.deps.Status.CrashDirs, linkBudget: s.deps.Core.LinkBudget, access: s.deps.Status.Access,
+		engineRecord: s.deps.Status.EngineRecord, trust: s.deps.Status.Trust, database: s.deps.Status.Database, cmds: s.deps.Core.Commands, setup: s.pendingSetup(), probe: s.deps.Status.Probe,
+		errs: s.deps.Core.Errors, latestGuard: s.deps.Status.LatestGuardVersion, crashReports: s.deps.Status.CrashReports,
+		update: s.updateInfo(), finisher: s.deps.Status.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.deps.Status.Passkeys.Passkeys, log: s.deps.Core.Log, now: s.deps.Core.Now,
 	}
 }
 
@@ -461,13 +467,17 @@ type LocalStatus struct {
 	Passkeys func(context.Context) ([]passkey.Credential, error)
 	Log      *slog.Logger
 	Now      func() time.Time
+	// Errors maps a failure to the contract's tool error; LatestGuardVersion
+	// is the basalt_meta version this build installs.
+	Errors             ErrorMap
+	LatestGuardVersion func() int
 }
 
 // Report is the status report. It panics on a missing probe, passkey
 // reader, logger or clock.
 func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
-	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil {
-		panic("agent: local status needs a probe, a passkey reader, a logger and a clock")
+	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil || l.LatestGuardVersion == nil {
+		panic("agent: local status needs a probe, a passkey reader, a logger, a clock and the guard version")
 	}
 	base := l.PagesBase
 	if base == "" {
@@ -479,6 +489,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		errs: l.Errors, latestGuard: l.LatestGuardVersion,
 	}.report(ctx)
 }
 
@@ -525,7 +536,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
 	switch {
 	case err != nil:
-		r.Guard = GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()}
+		r.Guard = GuardStatus{State: guardmodel.GuardUnknown, Build: s.latestGuard()}
 		if !explained {
 			s.addUnreachable(ctx, &ps, err, trust)
 		}
@@ -567,8 +578,8 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 // does not answer: engine unreachable, guard UNKNOWN, operatedBy from the
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
-func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
-	return EngineDownStatusAfterStart(name, cmds, cfg, cfgErr, build, now, "", "")
+func EngineDownStatus(host EngineHost, name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
+	return EngineDownStatusAfterStart(host, name, cmds, cfg, cfgErr, build, now, "", "")
 }
 
 // EngineDownStatusAfterStart is EngineDownStatus for a basalt mcp that tried
@@ -576,11 +587,11 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr err
 // ("basalt mcp could not start the engine: <reason>. Its log is <path>."),
 // shown as the problem ENGINE_START_FAILED before ENGINE_UNREACHABLE, whose
 // steps stay.
-func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (StatusReport, error) {
+func EngineDownStatusAfterStart(host EngineHost, name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
-		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()},
+		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: host.LatestGuardVersion()},
 		Setup:  SetupStatus{State: setupNone},
 		Pages:  PagesStatus{URL: links.DefaultLocal},
 	}
@@ -602,7 +613,7 @@ func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, 
 	if cfg != nil {
 		if stop, ok := ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
 			r.Engine.LastStop = &stop
-			ps.add(problemEngineGaveUp, engineGaveUpMessage(stop, configPath, now),
+			ps.add(problemEngineGaveUp, engineGaveUpMessage(host, stop, configPath, now),
 				func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 		}
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
@@ -821,7 +832,7 @@ func (s statusDeps) addUnreachable(ctx context.Context, ps *problems, err error,
 		s.addCertificateNotVerified(ctx, ps, err, trust)
 		return
 	}
-	te := ToolError(err)
+	te := s.errs.ToolError(err)
 	switch te.Reason {
 	case reasonCredentialRejected:
 		ps.add(problemCredentialRejected, "the database refuses the agent's credential",
@@ -1098,7 +1109,7 @@ func (s *Service) Admit(ctx context.Context) error {
 	if v, known := s.statusDeps().setupGate(ctx); known && v.blocks() {
 		return &SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired, ConnectOnly: v.status.ConnectOnly}
 	}
-	st, err := s.Probe.GuardStatus(ctx)
+	st, err := s.deps.Status.Probe.GuardStatus(ctx)
 	if err != nil {
 		return err
 	}
@@ -1160,7 +1171,9 @@ func notInstalledYet(st guardmodel.Status, err error) bool {
 	if err == nil {
 		return st.State == guardmodel.GuardMissing
 	}
-	reason := ToolError(err).Reason
+	// Only the store's own refusals carry these reasons, so no adapter's error
+	// values are needed to tell them.
+	reason := ErrorMap{}.ToolError(err).Reason
 	return reason == reasonCredentialRejected || reason == reasonGuardMissing
 }
 
@@ -1262,9 +1275,9 @@ func ReadLastStop(dir string) (LastStop, bool) {
 
 // engineGaveUpMessage is the ENGINE_GAVE_UP status message: the supervisor's
 // reason, and when the next try happens during the hold-off.
-func engineGaveUpMessage(stop LastStop, configPath string, now time.Time) string {
+func engineGaveUpMessage(host EngineHost, stop LastStop, configPath string, now time.Time) string {
 	msg := "the engine stopped and was not restarted: " + stop.Reason
-	if until, ok := theHost().StartHoldOffUntil(stop, configPath, now); ok {
+	if until, ok := host.StartHoldOffUntil(stop, configPath, now); ok {
 		msg += ". The next try is at " + until.UTC().Format(time.RFC3339) + "."
 	}
 	return msg

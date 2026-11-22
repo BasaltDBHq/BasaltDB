@@ -57,7 +57,7 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 	if err != nil {
 		return RejectResponse{}, err
 	}
-	out, err := s.Store.RejectRevert(ctx, id, note, st.token)
+	out, err := s.deps.Revert.Store.RejectRevert(ctx, id, note, st.token)
 	if err != nil {
 		return RejectResponse{}, s.rejectError(r, st.token != nil, err)
 	}
@@ -102,11 +102,11 @@ func refusedInNote(r rune) bool {
 // to a revert Postgres refuses everything for: it is logged.
 func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 	revoke := func() {
-		if err := s.Links.RevokeItem(id); err != nil {
-			s.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
+		if err := s.deps.Delivery.Links.RevokeItem(id); err != nil {
+			s.deps.Core.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
 		}
 	}
-	if theHost().AfterAnswer(ctx, revoke) {
+	if s.deps.Revert.AfterAnswer(ctx, revoke) {
 		return
 	}
 	revoke()

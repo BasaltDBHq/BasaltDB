@@ -52,7 +52,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	pv, err := s.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
+	pv, err := s.deps.Revert.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
 	if err != nil {
 		return RevertPreview{}, s.prepareError(ctx, toolPreviewRevert, p.Scope, err)
 	}
@@ -128,8 +128,8 @@ type RevertPlan struct {
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
 func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPlan, error) {
-	r, err := s.Store.FindRevert(ctx, p.RevertID)
-	if sentinel(err, theHost().ErrRevertNotFound) {
+	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
+	if sentinel(err, s.deps.Revert.ErrNotFound) {
 		return RevertPlan{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
@@ -139,7 +139,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		return RevertPlan{}, &ArgumentError{Message: fmt.Sprintf(
 			"revert %s has %d lines: the revert page applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
-	page, err := s.Store.RevertLines(ctx, p)
+	page, err := s.deps.Revert.Store.RevertLines(ctx, p)
 	if err != nil {
 		return RevertPlan{}, err
 	}
@@ -185,7 +185,7 @@ type ApplyRevertBatchParams struct {
 // ApplyRevertBatch applies lines of a signed plan this agent prepared.
 // Postgres checks them against the signed plan and re-checks each row.
 func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
-	res, err := s.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+	res, err := s.deps.Revert.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
 	if err != nil {
 		return AppliedBatch{}, err
 	}
@@ -237,11 +237,11 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
 	}
-	prep, err := s.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
+	prep, err := s.deps.Revert.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
 	if err != nil {
 		return RequestedRevert{}, s.prepareError(ctx, toolRequestRevert, p.Scope, err)
 	}
-	r, err := s.Store.FindRevert(ctx, prep.RevertID)
+	r, err := s.deps.Revert.Store.FindRevert(ctx, prep.RevertID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -316,11 +316,11 @@ type AwaitRevertParams struct {
 
 // AwaitRevert returns the state of a revert this agent requested. With
 // Reissue on a PENDING revert it issues a new link and returns at once;
-// otherwise it reads the revert about every s.Poll until it is not PENDING
+// otherwise it reads the revert about every s.deps.Delivery.Poll until it is not PENDING
 // or Wait is over. It never signs: the person signs on the revert page.
 func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
-	r, err := s.Store.FindRevert(ctx, p.RevertID)
-	if sentinel(err, theHost().ErrRevertNotFound) {
+	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
+	if sentinel(err, s.deps.Revert.ErrNotFound) {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
@@ -340,7 +340,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
-		next, err := s.Store.FindRevert(budget.With(ctx), r.ID)
+		next, err := s.deps.Revert.Store.FindRevert(budget.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}
@@ -480,16 +480,16 @@ func applyByText(r action.Revert) string {
 func (s *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
 	switch scope.Kind {
 	case revert.ScopeRun:
-		_, err := s.Store.FindRun(ctx, scope.ID)
+		_, err := s.deps.Core.Store.FindRun(ctx, scope.ID)
 		if errors.Is(err, action.ErrRunNotFound) {
 			return notOwnScope(scope)
 		}
 		return err
 	case revert.ScopeChange:
-		own, err := s.Store.HasChange(ctx, scope.ID)
+		own, err := s.deps.Revert.Store.HasChange(ctx, scope.ID)
 		return ownOr(own, err, notOwnScope(scope))
 	case revert.ScopeTask:
-		own, err := s.Store.HasTaskRun(ctx, scope.ID)
+		own, err := s.deps.Revert.Store.HasTaskRun(ctx, scope.ID)
 		return ownOr(own, err, notOwnTask(scope))
 	}
 	return &ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
@@ -652,7 +652,7 @@ func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink
 			Message: s.tooLargeMessage(sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
 		}, nil
 	}
-	pick, err := chooseLink(short, long, s.LinkBudget, links.RevertFile(r.ID))
+	pick, err := chooseLink(short, long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))
 	if err != nil {
 		return revertLink{}, err
 	}
@@ -701,11 +701,11 @@ func revertHeadline(r action.Revert) (string, error) {
 // for their signature (LP-2). A failed notice is logged; it never fails the
 // call.
 func (s *Service) notifyRevert(ctx context.Context, r action.Revert, n revertLink) {
-	sent := RevertNotice{RevertID: r.ID, Agent: s.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
+	sent := RevertNotice{RevertID: r.ID, Agent: s.deps.Core.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
 	if !r.Widened {
 		sent.Intent, sent.RevertURL, sent.ShortURL = r.Intent, n.long, n.short
 	}
-	if err := s.Notifier.NotifyRevert(context.WithoutCancel(ctx), sent); err != nil {
-		s.Log.Error("notify revert", "revertId", r.ID, "err", err)
+	if err := s.deps.Delivery.Notifier.NotifyRevert(context.WithoutCancel(ctx), sent); err != nil {
+		s.deps.Core.Log.Error("notify revert", "revertId", r.ID, "err", err)
 	}
 }

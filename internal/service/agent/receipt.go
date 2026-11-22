@@ -54,7 +54,7 @@ type Receipt struct {
 // signature was accepted, and signs its receipt. Only an approved (or
 // already applied) approval gets one.
 func (s *Service) approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
-	a, err := s.Store.FindApproval(ctx, id)
+	a, err := s.deps.Approval.Store.FindApproval(ctx, id)
 	if err != nil {
 		return Receipt{}, err
 	}
@@ -113,18 +113,18 @@ func (s *Service) revertReceipt(r action.Revert) (Receipt, error) {
 // with the engine's key. Without a usable key (KEY_ERROR) there is no
 // receipt, and the line says why.
 func (s *Service) signReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
-	if s.Receipts == nil {
+	if s.deps.Delivery.Receipts == nil {
 		return Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, nil
 	}
 	p.Headline = clip(p.Headline, channel.MaxReceiptHeadline)
-	p.Agent = s.Name
-	p.EngineID = s.Receipts.EngineID()
-	p.At = s.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
-	token, err := channel.SignReceipt(s.Receipts, p)
+	p.Agent = s.deps.Core.Name
+	p.EngineID = s.deps.Delivery.Receipts.EngineID()
+	p.At = s.deps.Core.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
+	token, err := channel.SignReceipt(s.deps.Delivery.Receipts, p)
 	if err != nil {
 		return Receipt{}, err
 	}
-	return Receipt{Token: token, Line: receiptLine(verb, noun, p, s.Receipts.Fingerprint())}, nil
+	return Receipt{Token: token, Line: receiptLine(verb, noun, p, s.deps.Delivery.Receipts.Fingerprint())}, nil
 }
 
 // receiptLine is the person's sentence for receipt p (CONTRACT.md,

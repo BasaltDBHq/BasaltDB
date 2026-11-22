@@ -19,17 +19,17 @@ func (f fakePlugins) PluginProblems(agent string) []PluginProblem { return f[age
 func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, r PluginReporter) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.Plugins = r
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.OperatedBy = operatedBy
+	d.Status.Plugins = r
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
-	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", configPath, "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", configPath, "linux", testManager())
 	require.NoError(t, err)
 	if foreground {
 		cmds = cmds.Foreground()
 	}
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	rep, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return rep

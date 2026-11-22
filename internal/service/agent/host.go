@@ -1,89 +1,11 @@
 package agent
 
 import (
-	"context"
 	"errors"
-	"sync/atomic"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/channel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
-// Host is what the agent takes from the adapters it may not import: the
-// error values it tells apart, and the functions that read the host (the
-// service manager, the crash directory, the Vault session). The app fills
-// it once at start, before any tool is served, with UseHost. A function
-// the app leaves nil is a build defect: its first use panics.
-type Host struct {
-	// StartCommand and RestartArgs are the service manager's start command
-	// and restart command line for goos.
-	StartCommand func(goos string) string
-	RestartArgs  func(goos string) []string
-
-	// StartHoldOffUntil is when the supervisor tries the engine again after
-	// it gave up (false when it holds nothing off).
-	StartHoldOffUntil func(stop LastStop, configPath string, now time.Time) (time.Time, bool)
-
-	// CrashReports are the crash reports in dirs, newest first.
-	CrashReports func(dirs ...string) []CrashReport
-
-	// VaultConflict reports whether err is the Vault's answer that another
-	// engine holds a link's token. ErrVaultNotConnected is what a relay
-	// answers when no Vault is connected. AfterAnswer runs f after the
-	// answer of the Vault session ctx belongs to (false: there is none).
-	// RotateSession moves that session onto token.
-	VaultConflict        func(err error) bool
-	ErrVaultNotConnected error
-	AfterAnswer          func(ctx context.Context, f func()) bool
-	RotateSession        func(ctx context.Context, token channel.LinkToken) bool
-
-	// RowTooLarge says whether err is one row over the result budget on its
-	// own, with its message.
-	RowTooLarge func(err error) (message string, ok bool)
-
-	// ErrRevertNotFound, ErrApprovalNotFound and ErrInvalidParams are the
-	// ledger's, ErrInvalidIntent the guard's: values the agent maps to
-	// tool errors.
-	ErrRevertNotFound   error
-	ErrApprovalNotFound error
-	ErrInvalidParams    error
-	ErrInvalidIntent    error
-	// ApprovalSortSpec whitelists the approval list sort.
-	ApprovalSortSpec pagination.SortSpec
-
-	// Record is the wire record of one change and its rows, as the ledger
-	// renders it.
-	Record func(ch action.Change, rows []action.RowChange) any
-
-	// PluginApprovalsVersion is the basalt_meta version that holds plugin
-	// approvals.
-	PluginApprovalsVersion int
-
-	// LatestGuardVersion is the basalt_meta version this build installs.
-	LatestGuardVersion func() int
-
-	// UpdateMessage is the notice for the agent to relay, for the binary
-	// at exe.
-	UpdateMessage func(n UpdateNotice, exe string) string
-}
-
-var host atomic.Pointer[Host]
-
-// UseHost sets what the agent takes from the adapters. The app calls it
-// once, before it serves any tool.
-func UseHost(h Host) { host.Store(&h) }
-
-func theHost() *Host {
-	if h := host.Load(); h != nil {
-		return h
-	}
-	panic("agent: host not set (internal/app sets it at start)")
-}
-
-// sentinel reports whether err is target, false for a target the host did
-// not set.
+// sentinel reports whether err is target, false for a nil target.
 func sentinel(err, target error) bool { return target != nil && errors.Is(err, target) }
 
 // CrashReport is a crash report the engine saved: what status shows of it.

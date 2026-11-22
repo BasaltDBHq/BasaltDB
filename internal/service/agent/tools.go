@@ -43,7 +43,7 @@ func Tools(svc *Service) []Tool {
 	}
 	h := handlers{svc: svc}
 	tools := []Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
-	if speaksSQL(svc.Store.Kind()) {
+	if speaksSQL(svc.deps.Core.Store.Kind()) {
 		tools = append(tools,
 			contractTool("query", h.wrap("query", h.query)),
 			contractTool("write", h.wrap("write", h.write)))
@@ -92,20 +92,20 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 		// or logged, and its arguments are not echoed into the error.
 		if holdsAdminCredential(args) {
 			te := h.svc.Failure(tool, nil, adminCredentialError())
-			if h.svc.DevLocalPages {
+			if h.svc.deps.Status.DevLocalPages {
 				return nil, devLocalError(te)
 			}
 			return nil, te
 		}
 		out, err := h.admitted(ctx, tool, args, call)
 		switch {
-		case err == nil && h.svc.DevLocalPages:
+		case err == nil && h.svc.deps.Status.DevLocalPages:
 			return devLocalResult(out)
 		case err == nil:
 			return out, nil
 		}
 		te := h.svc.Failure(tool, callArgs(args), err)
-		if h.svc.DevLocalPages {
+		if h.svc.deps.Status.DevLocalPages {
 			return nil, devLocalError(te)
 		}
 		return nil, te
@@ -359,7 +359,7 @@ func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	items := make([]any, 0, len(hist.Page.Items))
 	for _, ch := range hist.Page.Items {
-		items = append(items, theHost().Record(ch, hist.Rows[ch.ID]))
+		items = append(items, h.svc.deps.Write.Record(ch, hist.Rows[ch.ID]))
 	}
 	return pagination.ToMCP(pagination.Page[any]{Items: items, NextCursor: hist.Page.NextCursor}), nil
 }

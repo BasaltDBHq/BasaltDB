@@ -72,19 +72,19 @@ func (p parts) HoldColumns(ctx context.Context, sql string, params []any) ([]str
 
 // setApprovals and setReverts replace one part of d's store.
 func setApprovals(d *Deps, a approvalStore) {
-	p, _ := d.Store.(parts)
+	p, _ := d.Core.Store.(parts)
 	p.approvalStore = a
-	d.Store = p
+	useStore(d, p)
 }
 
 func setReverts(d *Deps, r Reverts) {
-	p, _ := d.Store.(parts)
+	p, _ := d.Core.Store.(parts)
 	p.Reverts = r
-	d.Store = p
+	useStore(d, p)
 }
 
 func setRuns(d *Deps, r runStore) {
-	p, _ := d.Store.(parts)
+	p, _ := d.Core.Store.(parts)
 	p.runStore = r
-	d.Store = p
+	useStore(d, p)
 }

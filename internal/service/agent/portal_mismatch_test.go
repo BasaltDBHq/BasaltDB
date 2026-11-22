@@ -21,14 +21,14 @@ func (p fakePortal) PortalFinding() (PortalFinding, bool) { return p.f, p.ok }
 func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.Portal = p
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.OperatedBy = operatedBy
+	d.Status.Portal = p
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
-	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r

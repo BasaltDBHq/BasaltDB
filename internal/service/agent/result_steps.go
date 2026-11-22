@@ -176,7 +176,7 @@ func (s *Service) openHeldLink(b *Steps, n *toolresult.ApprovalNotice, text stri
 
 // expired reports whether a held write ran out before it was approved.
 func (s *Service) expired(p PendingItem) bool {
-	return p.Status == approvalExpired || !s.Now().Before(p.ExpiresAt)
+	return p.Status == approvalExpired || !s.deps.Core.Now().Before(p.ExpiresAt)
 }
 
 // waitsForPerson reports whether a held write still waits for the person's

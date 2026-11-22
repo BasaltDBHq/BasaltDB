@@ -98,16 +98,16 @@ func (s *Service) largeShortLink(ctx context.Context, page func(string, uuid.UUI
 // carry a request whose lines cost cost: the local pages always, the
 // portal's over a READY Vault up to maxPortalRequestCost.
 func (s *Service) carriesLarge(cost int64) bool {
-	return s.PagesOrigin != "" || (cost <= maxPortalRequestCost && s.Relay.Connected())
+	return s.deps.Core.PagesOrigin != "" || (cost <= maxPortalRequestCost && s.deps.Delivery.Relay.Connected())
 }
 
 // pageAddress is an item's page with no fragment: what a field that would
 // restate a long link carries for a request too large for one.
 func (s *Service) pageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string {
-	if s.PagesOrigin != "" {
-		return page(s.PagesOrigin, id)
+	if s.deps.Core.PagesOrigin != "" {
+		return page(s.deps.Core.PagesOrigin, id)
 	}
-	return page(s.PagesBase, id)
+	return page(s.deps.Core.PagesBase, id)
 }
 
 // revertRequestOf is r's request as the agent's read returned it.
@@ -139,13 +139,13 @@ func (s *Service) tooLargeText(what string, cost int64, expires time.Time, isRev
 		narrower = " Or ask the agent for a narrower revert (only some runs or tables)."
 	}
 	switch {
-	case s.PagesBase != links.Portal:
+	case s.deps.Core.PagesBase != links.Portal:
 		return lead + " To open it, turn on the engine's local pages (pagesAddr in engine.json), restart the engine, then tell the agent." +
 			narrower + until
 	case cost <= maxPortalRequestCost:
 		// Only the Vault carries a too-large request's portal short link.
 		return lead + " To open it, turn on the Vault: ask the agent, it gives you a link for that. Then tell the agent." + narrower + until
-	case s.Commands.AgentOperated():
+	case s.deps.Core.Commands.AgentOperated():
 		return what + " is too large for any page this engine can serve: only local pages can carry it, and an agent-operated " +
 			"engine has none. It cannot be opened on this setup unless the setup changes; otherwise it expires." + narrower + until
 	}

@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // evil is text an agent or its data can put in the ledger: erase the line
@@ -56,4 +58,16 @@ func TestApprovalStatusEscapesControlCharacters(t *testing.T) {
 	line := approvalStatusLine(uuid.Nil, "EXPIRED"+evil+"\nbasalt: approval signed")
 	requireTerminalSafe(t, line)
 	require.NotContains(t, line, "\n")
+}
+
+func TestRevertStatusEscapesControlCharacters(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	c := &cliIO{ctx: context.Background(), stdout: &out}
+	conflict := "CHANGED_AFTER" + evil
+	printRevertStatus(c, revertStatusDTO{
+		RevertID: uuid.NewString(), Status: "APPLIED" + evil, Batched: true,
+		SkippedLines: []skippedLineDTO{{Conflict: conflict, Plan: revert.Line{Op: "UPDATE", Table: "public.t" + evil}}},
+	})
+	requireTerminalSafe(t, out.String())
 }

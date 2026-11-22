@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -103,9 +104,14 @@ func TestListenPagesServesAFreePort(t *testing.T) {
 // credential (CONTRACT.md, What the agent is told).
 func TestInstructionsKeepTheAdminCredentialAway(t *testing.T) {
 	t.Parallel()
-	require.Contains(t, Instructions, "Never ask the person for, or accept, their database admin connection string or password, "+
-		"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote "+
-		"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now.")
+	require.Contains(t, Instructions, "Never ask the person for, or accept, their database admin connection string or password: "+
+		"to set up, repair or change your access, follow nextSteps or run basalt init, and show the person the one link it prints; "+
+		"they finish on that page. If the person pastes an admin password, tell them to change it now.")
+	// The one basalt command the instructions name is basalt init (CONTRACT.md,
+	// Next steps).
+	for _, m := range regexp.MustCompile(`basalt [a-z][a-z-]*`).FindAllString(Instructions, -1) {
+		require.Equal(t, "basalt init", m, "the MCP instructions name only basalt init")
+	}
 }
 
 // A waiting engine's listener is served on only when the config's pages

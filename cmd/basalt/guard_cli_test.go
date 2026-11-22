@@ -53,7 +53,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit, "uninstall": runUninstall, "approve": runApprove, "passkey": runPasskey, "upgrade": runUpgrade,
+	"init": runInit, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "upgrade": runUpgrade,
 	"engine": runEngineRecords,
 }
 
@@ -568,9 +568,6 @@ func TestInitDevLocalPages(t *testing.T) {
 	require.Equal(t, links.DefaultLocal, cfg.PagesURL, "the default origin with --dev-local-pages is local")
 	require.NotEqual(t, "ON", cfg.Vault, "the Vault carries portal links only")
 	require.Contains(t, cfg.Agents[0].InitArgs, "--dev-local-pages=true")
-	cmds, err := agent.NewCommands("x1", config, "linux", cfg.Agents[0].InitArgs)
-	require.NoError(t, err, "the saved flag round-trips")
-	require.NotContains(t, cmds.InitPortal(), "dev-local-pages")
 
 	// An explicit local origin, as the contract's command gives it.
 	r = cli(t, map[string]string{envAdminURL: d.URL}, "", append(slices.Clone(base), "--dev-local-pages", "--passkey-origin", "http://localhost:9000")...)
@@ -614,7 +611,7 @@ func TestInitOperatedByAgentWithAnExplicitPortalOrigin(t *testing.T) {
 		} `json:"agents"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &cfg))
-	_, err = agent.NewCommands("x1", config, "linux", cfg.Agents[0].InitArgs)
+	_, err = agent.NewCommands("x1", config, "linux")
 	require.NoError(t, err)
 
 	// Switched back by an explicit --operated-by person.

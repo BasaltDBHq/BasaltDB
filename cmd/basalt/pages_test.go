@@ -36,7 +36,7 @@ func localConfig(t *testing.T, cred string) string {
 
 func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	t.Parallel()
-	d, _, cred := revertSetup(t)
+	d, _, cred, _ := revertSetup(t)
 	held := holdDelete(t, cred)
 	cfg := localConfig(t, cred)
 	id := held.ApprovalID.String()

@@ -43,14 +43,14 @@ var noUpdateLine = []string{"engine", "mcp", "help", "-h", "--help"}
 // is the engine's own, 0600), the check stays off, so an admin's opt-out is
 // never overridden by a failed read; the engine's own notice reaches the
 // agent. No config at all means nobody opted out.
-func updateOff(getenv func(string) string, goos string, h host) bool {
+func updateOff(getenv func(string) string, h host) bool {
 	if updatecheck.Disabled(getenv) || buildinfo.Version == updatecheck.DevVersion {
 		return true
 	}
-	path, derr := discoverConfig(h, config.DefaultPath(goos))
+	path, derr := discoverConfig(h, config.DefaultPath(runtime.GOOS))
 	if derr != nil {
 		// Two configs: the command itself reports it; the system one decides.
-		path = config.DefaultPath(goos)
+		path = config.DefaultPath(runtime.GOOS)
 	}
 	cfg, err := loadEngineConfigAs(h.Euid(), path)
 	switch {
@@ -85,7 +85,7 @@ func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv fun
 	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || wantsJSON(args) {
 		return nothing
 	}
-	if updateOff(getenv, runtime.GOOS, osHost{}) {
+	if updateOff(getenv, osHost{}) {
 		return nothing
 	}
 	ck, err := updateChecker(getenv)

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
@@ -51,8 +53,8 @@ type agentLedger struct {
 // openLedger opens the agent's ledger with the agent's credential
 // (agentURL). A person (not root) on a service engine cannot read it and is
 // told to use sudo.
-func openLedger(c *cliIO, agent, configPath string) (*agentLedger, error) {
-	credFile := c.paths.credFile
+func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, error) {
+	credFile = cmp.Or(credFile, c.paths.credFile)
 	if c.needsAgent(agent, credFile) {
 		// --agent is needed only when the engine serves more than one.
 		if names, err := c.configuredAgents(configPath); err == nil && len(names) == 1 {
@@ -122,4 +124,17 @@ func (l *agentLedger) credentials(ctx context.Context) ([]passkey.Credential, er
 		out = append(out, k.Credential)
 	}
 	return out, nil
+}
+
+// ownAgent is the agent's name: the one given, else the one in the role of
+// the credential (<prefix>_agent_<name>), "" when it cannot be told.
+func (l *agentLedger) ownAgent() string {
+	if l.agent != "" {
+		return l.agent
+	}
+	i := strings.Index(l.role, "_agent_")
+	if i < 0 {
+		return ""
+	}
+	return l.role[i+len("_agent_"):]
 }

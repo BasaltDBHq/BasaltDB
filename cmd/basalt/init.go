@@ -83,10 +83,10 @@ func runInit(c *cliIO, args []string) int {
 	if isSetupCode(args) {
 		return runInitSetupCode(c, args)
 	}
-	// Under an agent, init with the admin credential is refused before
-	// anything else, a usage error included: the agent makes a setup code.
+	// Under an agent, or with no terminal, init with the admin credential is
+	// refused before anything else, a usage error included.
 	if !helpAsked(args) {
-		if err := c.agentContextError("basalt init without --remote", hintAgentInit); err != nil {
+		if err := c.agentInitError(); err != nil {
 			return c.fail(err)
 		}
 	}
@@ -121,7 +121,9 @@ func runInit(c *cliIO, args []string) int {
 			}
 		}
 	}
-	admin, err := c.adminURL()
+	// Typed at the prompt only: agentInitError refused a set
+	// BASALT_ADMIN_DATABASE_URL.
+	admin, err := c.initAdminURL()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -647,15 +649,17 @@ func (f initFlags) savedArgs(goos string) []string {
 	return args
 }
 
-// commands are the agent's commands for what init saves. It refuses saved
-// arguments the engine would not accept (a connection URL, a password), so
-// init fails before it writes them.
+// commands are the agent's commands. It refuses saved arguments that carry
+// a connection URL or a password, so init fails before it writes them.
 func (f initFlags) commands(goos string) (agent.Commands, error) {
 	path, err := filepath.Abs(f.configPath)
 	if err != nil {
 		return agent.Commands{}, err
 	}
-	return agent.NewCommands(f.agent, path, goos, f.savedArgs(goos))
+	if err := refuseSecretInitArgs(f.savedArgs(goos)); err != nil {
+		return agent.Commands{}, err
+	}
+	return agent.NewCommands(f.agent, path, goos)
 }
 
 // keepOrReplaceCredential decides, for an agent role that exists, whether

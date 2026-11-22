@@ -66,7 +66,7 @@ func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
 		var stderr bytes.Buffer
 		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
 		c.host = h
-		got := linkPages{local: local}.short(c, id, "binding", long)
+		got := linkPages{local: local}.short(c, "approvals", id, "binding", long)
 		require.Equal(t, long, got, name)
 		require.Contains(t, stderr.String(), "the engine gave no short link", name)
 		require.NotContains(t, stderr.String(), answer, name)
@@ -76,11 +76,11 @@ func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
 	var stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
 	c.host = h
-	require.Equal(t, page+fakeSecret, linkPages{local: local}.short(c, id, "binding", long), "the item's own short link")
+	require.Equal(t, page+fakeSecret, linkPages{local: local}.short(c, "approvals", id, "binding", long), "the item's own short link")
 	require.Empty(t, stderr.String())
 
 	h.issueErr = errors.New("engine answered 500: \x1b]8;;https://evil.example\x1b\\click\u202e\r\nbasalt: approved")
-	got := linkPages{local: local}.short(c, id, "binding", long)
+	got := linkPages{local: local}.short(c, "approvals", id, "binding", long)
 	require.Equal(t, long, got)
 	require.Equal(t, "basalt: the engine gave no short link (engine answered 500: ?]8;;https://evil.example?\\click???basalt: approved); using the long link\n",
 		stderr.String(), "the engine's message is shown with its control characters replaced")

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/next-step.v1.json",
   "title": "Next step",
-  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. Commands are complete (--agent, ids filled in; no command names the engine config, which the CLI finds by itself) and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps.",
+  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. A PERSON step is a link to a page; the agent's own basalt init prints that link. Commands are complete and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps.",
   "type": "object",
   "additionalProperties": false,
   "required": ["actor", "action", "text"],
@@ -26,7 +26,7 @@
         "TELL_AGENT",
         "SEND_REQUEST"
       ],
-      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP, SEND_REQUEST (send the person the requestFile beside a hash link, as a file or its text blocks; first step, only when requestFile is present), and RUN_COMMAND only when the engine's operatedBy is AGENT (a machine step on the engine's machine, never one that needs the admin). PERSON: OPEN_LINK, RUN_COMMAND, TELL_AGENT."
+      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP, SEND_REQUEST (send the person the requestFile beside a hash link, as a file or its text blocks; first step, only when requestFile is present), and RUN_COMMAND (basalt init, which prints the link the person opens; on an agent-operated engine also a machine step on the engine's machine; never one that needs the admin). PERSON: OPEN_LINK, RUN_COMMAND (only the engine's start, a root fix on the engine's machine, and plugin steps), TELL_AGENT."
     },
     "text": {
       "type": "string",
@@ -50,7 +50,7 @@
     "command": {
       "type": "string",
       "minLength": 1,
-      "description": "RUN_COMMAND: the complete command to run in a terminal: for an AGENT step on the engine's machine; for a PERSON step on the engine's machine, or on the person's own computer when the engine is agent-operated and the command needs the admin (text says which). Optional on OPEN_LINK: a command that opens the same page."
+      "description": "RUN_COMMAND: the complete command to run in a terminal on the engine's machine: for an AGENT step basalt init or a machine step; for a PERSON step the engine's start, a root fix or a plugin step (text says which)."
     },
     "url": {
       "type": "string",

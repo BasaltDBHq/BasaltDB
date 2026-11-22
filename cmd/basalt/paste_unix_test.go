@@ -201,7 +201,7 @@ func TestApprovePromptTakesALongCode(t *testing.T) {
 // local page, a pasted code over the terminal's line limit is still read.
 func TestApproveOpenTakesALongCode(t *testing.T) {
 	t.Parallel()
-	d, person, cred := revertSetup(t)
+	d, person, cred, _ := revertSetup(t)
 	held := holdDelete(t, cred)
 	id := held.ApprovalID.String()
 	as, err := person.Sign(approval.Challenge(bindingOf(t, cred, held.ApprovalID)), passkeytest.FlagsUPUV, nil)

@@ -1,21 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
 )
-
-// revertPoll is how often a waiting command reads whether the person signed.
-const revertPoll = time.Second
-
-// timeLayout is how a command states a deadline.
-const timeLayout = "2006-01-02 15:04 UTC"
 
 // agentURL finds the agent's connection string: --credential-file, then
 // the credential file of --agent in the engine config, then
@@ -81,11 +73,11 @@ func perUserConfigFallback(h host, system string) string {
 	return user
 }
 
-func printJSONValue(c *cliIO, v any) int {
-	enc := json.NewEncoder(c.stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		return c.fail(err)
+// withMark is a printed value followed by the summary of its size and
+// sha256 when it is over 1 MiB (largevalue.Summary), "" for any other.
+func withMark(text, mark string) string {
+	if mark == "" {
+		return text
 	}
-	return exitOK
+	return text + " " + mark
 }

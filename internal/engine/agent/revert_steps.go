@@ -62,10 +62,6 @@ func openLink(url, text string) mcp.NextStep {
 	return mcp.NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Text: text, URL: url}
 }
 
-func runCommand(command, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: text, Command: command}
-}
-
 // requestedSteps: the person signs at link, the agent waits once.
 func requestedSteps(id uuid.UUID, link string) []mcp.NextStep {
 	return []mcp.NextStep{
@@ -231,7 +227,7 @@ func revertNotFound(id uuid.UUID) error {
 		Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf(
 			"no revert %s requested by this agent: request one with request_revert and a changeId or runId of yours", id),
 		NextSteps: []mcp.NextStep{agentStep(mcp.ActionAskPerson,
-			"Ask the person for the revert id that basalt revert printed; this agent prepared no revert with that id.")},
+			"Ask the person which revert they mean; this agent prepared no revert with that id.")},
 	}
 }
 
@@ -346,6 +342,10 @@ func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
 	return s.passkeyRevokedWith(open, r)
 }
 
+// requestAgainText is the text of the step that prepares an expired revert
+// again.
+const requestAgainText = "On yes, call request_revert with these arguments and the person's reason as intent; rows already restored are skipped."
+
 // passkeyRevokedWith is REVERT_INVALID PASSKEY_REVOKED with open, the step
 // to the revert page (signingLink).
 func (s *Service) passkeyRevokedWith(open mcp.NextStep, r ledger.Revert) error {
@@ -353,11 +353,10 @@ func (s *Service) passkeyRevokedWith(open mcp.NextStep, r ledger.Revert) error {
 		Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
 		Message: "the code was signed by a passkey this database does not know or that was revoked; nothing was reverted",
 		PersonMessage: fmt.Sprintf("%s was signed with a passkey this database does not accept (unknown or "+
-			"revoked), so nothing was reverted. Check your passkeys, register one if needed, then sign again.",
+			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
 			sentence(revertTitle(r))),
 		NextSteps: []mcp.NextStep{
-			runCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts."),
-			runCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else."),
+			{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: passkeyInitText, Command: s.Commands.Init()},
 			open,
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
 		},
@@ -415,31 +414,31 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 	return &mcp.ToolError{
 		Code: CodeRevertExpired, Reason: reason,
 		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, timeText(r.ExpiresAt)),
-		PersonMessage: fmt.Sprintf("%s %s, so it expired.", sentence(revertTitle(r)), window),
+		PersonMessage: fmt.Sprintf("%s %s, so it expired. To revert it still, ask the agent to prepare it again.", sentence(revertTitle(r)), window),
 		NextSteps: []mcp.NextStep{
 			agentStep(mcp.ActionAskPerson, "Ask the person whether to prepare it again."),
-			runCommand(s.Commands.Revert(proposalOf(r)), "Prepare it again and sign within an hour; rows already restored are skipped."),
+			reviseRequestRevert(scopeArgs(proposalOf(r)), requestAgainText),
 		},
 	}
 }
 
-// prepareTimeout: the revert is too large to prepare over MCP; the person
-// prepares it in a terminal. After a preview the person looks at what it
-// would do and prepares it; after a request they prepare it, sign it and give
-// the agent the revert id.
+// prepareTimeout: the revert is too large to prepare in one MCP call. The
+// agent stops and asks the person whether a narrower revert (some runs or
+// tables) will do; there is no other way to prepare it.
 func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
-	command := s.Commands.Revert(scope)
-	minutes := int(guard.CLIPrepareTimeout.Minutes())
 	te := &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
-			"The person can prepare it in a terminal on the engine's machine, where it may take up to %d minutes: %s",
-		strings.ToLower(string(scope.Kind)), scope.ID, int(guard.MCPPrepareTimeout.Seconds()), minutes, command)}
-	person, b := s.requestTimeoutSteps(command, minutes)
+			"A narrower revert, with runs or tables, may fit.",
+		strings.ToLower(string(scope.Kind)), scope.ID, int(guard.MCPPrepareTimeout.Seconds()))}
+	what := "prepare"
 	if tool == toolPreviewRevert {
-		person, b = s.previewTimeoutSteps(scope, command, minutes)
+		what = "preview"
 	}
-	te.PersonMessage = fitMessage(person, command, s.Commands.RevertDryRun(scope))
-	steps, err := b.EndTurn(stepEndTurnPersonActsNext).Build()
+	te.PersonMessage = fmt.Sprintf("This revert is too large for the agent to %s in one call, so nothing was prepared. "+
+		"The agent can revert a part of it instead: only some runs or tables.", what)
+	steps, err := NewSteps().Stop("This revert is too large to prepare here: do not retry it as it is.").
+		AskPerson("Ask the person whether a narrower revert will do: request_revert with runs or tables.").
+		EndTurn(stepEndTurnPersonActsNext).Build()
 	if err != nil {
 		return err
 	}
@@ -497,13 +496,10 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope a
 	}
 	if scope.Kind == revert.ScopeTask {
 		// The agent's own lines are empty, but other agents' may not be
-		// (RS-6): the person can open the page and widen to them. The
-		// command is a PERSON step too (the catalog's task-scope entry), so
-		// a long --config path can cut it from personMessage without losing it.
-		command := s.Commands.Revert(scope)
-		te.PersonMessage = fitMessage(te.PersonMessage+fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
-			"signing page.", command), command)
-		b.RunCommand(command, "To include other agents' changes, open the revert page and choose them.")
+		// (RS-6): the person widens to them on the signing page of a revert
+		// another agent in the task requests.
+		te.PersonMessage += " To revert other agents' changes in this task, ask an agent that changed rows in it to request " +
+			"the revert: you can include the others' changes on its signing page."
 	}
 	steps, err := b.Build()
 	if err != nil {
@@ -521,25 +517,4 @@ func skipReason(pv action.PreviewPage) string {
 		return reasonAlreadyReverted
 	}
 	return reasonAllChangedByPeople
-}
-
-// requestTimeoutSteps: the person prepares and signs the revert in a
-// terminal and gives the agent the revert id.
-func (s *Service) requestTimeoutSteps(command string, minutes int) (string, *Steps) {
-	b := NewSteps().Stop("This revert is too large to prepare here: do not retry it.").
-		RunCommand(command, fmt.Sprintf("Prepare and sign it in a terminal; the CLI allows up to %d minutes.", minutes)).
-		TellAgent("Then give the agent the revert id that basalt revert prints.")
-	return fmt.Sprintf("This revert is too large to prepare through the agent. Run: %s, sign it, then give the "+
-		"agent the revert id it prints so it can apply it in batches.", command), b
-}
-
-// previewTimeoutSteps: the person sees what the revert would do, then
-// prepares it.
-func (s *Service) previewTimeoutSteps(scope action.Scope, command string, minutes int) (string, *Steps) {
-	dry := s.Commands.RevertDryRun(scope)
-	b := NewSteps().Stop("This revert is too large to prepare here: do not retry it.").
-		RunCommand(dry, fmt.Sprintf("See what the revert would do; the CLI allows up to %d minutes.", minutes)).
-		RunCommand(command, "Then prepare it and sign it on the revert page.")
-	return fmt.Sprintf("This revert is too large for the agent to preview. See what it would do with: %s then prepare it "+
-		"and sign it with: %s", dry, command), b
 }

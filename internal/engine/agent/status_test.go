@@ -138,12 +138,12 @@ func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *t
 
 // operatedStatus is engineStatus on an engine whose operatedBy is operatedBy.
 func operatedStatus(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy string) func(t *testing.T) StatusReport {
-	return operatedStatusWith(probe, passkeys, setup, operatedBy, "", []string{"--agent=bot", "--write=public.leads"})
+	return operatedStatusWith(probe, passkeys, setup, operatedBy, "")
 }
 
 // operatedStatusWith is operatedStatus with the engine config at configPath
 // and the flags init saved.
-func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy, configPath string, saved []string) func(t *testing.T) StatusReport {
+func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy, configPath string) func(t *testing.T) StatusReport {
 	return func(t *testing.T) StatusReport {
 		t.Helper()
 		d := deps()
@@ -154,7 +154,7 @@ func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, ope
 		d.Now = func() time.Time { return statusNow }
 		// The credential file is at init's default, so no saved flag names it
 		// (a saved --credential-file stays in init commands, AE-15).
-		cmds, err := NewCommands("bot", configPath, "linux", saved)
+		cmds, err := NewCommands("bot", configPath, "linux")
 		require.NoError(t, err)
 		d.Commands = cmds
 		r, err := NewService(d).Status(context.Background())
@@ -176,7 +176,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 	cases := map[string]statusCase{
 		problemEngineUnreachable: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux", nil)
+			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
@@ -185,7 +185,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		}},
 		problemEngineStartFailed: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux", nil)
+			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
@@ -194,7 +194,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		}},
 		problemEngineGaveUp: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux", nil)
+			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
@@ -293,7 +293,7 @@ func TestStatusLedgerReinstalled(t *testing.T) {
 	p := findProblem(t, r, problemLedgerReinstalled)
 	require.True(t, r.Ready)
 	require.Equal(t, mcpcontract.SeverityWarning, p.Severity)
-	require.Equal(t, ledger.ReinstallNotice(sampleReinstalls().List[0])[0]+"\nRun basalt log to see every report.", p.PersonMessage)
+	require.Equal(t, ledger.ReinstallNotice(sampleReinstalls().List[0])[0]+"\nOlder reports stay in the ledger's install records.", p.PersonMessage)
 	require.NotContains(t, p.PersonMessage, "basalt_agent_other")
 
 	r = engineStatus(&fakeProbe{st: ok}, 1, nil)(t)
@@ -350,7 +350,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	want, pm, variant := expectedSteps(t, mcpcontract.VariantProblem, code, "", "", entry.Steps, entry.PersonMessage, operatedBy)
 	require.Equal(t, want, got, "(actor, action) sequence of %s", code)
 	require.Equal(t, pm, p.PersonMessage != "", "personMessage set exactly when the catalog says")
-	requireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, code)
+	requireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, operatedBy, code)
 	requirePersonMessage(t, p.PersonMessage, nil)
 	for i, st := range p.NextSteps {
 		where := fmt.Sprintf("%s step %d", code, i+1)
@@ -446,7 +446,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	require.Equal(t, mcpcontract.OperatedByPerson, operatedBy(""))
 
 	// The shim that cannot read the config: PERSON and GUARD_ONLY.
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	r, err := EngineDownStatus("bot", cmds, nil, nil, "test", statusNow)
 	require.NoError(t, err)
@@ -572,7 +572,7 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 // requireOnlyStatusServed calls every served tool but status on srv and
 // checks each is refused UNAVAILABLE reason with the catalog's steps, and
 // that status still answers.
-func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, command, inMessage string) {
+func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, inMessage string) {
 	t.Helper()
 	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, reason, "")
 	require.True(t, ok)
@@ -595,7 +595,7 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 		require.NotEmpty(t, body["errorId"], tool.Name)
 		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 		require.Contains(t, body["personMessage"], inMessage, tool.Name)
-		require.Equal(t, command, body["nextSteps"].([]any)[0].(map[string]any)["command"], tool.Name)
+		require.Equal(t, "basalt init --agent bot", body["nextSteps"].([]any)[0].(map[string]any)["command"], tool.Name)
 	}
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError, "status is served: %v", body)
@@ -606,7 +606,7 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
 	srv, tools := degraded(t, probe, nil)
-	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "basalt upgrade --agent bot", "basalt upgrade --agent bot")
+	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "The agent gives you a link")
 
 	// The person upgrades: the next call is served, with no restart.
 	probe.st = guardAt(guard.GuardOK, nil, nil)
@@ -618,7 +618,7 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 func TestAMissingGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	srv, tools := degraded(t, &fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, nil)
-	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "basalt init --agent bot", "basalt init --agent bot")
+	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "The agent gives you a link")
 }
 
 func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
@@ -642,7 +642,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	// The person runs the code on their own computer: basalt init
 	// --setup-code takes no --agent or --config, and the message names the
 	// fingerprint to check, not the code itself.
-	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, "basalt init --setup-code "+testSetupCode, testFingerprint)
+	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, testFingerprint)
 
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError)
@@ -692,7 +692,7 @@ func TestStatusRefusesArguments(t *testing.T) {
 
 func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "/srv/basalt/engine.json", "linux", nil)
+	cmds, err := NewCommands("bot", "/srv/basalt/engine.json", "linux")
 	require.NoError(t, err)
 	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)
@@ -736,7 +736,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 // that cannot read the config keeps the person's steps (the default above).
 func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	cfg := &config.Config{
 		SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
@@ -765,33 +765,29 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 }
 
 // TestStatusProblemsStayWithinTheLimitWithALongConfigPath: a 252-character
-// config path and the flags init saves must not make the status call fail
-// on a personMessage over 500 characters; the commands then stand in the
-// PERSON steps only.
+// config path must not make the status call fail on a personMessage over
+// 500 characters, and no message names it: steps never carry --config.
 func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 	t.Parallel()
 	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	saved := []string{
-		"--agent=bot", "--write=public.leads,public.lead_notes", "--read=public.owners", "--prefix=acme",
-		"--passkey-origin=https://portal.basaltvault.app", "--statement-timeout=30s", "--os-user=deploy",
-	}
 	ok := guardAt(guard.GuardOK, nil, nil)
 	soon := statusNow.Add(time.Hour)
 	reports := map[string]func(t *testing.T) StatusReport{
-		"credential rejected":  operatedStatusWith(&fakeProbe{err: postgres.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long, saved),
-		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long, saved),
-		"guard missing":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long, saved),
-		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long, saved),
-		"upgrade available":    operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil, "", long, saved),
-		"no passkey":           operatedStatusWith(&fakeProbe{st: ok}, 0, nil, "", long, saved),
-		"setup not run":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon), "", long, saved),
-		"setup change pending": operatedStatusWith(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon), "", long, saved),
+		"credential rejected":  operatedStatusWith(&fakeProbe{err: postgres.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long),
+		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long),
+		"guard missing":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long),
+		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long),
+		"upgrade available":    operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil, "", long),
+		"no passkey":           operatedStatusWith(&fakeProbe{st: ok}, 0, nil, "", long),
+		"setup not run":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon), "", long),
+		"setup change pending": operatedStatusWith(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon), "", long),
 	}
 	for name, report := range reports {
 		r := report(t)
 		require.NotEmpty(t, r.Problems, name)
 		for _, p := range r.Problems {
 			require.NoError(t, CheckPersonMessage(p.PersonMessage), "%s: %s: %s", name, p.Code, p.PersonMessage)
+			require.NotContains(t, p.PersonMessage, long, "%s: %s", name, p.Code)
 		}
 	}
 }
@@ -807,7 +803,7 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
 	d.Now = func() time.Time { return statusNow }
 	d.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
-	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
@@ -840,7 +836,7 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordRead
 	d.Now = func() time.Time { return statusNow }
 	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
 	d.EngineRecord = read
-	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
@@ -912,7 +908,7 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 	t.Parallel()
 	local := func(key *string, read EngineRecordReader) StatusReport {
 		t.Helper()
-		cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+		cmds, err := NewCommands("bot", "", "linux")
 		require.NoError(t, err)
 		r, err := LocalStatus{
 			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
@@ -952,7 +948,7 @@ func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c/bot.cred"}]}`), 0o600))
 	_, cfgErr := config.Load(path)
-	cmds, err := NewCommands("bot", path, "linux", nil)
+	cmds, err := NewCommands("bot", path, "linux")
 	require.NoError(t, err)
 	r, err := EngineDownStatus("bot", cmds, nil, cfgErr, "test", statusNow)
 	require.NoError(t, err)
@@ -1004,7 +1000,7 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 // status and in every other call, with the log's path.
 func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	const why = "basalt mcp could not start the engine: the engine did not start within 15s. Its log is /s/engine.log."
 	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
@@ -1050,7 +1046,7 @@ func TestStatusStartedBy(t *testing.T) {
 
 func TestEngineDownStatusLastStop(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	dir := t.TempDir()
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
@@ -1092,7 +1088,7 @@ func TestReadLastStopRefusesASymlinkAndAFifo(t *testing.T) {
 
 func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "engine.json")
@@ -1133,7 +1129,7 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 
 func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "engine.json")

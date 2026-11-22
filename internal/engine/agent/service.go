@@ -242,9 +242,9 @@ func NewService(d Deps) *Service {
 	if d.Links == nil {
 		d.Links = links.NewSecrets(time.Now, rand.Reader)
 	}
-	if d.Commands.flags == "" {
-		// A name and no config path or init arguments cannot fail.
-		d.Commands, _ = NewCommands(d.Name, "", "", nil)
+	if d.Commands.agent == "" {
+		// A name and no config path cannot fail.
+		d.Commands, _ = NewCommands(d.Name, "", "")
 	}
 	d.Commands = d.Commands.OperatedBy(d.OperatedBy)
 	if d.LinkBudget <= 0 {

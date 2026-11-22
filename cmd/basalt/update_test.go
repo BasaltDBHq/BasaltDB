@@ -81,10 +81,10 @@ func TestUpdateOffFollowsAReadableConfig(t *testing.T) {
 	getenv := func(string) string { return "" }
 	h := newFakeHost(t)
 	writeUserConfig(t, h, configWith("OFF"), 0o600)
-	require.True(t, updateOff(getenv, "linux", h))
+	require.True(t, updateOff(getenv, h))
 	h = newFakeHost(t)
 	writeUserConfig(t, h, configWith("ON"), 0o600)
-	require.False(t, updateOff(getenv, "linux", h))
+	require.False(t, updateOff(getenv, h))
 }
 
 func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
@@ -93,5 +93,5 @@ func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
 	}
-	require.False(t, updateOff(func(string) string { return "" }, "linux", h))
+	require.False(t, updateOff(func(string) string { return "" }, h))
 }

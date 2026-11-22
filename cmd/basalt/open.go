@@ -24,13 +24,13 @@ type linkPages struct {
 // short is a newly issued short link with its secret when the engine
 // serves the pages, else long. The engine issues it to whoever shows
 // proof of the item's binding text (CONTRACT.md, Link secrets); issuing it
-// revokes the item's earlier short link. When the engine does not issue one, the long link stands.
+// revokes the item's earlier short link. kind is "approvals" or
+// "reverts". When the engine does not issue one, the long link stands.
 // Whatever answers on the pages port is not trusted: the link must be this
 // item's page on the local origin with a well-formed secret, and the
 // answer's message is shown with its control and non-ASCII characters
 // replaced (printableLabel).
-func (p linkPages) short(c *cliIO, id uuid.UUID, binding, long string) string {
-	const kind = "approvals"
+func (p linkPages) short(c *cliIO, kind string, id uuid.UUID, binding, long string) string {
 	if p.local == "" {
 		return long
 	}

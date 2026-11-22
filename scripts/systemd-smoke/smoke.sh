@@ -181,7 +181,15 @@ sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --sh
 # says so and stops before it reaches the database, never falling back to
 # running the engine as this user.
 [ ! -e /usr/bin/pkexec ] || sudo mv /usr/bin/pkexec /usr/bin/pkexec.smoke-aside
-if "$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes </dev/null >"$work/nodialog.out" 2>&1; then
+# init_on_tty runs basalt init on a pseudo-terminal, the admin connection
+# string typed at its prompt: init without --remote refuses the admin path
+# when stdin is not a terminal, and never reads BASALT_ADMIN_DATABASE_URL
+# (it refuses when it is set).
+init_on_tty() {
+	printf '%s\n' "$BASALT_ADMIN_DATABASE_URL" |
+		script -qec "$(printf '%q ' env -u BASALT_ADMIN_DATABASE_URL "$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes)" /dev/null
+}
+if init_on_tty >"$work/nodialog.out" 2>&1; then
 	cat "$work/nodialog.out" >&2
 	fail "basalt init went on without an administrator dialog"
 fi
@@ -209,7 +217,7 @@ exit 1
 EOF
 sudo chmod 0755 /usr/bin/pkexec
 # Its output is the setup SQL (the password redacted): shown only on failure.
-"$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes </dev/null >"$work/init.out" 2>&1 || {
+init_on_tty >"$work/init.out" 2>&1 || {
 	cat "$work/init.out" >&2
 	fail "basalt init"
 }

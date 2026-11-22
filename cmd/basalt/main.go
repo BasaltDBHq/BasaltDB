@@ -49,6 +49,7 @@ func commands() []command {
 		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
 		{"init", "Install the guard in Postgres and add an agent to the engine config", withIO(runInit)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
+		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
 		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},

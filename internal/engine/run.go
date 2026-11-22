@@ -119,6 +119,14 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
+	// A listener a waiting engine handed on is closed on any return before
+	// the pages take it (takeHandedListener).
+	handed := restart.PagesListener
+	defer func() {
+		if handed != nil {
+			_ = handed.Close()
+		}
+	}()
 	// Every configured agent's OS user, before any agent is skipped: the
 	// person socket scopes a peer that runs an agent to that agent (SM-4),
 	// served or not, so a skipped agent's user never looks like the person.
@@ -154,8 +162,10 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
 	}
 	var site *pagesSite
+	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
+	handed = nil
 	if pagesCfg.Addr != "" {
-		site, err = listenPages(pagesCfg, log)
+		site, err = listenPages(pagesCfg, pagesLn, log)
 		if err != nil {
 			return err
 		}
@@ -248,6 +258,10 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	restart.Upgrade = upgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
+		// What each agent's database says of this engine's key, which the
+		// relay acts on (CONTRACT.md, Engine revocation).
+		env.revocation = newRevocation(ev.keys.EngineID(), log.With("component", "vault"))
+		relay.watch(ctx, env.revocation, endRevoked(ev.client)) //nolint:contextcheck // runs when a link is dropped, after the call that set it up; like Unregister it waits for nothing
 	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
@@ -312,7 +326,12 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		})
 	}
 	if ev.client != nil {
-		wg.Go(func() { _ = ev.client.Run(ctx) })
+		// The engine leaves the Vault once every agent's database revoked
+		// its key.
+		vaultCtx, leave := context.WithCancel(ctx)
+		defer leave()
+		env.revocation.onLeave(leave)
+		wg.Go(func() { _ = ev.client.Run(vaultCtx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
@@ -532,14 +551,32 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the approval pages. A port it cannot bind stops the
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
-func listenPages(p config.Pages, log *slog.Logger) (*pagesSite, error) {
+func listenPages(p config.Pages, handed net.Listener, log *slog.Logger) (*pagesSite, error) {
 	srv := pages.New(p.Origin, log.With("component", "pages"))
+	if handed != nil {
+		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)
+		return &pagesSite{pages: srv, ln: handed, handler: server.Wrap(p.Addr, handed, srv.Handler()), origin: p.Origin}, nil
+	}
 	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
 		return nil, pagesPortError(p.Addr, err)
 	}
 	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
 	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}, nil
+}
+
+// takeHandedListener is the listener a waiting engine handed on, when the
+// config serves its pages at that same address; else it is closed and the
+// pages bind as usual.
+func takeHandedListener(ln net.Listener, addr string) net.Listener {
+	if ln == nil {
+		return nil
+	}
+	if addr == SetupAddr && ln.Addr().String() == addr {
+		return ln
+	}
+	_ = ln.Close()
+	return nil
 }
 
 func pagesPortError(addr string, err error) error {
@@ -620,6 +657,9 @@ type agentEnv struct {
 	// each agent registers its portal short links there.
 	relay      *vault.Client
 	relayLinks *relayLinks
+	// revocation is what each agent's database says of this engine's key;
+	// nil when the engine does not dial out to the Vault.
+	revocation *revocation
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
 	// asRoot: the engine runs as root; it then
@@ -696,13 +736,25 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	observer := piidict.NewObserver(classes, env.dict)
 	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
+	readRecord := func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
+		r, err := guard.EngineRecord(ctx, pool, id)
+		return r, postgres.MapError(err)
+	}
 	var relay agent.LinkRelay
 	if env.relay != nil {
 		relay = env.relay
 	}
+	if env.revocation != nil {
+		rev, name := env.revocation, a.Name
+		relay = revocableRelay{next: env.relay, revoked: func() bool { return rev.isRevoked(name) }}
+		rev.add(a.Name, readRecord, secrets)
+	}
 	if env.relayLinks != nil {
 		env.relayLinks.add(a.Name, secrets, env.dropLink)
 	}
+	// The engine reads its record at start: a revoked key hands no relay
+	// short link from the first call.
+	env.revocation.check(ctx, a.Name)
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
@@ -741,17 +793,14 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		CrashDirs:      crashDirs(env.stateDir),
 		Access:         func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
 		Update:         env.updateNotice(),
-		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			r, err := guard.EngineRecord(ctx, pool, id)
-			return r, postgres.MapError(err)
-		},
-		Trust:    TrustOf(pool),
-		Database: agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
-		Receipts: env.receipts,
-		Finisher: finisher,
-		PII:      observer.On(pool),
-		Catalog:  postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
-		Columns:  postgres.NewColumnOrder(budgeted),
+		EngineRecord:   readRecord,
+		Trust:          TrustOf(pool),
+		Database:       agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
+		Receipts:       env.receipts,
+		Finisher:       finisher,
+		PII:            observer.On(pool),
+		Catalog:        postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
+		Columns:        postgres.NewColumnOrder(budgeted),
 		// The plugin approval routes read and relay on the agent's own
 		// credential, as the approval routes do.
 		PluginApprovals: store,
@@ -760,7 +809,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	return agentRuntime{
 		svc: svc,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
-			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
+			WithOperatedBy(env.cfg.OperatedBy).WithGate(env.revocation.gate(a.Name, svc.AdmitTick)).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
 		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),

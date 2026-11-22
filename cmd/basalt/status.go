@@ -461,7 +461,7 @@ func engineRecordWords(r agent.EngineRecordStatus) string {
 	case "RECORDED":
 		return fmt.Sprintf("RECORDED in the agent's database (since %s)", r.RecordedAt)
 	case "REVOKED":
-		return fmt.Sprintf("REVOKED %s (shown in status; the relay does not enforce it yet, so links already handed over may still work)", r.RevokedAt)
+		return fmt.Sprintf("REVOKED %s (shown in status; the engine hands over no relay short link for this database and has ended the ones it handed over)", r.RevokedAt)
 	case "NOT_RECORDED":
 		return "NOT_RECORDED (the agent's database does not hold this engine's key)"
 	}

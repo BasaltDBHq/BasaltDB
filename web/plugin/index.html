@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' wss://relay.basaltvault.app; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <title>Approve a plugin</title>
@@ -20,7 +20,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/plugin.js" integrity="sha384-89AjtwhTc1yxdfg68F5lkQIJih8McGMyCr7MGG2XwJc+s7JUMvJ6fJzrebq81rH6"></script>
+  <script type="module" src="../lib/plugin.js" integrity="sha384-VIwZf5kaLsJs9YNu/fu6jrXOdTQkiR6M7pH8Y2i/7yni4oKTqYyOuF9maubRNGnQ"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -44,6 +44,8 @@
     <p id="request-status" class="muted" role="status"></p>
   </section>
 
+  <p id="connecting" class="muted" role="status" hidden>Connecting to your engine through the BasaltDB Vault...</p>
+
   <section id="error" class="panel error" hidden>
     <h1>Cannot approve</h1>
     <p id="error-text"></p>
@@ -65,6 +67,7 @@
         <div><dt>Database</dt><dd id="database"></dd></div>
         <div><dt>Expires</dt><dd id="expires"></dd></div>
       </dl>
+      <p id="engine" class="muted" hidden></p>
     </section>
 
     <section id="change" class="panel plugin-change" hidden>

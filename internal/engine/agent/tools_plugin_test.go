@@ -123,15 +123,19 @@ func requireReason(t *testing.T, err error, code, reason string) *mcp.ToolError 
 }
 
 // The tool is refused, before the engine is asked anything, wherever it is
-// not served: an agent-operated engine, a same-user engine, and an engine
-// without local pages for a call that opens an approval.
+// not served: an agent-operated service engine, a person-operated
+// same-user engine, and an engine without local pages for a call that
+// opens an approval.
 func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 	t.Parallel()
 	for _, kase := range []struct {
 		name, reason string
 		set          func(s *Service)
 	}{
-		{"agent operated", ReasonPluginAgentOperated, func(s *Service) { s.Commands = s.Commands.OperatedBy(mcpcontract.OperatedByAgent) }},
+		{"agent operated service", ReasonPluginAgentOperated, func(s *Service) { s.Commands = s.Commands.OperatedBy(mcpcontract.OperatedByAgent) }},
+		{"agent operated without engine-kept plugins", ReasonPluginAgentOperated, func(s *Service) {
+			s.Commands, s.SameUser, s.PluginRequests = s.Commands.OperatedBy(mcpcontract.OperatedByAgent), true, nil
+		}},
 		{"same user", ReasonPluginSameUserMode, func(s *Service) { s.SameUser = true }},
 		{"no engine-kept plugins", ReasonPluginSameUserMode, func(s *Service) { s.PluginRequests = nil }},
 		{"no local pages", ReasonPluginNoLocalPages, func(s *Service) { s.PagesOrigin = "" }},
@@ -374,6 +378,9 @@ func pluginCatalogCases() map[string]catalogCase {
 		})},
 		caseKey(codePluginRefused, ReasonPluginSameUserMode, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) { s.SameUser = true })},
 		caseKey(codePluginRefused, ReasonPluginNoLocalPages, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) { s.PagesOrigin = "" })},
+		caseKey(codePluginRefused, ReasonPluginNoPortalLink, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) {
+			s.Commands, s.SameUser, s.PagesOrigin = s.Commands.OperatedBy(mcpcontract.OperatedByAgent), true, ""
+		})},
 	}
 	for _, reason := range []string{
 		ReasonPluginAgentNotAllowed, "BAD_MANIFEST", "NOT_TRUSTED", "UNKNOWN_AGENT", "UNSAFE_PATH", "TOO_MANY_PENDING", "GUARD_OUTDATED",

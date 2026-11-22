@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
 
 // request_plugin (CONTRACT.md, MCP tools, request_plugin): the agent
@@ -43,6 +44,7 @@ const (
 	ReasonPluginAgentOperated   = "AGENT_OPERATED"
 	ReasonPluginSameUserMode    = "SAME_USER_MODE"
 	ReasonPluginNoLocalPages    = "NO_LOCAL_PAGES"
+	ReasonPluginNoPortalLink    = "NO_PORTAL_LINK"
 	ReasonPluginAgentNotAllowed = "AGENT_NOT_ALLOWED"
 	reasonPluginBadManifest     = "BAD_MANIFEST"
 	reasonPluginNotTrusted      = "NOT_TRUSTED"
@@ -233,15 +235,23 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 // install would be refused (pluginsServed), before anything is written.
 func (s *Service) PluginUploadsServed() error { return s.pluginsServed(true) }
 
-// pluginsServed refuses request_plugin where it is not served: an
-// agent-operated engine, a same-user engine, and, for a call that opens an
-// approval, an engine that serves no local pages.
+// pluginsServed refuses request_plugin where it is not served, before
+// anything is written: an agent-operated engine that runs as a service
+// under its own OS user, a person-operated engine that runs as the
+// person's own OS user, and, for a call that opens an approval, an engine
+// that has no page the person could sign on (CONTRACT.md, Plugin approval
+// through the portal).
 func (s *Service) pluginsServed(opens bool) error {
 	switch {
-	case s.Commands.AgentOperated():
+	case s.Commands.AgentOperated() && (!s.SameUser || s.PluginRequests == nil):
 		return pluginRefused(ReasonPluginAgentOperated,
-			"request_plugin is refused: this engine is operated by an agent, and plugin changes stay refused there until remote installation exists. Nothing was written",
-			"Plugins cannot be added or changed on an engine an agent operates yet. Nothing was changed.")
+			"request_plugin is refused: this engine is operated by an agent and runs as a service under its own OS user, where plugin changes stay refused. Nothing was written",
+			"Plugins cannot be added or changed on this engine: an agent operates it and it runs as its own user. Nothing was changed.")
+	case s.Commands.AgentOperated():
+		if why := s.noPortalLink(); opens && why != "" {
+			return noPortalLinkError("request_plugin is refused: "+why+", so there is no page to approve the plugin on. Nothing was written",
+				"Basalt cannot hand you a link to approve the plugin right now: "+why+". Nothing was changed.")
+		}
 	case s.SameUser || s.PluginRequests == nil:
 		return pluginRefused(ReasonPluginSameUserMode,
 			"request_plugin is refused: this engine runs as the person's own OS user and keeps no plugins of its own. Nothing was written",
@@ -252,6 +262,60 @@ func (s *Service) pluginsServed(opens bool) error {
 			"This Basalt engine serves no approval pages on this computer, so you could not approve a plugin. Turn its local pages on first.")
 	}
 	return nil
+}
+
+// portalPluginLinks reports whether a plugin approval's link is the
+// portal's: on an agent-operated engine, unless it serves its own pages
+// for development (devLocalPages).
+func (s *Service) portalPluginLinks() bool {
+	return s.Commands.AgentOperated() && (!s.DevLocalPages || s.PagesOrigin == "")
+}
+
+// noPortalLink is why the engine cannot hand over a plugin approval's
+// portal link now, "" when it can (or needs none). A plugin approval has
+// no long link to fall back to.
+func (s *Service) noPortalLink() string {
+	if !s.portalPluginLinks() || s.Relay.Connected() {
+		return ""
+	}
+	state := string(vault.StateOff)
+	if s.Vault != nil {
+		state = s.Vault.VaultStatus().State
+	}
+	switch state {
+	case string(vault.StateOff):
+		return "the Vault is off on this engine (vault in engine.json)"
+	case string(vault.StateKeyError):
+		return "the engine's Vault key file is refused (status shows vault KEY_ERROR)"
+	case string(vault.StateConnected):
+		return "this database revoked this engine's key (status shows engineRecord REVOKED)"
+	}
+	return "the engine has no connection to the Vault right now (status shows vault " + state + ")"
+}
+
+// pluginLink is the new approval's short link: the portal's, registered at
+// the Vault, on an agent-operated engine; else the engine's own pages. A
+// portal link the Vault did not register leaves the entry written and
+// withheld, and the name form opens a new approval later.
+func (s *Service) pluginLink(ctx context.Context, o PluginOpened) (string, error) {
+	if !s.portalPluginLinks() {
+		return s.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
+	}
+	if link := s.relayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
+		return link, nil
+	}
+	why := s.noPortalLink()
+	if why == "" {
+		why = "the Vault did not register the link"
+	}
+	return "", noPortalLinkError(
+		fmt.Sprintf("request_plugin opened the approval but cannot hand over its link: %s. The plugin %s/%s is written and waits for an approval; call request_plugin with name and instance to open a new one", why, o.Name, o.Instance),
+		fmt.Sprintf("Basalt cannot hand you a link to approve the plugin %s right now: %s. Nothing runs until you approve it.", o.Name, why))
+}
+
+// noPortalLinkError is PLUGIN_REFUSED NO_PORTAL_LINK.
+func noPortalLinkError(message, person string) error {
+	return pluginRefused(ReasonPluginNoPortalLink, message, person)
 }
 
 // uploadOf is basalt mcp's upload of the source, from the call's _meta.
@@ -279,7 +343,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 	if err != nil {
 		return requestPluginResult{}, err
 	}
-	link, err := s.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
+	link, err := s.pluginLink(ctx, o)
 	if err != nil {
 		return requestPluginResult{}, err
 	}
@@ -436,6 +500,9 @@ func pluginRefused(reason, message, person string) error {
 	case reasonPluginUnreachable:
 		steps.AskPerson("Ask the person to check that the database is up.").
 			CallTool(toolRequestPlugin, nil, "Once it answers, call request_plugin again (with name and instance when the plugin is already installed).")
+	case ReasonPluginNoPortalLink:
+		steps.AskPerson("Show the person the personMessage: it says why Basalt cannot hand over a link; status shows vault.").
+			CallTool(toolRequestPlugin, nil, "Once the person says it is fixed, call request_plugin again: the same call when nothing was written, or with name and instance when the plugin is already installed.")
 	default:
 		steps.Stop("Stop: the engine refused this plugin change; do not work around it.").
 			AskPerson("Show the person the personMessage; only they can decide about this plugin.")

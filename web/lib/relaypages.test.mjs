@@ -142,8 +142,8 @@ test("on the relay path no page falls back to a code to paste", async () => {
   assert.match(RELAY_NO_ANSWER, /Open the link again: it shows whether it was signed/);
 });
 
-test("registration and the plugin page never use the relay", () => {
-  for (const f of ["register.js", "plugin.js"]) {
+test("registration never uses the relay", () => {
+  for (const f of ["register.js"]) {
     const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(src, /pageTransport|relay\.js|relayTransport/, f);
   }

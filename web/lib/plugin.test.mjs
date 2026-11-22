@@ -13,7 +13,7 @@ import { deflateRawSync } from "node:zlib";
 
 import { b64urlDecode, b64urlEncode, sha256, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { HOOK_LABELS, HOOK_SEES, ON_PORTAL, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView, portalRefusal } from "./plugin.js";
+import { HOOK_LABELS, HOOK_SEES, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
@@ -473,10 +473,13 @@ test("every fixed sentence is written in CONTRACT.md word for word", () => {
   }
 });
 
-test("on the portal a plugin short link says to open it on your own computer, and nothing else", () => {
-  const err = portalRefusal("https://portal.basaltvault.app");
-  assert.equal(err.name, "RelayError");
-  assert.equal(describe(err), ON_PORTAL);
-  assert.match(ON_PORTAL, /your own computer/);
-  for (const origin of ["http://localhost:8787", "http://127.0.0.1:8787", undefined]) assert.equal(portalRefusal(origin), null, String(origin));
+test("on the portal the page says, at every level, that Basalt and the agent share one user, between where it runs and a declared limit", () => {
+  for (const b of [binding({}), binding({ signer: "KNOWN" }), binding({ endpoint: { kind: "REMOTE", host: "ner.example:443" }, isolation: undefined })]) {
+    const here = pluginView(b, { portal: true });
+    assert.ok(here.where.includes(SENTENCES.portalSameUser), JSON.stringify(b.endpoint));
+    assert.ok(!pluginView(b).where.includes(SENTENCES.portalSameUser), "not on the engine's own pages");
+    const limit = here.where.findIndex((s) => s === SENTENCES.noNetwork || s.startsWith("It says it connects only to"));
+    if (limit >= 0) assert.ok(here.where.indexOf(SENTENCES.portalSameUser) < limit, "before the declared limit");
+  }
+  assert.equal(SENTENCES.fingerprint, "Plugin fingerprint: <fingerprint>", "named apart from the engine's fingerprint");
 });

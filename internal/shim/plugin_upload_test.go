@@ -34,16 +34,27 @@ func metaOf(t *testing.T, line []byte) map[string]json.RawMessage {
 	return msg.Params.Meta
 }
 
-// On a person-operated engine with local pages, the shim's own upload
+// On a person-operated engine with local pages, and on an agent-operated
+// one (its plugin approval link is the portal's), the shim's own upload
 // replaces any the client named; other _meta keys pass.
 func TestPrepareUploadsTheSource(t *testing.T) {
 	t.Parallel()
+	for _, sess := range []*session{
+		readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"),
+		readySession(mcpcontract.OperatedByAgent, ""),
+	} {
+		prepareUploads(t, sess)
+	}
+}
+
+func prepareUploads(t *testing.T, sess *session) {
+	t.Helper()
 	var asked []string
 	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(_ context.Context, source string) (mcp.PluginUpload, error) {
 		asked = append(asked, source)
 		return mcp.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner", Executables: []string{"bin/ner"}}, nil
 	}}
-	out, answered := r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), []byte(pluginCall))
+	out, answered := r.prepare(context.Background(), sess, []byte(pluginCall))
 	require.False(t, answered)
 	require.Equal(t, []string{"/home/me/local-ner"}, asked)
 	meta := metaOf(t, out)
@@ -56,7 +67,7 @@ func TestPrepareUploadsTheSource(t *testing.T) {
 func TestPrepareStripsAClientUpload(t *testing.T) {
 	t.Parallel()
 	for _, sess := range []*session{
-		readySession(mcpcontract.OperatedByAgent, "http://localhost:7878"),
+		readySession("", "http://localhost:7878"),
 		readySession(mcpcontract.OperatedByPerson, ""),
 	} {
 		r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcp.PluginUpload, error) {

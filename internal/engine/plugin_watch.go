@@ -140,13 +140,22 @@ func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
 // engine.json that cannot be read or fails validation changes nothing: no
 // pass runs until it can be read again, and status says so.
 func (w *pluginWatch) step(ctx context.Context) {
-	if w.ep.kept != nil {
+	if w.serviceKept() {
 		w.stepKept(ctx)
 		return
 	}
 	raw, readErr := os.ReadFile(w.path)
 	if readErr != nil {
 		raw = nil
+	}
+	if w.ep.kept != nil && raw != nil {
+		// A same-user engine that keeps entries of its own: a change of
+		// the entries file is a change too.
+		kept, err := os.ReadFile(w.ep.kept.EntriesPath())
+		if err != nil {
+			kept = []byte(err.Error())
+		}
+		raw = append(append(raw, 0), kept...)
 	}
 	if w.raw == nil || !bytes.Equal(raw, w.raw) {
 		w.raw = raw
@@ -168,12 +177,22 @@ func (w *pluginWatch) step(ctx context.Context) {
 		w.bad = false
 		w.ep.setConfigProblem(false)
 		w.eff = w.effective(cfg)
+		if w.ep.kept != nil {
+			w.eff = w.ep.reloadKept(w.eff, w.path)
+		}
 		w.pass(ctx, true)
 		return
 	}
 	if !w.bad && !w.next.IsZero() && !w.now().Before(w.next) {
 		w.pass(ctx, false)
 	}
+}
+
+// serviceKept reports a service engine that keeps entries of its own: only
+// those change while it runs. A same-user engine that keeps entries (an
+// agent-operated one) applies its config entries while it runs too.
+func (w *pluginWatch) serviceKept() bool {
+	return w.ep.kept != nil && w.ep.mode == plugin.ModeService
 }
 
 // stepKept is step on a service engine: only its engine-kept entries change
@@ -420,7 +439,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 // changes while the engine runs: in service mode the engine reads plugins at
 // start only), and the watch neither checks it nor changes it.
 func (w *pluginWatch) frozenNow() func(plugin.EntryKey) bool {
-	if w.ep.kept == nil {
+	if !w.serviceKept() {
 		return func(plugin.EntryKey) bool { return false }
 	}
 	// The start config's entries, as wanted holds them: an engine-kept
@@ -438,7 +457,7 @@ func (w *pluginWatch) frozenNow() func(plugin.EntryKey) bool {
 // ends or withholds anything of theirs.
 func (w *pluginWatch) wanted(copyOf func(plugin.EntryKey) (plugin.Verified, bool)) pluginWant {
 	ep := w.ep
-	if ep.kept == nil {
+	if !w.serviceKept() {
 		return wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, w.trust, ep.isKept)
 	}
 	eff := w.eff

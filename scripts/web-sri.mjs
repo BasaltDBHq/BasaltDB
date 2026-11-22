@@ -193,7 +193,7 @@ const HEAD_LINE = new RegExp("^(?:" + [
 // No other page may name either.
 export const CONNECT_PAGE = "connect/index.html";
 export const CONNECT_SERVICE = "https://connect.basaltvault.app";
-export const RELAY_PAGES = Object.freeze(["approve/index.html", "revert/index.html"]);
+export const RELAY_PAGES = Object.freeze(["approve/index.html", "revert/index.html", "plugin/index.html"]);
 export const RELAY_ORIGIN = "wss://relay.basaltvault.app";
 const cspLine = (connectSrc) => new RegExp(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src ${connectSrc}; base-uri 'none'; form-action 'none'">$`);
 const CSP_LINE = cspLine("'(?:self|none)'");

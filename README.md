@@ -38,7 +38,7 @@ The common advice is "never connect agents to production". BasaltDB is for the c
 
 ## Quickstart
 
-You need macOS or Linux with a desktop session, a Postgres you own, a browser with a passkey, and an MCP client. You never type a `basalt` command after the install: your agent runs it, and you finish on a page. The [install guide](docs/install.md) has the details.
+You need macOS or Linux, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
 
 **1. Install `basalt`.**
 
@@ -49,11 +49,9 @@ basalt version
 
 To install from a GitHub release, check the archive against `SHA256SUMS` and put `basalt` on your `PATH`. To build from source, see the [install guide](docs/install.md).
 
-**2. Ask your agent to set up BasaltDB with the sample database.** The agent runs `basalt init --demo`. On a first install your system asks for your administrator password in its own dialog, once, to start the engine as a service. Then `basalt` opens the setup page in your browser and prints the same link for the agent to show you.
+**2. Set it up on a sample schema.** Ask your agent to set up BasaltDB with the sample data. Your computer asks for your password once, then a setup page opens. Paste your admin connection string, check the SQL and add a passkey. The string is used once and never stored, and your agent never sees it. You get a `basalt_demo` schema with 30 leads and 20 notes.
 
-On the page you confirm the OS user your agent runs as, type your database's admin connection string, read the SQL, register a passkey and press **Set up**. The connection string goes to the engine on your own computer, is used once and is never stored. The agent never sees it. The page creates a schema `basalt_demo` with 30 leads and 20 notes, and an agent `demo_bot`.
-
-The page ends with the `basalt mcp` line for the agent. The agent registers it with its MCP client; any client takes the same command:
+**3. Connect your agent.** The page gives you this line. Any MCP client takes it:
 
 ```json
 {
@@ -68,17 +66,15 @@ The page ends with the `basalt mcp` line for the agent. The agent registers it w
 
 Use the absolute path of `basalt` (`which basalt`) if the client does not inherit your `PATH`.
 
-The page installs the sample database today. Picking your own tables on this page is not built yet. A bot on a computer you cannot reach picks them on the hosted connect page: see [docs/bot-setup.md](docs/bot-setup.md).
+**4. See what it did, and take it back.** Ask your agent what it changed, or to undo a run. You get a link to a page with the rows. Nothing is restored until you sign there with your passkey.
 
-**3. See what it did, and take it back.** Ask the agent to undo a run. It checks what would change and gives you a link to a page that shows the rows. Nothing is restored until you sign there with your passkey. The [approving guide](docs/approving.md) walks through it.
-
-**4. Update or remove.** When the agent's `status` says the guard can be updated, or you ask it to remove BasaltDB, it runs `basalt init` again. On a set-up engine the link opens a page where you pick Update or Remove, and you type the admin connection string there again. Remove drops the `basalt_meta` schema, the guard's triggers and policies, the `basalt_*` roles and, when the sample setup made it, the `basalt_demo` schema. It does not stop the engine service yet: see [Remove everything](docs/install.md#remove-everything).
+To remove everything, ask your agent to remove BasaltDB. On the page that opens, pick Remove: it drops `basalt_meta`, the guard's triggers and policies, the `basalt_*` roles and the sample schema. Then run `sudo basalt service uninstall` to stop the engine.
 
 ## How it works
 
 **The engine runs next to the agent. The guard runs inside your database.** Enforcement lives in Postgres, so it holds whatever path a write takes.
 
-- **Engine.** One Go binary per agent machine, running as its own OS user behind a local socket. It serves the setup, approval and revert pages on `localhost`. It parses SQL with `libpg_query`, refuses what is not allowed, records reads, and holds only that agent's scoped credential. The agent's MCP server is a thin shim that holds no secrets.
+- **Engine.** One Go binary per agent machine, running as its own OS user behind a local socket, and it serves the setup and approval pages on `localhost`. It parses SQL with `libpg_query`, refuses what is not allowed, records reads, and holds only that agent's scoped credential. The agent's MCP server is a thin shim that holds no secrets.
 - **Guard in `basalt_meta`.** Agent roles have no DDL rights. Triggers act only for agent roles: they require an intent, record old and new rows in the same transaction, and count rows per action, cascaded rows included. Writes by people and by your app are never blocked.
 - **Signatures.** A held write or a revert counts only with a valid signature from a person's passkey, checked inside Postgres. Whatever carries the signed request cannot forge one, and an agent cannot sign for itself.
 
@@ -109,7 +105,7 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 - Data an agent read and leaked, for example through prompt injection. Row limits and per-agent table access limit the damage and leave a trail. Nothing un-leaks it.
 - Actions outside the database taken on bad data: emails sent, payments made.
 - An agent holding a person's or the admin's credential, or `sudo` on the engine's machine.
-- An agent that runs as your own OS user on your own computer. It can serve a lookalike `localhost` page that asks for your admin connection string, or replace a `basalt` binary in a folder you can write to. A terminal prompt had the same exposure. Signing stays safe, because Postgres checks the exact origin, port included. Check the OS user the setup page names and the address bar before you type the admin string.
+- An agent that runs as your own OS user. It could show you a fake setup page and catch your admin string, or swap the `basalt` binary. Before you paste the admin string, check that the page names your agent's OS user and the address bar says `localhost:8787`. Approvals stay safe either way, because Postgres checks the page's exact address.
 - Downstream systems that already consumed a change before it was reverted.
 
 ## Works with
@@ -122,17 +118,11 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 What works today:
 
 - Guarded writes with a stated intent, a per-agent Postgres role, and the engine as its own OS user
-- A record of every read and write, which the agent reads through MCP (`run_history`, `list_runs`)
+- A record of every read and write, which your agent can show you (`run_history`, `list_runs`)
 - Refusal of a write based on a row that changed after the agent read it
 - Holds for larger writes and every `DELETE`, signed with a passkey and checked inside Postgres
 - Revert by change, by run and by task, with a preview and conflict checks
-- One setup flow: the agent runs `basalt init`, the person finishes on a page, and the guard update and the removal run on the same page
-- People use pages and agents use MCP: the `status` and `describe` tools replace the old commands that read state
-
-Not there yet:
-
-- Picking your own tables on the local setup page. Today it installs the sample database; a bot's own tables go through the hosted connect page.
-- The hosted relay, which removes the pasted approval and revert codes on the portal (the portal path needs them until then).
+- Setup, guard updates and removal on one local page
 
 ## Development
 

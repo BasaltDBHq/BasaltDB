@@ -72,10 +72,10 @@ Changing the scope needs the page served by the engine, from the short link the 
 
 ## Commands that stay until the relay is live
 
-`basalt approve` and `basalt revert` go once the hosted relay is live, together with the pasted codes. Until then they have two jobs:
+`basalt approve` and `basalt revert` go once the hosted relay is live, together with the pasted codes. Until then you may need them in two cases:
 
-- **Persona 2, a bot's computer.** The portal's page shows a code, and `basalt approve '<code>'` relays an approval code to Postgres from the machine that holds the agent's credential. `write` with `approval` and `request_revert` with `signature` do the same through the agent, which is the usual way.
-- **A revert too large for the agent to prepare, or one that covers a whole task.** `basalt revert --agent NAME --task <taskId> --open` prepares that agent's own lines (possibly none) and opens the page, where you include the others.
+- On a bot's computer, the portal's page shows a code. Paste it to your agent, which passes it on with `write` (`approval`) or `request_revert` (`signature`). You can also run `basalt approve '<code>'` on the machine that holds the agent's credential.
+- For a revert too large for the agent to prepare, or one that covers a whole task, run `basalt revert --agent NAME --task <taskId> --open` prepares that agent's own lines (possibly none) and opens the page, where you include the others.
 
 On an engine that runs as a service, a person who is not root runs both with `sudo`, because they read the agent's credential. Add `--config PATH` when the engine runs from a non-default config.
 
@@ -112,4 +112,4 @@ Checked on real devices (Nov 13, 2026): a Touch ID platform passkey, through the
 
 ## A machine with no desktop
 
-The local setup and approval pages need a browser on the machine that runs the engine, so `basalt init` stops on a headless one. Run a bot there with `basalt init --remote`: its pages are the portal's, and you open them on any device ([bot-setup.md](bot-setup.md)).
+The local setup and approval pages need a browser on the machine that runs the engine. On a headless machine, run the bot with `basalt init --remote` instead: its pages are the portal's, and you open them on any device ([bot-setup.md](bot-setup.md)).

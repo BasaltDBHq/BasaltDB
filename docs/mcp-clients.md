@@ -4,7 +4,7 @@ BasaltDB serves each agent over MCP from the engine, a service running as its ow
 
 ## Before you start
 
-Your agent sets BasaltDB up: it runs `basalt init` and gives you one link, and you finish on a page ([install.md](install.md)). The page ends with the `basalt mcp` line the agent registers in its client. On a person's own computer the engine runs as a service under its own OS user (`_basalt` on macOS, `basalt` on Linux), which the system's administrator dialog creates on the first install. On a bot's computer the engine runs as the bot's own user, and `basalt mcp` starts it ([bot-setup.md](bot-setup.md)).
+Set BasaltDB up first ([install.md](install.md)); the setup page ends with the `basalt mcp` line to register in your client. On your own computer the engine runs as a service under its own OS user (`_basalt` on macOS, `basalt` on Linux). On a bot's computer it runs as the bot's own user, and `basalt mcp` starts it ([bot-setup.md](bot-setup.md)).
 
 ## Client configuration
 
@@ -77,7 +77,7 @@ The engine looks once a day at the public release list. When a newer release is 
 
 ## Reading the ledger
 
-The agent reads its own change records through MCP: `run_history` for one run, `list_runs` for the runs. You do not read the ledger from a terminal. Ask the agent what it did.
+Ask your agent what it did. It reads its own change records with `run_history` for one run and `list_runs` for the runs.
 
 ## Approving held writes
 

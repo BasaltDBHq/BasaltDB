@@ -181,12 +181,12 @@ export async function passkeyCheckCode(spki) {
 // { credentialId, checkCode } or null when this page created none.
 export function compareCheckCodes(mine, registered) {
   const list = Array.isArray(registered) ? registered : [];
-  if (!mine) return list.length === 0 ? "" : "The service reports a passkey registered that this page did not create. Something is wrong: do not use this database's passkeys until you have checked them with basalt passkey list on your own computer, and remove any you did not create.";
+  if (!mine) return list.length === 0 ? "" : "The service reports a passkey registered that this page did not create. Something is wrong: do not use this database's passkeys until you have checked them. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Remove any passkey you did not create on the connect page (have your agent run basalt init --remote again).";
   const others = list.filter((p) => p?.credentialId !== mine.credentialId);
   const same = list.find((p) => p?.credentialId === mine.credentialId);
-  if (others.length > 0) return "The service reports a passkey registered that this page did not create. Something is wrong: remove every passkey you did not create (basalt passkey list on your own computer).";
-  if (!same) return "The service does not report the passkey this page created. Something is wrong: check the database's passkeys with basalt passkey list on your own computer.";
-  if (same.checkCode !== mine.checkCode) return "The service reports a different check code for your passkey than this page computed. Something is wrong: stop, and remove that passkey (basalt passkey list on your own computer).";
+  if (others.length > 0) return `The service reports a passkey registered that this page did not create. Something is wrong: stop. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Remove every passkey whose code is not ${mine.checkCode} on the connect page (have your agent run basalt init --remote again).`;
+  if (!same) return `The service does not report the passkey this page created. Something is wrong: stop. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Your passkey's code is ${mine.checkCode}; remove any passkey you did not create on the connect page (have your agent run basalt init --remote again).`;
+  if (same.checkCode !== mine.checkCode) return `The service reports a different check code for your passkey than this page computed. Something is wrong: stop. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Remove any passkey whose code is not ${mine.checkCode} on the connect page (have your agent run basalt init --remote again).`;
   return "";
 }
 

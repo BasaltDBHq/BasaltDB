@@ -48,9 +48,6 @@ func commands() []command {
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install the engine service (install)", runService},
 		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit)},
-		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
-		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
-		{"trust", "List and change which root certificates verify a database host (list | add | pin | remove | disable)", withIO(runTrust)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},
 	}

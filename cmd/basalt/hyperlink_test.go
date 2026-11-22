@@ -86,23 +86,6 @@ func TestPrintLinkRefusesABadURLWithoutWritingIt(t *testing.T) {
 	}
 }
 
-func TestPagesURLFlagRefusesABadBaseAsUsage(t *testing.T) {
-	t.Parallel()
-	for name, base := range badBases {
-		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
-		require.Equal(t, exitUsage, r.code, name)
-		require.Contains(t, r.stderr, "--pages-url", name)
-		require.Contains(t, r.stderr, firstBadPosition, name)
-		for _, raw := range []string{"\x1b", "\x07", "\x7f", "\u009b"} {
-			require.NotContains(t, r.stdout+r.stderr, raw, name)
-		}
-	}
-	for _, base := range []string{"ftp://x", "http://example.com", "http://localhost:8787/?a=b", "https://example.com/#x"} {
-		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
-		require.Equal(t, exitUsage, r.code, base)
-	}
-}
-
 func TestConfigLoadRefusesABadPagesURL(t *testing.T) {
 	t.Parallel()
 	for name, base := range badBases {
@@ -120,29 +103,7 @@ func TestConfigLoadRefusesABadPagesURL(t *testing.T) {
 	}
 }
 
-func TestPagesURLFlagRefusesCredentialsAndBadPorts(t *testing.T) {
-	t.Parallel()
-	for _, base := range []string{"http://localhost:80@evil.com", "http://[::1]:1@evil.com", "http://localhost:abc", "https://evil.com@x"} {
-		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
-		require.Equal(t, exitUsage, r.code, base)
-	}
-}
-
 func TestPrintableLabel(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "a?b?c?d?", printableLabel("a\x1bb\nc\u009bd\x07"))
-}
-
-// The local pages run only at localhost, so --pages-url on a loopback IP is
-// a usage error naming the localhost base to use instead.
-func TestPagesURLFlagRefusesALoopbackIP(t *testing.T) {
-	t.Parallel()
-	for base, want := range map[string]string{
-		"http://127.0.0.1:8787": "use http://localhost:8787",
-		"http://[::1]:9000":     "use http://localhost:9000",
-	} {
-		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
-		require.Equal(t, exitUsage, r.code, base)
-		require.Contains(t, r.stderr, want, base)
-	}
 }

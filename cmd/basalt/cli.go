@@ -69,8 +69,6 @@ type cliIO struct {
 	// probe tries a login bound to fail, to confirm a credential's TLS
 	// protection (hardenedCredential); probeLogin outside tests.
 	probe func(ctx context.Context, dsn string) error
-	// engine tells service mode from same-user mode; tests replace it.
-	engine engineAccess
 	// fetchChain reads the chain a database presents with the TLS
 	// handshake alone, before a pin is offered (fetchChain outside tests;
 	// nil offers no pin).
@@ -83,7 +81,6 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
 		agentLogin: loginAsAgent,
 		dial:       connect,
-		engine:     osEngineAccess(runtime.GOOS),
 		fetchChain: fetchChain,
 		width:      func() int { return terminalWidth(std.out) },
 	}
@@ -195,16 +192,6 @@ func (c *cliIO) promptAdminURL() (string, error) {
 		return strings.TrimSpace(string(b)), err
 	}
 	return c.line()
-}
-
-// confirm asks a yes/no question on stderr.
-func (c *cliIO) confirm(question string) (bool, error) {
-	fmt.Fprintf(c.stderr, "%s [y/N] ", question)
-	answer, err := c.line()
-	if err != nil {
-		return false, err
-	}
-	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
 }
 
 // connect opens one connection, usable through a transaction pooler

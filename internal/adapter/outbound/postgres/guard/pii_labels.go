@@ -2,7 +2,6 @@ package guard
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -16,33 +15,8 @@ import (
 // columns of the tables an agent will get, and the classes the person set,
 // written in the setup's transaction as basalt classify writes them.
 
-// Label is a column's class as the connect page shows and sets it.
-type Label struct {
-	Class, EntityType, PhoneRegion string
-}
-
 // unlabeled is the class of a column with no row in pii_columns.
 var unlabeled = Label{Class: ClassUnclassified}
-
-// ColumnLabel is one column of a table and its class now.
-type ColumnLabel struct {
-	// Table is schema.table.
-	Table, Column string
-	Label
-}
-
-// LabelChange is a class the person set on a column, with the class it had
-// when it was shown (Was).
-type LabelChange struct {
-	Table, Column string
-	Label
-	Was Label
-}
-
-// ErrClassesChanged is a change whose column's class stored now is not its
-// Was, or whose column is gone: someone classified or changed the table
-// since the person saw it. Nothing is written.
-var ErrClassesChanged = errors.New("a column's class or the column itself changed since it was shown")
 
 // tableColumn is a column of a listed table, with its type as
 // pii_readable_columns() reports it.
@@ -106,7 +80,7 @@ func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (m
 	return out, err
 }
 
-func (c PIIColumn) label() Label {
+func labelOf(c PIIColumn) Label {
 	return Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
 }
 
@@ -144,7 +118,7 @@ func ReadLabels(ctx context.Context, conn *pgx.Conn, n Names, tables []string) (
 	for _, c := range cols {
 		l := unlabeled
 		if s, ok := stored[[2]string{c.table, c.column}]; ok {
-			l = s.label()
+			l = labelOf(s)
 		}
 		out = append(out, ColumnLabel{Table: c.table, Column: c.column, Label: l})
 	}
@@ -239,7 +213,7 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 			}
 			now, prev := unlabeled, PIIColumn{}
 			if s, ok := stored[key]; ok {
-				now, prev = s.label(), s
+				now, prev = labelOf(s), s
 			}
 			if now != ch.Was {
 				return ErrClassesChanged
@@ -284,40 +258,4 @@ func labeled(table, column, dataType string, l Label, prev PIIColumn) PIIColumn 
 		SuggestedClass: prev.SuggestedClass, SuggestedEntityType: prev.SuggestedEntityType,
 		Reason: prev.Reason, NeedsReview: prev.NeedsReview,
 	}
-}
-
-// LabelClasses are the classes the connect page sets.
-var LabelClasses = []string{ClassPublic, ClassIdentifier, ClassSecret}
-
-// EntityTypes are the entity types of an IDENTIFIER column.
-var EntityTypes = []string{EntityEmail, EntityPhone, EntityPersonName, EntityAddress, EntityOther}
-
-// ValidLabel reports whether l is a class the connect page may set:
-// PUBLIC, IDENTIFIER with an entity type, or SECRET; a phone region, upper
-// case ISO 3166-1 alpha-2, with PHONE only and required there.
-func ValidLabel(l Label) bool {
-	return slices.Contains(LabelClasses, l.Class) && validEntity(l, true)
-}
-
-// ValidWas reports whether l is a class a column can have now: any of the
-// five, with the same entity type rule, and a region with PHONE only, when
-// one is stored.
-func ValidWas(l Label) bool {
-	return slices.Contains([]string{ClassPublic, ClassIdentifier, ClassFreeText, ClassSecret, ClassUnclassified}, l.Class) && validEntity(l, false)
-}
-
-func validEntity(l Label, regionRequired bool) bool {
-	if l.Class != ClassIdentifier {
-		return l.EntityType == "" && l.PhoneRegion == ""
-	}
-	if !slices.Contains(EntityTypes, l.EntityType) {
-		return false
-	}
-	if l.EntityType != EntityPhone {
-		return l.PhoneRegion == ""
-	}
-	if l.PhoneRegion == "" && !regionRequired {
-		return true
-	}
-	return len(l.PhoneRegion) == 2 && l.PhoneRegion[0] >= 'A' && l.PhoneRegion[0] <= 'Z' && l.PhoneRegion[1] >= 'A' && l.PhoneRegion[1] <= 'Z'
 }

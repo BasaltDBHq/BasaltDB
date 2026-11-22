@@ -10,53 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// PII classes (CONTRACT.md, PII classification).
-const (
-	ClassPublic       = "PUBLIC"
-	ClassIdentifier   = "IDENTIFIER"
-	ClassFreeText     = "FREE_TEXT"
-	ClassSecret       = "SECRET"
-	ClassUnclassified = "UNCLASSIFIED"
-)
-
-// Entity types of an IDENTIFIER column.
-const (
-	EntityEmail      = "EMAIL"
-	EntityPhone      = "PHONE"
-	EntityPersonName = "PERSON_NAME"
-	EntityAddress    = "ADDRESS"
-	EntityOther      = "OTHER"
-)
-
 // piiUpsertBatch is the number of columns per INSERT: at most 13 parameters each,
 // well under Postgres' 65535 bind parameters.
 const piiUpsertBatch = 1000
-
-// PIIColumn is one row of basalt_meta.pii_columns that basalt classify
-// writes. Empty strings are stored as NULL. A column of any class but
-// UNCLASSIFIED is stamped confirmed by the login role at Classification.At.
-type PIIColumn struct {
-	Schema, Table, Column string
-	// DataType is format_type without the modifier, as
-	// pii_readable_columns() reports it.
-	DataType            string
-	Class               string
-	EntityType          string
-	SuggestedClass      string
-	SuggestedEntityType string
-	// Reason holds names and counts only, never a value.
-	Reason      string
-	NeedsReview bool
-	PhoneRegion string
-}
-
-// Classification is one write of basalt classify.
-type Classification struct {
-	// Columns are upserted; columns not listed keep their row.
-	Columns []PIIColumn
-	// At stamps confirmed_at and classified_at.
-	At time.Time
-}
 
 // WriteClassification writes c in tx as the guard role, the owner of
 // basalt_meta (SET LOCAL ROLE, as the migrations do): upserts c.Columns,
@@ -93,7 +49,7 @@ func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
 		return err
 	}
 	// Plain SQL: role and setting changes on a validated role name.
-	if _, err := tx.Exec(ctx, n.render(`SET LOCAL ROLE {{guard}}; SET LOCAL search_path = pg_catalog, pg_temp`)); err != nil {
+	if _, err := tx.Exec(ctx, renderSQL(n, `SET LOCAL ROLE {{guard}}; SET LOCAL search_path = pg_catalog, pg_temp`)); err != nil {
 		return fmt.Errorf("act as the guard role: %w", err)
 	}
 	if err := fn(); err != nil {
@@ -104,30 +60,6 @@ func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
 		Column(sq.Expr("set_config('search_path', ?, true)", searchPath)).
 		Column(sq.Expr("set_config('role', ?, true)", role))
 	return execBuilt(ctx, tx, restore)
-}
-
-// ReadableColumn is one row of pii_readable_columns().
-type ReadableColumn struct {
-	TableOID              uint32
-	Attnum                int16
-	Schema, Table, Column string
-	DataType              string
-}
-
-// ColumnKey names a column: schema, table and column.
-type ColumnKey struct{ Schema, Table, Column string }
-
-// ClassificationState is what basalt classify reads before it suggests:
-// the readable columns, the stored classes and both fingerprints.
-type ClassificationState struct {
-	// Readable is pii_readable_columns(), by schema, table and attnum.
-	Readable []ReadableColumn
-	// Stored are the rows of pii_columns.
-	Stored map[ColumnKey]PIIColumn
-	// Fingerprint is pii_fingerprint() now.
-	Fingerprint []byte
-	// Previous is pii_catalog.fingerprint, nil before the first classify.
-	Previous []byte
 }
 
 // ReadClassification reads the classification state in tx as the guard
@@ -190,7 +122,7 @@ func readStored(ctx context.Context, tx pgx.Tx, into map[ColumnKey]PIIColumn) er
 		&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
 		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion,
 	}, func() error {
-		into[ColumnKey{c.Schema, c.Table, c.Column}] = c
+		into[ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}] = c
 		return nil
 	})
 	return err
@@ -242,30 +174,6 @@ func queryBuilt(ctx context.Context, q Querier, b sq.Sqlizer) pgx.Row {
 type errRow struct{ err error }
 
 func (r errRow) Scan(...any) error { return r.err }
-
-// Why a column needs a person (pii_unclassified().why).
-const (
-	UnclassifiedNew         = "NEW"
-	UnclassifiedClass       = "UNCLASSIFIED"
-	UnclassifiedTypeChanged = "TYPE_CHANGED"
-)
-
-// UnclassifiedColumn is one row of pii_unclassified(): a column the login
-// role can read that needs a person.
-type UnclassifiedColumn struct {
-	Schema, Table, Column, DataType string
-	// Why is UnclassifiedNew, UnclassifiedClass or UnclassifiedTypeChanged.
-	Why string
-}
-
-// Name is schema.table.column.
-func (c UnclassifiedColumn) Name() string { return c.Schema + "." + c.Table + "." + c.Column }
-
-// Unclassified reports whether the column has no class yet (NEW or
-// UNCLASSIFIED); a TYPE_CHANGED column keeps its class and needs a review.
-func (c UnclassifiedColumn) Unclassified() bool {
-	return c.Why == UnclassifiedNew || c.Why == UnclassifiedClass
-}
 
 // PIIUnclassified calls pii_unclassified() as the login role (version 15).
 func PIIUnclassified(ctx context.Context, q Querier) ([]UnclassifiedColumn, error) {

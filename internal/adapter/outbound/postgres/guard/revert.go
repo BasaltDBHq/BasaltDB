@@ -3,7 +3,6 @@ package guard
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -18,21 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
-// RevertScope is an agent's own proposal of what a revert covers: one of
-// its changes, one of its runs, or its own changes in a task it ran in,
-// optionally narrowed to some of its runs in that task and some tables
-// (CONTRACT.md, Revert, The scope descriptor). The guard builds the
-// descriptor with agents = [the calling role] and refuses anything outside
-// the caller's own work (BS011 SCOPE_REFUSED).
-type RevertScope struct {
-	Kind revert.Scope
-	ID   uuid.UUID
-	// Runs narrows a TASK to some of the caller's runs in it; nil for all.
-	Runs []uuid.UUID
-	// Tables narrows the lines to some schema.table names; nil for all.
-	Tables []string
-}
-
 // ownSelect is the SQL expression of the calling role's own descriptor for
 // $1 (scope), $2 (scope id), $3 (runs) and $4 (tables), with agents
 // = [session_user]: the role is the one Postgres authenticated, never an
@@ -40,8 +24,8 @@ type RevertScope struct {
 const ownSelect = `jsonb_build_object('scope', $1::text, 'scopeId', $2::text, ` +
 	`'agents', jsonb_build_array(session_user::text), 'runs', $3::jsonb, 'tables', $4::jsonb)`
 
-// args are the ownSelect arguments of s. A nil list is JSON null (all).
-func (s RevertScope) args() ([]any, error) {
+// scopeArgs are the ownSelect arguments of s. A nil list is JSON null (all).
+func scopeArgs(s RevertScope) ([]any, error) {
 	runs, err := json.Marshal(s.Runs)
 	if err != nil {
 		return nil, err
@@ -57,7 +41,7 @@ func (s RevertScope) args() ([]any, error) {
 // Postgres builds them (CONTRACT.md, Revert), in COLLATE "C" order,
 // redacted for the caller. It changes nothing.
 func PreviewRevert(ctx context.Context, q Querier, s RevertScope) ([]string, error) {
-	args, err := s.args()
+	args, err := scopeArgs(s)
 	if err != nil {
 		return nil, err
 	}
@@ -69,39 +53,12 @@ func PreviewRevert(ctx context.Context, q Querier, s RevertScope) ([]string, err
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// PreviewPage is one page of a preview as an agent reads it (preview_revert):
-// the totals of the whole preview and the page's lines, with values too
-// large for the agent left out (CONTRACT.md, Large values).
-type PreviewPage struct {
-	// Lines and Restore count every line of the preview, and
-	// AllAlreadyReverted says whether every one is a SKIP of a row a revert
-	// of the scope already restored.
-	Lines              int
-	Restore            int
-	AllAlreadyReverted bool
-	// CursorFound is false when a cursor was given and no line of the
-	// preview has its hash: the rows changed between pages.
-	CursorFound bool
-	// Page are the lines after the cursor, at most the limit, each with the
-	// hash of its full signed text (the next cursor); More says another
-	// page follows.
-	Page []PreviewLine
-	More bool
-}
-
-// PreviewLine is one line of a PreviewPage: its text with large values
-// left out, and the SHA-256 (lowercase hex) of the full text.
-type PreviewLine struct {
-	Text string
-	Hash string
-}
-
 // PreviewRevertPage previews the caller's own scope s as PreviewRevert does,
 // and reads only the totals and the limit lines after the line whose hash
 // is after ("" for the first page). Postgres counts, hashes and elides,
 // so a large preview or value never crosses the wire on an agent's call.
 func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after string, limit int) (PreviewPage, error) {
-	args, err := s.args()
+	args, err := scopeArgs(s)
 	if err != nil {
 		return PreviewPage{}, err
 	}
@@ -147,21 +104,6 @@ func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after stri
 	return out, nil
 }
 
-// PreparedRevert is a revert stored for the person to sign. Lines are every
-// line of a one-call revert, or the sample of a batched plan (Batched).
-type PreparedRevert struct {
-	RevertID    uuid.UUID
-	BindingText string
-	ExpiresAt   time.Time
-	Lines       []string
-	Batched     bool
-	// LineCount is how many lines the revert has. On an agent's call (a
-	// context with a result budget) Lines is nil: the agent reads them
-	// measured, with the revert (ledger.FindRevert), so a large revert's
-	// lines never cross the wire on its call (CONTRACT.md, Large values).
-	LineCount int
-}
-
 // PrepareRevert stores the caller's own proposal s for the person to sign
 // (basalt_meta.prepare_revert): Postgres runs it on trial, builds the lines
 // and the binding, and appends REVERT_PENDING. A TASK the caller ran in
@@ -170,7 +112,7 @@ type PreparedRevert struct {
 // it stores a batched plan. Call it outside a read-only transaction; a
 // large plan's trial can take minutes.
 func PrepareRevert(ctx context.Context, q Querier, s RevertScope, intent string) (PreparedRevert, error) {
-	args, err := s.args()
+	args, err := scopeArgs(s)
 	if err != nil {
 		return PreparedRevert{}, err
 	}
@@ -191,19 +133,6 @@ func PrepareRevert(ctx context.Context, q Querier, s RevertScope, intent string)
 	p.Batched = b.Batched
 	return p, nil
 }
-
-// Prepare time limits (agent-assisted revert design, Preparing). The
-// person's CLI may take minutes on a large scope; an MCP call stays under
-// the 2 minutes after which Claude Code moves a tool call to the
-// background.
-const (
-	CLIPrepareTimeout = 10 * time.Minute
-	MCPPrepareTimeout = 100 * time.Second
-)
-
-// ErrPrepareTimeout is a timeout shorter than the millisecond
-// statement_timeout counts in, where 0 would mean no limit at all.
-var ErrPrepareTimeout = errors.New("guard: a prepare timeout must be at least 1 ms")
 
 // PrepareRevertWithin prepares a revert of scope in its own transaction on
 // db, with statement_timeout set to timeout for that transaction only
@@ -235,19 +164,6 @@ func PrepareRevertWithin(ctx context.Context, db TxBeginner, s RevertScope, inte
 	return p, nil
 }
 
-// AppliedRevert is the result of apply_revert: for a one-call revert its
-// change record, the rows it restored and the rows it skipped; for a
-// batched plan the signature only (Rows 0), the lines still to apply and
-// the time they must be applied by.
-type AppliedRevert struct {
-	ChangeID uuid.UUID  `json:"changeId"`
-	Rows     int        `json:"rows"`
-	Skipped  int        `json:"skipped"`
-	Batched  bool       `json:"batched,omitempty"`
-	Pending  int        `json:"pending,omitempty"`
-	ApplyBy  *time.Time `json:"applyBy,omitempty"`
-}
-
 // ApplyRevert relays the person's passkey assertion for a prepared revert
 // (basalt_meta.apply_revert). Postgres verifies it and, for a one-call
 // revert, runs the revert in the same call; any row that changed since the
@@ -264,33 +180,6 @@ func ApplyRevert(ctx context.Context, q Querier, revertID uuid.UUID, a passkey.A
 		return AppliedRevert{}, err
 	}
 	return out, nil
-}
-
-// Outcomes of a batched plan's lines (CONTRACT.md, Revert, Large plans).
-const (
-	OutcomePending  = "PENDING"
-	OutcomeRestored = "RESTORED"
-	OutcomeSkipped  = "SKIPPED"
-)
-
-// BatchItem is what one batch did with one line of the plan.
-type BatchItem struct {
-	Line     int    `json:"line"`
-	Outcome  string `json:"outcome"`
-	Conflict string `json:"conflict,omitempty"`
-	SQLState string `json:"sqlState,omitempty"`
-}
-
-// BatchResult is one applied batch: its number, the plan's status and
-// totals after it, and this batch's lines in the order given.
-type BatchResult struct {
-	RevertID uuid.UUID   `json:"revertId"`
-	Batch    int         `json:"batch"`
-	Status   string      `json:"status"`
-	Restored int         `json:"restored"`
-	Skipped  int         `json:"skipped"`
-	Pending  int         `json:"pending"`
-	Items    []BatchItem `json:"items"`
 }
 
 // ApplyRevertBatch applies lines of a signed batched plan

@@ -2,7 +2,6 @@ package guard
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -13,19 +12,6 @@ import (
 // The labels of the Update check's LABELS fix (CONTRACT.md, Setup page, The
 // Update check): the columns one agent role may read that have no class,
 // read and written with the admin connection, as the guard role.
-
-// ErrLabelNotListed is a label for a column the agent role may not read, or
-// one that has a class: the check never lists it. Nothing is written.
-var ErrLabelNotListed = errors.New("a label for a column the check does not list")
-
-// AgentColumn is a column the agent role may read, with its class now.
-type AgentColumn struct {
-	ReadableColumn
-	Label
-}
-
-// TableName is schema.table.
-func (c AgentColumn) TableName() string { return c.Schema + "." + c.Table }
 
 // agentReadableSQL is pii_readable_columns() with the privileges of one
 // agent role, as pii_unclassified() filters them for its login role, and in
@@ -59,8 +45,8 @@ func agentColumns(ctx context.Context, tx pgx.Tx, role string) ([]AgentColumn, m
 	out := make([]AgentColumn, len(readable))
 	for i, c := range readable {
 		out[i] = AgentColumn{ReadableColumn: c, Label: unlabeled}
-		if s, ok := stored[ColumnKey{c.Schema, c.Table, c.Column}]; ok {
-			out[i].Label = s.label()
+		if s, ok := stored[ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}]; ok {
+			out[i].Label = labelOf(s)
 		}
 	}
 	return out, stored, nil
@@ -107,7 +93,9 @@ func WriteAgentLabels(ctx context.Context, tx pgx.Tx, n Names, role string, chan
 		if err != nil {
 			return err
 		}
-		prev := func(c AgentColumn) PIIColumn { return stored[ColumnKey{c.Schema, c.Table, c.Column}] }
+		prev := func(c AgentColumn) PIIColumn {
+			return stored[ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}]
+		}
 		byKey := make(map[[2]string]AgentColumn, len(cols))
 		for _, c := range cols {
 			byKey[[2]string{c.TableName(), c.Column}] = c

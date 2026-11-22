@@ -34,7 +34,7 @@ func (s *Setup) readEngine(ctx context.Context, q Querier) (EngineState, error) 
 		return EngineState{}, err
 	}
 	st := EngineState{Key: key, ID: channel.EngineIDOf(key)}
-	engines, err := be().Engines(ctx, q, true)
+	engines, err := s.be.Engines(ctx, q, true)
 	if isUndefinedTable(err) {
 		return st, nil
 	}
@@ -86,7 +86,7 @@ func (p *Prepared) engineStatements() []Statement {
 	if p.Engine.Key == nil {
 		return nil
 	}
-	return []Statement{be().RecordEngineStatement(p.Engine.Key, max(p.State.GuardVersion, p.P.Guard.To))}
+	return []Statement{p.be.RecordEngineStatement(p.Engine.Key, max(p.State.GuardVersion, p.P.Guard.To))}
 }
 
 func UTCMinute(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }

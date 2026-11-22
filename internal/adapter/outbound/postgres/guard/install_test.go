@@ -314,7 +314,7 @@ func initAs(t *testing.T, c *pgx.Conn, n guard.Names, spec guard.AgentSpec) {
 		if err != nil {
 			return err
 		}
-		return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+		return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
 	}))
 }
 

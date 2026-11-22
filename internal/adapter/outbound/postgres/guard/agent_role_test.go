@@ -35,7 +35,7 @@ func requireSentAsVerifier(t *testing.T, d *guardtest.DB, spec guard.AgentSpec) 
 	require.NotContains(t, s.SQL(), scramPrefix)
 	// Roles are cluster-wide: a parallel test can deadlock the role catalog.
 	require.NoError(t, guardtest.RetryDeadlock(func() error {
-		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
 	}))
 }
 

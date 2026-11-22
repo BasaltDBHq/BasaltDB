@@ -34,6 +34,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
@@ -147,13 +148,17 @@ type Description struct {
 	Summary []string
 }
 
+// store is the database side this package hands the setup service: pkg/setup
+// is the second composition root, for a program that calls it directly.
+var store = setupstore.New()
+
 // Describe decodes the code and applies the checks that need no database,
 // in the contract's order: the codec
 // (NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT, DAMAGED, INVALID), the clock
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
 // (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
+	s, err := setuprun.New(store, req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -379,7 +384,7 @@ func agentTables(s *setuprun.Setup) []string { return s.AgentTables() }
 
 // newSetup is setuprun.New for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
+	s, err := setuprun.New(store, req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return nil, err
 	}
@@ -618,12 +623,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		}
 		return nil // the laptop asks after the commit
 	}
-	if err := setuprun.ApplySetupWith(ctx, conn, script, first, inTx); err != nil {
-		return Result{}, asError(setuprun.Refused(ctx, conn, s.P, err))
+	if err := setuprun.ApplySetupWith(ctx, store, conn, script, first, inTx); err != nil {
+		return Result{}, asError(setuprun.Refused(ctx, store, conn, s.P, err))
 	}
 	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}
 	if s.P.Agent != nil {
-		res.Warnings = setuprun.RLSBlindWarnings(ctx, conn, s.P.Role(), s.Spec())
+		res.Warnings = setuprun.RLSBlindWarnings(ctx, store, conn, s.P.Role(), s.Spec())
 	}
 	if in.Committed != nil {
 		in.Committed(res)

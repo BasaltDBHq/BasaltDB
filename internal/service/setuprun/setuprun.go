@@ -66,6 +66,7 @@ const upgradeLinePrefix = "This upgrades Basalt's guard"
 
 // Setup is one setup code that passed the checks needing no database.
 type Setup struct {
+	be      Backend
 	P       setupcode.Payload
 	Names   guardmodel.Names
 	ID      uuid.UUID
@@ -186,7 +187,7 @@ func errTablesChanged() error {
 // (the laptop command refuses a code without target before the clock
 // checks; the connect service runs it), then this clock and this binary's
 // guard (setupcode.CheckLocal).
-func New(code string, now time.Time, connectPage bool) (*Setup, error) {
+func New(b Backend, code string, now time.Time, connectPage bool) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
@@ -196,14 +197,14 @@ func New(code string, now time.Time, connectPage bool) (*Setup, error) {
 			return nil, err
 		}
 	}
-	if err := setupcode.CheckLocal(p, now, be().LatestVersion()); err != nil {
+	if err := setupcode.CheckLocal(p, now, b.LatestVersion()); err != nil {
 		return nil, err
 	}
-	return forPayload(p)
+	return forPayload(b, p)
 }
 
 // forPayload is the Setup of a decoded payload, without checks.
-func forPayload(p setupcode.Payload) (*Setup, error) {
+func forPayload(b Backend, p setupcode.Payload) (*Setup, error) {
 	id, err := uuid.Parse(p.SetupID)
 	if err != nil {
 		return nil, err
@@ -212,7 +213,7 @@ func forPayload(p setupcode.Payload) (*Setup, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Setup{P: p, Names: guardmodel.Names{Prefix: p.Prefix}, ID: id, Expires: expires}, nil
+	return &Setup{be: b, P: p, Names: guardmodel.Names{Prefix: p.Prefix}, ID: id, Expires: expires}, nil
 }
 
 // AgentWord names the agent in messages: its name, or "your agent" for an
@@ -310,7 +311,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if s.P.KeepsGrants() && !s.asInstall && len(db.Roles) > 0 {
 		// The role's grants are the record of its tables: read them before
 		// the ticks are checked, since a role with none is ticked.
-		if s.kept, err = be().GrantedTables(ctx, conn, s.P.Role()); err != nil {
+		if s.kept, err = s.be.GrantedTables(ctx, conn, s.P.Role()); err != nil {
 			return nil, err
 		}
 		s.noGrants = len(s.kept) == 0
@@ -324,7 +325,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 		return nil, err
 	}
 	p := &Prepared{Setup: s, Conn: conn, State: state, Engine: engine}
-	if UpgradeDone(s.P, state.GuardVersion) {
+	if UpgradeDone(s.be, s.P, state.GuardVersion) {
 		p.EngineOnly = p.engineToRecord()
 		p.NothingToDo = !p.EngineOnly
 	}
@@ -334,9 +335,9 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := s.readAllTables(ctx, conn, &p.State); err != nil {
 		return nil, err
 	}
-	blind, err := be().AgentBlindTables(ctx, conn, s.Names, s.Spec())
+	blind, err := s.be.AgentBlindTables(ctx, conn, s.Names, s.Spec())
 	if err != nil {
-		return nil, MissingTablesHint(err, conn.Config().Database)
+		return nil, MissingTablesHint(s.be, err, conn.Config().Database)
 	}
 	p.Blind = blind
 	return p, nil
@@ -369,7 +370,7 @@ func (s *Setup) listAllTables(ctx context.Context, q Querier) (SchemaTables, err
 	schemas := s.listedSchemas()
 	out := SchemaTables{Write: []string{}, ReadOnly: []string{}}
 	for _, schema := range schemas {
-		got, err := be().AllTablesIn(ctx, q, schema)
+		got, err := s.be.AllTablesIn(ctx, q, schema)
 		if err != nil {
 			return SchemaTables{}, err
 		}
@@ -444,17 +445,17 @@ func (s *Setup) RecheckTables(ctx context.Context, q Querier) error {
 // UpgradeDone is whether an UPGRADE code has nothing to add: the installed
 // guard already has every migration up to the code's guard.to (or is
 // newer). No guard installed is not done: the code installs it.
-func UpgradeDone(p setupcode.Payload, installed int) bool {
+func UpgradeDone(b Backend, p setupcode.Payload, installed int) bool {
 	if p.Kind != setupcode.KindUpgrade || installed == 0 {
 		return false
 	}
 	var upTo []guardmodel.Migration
-	for _, m := range be().Migrations() {
+	for _, m := range b.Migrations() {
 		if m.Version <= p.Guard.To {
 			upTo = append(upTo, m)
 		}
 	}
-	st := be().StatusAt(installed, upTo)
+	st := b.StatusAt(installed, upTo)
 	return st.State == guardmodel.GuardOK || st.State == guardmodel.GuardNewer
 }
 
@@ -463,34 +464,34 @@ func (s *Setup) readDatabase(ctx context.Context, q Querier) (setupcode.Database
 	var db setupcode.Database
 	var state setupcode.SummaryState
 	var err error
-	if db.Prefix, err = be().InstalledPrefix(ctx, q); err != nil {
+	if db.Prefix, err = s.be.InstalledPrefix(ctx, q); err != nil {
 		return db, state, err
 	}
 	if db.Prefix == s.Names.Prefix {
 		// Another prefix is PREFIX_MISMATCH, from the checks.
-		if err := be().CheckUsable(ctx, q); be().UnusableInstall(err) {
-			return db, state, &RefusalError{Code: CodeSetupFailed, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + be().RemoveOldInstallDoc() + " says how. Nothing changed."}
+		if err := s.be.CheckUsable(ctx, q); s.be.UnusableInstall(err) {
+			return db, state, &RefusalError{Code: CodeSetupFailed, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + s.be.RemoveOldInstallDoc() + " says how. Nothing changed."}
 		} else if err != nil {
 			return db, state, err
 		}
 	}
-	if state.GuardVersion, err = be().InstalledVersion(ctx, q); err != nil {
+	if state.GuardVersion, err = s.be.InstalledVersion(ctx, q); err != nil {
 		return db, state, err
 	}
 	role := s.P.Role()
-	if db.Setups, err = be().SetupsFor(ctx, q, s.ID, role); err != nil {
+	if db.Setups, err = s.be.SetupsFor(ctx, q, s.ID, role); err != nil {
 		return db, state, err
 	}
 	if role == "" {
 		return db, state, nil
 	}
-	exists, err := be().AgentRoleExists(ctx, q, s.Names, s.P.Agent.Name)
+	exists, err := s.be.AgentRoleExists(ctx, q, s.Names, s.P.Agent.Name)
 	if err != nil || !exists {
 		return db, state, err
 	}
 	db.Roles = []string{role}
 	if s.P.Kind == setupcode.KindAgent {
-		now, err := be().RoleStatementTimeout(ctx, q, role)
+		now, err := s.be.RoleStatementTimeout(ctx, q, role)
 		if err != nil {
 			return db, state, err
 		}
@@ -593,7 +594,7 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (Script, error) {
 	}
 	script, err := p.plan(ctx, policies)
 	if err != nil {
-		return Script{}, MissingTablesHint(err, p.Conn.Config().Database)
+		return Script{}, MissingTablesHint(p.be, err, p.Conn.Config().Database)
 	}
 	return script, nil
 }
@@ -610,11 +611,11 @@ func (p *Prepared) plan(ctx context.Context, policies []BlindTable) (Script, err
 		opts.AgentPolicies = policies
 		agent = p.P.Agent.Name
 	}
-	script, err := be().PlanInit(ctx, p.Conn, opts)
+	script, err := p.be.PlanInit(ctx, p.Conn, opts)
 	if err != nil {
 		return Script{}, err
 	}
-	record, err := be().RecordSetupStatement(p.Names, guardmodel.Setup{
+	record, err := p.be.RecordSetupStatement(p.Names, guardmodel.Setup{
 		ID: p.ID, Kind: string(p.P.Kind), Agent: agent, GuardVersion: p.P.Guard.To, ExpiresAt: p.Expires,
 	})
 	if err != nil {
@@ -666,7 +667,7 @@ func blindIndex(tables []BlindTable, table string) int {
 // record_setup (a passkey registered with the setup). An error from it
 // rolls everything back. first, when set, runs in the transaction before
 // anything else (the tables read again before the grants name them).
-func ApplySetupWith(ctx context.Context, conn *pgx.Conn, script Script, first, inTx func(context.Context, pgx.Tx) error) error {
+func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script Script, first, inTx func(context.Context, pgx.Tx) error) error {
 	n := len(script.Statements)
 	if n == 0 {
 		return errors.New("nothing to run")
@@ -678,7 +679,7 @@ func ApplySetupWith(ctx context.Context, conn *pgx.Conn, script Script, first, i
 				return err
 			}
 		}
-		if err := ApplyInitTx(ctx, tx, body); err != nil {
+		if err := ApplyInitTx(ctx, b, tx, body); err != nil {
 			return err
 		}
 		if inTx != nil {
@@ -697,15 +698,15 @@ func ApplySetupWith(ctx context.Context, conn *pgx.Conn, script Script, first, i
 // Refused turns a failed transaction into what the person reads. Nothing
 // changed: the transaction rolled back. A refusal by record_setup gets the
 // contract's words (USED and SUPERSEDED with the time, read again with q).
-func Refused(ctx context.Context, q Querier, p setupcode.Payload, err error) error {
+func Refused(ctx context.Context, b Backend, q Querier, p setupcode.Payload, err error) error {
 	agent := AgentWord(p)
-	detail, ok := be().SetupRefusal(err)
+	detail, ok := b.SetupRefusal(err)
 	if !ok {
 		return NothingChanged(WithGuardDetail(err))
 	}
 	switch setupcode.Refusal(detail) {
 	case setupcode.RefusalUsed, setupcode.RefusalSuperseded:
-		if s, serr := forPayload(p); serr == nil {
+		if s, serr := forPayload(b, p); serr == nil {
 			if db, _, rerr := s.readDatabase(ctx, q); rerr == nil {
 				if cerr := setupcode.CheckDatabase(p, db); cerr != nil {
 					return cerr
@@ -726,12 +727,12 @@ func Refused(ctx context.Context, q Querier, p setupcode.Payload, err error) err
 // can turn RLS on for new tables, and the agent then reads 0 rows without
 // any error. A failed check is a warning too: the guard is installed
 // either way.
-func RLSBlindWarnings(ctx context.Context, q Querier, role string, spec guardmodel.AgentSpec) []string {
+func RLSBlindWarnings(ctx context.Context, b Backend, q Querier, role string, spec guardmodel.AgentSpec) []string {
 	tables := append(append([]string{}, spec.Write...), spec.Read...)
 	if len(tables) == 0 {
 		return nil // no tables would check every table the role can SELECT
 	}
-	blind, err := be().RLSBlindTables(ctx, q, role, tables)
+	blind, err := b.RLSBlindTables(ctx, q, role, tables)
 	if err != nil {
 		return []string{fmt.Sprintf("could not check row-level security on the agent's tables: %v", err)}
 	}

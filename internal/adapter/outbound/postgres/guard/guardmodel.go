@@ -7,6 +7,15 @@ import "github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 // use them.
 
 type (
+	InitOptions            = guardmodel.InitOptions
+	Statement              = guardmodel.Statement
+	Script                 = guardmodel.Script
+	SchemaTables           = guardmodel.SchemaTables
+	RecordedEngine         = guardmodel.RecordedEngine
+	RegisteredPasskey      = guardmodel.RegisteredPasskey
+	BlindTable             = guardmodel.BlindTable
+	Uncovered              = guardmodel.Uncovered
+	RoleTimeouts           = guardmodel.RoleTimeouts
 	AgentColumn            = guardmodel.AgentColumn
 	AgentSetup             = guardmodel.AgentSetup
 	AgentSpec              = guardmodel.AgentSpec

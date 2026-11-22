@@ -14,11 +14,11 @@ import (
 // commit while any agent-writable table or cascade target is left
 // unguarded. The after statements run last, once that check passed (a
 // setup code's record_setup).
-func ApplyInitTx(ctx context.Context, tx pgx.Tx, script Script, after ...Statement) error {
-	if err := script.Apply(ctx, tx); err != nil {
+func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script Script, after ...Statement) error {
+	if err := applyScript(ctx, tx, script); err != nil {
 		return err
 	}
-	if err := checkCovered(ctx, tx); err != nil {
+	if err := checkCovered(ctx, b, tx); err != nil {
 		return err
 	}
 	for _, st := range after {
@@ -31,8 +31,8 @@ func ApplyInitTx(ctx context.Context, tx pgx.Tx, script Script, after ...Stateme
 
 // checkCovered refuses, inside the install's transaction, while any
 // agent-writable table or cascade target is left unguarded.
-func checkCovered(ctx context.Context, tx pgx.Tx) error {
-	uncovered, err := be().UncoveredTables(ctx, tx)
+func checkCovered(ctx context.Context, b Backend, tx pgx.Tx) error {
+	uncovered, err := b.UncoveredTables(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -105,8 +105,8 @@ const demoSchema = "basalt_demo."
 // MissingTablesHint turns the guard's list of missing write and read
 // tables into one refusal naming the database, and points at the demo seed
 // when a demo table is missing. Other errors pass through.
-func MissingTablesHint(err error, database string) error {
-	missing, ok := be().MissingTables(err)
+func MissingTablesHint(b Backend, err error, database string) error {
+	missing, ok := b.MissingTables(err)
 	if !ok {
 		return err
 	}

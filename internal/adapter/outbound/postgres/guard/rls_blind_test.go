@@ -111,7 +111,7 @@ func TestAgentPolicies(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, s.SQL(), "CREATE POLICY "+role+" ON public.leads AS PERMISSIVE FOR ALL TO "+role+" USING (true) WITH CHECK (true);")
 	require.Contains(t, s.SQL(), "CREATE POLICY "+role+" ON public.lead_notes AS PERMISSIVE FOR SELECT TO "+role+" USING (true);")
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 
 	dsn, err := guard.AgentConnString(d.URL, role, spec.Password)
 	require.NoError(t, err)

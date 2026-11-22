@@ -19,6 +19,7 @@ import (
 // files. The engine wires it (internal/app); each method is the call it
 // is named after, unchanged.
 type Backend interface {
+	setuprun.Backend
 	// Connections and their trust.
 	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
 	Trust() *trustprofile.Set

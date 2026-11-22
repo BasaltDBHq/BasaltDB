@@ -53,16 +53,3 @@ type Backend interface {
 	DemoPlanDrop(ctx context.Context, q Querier) ([]string, error)
 	DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (kept bool, err error)
 }
-
-var backend Backend
-
-// Use sets the backend every setup in this process runs on. A program calls
-// it once at start, before any setup; a later call replaces it.
-func Use(b Backend) { backend = b }
-
-func be() Backend {
-	if backend == nil {
-		panic("setuprun: no backend; call setuprun.Use first")
-	}
-	return backend
-}

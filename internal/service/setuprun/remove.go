@@ -32,6 +32,8 @@ type RemovePlan struct {
 	Installed bool
 	// Agents are the agent names of the prefix's agent roles, sorted.
 	Agents []string
+	// demoSchema names the sample schema in Lines.
+	demoSchema string
 	// Drops are the guard's (guard.PlanUninstall); DemoDrops the sample
 	// schema's, empty when the sample setup did not make it.
 	Drops, DemoDrops []string
@@ -69,7 +71,7 @@ func (p RemovePlan) Lines() []string {
 		lines = append(lines, fmt.Sprintf("The bots that lose their access: %s. Nothing can undo this.", strings.Join(p.Agents, ", ")))
 	}
 	if len(p.DemoDrops) > 0 {
-		lines = append(lines, "It drops the sample schema "+be().DemoSchema()+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")
+		lines = append(lines, "It drops the sample schema "+p.demoSchema+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")
 	}
 	return lines
 }
@@ -78,12 +80,12 @@ func (p RemovePlan) Lines() []string {
 // changes nothing. prefix is the roles' prefix when no guard is installed
 // (guard.DefaultPrefix outside tests); a guard installed with another
 // prefix is refused PREFIX_MISMATCH.
-func PlanRemove(ctx context.Context, q Querier, prefix string) (RemovePlan, error) {
+func PlanRemove(ctx context.Context, b Backend, q Querier, prefix string) (RemovePlan, error) {
 	var database string
 	if err := q.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
 		return RemovePlan{}, err
 	}
-	installed, err := be().InstalledPrefix(ctx, q)
+	installed, err := b.InstalledPrefix(ctx, q)
 	if err != nil {
 		return RemovePlan{}, err
 	}
@@ -92,7 +94,7 @@ func PlanRemove(ctx context.Context, q Querier, prefix string) (RemovePlan, erro
 			fmt.Sprintf("This database's BasaltDB uses the prefix %s, not %s. Nothing changed.", installed, prefix))
 	}
 	names := guardmodel.Names{Prefix: prefix}
-	roles, err := be().AgentRoles(ctx, q, names)
+	roles, err := b.AgentRoles(ctx, q, names)
 	if err != nil {
 		return RemovePlan{}, err
 	}
@@ -101,15 +103,15 @@ func PlanRemove(ctx context.Context, q Querier, prefix string) (RemovePlan, erro
 		agents = append(agents, strings.TrimPrefix(r, prefix+"_agent_"))
 	}
 	slices.Sort(agents)
-	drops, err := be().PlanUninstall(ctx, q, names)
+	drops, err := b.PlanUninstall(ctx, q, names)
 	if err != nil {
 		return RemovePlan{}, err
 	}
-	demoDrops, err := be().DemoPlanDrop(ctx, q)
+	demoDrops, err := b.DemoPlanDrop(ctx, q)
 	if err != nil {
 		return RemovePlan{}, err
 	}
-	return RemovePlan{Database: database, Prefix: prefix, Installed: installed != "", Agents: agents, Drops: drops, DemoDrops: demoDrops}, nil
+	return RemovePlan{Database: database, Prefix: prefix, Installed: installed != "", Agents: agents, Drops: drops, DemoDrops: demoDrops, demoSchema: b.DemoSchema()}, nil
 }
 
 // InstalledRemovalPrefix is the role prefix a removal with no prefix of
@@ -165,11 +167,11 @@ func CheckTypedName(ctx context.Context, tx pgx.Tx, confirmName string) error {
 // runs the drops. demoKept reports a sample schema another object depends
 // on, which stays. A failed drop refuses SETUP_FAILED; the caller rolls
 // tx back.
-func RunRemove(ctx context.Context, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
+func RunRemove(ctx context.Context, b Backend, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
 	if err := CheckTypedName(ctx, tx, confirmName); err != nil {
 		return RemovePlan{}, false, err
 	}
-	if p, err = PlanRemove(ctx, tx, prefix); err != nil {
+	if p, err = PlanRemove(ctx, b, tx, prefix); err != nil {
 		return RemovePlan{}, false, err
 	}
 	for _, sql := range p.Drops {
@@ -180,7 +182,7 @@ func RunRemove(ctx context.Context, tx pgx.Tx, prefix, confirmName string) (p Re
 			}
 		}
 	}
-	if demoKept, err = be().DemoApplyDrop(ctx, tx, p.DemoDrops); err != nil {
+	if demoKept, err = b.DemoApplyDrop(ctx, tx, p.DemoDrops); err != nil {
 		return RemovePlan{}, false, err
 	}
 	return p, demoKept, nil

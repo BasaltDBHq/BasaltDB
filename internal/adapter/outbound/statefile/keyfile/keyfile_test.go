@@ -1,10 +1,11 @@
-package channel
+package keyfile
 
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -15,13 +16,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
+
+func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+
+func unb64(s string) ([]byte, error) { return base64.RawURLEncoding.Strict().DecodeString(s) }
 
 var fixedNow = func() time.Time { return time.Date(2026, 11, 12, 9, 30, 0, 123, time.FixedZone("x", 3600)) }
 
 func keyPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), KeyFileName)
+	return filepath.Join(t.TempDir(), channel.KeyFileName)
 }
 
 func TestLoadOrCreateKeysMakesA0600FileOnceAndReusesIt(t *testing.T) {
@@ -49,11 +56,11 @@ func TestLoadOrCreateKeysMakesA0600FileOnceAndReusesIt(t *testing.T) {
 	require.Equal(t, k1.EngineID(), k3.EngineID())
 
 	// A signature by the loaded key verifies under the created one's SPKI.
-	pub, err := ParseEngineKey(k1.PublicKeySPKI())
+	pub, err := channel.ParseEngineKey(k1.PublicKeySPKI())
 	require.NoError(t, err)
-	sig, err := k3.Sign(ContextVaultAuth, []byte("challenge\nrelay.basaltvault.app"))
+	sig, err := k3.Sign(channel.ContextVaultAuth, []byte("challenge\nrelay.basaltvault.app"))
 	require.NoError(t, err)
-	require.NoError(t, VerifySignature(pub, ContextVaultAuth, []byte("challenge\nrelay.basaltvault.app"), sig))
+	require.NoError(t, channel.VerifySignature(pub, channel.ContextVaultAuth, []byte("challenge\nrelay.basaltvault.app"), sig))
 }
 
 // TestKeyFileHasTheSchemaShape checks the written file against
@@ -67,7 +74,7 @@ func TestKeyFileHasTheSchemaShape(t *testing.T) {
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	schemaRaw, err := os.ReadFile("../../../api/mcp/vault/channel-key-file.schema.json")
+	schemaRaw, err := os.ReadFile("../../../../../api/mcp/vault/channel-key-file.schema.json")
 	require.NoError(t, err)
 	var schema struct {
 		Required   []string                   `json:"required"`
@@ -86,7 +93,7 @@ func TestKeyFileHasTheSchemaShape(t *testing.T) {
 	require.InDelta(t, 1, file["format"], 0)
 	require.Equal(t, k.EngineID(), file["engineId"])
 	require.Equal(t, "2026-11-12T08:30:00Z", file["createdAt"])
-	require.Regexp(t, sigPattern, file["boxKeySig"])
+	require.Regexp(t, `^[A-Za-z0-9_-]{86}$`, file["boxKeySig"])
 
 	der, err := unb64(file["signingKey"].(string))
 	require.NoError(t, err)
@@ -98,12 +105,12 @@ func TestKeyFileHasTheSchemaShape(t *testing.T) {
 	_, err = x509.ParsePKCS8PrivateKey(der)
 	require.NoError(t, err)
 
-	pub, err := ParseEngineKey(k.PublicKeySPKI())
+	pub, err := channel.ParseEngineKey(k.PublicKeySPKI())
 	require.NoError(t, err)
 	sig, err := unb64(file["boxKeySig"].(string))
 	require.NoError(t, err)
 	statement := []byte(k.EngineID() + "\n" + b64(k.BoxPublicKeySPKI()))
-	require.NoError(t, VerifySignature(pub, ContextBoxKey, statement, sig))
+	require.NoError(t, channel.VerifySignature(pub, channel.ContextBoxKey, statement, sig))
 }
 
 func TestLoadOrCreateKeysKeepsTheFirstOfTwoConcurrentStarts(t *testing.T) {
@@ -135,7 +142,7 @@ func TestLoadKeysNeverCreates(t *testing.T) {
 	t.Parallel()
 	path := keyPath(t)
 	_, err := LoadKeys(path)
-	require.ErrorIs(t, err, ErrKeyFile)
+	require.ErrorIs(t, err, channel.ErrKeyFile)
 	_, err = os.Lstat(path)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
@@ -154,13 +161,13 @@ func writeValid(t *testing.T) (string, map[string]any) {
 	return path, file
 }
 
-// requireRefusedUntouched loads path, expects ErrKeyFile, and checks the
+// requireRefusedUntouched loads path, expects channel.ErrKeyFile, and checks the
 // file is exactly as it was: a refused key file is never replaced.
 func requireRefusedUntouched(t *testing.T, path string, msgAndArgs ...any) error {
 	t.Helper()
 	before, statErr := os.ReadFile(path)
 	_, err := LoadOrCreateKeys(path, time.Now)
-	require.ErrorIs(t, err, ErrKeyFile, msgAndArgs...)
+	require.ErrorIs(t, err, channel.ErrKeyFile, msgAndArgs...)
 	after, afterErr := os.ReadFile(path)
 	require.Equal(t, statErr == nil, afterErr == nil, msgAndArgs...)
 	require.Equal(t, before, after, msgAndArgs...)
@@ -204,13 +211,13 @@ func TestLoadKeysRefusesASymlinkOrADirectory(t *testing.T) {
 	dir := keyPath(t)
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	_, err = LoadOrCreateKeys(dir, time.Now)
-	require.ErrorIs(t, err, ErrKeyFile)
+	require.ErrorIs(t, err, channel.ErrKeyFile)
 	require.ErrorContains(t, err, "regular file")
 
 	dangling := keyPath(t)
 	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "missing"), dangling))
 	_, err = LoadOrCreateKeys(dangling, time.Now)
-	require.ErrorIs(t, err, ErrKeyFile, "a dangling link is not a missing file")
+	require.ErrorIs(t, err, channel.ErrKeyFile, "a dangling link is not a missing file")
 	_, err = os.Lstat(filepath.Join(filepath.Dir(dangling), "missing"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
@@ -270,10 +277,9 @@ func TestLoadKeysRefusesAnInvalidFileAndLeavesIt(t *testing.T) {
 func TestLoadKeysRefusesABoxKeySignedByAnotherKey(t *testing.T) {
 	t.Parallel()
 	path, file := writeValid(t)
-	stranger := newKeys(t)
-	sig, err := stranger.Sign(ContextBoxKey, []byte(file["engineId"].(string)+"\n"+b64(stranger.BoxPublicKeySPKI())))
+	strangerRaw, stranger, err := channel.NewKeyFile(time.Now)
 	require.NoError(t, err)
-	strangerRaw, err := marshalKeyFile(stranger)
+	sig, err := stranger.Sign(channel.ContextBoxKey, []byte(file["engineId"].(string)+"\n"+b64(stranger.BoxPublicKeySPKI())))
 	require.NoError(t, err)
 	var strangerFile map[string]any
 	require.NoError(t, json.Unmarshal(strangerRaw, &strangerFile))
@@ -302,8 +308,8 @@ func TestLoadOrCreateKeysFailsWhenItCannotWrite(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0o500))
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	_, err := LoadOrCreateKeys(filepath.Join(dir, KeyFileName), time.Now)
-	require.ErrorIs(t, err, ErrKeyFile)
+	_, err := LoadOrCreateKeys(filepath.Join(dir, channel.KeyFileName), time.Now)
+	require.ErrorIs(t, err, channel.ErrKeyFile)
 }
 
 func TestLoadKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
@@ -318,11 +324,11 @@ func TestLoadKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
 		err := requireRefusedUntouched(t, path, mode)
 		require.ErrorContains(t, err, "state directory")
 		_, err = LoadKeys(path)
-		require.ErrorIs(t, err, ErrKeyFile, mode)
+		require.ErrorIs(t, err, channel.ErrKeyFile, mode)
 
-		fresh := filepath.Join(dir, "fresh-"+KeyFileName)
+		fresh := filepath.Join(dir, "fresh-"+channel.KeyFileName)
 		_, err = LoadOrCreateKeys(fresh, time.Now)
-		require.ErrorIs(t, err, ErrKeyFile, mode)
+		require.ErrorIs(t, err, channel.ErrKeyFile, mode)
 		_, err = os.Lstat(fresh)
 		require.ErrorIs(t, err, os.ErrNotExist, "nothing is created in such a directory")
 		require.NoError(t, os.Chmod(dir, 0o700))
@@ -341,8 +347,8 @@ func TestLoadKeysRefusesAStateDirectoryThatIsALink(t *testing.T) {
 	if err := os.Symlink(filepath.Dir(path), link); err != nil {
 		t.Skip("no symlinks here")
 	}
-	_, err := LoadKeys(filepath.Join(link, KeyFileName))
-	require.ErrorIs(t, err, ErrKeyFile)
+	_, err := LoadKeys(filepath.Join(link, channel.KeyFileName))
+	require.ErrorIs(t, err, channel.ErrKeyFile)
 	require.ErrorContains(t, err, "not a link")
 }
 
@@ -350,8 +356,8 @@ func TestLoadOrCreateKeysRemovesStaleTemps(t *testing.T) {
 	t.Parallel()
 	path := keyPath(t)
 	dir := filepath.Dir(path)
-	stale := filepath.Join(dir, KeyFileName+".123.tmp")
-	fresh := filepath.Join(dir, KeyFileName+".456.tmp")
+	stale := filepath.Join(dir, channel.KeyFileName+".123.tmp")
+	fresh := filepath.Join(dir, channel.KeyFileName+".456.tmp")
 	unrelated := filepath.Join(dir, "other.json.789.tmp")
 	for _, p := range []string{stale, fresh, unrelated} {
 		require.NoError(t, os.WriteFile(p, []byte("x"), 0o600))

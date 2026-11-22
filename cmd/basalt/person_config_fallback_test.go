@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -29,20 +28,6 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	cfg := filepath.Join(h.configDir, perUserDirName, "engine.json")
 	initAgent(t, d, cfg)
 
-	id := uuid.NewString()
-	// Each of these answers from the agent's own ledger, which only the
-	// per-user config leads to: the held write or the revert is not there.
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"approve", "--agent", "bot", "--show", id}, "is not a held write of this agent"},
-	} {
-		got := cliOn(t, h, nil, "", tc.args...)
-		require.Equal(t, exitError, got.code, "%v: %s", tc.args, got.stderr)
-		require.Contains(t, got.stderr, tc.want, "%v did not reach the per-user engine", tc.args)
-		require.NotContains(t, got.stderr, config.DefaultPath(runtime.GOOS), "%v read the system path", tc.args)
-	}
 	pk := cliOn(t, h, nil, "", "passkey", "list", "--agent", "bot")
 	require.Equal(t, exitOK, pk.code, pk.stderr)
 	require.Contains(t, pk.stderr, "no active passkey")

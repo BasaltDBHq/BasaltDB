@@ -207,10 +207,8 @@ func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after str
 // PrepareRevert stores a revert of scope for the person to sign
 // (basalt_meta.prepare_revert) on the agent's credential, in its own
 // transaction with the statement timeout set to timeout instead of the
-// agent's limit, as basalt revert does. A proposal with no line is rolled
-// back and answered action.ErrEmptyProposal: the guard stores such a proposal
-// for the person to widen on the page (basalt revert --task); through MCP
-// it is NOTHING_TO_REVERT (RS-6).
+// agent's limit. A proposal with no line is rolled back and answered
+// action.ErrEmptyProposal: through MCP it is NOTHING_TO_REVERT (RS-6).
 func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
 	r0, err := s.prepareRevertRaw(ctx, scope, intent, timeout)
 	return r0, MapError(err)
@@ -280,7 +278,7 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 }
 
 // ApplyRevert relays the person's signed revert (basalt_meta.apply_revert)
-// on the agent's credential, as basalt revert does: Postgres verifies the
+// on the agent's credential, for the revert page: Postgres verifies the
 // passkey assertion and runs the revert, or for a large plan records the
 // signature. It runs in its own transaction with the engine's timeouts
 // (guard.SetTimeouts), so the agent role's own defaults cannot fail the

@@ -69,14 +69,14 @@ func TestPrintLinkRefusesABadURLWithoutWritingIt(t *testing.T) {
 	t.Parallel()
 	for name, base := range badBases {
 		c, out := linkIO(true)
-		err := printLink(c, out, base+"/approvals/x", linkRef{setting: "pagesUrl", item: "approval 0190", again: "basalt approve --show 0190"})
+		err := printLink(c, out, base+"/approvals/x", linkRef{setting: "pagesUrl", item: "approval 0190", again: "ask the agent for a new link"})
 		require.Error(t, err, name)
 		require.Empty(t, out.String(), name+": nothing of the URL or a control byte is written")
 		msg := err.Error()
 		require.Contains(t, msg, "pagesUrl", name)
 		require.Contains(t, msg, "approval 0190", name)
 		require.Contains(t, msg, firstBadPosition, name)
-		require.Contains(t, msg, "basalt approve --show 0190", name)
+		require.Contains(t, msg, "ask the agent for a new link", name)
 		requirePrintable(t, name, msg)
 
 		var errOut bytes.Buffer
@@ -88,9 +88,8 @@ func TestPrintLinkRefusesABadURLWithoutWritingIt(t *testing.T) {
 
 func TestPagesURLFlagRefusesABadBaseAsUsage(t *testing.T) {
 	t.Parallel()
-	const id = "0190a3f2-7c1e-7000-8000-000000000001"
 	for name, base := range badBases {
-		r := cli(t, nil, "", "approve", "--pages-url", base, "--show", id)
+		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
 		require.Equal(t, exitUsage, r.code, name)
 		require.Contains(t, r.stderr, "--pages-url", name)
 		require.Contains(t, r.stderr, firstBadPosition, name)
@@ -99,7 +98,7 @@ func TestPagesURLFlagRefusesABadBaseAsUsage(t *testing.T) {
 		}
 	}
 	for _, base := range []string{"ftp://x", "http://example.com", "http://localhost:8787/?a=b", "https://example.com/#x"} {
-		r := cli(t, nil, "", "approve", "--pages-url", base, "--show", id)
+		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
 		require.Equal(t, exitUsage, r.code, base)
 	}
 }
@@ -124,7 +123,7 @@ func TestConfigLoadRefusesABadPagesURL(t *testing.T) {
 func TestPagesURLFlagRefusesCredentialsAndBadPorts(t *testing.T) {
 	t.Parallel()
 	for _, base := range []string{"http://localhost:80@evil.com", "http://[::1]:1@evil.com", "http://localhost:abc", "https://evil.com@x"} {
-		r := cli(t, nil, "", "approve", "--pages-url", base, "--show", "0190a3f2-7c1e-7000-8000-000000000001")
+		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
 		require.Equal(t, exitUsage, r.code, base)
 	}
 }
@@ -142,7 +141,7 @@ func TestPagesURLFlagRefusesALoopbackIP(t *testing.T) {
 		"http://127.0.0.1:8787": "use http://localhost:8787",
 		"http://[::1]:9000":     "use http://localhost:9000",
 	} {
-		r := cli(t, nil, "", "approve", "--pages-url", base, "--show", "0190a3f2-7c1e-7000-8000-000000000001")
+		r := cli(t, nil, "", "passkey", "check", "--pages-url", base)
 		require.Equal(t, exitUsage, r.code, base)
 		require.Contains(t, r.stderr, want, base)
 	}

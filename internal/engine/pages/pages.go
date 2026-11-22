@@ -300,8 +300,8 @@ type approvedDTO struct {
 	NoReceipt  string `json:"noReceipt,omitempty"`
 }
 
-// appliedDTO is the relay's answer for a revert: the result basalt revert
-// --apply --json prints, with the engine's receipt or why there is none.
+// appliedDTO is the relay's answer for a revert: the applied revert, with
+// the engine's receipt or why there is none.
 type appliedDTO struct {
 	action.AppliedRevert
 	Receipt   string `json:"receipt,omitempty"`

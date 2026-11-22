@@ -1,9 +1,8 @@
 // Package passkey verifies WebAuthn ES256 (P-256) passkey registrations and
 // assertions the way basalt_meta.submit_approval does in Postgres
 // (CONTRACT.md, Approvals). Postgres is the only check that counts; this Go
-// mirror lets basalt init verify a registration before storing it, lets
-// basalt approve explain a bad code before submitting it, and is the oracle
-// the guard's PL/pgSQL verifier is tested against.
+// mirror lets basalt init verify a registration before storing it, and is
+// the oracle the guard's PL/pgSQL verifier is tested against.
 package passkey
 
 import (

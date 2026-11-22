@@ -27,7 +27,7 @@
         "tool": "request_revert"
       }
     ],
-    "personMessage": "Revert of run <id-1>: 12 rows to restore, 0 left as they are (changed after the agent). Why: Undo the tidy-up. Expires <time>.\nSign it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/reverts/<id-27>#<fragment>",
+    "personMessage": "Revert of run <id-1>: 12 rows to restore, 0 left as they are (changed after the agent). Why: Undo the tidy-up. Expires <time>.\nReview only: this link cannot be signed. Ask the agent for a new link later.\n\nhttp://localhost:8787/reverts/<id-27>#<fragment>",
     "revertId": "<id-27>",
     "revertUrl": "http://localhost:8787/reverts/<id-27>#<fragment>",
     "rows": 12,

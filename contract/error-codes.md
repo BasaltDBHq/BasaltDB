@@ -8,7 +8,7 @@ Planned (actionable errors, owner decisions AE-1 to AE-14; not emitted yet): the
 
 From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "expiresAt", "rows", "headline", "approvalUrl", "personMessage" }` (see [Approvals](approvals.md#approvals) and [Handing a held action to the person](local-pages.md#handing-a-held-action-to-the-person)):
 
-- `headline`: the held write in one line, cascade stated (`Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)`), as `basalt approve --show` prints it until that command goes.
+- `headline`: the held write in one line, cascade stated (`Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)`). The page shows the same line.
 - `approvalUrl`: the **short link** `<base>/approvals/<approvalId>` when the engine serves the [local pages](local-pages.md#local-pages); otherwise the long link `<base>/approvals/<approvalId>#1.<request>` (below, [Page links](page-links.md#page-links)), or, when that is over the link budget, the hash link `<base>/approvals/<approvalId>#h=<h>` with `requestFile` beside it ([The request file and pasted blocks](showing-links.md#the-request-file-and-pasted-blocks)). Clients that render links may show it.
 - `requestFile`: only with a hash link: the request as a file and as numbered text blocks for the agent to send the person ([The request file and pasted blocks](showing-links.md#the-request-file-and-pasted-blocks)).
 - `personMessage`: the message the agent shows the person verbatim: what is held, the headline, the link and the expiry, with the link on its own line ([Showing links](showing-links.md#showing-links), which has an example). Planned (M3.5): `approval.links` and the body's `links` carry the link with a label, as there.

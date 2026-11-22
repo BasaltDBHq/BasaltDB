@@ -1,34 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
-
-// lockedBuffer is stderr shared with the test reading it.
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
 
 // fallbackIO is a cliIO whose stdin is a terminal whose modes cannot be
 // set (as on a platform without raw reads): a plain line read of it blocks

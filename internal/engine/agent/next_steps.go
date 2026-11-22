@@ -691,8 +691,8 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 		s.openApprovalAgain(b, n, "Open the link and approve with your passkey: the write is not approved yet.")
 		lead = "The held write was not approved yet, so nothing was applied."
 	case reasonBadSignature:
-		s.openApprovalAgain(b, n, "Approve again on the page; the code did not verify.")
-		lead = "The approval code did not verify, so nothing was applied."
+		s.openApprovalAgain(b, n, "Approve again on the page; the signature did not verify.")
+		lead = "The approval signature did not verify, so nothing was applied."
 	case reasonPasskeyRevoked:
 		b.AgentRunCommand(s.Commands.Init(), passkeyInitText)
 		s.openApprovalAgain(b, n, "Then approve the held write with that passkey.")

@@ -1,16 +1,15 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
 // engineAccess is how the CLI tells service mode from same-user mode (owner
@@ -38,7 +37,7 @@ func osEngineAccess(goos string) engineAccess {
 // goosDarwin is macOS's GOOS.
 const goosDarwin = "darwin"
 
-// agentLedger is the agent's ledger for basalt approve and passkey: a
+// agentLedger is the agent's ledger for basalt passkey: a
 // direct connection with the agent's credential.
 type agentLedger struct {
 	person.Ledger
@@ -53,8 +52,8 @@ type agentLedger struct {
 // openLedger opens the agent's ledger with the agent's credential
 // (agentURL). A person (not root) on a service engine cannot read it and is
 // told to use sudo.
-func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, error) {
-	credFile = cmp.Or(credFile, c.paths.credFile)
+func openLedger(c *cliIO, agent, configPath string) (*agentLedger, error) {
+	credFile := c.paths.credFile
 	if c.needsAgent(agent, credFile) {
 		// --agent is needed only when the engine serves more than one.
 		if names, err := c.configuredAgents(configPath); err == nil && len(names) == 1 {
@@ -106,35 +105,38 @@ func (l *agentLedger) pagesBase(c *cliIO, flag string) string {
 	return configuredBase(c, "", l.agent, l.configPath)
 }
 
-// localPages is the origin of the pages the engine serves when it answers
-// there, else "" (see localPages).
-func (l *agentLedger) localPages(c *cliIO, flag string) string {
-	return localPages(c, flag, l.agent, l.configPath)
+// needsAgent reports whether nothing names the agent: no --agent, no
+// credential given and no BASALT_DATABASE_URL.
+func (c *cliIO) needsAgent(agent, credFile string) bool {
+	return agent == "" && credFile == "" && c.paths.credFile == "" && c.getenv(envAgentURL) == ""
 }
 
-// credentials are the active passkeys' credentials, to fill credentialIds
-// and check a code before relaying it.
-func (l *agentLedger) credentials(ctx context.Context) ([]passkey.Credential, error) {
-	keys, err := l.ListPasskeys(ctx)
+// configuredAgents are the agents this person can name: in service mode
+// the agent sockets in the engine's socket directory (the person cannot
+// read engine.json, but can list that directory), else the agents of the
+// engine config.
+func (c *cliIO) configuredAgents(configPath string) ([]string, error) {
+	if configPath == c.systemConfig() && c.engine.unitInstalled() {
+		entries, err := os.ReadDir(config.DefaultSocketDir(c.goos))
+		if err != nil {
+			return nil, err
+		}
+		var names []string
+		for _, e := range entries {
+			name, ok := strings.CutSuffix(e.Name(), ".sock")
+			if ok && e.Type()&os.ModeSocket != 0 && config.ValidAgentName(name) {
+				names = append(names, name)
+			}
+		}
+		return names, nil
+	}
+	cfg, err := loadEngineConfig(c, configPath)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]passkey.Credential, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, k.Credential)
+	names := make([]string, 0, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		names = append(names, a.Name)
 	}
-	return out, nil
-}
-
-// ownAgent is the agent's name: the one given, else the one in the role of
-// the credential (<prefix>_agent_<name>), "" when it cannot be told.
-func (l *agentLedger) ownAgent() string {
-	if l.agent != "" {
-		return l.agent
-	}
-	i := strings.Index(l.role, "_agent_")
-	if i < 0 {
-		return ""
-	}
-	return l.role[i+len("_agent_"):]
+	return names, nil
 }

@@ -76,7 +76,7 @@ func requestedSteps(id uuid.UUID, link string) []mcp.NextStep {
 // link the step carries.
 const (
 	waitEndedShortLink = "Open the short link the agent gave you earlier and sign with your passkey."
-	waitEndedLongLink  = "Open the link and sign with your passkey; then give the agent the code the page shows."
+	waitEndedLongLink  = "Open the link to review it. It cannot be signed: ask the agent for a new link later."
 )
 
 // waitEndedSteps: not signed yet. The person signs at the link already
@@ -316,7 +316,7 @@ func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message str
 
 // The OPEN_LINK texts of the refusals that send the person back to sign.
 const (
-	signAgainText   = "Sign again on the page; the code did not verify."
+	signAgainText   = "Sign again on the page; the signature did not verify."
 	signRevokedText = "Then sign the revert again with that passkey."
 )
 
@@ -325,8 +325,8 @@ const (
 func (s *Service) badSignatureWith(open mcp.NextStep, r ledger.Revert, message string) error {
 	return &mcp.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
-		PersonMessage: fmt.Sprintf("The code for %s did not verify, so nothing was reverted. Sign again on "+
-			"the revert page and give the agent the new code.", revertTitle(r)),
+		PersonMessage: fmt.Sprintf("The signature for %s did not verify, so nothing was reverted. Sign again on "+
+			"the revert page.", revertTitle(r)),
 		NextSteps: []mcp.NextStep{
 			open,
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
@@ -351,7 +351,7 @@ const requestAgainText = "On yes, call request_revert with these arguments and t
 func (s *Service) passkeyRevokedWith(open mcp.NextStep, r ledger.Revert) error {
 	return &mcp.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
-		Message: "the code was signed by a passkey this database does not know or that was revoked; nothing was reverted",
+		Message: "the revert was signed by a passkey this database does not know or that was revoked; nothing was reverted",
 		PersonMessage: fmt.Sprintf("%s was signed with a passkey this database does not accept (unknown or "+
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
 			sentence(revertTitle(r))),
@@ -401,7 +401,7 @@ func alreadySigned(r ledger.Revert) error {
 		Code: CodeRevertInvalid, Reason: reasonPlanFinished, Message: msg,
 		NextSteps: []mcp.NextStep{
 			callTool(toolRequestRevert, map[string]any{argRevertID: r.ID.String(), argWaitForSignature: 0}, "See the revert's state."),
-			agentStep(mcp.ActionStop, "Do not deliver the code again."),
+			agentStep(mcp.ActionStop, "Do not ask the person to sign it again."),
 		},
 	}
 }

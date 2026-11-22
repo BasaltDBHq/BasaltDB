@@ -6,7 +6,7 @@ A five-minute map of the code for someone new to it. The exact behaviour of ever
 
 BasaltDB is one Go binary, `basalt` (`cmd/basalt`), plus a schema installed in the person's Postgres. The same binary plays three roles.
 
-- **Setup command.** `basalt init` is what an agent runs to start setup, a guard update, a repair or a removal. It prints one link and the person finishes on a page. `approve` and `revert` stay until the relay is live. These live in `cmd/basalt`.
+- **Setup command.** `basalt init` is what an agent runs to start setup, a guard update, a repair or a removal. It prints one link and the person finishes on a page. These live in `cmd/basalt`.
 - **Engine.** `basalt engine` is a long-running service on the agent's machine, running as its own OS user. It serves each agent over a Unix socket, checks the agent's SQL, and holds that agent's scoped Postgres credential. It is the first filter, not the boundary. Code: `internal/engine`.
 - **MCP shim.** `basalt mcp --agent NAME` is the process an MCP client starts. It only relays stdio to the engine's socket. It holds no credential and parses no SQL. Code: `internal/shim`.
 

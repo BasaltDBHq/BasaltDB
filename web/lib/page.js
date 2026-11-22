@@ -47,32 +47,43 @@ export function personText(err) {
 }
 
 // linkFailure is the sentence a page shows when its link cannot be used.
-// kind names the page ("approval", "revert"); reopen says how to open the
-// full link from the terminal. A link that does not decode was most likely
-// cut short when copied, so the person is told to reopen it, not that it
-// is bad.
+// kind names the page ("approval", "revert"); reopen says how to get a
+// working link. A link that does not decode was most likely cut short when
+// copied, so the person is told to get it again, not that it is bad.
 export function linkFailure(err, kind, reopen) {
   const told = err?.name === "RelayError" ? personText(err) : "";
   if (told && err.code === "NOT_FOUND") return told + "\nOr " + reopen + ".";
   if (told) return told;
   if (err?.name === "RelayError" && err.code === "NOT_FOUND") {
     return `This ${kind} link is incomplete, was replaced by a newer one, or the ${kind} is gone. ` +
-      `Ask the agent for the link again (it gets a new one from list_pending), or ${reopen}.`;
+      `${sentenceStart(reopen)}.`;
   }
   if (err?.name === "RelayError") {
     return `This ${kind} cannot be shown: ${err.message}`;
   }
   if (err?.name === "TruncatedLinkError") {
     return `This ${kind} link looks cut short (${err.message}). Long links often break when copied from a terminal or a chat. ` +
-      `Open it from your terminal instead: ${reopen}.`;
+      `${sentenceStart(reopen)}.`;
   }
   return `This ${kind} link cannot be used: ${err?.message ?? err}`;
 }
 
-export const APPROVE_REOPEN =
-  "run basalt approve --agent <name> --open <approvalId> with the approvalId your agent gave you; it opens the full link in your browser";
-export const REVERT_REOPEN =
-  "run your basalt revert command again with --open; it prepares the revert and opens the full link in your browser";
+// sentenceStart starts s with a capital letter.
+function sentenceStart(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// What a cut, replaced or lost link tells the person: the agent gets a new
+// link (list_pending, or request_revert, with reissueLink).
+export const APPROVE_REOPEN = "ask the agent for a new link to this approval";
+export const REVERT_REOPEN = "ask the agent for a new link to this revert";
+
+// NO_CARRIER is what a page says on a long link: it shows the change, but
+// only a short link (from the engine's own pages, or from Basalt Vault)
+// can send a signature to the engine, so the page offers no passkey prompt.
+export const NO_CARRIER =
+  "This link shows the change but cannot send your signature to the engine, so it cannot be signed here. " +
+  "Only a short link from the engine's own pages or from Basalt Vault can. Nothing was signed.";
 
 const NO_LINK_IN_PASTE =
   "No link found in that text. Paste the whole message from your agent, from the line before the link to the line after it.";
@@ -296,15 +307,7 @@ export async function showReceipt(result, session, expect) {
   $("receipt").hidden = false;
 }
 
-// pastesCode says whether a page whose relayed signature failed falls back
-// to the code to paste. A page on the engine's own pages does (basalt
-// approve or revert takes it on that computer); a portal page through the
-// Vault never asks the person to paste anything: they open the link again.
-export function pastesCode(session) {
-  return session?.transport !== RELAY;
-}
-
-// What a portal page says after a relayed signature failed. The engine
+// What a page says after a relayed signature failed. The engine
 // answered with a refusal (an HTTP status): nothing was signed. No answer
 // came (the session dropped after the request may have gone out): the page
 // cannot tell, and the link shows whether it went through.
@@ -324,7 +327,7 @@ export function relayRetry(err) {
   return relayRefused(err) ? RELAY_REFUSED : RELAY_NO_ANSWER;
 }
 
-// relayFailure is what a portal page shows when the relayed signature of
+// relayFailure is what a page shows when the relayed signature of
 // item ("approval", "revert") failed: the engine's refusal and its reason,
 // or, with no answer, only that the page cannot tell.
 export function relayFailure(err, item) {
@@ -339,8 +342,7 @@ export function showDone(message) {
   $("action").hidden = true;
 }
 
-// showRelayFailed says the engine did not take the signature; the code
-// shown next is the way to finish by hand.
+// showRelayFailed says the engine did not take the signature.
 export function showRelayFailed(message) {
   $("done-text").textContent = message;
   $("done").hidden = false;

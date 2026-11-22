@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -99,20 +98,20 @@ func signBinding(t *testing.T, signer *passkeytest.Authenticator, binding string
 	return as
 }
 
-// revertCode is the basalt-revert.1. code the page shows after signing.
-func revertCode(t *testing.T, id uuid.UUID, as passkey.Assertion) string {
-	t.Helper()
-	code, err := revert.NewResponse(id, as).Code()
-	require.NoError(t, err)
-	return code
+// relayRevert is what the revert page does after the passkey signed: it
+// posts the signature, which the engine relays to Postgres (RelayRevert),
+// on its own pages or through the Vault. Nothing is pasted.
+func relayRevert(svc *agent.Service, id uuid.UUID, as passkey.Assertion) error {
+	_, _, err := svc.RelayRevert(context.Background(), revert.NewResponse(id, as))
+	return err
 }
 
-// personCode is the person signing the revert behind a long link and the
-// page showing the code.
-func personCode(t *testing.T, env agentEnv, link string) string {
+// personSigns is the person signing the revert behind link on its page, and
+// the page relaying the signature.
+func personSigns(t *testing.T, env agentEnv, link string) {
 	t.Helper()
 	id, binding := longLinkBinding(t, link)
-	return revertCode(t, id, signBinding(t, env.person, binding))
+	require.NoError(t, relayRevert(env.svc, id, signBinding(t, env.person, binding)))
 }
 
 func revertStatus(t *testing.T, h harness, id string) string {
@@ -294,8 +293,8 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	requireWaitEndedCalls(t, steps, id)
 	expires, err := time.Parse(time.RFC3339, str(t, body["expiresAt"]))
 	require.NoError(t, err)
-	require.Equal(t, "The revert of run "+runID+" waits for your passkey at the link the agent gave you, until "+
-		expires.UTC().Format("2006-01-02 15:04 UTC")+". Tell the agent when you have signed, or give it the code the page shows.",
+	require.Equal(t, "The revert of run "+runID+" waits until "+
+		expires.UTC().Format("2006-01-02 15:04 UTC")+", but its link cannot be signed. Ask the agent for a new link later.",
 		body["personMessage"])
 
 	start = time.Now()
@@ -398,18 +397,19 @@ func TestRequestRevertWaitCancelled(t *testing.T) {
 	require.Less(t, time.Since(start), 5*time.Second)
 }
 
-// The person's code, delivered by the agent, applies the revert; the
-// revert's own change can then be reverted the same way (a revert can be
-// reverted).
-func TestRequestRevertDeliversTheSignature(t *testing.T) {
+// The person signs on the revert page and the agent's wait sees it
+// applied; the revert's own change can then be reverted the same way (a
+// revert can be reverted).
+func TestRequestRevertSignedOnThePage(t *testing.T) {
 	t.Parallel()
 	env := agentHarness(t)
 	runID, _ := winLeads(t, env.h, "87, 88")
 	env.d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 88`)
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	require.Contains(t, str(t, req["personMessage"]), "the page then shows a code for the agent")
+	require.NotContains(t, str(t, req["personMessage"]), "code", "nothing to give the agent")
 
-	body := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "signature": personCode(t, env, str(t, req["revertUrl"]))})
+	personSigns(t, env, str(t, req["revertUrl"]))
+	body := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "waitForSignature": 0})
 	require.Equal(t, "APPLIED", body["status"])
 	require.EqualValues(t, "1", body["rows"])
 	require.EqualValues(t, "1", body["skipped"])
@@ -422,29 +422,30 @@ func TestRequestRevertDeliversTheSignature(t *testing.T) {
 	again := requestRevert(t, env.h, map[string]any{"changeId": revertChange, "intent": "Undo the undo"})
 	require.Equal(t, "CHANGE", again["scope"])
 	require.Equal(t, revertChange, again["scopeId"])
-	body = requestRevert(t, env.h, map[string]any{"revertId": again["revertId"], "signature": personCode(t, env, str(t, again["revertUrl"]))})
+	personSigns(t, env, str(t, again["revertUrl"]))
+	body = requestRevert(t, env.h, map[string]any{"revertId": again["revertId"], "waitForSignature": 0})
 	require.Equal(t, "APPLIED", body["status"])
 	require.Equal(t, "won", leadStatus(t, env.d, 87), "the revert of the revert puts the agent's value back")
 	require.Equal(t, "person", leadStatus(t, env.d, 88))
 }
 
-func TestRequestRevertDeliversALargePlanSignature(t *testing.T) {
+func TestRequestRevertLargePlanSignedOnThePage(t *testing.T) {
 	t.Parallel()
 	e := newBatchEnv(t)
-	code := revertCode(t, e.prep.RevertID, signBinding(t, e.person, e.prep.BindingText))
+	require.NoError(t, relayRevert(e.svc, e.prep.RevertID, signBinding(t, e.person, e.prep.BindingText)))
 	id := e.prep.RevertID.String()
 
-	body := requestRevert(t, e.h, map[string]any{"revertId": id, "signature": code})
+	body := requestRevert(t, e.h, map[string]any{"revertId": id, "waitForSignature": 0})
 	requireApplying(t, body)
 	applyEveryBatch(t, e.h, id)
 	require.Equal(t, planRows, itemsLeft(t, e.d, "before"))
 	require.Equal(t, "APPLIED", revertStatus(t, e.h, id))
 }
 
-// Security, as the agent role: the agent can only deliver the person's own
-// signature of this very revert. Every other code is refused and writes
+// Security: only the person's own signature of this very revert applies
+// it. Every other signature the page could relay is refused and writes
 // nothing, by the engine and again by Postgres.
-func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
+func TestRelayedRevertRefusesSignaturesThePersonDidNotMakeForIt(t *testing.T) {
 	t.Parallel()
 	env := agentHarness(t)
 	ctx := context.Background()
@@ -454,18 +455,16 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	reqB := requestRevert(t, env.h, map[string]any{"runId": runB, "intent": "Undo B"})
 	idA, bindingA := longLinkBinding(t, str(t, reqA["revertUrl"]))
 	idB, bindingB := longLinkBinding(t, str(t, reqB["revertUrl"]))
-	refused := func(revertID uuid.UUID, code, want, reason, message string) {
+	refused := func(revertID uuid.UUID, as passkey.Assertion, want, reason string) {
 		t.Helper()
-		body, isError := env.h.call(t, "request_revert", map[string]any{"revertId": revertID.String(), "signature": code})
-		requireErrorSteps(t, body, isError, want, reason)
-		require.Contains(t, str(t, body["message"]), message)
+		te := agent.ToolError(relayRevert(env.svc, revertID, as))
+		require.Equal(t, want, te.Code, "%v", te)
+		require.Equal(t, reason, te.Reason, "%v", te)
 	}
 
-	// The person's code for A, delivered as B's; and A's signature
-	// relabelled as B's.
+	// A's signature relabelled as B's.
 	asA := signBinding(t, env.person, bindingA)
-	refused(idB, revertCode(t, idA, asA), "REVERT_INVALID", "BAD_SIGNATURE", "is for revert "+idA.String())
-	refused(idB, revertCode(t, idB, asA), "REVERT_INVALID", "BAD_SIGNATURE", "does not verify")
+	refused(idB, asA, "REVERT_INVALID", "BAD_SIGNATURE")
 	_, err := guard.ApplyRevert(ctx, env.a.Conn, idB, asA)
 	requireRevertInvalid(t, err)
 
@@ -473,32 +472,28 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	tampered := signBinding(t, env.person, bindingA)
 	tampered.Signature = bytes.Clone(tampered.Signature)
 	tampered.Signature[len(tampered.Signature)-1] ^= 1
-	refused(idA, revertCode(t, idA, tampered), "REVERT_INVALID", "BAD_SIGNATURE", "does not verify")
+	refused(idA, tampered, "REVERT_INVALID", "BAD_SIGNATURE")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idA, tampered)
 	requireRevertInvalid(t, err)
 
-	// A code signed with a passkey that was revoked since.
+	// A signature by a passkey that was revoked since.
 	spare, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, env.d.Admin, spare.Credential(), "spare"))
 	bySpare := signBinding(t, spare, bindingA)
 	_, err = guard.RevokePasskey(ctx, env.d.Admin, spare.ID, false)
 	require.NoError(t, err)
-	refused(idA, revertCode(t, idA, bySpare), "REVERT_INVALID", "PASSKEY_REVOKED", "revoked")
+	refused(idA, bySpare, "REVERT_INVALID", "PASSKEY_REVOKED")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idA, bySpare)
 	requireRevertInvalid(t, err)
 
-	// An approval code is not a revert signature, nor is an approval's
-	// assertion relabelled as a revert's.
+	// An approval's signature relabelled as a revert's.
 	held, isError := env.h.call(t, "write", map[string]any{
 		"sql": "UPDATE leads SET status = 'closed' WHERE id BETWEEN 21 AND 35", "intent": "Close cold leads",
 	})
 	requireToolError(t, held, isError, "APPROVAL_REQUIRED", "", "")
-	approvalCode := signLink(t, str(t, approvalOf(t, held)["approvalUrl"]), env.person)
-	refused(idA, approvalCode, "INVALID_ARGUMENT", "", "not a basalt-revert.1. code")
-	resp, err := approval.ParseResponse(approvalCode)
-	require.NoError(t, err)
-	refused(idA, revertCode(t, idA, resp.Assertion()), "REVERT_INVALID", "BAD_SIGNATURE", "does not verify")
+	approvalSigned := signLink(t, str(t, approvalOf(t, held)["approvalUrl"]), env.person)
+	refused(idA, approvalSigned.Assertion(), "REVERT_INVALID", "BAD_SIGNATURE")
 
 	require.Equal(t, "won", leadStatus(t, env.d, 89), "nothing was written")
 	require.Equal(t, "won", leadStatus(t, env.d, 90))
@@ -506,13 +501,13 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	require.Equal(t, "PENDING", revertStatus(t, env.h, idA.String()))
 	require.Equal(t, "PENDING", revertStatus(t, env.h, idB.String()))
 
-	// The person's own code applies A once; a replay is refused.
+	// The person's own signature applies A once; a replay is refused.
 	asA = signBinding(t, env.person, bindingA)
-	codeA := revertCode(t, idA, asA)
-	require.Equal(t, "APPLIED", requestRevert(t, env.h, map[string]any{"revertId": idA.String(), "signature": codeA})["status"])
+	require.NoError(t, relayRevert(env.svc, idA, asA))
+	require.Equal(t, "APPLIED", revertStatus(t, env.h, idA.String()))
 	require.Equal(t, "open", leadStatus(t, env.d, 89))
 	env.d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 89`)
-	refused(idA, codeA, "REVERT_INVALID", "PLAN_FINISHED", "already signed")
+	refused(idA, asA, "REVERT_INVALID", "PLAN_FINISHED")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idA, asA)
 	requireRevertInvalid(t, err)
 	require.Equal(t, "person", leadStatus(t, env.d, 89), "a replay writes nothing")
@@ -520,7 +515,7 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	// An expired revert takes no signature, even the person's own.
 	expireRevert(t, env, idB.String())
 	asB := signBinding(t, env.person, bindingB)
-	refused(idB, revertCode(t, idB, asB), "REVERT_EXPIRED", "NOT_SIGNED", "expired")
+	refused(idB, asB, "REVERT_EXPIRED", "NOT_SIGNED")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idB, asB)
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)

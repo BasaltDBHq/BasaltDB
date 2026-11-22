@@ -19,9 +19,8 @@ import (
 
 // What the engine's local pages ask of an agent (CONTRACT.md, Local
 // pages): the request a short link stands for, and the relay of the
-// person's signature with this agent's credential, as basalt approve and
-// basalt revert do. The relay decides nothing: Postgres verifies the
-// passkey signature.
+// person's signature with this agent's credential. The relay decides
+// nothing: Postgres verifies the passkey signature.
 
 // ErrNotThisAgent is an approval or revert this agent's role cannot see:
 // another agent's, or none.

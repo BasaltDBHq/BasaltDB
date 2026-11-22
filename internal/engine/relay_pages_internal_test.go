@@ -48,6 +48,7 @@ type relayEnv struct {
 	svc    *agent.Service
 	v      *vaulttest.Vault
 	keys   *channel.EngineKeys
+	relay  *lateRelay
 }
 
 func newRelayEnv(t *testing.T) *relayEnv {
@@ -98,7 +99,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	})
 	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
 	relay.c.Store(ev.client)
-	return &relayEnv{d: d, person: person, server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...), svc: svc, v: v, keys: keys}
+	return &relayEnv{d: d, person: person, server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...), svc: svc, v: v, keys: keys, relay: relay}
 }
 
 // call runs one tools/call as the agent would and returns its body and
@@ -266,6 +267,63 @@ func (e *relayEnv) requireReceiptLine(t *testing.T, signed map[string]any) {
 	require.NotContains(t, strings.ToLower(line), "verified")
 }
 
+// requireNothingToPaste checks a result asks the person for nothing but the
+// link: no command to run and no code to give the agent.
+func requireNothingToPaste(t *testing.T, body map[string]any) {
+	t.Helper()
+	text, err := json.Marshal(body)
+	require.NoError(t, err)
+	for _, banned := range []string{"basalt approve", "basalt revert", "basalt-approval.1.", "basalt-revert.1.", "code the page", "code for the agent"} {
+		require.NotContains(t, string(text), banned)
+	}
+}
+
+// The agent cannot carry a signature: write takes no approval code and
+// request_revert no signature (the schemas refuse unknown arguments).
+func TestRelayToolsTakeNoPastedCode(t *testing.T) {
+	t.Parallel()
+	e := newRelayEnv(t)
+	req, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, e.server.Serve(context.Background(), bytes.NewReader(append(req, '\n')), &out))
+	var list struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				InputSchema struct {
+					Properties map[string]any `json:"properties"`
+				} `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal(out.Bytes(), &list), out.String())
+	seen := 0
+	for _, tool := range list.Result.Tools {
+		switch tool.Name {
+		case "write":
+			require.NotContains(t, tool.InputSchema.Properties, "approval")
+			require.Contains(t, tool.InputSchema.Properties, "approvalId")
+			seen++
+		case "request_revert":
+			require.NotContains(t, tool.InputSchema.Properties, "signature")
+			require.Contains(t, tool.InputSchema.Properties, "revertId")
+			seen++
+		}
+	}
+	require.Equal(t, 2, seen)
+
+	body, isError := e.call(t, "request_revert", map[string]any{"revertId": uuid.Must(uuid.NewV7()).String(), "signature": "basalt-revert.1.abc"})
+	require.True(t, isError)
+	require.Equal(t, "INVALID_ARGUMENT", body["code"], "%v", body)
+	body, isError = e.call(t, "write", map[string]any{
+		"sql": "UPDATE leads SET status = 'x' WHERE id = 1", "intent": "x",
+		"approvalId": uuid.Must(uuid.NewV7()).String(), "approval": "basalt-approval.1.abc",
+	})
+	require.True(t, isError)
+	require.Equal(t, "INVALID_ARGUMENT", body["code"], "%v", body)
+}
+
 // A held write approved on the portal page: the agent's waiting write
 // returns APPLIED once the page code, through the Vault, posts the
 // person's passkey signature. Nothing is pasted anywhere.
@@ -281,6 +339,7 @@ func TestRelayApprovalEndToEnd(t *testing.T) {
 	held, isError := e.call(t, "write", args)
 	require.True(t, isError)
 	require.Equal(t, "APPROVAL_REQUIRED", held["code"], "%v", held)
+	requireNothingToPaste(t, held)
 	ap := held["approval"].(map[string]any)
 	id, secret := portalLink(t, ap["approvalUrl"].(string), "approvals")
 	require.Equal(t, ap["approvalId"], id)
@@ -300,10 +359,59 @@ func TestRelayApprovalEndToEnd(t *testing.T) {
 	select {
 	case body := <-waiting:
 		require.Equal(t, agent.StatusApplied, body["status"], "%v", body)
+		requireNothingToPaste(t, body)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the waiting write did not return")
 	}
 	require.Equal(t, "closed", e.leadStatus(t, 21))
+}
+
+// A write held while the engine's Vault connection is down gets a long
+// link, which can only be reviewed: nothing can carry a signature from it.
+// Once the connection is back, list_pending with reissueLink gives a portal
+// short link, and the person signs through the relay with nothing pasted.
+func TestRelayApprovalAfterTheVaultWasDown(t *testing.T) {
+	t.Parallel()
+	e := newRelayEnv(t)
+	client := e.relay.c.Swap(nil)
+	run, isError := e.call(t, "run_start", map[string]any{"intent": "Close the stale leads"})
+	require.False(t, isError, "%v", run)
+	args := map[string]any{
+		"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3", "params": []any{"closed", 41, 55},
+		"intent": "Leads 41 to 55 went cold", "runId": run["runId"],
+	}
+	held, isError := e.call(t, "write", args)
+	require.True(t, isError)
+	require.Equal(t, "APPROVAL_REQUIRED", held["code"], "%v", held)
+	requireNothingToPaste(t, held)
+	ap := held["approval"].(map[string]any)
+	require.Contains(t, ap["approvalUrl"], "#2.", "no portal short link while the Vault is down: %v", ap["approvalUrl"])
+	require.Contains(t, ap["personMessage"], "Review only: this link cannot be signed. Ask the agent for a new link later.")
+
+	e.relay.c.Store(client)
+	pending, isError := e.call(t, "list_pending", map[string]any{"reissueLink": true})
+	require.False(t, isError, "%v", pending)
+	items := pending["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	requireNothingToPaste(t, item)
+	id, secret := portalLink(t, item["approvalUrl"].(string), "approvals")
+	require.Equal(t, ap["approvalId"], id)
+
+	args["approvalId"] = id
+	waiting := e.later(t, "write", args)
+	p := startPageDriver(t, e.v.URL())
+	p.ok(t, map[string]any{"op": "open", "secret": secret})
+	read := p.ok(t, map[string]any{"op": "read", "kind": "approvals", "id": id, "secret": secret})
+	signed := p.ok(t, map[string]any{"op": "sign", "kind": "approvals", "id": id, "secret": secret, "assertion": sign(t, e.person, read)})
+	require.Equal(t, "APPROVED", signed["result"].(map[string]any)["status"])
+	select {
+	case body := <-waiting:
+		require.Equal(t, agent.StatusApplied, body["status"], "%v", body)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the waiting write did not return")
+	}
+	require.Equal(t, "closed", e.leadStatus(t, 41))
 }
 
 // winRun applies a small write in a run and returns the run's id.
@@ -321,6 +429,7 @@ func (e *relayEnv) prepareRevert(t *testing.T, runID string) (string, string) {
 	t.Helper()
 	body, isError := e.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo the win"})
 	require.False(t, isError, "%v", body)
+	requireNothingToPaste(t, body)
 	id, secret := portalLink(t, body["revertUrl"].(string), "reverts")
 	require.Equal(t, body["revertId"], id)
 	return id, secret
@@ -345,6 +454,7 @@ func TestRelayRevertEndToEnd(t *testing.T) {
 	select {
 	case body := <-waiting:
 		require.Contains(t, []any{"APPLIED", "APPLYING"}, body["status"], "%v", body)
+		requireNothingToPaste(t, body)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the waiting request_revert did not return")
 	}
@@ -396,6 +506,17 @@ func TestRelayRevertWidenKeepsTheSession(t *testing.T) {
 	r = p.ok(t, map[string]any{"op": "request", "method": http.MethodGet, "path": readPath, "secret": secret})
 	require.EqualValues(t, http.StatusNotFound, r["status"], "the old secret reads as an unknown id")
 	require.Empty(t, r["ended"])
+
+	// The person signs the widened revert on the same page: the relay
+	// carries the signature and the agent's wait sees it applied.
+	read := p.ok(t, map[string]any{"op": "read", "kind": "reverts", "id": id, "secret": newSecret})
+	signed := p.ok(t, map[string]any{"op": "sign", "kind": "reverts", "id": id, "secret": newSecret, "assertion": sign(t, e.person, read)})
+	require.Equal(t, "WIDENED", signed["result"].(map[string]any)["noReceipt"], "a widened revert has no receipt")
+	body, isError := e.call(t, "request_revert", map[string]any{"revertId": id, "waitForSignature": 0})
+	require.False(t, isError, "%v", body)
+	require.Contains(t, []any{"APPLIED", "APPLYING"}, body["status"], "%v", body)
+	requireNothingToPaste(t, body)
+	require.Equal(t, "open", e.leadStatus(t, 41))
 }
 
 // A reject on the portal page revokes the revert's link: the answer reaches

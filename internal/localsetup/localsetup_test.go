@@ -2,6 +2,7 @@ package localsetup_test
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -23,6 +24,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/pii/classify"
+	"github.com/basaltdbhq/basaltdb/internal/trustdir"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
 
 const origin = "http://localhost:8787"
@@ -665,10 +669,11 @@ func TestRealInstallRefusesBadLabelsBeforeConnecting(t *testing.T) {
 	}
 	cases["more than 500"] = localsetup.Request{Tables: picked, ColumnClasses: many}
 	cases["labels on the sample database"] = localsetup.Request{Demo: true, RestPublic: true}
+	cases["a trustRoot on the sample database"] = localsetup.Request{Demo: true, TrustRoot: strings.Repeat("a", 64)}
 	for name, extra := range cases {
 		req := localsetup.Request{
 			Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL,
-			Demo: extra.Demo, Tables: extra.Tables, ColumnClasses: extra.ColumnClasses, RestPublic: extra.RestPublic,
+			Demo: extra.Demo, TrustRoot: extra.TrustRoot, Tables: extra.Tables, ColumnClasses: extra.ColumnClasses, RestPublic: extra.RestPublic,
 		}
 		_, err := svc.Check(context.Background(), req)
 		var r *localsetup.RefusalError
@@ -783,4 +788,163 @@ func TestRealInstallFailsTheCheckWhenTheColumnsCannotBeRead(t *testing.T) {
 	req.RestPublic = true
 	_, err := f.svc.Check(ctx, req)
 	refusal(t, err, localsetup.CodeSetupFailed)
+}
+
+// pinFixture is an install whose admin connection first fails on the
+// certificate, a chain a test CA signed, and then logs in only through the
+// pin it is given.
+type pinFixture struct {
+	*fixture
+	svc        *localsetup.Service
+	ca         *x509.Certificate
+	adminURL   string
+	pinnedWith []*trustprofile.Profile
+}
+
+const pinHost = "db.pin.example"
+
+func newPinFixture(t *testing.T) *pinFixture {
+	t.Helper()
+	f := newFixture(t)
+	ca, leaf := trustprofiletest.Chain(t, pinHost)
+	leafCert, err := x509.ParseCertificate(leaf.Certificate[0])
+	require.NoError(t, err)
+	p := &pinFixture{fixture: f, ca: ca, adminURL: "postgres://admin:" + mustPassword(t, f.db.URL) + "@" + pinHost + ":5432/app"}
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
+		Now: func() time.Time { return f.now },
+		Dial: func(context.Context, string) (*pgx.Conn, error) {
+			return nil, x509.UnknownAuthorityError{}
+		},
+		DialPinned: func(ctx context.Context, _ string, pin *trustprofile.Profile) (*pgx.Conn, error) {
+			p.pinnedWith = append(p.pinnedWith, pin)
+			return pgdial.Connect(ctx, f.db.URL)
+		},
+		Probe: func(_ context.Context, host string, _ int) ([]*x509.Certificate, error) {
+			require.Equal(t, pinHost, host)
+			return []*x509.Certificate{leafCert, ca}, nil
+		},
+	})
+	require.NoError(t, err)
+	p.svc = svc
+	return p
+}
+
+func (p *pinFixture) req() localsetup.Request {
+	r := p.real()
+	r.DatabaseURL = p.adminURL
+	r.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	return r
+}
+
+func TestRealInstallOffersAnUnknownAuthorityAndRefusesAnyOtherTrustRoot(t *testing.T) {
+	t.Parallel()
+	p := newPinFixture(t)
+	ctx := context.Background()
+	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+
+	_, err := p.svc.Check(ctx, p.req())
+	var r *localsetup.RefusalError
+	require.True(t, errors.As(err, &r))
+	require.Equal(t, localsetup.CodeCertificateNotVerified, r.Code)
+	require.NotNil(t, r.TrustRoot)
+	require.Equal(t, trustprofile.DERSHA256(p.ca), r.TrustRoot.SHA256)
+	require.Equal(t, "CN=trustprofiletest root", r.TrustRoot.Subject)
+	require.NotEmpty(t, r.TrustRoot.ExpiresAt)
+	require.Empty(t, p.pinnedWith, "no login before the person trusted it")
+
+	for _, bad := range []string{"nothex", strings.Repeat("a", 64), strings.ToUpper(trustprofile.DERSHA256(p.ca))} {
+		req := p.req()
+		req.TrustRoot = bad
+		_, err = p.svc.Check(ctx, req)
+		refusal(t, err, localsetup.CodeTrustRootMismatch)
+		req.Challenge = &localsetup.Challenge{ExpiresAt: p.now.Add(time.Hour)} // run reads the chain before it checks the binding
+		_, err = p.svc.Run(ctx, req)
+		refusal(t, err, localsetup.CodeTrustRootMismatch)
+	}
+	require.Empty(t, p.pinnedWith)
+}
+
+func TestRealInstallPinsTheTrustedAuthorityBeforeTheCommit(t *testing.T) {
+	t.Parallel()
+	p := newPinFixture(t)
+	ctx := context.Background()
+	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	req := p.req()
+	req.TrustRoot = trustprofile.DERSHA256(p.ca)
+
+	checked, err := p.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, p.pinnedWith, 1)
+	require.Equal(t, "pin-db-pin-example", p.pinnedWith[0].Name, "the login trusts that one certificate")
+	require.Contains(t, strings.Join(checked.Lines, " "), trustprofile.DERSHA256(p.ca))
+
+	// The trustRoot is bound to the challenge.
+	// Without it the database's certificate does not verify: the person is
+	// offered it again, and nothing is pinned.
+	other := req
+	other.TrustRoot = ""
+	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = p.svc.Run(ctx, other)
+	refusal(t, err, localsetup.CodeCertificateNotVerified)
+	_, statErr := os.Stat(filepath.Join(filepath.Dir(p.config), "trust.d"))
+	require.ErrorIs(t, statErr, os.ErrNotExist, "nothing is pinned by a refused run")
+
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = p.svc.Run(ctx, req)
+	require.NoError(t, err)
+
+	trustD := filepath.Join(filepath.Dir(p.config), "trust.d")
+	entries, err := os.ReadDir(trustD)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.Contains(t, names, "pin-db-pin-example.json")
+	dsn, err := config.ReadCredential(filepath.Join(filepath.Dir(p.config), "agents", "bot.url"))
+	require.NoError(t, err)
+	require.Contains(t, dsn, "sslmode=verify-full", "the pin applies with verify-full only")
+	var recorded int
+	require.NoError(t, p.db.Admin.QueryRow(ctx, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'TRUST_PIN_RECORDED' AND detail ->> 'sha256' = $1`,
+		trustprofile.DERSHA256(p.ca)).Scan(&recorded))
+	require.Equal(t, 1, recorded, "the pin is recorded in the ledger")
+}
+
+func TestRealInstallRollsBackWhenTheHostIsCoveredByAnotherProfile(t *testing.T) {
+	t.Parallel()
+	p := newPinFixture(t)
+	ctx := context.Background()
+	p.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	req := p.req()
+	req.TrustRoot = trustprofile.DERSHA256(p.ca)
+	checked, err := p.svc.Check(ctx, req)
+	require.NoError(t, err)
+	// Another pin for the host appears between the check and the run.
+	other, _ := trustprofiletest.Chain(t, pinHost)
+	_, err = trustdir.PinNew(p.config, pinHost, other, false)
+	require.NoError(t, err)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = p.svc.Run(ctx, req)
+	refusal(t, err, localsetup.CodeSetupFailed)
+	require.False(t, exists(t, p.db, "basalt_meta"), "the whole install rolled back")
+	_, statErr := os.Stat(filepath.Join(filepath.Dir(p.config), "agents", "bot.url"))
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+	_, statErr = os.Stat(p.config)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestRealInstallBindsTheTrustRootToTheChallenge(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	req.TrustRoot = strings.Repeat("a", 64) // ignored: the certificate verifies without it, but it is bound
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, req)
+	refusal(t, err, localsetup.CodeChallengeInvalid)
 }

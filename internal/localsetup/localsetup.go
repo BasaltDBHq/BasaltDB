@@ -8,6 +8,7 @@ package localsetup
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
@@ -26,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/pii/classify"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // The jobs of the setup page (CONTRACT.md, The local setup page, Jobs):
@@ -64,9 +66,12 @@ type Request struct {
 	// (CONTRACT.md, The install of a real database).
 	ColumnClasses []ColumnClass `json:"columnClasses,omitempty"`
 	RestPublic    bool          `json:"restPublic,omitempty"`
-	Answers       []Answer      `json:"answers,omitempty"`
-	Challenge     *Challenge    `json:"challenge,omitempty"`
-	Passkey       *Passkey      `json:"passkey,omitempty"`
+	// TrustRoot is the SHA-256 of the certificate authority the person
+	// trusted for the database's host.
+	TrustRoot string     `json:"trustRoot,omitempty"`
+	Answers   []Answer   `json:"answers,omitempty"`
+	Challenge *Challenge `json:"challenge,omitempty"`
+	Passkey   *Passkey   `json:"passkey,omitempty"`
 }
 
 // Answer answers one row-level security question.
@@ -150,6 +155,11 @@ type Options struct {
 	// runs UPDATE and REMOVE for the agents in it and never an INSTALL
 	// (the engine loads engine.json only at its start).
 	Configured bool
+	// DialPinned opens the admin connection trusting only the pin's
+	// certificate for its host (pinnedDial outside tests).
+	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (*pgx.Conn, error)
+	// Probe reads the chain a host presents (trustpin.Fetch outside tests).
+	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// SampleColumn reads a column's sample for the check's suggestions
 	// (the classifier's sampler outside tests).
 	SampleColumn func(ctx context.Context, conn *pgx.Conn, col classify.Column) (classify.Sample, error)
@@ -185,6 +195,12 @@ func New(o Options) (*Service, error) {
 	}
 	if o.Prefix == "" {
 		o.Prefix = defaultPrefix
+	}
+	if o.DialPinned == nil {
+		o.DialPinned = pinnedDial
+	}
+	if o.Probe == nil {
+		o.Probe = probe
 	}
 	if o.Euid == nil {
 		o.Euid = os.Geteuid
@@ -303,19 +319,20 @@ func sameTarget(a, b string) bool {
 // connect opens the admin connection; a failure is a fixed refusal.
 func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) {
 	conn, err := s.opts.Dial(ctx, admin)
-	if err == nil {
-		return conn, nil
+	if err != nil {
+		return nil, connectError(ctx, err)
 	}
-	var pg *pgconn.PgError
-	switch {
-	case pgdial.CertificateNotVerified(err):
-		return nil, refuse(CodeCertificateNotVerified, "The database's TLS certificate could not be verified for its host name.")
-	case errors.As(err, &pg) && strings.HasPrefix(pg.Code, "28"):
-		return nil, refuse(CodeLoginFailed, "The database refused the login. Check the admin user and password.")
-	case ctx.Err() != nil:
-		return nil, refuse(CodeTimeLimit, "The setup ran out of time; nothing changed.")
+	return conn, nil
+}
+
+// open opens the admin connection of j: a real install may pin the
+// database's certificate (connectAdmin).
+func (s *Service) open(ctx context.Context, req Request) (*pgx.Conn, *pin, error) {
+	if req.Demo {
+		conn, err := s.connect(ctx, req.DatabaseURL)
+		return conn, nil, err
 	}
-	return nil, refuse(CodeDatabaseUnreachable, "The database could not be reached. Check the host and port in the admin connection string.")
+	return s.connectAdmin(ctx, req)
 }
 
 // planned is what plan found and built.
@@ -447,7 +464,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if err != nil {
 		return CheckAnswer{}, err
 	}
-	conn, err := s.connect(ctx, req.DatabaseURL)
+	conn, pinned, err := s.open(ctx, req)
 	if err != nil {
 		return CheckAnswer{}, err
 	}
@@ -473,7 +490,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if !req.Demo && j.picks == nil {
 		return listingAnswer(j, database, p, needed)
 	}
-	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req)})
+	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req), trustRoot: req.TrustRoot})
 	if err != nil {
 		return CheckAnswer{}, setupFailed()
 	}
@@ -481,6 +498,9 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		out := CheckAnswer{
 			Database: database, Lines: realSummary(j, database, p.write, p.read, needed, p.keep), SQL: p.script.SQL() + labelsSQL(req),
 			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch,
+		}
+		if pinned != nil {
+			out.Lines = append(out.Lines, "It trusts the certificate authority SHA-256 "+pinned.sha256+" for "+pinned.host+" only, and the agent connects with sslmode=verify-full.")
 		}
 		// The tables are read; the transaction ends before the columns are
 		// read and sampled on the connection.

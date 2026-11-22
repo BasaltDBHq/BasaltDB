@@ -83,7 +83,7 @@ type ColumnInfo struct {
 // hasRealFields: the request names something only an install of a real
 // database takes.
 func (r Request) hasRealFields() bool {
-	return r.Schemas != nil || r.Tables != nil || r.ColumnClasses != nil || r.RestPublic
+	return r.Schemas != nil || r.Tables != nil || r.ColumnClasses != nil || r.RestPublic || r.TrustRoot != ""
 }
 
 // checkClasses applies the shape rules of the labels, before anything

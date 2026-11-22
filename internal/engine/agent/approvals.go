@@ -361,13 +361,15 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 // the background.
 const DefaultApprovalWait = 90 * time.Second
 
-// credentialIDs are the registered passkeys, for the request's
-// allowCredentials.
+// credentialIDs are the registered passkeys that can sign on the pages the
+// agent's links open (pagesPasskeys), for the request's allowCredentials:
+// none is a request nobody can sign yet.
 func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
-	keys, err := s.Store.Passkeys(ctx)
+	all, err := s.Store.Passkeys(ctx)
 	if err != nil {
 		return nil, err
 	}
+	keys, _ := pagesPasskeys(all, s.PagesBase)
 	ids := make([]passkey.Bytes, 0, len(keys))
 	for _, k := range keys {
 		ids = append(ids, k.ID)

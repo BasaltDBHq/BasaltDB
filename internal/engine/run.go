@@ -743,7 +743,14 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// carry no budget and are not charged.
 	budgeted := resultsize.Budgeted(pool)
 	probe := postgres.Probe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
-	logGuard(ctx, probe, log)
+	// The guard is logged once the engine serves, never before: a database
+	// that is slow or drops packets must not keep the agent's socket down
+	// (logGuard).
+	guardCtx, stopGuardLog := context.WithTimeout(ctx, guardLogTimeout)
+	go func() {
+		defer stopGuardLog()
+		logGuard(guardCtx, probe, log)
+	}()
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
 	// rows in the service, RETURNING rows inside the write's transaction.
@@ -827,11 +834,15 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 			database: pool.Config().ConnConfig.Database, role: pool.Config().ConnConfig.User,
 		},
 		close: func() {
+			stopGuardLog()
 			pool.Close()
 			files.close()
 		},
 	}, nil
 }
+
+// guardLogTimeout bounds the guard read logGuard makes as an agent starts.
+const guardLogTimeout = 15 * time.Second
 
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
 // started as root, through directories opened without
@@ -843,7 +854,9 @@ func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
 }
 
-// logGuard logs the agent's guard as the engine starts serving it. A guard
+// logGuard logs the agent's guard as the engine starts serving it. It runs
+// beside the serving, never before it, so the sockets are bound whatever
+// the database does (CONTRACT.md, Next steps). A guard
 // that is missing or misses a breaking migration, or a database the engine
 // cannot reach, does not stop the engine: the agent gets status and its
 // problems, and the guard is read again on each call.

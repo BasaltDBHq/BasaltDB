@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -440,7 +441,9 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 
 // prepareTimeout: the revert is too large to prepare in one MCP call. The
 // agent stops and asks the person whether a narrower revert (some runs or
-// tables) will do; there is no other way to prepare it.
+// tables) will do; there is no other way to prepare it. The message names
+// the limit the tool ran under: request_revert's prepare has the 100
+// seconds of an MCP call, preview_revert the agent's statement timeout.
 func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
 	te := &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
@@ -449,6 +452,9 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 	what := "prepare"
 	if tool == toolPreviewRevert {
 		what = "preview"
+		te.Message = fmt.Sprintf("previewing the revert of %s %s took longer than %s; nothing was previewed. "+
+			"A narrower revert, with runs or tables, may fit.",
+			strings.ToLower(string(scope.Kind)), scope.ID, statementLimitText(s.statementTimeout()))
 	}
 	te.PersonMessage = fmt.Sprintf("This revert is too large for the agent to %s in one call, so nothing was prepared. "+
 		"The agent can revert a part of it instead: only some runs or tables.", what)
@@ -460,6 +466,27 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 	}
 	te.NextSteps = steps
 	return te
+}
+
+// statementTimeout is the agent's statement timeout, 0 when the service
+// knows no catalog.
+func (s *Service) statementTimeout() time.Duration {
+	if s.Catalog == nil {
+		return 0
+	}
+	return s.Catalog.Limits().StatementTimeout
+}
+
+// statementLimitText names the agent's statement timeout d in a message.
+func statementLimitText(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "the agent's statement timeout"
+	case d%time.Second == 0:
+		return fmt.Sprintf("the agent's statement timeout of %d seconds", int(d.Seconds()))
+	default:
+		return fmt.Sprintf("the agent's statement timeout of %s", d)
+	}
 }
 
 // nothingToRevert tells the cases of BS009 apart: the scope changed no rows

@@ -193,7 +193,10 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(line), &resp), line)
 	require.Len(t, resp.Result.Content, 1, line)
 	var report struct {
-		Ready  bool `json:"ready"`
+		Problems []struct {
+			Code     string `json:"code"`
+			Severity string `json:"severity"`
+		} `json:"problems"`
 		Engine struct {
 			Reachable bool   `json:"reachable"`
 			StartedBy string `json:"startedBy"`
@@ -201,7 +204,11 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(resp.Result.Content[0].Text), &report))
 	require.True(t, report.Engine.Reachable, resp.Result.Content[0].Text)
-	require.True(t, report.Ready, resp.Result.Content[0].Text)
+	for _, p := range report.Problems {
+		if p.Severity == "ERROR" {
+			require.Equal(t, "NO_PASSKEY", p.Code, "ready but for the passkey the test database has none of: %s", resp.Result.Content[0].Text)
+		}
+	}
 	require.Equal(t, "MCP", report.Engine.StartedBy, "basalt mcp started this engine")
 
 	pid, up, _ := server.Running(engine.LockPath(socketDir))

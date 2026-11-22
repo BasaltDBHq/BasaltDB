@@ -174,3 +174,34 @@ export async function signalRemoved(pkc, rpId, credentialId) {
     return false;
   }
 }
+
+// ---- Not your database (CONTRACT.md, Not your database) ----
+
+// targetView is the confirm step's view (paintConfirm) of the databases the
+// engine serves, as the reset's check names them from its own files.
+export function targetView(databases) {
+  const rows = [];
+  for (const d of databases ?? []) {
+    const port = Number.isInteger(d?.port) && d.port > 0 ? d.port : 5432;
+    rows.push({ label: "Database", value: String(d?.database ?? ""), tone: "" });
+    rows.push({ label: "Host", value: `${String(d?.host ?? "")}:${port}`, tone: "" });
+  }
+  return {
+    title: "Is this your database?",
+    sub: "Check these, then continue.",
+    rows,
+    ok: "",
+    before: "",
+    go: "Yes, this is it",
+    weak: false,
+    back: "No, this isn't mine",
+    fingerprint: "",
+  };
+}
+
+// RESET is what the page says after the person's No: the page resets
+// nothing, basalt init asks for the administrator password.
+export const RESET = {
+  title: "Your computer asks for your password next",
+  text: "You answered that this database isn't yours. To reset BasaltDB on this computer, type your computer's administrator password in the system dialog that opens. It deletes BasaltDB's setup on this computer and touches no database. If no dialog opens, ask your agent to run basalt init again.",
+};

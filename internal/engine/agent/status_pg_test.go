@@ -129,7 +129,14 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 	g := body["guard"].(map[string]any)
 	require.Equal(t, guard.GuardUpgradeAvailable, g["state"])
 	require.Equal(t, []any{jsonNumber(version)}, g["missingNonBreaking"])
-	require.Equal(t, true, body["ready"], "a WARNING leaves the agent ready")
+	// A WARNING leaves the agent ready: the only ERROR is the passkey
+	// this database has none of.
+	for _, raw := range body["problems"].([]any) {
+		p := raw.(map[string]any)
+		if p["severity"] == "ERROR" {
+			require.Equal(t, "NO_PASSKEY", p["code"])
+		}
+	}
 }
 
 func TestStatusOnAFullGuard(t *testing.T) {
@@ -146,7 +153,8 @@ func TestStatusOnAFullGuard(t *testing.T) {
 	require.Equal(t, 0, *r.Passkeys.Active)
 	require.Len(t, r.Problems, 1)
 	require.Equal(t, "NO_PASSKEY", r.Problems[0].Code)
-	require.True(t, r.Ready, "no passkey is a WARNING")
+	require.Equal(t, "ERROR", r.Problems[0].Severity)
+	require.False(t, r.Ready, "no passkey: nothing held can be signed yet")
 	require.Equal(t, "NONE", r.Setup.State)
 }
 

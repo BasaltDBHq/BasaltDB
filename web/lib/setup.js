@@ -8,12 +8,14 @@ import { $, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
-import { checkView, fixQueue, passkeyItems, PASSKEYS_NOTE, signalRemoved } from "./doctor.js";
+import { checkView, fixQueue, passkeyItems, PASSKEYS_NOTE, RESET, signalRemoved, targetView } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
 export const CHECK_PATH = "/api/v1/setup/check";
 export const RUN_PATH = "/api/v1/setup/run";
 export const DOCTOR_PATH = "/api/v1/setup/doctor";
+export const ENGINE_PATH = "/api/v1/setup/engine";
+export const NOT_MINE_PATH = "/api/v1/setup/not-mine";
 export const LINK_PREFIX = "1.";
 
 // JOBS are the jobs this page runs: INSTALL on an engine with no config,
@@ -1142,6 +1144,18 @@ export class UpdateCheck {
     return this.answer;
   }
 
+  // engine asks what the engine is set up with (Not your database), and
+  // notMine tells it the person answered No, for basalt init, which asks
+  // for the administrator password. Neither takes the string or names an
+  // agent, and neither changes anything.
+  engine() {
+    return postSetup(this.fetchFn, ENGINE_PATH, {});
+  }
+
+  notMine() {
+    return postSetup(this.fetchFn, NOT_MINE_PATH, {});
+  }
+
   get hasString() {
     return this.#databaseUrl !== "";
   }
@@ -1233,6 +1247,8 @@ export function startUpdate(link, env) {
   let columnsMore = false;
   let confirmGo = null;
   let doneNext = null;
+  // target is the engine's answer while "Is this your database?" is open.
+  let target = null;
 
   const go = (name) => {
     screen = name;
@@ -1264,6 +1280,35 @@ export function startUpdate(link, env) {
       return;
     }
     showCheck(d);
+  };
+  // ---- Not your database: before the check, the page asks whose
+  // database the engine serves. No only tells the engine, for basalt init:
+  // the page resets nothing; the administrator dialog does. A refused
+  // engine check goes on to the check. ----
+  const start = async () => {
+    checking("Checking BasaltDB and your database");
+    let r = null;
+    try {
+      r = await fix.engine();
+    } catch {
+      r = null;
+    }
+    if (!r || !Array.isArray(r.databases) || r.databases.length === 0) return refresh();
+    target = r;
+    paintConfirm(document, targetView(r.databases));
+    problem("confirm-error", "");
+    go("s-confirm");
+    show("back", false);
+  };
+  const notMine = async () => {
+    try {
+      await fix.notMine();
+    } catch (err) {
+      return problem("confirm-error", err.message);
+    }
+    target = null;
+    fix.forget();
+    showDone(RESET.title, RESET.text, [], null, "");
   };
   const showCheck = (d) => {
     const crumb = document.querySelector?.(".crumb-page");
@@ -1450,6 +1495,10 @@ export function startUpdate(link, env) {
     go("s-confirm");
   };
   $("confirm-go").addEventListener("click", async () => {
+    if (screen === "s-confirm" && target) {
+      target = null;
+      return refresh();
+    }
     if (screen !== "s-confirm" || !trusting) return;
     const trustRoot = trusting.sha256;
     $("confirm-go").disabled = true;
@@ -1467,6 +1516,7 @@ export function startUpdate(link, env) {
   });
   $("confirm-back").addEventListener("click", () => {
     if (screen !== "s-confirm") return;
+    if (target) return notMine();
     trusting = null;
     cancel();
   });
@@ -1625,6 +1675,7 @@ export function startUpdate(link, env) {
     $("u-done-codes").replaceChildren(...codes.map((c) => el("li", "row mono", c)));
     show("u-done-codes", codes.length > 0);
     setText("u-done-next", action);
+    show("u-done-next", action !== "");
     doneNext = then;
     go("u-done");
   };
@@ -1639,7 +1690,7 @@ export function startUpdate(link, env) {
 
   document.body.classList.add("connect-page");
   show("flow");
-  refresh();
+  start();
   return fix;
 }
 

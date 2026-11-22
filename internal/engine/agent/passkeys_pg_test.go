@@ -15,16 +15,21 @@ import (
 
 // The pages pass credentialIds as allowCredentials, so the browser offers
 // only this database's passkeys. Both the engine's answers and the long
-// links carry exactly the active ones: a revoked passkey is left out.
+// links carry exactly the active ones on the pages' origin: a revoked
+// passkey, and one of another origin that cannot sign there, are left out.
 func TestPagesOfferOnlyThisDatabasesActivePasskeys(t *testing.T) {
 	t.Parallel()
 	s := newRevealSetup(t)
 	ctx := context.Background()
 	admin := s.env.d.Admin
-	other, err := passkeytest.New(passkey.Production)
+	pages := s.env.person.Credential().Relying
+	other, err := passkeytest.New(pages)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, admin, other.Credential(), "laptop"))
-	revoked, err := passkeytest.New(passkey.Production)
+	portal, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	require.NoError(t, guard.RegisterPasskey(ctx, admin, portal.Credential(), "portal phone"))
+	revoked, err := passkeytest.New(pages)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, admin, revoked.Credential(), "old phone"))
 	_, err = guard.RevokePasskey(ctx, admin, revoked.Credential().ID, true)

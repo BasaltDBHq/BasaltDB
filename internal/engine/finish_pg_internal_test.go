@@ -130,7 +130,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	require.Equal(t, agent.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guard.SetupInstall}, st.Setup)
 	require.Equal(t, []string{"NO_PASSKEY"}, problemCodes(st), "no passkey yet: a usual problem, not an unfinished setup")
 	require.Equal(t, "AGENT", st.Problems[0].NextSteps[0].Actor, "the agent makes the code that registers one")
-	require.True(t, st.Ready)
+	require.False(t, st.Ready, "not ready until a passkey can sign; the tools are still served")
 	require.Nil(t, r.configSetup(t), "cleared from engine.json")
 
 	// Served, with no restart.
@@ -154,7 +154,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	st, err := rt.svc.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", st.Setup.State)
-	require.Equal(t, []string{"SETUP_CHANGE_PENDING"}, problemCodes(st)[:1])
+	require.Contains(t, problemCodes(st), "SETUP_CHANGE_PENDING")
 
 	// The laptop rotates the password to the one in .pending and records
 	// the code: the engine's own password stops working.

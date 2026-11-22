@@ -63,6 +63,11 @@ func TestAgentConnString(t *testing.T) {
 			want:  "postgresql://basalt_agent_bot.abcd:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
 			user:  "basalt_agent_bot.abcd",
 		},
+		"supabase pooler under .co keeps the project ref": {
+			admin: "postgresql://postgres.abcd:" + canary + "@aws-0-eu-central-1.pooler.supabase.co:5432/postgres",
+			want:  "postgresql://basalt_agent_bot.abcd:pw@aws-0-eu-central-1.pooler.supabase.co:5432/postgres",
+			user:  "basalt_agent_bot.abcd",
+		},
 		"a dot elsewhere is part of the role": {
 			admin: "postgres://ops.admin:" + canary + "@127.0.0.1:5432/app",
 			want:  "postgres://basalt_agent_bot:pw@127.0.0.1:5432/app",

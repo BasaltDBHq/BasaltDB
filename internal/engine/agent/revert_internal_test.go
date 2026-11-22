@@ -70,6 +70,35 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, CodeUnavailable, ToolError(err).Code)
 }
 
+// limitsCatalog is a catalog that only reports the agent's limits.
+type limitsCatalog struct {
+	noCatalog
+	limits action.Limits
+}
+
+func (c limitsCatalog) Limits() action.Limits { return c.limits }
+
+// A preview that runs out names the agent's statement timeout it ran
+// under, never request_revert's 100 seconds; request_revert keeps them.
+func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
+	t.Parallel()
+	s := &Service{Deps: Deps{Catalog: limitsCatalog{limits: action.Limits{StatementTimeout: 5 * time.Second}}}}
+	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())}
+
+	preview := ToolError(s.prepareTimeout(toolPreviewRevert, scope, "57014"))
+	require.Equal(t, CodeQueryTimeout, preview.Code)
+	require.Equal(t, ReasonTimeLimit, preview.Reason)
+	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
+		"nothing was previewed. A narrower revert, with runs or tables, may fit.", preview.Message)
+	require.NotContains(t, preview.Message, "100")
+
+	request := ToolError(s.prepareTimeout(toolRequestRevert, scope, "57014"))
+	require.Contains(t, request.Message, "took longer than the 100 seconds an MCP call may take")
+
+	s.Catalog = limitsCatalog{limits: action.Limits{StatementTimeout: 1500 * time.Millisecond}}
+	require.Contains(t, ToolError(s.prepareTimeout(toolPreviewRevert, scope, "57014")).Message, "the agent's statement timeout of 1.5s;")
+}
+
 // noRuns is a Store that finds none of the agent's runs.
 type noRuns struct{ nopStore }
 

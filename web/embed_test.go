@@ -32,6 +32,8 @@ func TestPageCSPConnectSrc(t *testing.T) {
 		"revert/index.html":   "'self' wss://relay.basaltvault.app",
 		"plugin/index.html":   "'self'",
 		"register/index.html": "'self'",
+		// The setup page posts the job to the engine's own setup routes.
+		"setup/index.html":    "'self'",
 		"passkeys/index.html": "'none'",
 		// The pin page reaches only the address it checks, which the
 		// portal's edge function adds for that request.
@@ -89,7 +91,7 @@ func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
 		require.NotContains(t, strings.ToLower(string(body)), "touch id", p)
 		return nil
 	}))
-	for _, page := range []string{"approve", "revert", "plugin", "register", "passkeys", "connect"} {
+	for _, page := range []string{"approve", "revert", "plugin", "register", "passkeys", "connect", "setup"} {
 		body, err := web.Files.ReadFile(page + "/index.html")
 		require.NoError(t, err)
 		require.Contains(t, string(body), line, page)

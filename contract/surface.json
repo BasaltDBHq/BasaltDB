@@ -272,6 +272,7 @@
     {"kind": "page", "name": "/plugins/*"},
     {"kind": "page", "name": "/register/"},
     {"kind": "page", "name": "/revert/"},
+    {"kind": "page", "name": "/setup/"},
     {"kind": "page", "name": "/reverts/*"}
   ]
 }

@@ -22,6 +22,16 @@ import (
 // answer may carry any part of it.
 const adminURL = "postgres://admin" + ":" + "secret@db/x"
 
+// pageOrigin is the setup page's origin for a test listener at addr.
+func pageOrigin(addr string) string {
+	_, port, _ := net.SplitHostPort(addr)
+	return "http://localhost:" + port
+}
+
+func waitOptions(addr, configPath string) engine.WaitOptions {
+	return engine.WaitOptions{Addr: addr, Origin: pageOrigin(addr), ConfigPath: configPath, Log: slog.New(slog.DiscardHandler)}
+}
+
 // freeAddr is a loopback address nothing listens on, right now.
 func freeAddr(t *testing.T) string {
 	t.Helper()
@@ -76,28 +86,32 @@ func TestWaitForConfigServesOnlyTheSetupPageThenReturns(t *testing.T) {
 	}
 	done := make(chan waited, 1)
 	go func() {
-		ln, err := engine.WaitForConfig(context.Background(), addr, configPath, slog.New(slog.DiscardHandler))
+		ln, err := engine.WaitForConfig(context.Background(), waitOptions(addr, configPath))
 		done <- waited{ln, err}
 	}()
 	waitUp(t, addr)
 
-	origin := "http://" + addr
-	code, body := do(t, http.MethodGet, origin+"/setup/", "", "")
-	require.Equal(t, http.StatusServiceUnavailable, code)
-	require.Equal(t, "UNAVAILABLE", body["code"], "the setup routes are placeholders until the page ships")
-	code, body = do(t, http.MethodPost, origin+"/api/v1/setup/check", "", origin)
-	require.Equal(t, http.StatusServiceUnavailable, code)
-	require.Equal(t, "UNAVAILABLE", body["code"])
-	code, _ = do(t, http.MethodPost, origin+"/api/v1/setup/run", "", origin)
-	require.Equal(t, http.StatusServiceUnavailable, code)
-	code, body = do(t, http.MethodGet, origin+"/api/v1/approvals/x", "", "")
+	base := "http://" + addr
+	page := pageOrigin(addr)
+	code, _ := do(t, http.MethodGet, base+"/setup/", "", "")
+	require.Equal(t, http.StatusOK, code, "the setup page")
+	code, _ = do(t, http.MethodGet, base+"/lib/setup.js", "", "")
+	require.Equal(t, http.StatusOK, code, "and the files it loads")
+	code, body := do(t, http.MethodPost, base+"/api/v1/setup/check", "", page)
+	require.Equal(t, http.StatusBadRequest, code, "the setup routes run the job: this body names none")
+	require.Equal(t, "INVALID_ARGUMENT", body["code"])
+	code, _ = do(t, http.MethodPost, base+"/api/v1/setup/run", "", page)
+	require.Equal(t, http.StatusBadRequest, code)
+	code, body = do(t, http.MethodGet, base+"/api/v1/approvals/x", "", "")
 	require.Equal(t, http.StatusNotFound, code, "no other route")
 	require.Equal(t, "NOT_FOUND", body["code"])
 
-	code, _ = do(t, http.MethodGet, origin+"/healthz", "evil.example", "")
+	code, _ = do(t, http.MethodGet, base+"/healthz", "evil.example", "")
 	require.NotEqual(t, http.StatusOK, code, "a foreign Host is refused")
-	code, _ = do(t, http.MethodPost, origin+"/api/v1/setup/check", "", "https://evil.example")
-	require.Equal(t, http.StatusForbidden, code, "a foreign Origin is refused")
+	for _, foreign := range []string{"https://evil.example", base, ""} {
+		code, _ = do(t, http.MethodPost, base+"/api/v1/setup/check", "", foreign)
+		require.Equal(t, http.StatusForbidden, code, "only the page origin, exactly: %q", foreign)
+	}
 
 	select {
 	case w := <-done:
@@ -136,7 +150,7 @@ func TestWaitForConfigNamesATakenPort(t *testing.T) {
 	t.Cleanup(func() { _ = ln.Close() })
 	_, port, err := net.SplitHostPort(ln.Addr().String())
 	require.NoError(t, err)
-	_, err = engine.WaitForConfig(context.Background(), ln.Addr().String(), filepath.Join(t.TempDir(), "engine.json"), slog.New(slog.DiscardHandler))
+	_, err = engine.WaitForConfig(context.Background(), waitOptions(ln.Addr().String(), filepath.Join(t.TempDir(), "engine.json")))
 	require.ErrorContains(t, err, "serves its setup page on "+ln.Addr().String()+", but another process holds it")
 	require.ErrorContains(t, err, "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
 }
@@ -147,7 +161,7 @@ func TestWaitForConfigStopsWithItsContext(t *testing.T) {
 	addr := freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		_, err := engine.WaitForConfig(ctx, addr, filepath.Join(t.TempDir(), "engine.json"), slog.New(slog.DiscardHandler))
+		_, err := engine.WaitForConfig(ctx, waitOptions(addr, filepath.Join(t.TempDir(), "engine.json")))
 		done <- err
 	}()
 	waitUp(t, addr)

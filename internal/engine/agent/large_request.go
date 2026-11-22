@@ -141,8 +141,7 @@ func (s *Service) tooLargeText(what string, cost int64, expires time.Time, isRev
 		return lead + " To open it, turn on the engine's local pages (pagesAddr in engine.json), restart the engine, then tell the agent." +
 			narrower + until
 	case cost <= maxPortalRequestCost:
-		// Only the Vault carries a too-large request's portal short link
-		// today, not yet the direct transport.
+		// Only the Vault carries a too-large request's portal short link.
 		return lead + " To open it, turn on the Vault: ask the agent, it gives you a link for that. Then tell the agent." + narrower + until
 	case s.Commands.AgentOperated():
 		return what + " is too large for any page this engine can serve: only local pages can carry it, and an agent-operated " +

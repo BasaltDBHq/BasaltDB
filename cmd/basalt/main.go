@@ -44,9 +44,9 @@ type command struct {
 
 func commands() []command {
 	return []command{
-		{"engine", "Run the engine service in the foreground (or revoke a recorded engine)", runEngine},
+		{"engine", "Run the engine service in the foreground", runEngine},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
-		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
+		{"service", "Install the engine service (install)", runService},
 		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},

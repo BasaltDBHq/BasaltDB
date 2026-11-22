@@ -185,7 +185,7 @@ Every failure from step 3 to step 5 closes with `LINK_REFUSED`, alike, so a prob
 | 4010 | `RATE_LIMITED` | engine, Vault | Too many handshakes, requests or connections |
 | 4011 | `SESSION_LIMIT` | engine, Vault | Too many open sessions for the link or the engine |
 | 4012 | `TIMEOUT` | page, engine, Vault | Handshake over 10 s, idle 5 minutes, or 30 minutes lifetime or link expiry |
-| 4013 | `ENGINE_REVOKED` | engine | The engine's key is revoked in the database of the session's agent: it closes that agent's open sessions with this code (section 8) |
+| 4013 | `ENGINE_REVOKED` | engine | Not sent: the engine does not act on a revocation (section 8). Kept so a page that gets it shows the engine offline |
 | 4014 | `ENGINE_SHUTDOWN` | engine | The engine is stopping |
 
 ```constants close-codes
@@ -353,7 +353,7 @@ A receipt checked only against a key that came with it (the session's own `engin
 
 **Known limits, as built.**
 
-- Engine revocation is enforced by the engine, not by the relay. A person revokes an engine's key in their own database (today with `basalt engine revoke`; a portal passkeys page for it is planned). The engine reads its record in that database at start, at every heartbeat and at each relay session, and reports `REVOKED` in its status. When it finds the key revoked for a database, it stops handing over relay links for that database's agents, revokes their live links, unregisters their tokens at the relay, and closes their open sessions with `ENGINE_REVOKED`; a session opened afterwards is refused at message 1 with `LINK_REFUSED`. It leaves the relay when every database it serves has revoked the key. The relay holds no engine record and does nothing for this beyond forwarding the engine's `UNREGISTER_LINK` and `SESSION_CLOSE`. Limits: the engine's state is in memory only, so after a restart whose first read of the record fails, it serves the relay as for a key not revoked until a later read succeeds (it fails open); and a revoked engine on a compromised server can ignore all of it, though it still cannot sign anything a person did not.
+- No engine revocation. Nothing revokes an engine's key: a person who wants an engine cut off removes BasaltDB from the database, which drops every `basalt_*` role, so the engine can no longer log in. A row revoked by hand in SQL is only reported in the engine's status; the engine still hands over relay links for it, and the relay holds no engine record. A compromised engine still cannot sign anything a person did not.
 - An old signing key stays valid at the relay after a rotation or revocation: the relay never reads the person's database, so whoever holds the old key can still authenticate as the old engine id. It gives them only the old id's routing; its links were revoked.
 - The relay may lose its token binding (restart, failover). The engine re-registers live links after every `READY` and, on `LINK_CONFLICT` for a link it holds, revokes that link.
 - The engine counts handshakes per token before it looks the token up, and runs a dead token's tag check under a zero `psk`, to keep the answer and the time the same. The rate check runs before the token lookup, and the contract says the same.

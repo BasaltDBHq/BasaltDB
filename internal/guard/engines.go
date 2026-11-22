@@ -10,8 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// maxEngines bounds an engine list (basalt engine revoke): a database records
-// a handful.
+// maxEngines bounds an engine list: a database records a handful.
 const maxEngines = 100
 
 // Detail values of a BS008 refusal by record_engine and revoke_engine
@@ -48,7 +47,8 @@ func RecordEngine(ctx context.Context, q Querier, publicKey []byte) (string, err
 }
 
 // RevokeEngine revokes an engine with the admin connection and returns how
-// many engines remain not revoked. Postgres refuses an unknown or already
+// many engines remain not revoked. No command or page calls it: it is kept
+// for tests of revoke_engine, which the guard still has. Postgres refuses an unknown or already
 // revoked id alike (BS008, ENGINE_UNKNOWN) and appends ENGINE_REVOKED.
 func RevokeEngine(ctx context.Context, q Querier, engineID string) (int, error) {
 	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.revoke_engine(?::text)", engineID)).ToSql()

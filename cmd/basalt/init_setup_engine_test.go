@@ -15,7 +15,18 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 )
+
+// recordTestEngine records a new engine key in d and returns its id.
+func recordTestEngine(t *testing.T, d *guardtest.DB) string {
+	t.Helper()
+	k, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	id, err := guard.RecordEngine(context.Background(), d.Admin, k.PublicKeySPKI())
+	require.NoError(t, err)
+	return id
+}
 
 // The code carries the bot's engine key; the person's computer records it
 // in the setup's transaction (M4.1, CO-18).

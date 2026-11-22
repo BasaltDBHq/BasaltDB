@@ -135,6 +135,9 @@ type RunAnswer struct {
 	Warnings   []string            `json:"warnings"`
 	Passkeys   []RegisteredPasskey `json:"passkeys"`
 	MCPCommand string              `json:"mcpCommand"`
+	// EngineRemoved: a REMOVE removed this engine's last agent and deleted
+	// engine.json; basalt init removes the engine service next.
+	EngineRemoved bool `json:"engineRemoved"`
 }
 
 // Options are what the engine gives the setup.

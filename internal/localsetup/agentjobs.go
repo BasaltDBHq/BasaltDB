@@ -2,6 +2,7 @@ package localsetup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -53,6 +54,11 @@ type agentJob struct {
 // connect service compares a setup code's target (setuprun.SameDatabase),
 // before anything connects with it.
 func (s *Service) validateAgentJob(req Request) (agentJob, error) {
+	// A REMOVE deleted engine.json with the engine's last agent: the
+	// engine serves no agent any more, and basalt init removes its service.
+	if _, err := os.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
+		return agentJob{}, refuse(CodeEngineRemoved, "BasaltDB is removed from this engine: it serves no agent any more. Your computer asks for your password next, to remove the engine service.")
+	}
 	if req.Job == JobChange {
 		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
 	}
@@ -158,19 +164,15 @@ type agentPlan struct {
 	script            guard.Script
 	installed, latest int
 	// REMOVE
-	demoDrops, drops []string
-	removed          []string
+	remove  setuprun.RemovePlan
+	removed []string
 }
 
 func (p agentPlan) sql(job string) string {
 	if job == JobUpdate {
 		return p.script.SQL()
 	}
-	var b strings.Builder
-	for _, sql := range append(slices.Clone(p.drops), p.demoDrops...) {
-		b.WriteString(sql + ";\n")
-	}
-	return b.String()
+	return p.remove.SQL()
 }
 
 // planAgentJob reads the database for j in tx and changes nothing: the
@@ -186,7 +188,7 @@ func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, datab
 	if j.req.Job == JobUpdate {
 		return s.planUpdate(ctx, tx, j, prefix, database)
 	}
-	return s.planRemove(ctx, tx, j, prefix, database)
+	return s.planRemove(ctx, tx, j)
 }
 
 // planUpdate plans the basalt_meta migrations the build has and the
@@ -225,36 +227,25 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, prefix,
 	}, nil
 }
 
-// planRemove plans the removal: the guard's policies, basalt_meta and the
-// roles (guard.PlanUninstall), then the sample schema when the demo made
-// it. The guard's drops run first, so a policy they drop on a sample table
-// is still there to drop.
-// A database Basalt is already gone from (a removal whose engine.json write
-// failed) plans only the IF EXISTS drop, and the run finishes the removal
-// on this engine.
-func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob, prefix, database string) (agentPlan, error) {
-	demoDrops, err := demo.PlanDrop(ctx, tx)
+// planRemove plans the removal (setuprun.PlanRemove: the guard's
+// policies, basalt_meta, the roles and the marked sample schema), and
+// says what this engine forgets. A database BasaltDB is already gone from
+// (a removal whose engine.json write failed) plans only IF EXISTS drops,
+// and the run finishes the removal on this engine.
+func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob) (agentPlan, error) {
+	rp, err := setuprun.PlanRemove(ctx, tx, s.opts.Prefix)
 	if err != nil {
-		return agentPlan{}, setupFailed()
-	}
-	drops, err := guard.PlanUninstall(ctx, tx, j.names)
-	if err != nil {
-		return agentPlan{}, setupFailed()
+		return agentPlan{}, err
 	}
 	removed := append([]string{j.req.Agent}, j.others...)
-	var lines []string
-	if prefix == "" {
-		lines = append(lines, fmt.Sprintf("Basalt is no longer in the database %s. This finishes its removal on this computer.", database))
-	} else {
-		lines = append(lines, fmt.Sprintf("This removes Basalt from the database %s: the guard's row-level security policies, the schema basalt_meta with the ledger of every action, and every %s_ role. A view or other object of yours that uses the ledger is dropped with it (CASCADE).", database, s.opts.Prefix))
-	}
-	if len(demoDrops) > 0 {
-		lines = append(lines, "It drops the sample schema "+demo.Schema+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")
+	lines := rp.Lines()
+	if !rp.Installed {
+		lines[0] = fmt.Sprintf("BasaltDB is no longer in the database %s. This finishes its removal on this computer.", rp.Database)
 	}
 	lines = append(lines,
 		fmt.Sprintf("This engine stops serving %s and forgets %s: its credential is deleted. Nothing can undo this.", strings.Join(removed, ", "), plural(len(removed), "it", "them")),
 	)
-	return agentPlan{lines: lines, notes: []string{}, demoDrops: demoDrops, drops: drops, removed: removed}, nil
+	return agentPlan{lines: lines, notes: []string{}, remove: rp, removed: removed}, nil
 }
 
 func plural(n int, one, many string) string {
@@ -263,12 +254,6 @@ func plural(n int, one, many string) string {
 	}
 	return many
 }
-
-// maxDatabaseName bounds the typed name: Postgres names are at most 63
-// bytes.
-const maxDatabaseName = 63
-
-const wrongName = "Type the database's name exactly as the page shows it to remove BasaltDB from it. Nothing changed."
 
 // checkAgentJob is the check of an UPDATE or REMOVE: it reads, in a
 // transaction it rolls back, and changes nothing.
@@ -316,8 +301,8 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	if req.Job == JobUpdate && req.ConfirmName != "" {
 		return RunAnswer{}, refuse(CodeAnswersInvalid, "An update is not confirmed with the database name.")
 	}
-	if req.Job == JobRemove && (req.ConfirmName == "" || len(req.ConfirmName) > maxDatabaseName) {
-		return RunAnswer{}, refuse(CodeAnswersInvalid, wrongName)
+	if req.Job == JobRemove && setuprun.CheckDatabaseName(req.ConfirmName) != nil {
+		return RunAnswer{}, refuse(CodeAnswersInvalid, setuprun.WrongDatabaseName)
 	}
 	conn, err := s.connect(ctx, req.DatabaseURL)
 	if err != nil {
@@ -331,26 +316,21 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if database, err = currentDatabase(ctx, tx); err != nil {
 			return err
 		}
-		// The name the person typed, read against the database itself
-		// before anything is planned or dropped.
-		if req.Job == JobRemove && req.ConfirmName != database {
-			return refuse(CodeAnswersInvalid, wrongName)
+		if req.Job == JobRemove {
+			// The typed name is read against the database inside the
+			// transaction, before anything is planned or dropped
+			// (setuprun.RunRemove, as the connect page's removal).
+			rp, kept, err := setuprun.RunRemove(ctx, tx, s.opts.Prefix, req.ConfirmName)
+			if err != nil {
+				return removeRefusal(err)
+			}
+			p, demoKept = agentPlan{remove: rp, removed: append([]string{j.req.Agent}, j.others...)}, kept
+			return nil
 		}
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err
 		}
-		if req.Job == JobUpdate {
-			if err := setuprun.ApplyInitTx(ctx, tx, p.script); err != nil {
-				return setupFailed()
-			}
-			return nil
-		}
-		for _, sql := range p.drops {
-			if _, err := tx.Exec(ctx, sql); err != nil {
-				return refuse(CodeSetupFailed, "Removing Basalt failed, for example because one of its roles still has privileges in another database; nothing changed.")
-			}
-		}
-		if demoKept, err = demo.ApplyDrop(ctx, tx, p.demoDrops); err != nil {
+		if err := setuprun.ApplyInitTx(ctx, tx, p.script); err != nil {
 			return setupFailed()
 		}
 		return nil
@@ -365,25 +345,36 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		answer.MCPCommand = "basalt mcp --agent " + req.Agent
 		return answer, nil
 	}
-	if err := s.forget(p.removed); err != nil {
+	gone, err := s.forget(p.removed)
+	if err != nil {
 		r := refuse(CodeSetupFailed, "Basalt is removed from the database, but this engine could not remove the agent from its config. Open this link again to finish.")
 		r.Status = http.StatusInternalServerError
 		return RunAnswer{}, r
 	}
 	answer.Lines = []string{fmt.Sprintf("Basalt removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
+	answer.EngineRemoved = gone
 	if demoKept {
 		answer.Warnings = append(answer.Warnings, "the sample schema "+demo.Schema+" stays: another object depends on it")
 	}
 	return answer, nil
 }
 
+// removeRefusal is a setuprun removal refusal as this page's.
+func removeRefusal(err error) error {
+	var r *setuprun.RefusalError
+	if errors.As(err, &r) {
+		return refuse(r.Code, r.Message)
+	}
+	return setupFailed()
+}
+
 // forget removes agents from engine.json, then deletes their credential
 // files. The config goes first: a run that stops between the two leaves
 // only a credential no config names.
-func (s *Service) forget(agents []string) error {
+func (s *Service) forget(agents []string) (removedFile bool, err error) {
 	cfg, err := config.Load(s.opts.ConfigPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var creds []string
 	for _, a := range cfg.Agents {
@@ -391,12 +382,13 @@ func (s *Service) forget(agents []string) error {
 			creds = append(creds, a.Store.CredentialFile)
 		}
 	}
-	if _, err := config.RemoveAgents(s.opts.ConfigPath, agents); err != nil {
-		return err
+	removedFile, err = config.RemoveAgents(s.opts.ConfigPath, agents)
+	if err != nil {
+		return false, err
 	}
 	for _, c := range creds {
 		_ = os.Remove(c)
 		_ = os.Remove(c + ".pending")
 	}
-	return nil
+	return removedFile, nil
 }

@@ -283,7 +283,7 @@
           "state": {
             "type": "string",
             "enum": ["RECORDED", "NOT_RECORDED", "REVOKED", "UNKNOWN"],
-            "description": "RECORDED: the agent's database records this engine's key and has not revoked it. NOT_RECORDED: it does not record it (no setup code carried it, or the key was rotated since). REVOKED: the person revoked it; status reports ENGINE_REVOKED, and the engine hands over no relay short link for that database and has ended the ones it handed over (CONTRACT.md, Vault channel, Engine revocation). UNKNOWN: the guard is older than version 33, the key file is refused, or the record could not be read."
+            "description": "RECORDED: the agent's database records this engine's key and has not revoked it. NOT_RECORDED: it does not record it (no setup code carried it, or the key was rotated since). REVOKED: its row is revoked (by hand, in SQL; no command or page revokes an engine); status reports ENGINE_REVOKED, and the engine does not act on it (CONTRACT.md, Vault channel, Engine revocation). UNKNOWN: the guard is older than version 33, the key file is refused, or the record could not be read."
           },
           "recordedAt": {
             "type": "string",

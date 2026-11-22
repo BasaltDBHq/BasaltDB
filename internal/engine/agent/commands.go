@@ -27,6 +27,9 @@ type Commands struct {
 	// updateLink is the setup page's UPDATE link for this agent, when the
 	// engine serves the setup page (UpdateLink).
 	updateLink string
+	// removed reports a person-operated engine whose engine.json a setup
+	// page REMOVE deleted (Removed); nil when it cannot happen.
+	removed func() bool
 }
 
 // cmdBasalt is the CLI every command runs.
@@ -72,6 +75,17 @@ func (c Commands) UpdateLink(link string) Commands {
 	c.updateLink = link
 	return c
 }
+
+// Removed returns c with removed, which reports whether the setup page's
+// REMOVE deleted this engine's engine.json: the agent's fix steps then
+// finish the removal with basalt init, which removes the engine service.
+func (c Commands) Removed(removed func() bool) Commands {
+	c.removed = removed
+	return c
+}
+
+// engineRemoved reports whether Removed's func says the engine is removed.
+func (c Commands) engineRemoved() bool { return c.removed != nil && c.removed() }
 
 // UpdateLinkURL is the setup page's UPDATE link UpdateLink set, or "".
 func (c Commands) UpdateLinkURL() string { return c.updateLink }

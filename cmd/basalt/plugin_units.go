@@ -24,23 +24,18 @@ func unitEntry(p config.Plugin, v plugin.Verified) (service.PluginEntry, bool) {
 	return service.EntryFor(p, v)
 }
 
-// withPluginUnits is spec with cfg's plugin units: on install every local
-// entry whose copy verifies, on uninstall every entry by name.
-func withPluginUnits(spec service.Spec, cfg config.Config, install bool, warn io.Writer) service.Spec {
+// withPluginUnits is spec with cfg's plugin units: every local entry whose
+// copy verifies.
+func withPluginUnits(spec service.Spec, cfg config.Config, warn io.Writer) service.Spec {
 	h := servicePluginHost(cfg, spec.GOOS, spec.ConfigPath, spec.User)
 	spec.StateDir, spec.SocketDir, spec.CredentialFiles = h.StateDir, h.SocketDir, h.CredentialFiles
-	if install {
-		spec.Plugins = serviceUnitEntries(cfg, spec.GOOS, spec.ConfigPath, warn)
-	} else {
-		spec.Plugins = serviceUnitNames(cfg)
-	}
+	spec.Plugins = serviceUnitEntries(cfg, spec.GOOS, spec.ConfigPath, warn)
 	return spec
 }
 
 // serviceUnitEntries are cfg's local entries whose installed copies verify,
-// for basalt service install and uninstall. An entry that fails is left
-// out with a line on warn: the engine refuses it too (PLUGIN_NOT_TRUSTED),
-// and uninstall still removes its unit by name.
+// for basalt service install. An entry that fails is left out with a line
+// on warn: the engine refuses it too (PLUGIN_NOT_TRUSTED).
 func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writer) []service.PluginEntry {
 	if len(cfg.Plugins) == 0 {
 		return nil
@@ -73,18 +68,6 @@ func verifyFailure(err error) string {
 		return plugin.VerifyFailure(ve)
 	}
 	return "it could not be verified"
-}
-
-// serviceUnitNames are cfg's entries by name only, for uninstall: their
-// units, directories and users are removed whether or not their copies
-// still verify.
-func serviceUnitNames(cfg config.Config) []service.PluginEntry {
-	out := make([]service.PluginEntry, 0, len(cfg.Plugins))
-	for _, p := range cfg.Plugins {
-		k := p.Key()
-		out = append(out, service.PluginEntry{Name: k.Name, Instance: k.Instance})
-	}
-	return out
 }
 
 // checkAgentOSUser refuses an agent's OS user that is the engine's own

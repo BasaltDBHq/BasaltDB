@@ -33,8 +33,11 @@ import (
 // Errors): the connect page's reasons, plus INVALID_ARGUMENT and
 // JOB_UNAVAILABLE.
 const (
-	CodeInvalidArgument         = "INVALID_ARGUMENT"
-	CodeJobUnavailable          = "JOB_UNAVAILABLE"
+	CodeInvalidArgument = "INVALID_ARGUMENT"
+	CodeJobUnavailable  = "JOB_UNAVAILABLE"
+	// CodeEngineRemoved: a configured engine whose engine.json a REMOVE
+	// deleted; basalt init then removes the engine service.
+	CodeEngineRemoved           = "ENGINE_REMOVED"
 	CodeBusy                    = "BUSY"
 	CodeConnectionStringRefused = "CONNECTION_STRING_REFUSED"
 	CodeDatabaseUnreachable     = "DATABASE_UNREACHABLE"

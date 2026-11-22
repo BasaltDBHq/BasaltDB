@@ -59,3 +59,28 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	upgradeSteps(b, cmds)
 	require.True(t, hasStep(actions(t, b), mcp.ActorAgent, mcp.ActionRunCommand, "basalt init --agent bot"))
 }
+
+// On an engine the setup page removed, every fix finishes the removal: the
+// agent runs basalt init once, which removes the engine service.
+func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "", "darwin")
+	require.NoError(t, err)
+	gone := false
+	removed := cmds.UpdateLink(testUpdateLink).Removed(func() bool { return gone })
+	for _, reason := range []string{reasonCredentialRejected, reasonGuardMissing, reasonGuardOutdated} {
+		b := NewSteps()
+		person := fixSteps(b, removed, reason)
+		require.NotContains(t, person, "Last step", "not removed yet: the usual fix")
+
+		gone = true
+		b = NewSteps()
+		person = fixSteps(b, removed, reason)
+		steps := actions(t, b)
+		require.True(t, hasStep(steps, mcp.ActorAgent, mcp.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", reason, steps)
+		require.True(t, hasStep(steps, mcp.ActorAgent, mcp.ActionStop, ""), reason)
+		require.False(t, hasStep(steps, mcp.ActorPerson, mcp.ActionOpenLink, ""), "no update link on a removed engine")
+		require.Contains(t, person, "Last step: the agent runs basalt init once")
+		gone = false
+	}
+}

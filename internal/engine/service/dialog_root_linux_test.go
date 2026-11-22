@@ -134,3 +134,88 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		require.Equal(t, strings.Repeat("daemon-reload\nenable --now basalt-engine.service\n", 2), string(log))
 	})
 }
+
+// runRemove runs the Linux removal script as root.
+func runRemove(t *testing.T) (string, error) {
+	t.Helper()
+	script, err := service.RemoveScript("linux")
+	require.NoError(t, err)
+	out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
+	return string(out), err
+}
+
+func TestRemoveScriptAsRoot(t *testing.T) {
+	if os.Getenv(rootScriptEnv) != "1" || os.Geteuid() != 0 {
+		t.Skip("runs as root in a throwaway container: make test-root-container")
+	}
+	sh(t, `printf '#!/bin/sh\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
+	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
+	clean := func() {
+		sh(t, "for u in basalt basalt-plugin-ner-default basalt-plugin-shell-default; do userdel $u 2>/dev/null; done; groupdel basalt 2>/dev/null; "+
+			"rm -rf /etc/basalt /var/lib/basalt /run/basalt /opt/basalt /etc/systemd/system/basalt-*.service /tmp/systemctl.log; true")
+	}
+	clean()
+	t.Cleanup(clean)
+	// installed is an engine the install script made, with one plugin
+	// entry's unit, user and socket directory as service install makes
+	// them, and a state directory.
+	installed := func(t *testing.T) {
+		t.Helper()
+		out, err := runInstall(t, rootBinary)
+		require.NoError(t, err, out)
+		sh(t, "mkdir -m 0700 /var/lib/basalt && chown basalt:basalt /var/lib/basalt")
+		sh(t, "useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt-plugin-ner-default")
+		sh(t, "mkdir /opt/basalt/run/basalt-plugin-ner-default && touch /etc/systemd/system/basalt-plugin-ner-default.service")
+		sh(t, "rm -f /tmp/systemctl.log")
+	}
+
+	t.Run("an engine.json left: nothing is removed", func(t *testing.T) {
+		defer clean()
+		installed(t)
+		sh(t, "touch /etc/basalt/engine.json")
+		out, err := runRemove(t)
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr, out)
+		require.Equal(t, 1, exitErr.ExitCode(), out)
+		require.Contains(t, out, "/etc/basalt/engine.json still exists")
+		require.FileExists(t, service.SystemdUnitPath)
+		require.FileExists(t, "/etc/systemd/system/basalt-plugin-ner-default.service")
+		require.True(t, exists("getent passwd basalt"))
+		require.NoFileExists(t, "/tmp/systemctl.log", "nothing was stopped")
+	})
+	t.Run("removes the engine and its plugins", func(t *testing.T) {
+		defer clean()
+		installed(t)
+		// A plugin-prefixed account that can log in is not the install's.
+		sh(t, "useradd --system --shell /bin/sh basalt-plugin-shell-default")
+		out, err := runRemove(t)
+		require.NoError(t, err, out)
+		require.NoFileExists(t, service.SystemdUnitPath)
+		require.NoFileExists(t, "/etc/systemd/system/basalt-plugin-ner-default.service")
+		for _, d := range []string{"/etc/basalt", "/var/lib/basalt", "/opt/basalt"} {
+			require.NoDirExists(t, d)
+		}
+		require.False(t, exists("getent passwd basalt"), out)
+		require.False(t, exists("getent group basalt"), out)
+		require.False(t, exists("getent passwd basalt-plugin-ner-default"), out)
+		require.True(t, exists("getent passwd basalt-plugin-shell-default"), "an account that can log in stays")
+		require.Contains(t, out, "basalt-plugin-shell-default can log in, so it was left in place")
+		log, err := os.ReadFile("/tmp/systemctl.log")
+		require.NoError(t, err)
+		require.Contains(t, string(log), "disable --now basalt-engine.service\n")
+		require.Contains(t, string(log), "disable --now basalt-plugin-ner-default.service\n")
+		require.Contains(t, string(log), "daemon-reload\n")
+
+		// Run again: nothing is left, and it still succeeds.
+		out, err = runRemove(t)
+		require.NoError(t, err, out)
+	})
+	t.Run("an engine account that is not the install's stays", func(t *testing.T) {
+		defer clean()
+		sh(t, "useradd --uid 1500 --shell /usr/sbin/nologin basalt")
+		out, err := runRemove(t)
+		require.NoError(t, err, out)
+		require.True(t, exists("getent passwd basalt"))
+		require.Contains(t, out, "not the system account the install made")
+	})
+}

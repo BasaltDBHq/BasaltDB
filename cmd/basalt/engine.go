@@ -32,12 +32,7 @@ import (
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
-// basalt engine revoke is the person's command for an engine
-// recorded in their database.
 func runEngine(ctx context.Context, args []string, io stdio) int {
-	if isEngineRecordsCommand(args) {
-		return withIO(runEngineRecords)(ctx, args, io)
-	}
 	return runEngineOn(ctx, args, io, osHost{})
 }
 
@@ -386,8 +381,12 @@ func refuseSecretInitArgs(args []string) error {
 // socket whose name is not an agent name.
 const fallbackAgentName = "agent"
 
-// runService installs or uninstalls the engine as a system service. It
-// prints every step first; --dry-run stops there.
+// runService installs the engine as a system service, always on the
+// system config path: it takes no --config, so the removal script's
+// engine.json check (service.RemoveScript) is about the config it runs. It prints every
+// step first; --dry-run stops there. The removal is the setup page's
+// Remove, after which basalt init removes the service through the
+// administrator dialog (service.RemoveScript).
 func runService(ctx context.Context, args []string, io stdio) int {
 	return runServiceAt(ctx, args, io, config.DefaultPath(runtime.GOOS))
 }
@@ -395,8 +394,8 @@ func runService(ctx context.Context, args []string, io stdio) int {
 // runServiceAt is runService on the engine config at configPath: the
 // service's engine always runs on the system path (tests give their own).
 func runServiceAt(ctx context.Context, args []string, io stdio, configPath string) int {
-	if len(args) == 0 || (args[0] != "install" && args[0] != "uninstall") {
-		fail(io.err, "service", errors.New("want install or uninstall"))
+	if len(args) == 0 || args[0] != "install" {
+		fail(io.err, "service", errors.New("want install"))
 		return exitUsage
 	}
 	action := args[0]
@@ -498,17 +497,14 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	}
 	if cfg, err := config.LoadNoFollow(configPath); err == nil {
 		// Every local plugin entry runs under its own unit and OS user:
-		// install writes them all again, uninstall removes them.
-		spec = withPluginUnits(spec, cfg, action == "install", io.err)
+		// install writes them all again.
+		spec = withPluginUnits(spec, cfg, io.err)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		_, _ = fmt.Fprintf(io.err, "basalt: %s cannot be read, so plugin service units are left as they are\n", configPath)
 	}
 	sys := service.OSSystem{Stdout: io.out, Stderr: io.err}
 
-	steps, err := service.UninstallPlan(sys, spec)
-	if action == "install" {
-		steps, err = service.InstallPlan(ctx, sys, spec)
-	}
+	steps, err := service.InstallPlan(ctx, sys, spec)
 	if err != nil {
 		return fail(io.err, "service", err)
 	}

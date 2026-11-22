@@ -181,6 +181,7 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	done, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot")
+	require.True(t, done.EngineRemoved, "the engine's last agent went, so init removes the service next")
 	require.Empty(t, done.MCPCommand)
 	require.False(t, exists(t, f.db, "basalt_meta"))
 	require.False(t, exists(t, f.db, "basalt_demo"))
@@ -193,10 +194,16 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	_, err = os.Stat(cred)
 	require.ErrorIs(t, err, os.ErrNotExist, "the agent's credential is deleted")
 
-	// The engine that ran with that config never installs: it loads a
-	// config only at its start.
-	_, err = svc.Check(ctx, f.request())
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	// The engine that ran with that config never installs (it loads a
+	// config only at its start): it answers every request, the empty one
+	// basalt init sends included, that BasaltDB is removed from it, so init
+	// removes the engine service.
+	for _, req := range []localsetup.Request{f.request(), {}, f.agentJob(localsetup.JobUpdate), f.agentJob(localsetup.JobRemove)} {
+		_, err = svc.Check(ctx, req)
+		refusal(t, err, localsetup.CodeEngineRemoved)
+		_, err = svc.Run(ctx, req)
+		refusal(t, err, localsetup.CodeEngineRemoved)
+	}
 }
 
 func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
@@ -216,8 +223,9 @@ func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
 		return nil
 	}}))
 
-	_, err = svc.Run(ctx, f.removeRun(t))
+	kept, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
+	require.False(t, kept.EngineRemoved, "another agent is left: the service stays")
 	cfg, err = config.Load(f.config)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1)
@@ -236,7 +244,7 @@ func TestRemoveFinishesOnADatabaseBasaltIsGoneFrom(t *testing.T) {
 
 	checked, err := svc.Check(ctx, f.agentJob(localsetup.JobRemove))
 	require.NoError(t, err)
-	require.Contains(t, checked.Lines[0], "Basalt is no longer in the database")
+	require.Contains(t, checked.Lines[0], "BasaltDB is no longer in the database")
 	_, err = svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	_, err = os.Stat(f.config)

@@ -1087,11 +1087,21 @@ function list2(id, lines) {
   ul.hidden = lines.length === 0;
 }
 
+// REMOVE_LAST_STEP is the removal's last step when it removed the engine's
+// last agent: the agent's basalt init removes the engine service.
+export const REMOVE_LAST_STEP = "Last step: ask your agent to finish removing BasaltDB. Your computer asks for your password once.";
+
+// doneText is the done screen's sentence for job and the run's answer.
+export function doneText(job, done) {
+  const text = JOB_TEXT[job.job].done(done.agent || job.agent);
+  return job.job === "REMOVE" && done.engineRemoved ? `${text} ${REMOVE_LAST_STEP}` : text;
+}
+
 function showDone(job, done) {
   $("main").hidden = true;
   $("flow").hidden = true;
   $("done").hidden = false;
-  $("done-text").textContent = JOB_TEXT[job.job].done(done.agent || job.agent);
+  $("done-text").textContent = doneText(job, done);
   $("mcp-command").textContent = done.mcpCommand || "";
   $("mcp-command").hidden = job.job !== "INSTALL" || !done.mcpCommand;
   list("done-lines", done.lines || []);

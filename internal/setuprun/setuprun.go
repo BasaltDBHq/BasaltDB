@@ -42,6 +42,8 @@ const (
 	// CodeClassesChanged: a column's class stored now is not the one the
 	// person saw.
 	CodeClassesChanged = "CLASSES_CHANGED"
+	// CodeSetupFailed: the database or its driver failed; nothing changed.
+	CodeSetupFailed = "SETUP_FAILED"
 )
 
 // RefusalError is a refused setup: a code and the sentence the person reads.

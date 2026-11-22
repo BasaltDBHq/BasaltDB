@@ -134,18 +134,11 @@ func (c *Client) Register(ctx context.Context, token channel.LinkToken, expiresA
 // nothing: the Vault drops the token at its expiry, and the engine refuses
 // its sessions either way.
 func (c *Client) Unregister(token channel.LinkToken) {
-	c.UnregisterWith(token, channel.ErrLinkRefused)
-}
-
-// UnregisterWith is Unregister closing the token's open sessions with code:
-// ENGINE_REVOKED for the links of an agent whose database revoked this
-// engine's key (CONTRACT.md, Engine revocation).
-func (c *Client) UnregisterWith(token channel.LinkToken, code channel.CloseError) {
 	cn := c.current()
 	if cn == nil {
 		return
 	}
-	cn.endLink(token, code)
+	cn.endLink(token)
 	log := c.opts.Log
 	err := cn.sendNoWait(context.Background(), func(ref int64) any {
 		return unregisterLinkMsg{Type: typeUnregisterLink, Ref: ref, LinkToken: token.Wire()}

@@ -2,7 +2,7 @@
 
 ### Engine records
 
-M4.1 (owner decisions VC-21, CO-18, VC-27). The person's database records the engine's public identity key, and the person can revoke an engine. Since [schema version 8](basalt-meta-schema-versions.md#schema-version-8-engine-address-removed) no address is recorded with it: the direct transport is [removed](cli.md#removed). Written only by the admin: by the setup flow in its install transaction, and by `basalt engine revoke`.
+M4.1 (owner decisions VC-21, CO-18, VC-27). The person's database records the engine's public identity key. Since [schema version 8](basalt-meta-schema-versions.md#schema-version-8-engine-address-removed) no address is recorded with it: the direct transport is [removed](cli.md#removed). Written only by the admin: by the setup flow in its install transaction. No command or page calls `revoke_engine`; it stays for an admin in SQL, and the engine only reports a revoked row ([Engine revocation](vault-channel.md#engine-revocation)).
 
 | Object | Purpose |
 |---|---|

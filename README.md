@@ -68,7 +68,7 @@ Use the absolute path of `basalt` (`which basalt`) if the client does not inheri
 
 **4. See what it did, and take it back.** Ask your agent what it changed, or to undo a run. You get a link to a page with the rows. Nothing is restored until you sign there with your passkey.
 
-To remove everything, ask your agent to remove BasaltDB. On the page that opens, pick Remove: it drops `basalt_meta`, the guard's triggers and policies, the `basalt_*` roles and the sample schema. Then run `sudo basalt service uninstall` to stop the engine.
+To remove everything, ask your agent to remove BasaltDB. On the page that opens, pick Remove: it drops `basalt_meta`, the guard's triggers and policies, the `basalt_*` roles and the sample schema. When the page says Last step, ask your agent to finish: your computer asks for your password once, in its own dialog, and removes the engine service.
 
 ## How it works
 

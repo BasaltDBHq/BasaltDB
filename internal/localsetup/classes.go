@@ -122,7 +122,7 @@ func checkClasses(req Request, picks []TablePick) error {
 // bytes (a Postgres identifier), and no control character, which the
 // challenge's separators could be confused with.
 func plainColumn(name string) bool {
-	return name != "" && len(name) <= maxIdentifierBytes && !strings.ContainsFunc(name, func(r rune) bool { return unicode.IsControl(r) })
+	return name != "" && len(name) <= maxIdentifierBytes && !strings.ContainsFunc(name, unicode.IsControl)
 }
 
 // classesKey is the labels as the challenge binds them: a hash of the

@@ -35,12 +35,19 @@ type heldItem struct {
 // hold has the agent hold a write of leads from to to.
 func (e *relayEnv) hold(t *testing.T, from, to int) heldItem {
 	t.Helper()
+	return e.holdSQL(t, "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3", []any{"closed", from, to})
+}
+
+// bumpSQL adds 1 to the score of leads $1 to $2: a write that is not
+// idempotent, so applying it twice shows.
+const bumpSQL = "UPDATE leads SET score = score + 1 WHERE id BETWEEN $1 AND $2"
+
+// holdSQL has the agent hold the write sql with params.
+func (e *relayEnv) holdSQL(t *testing.T, sql string, params []any) heldItem {
+	t.Helper()
 	run, isError := e.call(t, "run_start", map[string]any{"intent": "Close the stale leads"})
 	require.False(t, isError, "%v", run)
-	args := map[string]any{
-		"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3", "params": []any{"closed", from, to},
-		"intent": "They went cold", "runId": run["runId"],
-	}
+	args := map[string]any{"sql": sql, "params": params, "intent": "They went cold", "runId": run["runId"]}
 	held, isError := e.call(t, "write", args)
 	require.True(t, isError)
 	require.Equal(t, "APPROVAL_REQUIRED", held["code"], "%v", held)
@@ -73,6 +80,13 @@ func readApproval(t *testing.T, ctx context.Context, p *pagetest.Page, item held
 
 // loopbackApproval reads a held write's request on the engine's own pages,
 // for a test whose Vault breaks every session.
+func (e *relayEnv) leadScore(t *testing.T, id int) int {
+	t.Helper()
+	var n int
+	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT score FROM public.leads WHERE id = $1`, id).Scan(&n))
+	return n
+}
+
 func (e *relayEnv) loopbackApproval(t *testing.T, item heldItem) approval.Request {
 	t.Helper()
 	site := pages.New(links.Portal, quietLog())
@@ -206,14 +220,6 @@ func (r *relayTamper) tamper(m vaulttest.Message) []vaulttest.Delivery {
 	return r.edit(m, n)
 }
 
-// newRelayEnvPage opens a session for item through e's Vault.
-func newRelayEnvPage(t *testing.T, e *relayEnv, item heldItem) (*pagetest.Page, error) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return e.session(t, ctx, item.secret)
-}
-
 func newTamperedRelayEnv(t *testing.T, edit func(m vaulttest.Message, n int) []vaulttest.Delivery) *relayEnv {
 	t.Helper()
 	r := &relayTamper{seen: map[[2]any]int{}, edit: edit}
@@ -231,18 +237,21 @@ func TestRelayApprovalThroughAHostileVault(t *testing.T) {
 		// postLands says the person's POST reaches the engine; maybe, that
 		// the Vault may break the session before the engine runs it.
 		postLands, maybe bool
+		// wait is the waiting write's waitForApproval, in seconds: long
+		// enough for a delayed signature, short for a dropped one.
+		wait int
 	}{
-		"the signature's frame duplicated": {maybe: true, edit: func(m vaulttest.Message, n int) []vaulttest.Delivery {
+		"the signature's frame duplicated": {maybe: true, wait: 5, edit: func(m vaulttest.Message, n int) []vaulttest.Delivery {
 			if m.Dir == vaulttest.ToEngine && n == 2 {
 				return []vaulttest.Delivery{vaulttest.Forward(m), vaulttest.Forward(m)}
 			}
 			return []vaulttest.Delivery{vaulttest.Forward(m)}
 		}},
-		"every frame delayed": {postLands: true, edit: func(m vaulttest.Message, _ int) []vaulttest.Delivery {
-			time.Sleep(100 * time.Millisecond)
+		"every frame delayed": {postLands: true, wait: 30, edit: func(m vaulttest.Message, _ int) []vaulttest.Delivery {
+			time.Sleep(50 * time.Millisecond)
 			return []vaulttest.Delivery{vaulttest.Forward(m)}
 		}},
-		"the signature's frame dropped": {postLands: false, edit: func(m vaulttest.Message, n int) []vaulttest.Delivery {
+		"the signature's frame dropped": {postLands: false, wait: 3, edit: func(m vaulttest.Message, n int) []vaulttest.Delivery {
 			if m.Dir == vaulttest.ToEngine && n == 2 {
 				return nil
 			}
@@ -253,14 +262,17 @@ func TestRelayApprovalThroughAHostileVault(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			e := newTamperedRelayEnv(t, c.edit)
-			item := e.hold(t, 21, 35)
-			wait := map[string]any{"waitForApproval": 3}
+			// A write that is not idempotent: applied twice, lead 21 would
+			// score 2.
+			item := e.holdSQL(t, bumpSQL, []any{21, 35})
+			wait := map[string]any{"waitForApproval": c.wait}
 			for k, v := range item.args {
 				wait[k] = v
 			}
 			waiting := e.later(t, "write", wait)
 
-			ctx := waitCtx(t)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
 			// What the person signs: this Vault may break every session, so
 			// the test reads it on the engine's own pages.
 			req := e.loopbackApproval(t, item)
@@ -270,15 +282,15 @@ func TestRelayApprovalThroughAHostileVault(t *testing.T) {
 			// Index 1 is a session's first frame: read the request again
 			// first, so the POST is frame 2 (the one a drop removes).
 			_, _ = signer.Do(ctx, http.MethodGet, "/api/v1/approvals/"+item.id, pagetest.Headers(item.secret), "", 0)
-			postCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
+			postCtx, cancelPost := context.WithTimeout(ctx, 2*time.Second)
+			defer cancelPost()
 			_, _ = signer.Do(postCtx, http.MethodPost, "/api/v1/approvals/"+item.id+"/approve", pagetest.PostHeaders(item.secret),
 				approveBody(t, e.person, item.id, req.Binding), 0)
 
 			var body map[string]any
 			select {
 			case body = <-waiting:
-			case <-time.After(30 * time.Second):
+			case <-time.After(time.Duration(c.wait+30) * time.Second):
 				t.Fatal("the waiting write did not return")
 			}
 			applied := body["status"] == "APPLIED"
@@ -290,26 +302,29 @@ func TestRelayApprovalThroughAHostileVault(t *testing.T) {
 			}
 			if !applied {
 				require.Equal(t, "APPROVAL_REQUIRED", body["code"], "a clean failure: %v", body)
-				require.Equal(t, "open", e.leadStatus(t, 21), "nothing applied")
-				// The person signs again over an honest path: applied once.
-				p, err := newRelayEnvPage(t, e, item)
+				require.Zero(t, e.leadScore(t, 21), "nothing applied without a signature the engine took")
+				// The person signs again in a new session (its POST is frame
+				// 1, which this Vault leaves alone): it must apply, once.
+				retryCtx, cancelRetry := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancelRetry()
+				p, err := e.session(t, retryCtx, item.secret)
 				require.NoError(t, err)
-				r, err := p.Do(ctx, http.MethodPost, "/api/v1/approvals/"+item.id+"/approve", pagetest.PostHeaders(item.secret),
+				defer p.Close()
+				r, err := p.Do(retryCtx, http.MethodPost, "/api/v1/approvals/"+item.id+"/approve", pagetest.PostHeaders(item.secret),
 					approveBody(t, e.person, item.id, req.Binding), 0)
-				if err == nil && r.Status == http.StatusOK {
-					done, isError := e.call(t, "write", item.args)
-					require.False(t, isError, "%v", done)
-					require.Equal(t, "APPLIED", done["status"])
-					applied = true
-				}
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, r.Status, r.Body)
+				done, isError := e.call(t, "write", item.args)
+				require.False(t, isError, "%v", done)
+				require.Equal(t, "APPLIED", done["status"], "%v", done)
 			}
-			if applied {
-				require.Equal(t, "closed", e.leadStatus(t, 21))
-				// Never twice: the approval is single-use in Postgres.
-				again, isError := e.call(t, "write", item.args)
-				require.True(t, isError)
-				require.Equal(t, "APPROVAL_INVALID", again["code"], "%v", again)
-			}
+			// Applied exactly once: a second apply would score 2.
+			require.Equal(t, 1, e.leadScore(t, 21))
+			require.Equal(t, 1, e.leadScore(t, 35))
+			again, isError := e.call(t, "write", item.args)
+			require.True(t, isError)
+			require.Equal(t, "APPROVAL_INVALID", again["code"], "the approval is single-use: %v", again)
+			require.Equal(t, 1, e.leadScore(t, 21))
 		})
 	}
 }

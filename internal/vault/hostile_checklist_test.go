@@ -38,7 +38,7 @@ var hostileChecklist = []hostileCheck{
 			"internal/engine/vault_portal_page_internal_test.go": {"TestPortalChannelClientRefusesAHostileVault"},
 		},
 		node:    map[string][]string{"web/lib/channel.test.mjs": {"frame: ${c.name}"}},
-		vectors: map[string][]string{"api/mcp/vault/testdata/frame.json": {"reordered: the second frame first", "replayed: the first frame again", "reflected: the engine's frame sent back to it", "spliced: a frame from another session", "a tampered tag"}},
+		vectors: map[string][]string{"api/mcp/vault/testdata/frame.json": {"reordered: the second frame first", "replayed: the first frame again", "reflected: the engine's frame sent back to it", "spliced: a frame from another session", "a tampered tag", "a truncated frame"}},
 	},
 	{
 		item: "a wrong secret, an expired, revoked or unknown link get LINK_REFUSED alike, with nothing before it",
@@ -61,13 +61,17 @@ var hostileChecklist = []hostileCheck{
 		},
 	},
 	{
-		item: "size caps: message 1, frames, ROUTE and control messages, headers, a 16 KiB body (413), sessions per link and per engine",
+		item: "size caps: message 1, frames, ROUTE and control messages, headers, a 16 KiB body (413), sessions per link and per engine, a session idle 5 minutes or open 30",
 		goTests: map[string][]string{
 			"internal/vault/hostile_session_test.go":         {"TestMessageOneOfAnotherLength"},
-			"internal/vault/session_test.go":                 {"TestSessionOversizeFrames", "TestSessionLimits", "TestSessionAnswersRequests"},
+			"internal/vault/session_test.go":                 {"TestSessionOversizeFrames", "TestSessionLimits", "TestSessionAnswersRequests", "TestSessionTimeouts"},
 			"internal/vault/hostile_test.go":                 {"TestRefusesAHostileVault", "TestSessionLimitAndHandshakeTimeout"},
 			"internal/engine/vault_session_internal_test.go": {"TestVaultSessionKeepsThePagesRules"},
 		},
+	},
+	{
+		item:    "a revert's scope is not widened through the channel without the person's proof (the refused widen answers as on loopback and returns nothing of the widened scope)",
+		goTests: map[string][]string{"internal/engine/vault_rescope_internal_test.go": {"TestVaultSessionWidensARevert"}},
 	},
 	{
 		item:    "forged SESSION_OPEN, OK, ERROR and SESSION_CLOSE do no harm",

@@ -59,7 +59,7 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 
 ### Schema version 7: shorter setup-code life
 
-[Valid for 10 minutes, single use (CO-13)](setup.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed, since that guard has no grace. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by a guard at this version: the person asks for a new link; `basalt upgrade` applies the new `record_setup`. New installs get it with the rest. Idempotent.
+[Valid for 10 minutes, single use (CO-13)](setup.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed, since that guard has no grace. A code made by an older `basalt` (24-hour `expiresAt`) is refused `EXPIRY_TOO_FAR` by a guard at this version: the person asks for a new link; the guard update (the setup page's `UPDATE`) applies the new `record_setup`. New installs get it with the rest. Idempotent.
 
 | Object | Change |
 |---|---|

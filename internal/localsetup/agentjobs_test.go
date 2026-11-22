@@ -285,3 +285,38 @@ func TestRemoveForgetsEveryAgentOfTheSameDatabase(t *testing.T) {
 	_, err = os.Stat(twinCred)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestAgentJobsRefuseAnEngineRunningAsRoot(t *testing.T) {
+	t.Parallel()
+	f, _ := installed(t)
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
+		Euid: func() int { return 0 },
+	})
+	require.NoError(t, err)
+	for _, job := range []string{localsetup.JobUpdate, localsetup.JobRemove} {
+		_, err := svc.Check(context.Background(), f.agentJob(job))
+		refusal(t, err, localsetup.CodeJobUnavailable)
+		_, err = svc.Run(context.Background(), f.agentJob(job))
+		refusal(t, err, localsetup.CodeJobUnavailable)
+	}
+	require.True(t, exists(t, f.db, "basalt_meta"))
+}
+
+func TestRemoveAlsoDropsAnAgentWhoseCredentialCannotBeRead(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	cfg, err := config.Load(f.config)
+	require.NoError(t, err)
+	lost := cfg.Agents[0]
+	lost.Name, lost.Store = "lost_bot", config.PostgresStore(filepath.Join(filepath.Dir(f.config), "agents", "lost_bot.url"))
+	require.NoError(t, config.UpdateConfig(f.config, config.Change{Apply: func(c *config.Config) error {
+		c.Agents = append(c.Agents, lost)
+		return nil
+	}}))
+	done, err := svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.Contains(t, done.Lines, "removed from this engine: demo_bot, lost_bot")
+	_, err = os.Stat(f.config)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}

@@ -128,6 +128,8 @@ type Options struct {
 	// runs UPDATE and REMOVE for the agents in it and never an INSTALL
 	// (the engine loads engine.json only at its start).
 	Configured bool
+	// Euid is this process's effective user id (os.Geteuid outside tests).
+	Euid func() int
 }
 
 // Service runs the setup jobs. One runs at a time.
@@ -158,6 +160,9 @@ func New(o Options) (*Service, error) {
 	}
 	if o.Prefix == "" {
 		o.Prefix = defaultPrefix
+	}
+	if o.Euid == nil {
+		o.Euid = os.Geteuid
 	}
 	key, err := newKey()
 	if err != nil {

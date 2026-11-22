@@ -134,7 +134,7 @@ Same-user mode. At each start, for each enabled entry that requires approval and
 
 | What the engine finds | Served to that agent | `status` problem for that agent |
 |---|---|---|
-| The agent's guard is older than [schema version 5](basalt-meta-schema-versions.md#schema-version-5-plugin-approvals) | no | `PLUGIN_UNAVAILABLE`, reason: the guard is older than schema version 5 (run `basalt upgrade` for the agent, on an agent-operated engine an `UPGRADE` setup code; the running engine checks again on its own) |
+| The agent's guard is older than [schema version 5](basalt-meta-schema-versions.md#schema-version-5-plugin-approvals) | no | `PLUGIN_UNAVAILABLE`, reason: the guard is older than schema version 5 (update the guard with the setup page's `UPDATE`; on an agent-operated engine an `UPGRADE` setup code; the running engine checks again on its own) |
 | The approvals cannot be read (no answer within 15 seconds, or the guard refused) | no | `PLUGIN_UNAVAILABLE`, with the reason |
 | No approval names the agent | no | `PLUGIN_AWAITING_APPROVAL`: none was opened |
 | The newest is pending | no | `PLUGIN_AWAITING_APPROVAL`, with its expiry |

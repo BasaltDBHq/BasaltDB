@@ -56,6 +56,11 @@ func (s *Service) validateAgentJob(req Request) (agentJob, error) {
 	if req.Job != JobUpdate && req.Job != JobRemove {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
 	}
+	if s.opts.Euid() == 0 {
+		// A root engine reads its agents' files by other rules; it never
+		// serves these jobs (engine.setupJobs), and this holds it here too.
+		return agentJob{}, refuse(CodeJobUnavailable, "An engine running as root never takes the admin connection string on this page.")
+	}
 	names := guard.Names{Prefix: s.opts.Prefix}
 	role, err := names.Agent(req.Agent)
 	if err != nil {
@@ -102,7 +107,9 @@ func (s *Service) validateAgentJob(req Request) (agentJob, error) {
 			if o.Name == a.Name {
 				continue
 			}
-			if t, err := credentialTarget(o); err == nil && setuprun.SameDatabase(want, t) {
+			// An agent whose credential cannot be read cannot be served
+			// either: it goes with the removal rather than stay behind.
+			if t, err := credentialTarget(o); err != nil || setuprun.SameDatabase(want, t) {
 				j.others = append(j.others, o.Name)
 			}
 		}
@@ -236,7 +243,7 @@ func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob, prefix,
 	if prefix == "" {
 		lines = append(lines, fmt.Sprintf("Basalt is no longer in the database %s. This finishes its removal on this computer.", database))
 	} else {
-		lines = append(lines, fmt.Sprintf("This removes Basalt from the database %s: the guard's row-level security policies, the schema basalt_meta with the ledger of every action, and every %s_ role.", database, s.opts.Prefix))
+		lines = append(lines, fmt.Sprintf("This removes Basalt from the database %s: the guard's row-level security policies, the schema basalt_meta with the ledger of every action, and every %s_ role. A view or other object of yours that uses the ledger is dropped with it (CASCADE).", database, s.opts.Prefix))
 	}
 	if len(demoDrops) > 0 {
 		lines = append(lines, "It drops the sample schema "+demo.Schema+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")

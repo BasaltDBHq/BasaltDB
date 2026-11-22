@@ -17,10 +17,10 @@ import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256,
 import { pairingCoordinates } from "./pairing.js";
 import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
-import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restQuestion, tableName, trustRootFrom, trustText } from "./picks.js";
+import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
 
 // The pieces the local setup page shares with this one.
-export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restQuestion, tableName, trustRootFrom, trustText };
+export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText };
 
 // CONNECT_SERVICE is the only origin this page connects to; the page's
 // policy (its meta CSP and the edge function's header) allows it alone.
@@ -1211,7 +1211,6 @@ export function start(env) {
     }
     setText("unlabeled-warn", `Columns without a label aren't masked: ${bot()} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
     show("labels-error", false);
-    show("rest-confirm", false);
     $("rest-mark").checked = labelMode === "rest";
     $("rest-leave").checked = labelMode !== "rest";
     restCount();
@@ -1219,10 +1218,16 @@ export function start(env) {
   };
 
   // restCount shows the choice for the columns left unlabeled only while
-  // there are some.
+  // there are some, and the note under "Mark them as not personal" while
+  // it is chosen: the choice is the confirmation.
   const restCount = () => {
-    show("rest-choice", labels.unlabeled(tablesNow()).length > 0);
-    show("rest-confirm", false);
+    const n = labels.unlabeled(tablesNow()).length;
+    show("rest-choice", n > 0);
+    const note = $("rest-note");
+    const lines = $("rest-mark").checked ? restNote({ count: n, forced: labels.changes(tablesNow()).length + n > MAX_LABELS }) : [];
+    clear(note);
+    for (const line of lines) note.appendChild(el("span", "", line));
+    note.hidden = lines.length === 0;
   };
 
   const labelRow = (c) => sharedLabelRow(c, labels, restCount);
@@ -1233,28 +1238,15 @@ export function start(env) {
     return text !== "";
   };
 
-  // Continue keeps the labels the person picked; with "Mark them as not
-  // personal" it first asks, with the count of what it marks.
+  // Continue keeps the labels the person picked, and with "Mark them as
+  // not personal" marks the rest as its note says.
   $("labels-next").addEventListener("click", () => {
     if (labelsProblem(labels.problem(tablesNow()))) return;
-    if (!$("rest-choice").hidden && $("rest-mark").checked) {
-      setText("rest-question", restQuestion(labels.unlabeled(tablesNow())));
-      show("rest-confirm");
-      return;
-    }
-    labelMode = "changes";
+    labelMode = !$("rest-choice").hidden && $("rest-mark").checked ? "rest" : "changes";
     showApprove();
   });
 
-  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", () => show("rest-confirm", false));
-
-  $("rest-yes").addEventListener("click", () => {
-    show("rest-confirm", false);
-    labelMode = "rest";
-    showApprove();
-  });
-
-  $("rest-no").addEventListener("click", () => show("rest-confirm", false));
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", restCount);
 
   // ---- 6: approve ----
   const showApprove = () => {

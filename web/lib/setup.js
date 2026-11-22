@@ -5,7 +5,7 @@
 // storage, never in the URL, and cleared after the run.
 import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./codec.js";
 import { $, el, webauthnError } from "./page.js";
-import { answersFor, ENTITY_WORDS, fingerprintText, hostOf, Labels, MAX_LABELS, restQuestion, tableName, trustRootFrom } from "./picks.js";
+import { answersFor, ENTITY_WORDS, fingerprintText, hostOf, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
 
@@ -407,17 +407,12 @@ export class Install {
     return { rest, suggested, restPublic };
   }
 
-  // restQuestion is the confirm before "Mark the rest as not personal".
-  restQuestion() {
+  // restNote is the note under "Mark them as not personal".
+  restNote() {
     const p = this.restPlan();
-    const names = (cols) => cols.map((c) => `${tableName(c.table)}.${c.column}`).join(", ");
-    if (p.restPublic) {
-      const more = this.columnsMore ? ", the ones not listed here too" : "";
-      const flagged = p.suggested.length > 0 ? ` This includes ${names(p.suggested)}, suggested as personal or secret.` : "";
-      return `Mark every column without a label in the ticked tables as not personal${more}?${flagged}`;
-    }
-    const left = p.suggested.length > 0 ? ` Left out: ${names(p.suggested)}, suggested as personal or secret; label them or leave them blank.` : "";
-    return restQuestion(p.rest) + left;
+    const personal = p.suggested.map((c) => `${tableName(c.table)}.${c.column}`);
+    const count = p.restPublic ? p.rest.length + p.suggested.length : p.rest.length;
+    return restNote({ count, forced: p.restPublic, more: this.columnsMore, personal });
   }
 
   #labelFields() {
@@ -959,18 +954,18 @@ export function startReal(link, env) {
     }
     setText("unlabeled-warn", `Columns without a label aren't masked: ${agent} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
     show("labels-error", false);
-    show("rest-confirm", false);
     $("rest-mark").checked = install.labelMode === "rest";
     $("rest-leave").checked = install.labelMode !== "rest";
     restCount();
     go("s-labels");
   };
   // restCount shows the choice for the columns left unlabeled only while
-  // "Mark them as not personal" would mark some.
+  // "Mark them as not personal" would mark some, and the note under it
+  // while it is chosen: the choice is the confirmation.
   const restCount = () => {
     const p = install.restPlan();
     show("rest-choice", p.rest.length > 0 || p.restPublic);
-    show("rest-confirm", false);
+    showNote("rest-note", $("rest-mark").checked ? install.restNote() : []);
   };
   const labelsProblem = (text) => {
     setText("labels-error", text);
@@ -981,23 +976,13 @@ export function startReal(link, env) {
     install.setLabelMode(mode);
     if (await recheck("labels-error")) showApprove();
   };
-  // Continue keeps the labels the person picked; with "Mark them as not
-  // personal" it first asks, naming what it leaves out or also marks.
+  // Continue keeps the labels the person picked, and with "Mark them as
+  // not personal" marks the rest as its note says.
   $("labels-next").addEventListener("click", () => {
     if (labelsProblem(install.labelsProblem())) return;
-    if (!$("rest-choice").hidden && $("rest-mark").checked) {
-      setText("rest-question", install.restQuestion());
-      show("rest-confirm");
-      return;
-    }
-    return labelsDone("changes");
+    return labelsDone(!$("rest-choice").hidden && $("rest-mark").checked ? "rest" : "changes");
   });
-  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", () => show("rest-confirm", false));
-  $("rest-yes").addEventListener("click", () => {
-    show("rest-confirm", false);
-    return labelsDone("rest");
-  });
-  $("rest-no").addEventListener("click", () => show("rest-confirm", false));
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", restCount);
 
   // ---- 5: approve: exactly what the last check was made for ----
   const showApprove = () => {
@@ -1087,6 +1072,13 @@ export function startReal(link, env) {
   show("flow");
   go("s-user");
   return install;
+}
+
+// showNote fills a note with one line each, hidden when it has none.
+export function showNote(id, lines) {
+  const box = $(id);
+  box.replaceChildren(...lines.map((line) => el("span", "", line)));
+  box.hidden = lines.length === 0;
 }
 
 function list2(id, lines) {

@@ -170,10 +170,20 @@ export class Labels {
   }
 }
 
-// restQuestion is the confirm before "Mark the rest as not personal", with
-// the count of what it marks.
-export function restQuestion(columns) {
-  const tables = new Set(columns.map((c) => c.table)).size;
-  const n = columns.length;
-  return `Mark ${n} ${n === 1 ? "column" : "columns"} in ${tables} ${tables === 1 ? "table" : "tables"} as not personal?`;
+// restNote is the note under "Mark them as not personal", in lines: how
+// many columns it marks, and the columns that look personal, which it
+// leaves out, or, when the rest must go as restPublic (forced), marks
+// too. more says that columns past the ones listed are marked as well.
+export function restNote({ count, forced = false, more = false, personal = [] }) {
+  const cols = (n) => `${n} ${n === 1 ? "column" : "columns"}`;
+  const lines = [];
+  if (forced) {
+    const head = more ? "All unlabeled columns, the ones not listed here too, will be marked not personal" : `All ${count} unlabeled ${count === 1 ? "column" : "columns"} will be marked not personal`;
+    lines.push(personal.length > 0 ? `${head}, including these that look personal:` : `${head}.`);
+  } else {
+    lines.push(`${cols(count)} will be marked not personal.`);
+    if (personal.length > 0) lines.push("Not included, because they look personal:");
+  }
+  if (personal.length > 0) lines.push(personal.join(", "));
+  return lines;
 }

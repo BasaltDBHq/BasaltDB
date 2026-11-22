@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { b64urlEncode, utf8 } from "./codec.js";
+import { restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
 import { agentProbe, answerFits, CHECK_PATH, CHOICES, Install, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, SetupError, setupRequest, startReal, suggestionOf, trustView } from "./setup.js";
 
@@ -331,7 +332,7 @@ test("labels: the rest as not personal, and as restPublic when the check listed 
   i.setLabelMode("rest");
   await i.check();
   assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => [c.column, c.class]), [["note", "PUBLIC"], ["line", "PUBLIC"]], "email, suggested as personal and not accepted, is left out");
-  assert.equal(i.restQuestion(), "Mark 2 columns in 2 tables as not personal? Left out: orders.email, suggested as personal or secret; label them or leave them blank.");
+  assert.deepEqual(i.restNote(), ["2 columns will be marked not personal.", "Not included, because they look personal:", "orders.email"]);
   assert.equal(i.view().labeled, 0, "the rest are not counted as the person's labels");
   assert.equal(i.view().restPublic, true);
 
@@ -344,7 +345,7 @@ test("labels: the rest as not personal, and as restPublic when the check listed 
   await j.check();
   const body = more.bodies.at(-1).body;
   assert.equal(body.restPublic, true, "the columns the page never showed are covered only by restPublic");
-  assert.match(j.restQuestion(), /^Mark every column without a label in the ticked tables as not personal, the ones not listed here too\?$/, "email is labeled, so nothing suggested is named");
+  assert.deepEqual(j.restNote(), ["All unlabeled columns, the ones not listed here too, will be marked not personal."], "email is labeled, so nothing suggested is named");
   assert.deepEqual(body.columnClasses.map((c) => c.column), ["email"]);
   assert.equal(j.view().restPublic, true);
 });
@@ -638,23 +639,22 @@ test("the approval after Mark the rest says the rest are not personal", async ()
   pick.fire("change");
   nodes["rest-mark"].checked = true;
   nodes["rest-mark"].fire("change");
+  assert.equal(nodes["rest-note"].textContent, "2 columns will be marked not personal.");
   await nodes["labels-next"].click();
-  assert.match(nodes["rest-question"].textContent, /Mark 2 columns in 2 tables as not personal\?/);
-  await nodes["rest-yes"].click();
-  assert.equal(screenOf(nodes), "s-approve");
+  assert.equal(screenOf(nodes), "s-approve", "the choice is the confirmation");
   assert.match(nodes["ap-facts"].textContent, /Personal data: 1 column marked · the rest not personal/);
 });
 
-test("when the rest must go as restPublic, the confirm names the suggested columns it would mark", async () => {
+test("when the rest must go as restPublic, the note names the columns that look personal it would mark too", async () => {
   const more = fakeEngine({ answer: (path, body) => body.tables ? new Response(JSON.stringify({ database: "app", lines: [], sql: "", questions: [], notes: [], passkeyNeeded: true, challenge, columns, columnsMore: true }), { status: 200 }) : null });
   const i = new Install(more.fetchFn, real);
   await i.list(ADMIN);
   await i.check();
   assert.deepEqual(i.restPlan().suggested.map((c) => c.column), ["email"]);
-  assert.equal(i.restQuestion(), "Mark every column without a label in the ticked tables as not personal, the ones not listed here too? This includes orders.email, suggested as personal or secret.");
+  assert.deepEqual(i.restNote(), ["All unlabeled columns, the ones not listed here too, will be marked not personal, including these that look personal:", "orders.email"]);
   // Accepting the suggestion takes it out of the rest.
   i.acceptSuggestion(i.labels.columns.find((c) => c.column === "email"));
-  assert.doesNotMatch(i.restQuestion(), /This includes/);
+  assert.equal(i.restNote().length, 1);
 });
 
 test("Mark the rest leaves out a suggested column the person did not accept, on the page too", async () => {
@@ -666,11 +666,12 @@ test("Mark the rest leaves out a suggested column the person did not accept, on 
   leads.fire("change");
   await nodes["tables-next"].click();
   assert.equal(nodes["rest-leave"].checked, true, "leaving them unlabeled is the default");
+  assert.equal(nodes["rest-note"].hidden, true, "no note under the default");
   nodes["rest-mark"].checked = true;
   nodes["rest-mark"].fire("change");
+  assert.equal(nodes["rest-note"].hidden, false);
+  assert.deepEqual(nodes["rest-note"].children.map((n) => n.textContent), ["2 columns will be marked not personal.", "Not included, because they look personal:", "orders.email"]);
   await nodes["labels-next"].click();
-  assert.match(nodes["rest-question"].textContent, /Left out: orders\.email, suggested as personal or secret/);
-  await nodes["rest-yes"].click();
   assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => c.column), ["note", "line"]);
   assert.equal(e.bodies.at(-1).body.restPublic, undefined);
 });
@@ -698,4 +699,8 @@ test("Continue with the default choice keeps the picked labels and marks nothing
     pick(col).fire("change");
   }
   assert.equal(nodes["rest-choice"].hidden, true, "nothing left unlabeled: no choice");
+});
+
+test("the restPublic note counts every unlabeled column when more than 500 labels would go", () => {
+  assert.deepEqual(restNote({ count: 501, forced: true, personal: ["orders.email"] }), ["All 501 unlabeled columns will be marked not personal, including these that look personal:", "orders.email"]);
 });

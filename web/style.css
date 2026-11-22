@@ -362,6 +362,7 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .label-suggested { font-size: 12px; color: var(--ui-text-2); text-align: right; }
 .rest-choice { margin: 0; min-width: 0; }
 .rest-choice legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-size: 14px; font-weight: 600; }
+.rest-note { display: flex; flex-direction: column; gap: 2px; margin: 0 0 0 26px; font-size: 12px; color: var(--ui-text-2); overflow-wrap: anywhere; }
 .label-fixed-line { display: flex; align-items: center; gap: 6px; min-height: 36px; }
 .label-fixed { font-size: 12px; border-radius: 10px; padding: 1px 8px; background: var(--ui-subtle); color: var(--ui-text-2); }
 

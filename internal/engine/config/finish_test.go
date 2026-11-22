@@ -19,7 +19,7 @@ const finishSetupID = "0193a4c2-7d1e-7c3a-9f00-0000000000e5"
 
 func pendingAgent(name string) config.Agent {
 	return config.Agent{
-		Name: name, OSUser: "bot", Store: config.PostgresStore("/c/" + name + ".url"), InitArgs: []string{"--agent=" + name},
+		Name: name, OSUser: "bot", Store: config.PostgresStore("/c/" + name + ".url"),
 		Setup: &config.Setup{
 			SetupID: finishSetupID, Kind: "INSTALL", GuardVersion: 16, ExpiresAt: "2026-11-13T10:00:00Z",
 			Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",
@@ -84,7 +84,7 @@ func TestClearSetupAndAnUpsertOfAnotherAgentBothLand(t *testing.T) {
 		require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt"}, a))
 		require.NoError(t, config.UpsertAgent(path, config.Settings{}, b))
 
-		b.InitArgs = []string{"--agent=b", "--write=public.notes"}
+		b.OSUser = "other_bot"
 		var wg sync.WaitGroup
 		var clearErr, upsertErr error
 		wg.Go(func() { _, clearErr = config.ClearSetup(path, "a", finishSetupID) })
@@ -96,7 +96,7 @@ func TestClearSetupAndAnUpsertOfAnotherAgentBothLand(t *testing.T) {
 		c, err := config.Load(path)
 		require.NoError(t, err)
 		require.Nil(t, c.Agents[0].Setup, "round %d: a's clear landed", i)
-		require.Equal(t, b.InitArgs, c.Agents[1].InitArgs, "round %d: b's upsert landed", i)
+		require.Equal(t, b.OSUser, c.Agents[1].OSUser, "round %d: b's upsert landed", i)
 	}
 }
 

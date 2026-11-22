@@ -31,7 +31,19 @@ var adminString = "postgres://admin" + ":" + adminSecret + "@db.example:5432/app
 type fakeJobs struct {
 	got     []localsetup.Request
 	doctors []localsetup.DoctorRequest
+	engines int
+	notMine int
 	refusal error
+}
+
+func (f *fakeJobs) Engine(context.Context) (localsetup.EngineAnswer, error) {
+	f.engines++
+	return localsetup.EngineAnswer{Agents: []string{"demo_bot"}, Databases: []localsetup.EngineDatabase{{Database: "app", Host: "db.example", Port: 5432}}}, f.refusal
+}
+
+func (f *fakeJobs) NotMine(context.Context) error {
+	f.notMine++
+	return f.refusal
 }
 
 func (f *fakeJobs) Doctor(_ context.Context, req localsetup.DoctorRequest) (localsetup.DoctorAnswer, error) {
@@ -262,6 +274,45 @@ func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 	w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
+}
+
+// The engine check and the "No" take an empty object, never the admin
+// string, on both handlers; an engine with no setup jobs refuses them. No
+// route resets anything: a forged request to one is not found.
+func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
+	t.Parallel()
+	jobs := &fakeJobs{}
+	srv := pages.New(setupOrigin, slog.New(slog.DiscardHandler))
+	srv.SetSetup(jobs)
+	for _, h := range []http.Handler{srv.Handler(), pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
+		w := setupCall{path: pages.SetupEnginePath, origin: setupOrigin, body: `{}`}.do(h)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), `"database":"app"`)
+		w = setupCall{path: pages.SetupNotMinePath, origin: setupOrigin, body: `{}`}.do(h)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		for _, path := range []string{pages.SetupEnginePath, pages.SetupNotMinePath} {
+			for _, body := range []string{`{"databaseUrl":"` + adminString + `"}`, `{"run":true}`, `{"agent":"demo_bot"}`} {
+				w = setupCall{path: path, origin: setupOrigin, body: body}.do(h)
+				require.Equal(t, http.StatusBadRequest, w.Code, body)
+				require.NotContains(t, w.Body.String(), adminSecret)
+			}
+			w = setupCall{path: path, origin: "http://localhost:9999", body: `{}`}.do(h)
+			require.Equal(t, http.StatusForbidden, w.Code)
+		}
+		for _, path := range []string{"/api/v1/setup/reset", "/api/v1/setup/forget"} {
+			w = setupCall{path: path, origin: setupOrigin, body: `{"run":true}`}.do(h)
+			require.Equal(t, http.StatusNotFound, w.Code, path)
+		}
+	}
+	require.Equal(t, 2, jobs.engines)
+	require.Equal(t, 2, jobs.notMine)
+
+	h := pages.New(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
+	for _, path := range []string{pages.SetupEnginePath, pages.SetupNotMinePath} {
+		w := setupCall{path: path, origin: setupOrigin, body: `{}`}.do(h)
+		require.Equal(t, http.StatusConflict, w.Code)
+		require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
+	}
 }
 
 // A TRUST check's refusal of a changed certificate carries the pin.

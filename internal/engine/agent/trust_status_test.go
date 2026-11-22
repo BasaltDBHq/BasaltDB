@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -47,8 +48,10 @@ func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) StatusReport 
 	require.NoError(t, err)
 	r, err := LocalStatus{
 		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
-		Passkeys: func(context.Context) ([]passkey.Credential, error) { return []passkey.Credential{{}}, nil },
-		Log:      slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+		Passkeys: func(context.Context) ([]passkey.Credential, error) {
+			return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
+		},
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
 	}.Report(context.Background())
 	require.NoError(t, err)
 	return r
@@ -134,7 +137,8 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	require.Contains(t, p.Message, host)
 	require.Equal(t, NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
-	require.Contains(t, p.PersonMessage, "sslrootcert")
+	require.Contains(t, p.PersonMessage, "trust it there")
+	require.NotContains(t, p.PersonMessage, "sslrootcert", "the setup page refuses sslrootcert, so no message suggests it")
 	for _, q := range r.Problems {
 		require.NotEqual(t, problemDatabaseUnreachable, q.Code)
 	}

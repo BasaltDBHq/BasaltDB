@@ -21,8 +21,10 @@ const (
 	SetupCheckPath = "/api/v1/setup/check"
 	SetupRunPath   = "/api/v1/setup/run"
 	// SetupDoctorPath is the Update check: no admin string.
-	SetupDoctorPath = "/api/v1/setup/doctor"
-	setupPageFile   = "setup/index.html"
+	SetupDoctorPath  = "/api/v1/setup/doctor"
+	SetupEnginePath  = "/api/v1/setup/engine"
+	SetupNotMinePath = "/api/v1/setup/not-mine"
+	setupPageFile    = "setup/index.html"
 )
 
 // SetupJobs runs the setup page's jobs (localsetup.Service).
@@ -30,6 +32,8 @@ type SetupJobs interface {
 	Check(ctx context.Context, req localsetup.Request) (localsetup.CheckAnswer, error)
 	Run(ctx context.Context, req localsetup.Request) (localsetup.RunAnswer, error)
 	Doctor(ctx context.Context, req localsetup.DoctorRequest) (localsetup.DoctorAnswer, error)
+	Engine(ctx context.Context) (localsetup.EngineAnswer, error)
+	NotMine(ctx context.Context) error
 }
 
 // SetupOnlyHandler is what an engine with no config serves: GET /healthz,
@@ -54,6 +58,8 @@ func SetupOnlyHandler(origin string, jobs SetupJobs, log *slog.Logger) http.Hand
 	mux.HandleFunc("POST "+SetupCheckPath, st.check)
 	mux.HandleFunc("POST "+SetupRunPath, st.run)
 	mux.HandleFunc("POST "+SetupDoctorPath, st.doctor)
+	mux.HandleFunc("POST "+SetupEnginePath, st.engine)
+	mux.HandleFunc("POST "+SetupNotMinePath, st.notMine)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "This engine has no config yet: it serves only its setup page.")
 	})
@@ -116,6 +122,47 @@ func (st setupRoutes) doctor(w http.ResponseWriter, r *http.Request) {
 
 // decodeStrict decodes raw into v, refusing unknown fields and trailing
 // data.
+// engine answers what the engine is set up with, and notMine marks the
+// person's "No, this isn't mine" for basalt init (CONTRACT.md, Not your
+// database). Both take an empty object, never the admin string, and
+// neither changes a file or a database.
+func (st setupRoutes) engine(w http.ResponseWriter, r *http.Request) {
+	if !st.empty(w, r) {
+		return
+	}
+	answer, err := st.jobs.Engine(r.Context())
+	st.answer(w, answer, err, "engine")
+}
+
+func (st setupRoutes) notMine(w http.ResponseWriter, r *http.Request) {
+	if !st.empty(w, r) {
+		return
+	}
+	err := st.jobs.NotMine(r.Context())
+	if err == nil {
+		st.log.Info("setup page: the person said the database is not theirs; basalt init asks for the administrator password")
+	}
+	st.answer(w, struct{}{}, err, "not-mine")
+}
+
+// empty reads a body that must be an empty JSON object.
+func (st setupRoutes) empty(w http.ResponseWriter, r *http.Request) bool {
+	raw, ok := st.body(w, r)
+	if !ok {
+		return false
+	}
+	if holdsDatabaseURL(raw) {
+		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route never takes the admin connection string.")
+		return false
+	}
+	var none struct{}
+	if !decodeStrict(raw, &none) {
+		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route takes an empty object.")
+		return false
+	}
+	return true
+}
+
 func decodeStrict(raw []byte, v any) bool {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()

@@ -56,6 +56,10 @@ type cliIO struct {
 	systemConfigPath string
 	// paths point commands at temporary files in tests.
 	paths pathOverrides
+	// rolePrefix replaces guard.DefaultPrefix for basalt init --remote's
+	// first code, before any credential names the role; tests set it, so
+	// tests sharing a database server keep their roles apart.
+	rolePrefix string
 	// goos is the platform whose paths and service manager init uses.
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,
@@ -169,31 +173,6 @@ func (c *cliIO) line() (string, error) {
 	return strings.TrimSpace(s), nil
 }
 
-// adminURL takes the admin connection string from the environment or a
-// hidden prompt. It is used for this command only and never written. Under
-// an agent it reads neither and refuses (agentContextError).
-func (c *cliIO) adminURL() (string, error) {
-	if err := c.agentContextError("This basalt command", hintAgentPerson); err != nil {
-		return "", err
-	}
-	if v := c.getenv(envAdminURL); v != "" {
-		return v, nil
-	}
-	return c.promptAdminURL()
-}
-
-// promptAdminURL asks for the admin connection string with a hidden
-// prompt; it never reads the environment.
-func (c *cliIO) promptAdminURL() (string, error) {
-	fmt.Fprint(c.stderr, "Admin connection string (used once, never stored): ")
-	if c.terminal != nil {
-		b, err := term.ReadPassword(int(c.terminal.Fd()))
-		fmt.Fprintln(c.stderr)
-		return strings.TrimSpace(string(b)), err
-	}
-	return c.line()
-}
-
 // connect opens one connection, usable through a transaction pooler
 // (pgdial).
 func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
@@ -212,15 +191,4 @@ func withIO(f func(c *cliIO, args []string) int) func(context.Context, []string,
 	return func(ctx context.Context, args []string, std stdio) int {
 		return f(newIO(ctx, std, os.Getenv), args)
 	}
-}
-
-// splitList splits a comma-separated flag value.
-func splitList(s string) []string {
-	var out []string
-	for _, p := range strings.Split(s, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }

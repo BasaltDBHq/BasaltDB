@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -706,18 +707,23 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
 		})
 }
 
-// passkeys counts the active passkeys; none is NO_PASSKEY. A count that
-// fails is logged and leaves active out.
+// passkeys counts the active passkeys that can sign the agent's links:
+// those registered on the origin of its pages (pagesPasskeys); none is
+// NO_PASSKEY. A count that fails is logged and leaves active out.
 func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone bool) PasskeysStatus {
-	keys, err := s.passkeys(ctx)
+	all, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
 		return PasskeysStatus{}
 	}
+	keys, origin := pagesPasskeys(all, s.pagesBase)
 	n := len(keys)
 	if n == 0 {
-		ps.add(problemNoPasskey, "no passkey is registered, so held writes and reverts cannot be signed",
-			func(b *Steps) string { return noPasskeySteps(b, s.cmds) })
+		msg := "no passkey is registered, so held writes and reverts cannot be signed"
+		if len(all) > 0 {
+			msg = "no passkey is registered on " + origin + ", where this agent's links open, so held writes and reverts cannot be signed"
+		}
+		ps.add(problemNoPasskey, msg, func(b *Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
 	}
 	out := PasskeysStatus{Registered: n > 0, Active: &n}
 	for _, k := range keys {
@@ -733,6 +739,25 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone b
 		out.Summary = passkeySummary(out.Keys)
 	}
 	return out
+}
+
+// pagesPasskeys keeps the passkeys registered on the origin of the pages
+// at base, and returns that origin. A passkey signs only on the origin it
+// was registered on, so a localhost one cannot sign an agent's portal
+// links. A base with no origin keeps every passkey.
+func pagesPasskeys(keys []passkey.Credential, base string) ([]passkey.Credential, string) {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return keys, ""
+	}
+	origin := u.Scheme + "://" + u.Host
+	out := make([]passkey.Credential, 0, len(keys))
+	for _, k := range keys {
+		if k.Relying.Origin == origin {
+			out = append(out, k)
+		}
+	}
+	return out, origin
 }
 
 // passkeySummary says in words how many passkeys are registered and the
@@ -762,12 +787,28 @@ func passkeySummary(keys []PasskeyStatus) string {
 	return msg + ". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it."
 }
 
+// noPasskeyProblemSteps are the NO_PASSKEY problem's steps: the setup
+// page's Update link when the engine serves it (its Update check adds a
+// passkey on the person's device), else noPasskeySteps.
+func noPasskeyProblemSteps(b *Steps, cmds Commands) string {
+	if !cmds.AgentOperated() && cmds.updateLink != "" {
+		// The setup page's Update check adds a passkey on this device.
+		b.OpenLink(cmds.updateLink, "Show the person this link: its page adds a passkey on their device.")
+		b.EndTurn("End your turn; the person adds the passkey on that page.")
+		return nothingSignableLead + " Open the link the agent gives you and add a passkey there."
+	}
+	return noPasskeySteps(b, cmds)
+}
+
+// nothingSignableLead says why nothing the agent holds can be approved yet.
+const nothingSignableLead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
+
 // noPasskeySteps: the agent runs basalt init, whose link opens the page
 // where the person registers a passkey; on an agent-operated engine the
 // connect page (RI-6: the person's computer registers a portal passkey when
 // none is active).
 func noPasskeySteps(b *Steps, cmds Commands) string {
-	const lead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
+	const lead = nothingSignableLead
 	if cmds.AgentOperated() {
 		return remoteSetupSteps(b, cmds, lead)
 	}

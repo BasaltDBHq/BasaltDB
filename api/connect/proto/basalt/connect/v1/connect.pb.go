@@ -600,8 +600,14 @@ type CheckSetupResponse struct {
 	// current_database() on the pasted string's login, which the confirm
 	// step names. Sensitive, as database is.
 	CurrentDatabase string `protobuf:"bytes,15,opt,name=current_database,json=currentDatabase,proto3" json:"current_database,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// True when the page shows tables with ticks and RunSetup needs
+	// included_tables (the setup package's Checked.Ticked): an INSTALL code
+	// with agent.allTables, and an AGENT code that runs as an INSTALL (its
+	// role is gone, or it names no tables and the role holds none). tables is
+	// then the listing to tick from.
+	Ticked        bool `protobuf:"varint,16,opt,name=ticked,proto3" json:"ticked,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CheckSetupResponse) Reset() {
@@ -737,6 +743,13 @@ func (x *CheckSetupResponse) GetCurrentDatabase() string {
 		return x.CurrentDatabase
 	}
 	return ""
+}
+
+func (x *CheckSetupResponse) GetTicked() bool {
+	if x != nil {
+		return x.Ticked
+	}
+	return false
 }
 
 // The database's certificate as the confirm step shows it.
@@ -2838,7 +2851,7 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12'\n" +
 	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\x12\x1d\n" +
 	"\n" +
-	"trust_root\x18\x03 \x01(\tR\ttrustRoot\"\xb3\x05\n" +
+	"trust_root\x18\x03 \x01(\tR\ttrustRoot\"\xcb\x05\n" +
 	"\x12CheckSetupResponse\x129\n" +
 	"\tquestions\x18\x01 \x03(\v2\x1b.basalt.connect.v1.QuestionR\tquestions\x12%\n" +
 	"\x0epasskey_needed\x18\x02 \x01(\bR\rpasskeyNeeded\x12\x14\n" +
@@ -2856,7 +2869,8 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\bpasskeys\x18\f \x03(\v2 .basalt.connect.v1.ActivePasskeyR\bpasskeys\x12'\n" +
 	"\fsession_user\x18\r \x01(\tB\x04\x88\xaa\x19\x01R\vsessionUser\x12@\n" +
 	"\vcertificate\x18\x0e \x01(\v2\x1e.basalt.connect.v1.CertificateR\vcertificate\x12/\n" +
-	"\x10current_database\x18\x0f \x01(\tB\x04\x88\xaa\x19\x01R\x0fcurrentDatabase\"9\n" +
+	"\x10current_database\x18\x0f \x01(\tB\x04\x88\xaa\x19\x01R\x0fcurrentDatabase\x12\x16\n" +
+	"\x06ticked\x18\x10 \x01(\bR\x06ticked\"9\n" +
 	"\vCertificate\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06issuer\x18\x02 \x01(\tR\x06issuer\"\xa0\x01\n" +

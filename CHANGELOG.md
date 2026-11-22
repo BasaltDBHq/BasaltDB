@@ -48,6 +48,10 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The README, `llms.txt` and `docs/` describe the simplified product. No guide asks a person to type a `basalt` command or to paste an admin connection string into a terminal.
 - Release builds are reproducible: the same tagged commit built with the Go toolchain set in `go.mod` gives byte-identical archives, packages and `SHA256SUMS`. [docs/RELEASING.md](docs/RELEASING.md) explains how to check a release.
 - Release binaries embed `golang.org/x/crypto` v0.59.0, so binary scanners no longer flag GO-2026-5932. BasaltDB never called the package involved.
+- The setup page and the engine refuse more spellings of an admin connection string in a tool call: JSON text with `\u0026` for `&`, a percent-encoded `password` name or scheme, a password with a space, `postgresql+psycopg2://` and a libpq key and value string. The connection string pasted on the local setup page takes only the parameters the engine needs and refuses file-path keys such as `sslrootcert`, so the engine no longer reads files a pasted string names. Error and status messages no longer advise adding `sslrootcert`.
+- `status` counts only the passkeys registered on the origin the agent's links open, and it is not `ready` until one can sign there. The tools keep working meanwhile.
+- A repair keeps the role's grants. `basalt init --remote` no longer saves the agent's tables, prefix or timeout in `engine.json`, and the database's grants are the only record. A role that was dropped, or that holds no table, asks the person to tick tables on the connect page, which shows the ticks from the connect service's answer.
+- `preview_revert` says its timeout is the agent's statement timeout, not the 100 seconds of `request_revert`.
 
 ### Removed
 
@@ -59,11 +63,15 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - The direct transport: the engine's direct listener (`directAddr` in `engine.json`), the engine address recorded with its key, and the portal's engine pin pages (`/engines`, `/engines/add`). Portal pages reach the engine through the relay only.
 - The person socket, and the `/passkeys/check` and `/passkeys/forget` pages.
 - The `remote-init-result` and `portal-verify-result` JSON schemas, and `docs/setup-from-laptop.md`.
+- The `DIRECT_NOT_SERVED` problem from `status`, and the last mentions of the direct transport in the tool schemas.
 
 ### Fixed
 
 - A Vault session that a duplicated or otherwise refused frame ends now always closes with `FRAME_INVALID`. It could close with `PROTOCOL` instead and send the Vault a second `SESSION_CLOSE`.
 - The engine no longer reports "ledger chain broken" on a new ledger after the database was recreated the same way, for example after running the quickstart again on a fresh Postgres container. The guard now identifies each install by a random id instead of the schema's oid.
+- A program on your computer could finish the first setup with a database it controls and leave you unable to set up your own. Running `basalt init` again now asks "Is this your database?" first. After "No, this isn't mine", `basalt init` asks for your password in the system's administrator dialog and resets BasaltDB on this computer: it deletes the engine's config, credentials and certificate pins, restarts the engine and opens the first-install page. No database is touched. On macOS the dialog says what it asks for.
+- The engine opens its agents' sockets before it reads the database, so a slow database no longer makes the engine look down to the bot. The first guard read runs beside the serving and gives up after 15 seconds.
+- Supabase pooler hosts under `.pooler.supabase.co` are recognised as the pooler, like `.pooler.supabase.com`.
 
 ### Security
 
@@ -86,7 +94,8 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - A pin trusts the provider's certificate authority, so where a provider shares one across customers, another customer on the network path could pose as your database.
 - A revert that is too large to prepare even when narrowed to one change and one table cannot be reverted through BasaltDB.
 - A reboot between Remove on the setup page and its last step leaves the engine service installed until you remove it by hand, as [docs/install.md](docs/install.md) shows.
-- On your own computer a program running as your user can forge `Host` and `Origin` on loopback, so every setup job needs the admin connection string typed on the page.
+- Resetting a setup you did not make needs your OS password. A program running as your user can still start a first setup before you do, and you undo it with "No, this isn't mine".
+- On Linux, the administrator dialog shows the system's generic text instead of naming what it asks for.
 
 ## [0.0.1-alpha.2] - 2026-11-15
 

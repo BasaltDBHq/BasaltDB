@@ -286,7 +286,7 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	}
 	require.NoError(t, os.Rename(dir, dir+".moved"))
 	require.NoError(t, os.Symlink(elsewhere, dir))
-	require.NoError(t, r.writeConfig([]string{"--agent=bot"}, nil))
+	require.NoError(t, r.writeConfig(nil))
 	requireEmptyDir(t, elsewhere)
 	c, err := config.Load(filepath.Join(dir+".moved", "engine.json"))
 	require.NoError(t, err)

@@ -204,6 +204,8 @@ type Service struct {
 	key  []byte
 	rp   passkey.Relying
 	busy sync.Mutex
+	// mark is the person's "No, this isn't mine" (Not your database).
+	mark resetMark
 }
 
 // New returns the setup of an engine with no config.
@@ -313,6 +315,11 @@ func (s *Service) validate(req Request) (job, error) {
 	return j, nil
 }
 
+// adminURLParams is the refusal of a parameter outside the allowlist. It
+// never names the parameter or its value.
+var adminURLParams = "The admin connection string can take only these parameters: " +
+	strings.Join(pgdial.ConnectionKeys(), ", ") + ". Remove the others (a file such as passfile, sslkey, sslcert or sslrootcert is never read from it) and paste it again."
+
 // checkAdminURL accepts a postgres:// or postgresql:// URL with a user and
 // a password that an agent's connection string can be built from. The
 // refusal never names any part of it.
@@ -328,13 +335,19 @@ func checkAdminURL(raw, role string) (string, error) {
 	if pw, ok := u.User.Password(); !ok || pw == "" {
 		return "", bad
 	}
-	// The host, port and database come from the URL itself: a parameter
-	// that names another one would make the connection and the target
-	// checks disagree.
-	for key := range u.Query() {
-		switch strings.ToLower(key) {
-		case "host", "hostaddr", "port", "dbname", "service", "servicefile":
-			return "", bad
+	// The host, port and database come from the URL itself, and the
+	// parameters only from pgdial's allowlist: one that names another
+	// host or database would make the connection and the target checks
+	// disagree, and one that names a file (passfile, sslkey, sslcert,
+	// sslrootcert, service) would have the engine read it as its own
+	// user. The pinned login sets its roots itself, never from the string.
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return "", bad
+	}
+	for key := range query {
+		if !pgdial.ConnectionKey(key) {
+			return "", refuse(CodeConnectionStringRefused, adminURLParams)
 		}
 	}
 	if _, err := guard.AgentConnString(raw, role, ""); err != nil {
@@ -380,9 +393,13 @@ func (s *Service) open(ctx context.Context, req Request) (*pgx.Conn, *pin, error
 
 // planned is what plan found and built.
 type planned struct {
-	seeded    demo.Plan
-	script    guard.Script
-	keep      bool
+	seeded demo.Plan
+	script guard.Script
+	keep   bool
+	// rekey: the role exists, an agent of this guard's group, with no
+	// password this engine holds (an earlier setup this engine forgot):
+	// the install sets a new one, as the Update check's REPAIR does.
+	rekey     bool
 	write     []string
 	read      []string
 	questions []Question
@@ -416,12 +433,28 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	}
 	var p planned
 	if exists {
-		if !s.ownRole(ctx, j, database) {
+		switch {
+		case s.ownRole(ctx, j, database):
+			p.keep, password = true, ""
+		case installed == prefix:
+			// A role of this guard's agents group whose password this
+			// engine no longer holds (its setup was reset): the admin string
+			// typed on the page allows a new one, as it allows REPAIR. The
+			// install's adopt checks still refuse anything but a plain agent
+			// role.
+			var member bool
+			if err := tx.QueryRow(ctx, `SELECT pg_catalog.pg_has_role($1, $2, 'MEMBER')`, j.role, names.Agents()).Scan(&member); err != nil {
+				return planned{}, setupFailed()
+			}
+			if !member {
+				return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over a role outside BasaltDB's agents.", j.role))
+			}
+			p.rekey = true
+		default:
 			return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
 		}
-		p.keep, password = true, ""
 	}
-	spec := guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep, StatementTimeout: statementTimeout}
+	spec := guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep && !p.rekey, StatementTimeout: statementTimeout}
 	opts := guard.InitOptions{Names: names}
 	if j.req.Demo {
 		if p.seeded, err = demo.Seed(ctx, tx); err != nil {
@@ -552,6 +585,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch,
 		}
 		facts.apply(&out)
+		out.Lines = append(out.Lines, rekeyLines(j, p)...)
 		if pinned != nil {
 			out.Lines = append(out.Lines, "It trusts the certificate authority SHA-256 "+pinned.sha256+" for "+pinned.host+" only, and the agent connects with sslmode=verify-full.")
 		}
@@ -568,7 +602,17 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		Questions: []Question{}, Notes: notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch,
 	}
 	facts.apply(&out)
+	out.Lines = append(out.Lines, rekeyLines(j, p)...)
 	return out, nil
+}
+
+// rekeyLines say that the install sets a new password for a role an
+// earlier setup left.
+func rekeyLines(j job, p planned) []string {
+	if !p.rekey {
+		return nil
+	}
+	return []string{fmt.Sprintf("The database already has the agent role %s from an earlier setup whose password this computer no longer holds: this sets a new password for it, as Fix on the Update check does.", j.role)}
 }
 
 // listingAnswer is the answer of a check with no picks: the tables the

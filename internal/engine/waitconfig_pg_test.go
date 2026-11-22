@@ -4,19 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/user"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -292,4 +299,162 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT class::text, coalesce(entity_type::text, '') FROM basalt_meta.pii_columns
 		WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'email'`).Scan(&class, &entity))
 	require.Equal(t, [2]string{"IDENTIFIER", "EMAIL"}, [2]string{class, entity})
+}
+
+// A setup the person did not make (CONTRACT.md, Not your database): a
+// program on this computer forges the page's Origin on loopback and
+// finishes the first install itself, with an admin string for a Postgres
+// it controls and a passkey of its own, as TestFirstInstallThroughTheSetupRoutes
+// does, under an agent name of its own. Every later install is refused,
+// and no request without a proof resets anything. The person sees the
+// database's name on the page and answers No; basalt init then runs the
+// reset script through the administrator dialog (here its effect, done by
+// the test: the script itself is tested in internal/engine/service, and
+// init's part in cmd/basalt). The database keeps everything, and the
+// person's install is accepted again, even under the same agent name.
+func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	if u, err := url.Parse(d.URL); err != nil || u.User == nil {
+		t.Skip("the test server's admin string has no password")
+	} else if _, ok := u.User.Password(); !ok {
+		t.Skip("the test server's admin string has no password")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addr := freeAddr(t)
+	origin := pageOrigin(addr)
+	configPath := filepath.Join(t.TempDir(), "engine.json")
+	credential := filepath.Join(filepath.Dir(configPath), "agents", "other_bot.url")
+	type waited struct {
+		ln  net.Listener
+		err error
+	}
+	wait := func() chan waited {
+		done := make(chan waited, 1)
+		go func() {
+			o := waitOptions(addr, configPath)
+			o.Users, o.Prefix = agentUsers{}, d.Names.Prefix
+			ln, err := engine.WaitForConfig(ctx, o)
+			done <- waited{ln, err}
+		}()
+		waitUp(t, addr)
+		return done
+	}
+	waitFor := func(done chan waited) net.Listener {
+		t.Helper()
+		select {
+		case w := <-done:
+			require.NoError(t, w.err)
+			return w.ln
+		case <-time.After(10 * time.Second):
+			t.Fatal("the engine did not see the config the setup wrote")
+		}
+		return nil
+	}
+	base := "http://" + addr
+	install := func(job localsetup.Request) {
+		t.Helper()
+		code, raw := postJSON(t, base, origin, pages.SetupCheckPath, job)
+		require.Equal(t, http.StatusOK, code, string(raw))
+		var checked localsetup.CheckAnswer
+		require.NoError(t, json.Unmarshal(raw, &checked))
+		run := job
+		run.Challenge = checked.Challenge
+		if checked.PasskeyNeeded {
+			run.Passkey = registerFor(t, origin, *checked.Challenge)
+		}
+		code, raw = postJSON(t, base, origin, pages.SetupRunPath, run)
+		require.Equal(t, http.StatusOK, code, string(raw))
+	}
+
+	// 1: the program's install, with its own database and passkey.
+	done := wait()
+	job := localsetup.Request{Job: localsetup.JobInstall, Agent: "other_bot", OSUser: "alice", Demo: true, DatabaseURL: d.URL}
+	install(job)
+	ln := waitFor(done)
+
+	// 2: the engine now serves that setup on the same port, as Run does
+	// with the listener handed on. Its admin connections are counted.
+	var dials atomic.Int32
+	jobs, err := localsetup.New(localsetup.Options{
+		ConfigPath: configPath, Origin: origin, Users: agentUsers{}, Prefix: d.Names.Prefix, Configured: true,
+		Euid: func() int { return 4000 },
+		Dial: func(context.Context, string) (*pgx.Conn, error) {
+			dials.Add(1)
+			return nil, errors.New("down")
+		},
+	})
+	require.NoError(t, err)
+	srv := pages.New(origin, slog.New(slog.DiscardHandler))
+	srv.SetSetup(jobs)
+	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: time.Second}
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		_ = hs.Serve(ln)
+	}()
+	config0, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	// Every later install is refused, and the person's link names an agent
+	// this engine does not have.
+	mine := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice"}
+	code, raw := postJSON(t, base, origin, pages.SetupCheckPath, mine)
+	require.Equal(t, http.StatusConflict, code, string(raw))
+	require.Contains(t, string(raw), localsetup.CodeJobUnavailable)
+	code, raw = postJSON(t, base, origin, pages.SetupDoctorPath, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"})
+	require.Equal(t, http.StatusBadRequest, code, string(raw))
+	// A forged request to anything reset-like finds no route.
+	for _, path := range []string{"/api/v1/setup/reset", "/api/v1/setup/forget"} {
+		code, _ = postJSON(t, base, origin, path, map[string]bool{"run": true})
+		require.Equal(t, http.StatusNotFound, code, path)
+	}
+
+	// 3: "Is this your database?" names it from the engine's own file.
+	code, raw = postJSON(t, base, origin, pages.SetupEnginePath, struct{}{})
+	require.Equal(t, http.StatusOK, code, string(raw))
+	var asked localsetup.EngineAnswer
+	require.NoError(t, json.Unmarshal(raw, &asked))
+	var database string
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database))
+	require.Len(t, asked.Databases, 1)
+	require.Equal(t, database, asked.Databases[0].Database)
+	require.Equal(t, []string{"other_bot"}, asked.Agents)
+
+	// 4: No, this isn't mine: a mark for basalt init, nothing else.
+	code, raw = postJSON(t, base, origin, pages.SetupNotMinePath, struct{}{})
+	require.Equal(t, http.StatusOK, code, string(raw))
+	require.Zero(t, dials.Load(), "nothing connects to a database")
+	config1, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	require.Equal(t, config0, config1, "no request without a proof changes the setup")
+	require.FileExists(t, credential)
+	code, raw = postJSON(t, base, origin, pages.SetupCheckPath, struct{}{})
+	require.Equal(t, http.StatusConflict, code, string(raw))
+	require.Contains(t, string(raw), localsetup.CodeResetAsked, "basalt init's probe reads the No")
+
+	// 5: the person's password in the administrator dialog: the reset
+	// script deletes the setup's files and restarts the engine, which
+	// waits for a first install on the same port.
+	require.NoError(t, os.Remove(configPath))
+	require.NoError(t, os.Remove(credential))
+	require.NoError(t, hs.Shutdown(ctx))
+	<-served
+	_ = ln.Close()
+	var kept bool
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'basalt_meta')`).Scan(&kept))
+	require.True(t, kept, "the database keeps its guard and ledger")
+	done = wait()
+	code, raw = postJSON(t, base, origin, pages.SetupCheckPath, mine)
+	require.Equal(t, http.StatusBadRequest, code, string(raw))
+	require.Contains(t, string(raw), localsetup.CodeConnectionStringRefused, "the install gets past the job and asks for the admin string")
+
+	// The install is accepted, even under the agent name the role left
+	// behind has: it sets a new password for that role.
+	install(job)
+	require.NoError(t, waitFor(done).Close())
+	cfg, err := config.Load(configPath)
+	require.NoError(t, err)
+	require.Equal(t, "other_bot", cfg.Agents[0].Name)
 }

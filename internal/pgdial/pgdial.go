@@ -190,11 +190,11 @@ func WithCertificateHint(dsn string, err error) error {
 			"~/.postgresql/root.crt), and no trust profile applies while it names them: fix that root file", err, a.Host)
 	case trustprofile.AppliesNotVerified:
 		return fmt.Errorf("%w; the certificate of %s does not verify, and trust profiles apply only with sslmode=verify-full: "+
-			"name its CA with sslrootcert=<CA file> in the connection string", err, a.Host)
+			"trust its certificate authority on the page basalt init opens (basalt init --remote on an agent-operated engine)", err, a.Host)
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
 	return fmt.Errorf("%w; the certificate of %s does not verify: trust its certificate authority on the page basalt init opens "+
-		"(basalt init --remote on an agent-operated engine), or name it with sslrootcert=<CA file> in the connection string", err, a.Host)
+		"(basalt init --remote on an agent-operated engine)", err, a.Host)
 }
 
 // apply sets DefaultMode unless dsn names a mode itself (pgx has already

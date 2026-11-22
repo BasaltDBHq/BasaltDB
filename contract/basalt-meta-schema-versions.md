@@ -4,7 +4,7 @@ Changes to `basalt_meta` after the first release. Schema version 1, the files `0
 
 ### Schema version 2: install ids
 
-Breaking (the engine and `basalt log` call `install_id()`). Schema version 1 identified a guard install by the oid of the `basalt_meta` schema, which repeats: two clusters made the same way (a Postgres container removed and started again from the same image, then `basalt init`), or a database created from a template that holds the schema, give `basalt_meta` the same oid. A witness's pin of the old ledger was then taken as a pin of the new install and checked against an unrelated ledger: "ledger chain broken" on every check of an untouched ledger. Schema version 2 gives each install a random id; the objects are described in [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record).
+Breaking (the engine calls `install_id()`; `basalt log`, which called it too, is removed). Schema version 1 identified a guard install by the oid of the `basalt_meta` schema, which repeats: two clusters made the same way (a Postgres container removed and started again from the same image, then `basalt init`), or a database created from a template that holds the schema, give `basalt_meta` the same oid. A witness's pin of the old ledger was then taken as a pin of the new install and checked against an unrelated ledger: "ledger chain broken" on every check of an untouched ledger. Schema version 2 gives each install a random id; the objects are described in [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record).
 
 | Object | Change |
 |---|---|

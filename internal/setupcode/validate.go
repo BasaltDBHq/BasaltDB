@@ -47,7 +47,7 @@ var (
 
 // Validate checks p against setup-code.schema.json and the rules the
 // schema cannot state (guard.from <= guard.to, < for UPGRADE; at least one
-// table; no table in both lists; the role at most 63 bytes; expiresAt no
+// table in an INSTALL code; no table in both lists; the role at most 63 bytes; expiresAt no
 // later than the setupId's time plus 10 minutes). Failing one is INVALID.
 // None of these depend on the clock.
 func (p Payload) Validate() error {
@@ -154,7 +154,9 @@ func (p Payload) validateAgent() error {
 		return validateAllTables(a)
 	case a.Write == nil || a.Read == nil:
 		return invalid("agent.write and agent.read are required")
-	case len(a.Write)+len(a.Read) == 0:
+	case len(a.Write)+len(a.Read) == 0 && p.Kind == KindInstall:
+		// An AGENT code that names no tables keeps the role's grants
+		// (KeepsGrants); a new role needs at least one.
 		return invalid("the agent has no tables")
 	}
 	if err := validateTables("agent.write", a.Write); err != nil {

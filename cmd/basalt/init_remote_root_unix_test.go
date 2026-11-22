@@ -161,7 +161,7 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	cfg := filepath.Join(dir, "basalt", "engine.json")
-	install := installed(t, d, dbURL, cfg, "--write=public.leads")
+	install := installed(t, d, dbURL, cfg, "public.leads")
 	// The database refuses the bot's credential: a new password.
 	role, err := d.Names.Agent("bot")
 	require.NoError(t, err)

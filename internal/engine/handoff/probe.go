@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/supabase"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -46,10 +48,6 @@ const (
 	sqlstateInternal  = "XX000"
 	supavisorNoTenant = "Tenant or user not found"
 )
-
-// supabasePooler is the host suffix of Supabase's pooler (Supavisor), where
-// the agent logs in as <role>.<ref>.
-const supabasePooler = ".pooler.supabase.com"
 
 // probeTimeout bounds one probe login.
 const probeTimeout = 15 * time.Second
@@ -421,7 +419,7 @@ func ConnString(a Address, user, password string, binding bool) string {
 // LoginUser is the user the agent's role logs in as at a: <role>.<ref>
 // through Supabase's pooler, the role otherwise.
 func LoginUser(a Address, role string) string {
-	if a.SupabaseRef != "" && strings.HasSuffix(strings.ToLower(a.Host), supabasePooler) {
+	if a.SupabaseRef != "" && supabase.PoolerHost(a.Host) {
 		return role + "." + a.SupabaseRef
 	}
 	return role

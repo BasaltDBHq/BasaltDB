@@ -79,6 +79,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	script, err := service.InstallScript("linux", fakeBin)
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
+	require.Equal(t, []string{service.InstallPrompt}, h.prompts, "the dialog names the install")
 	require.Empty(t, h.sudo, "no sudo")
 	require.Equal(t, 3, h.setupCalls, "init waited for the setup page")
 
@@ -203,6 +204,7 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	script, err := service.RemoveScript("linux")
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
+	require.Equal(t, []string{service.RemovePrompt}, h.prompts, "the dialog names the removal")
 	require.Empty(t, h.sudo)
 	require.Contains(t, r.stderr, "the engine service is removed")
 	require.NotContains(t, read, envAdminURL)
@@ -245,7 +247,102 @@ func TestInitRemovesTheServiceWhenTheRemoveLandsWithinTheWait(t *testing.T) {
 	require.Contains(t, r.stderr, "the engine service is removed")
 }
 
+// "No, this isn't mine" on the page within the wait (Not your database):
+// the init that opened the Update check resets the engine through the
+// administrator dialog with the fixed reset script, then opens the install
+// link once the engine waits for a first install.
+func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+	h.setupCodes = []string{
+		localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeResetAsked, localsetup.CodeInvalidArgument,
+	}
+	r, read := localInit(t, h)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	script, err := service.ResetScript("linux")
+	require.NoError(t, err)
+	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog, for the fixed reset script")
+	require.Equal(t, []string{service.ResetPrompt}, h.prompts, "the dialog names the reset")
+	require.Empty(t, h.sudo)
+	require.Len(t, h.opened, 2, "the Update check's link, then the install link")
+	require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[0]))
+	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[1]))
+	require.Contains(t, r.stderr, "BasaltDB on this computer is reset")
+	require.Contains(t, r.stdout, "basalt mcp --agent demo_bot")
+	require.NotContains(t, read, envAdminURL)
+}
+
+// Without the dialog, or with it closed, nothing is reset and no install
+// link opens; a "No" found at the start resets nothing either.
+func TestInitResetStops(t *testing.T) {
+	t.Parallel()
+	for _, v := range []struct {
+		name string
+		edit func(*fakeHost)
+		want string
+	}{
+		{"no dialog", func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (an SSH session)", service.ErrNoDialog) }, "cannot be shown here"},
+		{"dialog closed", func(h *fakeHost) { h.dialogErr = service.ErrDialogCancelled }, "the administrator dialog was closed, so nothing was reset"},
+		{"script stopped", func(h *fakeHost) { h.dialogErr = fmt.Errorf("%w: no setup to reset", service.ErrDialogScript) }, "was not reset"},
+	} {
+		h := newFakeHost(t)
+		h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+		h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeResetAsked}
+		v.edit(h)
+		r, _ := localInit(t, h)
+		require.Equal(t, exitError, r.code, v.name)
+		require.Contains(t, r.stderr, v.want, v.name)
+		require.Len(t, h.opened, 1, "%s: no install link", v.name)
+		if v.name == "no dialog" {
+			require.Empty(t, h.dialogs)
+		}
+	}
+
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+	h.setupCodes = []string{localsetup.CodeResetAsked, localsetup.CodeJobUnavailable}
+	r, _ := localInitWithin(t, 3*time.Second, h)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Empty(t, h.dialogs, "a No left from an earlier page resets nothing")
+	require.Len(t, h.opened, 1)
+	require.Equal(t, localsetup.JobChange, linkJob(t, h.opened[0]).Job)
+}
+
 func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, 90*time.Second, removalWait)
+}
+
+// Plain basalt init never reads BASALT_ADMIN_DATABASE_URL, with or without
+// an agent marker and with or without a terminal: the admin connection
+// string is typed on the setup page only.
+func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		marker      bool
+		interactive bool
+	}{{"a person at a terminal", false, true}, {"no terminal", false, false}, {"an agent marker", true, true}} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		var stdout, stderr bytes.Buffer
+		var read []string
+		getenv := func(k string) string {
+			read = append(read, k)
+			switch {
+			case k == envAdminURL:
+				return "postgres://admin" + ":" + "pw@db.example/app"
+			case k == "CLAUDECODE" && tc.marker:
+				return "1"
+			}
+			return ""
+		}
+		c := newIO(ctx, stdio{in: strings.NewReader(leakedAdmin + "\n"), out: &stdout, err: &stderr}, getenv)
+		c.goos, c.host, c.interactive = "linux", newFakeHost(t), tc.interactive
+		code := runInit(c, []string{"--demo"})
+		cancel()
+		require.Equal(t, exitOK, code, "%s: %s", tc.name, stderr.String())
+		require.NotContains(t, read, envAdminURL, tc.name)
+		require.NotContains(t, stdout.String()+stderr.String(), "pw@db.example", tc.name)
+	}
 }

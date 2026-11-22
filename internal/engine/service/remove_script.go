@@ -68,9 +68,10 @@ func configGone(goos string) string {
 // linuxRemovePreflight checks, before anything is removed, that the config
 // is gone, whether the engine's account is one the install would take
 // over, and every directory it removes in or under.
-func linuxRemovePreflight() string {
-	u := DefaultUser(goosLinux)
-	return configGone(goosLinux) + fmt.Sprintf(`engine_uid=
+// linuxEngineUID sets engine_uid to the engine's OS user when it is the
+// system account the install made, else to empty.
+func linuxEngineUID() string {
+	return fmt.Sprintf(`engine_uid=
 if id -u %[1]s >/dev/null 2>&1; then
 	uid=$(id -u %[1]s)
 	sys_max=$(awk '$1 == "SYS_UID_MAX" { print $2 }' /etc/login.defs 2>/dev/null || true)
@@ -79,12 +80,16 @@ if id -u %[1]s >/dev/null 2>&1; then
 		engine_uid=$uid
 	fi
 fi
+`, DefaultUser(goosLinux), linuxSysUIDMax)
+}
+
+func linuxRemovePreflight() string {
+	return configGone(goosLinux) + linuxEngineUID() + fmt.Sprintf(`check_dir %[1]s "$engine_uid"
+check_dir %[2]s "$engine_uid"
 check_dir %[3]s "$engine_uid"
-check_dir %[4]s "$engine_uid"
-check_dir %[5]s "$engine_uid"
-check_dir %[6]s ""
-trusted %[7]s ""
-`, u, linuxSysUIDMax,
+check_dir %[4]s ""
+trusted %[5]s ""
+`,
 		scriptWord(filepath.Dir(config.DefaultPath(goosLinux))), scriptWord(config.DefaultStateDir(goosLinux)),
 		scriptWord(config.DefaultSocketDir(goosLinux)), scriptWord(linuxPluginBase), scriptWord(strings.TrimSuffix(systemdUnitDir, "/")))
 }
@@ -122,23 +127,28 @@ fi
 }
 
 // darwinRemovePreflight is linuxRemovePreflight on macOS.
-func darwinRemovePreflight() string {
-	u := DefaultUser(goosDarwin)
-	return configGone(goosDarwin) + fmt.Sprintf(`engine_uid=
+// darwinEngineUID sets engine_uid to the engine's OS user when it is the
+// hidden system account the install made, else to empty.
+func darwinEngineUID() string {
+	return fmt.Sprintf(`engine_uid=
 if id -u %[1]s >/dev/null 2>&1; then
 	uid=$(id -u %[1]s)
 	if [ "$uid" -ge %[2]d ] && [ "$uid" -le %[3]d ] && no_login "$(dscl . -read /Users/%[1]s UserShell | awk '{ print $2 }')"; then
 		engine_uid=$uid
 	fi
 fi
+`, DefaultUser(goosDarwin), darwinIDMin, darwinIDMax)
+}
+
+func darwinRemovePreflight() string {
+	return configGone(goosDarwin) + darwinEngineUID() + fmt.Sprintf(`check_dir %[1]s "$engine_uid"
+check_dir %[2]s "$engine_uid"
+check_dir %[3]s "$engine_uid"
 check_dir %[4]s "$engine_uid"
-check_dir %[5]s "$engine_uid"
-check_dir %[6]s "$engine_uid"
-check_dir %[7]s "$engine_uid"
-check_dir %[8]s ""
-trusted %[9]s ""
-trusted %[10]s ""
-`, u, darwinIDMin, darwinIDMax,
+check_dir %[5]s ""
+trusted %[6]s ""
+trusted %[7]s ""
+`,
 		scriptWord(filepath.Dir(config.DefaultPath(goosDarwin))), scriptWord(config.DefaultSocketDir(goosDarwin)),
 		scriptWord(config.DefaultStateDir(goosDarwin)), scriptWord(darwinLogDir), scriptWord(darwinPluginBase),
 		scriptWord(strings.TrimSuffix(launchDaemonsDir, "/")), scriptWord(strings.TrimSuffix(newsyslogDir, "/")))

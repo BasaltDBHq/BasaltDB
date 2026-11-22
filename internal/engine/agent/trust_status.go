@@ -201,7 +201,7 @@ func (s statusDeps) addTrustExpiring(ps *problems, a trustprofile.Applied, sorte
 	if len(soon) > 1 {
 		what = fmt.Sprintf("%d roots, the first %s (SHA-256 %s),", len(soon), first.Subject, trustprofile.Fingerprint(first))
 	}
-	fix := "Once your provider has put the new certificate on the database, run basalt init again: its Update check offers to trust it. Or name the new root with sslrootcert in the agent's connection string."
+	fix := "Once your provider has put the new certificate on the database, run basalt init again: its Update check offers to trust it."
 	if a.Profile.Origin == trustprofile.BuiltIn {
 		fix = "Update basalt for the provider's new roots. Nothing on the setup page adds a root before the database presents a new certificate."
 	}
@@ -217,9 +217,9 @@ func (s statusDeps) addTrustExpiring(ps *problems, a trustprofile.Applied, sorte
 
 // addCertificateNotVerified is CERTIFICATE_NOT_VERIFIED for a database
 // whose certificate does not verify, naming the host and the fix that can
-// work: a trust profile when the system's authorities or a profile
-// verified it, the connection string's own roots when it names them, and
-// verify-full when its sslmode is weaker (no profile applies then).
+// work: the setup page's trust step when the system's authorities or a
+// profile verified it or its sslmode is weaker than verify-full, and the
+// connection string's own roots when it names them.
 func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *problems, err error, trust *TrustReport) {
 	s.log.Error("status: the database's certificate does not verify", "err", err)
 	a := trustprofile.Applied{Host: "the database", Applies: trustprofile.AppliesSystem}
@@ -237,7 +237,7 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *problems,
 		why := "the agent's connection string names its own roots (sslrootcert, PGSSLROOTCERT or ~/.postgresql/root.crt), and they do not " +
 			"verify it; a trust profile does not apply while it names them. Fix or remove that root file"
 		if a.Applies == trustprofile.AppliesNotVerified {
-			why = "its sslmode is below verify-full, so trust profiles do not apply. Name the CA with sslrootcert in the agent's connection string"
+			why = "its sslmode is below verify-full, so trust profiles do not apply. Trust its CA on the setup page the agent gives you a link to"
 		}
 		ps.add(problemCertificateNotVerified, msg,
 			func(b *Steps) string {
@@ -255,7 +255,7 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *problems,
 			b.TellAgent("Tell the agent when it is done.")
 			return "The certificate of your database " + host + " does not verify against the system's authorities or any trust profile. " +
 				"The agent gives you a link: the setup page shows the certificate the database presents, and you check it against your " +
-				"provider's console and trust it there. Or name the CA with sslrootcert in the agent's connection string. Then tell the agent."
+				"provider's console and trust it there. Then tell the agent."
 		})
 }
 

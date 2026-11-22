@@ -184,8 +184,8 @@ func (g *callGate) waitIdle(ctx context.Context) bool {
 }
 
 // gatedDispatcher counts each page-session request (an approval or a revert
-// relayed through the Vault or the direct listener) in the gate, and
-// answers UNAVAILABLE with nothing run once the gate is closed.
+// relayed through the Vault) in the gate, and answers UNAVAILABLE with
+// nothing run once the gate is closed.
 type gatedDispatcher struct {
 	gate *callGate
 	next vault.Dispatcher

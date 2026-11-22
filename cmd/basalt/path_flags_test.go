@@ -14,7 +14,7 @@ import (
 //
 // The commands another change removes still take --config themselves, so
 // the helper leaves their arguments alone.
-var keepsConfigFlag = []string{"runLog", "runAccess", "runRevert", "runStatus", "runTunnel"}
+var keepsConfigFlag = []string{"runLog", "runAccess", "runRevert", "runStatus"}
 
 // takePathFlags removes --config, --socket-dir and --credential-file (and
 // their values) from args and sets them on c, unless the command named by

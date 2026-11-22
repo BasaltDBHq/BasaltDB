@@ -26,7 +26,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
-// headlessBrowser finds a Chromium that can run headless, in this order:
+// headlessBrowser finds a Chromium that can run headless: on CI only
+// (CI=true) unless BASALT_TEST_BROWSER names one, in this order:
 //
 //  1. $BASALT_TEST_BROWSER;
 //  2. Playwright's cache ($PLAYWRIGHT_BROWSERS_PATH, then
@@ -41,6 +42,12 @@ import (
 func headlessBrowser() string {
 	if p := os.Getenv("BASALT_TEST_BROWSER"); p != "" {
 		return p
+	}
+	if os.Getenv("CI") != "true" {
+		// A local run never starts a browser on its own: it could open the
+		// person's real Chrome and its keychain prompts. Opt in with
+		// BASALT_TEST_BROWSER; CI (CI=true) finds one below.
+		return "none"
 	}
 	home, _ := os.UserHomeDir()
 	caches := []string{os.Getenv("PLAYWRIGHT_BROWSERS_PATH")}
@@ -87,7 +94,7 @@ func headlessBrowser() string {
 func browserMissing(browser string) (reason string, fail bool) {
 	switch {
 	case browser == "none":
-		return "BASALT_TEST_BROWSER=none", false
+		return "no browser opt-in: set BASALT_TEST_BROWSER to a Chrome or Chromium binary to run it here (CI runs it)", false
 	case browser != "":
 		return "", false
 	}

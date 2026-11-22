@@ -42,6 +42,7 @@ type fakeHost struct {
 	// dialogs are the scripts the administrator dialog ran; noDialog is
 	// what DialogAvailable says, dialogErr what the dialog run returns.
 	dialogs   []string
+	prompts   []string
 	noDialog  error
 	dialogErr error
 	// setupCodes are what SetupState answers, one per call (the last one
@@ -93,7 +94,8 @@ func (h *fakeHost) SetupState(context.Context, string) (string, error) {
 	return code, nil
 }
 
-func (h *fakeHost) AdminDialog(_ context.Context, _, script string, _ io.Writer) error {
+func (h *fakeHost) AdminDialog(_ context.Context, _, prompt, script string, _ io.Writer) error {
+	h.prompts = append(h.prompts, prompt)
 	h.dialogs = append(h.dialogs, script)
 	return h.dialogErr
 }

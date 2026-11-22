@@ -61,7 +61,6 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	editConfig(t, cfg, func(c *config.Config) {
 		c.Vault = config.VaultOff
 		c.Agents[0].Setup.AwaitingAddress = false
-		c.Agents[0].InitArgs = []string{"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix}
 	})
 
 	res := remoteWith(t, e, "", "--agent", "bot").res
@@ -69,7 +68,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
 	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, res.MCPCommand)
 
-	runViaConnect(t, d, res.Code)
+	runViaConnect(t, d, res.Code, "public.leads")
 
 	// osHost with the same UserConfigDir init used, so basalt mcp finds the
 	// per-user config and auto-start sees the real file owner.

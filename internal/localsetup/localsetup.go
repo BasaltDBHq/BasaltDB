@@ -313,6 +313,11 @@ func (s *Service) validate(req Request) (job, error) {
 	return j, nil
 }
 
+// adminURLParams is the refusal of a parameter outside the allowlist. It
+// never names the parameter or its value.
+var adminURLParams = "The admin connection string can take only these parameters: " +
+	strings.Join(pgdial.ConnectionKeys(), ", ") + ". Remove the others (a file such as passfile, sslkey, sslcert or sslrootcert is never read from it) and paste it again."
+
 // checkAdminURL accepts a postgres:// or postgresql:// URL with a user and
 // a password that an agent's connection string can be built from. The
 // refusal never names any part of it.
@@ -328,13 +333,19 @@ func checkAdminURL(raw, role string) (string, error) {
 	if pw, ok := u.User.Password(); !ok || pw == "" {
 		return "", bad
 	}
-	// The host, port and database come from the URL itself: a parameter
-	// that names another one would make the connection and the target
-	// checks disagree.
-	for key := range u.Query() {
-		switch strings.ToLower(key) {
-		case "host", "hostaddr", "port", "dbname", "service", "servicefile":
-			return "", bad
+	// The host, port and database come from the URL itself, and the
+	// parameters only from pgdial's allowlist: one that names another
+	// host or database would make the connection and the target checks
+	// disagree, and one that names a file (passfile, sslkey, sslcert,
+	// sslrootcert, service) would have the engine read it as its own
+	// user. The pinned login sets its roots itself, never from the string.
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return "", bad
+	}
+	for key := range query {
+		if !pgdial.ConnectionKey(key) {
+			return "", refuse(CodeConnectionStringRefused, adminURLParams)
 		}
 	}
 	if _, err := guard.AgentConnString(raw, role, ""); err != nil {

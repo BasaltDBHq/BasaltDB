@@ -51,6 +51,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Every MCP tool now also refuses (`ADMIN_CREDENTIAL`) an admin connection string in a JSON-text parameter from Go's default encoder (`\u0026` for `&`), with a percent-encoded scheme or `password` name, with a space in the password, with a driver in the scheme (`postgresql+psycopg2://`), or as a libpq key and value string (`host=h user=u password=…`), so the password no longer reaches the ledger or the result. Text that only mentions a password is still allowed.
+- The admin connection string pasted on the local setup page takes only the connection parameters the engine needs. `passfile`, `sslkey`, `sslcert`, `sslrootcert`, `service` and every other key are refused (`CONNECTION_STRING_REFUSED`) before anything connects, so the engine no longer reads files a pasted string names. Trust a private CA with the page's certificate step instead of `sslrootcert`.
 - A Vault session that a duplicated or otherwise refused frame ends now always closes with `FRAME_INVALID`. When the engine was answering the page's request at that moment, it could close with `PROTOCOL` instead and send the Vault a second `SESSION_CLOSE`.
 - The warning for a binary in a temporary folder now also fires on macOS, where the default temp folder is a link (`/var/folders/...` to `/private/var/...`) and the binary path was never matched against it.
 

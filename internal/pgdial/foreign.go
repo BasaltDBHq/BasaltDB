@@ -39,6 +39,16 @@ var foreignURLKeys = []string{"user", "password", "host", "port", "dbname"}
 var ErrForeignDSN = errors.New("only a postgres:// or postgresql:// URL with a password, no # or ;, and only the parameters " +
 	strings.Join(sortedForeignKeys(), ", "))
 
+// ConnectionKey reports whether key is one of the connection string
+// parameters a Basalt connection takes from a string someone gave:
+// how to reach and trust the server, never a file to read (passfile,
+// service, servicefile, sslkey, sslcert, sslrootcert, sslcrl) or who
+// logs in. The match is exact: libpq's keys are lower case.
+func ConnectionKey(key string) bool { return foreignKeys[key] }
+
+// ConnectionKeys is the sorted list ConnectionKey accepts.
+func ConnectionKeys() []string { return sortedForeignKeys() }
+
 func sortedForeignKeys() []string {
 	keys := make([]string, 0, len(foreignKeys))
 	for k := range foreignKeys {

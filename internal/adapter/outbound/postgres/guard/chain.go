@@ -2,11 +2,12 @@ package guard
 
 import (
 	"context"
-	"errors"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // ChainStatus is the result of VerifyChain.
@@ -32,7 +33,7 @@ func Genesis() ChainHead { return ChainHead{Seq: 0, Hash: make([]byte, hashBytes
 // ErrNoInstall is InstallID's error when basalt_meta has no install row:
 // it was recreated outside the install, or the row deleted. basalt init
 // writes a new one, a new install.
-var ErrNoInstall = errors.New("basalt_meta has no install record; run basalt init again with the admin connection string")
+var ErrNoInstall = guardmodel.ErrNoInstall
 
 // InstallID identifies this install of the guard: the random id the
 // install wrote (basalt_meta.install_id), which no other install has, a new

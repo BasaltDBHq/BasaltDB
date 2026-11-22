@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -38,7 +36,7 @@ type TrustStore struct {
 // engine.json is in configDir: TrustDir(mode, goos, configDir), with the
 // owner the path rule requires in that mode.
 func NewTrustStore(mode Mode, goos, configDir string) (TrustStore, error) {
-	owner, err := pluginpath.Owner(mode)
+	owner, err := requiredOwner(mode)
 	if err != nil {
 		return TrustStore{}, err
 	}
@@ -328,7 +326,7 @@ func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 // readOwned is readNoFollow that also applies the path rule to the file it
 // opened: owned by owner and writable by no one else.
 func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
-	f, err := os.OpenFile(path, noFollowFlags, 0)
+	f, err := os.OpenFile(path, noFollowFlags(), 0)
 	if err != nil {
 		// A symlink in the trust store is the path rule's refusal.
 		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
@@ -351,7 +349,7 @@ func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
 // component, a file larger than limit, and anything not regular. Errors name
 // the path, never the contents.
 func readNoFollow(path string, limit int64) ([]byte, error) {
-	f, err := os.OpenFile(path, noFollowFlags, 0)
+	f, err := os.OpenFile(path, noFollowFlags(), 0)
 	if err != nil {
 		return nil, pathRefusal(path, "cannot be opened, or is a symlink")
 	}

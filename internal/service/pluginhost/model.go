@@ -1,10 +1,6 @@
 package pluginhost
 
 import (
-	"io/fs"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
@@ -77,33 +73,3 @@ var errUnknownMode = pluginmodel.ErrUnknownMode
 
 // Fail returns the error a transport gives for a failure of the given class.
 func Fail(class FailureClass) error { return pluginmodel.Fail(class) }
-
-// Root is the directory installed copies live under.
-func Root(mode Mode, goos, configDir string) (string, error) {
-	return pluginpath.Root(mode, goos, configDir)
-}
-
-// TrustDir is the trust store's directory, next to Root.
-func TrustDir(mode Mode, goos, configDir string) (string, error) {
-	return pluginpath.TrustDir(mode, goos, configDir)
-}
-
-// CheckSocketBase applies the path rule to a socket base directory.
-func CheckSocketBase(dir string) error { return pluginpath.CheckSocketBase(dir) }
-
-var (
-	pathRefusal     = pluginmodel.PathRefusal
-	ruleRefusal     = pluginpath.RuleRefusal
-	checkAbove      = pluginpath.CheckAbove
-	checkStrict     = pluginpath.CheckStrict
-	checkStrictInfo = pluginpath.CheckStrictInfo
-	checkUnder      = pluginpath.CheckUnder
-	currentUID      = pluginpath.CurrentUID
-)
-
-const noFollowFlags = pluginpath.NoFollowFlags
-
-// CheckSocketBaseInfo is CheckSocketBase's rule for dir alone, judged from fi.
-func CheckSocketBaseInfo(dir string, fi fs.FileInfo) error {
-	return pluginpath.CheckSocketBaseInfo(dir, fi)
-}

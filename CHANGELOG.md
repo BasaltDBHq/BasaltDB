@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Both setup pages ask one question right after you paste the admin connection string: "Is this your database?", with the database, its host, who the string signs in as and how its certificate was verified. For a database whose provider signs its own certificate, confirming is also trusting it for that database only, in place of the separate trust screen; the fingerprint is under Details. A renewed certificate on the Update check asks "Is this still your database?" and says whether the issuer is the same as before. The engine's `check` and the connect service's `CheckSetup` answer the database's host, port, `session_user` and certificate kind and issuer, and `pkg/setup` adds `SessionUser` and `CertificateOf`.
 - The plugin approval page names the plugin's fingerprint "Plugin fingerprint", apart from the engine's fingerprint a portal page shows.
 
 - The README, `llms.txt` and `docs/` describe the simplified product: the agent runs `basalt init`, the person finishes on the setup page, and no guide asks a person to type a `basalt` command or paste an admin connection string into a terminal. `docs/bot-setup.md` asks the person for nothing but the page they open. The same-user limit of the local setup is written down in the install guide and the README.

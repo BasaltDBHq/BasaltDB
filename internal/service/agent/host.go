@@ -79,10 +79,7 @@ func theHost() *Host {
 	if h := host.Load(); h != nil {
 		return h
 	}
-	// Not wired (a test of a package that only reads agent's errors): the
-	// error values are unset and match nothing; a function a caller needs
-	// is nil.
-	return &Host{}
+	panic("agent: host not set (internal/app sets it at start)")
 }
 
 // sentinel reports whether err is target, false for a target the host did

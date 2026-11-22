@@ -178,10 +178,15 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.Equal(t, agent.PluginStatePending, st.State)
 
 	// The person's passkey: Postgres verifies it, and the answer carries no
-	// receipt (there is no receipt kind for a plugin approval). With node,
-	// the portal's own page code reads and posts it through the Vault.
+	// receipt (there is no receipt kind for a plugin approval). The portal's
+	// own page code reads and posts it through the Vault; only a local run
+	// without node signs in Go instead.
 	var answer map[string]any
-	if _, err := osexec.LookPath("node"); err == nil {
+	_, noNode := osexec.LookPath("node")
+	if noNode != nil && os.Getenv("CI") != "" {
+		t.Fatalf("CI runs the portal's page code: node is not installed (%v)", noNode)
+	}
+	if noNode == nil {
 		drv := startPageDriver(t, v.URL())
 		drv.ok(t, map[string]any{"op": "open", "secret": secret})
 		read := drv.ok(t, map[string]any{"op": "read", "kind": "plugins", "id": idText, "secret": secret})

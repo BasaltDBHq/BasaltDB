@@ -1,1 +1,0 @@
-pinfile.go calls chainpin.CheckName

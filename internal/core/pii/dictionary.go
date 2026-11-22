@@ -43,12 +43,12 @@ type DictionaryOptions struct {
 	Now func() time.Time
 }
 
-// DefaultDictionaryOptions are the contract defaults.
-func DefaultDictionaryOptions() DictionaryOptions {
+// DefaultDictionaryOptions are the contract defaults; now is the clock that stamps status.json.
+func DefaultDictionaryOptions(now func() time.Time) DictionaryOptions {
 	return DictionaryOptions{
 		MaxMemoryBytes:  DefaultMaxMemoryMB * bytesPerMB,
 		MaxDeltaEntries: DefaultMaxDeltaEntries,
-		Now:             time.Now,
+		Now:             now,
 	}
 }
 

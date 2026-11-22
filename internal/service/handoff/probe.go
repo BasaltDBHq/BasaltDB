@@ -19,7 +19,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -149,8 +148,16 @@ type Prober struct {
 	// profile that matches the host (Supabase, Amazon RDS, the operator's).
 	Roots *x509.CertPool
 	// Profiles are the trust profiles the probe uses (package
-	// trustprofile); nil is pgdial's. Tests give test CAs.
+	// trustprofile); nil is Trust's. Tests give test CAs.
 	Profiles *trustprofile.Set
+	// Trust is the trust profiles the engine holds now (the built-in ones
+	// and the operator's); nil is the built-in ones. internal/app gives the
+	// engine's own.
+	Trust func() *trustprofile.Set
+	// ConnConfig parses dsn into the connection config the engine opens
+	// connections with, trusting set (nil: the engine's own trust). It is
+	// required to probe a login; internal/app gives the Postgres adapter's.
+	ConnConfig func(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, error)
 	// Now is the clock certificates are checked at; nil is time.Now.
 	Now func() time.Time
 }
@@ -242,7 +249,10 @@ func (p Prober) profiles() *trustprofile.Set {
 	if p.Profiles != nil {
 		return p.Profiles
 	}
-	return pgdial.Trust()
+	if p.Trust != nil {
+		return p.Trust()
+	}
+	return trustprofile.BuiltInSet()
 }
 
 func (p Prober) now() time.Time {
@@ -366,7 +376,10 @@ func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, bind
 	if pin.Profile != nil {
 		set = p.profiles().Replacing(pin.Profile.Name, pin.Profile)
 	}
-	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), set)
+	if p.ConnConfig == nil {
+		return nil, errors.New("handoff: the prober has no connection config")
+	}
+	cfg, err := p.ConnConfig(ConnString(a, user, password, binding), set)
 	if err != nil {
 		return nil, err
 	}

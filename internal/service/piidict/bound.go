@@ -5,20 +5,20 @@ import (
 	"encoding/hex"
 	"sort"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Secrets returns the SECRET columns of the map, ordered by table oid and
 // attribute number, loading it first when nothing is loaded. describe hides
 // them and search never matches them (CONTRACT.md, describe).
-func (m *Map) Secrets(ctx context.Context, db guard.Querier) ([]ColumnRef, error) {
+func (m *Map) Secrets(ctx context.Context, db Querier) ([]ColumnRef, error) {
 	s, err := m.current(ctx, db, nil)
 	if err != nil {
 		return nil, err
 	}
 	var out []ColumnRef
 	for ref, c := range s.cols {
-		if c.Class == guard.ClassSecret {
+		if c.Class == guardmodel.ClassSecret {
 			out = append(out, ref)
 		}
 	}
@@ -35,7 +35,7 @@ func (m *Map) Secrets(ctx context.Context, db guard.Querier) ([]ColumnRef, error
 // (agent_pii_catalog.fingerprint) the map was loaded with, as hex: empty
 // before the first basalt classify. It loads the map first when nothing is
 // loaded.
-func (m *Map) CatalogFingerprint(ctx context.Context, db guard.Querier) (string, error) {
+func (m *Map) CatalogFingerprint(ctx context.Context, db Querier) (string, error) {
 	s, err := m.current(ctx, db, nil)
 	if err != nil {
 		return "", err
@@ -45,14 +45,14 @@ func (m *Map) CatalogFingerprint(ctx context.Context, db guard.Querier) (string,
 
 // On is the map reading through db (the agent's pool), as describe calls
 // it (agent.ClassResolver).
-func (m *Map) On(db guard.Querier) BoundMap {
+func (m *Map) On(db Querier) BoundMap {
 	return BoundMap{m: m, db: db}
 }
 
 // BoundMap is a Map with its database.
 type BoundMap struct {
 	m  *Map
-	db guard.Querier
+	db Querier
 }
 
 // Resolve is Map.Resolve through the bound database.

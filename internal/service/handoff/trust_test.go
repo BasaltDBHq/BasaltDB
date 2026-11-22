@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -42,7 +43,8 @@ func newTrustServer(t *testing.T, certHost string, operator ...*trustprofile.Pro
 			}
 			return dial(ctx, network, addr)
 		},
-		Profiles: trustprofiletest.Set(t, nil, operator...),
+		Profiles:   trustprofiletest.Set(t, nil, operator...),
+		ConnConfig: pgdial.ConnConfigTrusting,
 	}
 	return s
 }

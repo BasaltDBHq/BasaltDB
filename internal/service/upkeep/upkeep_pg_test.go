@@ -108,7 +108,7 @@ func TestTickAfterSilenceWritesTheDeadManRow(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, newUpkeep(a.Conn, time.Now).Tick(ctx))
-	later := func() time.Time { return time.Now().Add(ledger.DeadManAfter + 24*time.Hour) }
+	later := func() time.Time { return time.Now().Add(upkeep.DeadManAfter + 24*time.Hour) }
 	require.NoError(t, newUpkeep(a.Conn, later).Tick(ctx))
 
 	require.Len(t, heartbeats(t, a.Conn), 2)

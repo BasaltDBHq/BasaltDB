@@ -2,6 +2,7 @@ package setup_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -168,4 +169,54 @@ func TestAgentCodeWithNoTablesForADroppedRoleIsAnInstallWithTicks(t *testing.T) 
 	require.True(t, hasPrivilege(t, d, "public.leads", "UPDATE"))
 	require.False(t, hasPrivilege(t, d, "public.lead_notes", "SELECT"), "only the ticked table")
 	require.False(t, hasPrivilege(t, d, "public.payroll", "SELECT"))
+}
+
+// The role exists but holds no table: an AGENT code that keeps its grants
+// is treated like one for a dropped role. Check lists the tables of public
+// with ticks; a run without ticks is NO_TABLES, nothing changed, and a run
+// with ticks grants exactly the ticked tables. Never all of public.
+func TestAgentCodeWithNoTablesForARoleWithNoGrantsNeedsTicks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	installTwoOfFive(t, d)
+	role := d.Names.Prefix + "_agent_bot"
+	ident := pgx.Identifier{role}.Sanitize()
+	d.Exec(t, `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM `+ident+`; REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM `+ident)
+	require.Empty(t, grantedOn(roleACL(t, d, role)), "the role holds no table")
+
+	for _, verifier := range []bool{false, true} {
+		code := newCode(t, d, keepGrants(verifier))
+		checked, err := setup.Check(ctx, d.Admin, connectPage(code))
+		require.NoError(t, err)
+		require.False(t, checked.RunsAsInstall, "the role exists")
+		require.True(t, checked.Ticked, "the person ticks the tables")
+		require.Equal(t, []string{"public.lead_notes", "public.lead_owner", "public.leads", "public.note_tags", "public.payroll"}, checked.Tables)
+
+		_, err = setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{})
+		require.Equal(t, setup.CodeNoTables, codeOf(t, err), "no ticks on the page")
+		_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
+		require.Equal(t, setup.CodeNoTables, codeOf(t, err), "never every table in public unticked")
+		require.Empty(t, grantedOn(roleACL(t, d, role)), "nothing changed")
+	}
+
+	code := newCode(t, d, keepGrants(true))
+	res, err := setup.Run(ctx, d.Admin, ticked(code, "public.note_tags"), setup.RunInput{})
+	require.NoError(t, err)
+	require.True(t, res.Ran)
+	require.True(t, hasPrivilege(t, d, "public.note_tags", "SELECT"))
+	require.False(t, hasPrivilege(t, d, "public.leads", "SELECT"), "only the ticked table")
+	require.False(t, hasPrivilege(t, d, "public.payroll", "SELECT"))
+}
+
+// grantedOn are the ACL lines on tables, views and sequences: no schema
+// usage, which a role may keep with no table.
+func grantedOn(acl []string) []string {
+	var out []string
+	for _, l := range acl {
+		if !strings.HasPrefix(l, "schema ") {
+			out = append(out, l)
+		}
+	}
+	return out
 }

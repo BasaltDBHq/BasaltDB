@@ -81,6 +81,10 @@ type Setup struct {
 	// the role holds a privilege on, read in Prepare: the column labels
 	// cover them, and nothing is granted or revoked.
 	kept []string
+	// noGrants is an AGENT code that keeps the role's grants whose role
+	// exists and holds none: like a dropped role, the person ticks its
+	// tables (Ticked), never every table in public.
+	noGrants bool
 	// given: Include was called with the page's ticks (given), which
 	// Prepare checks after the database's refusals; ticks: they apply
 	// (Ticked), and included are those tables.
@@ -99,7 +103,7 @@ var includedShape = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{
 // (CONTRACT.md, Connect, Tables on the connect page). For an AGENT code it
 // is known once Prepare found the role missing.
 func (s *Setup) Ticked() bool {
-	return s.listedSchemas() != nil && (s.P.Kind == setupcode.KindInstall || s.asInstall)
+	return s.listedSchemas() != nil && (s.P.Kind == setupcode.KindInstall || s.asInstall || s.noGrants)
 }
 
 // listedSchemas are the schemas whose tables Prepare lists for the agent:
@@ -113,7 +117,7 @@ func (s *Setup) listedSchemas() []string {
 		return nil
 	case a.AllTables != nil:
 		return a.AllTables.Schemas
-	case s.asInstall && s.P.KeepsGrants():
+	case (s.asInstall || s.noGrants) && s.P.KeepsGrants():
 		return []string{publicSchema}
 	}
 	return nil
@@ -125,7 +129,7 @@ const publicSchema = "public"
 // errTicksRequired refuses to grant a listing the person did not tick: an
 // AGENT code whose role does not exist and that names no tables.
 func errTicksRequired(agent string) error {
-	return refuse(CodeNoTables, fmt.Sprintf("The role of %s does not exist any more, so the setup creates it: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
+	return refuse(CodeNoTables, fmt.Sprintf("%s has no tables in this database: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
 }
 
 // Include gives Prepare the tables the person left ticked on the connect
@@ -246,7 +250,7 @@ func (s *Setup) AgentTables() []string {
 	if s.P.Agent == nil {
 		return nil
 	}
-	if s.P.KeepsGrants() && !s.asInstall {
+	if s.P.KeepsGrants() && !s.asInstall && !s.noGrants {
 		return slices.Clone(s.kept)
 	}
 	spec := s.Spec()
@@ -303,6 +307,15 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	// before the ticks are checked.
 	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.HasVerifier() && len(db.Roles) == 0
 	state.RunsAsInstall = s.asInstall
+	if s.P.KeepsGrants() && !s.asInstall && len(db.Roles) > 0 {
+		// The role's grants are the record of its tables: read them before
+		// the ticks are checked, since a role with none is ticked.
+		if s.kept, err = guard.GrantedTables(ctx, conn, s.P.Role()); err != nil {
+			return nil, err
+		}
+		s.noGrants = len(s.kept) == 0
+		state.NoGrants = s.noGrants
+	}
 	if err := s.checkIncluded(); err != nil {
 		return nil, err
 	}
@@ -320,11 +333,6 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	}
 	if err := s.readAllTables(ctx, conn, &p.State); err != nil {
 		return nil, err
-	}
-	if s.P.KeepsGrants() && !s.asInstall {
-		if s.kept, err = guard.GrantedTables(ctx, conn, s.P.Role()); err != nil {
-			return nil, err
-		}
 	}
 	blind, err := guard.AgentBlindTables(ctx, conn, s.Names, s.Spec())
 	if err != nil {
@@ -583,7 +591,7 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guard.Script, er
 }
 
 func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable) (guard.Script, error) {
-	if p.asInstall && p.Ticked() && !p.ticks {
+	if (p.asInstall || p.noGrants) && p.Ticked() && !p.ticks {
 		// Never every table in public: only the ones the person ticked.
 		return guard.Script{}, errTicksRequired(p.P.Agent.Name)
 	}

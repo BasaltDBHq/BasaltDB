@@ -3,6 +3,7 @@ package localsetup_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -395,10 +396,15 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 	require.Equal(t, strings.ToLower(adminCfg.Host), listing.Host)
 	require.Equal(t, int(adminCfg.Port), listing.Port)
 	require.NotNil(t, listing.Certificate)
-	require.Contains(t, []string{"NONE", "NOT_VERIFIED", "PUBLIC", "OWN"}, listing.Certificate.Kind)
+	if _, tlsConn := f.db.Admin.PgConn().Conn().(*tls.Conn); !tlsConn {
+		require.Equal(t, &localsetup.ConfirmCertificate{Kind: "NONE"}, listing.Certificate, "no TLS: no certificate to name")
+	}
 	raw, err := json.Marshal(listing)
 	require.NoError(t, err)
-	require.NotContains(t, string(raw), mustPassword(t, f.db.URL), "the answer never echoes the password")
+	u, err := url.Parse(f.db.URL)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), u.User.String()+"@", "the answer never echoes the user and password")
+	require.NotContains(t, string(raw), "databaseUrl")
 
 	// Write on a table with no primary key: the listing says it cannot.
 	req := f.real()

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -337,8 +338,8 @@ func TestInitRemoteWithoutAgent(t *testing.T) {
 }
 
 // An agent with a credential gets a code with the credential's database as
-// its target: here the person confirmed a database that does not record
-// the setup (SETUP_NOT_FOUND), so the run makes a fresh INSTALL code with
+// its target: here the role does not log in while the confirmed
+// connect-only setup is pending, so the run makes a fresh INSTALL code with
 // the password the credential holds.
 func TestInitRemoteMakesATargetCode(t *testing.T) {
 	t.Parallel()
@@ -691,8 +692,8 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	cfg := tempConfig(t)
 	seedDB(t, withDB(t), cfg, d, dbURL, "0123abcd")
 
-	// The confirmed database does not record the setup: INSTALL, run by the
-	// person; the bot's password now logs in.
+	// The role does not log in yet while the confirmed setup is pending:
+	// INSTALL, run by the person; the bot's password now logs in.
 	install := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "INSTALL", install.res.Kind)
 	requireVerifierOf(t, install.payload.Agent.Verifier, "0123abcd")
@@ -744,6 +745,37 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	require.Nil(t, upgrade.payload.Agent)
 	require.Equal(t, setupcode.Guard{From: guard.LatestVersion() - 1, To: guard.LatestVersion()}, upgrade.payload.Guard)
 	require.Equal(t, pw2, credentialPassword(t, install.credFile))
+}
+
+// The person confirmed a database of a server where the bot's role already
+// logs in (the setup ran in another database there), and the database does
+// not record the setup (SETUP_NOT_FOUND): with no flag, the next run makes
+// an AGENT code with a new password for that database.
+func TestInitRemoteSetupNotFoundGetsANewPassword(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	cfg := tempConfig(t)
+	seedDB(t, withDB(t), cfg, d, dbURL, botPassword)
+	salt := make([]byte, 16)
+	verifier, err := setupcode.VerifierWithSalt(botPassword, salt)
+	require.NoError(t, err)
+	other, expires, err := setupcode.NewSetupID(time.Now(), rand.Reader)
+	require.NoError(t, err)
+	runCode(t, d, setupcode.Payload{
+		SetupID: other, Kind: setupcode.KindInstall, ExpiresAt: expires, Guard: setupcode.Guard{To: guard.LatestVersion()},
+		Agent: &setupcode.Agent{Name: "bot", Write: []string{"public.leads"}, Verifier: verifier},
+	})
+	pending, err := config.Load(cfg)
+	require.NoError(t, err)
+
+	r := remoteDBRun(t, cfg, "--agent", "bot")
+	require.NotEqual(t, pending.Agents[0].Setup.SetupID, r.res.SetupID)
+	require.Equal(t, "AGENT", r.res.Kind)
+	require.NotNil(t, r.payload.Target)
+	require.Equal(t, botPassword, credentialPassword(t, r.credFile))
+	pw := credentialPassword(t, r.credFile+pendingSuffix)
+	require.NotEqual(t, botPassword, pw)
+	requireVerifierOf(t, r.payload.Agent.Verifier, pw)
 }
 
 func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {

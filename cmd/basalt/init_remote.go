@@ -755,14 +755,16 @@ type plan struct {
 }
 
 // decide picks the kind (CONTRACT.md, basalt init --remote, item 3; RI-6).
-// A role that does not log in while an INSTALL setup is pending (the person
-// confirmed a database that does not record it yet): INSTALL again with the
-// password this machine holds, so any of its INSTALL codes matches the
-// credential. A role that does not log in otherwise: the database refuses
-// the credential (CREDENTIAL_REJECTED), so an AGENT code with a new password
-// (RI-17), with no flag. A role that logs in: AGENT for a change of tables
-// or timeout; else UPGRADE when its guard is older than this build's; else
-// an AGENT code with no change.
+// A role that does not log in while an INSTALL setup is pending: INSTALL
+// again with the password this machine holds, so any of its INSTALL codes
+// matches the credential. A role that does not log in otherwise: the
+// database refuses the credential (CREDENTIAL_REJECTED), so an AGENT code
+// with a new password (RI-17), with no flag. A role that logs in while a
+// connect-only setup the person confirmed is not recorded there
+// (SETUP_NOT_FOUND: it ran in another database of the same server): an
+// AGENT code with a new password for this one. Otherwise AGENT for a change
+// of tables or timeout; else UPGRADE when its guard is older than this
+// build's; else an AGENT code with no change.
 func (r *remoteInit) decide(saved []string) (plan, error) {
 	latest := guard.LatestVersion()
 	pendingInstall := r.entry != nil && r.entry.Setup != nil && r.entry.Setup.Kind == string(setupcode.KindInstall)
@@ -781,6 +783,9 @@ func (r *remoteInit) decide(saved []string) (plan, error) {
 	p := plan{from: r.installed}
 	changed := r.entry == nil || !sameRequest(r.entry.InitArgs, saved)
 	switch {
+	case r.confirmedNotFound():
+		p.kind = setupcode.KindAgent
+		return r.withNewPassword(p)
 	case changed:
 		p.kind = setupcode.KindAgent
 	case r.installed < latest:
@@ -789,6 +794,14 @@ func (r *remoteInit) decide(saved []string) (plan, error) {
 		p.kind = setupcode.KindAgent
 	}
 	return p, nil
+}
+
+// confirmedNotFound reports whether the pending setup is a connect-only
+// code whose database the person confirmed and that the database the agent
+// logs in to does not record (the engine's SETUP_NOT_FOUND).
+func (r *remoteInit) confirmedNotFound() bool {
+	s := r.entry
+	return s != nil && s.Setup != nil && !s.Setup.ConnectOnly() && connectOnlyCode(s.Setup.Code) && !r.recorded
 }
 
 func (r *remoteInit) withNewPassword(p plan) (plan, error) {

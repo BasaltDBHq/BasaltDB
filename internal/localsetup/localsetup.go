@@ -422,14 +422,17 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	names := guard.Names{Prefix: prefix}
 	installed, err := guard.InstalledPrefix(ctx, tx)
 	if err != nil {
-		return planned{}, setupFailed()
+		return planned{}, setupFailed("read the guard prefix", err)
 	}
 	if installed != "" && installed != prefix {
 		return planned{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
 	}
+	if err := usable(ctx, tx); err != nil {
+		return planned{}, err
+	}
 	exists, err := guard.AgentRoleExists(ctx, tx, names, j.req.Agent)
 	if err != nil {
-		return planned{}, setupFailed()
+		return planned{}, setupFailed("read the agent role", err)
 	}
 	var p planned
 	if exists {
@@ -444,7 +447,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			// role.
 			var member bool
 			if err := tx.QueryRow(ctx, `SELECT pg_catalog.pg_has_role($1, $2, 'MEMBER')`, j.role, names.Agents()).Scan(&member); err != nil {
-				return planned{}, setupFailed()
+				return planned{}, setupFailed("read the agent role membership", err)
 			}
 			if !member {
 				return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over a role outside BasaltDB's agents.", j.role))
@@ -458,12 +461,12 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	opts := guard.InitOptions{Names: names}
 	if j.req.Demo {
 		if p.seeded, err = demo.Seed(ctx, tx); err != nil {
-			return planned{}, setupFailed()
+			return planned{}, setupFailed("seed the sample data", err)
 		}
 		spec.Write = demo.Tables
 	} else {
 		if p.list, err = readListing(ctx, tx, j.schemas); err != nil {
-			return planned{}, setupFailed()
+			return planned{}, setupFailed("read the tables", err)
 		}
 		if j.picks == nil {
 			return p, nil // the listing call
@@ -474,7 +477,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		spec.Write, spec.Read = p.write, p.read
 		blind, err := guard.AgentBlindTables(ctx, tx, names, spec)
 		if err != nil {
-			return planned{}, setupFailed()
+			return planned{}, setupFailed("read the tables without row-level security", err)
 		}
 		p.questions = questions(blind, j.req.Agent)
 		if answers == nil {
@@ -487,7 +490,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	}
 	opts.Agent = spec
 	if p.script, err = guard.PlanInit(ctx, tx, opts); err != nil {
-		return planned{}, setupFailed()
+		return planned{}, setupFailed("plan the install", err)
 	}
 	return p, nil
 }
@@ -525,12 +528,48 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 	return user == j.role && db == database
 }
 
-func setupFailed() *RefusalError {
-	return refuse(CodeSetupFailed, "Reading the database or running the setup failed; nothing changed.")
+// RemoveOldInstallDoc is the page that says how to remove an older
+// BasaltDB install from a database.
+const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
+
+// usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
+// install over or update, before anything is planned or changed.
+func usable(ctx context.Context, tx pgx.Tx) error {
+	err := guard.CheckUsable(ctx, tx)
+	switch {
+	case errors.Is(err, guard.ErrUnusableInstall):
+		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+RemoveOldInstallDoc+" says how. Nothing changed.")
+	case err != nil:
+		return setupFailed("read the installed guard", err)
+	}
+	return nil
 }
+
+// setupFailed is SETUP_FAILED for err at step: the person's message names
+// the Postgres error code and the step when the database refused it, and
+// Cause carries the redacted message for the engine's log.
+func setupFailed(step string, err error) *RefusalError {
+	c := causeOf(step, err)
+	r := refuse(CodeSetupFailed, "Reading the database or running the setup failed; nothing changed.")
+	switch {
+	case c.SQLState == sqlstateInsufficientPrivilege:
+		r.Message = fmt.Sprintf("The admin role lacks a privilege the setup needs (Postgres error %s, %s); nothing changed.", c.SQLState, c.Step)
+	case c.SQLState != "":
+		r.Message = fmt.Sprintf("Reading the database or running the setup failed (Postgres error %s, %s); nothing changed.", c.SQLState, c.Step)
+	}
+	r.Cause = c
+	return r
+}
+
+const sqlstateInsufficientPrivilege = "42501"
 
 // Check reads what an install would do. It changes nothing.
 func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
+	a, err := s.check(ctx, req)
+	return a, scrub(err, req.DatabaseURL)
+}
+
+func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
 	if s.opts.Configured {
@@ -547,7 +586,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := currentDatabase(ctx, tx)
@@ -565,7 +604,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	}
 	needed, err := passkeyNeeded(ctx, tx, s.opts.Origin)
 	if err != nil {
-		return CheckAnswer{}, timeLimit(ctx, setupFailed())
+		return CheckAnswer{}, timeLimit(ctx, setupFailed("read the passkeys", err))
 	}
 	if !req.Demo && j.picks == nil {
 		out, err := listingAnswer(j, database, p, needed)
@@ -577,7 +616,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	}
 	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req), trustRoot: req.TrustRoot})
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("make the passkey challenge", err)
 	}
 	if !req.Demo {
 		out := CheckAnswer{
@@ -593,7 +632,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		// read and sampled on the connection.
 		_ = tx.Rollback(context.WithoutCancel(ctx))
 		if out.Columns, out.ColumnsMore, err = s.columns(ctx, conn, j); err != nil {
-			return CheckAnswer{}, timeLimit(ctx, setupFailed())
+			return CheckAnswer{}, timeLimit(ctx, setupFailed("read the columns", err))
 		}
 		return out, nil
 	}
@@ -634,7 +673,7 @@ func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer,
 func currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
 	var name string
 	if err := tx.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&name); err != nil {
-		return "", setupFailed()
+		return "", setupFailed("read the database name", err)
 	}
 	return name, nil
 }

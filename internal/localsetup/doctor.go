@@ -149,7 +149,7 @@ func (s *Service) Doctor(ctx context.Context, req DoctorRequest) (DoctorAnswer, 
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 	if err := s.readDoctor(ctx, conn, a, &out); err != nil {
-		return DoctorAnswer{}, timeLimit(ctx, setupFailed())
+		return DoctorAnswer{}, timeLimit(ctx, setupFailed("read the doctor checks", err))
 	}
 	return out, nil
 }

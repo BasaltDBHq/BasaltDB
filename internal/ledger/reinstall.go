@@ -16,7 +16,7 @@ import (
 
 // Reinstalls on the record (CONTRACT.md, "Version 36: reinstalls on the
 // record"): what a witness does with a pin of another install, and the
-// notice basalt log and basalt status show.
+// notice the status tool shows.
 
 // PinFate is what became of a pin of another install.
 type PinFate int
@@ -96,7 +96,7 @@ const (
 	noticeMoreReports = ", and %d more reports"
 	noticeMoreAgents  = "and %d more agents"
 	noticeEarlier     = "and %d earlier reinstalls"
-	noticeRunLog      = "Run basalt log to see every report."
+	noticeRunLog      = "Older reports stay in the ledger's install records."
 )
 
 // Cuts that keep the status personMessage within its limit.
@@ -111,7 +111,7 @@ const (
 	roleCut = 32
 )
 
-// ReinstallNotices are every line basalt log prints for rs: each
+// ReinstallNotices are every notice line for rs: each
 // reinstall's notice, newest first, then "and N earlier reinstalls".
 func ReinstallNotices(rs guard.Reinstalls) []string {
 	var out []string
@@ -145,8 +145,7 @@ func ReinstallNotice(r guard.Reinstall) []string {
 }
 
 // ReinstallPersonMessage is the status problem's personMessage: the newest
-// reinstall's first notice line, then "Run basalt log to see every
-// report.", the Vault user cut to VaultUserCut characters, and the role
+// reinstall's first notice line, then noticeRunLog, the Vault user cut to VaultUserCut characters, and the role
 // names cut too when the message would be over limit characters. False
 // when there is no reinstall.
 func ReinstallPersonMessage(rs guard.Reinstalls, limit int) (string, bool) {

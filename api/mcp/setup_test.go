@@ -72,8 +72,8 @@ type validSetupFixture struct {
 	Payload     map[string]any `json:"payload"`
 }
 
-// laptopFixture is what basalt init --setup-code decides for a code against
-// a database state at a time (CONTRACT.md, basalt init --setup-code).
+// laptopFixture is what the setup checks decide for a code against a
+// database state at a time (CONTRACT.md, The setup checks).
 type laptopFixture struct {
 	Name     string `json:"name"`
 	Code     string `json:"code"`
@@ -107,14 +107,9 @@ func loadSetupFixtures(t *testing.T) setupFixtures {
 	return f
 }
 
-func TestPortalSchemas(t *testing.T) {
-	t.Parallel()
-	checkPayloadSchemas(t, "portal", []string{"portal-verify-result.schema.json"})
-}
-
 func TestSetupSchemas(t *testing.T) {
 	t.Parallel()
-	checkPayloadSchemas(t, "setup", []string{"remote-init-result.schema.json", "setup-code.schema.json"})
+	checkPayloadSchemas(t, "setup", []string{"setup-code.schema.json"})
 }
 
 // TestSetupCodeFixtures checks the golden setup codes against the codec
@@ -215,6 +210,11 @@ func checkSetupRules(p map[string]any) error {
 		return fmt.Errorf("expiresAt more than %v after the setup id's time", setupLifetime)
 	}
 	agent, hasAgent := p["agent"].(map[string]any)
+	if _, ok := p["trustPin"]; ok {
+		if _, hasTarget := p["target"]; !hasTarget {
+			return fmt.Errorf("a code without target carries trustPin")
+		}
+	}
 	if _, ok := p["target"]; !ok {
 		// A connect-only code: the engine collects the address, so it
 		// needs the engine key; an AGENT one is a recovery code.
@@ -262,7 +262,7 @@ func uuidV7Time(id string) time.Time {
 // setupKeyOrder is setup-code.schema.json's key order per object: the
 // order the compact JSON of a code is written in.
 var setupKeyOrder = map[string][]string{
-	"":          {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt", "engine"},
+	"":          {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt", "engine", "trustPin"},
 	"target":    {"host", "port", "database", "supabaseRef"},
 	"guard":     {"from", "to"},
 	"agent":     {"name", "write", "read", "allTables", "verifier", "statementTimeoutMs"},
@@ -310,7 +310,7 @@ func setupFingerprint(t *testing.T, p map[string]any) string {
 	return strings.Join(groups, " ")
 }
 
-// TestSetupLaptopFixtures runs the checks of basalt init --setup-code, in
+// TestSetupLaptopFixtures runs the setup checks, in
 // CONTRACT.md's order, over the laptop fixtures: the refusal, or the summary
 // lines the person must see (the agent and role named, a password
 // replacement said out loud, the fingerprint, prefix and timeout).
@@ -378,10 +378,18 @@ func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Ti
 	switch {
 	case kind == "INSTALL" && exists:
 		return "ROLE_EXISTS", ""
-	case kind == "AGENT" && !exists:
+	case kind == "AGENT" && !exists && !hasVerifier(p):
+		// An AGENT code with a verifier runs as an INSTALL instead.
 		return "ROLE_MISSING", ""
 	}
 	return "", laptopSummary(t, p, role)
+}
+
+// hasVerifier reports whether the payload's agent part carries a verifier.
+func hasVerifier(p map[string]any) bool {
+	a, ok := p["agent"].(map[string]any)
+	v, _ := a["verifier"].(string)
+	return ok && v != ""
 }
 
 func laptopSummary(t *testing.T, p map[string]any, role string) string {
@@ -449,9 +457,9 @@ func hmacSHA256(key []byte, msg string) []byte {
 }
 
 // TestAgentOperatedSteps checks the catalog's agent-operated rules
-// (CONTRACT.md, Next steps): AGENT RUN_COMMAND appears only in variants,
-// OPERATOR only in the entries both modes share, and every variant replaces
-// an existing entry and is listed in CONTRACT.md.
+// (CONTRACT.md, Next steps): every variant replaces an existing entry, names
+// AGENT or PERSON only, and is listed in CONTRACT.md. An AGENT RUN_COMMAND,
+// the agent's basalt init, may stand in any entry.
 func TestAgentOperatedSteps(t *testing.T) {
 	t.Parallel()
 	c, err := mcpcontract.LoadNextSteps()
@@ -470,13 +478,6 @@ func TestAgentOperatedSteps(t *testing.T) {
 	for _, r := range c.Results {
 		shared["RESULT:"+r.Tool+"/"+r.Case] = r.Steps
 	}
-	for key, steps := range shared {
-		for _, s := range steps {
-			agentCommand := s.Actor == mcpcontract.ActorAgent && s.Action == mcpcontract.ActionRunCommand
-			require.False(t, agentCommand, "%s: AGENT RUN_COMMAND only in agentOperated variants", key)
-		}
-	}
-
 	variants := map[string]bool{}
 	for _, v := range c.AgentOperated {
 		key := v.Kind + ":" + v.Code + "/" + v.Reason + "/" + v.Tool
@@ -497,9 +498,9 @@ func TestAgentOperatedSteps(t *testing.T) {
 
 // TestConnectLinkSteps checks the catalog's connect-link variants (CONTRACT.md,
 // Next steps with the connect link): each replaces an entry that hands the
-// person a pending setup code, puts the person's OPEN_LINK before that
-// entry's steps on an agent-operated engine, keeps the rest unchanged, and is
-// listed in CONTRACT.md.
+// person a pending setup, puts the person's OPEN_LINK in place of that
+// entry's first step (the agent's basalt init), keeps the rest unchanged, and
+// is listed in CONTRACT.md.
 func TestConnectLinkSteps(t *testing.T) {
 	t.Parallel()
 	c, err := mcpcontract.LoadNextSteps()
@@ -523,9 +524,11 @@ func TestConnectLinkSteps(t *testing.T) {
 		require.False(t, agentVariant, "%s: an entry with an agent-operated variant cannot take a connect-link one", key)
 		require.True(t, v.PersonMessage, "%s: the link is in the personMessage", key)
 		requireSteps(t, key, v.Steps)
-		want := append([]mcpcontract.StepKind{{Actor: mcpcontract.ActorPerson, Action: "OPEN_LINK"}},
-			mcpcontract.Resolve(steps, mcpcontract.OperatedByAgent)...)
-		require.Equal(t, want, v.Steps, "%s: the link first, then the entry's own steps", key)
+		resolved := mcpcontract.Resolve(steps, mcpcontract.OperatedByAgent)
+		require.Equal(t, mcpcontract.StepKind{Actor: mcpcontract.ActorAgent, Action: mcpcontract.ActionRunCommand}, resolved[0],
+			"%s: the entry starts with the agent's basalt init", key)
+		want := append([]mcpcontract.StepKind{{Actor: mcpcontract.ActorPerson, Action: "OPEN_LINK"}}, resolved[1:]...)
+		require.Equal(t, want, v.Steps, "%s: the link in place of basalt init, then the entry's other steps", key)
 		got, ok := c.ConnectLinkEntry(v.Kind, v.Code, v.Reason, v.Tool)
 		require.True(t, ok, key)
 		require.Equal(t, v, got)
@@ -605,11 +608,12 @@ func contractConnectLink(t *testing.T) map[string]bool {
 
 func TestResolveOperatorSteps(t *testing.T) {
 	t.Parallel()
-	c, err := mcpcontract.LoadNextSteps()
-	require.NoError(t, err)
-	e, ok := c.ErrorEntry("UNAVAILABLE", "SETUP_EXPIRED", "write")
-	require.True(t, ok)
-	require.Equal(t, mcpcontract.ActorOperator, e.Steps[0].Actor)
+	// No catalog entry has an OPERATOR step since the person runs no
+	// command; Resolve still turns one into the operator's actor.
+	e := mcpcontract.ErrorSteps{Steps: []mcpcontract.StepKind{
+		{Actor: mcpcontract.ActorAgent, Action: "ASK_PERSON"},
+		{Actor: mcpcontract.ActorOperator, Action: mcpcontract.ActionRunCommand},
+	}}
 
 	for operatedBy, actor := range map[string]string{
 		mcpcontract.OperatedByAgent:  mcpcontract.ActorAgent,
@@ -617,11 +621,11 @@ func TestResolveOperatorSteps(t *testing.T) {
 		"":                           mcpcontract.ActorPerson, // config unreadable: the safe default
 	} {
 		got := mcpcontract.Resolve(e.Steps, operatedBy)
-		require.Equal(t, actor, got[0].Actor, operatedBy)
-		require.Equal(t, mcpcontract.ActionRunCommand, got[0].Action)
-		require.Equal(t, e.Steps[1:], got[1:], "only OPERATOR steps change")
+		require.Equal(t, actor, got[1].Actor, operatedBy)
+		require.Equal(t, mcpcontract.ActionRunCommand, got[1].Action)
+		require.Equal(t, e.Steps[:1], got[:1], "only OPERATOR steps change")
 	}
-	require.Equal(t, mcpcontract.ActorOperator, e.Steps[0].Actor, "Resolve does not change the catalog")
+	require.Equal(t, mcpcontract.ActorOperator, e.Steps[1].Actor, "Resolve does not change the catalog")
 }
 
 var agentOperatedRow = regexp.MustCompile("^\\| (error|warning|problem) \\| `([A-Z][A-Z0-9_]*)` \\| (?:`([A-Z][A-Z0-9_]*)`|—) \\|")

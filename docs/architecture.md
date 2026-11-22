@@ -6,7 +6,7 @@ A five-minute map of the code for someone new to it. The exact behaviour of ever
 
 BasaltDB is one Go binary, `basalt` (`cmd/basalt`), plus a schema installed in the person's Postgres. The same binary plays three roles.
 
-- **Person CLI.** What a person types: `basalt init`, `log`, `approve`, `revert`, `status`, `upgrade`, `uninstall`. These live in `cmd/basalt`.
+- **Setup command.** `basalt init` is what an agent runs to start setup, a guard update, a repair or a removal. It prints one link and the person finishes on a page. These live in `cmd/basalt`.
 - **Engine.** `basalt engine` is a long-running service on the agent's machine, running as its own OS user. It serves each agent over a Unix socket, checks the agent's SQL, and holds that agent's scoped Postgres credential. It is the first filter, not the boundary. Code: `internal/engine`.
 - **MCP shim.** `basalt mcp --agent NAME` is the process an MCP client starts. It only relays stdio to the engine's socket. It holds no credential and parses no SQL. Code: `internal/shim`.
 
@@ -15,7 +15,7 @@ The fourth piece is not Go. The **guard** is the `basalt_meta` schema in the per
 ```
 MCP client --stdio--> basalt mcp (shim) --unix socket--> basalt engine --agent credential--> Postgres
                                                                                               basalt_meta (guard)
-person --> basalt CLI ---------------------------------> Postgres (admin credential, once, at init)
+person --> setup page (admin credential, once) --------> engine or connect service --> Postgres
 person --> approval / revert page (passkey) -----------> engine or relay --> basalt_meta checks the signature
 ```
 
@@ -42,14 +42,14 @@ The whole CLI: one file or a few per command (`init.go`, `approve.go`, `revert.g
 
 | Package | What it does |
 |---|---|
-| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local approval and revert pages), `person` (the person socket for the CLI), `config`, `service`, `privdrop`, `peercred`, `upkeep`, `piidict`. |
+| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local setup, approval and revert pages), `person` (plugin approvals behind `request_plugin`), `config`, `service`, `peercred`, `upkeep`, `piidict`. |
 | `mcp` | A minimal MCP server over JSON-RPC 2.0. Used by the engine and its tests. |
 | `shim` | The `basalt mcp` relay. |
 | `sqlguard` | Parses one agent statement with libpg_query and classifies or refuses it. |
 | `action` | Plain structs for runs, reads, writes and refusals, with no database in them. |
 | `store/postgres` | Maps `action` types to Postgres and the guard. The adapter between the agent service and the database. |
 | `guard` | Installs and calls `basalt_meta`. SQL is in `guard/schema`. |
-| `ledger` | Reads the ledger the way an agent may, through the agent views. Backs `basalt log` and `run_history`. |
+| `ledger` | Reads the ledger the way an agent may, through the agent views. Backs `run_history` and `list_runs`. |
 | `pgdial`, `pgcatalog` | Opening every Postgres connection (works through poolers), and reading the catalog. |
 
 ### `internal/`: approvals, reverts and pages
@@ -65,10 +65,10 @@ The whole CLI: one file or a few per command (`init.go`, `approve.go`, `revert.g
 
 | Package | What it does |
 |---|---|
-| `vault`, `channel`, `engineaddr` | The engine's one optional outbound connection to the Vault, its encrypted session, and the address grammar for direct links. |
-| `portalverify` | Checks that the hosted portal serves the same pages as the binary embeds. |
+| `vault`, `channel` | The engine's one optional outbound connection to the Vault, and its encrypted session. |
+| `portalverify` | Checks that the hosted portal serves the same pages as the binary embeds (run by the release workflow, `make portal-verify`). |
 | `pii`, `logredact` | PII detection primitives, and keeping link secrets out of logs. |
-| `setupcode` | The code that carries an install from the agent's machine to the person's own. |
+| `setupcode`, `setuprun`, `localsetup` | The connect-only setup code a bot's `basalt init --remote` makes, running a setup, and the local setup page's jobs. |
 | `chainpin` | Remembers the last ledger chain head a reader verified, to catch rewritten history. |
 | `crash`, `updatecheck`, `buildinfo` | Local crash reports, the new-release notice, and the version. |
 

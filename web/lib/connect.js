@@ -15,7 +15,15 @@
 // step. The hand-off ticket is kept the same way and never shown.
 import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256, utf8 } from "./codec.js";
 import { pairingCoordinates } from "./pairing.js";
+import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
+import { startTabs } from "./remove.js";
+import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
+import { ADD_AGAIN, activePasskeys, checkView, passkeyLabel, passkeyLine, revokeLines, signalRemoved, unlabeledColumns } from "./connectupdate.js";
+import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
+
+// The pieces the local setup page shares with this one.
+export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText };
 
 // CONNECT_SERVICE is the only origin this page connects to; the page's
 // policy (its meta CSP and the edge function's header) allows it alone.
@@ -28,11 +36,7 @@ export const PAGE_HOST = "portal.basaltvault.app";
 // opened in a new tab. The page sends nothing there itself.
 export const WAITLIST = "https://basaltvault.app/#waitlist";
 
-export const LAPTOP_COMMAND = "basalt init --setup-code <the code your bot sent>";
-const LAPTOP_LINE = `Or run the setup on your own computer instead, with no hosted service: ${LAPTOP_COMMAND}`;
-// A connect-only code names no database, and the laptop command refuses it:
-// the other way is a code made with the database's address.
-const CONNECT_ONLY_LINE = "Or ask your bot for a new setup code made with --database-url.";
+const TRY_AGAIN_LINE = "Try again later, or ask your bot for a new link.";
 
 // A setup code is at most 1500 characters (CONTRACT.md, The setup code).
 export const MAX_CODE_CHARS = 1500;
@@ -56,9 +60,6 @@ export const POLL_MS = 5000;
 export const REACH_WAIT_MS = 60000;
 export const LATE_MS = 120000;
 export const WATCH_MS = 30 * 60000;
-// columnClasses holds at most 500 entries; past that, "Mark the rest as not
-// personal" goes as restPublic.
-export const MAX_LABELS = 500;
 
 // Refusal is a refusal of the connect service: reason and message come from
 // its basalt.connect.v1.Refusal detail, or are fixed words of this page.
@@ -73,49 +74,6 @@ export class Refusal extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
     this.trustRoot = trustRoot;
   }
-}
-
-// The refusals that may carry a certificate authority to trust.
-const TRUST_REASONS = new Set(["CERTIFICATE_NOT_VERIFIED", "TRUST_ROOT_MISMATCH"]);
-const SHA256_HEX = /^[0-9a-f]{64}$/;
-// The server chooses the subject; the service cuts it to 512 characters.
-const MAX_SUBJECT_CHARS = 512;
-const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-
-// trustRootFrom is a Refusal detail's trustRoot, checked: its subject as
-// text, its SHA-256 as 64 lowercase hex digits and its expiry as RFC 3339
-// UTC. null when there is none or any part is unreadable: the refusal is
-// then shown as it is.
-export function trustRootFrom(reason, t) {
-  if (!TRUST_REASONS.has(reason) || !t || typeof t !== "object") return null;
-  const { subject, sha256: fp, expiresAt } = t;
-  if (typeof subject !== "string" || subject === "" || [...subject].length > MAX_SUBJECT_CHARS) return null;
-  if (typeof fp !== "string" || !SHA256_HEX.test(fp)) return null;
-  if (typeof expiresAt !== "string" || !RFC3339_UTC.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) return null;
-  return { subject, sha256: fp, expiresAt };
-}
-
-// fingerprintText is a SHA-256 as the laptop command shows it: uppercase
-// hex pairs with colons.
-export function fingerprintText(fp) {
-  return fp.toUpperCase().match(/../g).join(":");
-}
-
-// trustText is the question the page asks about trustRoot for host.
-export function trustText(host, trustRoot) {
-  const date = trustRoot.expiresAt.slice(0, 10);
-  return `${host} presents a certificate authority Basalt does not know: ${trustRoot.subject}, SHA-256 ${fingerprintText(trustRoot.sha256)}, valid until ${date}. Check it against your provider's console. Trust it for this host only?`;
-}
-
-// hostOf is the host a pasted connection string names, or a plain word.
-export function hostOf(url) {
-  try {
-    const h = new URL(url).hostname;
-    if (h !== "") return h.replace(/^\[|\]$/g, "");
-  } catch {
-    // Fall through.
-  }
-  return "This database";
 }
 
 const UNREACHABLE = "The connect service could not be reached. Check your connection and try again.";
@@ -192,14 +150,13 @@ export async function call(fetchFn, method, request) {
 }
 
 // refusalText is what the page shows for a refusal: its message, when to
-// try again, and the other way (every reason but a limit, which passes):
-// the laptop command, or for a connect-only code, which the laptop command
-// refuses, a code made with --database-url.
-export function refusalText(err, connectOnly = false) {
+// try again, and what to do next (every reason but a limit, which passes):
+// try again later or ask the bot for a new link.
+export function refusalText(err) {
   if (!(err instanceof Refusal)) return "Something went wrong on this page. Nothing was sent.";
   const lines = [err.message];
   if (err.retryAfterSeconds > 0) lines.push(`Try again in ${err.retryAfterSeconds} seconds.`);
-  if (err.reason !== "RATE_LIMITED" && err.reason !== "BUSY") lines.push(connectOnly ? CONNECT_ONLY_LINE : LAPTOP_LINE);
+  if (err.reason !== "RATE_LIMITED" && err.reason !== "BUSY") lines.push(TRY_AGAIN_LINE);
   return lines.join("\n");
 }
 
@@ -225,12 +182,12 @@ export async function passkeyCheckCode(spki) {
 // { credentialId, checkCode } or null when this page created none.
 export function compareCheckCodes(mine, registered) {
   const list = Array.isArray(registered) ? registered : [];
-  if (!mine) return list.length === 0 ? "" : "The service reports a passkey registered that this page did not create. Something is wrong: do not use this database's passkeys until you have checked them with basalt passkey list on your own computer, and remove any you did not create.";
+  if (!mine) return list.length === 0 ? "" : "The service reports a passkey registered that this page did not create. Something is wrong: do not use this database's passkeys until you have checked them. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Remove any passkey you did not create on the connect page (have your agent run basalt init --remote again).";
   const others = list.filter((p) => p?.credentialId !== mine.credentialId);
   const same = list.find((p) => p?.credentialId === mine.credentialId);
-  if (others.length > 0) return "The service reports a passkey registered that this page did not create. Something is wrong: remove every passkey you did not create (basalt passkey list on your own computer).";
-  if (!same) return "The service does not report the passkey this page created. Something is wrong: check the database's passkeys with basalt passkey list on your own computer.";
-  if (same.checkCode !== mine.checkCode) return "The service reports a different check code for your passkey than this page computed. Something is wrong: stop, and remove that passkey (basalt passkey list on your own computer).";
+  if (others.length > 0) return `The service reports a passkey registered that this page did not create. Something is wrong: stop. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Remove every passkey whose code is not ${mine.checkCode} on the connect page (have your agent run basalt init --remote again).`;
+  if (!same) return `The service does not report the passkey this page created. Something is wrong: stop. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Your passkey's code is ${mine.checkCode}; remove any passkey you did not create on the connect page (have your agent run basalt init --remote again).`;
+  if (same.checkCode !== mine.checkCode) return `The service reports a different check code for your passkey than this page computed. Something is wrong: stop. Once your bot is set up, ask it for BasaltDB's status: the engine lists each passkey of the database with its check code, read from the database. Remove any passkey whose code is not ${mine.checkCode} on the connect page (have your agent run basalt init --remote again).`;
   return "";
 }
 
@@ -353,12 +310,6 @@ export function databaseView(t) {
   return { big: host, sub: `Port ${port} · database ${db}`, line: `${host}:${port}, database ${db}` };
 }
 
-// tableName is a table as the page shows it: without public., which most
-// databases put everything in.
-export function tableName(t) {
-  return t.startsWith("public.") ? t.slice("public.".length) : t;
-}
-
 // tableRows is screen 4's list: the tables the agent will get, each with
 // what it may do, and whether the person may untick them. Ticks are only
 // for an allTables INSTALL code (CONTRACT.md, Tables on the connect page);
@@ -375,127 +326,6 @@ export function tableRows(summary, check) {
   const ticks = summary?.kind === "INSTALL" && allTables && !check?.alreadyRan && !check?.nothingToDo;
   const excluded = (Array.isArray(check?.excluded) ? check.excluded : []).filter((e) => typeof e?.table === "string");
   return { rows, ticks, excluded };
-}
-
-// answersFor answers every row-level security question for an included
-// table with ALL_ROWS (CONTRACT.md, The connect page, step 6): a ticked
-// table gives the bot every row. included is null when every table is.
-export function answersFor(questions, included) {
-  const out = [];
-  for (const q of Array.isArray(questions) ? questions : []) {
-    if (included && !included.includes(q.table)) continue;
-    out.push({ kind: q.kind, table: q.table, choice: "ALL_ROWS" });
-  }
-  return out;
-}
-
-// ---- Column labels (CONTRACT.md, Column labels on the connect page) ----
-
-export const ENTITY_WORDS = { EMAIL: "email", PHONE: "phone", PERSON_NAME: "name", ADDRESS: "address", OTHER: "other" };
-const FIXED_WORDS = { PUBLIC: "Not personal", FREE_TEXT: "Free text" };
-const REGION = /^[A-Z]{2}$/;
-
-const key = (table, column) => `${table}\u0000${column}`;
-
-// labelOf is a column's class as CheckSetup read it, UNCLASSIFIED when it
-// has none.
-export function labelOf(c) {
-  const cls = typeof c?.class === "string" && c.class !== "" ? c.class : "UNCLASSIFIED";
-  // As CheckSetup sent it: the service compares all three fields with what
-  // is stored, so was echoes them unchanged.
-  return {
-    class: cls,
-    entityType: typeof c.entityType === "string" ? c.entityType : "",
-    phoneRegion: typeof c.phoneRegion === "string" ? c.phoneRegion : "",
-  };
-}
-
-const sameLabel = (a, b) => a.class === b.class && a.entityType === b.entityType && a.phoneRegion === b.phoneRegion;
-
-// Labels is screen 5's state: the columns of the included tables, each with
-// its class now, and what the person chose.
-export class Labels {
-  constructor(columns) {
-    this.columns = (Array.isArray(columns) ? columns : []).filter((c) => typeof c?.table === "string" && typeof c?.column === "string");
-    this.chosen = new Map();
-  }
-
-  // set records the person's choice for a column: a class with its entity
-  // type and region, or null for blank (only offered on a column without a
-  // class, so it never erases one).
-  set(table, column, label) {
-    if (label === null) this.chosen.delete(key(table, column));
-    else this.chosen.set(key(table, column), { class: label.class, entityType: label.entityType ?? "", phoneRegion: label.phoneRegion ?? "" });
-  }
-
-  current(c) {
-    return this.chosen.get(key(c.table, c.column)) ?? labelOf(c);
-  }
-
-  of(included) {
-    const set = new Set(included);
-    return this.columns.filter((c) => set.has(c.table));
-  }
-
-  // changes are the columns of the included tables the person changed, as
-  // columnClasses entries, each with the class it had (was).
-  changes(included) {
-    const out = [];
-    for (const c of this.of(included)) {
-      const was = labelOf(c);
-      const now = this.chosen.get(key(c.table, c.column));
-      if (!now || sameLabel(now, was)) continue;
-      const entry = { table: c.table, column: c.column, class: now.class, was: { class: was.class } };
-      if (was.entityType) entry.was.entityType = was.entityType;
-      if (was.phoneRegion) entry.was.phoneRegion = was.phoneRegion;
-      if (now.class === "IDENTIFIER") entry.entityType = now.entityType;
-      if (now.class === "IDENTIFIER" && now.entityType === "PHONE") entry.phoneRegion = now.phoneRegion;
-      out.push(entry);
-    }
-    return out;
-  }
-
-  // unlabeled are the columns of the included tables that have no class
-  // and that the person left blank: what "Mark the rest as not personal"
-  // marks, folded tables included.
-  unlabeled(included) {
-    return this.of(included).filter((c) => this.current(c).class === "UNCLASSIFIED");
-  }
-
-  // problem is what stops Continue: a phone without its country.
-  problem(included) {
-    for (const e of this.changes(included)) {
-      if (e.class === "IDENTIFIER" && e.entityType === "PHONE" && !REGION.test(e.phoneRegion ?? "")) {
-        return `Enter the country of the phone numbers in ${tableName(e.table)}.${e.column} as two letters, such as US.`;
-      }
-    }
-    if (this.changes(included).length > MAX_LABELS) return `Label at most ${MAX_LABELS} columns at once.`;
-    return "";
-  }
-
-  // request is what RunSetup carries: nothing on Skip, the changes on
-  // Continue, and with "Mark the rest" the rest as PUBLIC entries when all
-  // fit in 500, else restPublic.
-  request(included, mode) {
-    if (mode === "skip") return {};
-    const changes = this.changes(included);
-    const out = {};
-    if (mode === "rest") {
-      const rest = this.unlabeled(included).map((c) => ({ table: c.table, column: c.column, class: "PUBLIC", was: { class: "UNCLASSIFIED" } }));
-      if (changes.length + rest.length <= MAX_LABELS) changes.push(...rest);
-      else if (rest.length > 0) out.restPublic = true;
-    }
-    if (changes.length > 0) out.columnClasses = changes;
-    return out;
-  }
-}
-
-// restQuestion is the confirm before "Mark the rest as not personal", with
-// the count of what it marks.
-export function restQuestion(columns) {
-  const tables = new Set(columns.map((c) => c.table)).size;
-  const n = columns.length;
-  return `Mark ${n} ${n === 1 ? "column" : "columns"} in ${tables} ${tables === 1 ? "table" : "tables"} as not personal?`;
 }
 
 // reachText is screen 3c's advice for the reason the engine reported.
@@ -595,6 +425,27 @@ export class Flow {
     return isConnectOnly(this.summary);
   }
 
+  // updateCheck: a code with a target that changes an agent or upgrades
+  // the guard gets the Update check after the paste (CONTRACT.md, Update on
+  // the connect page).
+  get updateCheck() {
+    return !this.connectOnly && (this.summary?.kind === "AGENT" || this.summary?.kind === "UPGRADE");
+  }
+
+  // confirm is the confirm step, "Is this your database?" (CONTRACT.md,
+  // The connect page): at the trust step, what the pasted string names and
+  // the certificate authority to trust, with the bot's pin when the code
+  // carries one; after CheckSetup, what the service found when it signed in.
+  confirm() {
+    const bot = botName(this.summary);
+    if (this.step === "trust" && this.asking) {
+      return confirmView({ facts: stringFacts(this.#databaseUrl), asking: this.asking, trustPin: this.summary?.trustPin ?? "", bot });
+    }
+    const t = this.check?.database ?? {};
+    const facts = { database: this.check?.currentDatabase || t.database, host: t.host, port: t.port, user: this.check?.sessionUser ?? "" };
+    return confirmView({ facts, certificate: this.check?.certificate ?? null, bot });
+  }
+
   // needsNewPasskey: an INSTALL creates the approval passkey at the passkey
   // step, unless the person already has one for this database.
   get needsNewPasskey() {
@@ -662,13 +513,9 @@ export class Flow {
     return this.check;
   }
 
-  // trustHost is the host the trust step names.
-  get trustHost() {
-    return hostOf(this.#databaseUrl);
-  }
-
-  // trust is "Trust and continue": CheckSetup again with the certificate
-  // authority the person was shown.
+  // trust is Yes on the confirm step, the person's click: CheckSetup again
+  // with the certificate authority they were shown. Only this sends a
+  // trustRoot.
   async trust() {
     if (this.step !== "trust" || !this.asking) throw new Error("not at the trust step");
     this.#trustRoot = this.asking.sha256;
@@ -676,7 +523,8 @@ export class Flow {
     return this.#checkOrAsk();
   }
 
-  // cancelTrust is "Cancel": the string is dropped, back to the paste step.
+  // cancelTrust is "No, go back": the string is dropped, back to the paste
+  // step.
   cancelTrust() {
     if (this.step !== "trust") throw new Error("not at the trust step");
     this.#databaseUrl = "";
@@ -703,8 +551,40 @@ export class Flow {
       excluded: Array.isArray(out.excluded) ? out.excluded : [],
       columns: Array.isArray(out.columns) ? out.columns : [],
       alreadyRan: out.alreadyRan === true,
+      // The confirm step's: the role the string signed in as, and what
+      // verified the certificate.
+      sessionUser: typeof out.sessionUser === "string" ? out.sessionUser : "",
+      currentDatabase: typeof out.currentDatabase === "string" ? out.currentDatabase : "",
+      certificate: out.certificate && typeof out.certificate === "object" ? out.certificate : null,
+      // For a code with a target: every active passkey of the database
+      // (CONTRACT.md, Update on the connect page).
+      passkeys: activePasskeys(out.passkeys),
     };
     this.#ticket = typeof out.ticket === "string" ? out.ticket : "";
+  }
+
+  // revokePasskey is Remove on the passkey list: RevokePasskey with the
+  // code, the string the page holds and the trusted certificate, for one
+  // active passkey. The string stays for the fixes that follow; a refusal
+  // of the string or the database drops it (the person pastes it again),
+  // one of the passkey alone (ANSWERS_INVALID) keeps it.
+  async revokePasskey(credentialId) {
+    if (this.step !== "questions" || this.#databaseUrl === "" || !this.updateCheck) throw new Error("not at the passkey list");
+    const req = { code: this.code, databaseUrl: this.#databaseUrl, credentialId };
+    if (this.#trustRoot !== "") req.trustRoot = this.#trustRoot;
+    let out;
+    try {
+      out = await call(this.fetch, "RevokePasskey", req);
+    } catch (err) {
+      if (!(err instanceof Refusal) || err.reason !== "ANSWERS_INVALID") this.backToPaste();
+      throw err;
+    }
+    const removed = this.check.passkeys.find((p) => p.credentialId === credentialId) ?? null;
+    this.check.passkeys = this.check.passkeys.filter((p) => p.credentialId !== credentialId);
+    const remaining = Number.isInteger(out.remaining) && out.remaining > 0 ? out.remaining : 0;
+    // No portal passkey left: the approval registers one.
+    if (remaining === 0) this.check.passkeyNeeded = true;
+    return { removed, remaining, lines: strings(out.lines) };
   }
 
   // recheck is "Retry" without a preview ticket (the service's caps were
@@ -904,8 +784,14 @@ function show(id, on = true) {
 
 // The screens, in order, with the progress segment each fills and where
 // Back goes. Every screen but the result carries the address-bar strip.
-const SCREENS = ["s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-trust", "s-checking", "s-unreach", "s-tables", "s-labels", "s-approve", "s-done"];
-const PROGRESS = { "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-trust": 3, "s-checking": 3, "s-unreach": 3, "s-tables": 4, "s-labels": 5, "s-approve": 6 };
+const SCREENS = [
+  "s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-confirm", "s-checking", "s-unreach",
+  "s-doctor", "s-passkeys", "s-revoke", "s-addpk", "s-tables", "s-labels", "s-approve", "s-done",
+];
+const PROGRESS = {
+  "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-confirm": 3, "s-checking": 3, "s-unreach": 3,
+  "s-doctor": 4, "s-passkeys": 4, "s-revoke": 4, "s-addpk": 4, "s-tables": 4, "s-labels": 5, "s-approve": 6,
+};
 
 function showScreen(name) {
   for (const s of SCREENS) show(s, s === name);
@@ -972,6 +858,9 @@ export function start(env) {
   const flow = new Flow(env);
   setText("host", PAGE_HOST);
   show("main");
+  // Two tabs: Connect a bot (the default) and Remove BasaltDB, which needs
+  // no setup code (#remove opens it).
+  startTabs(env, { removeOnly: location.hash === "#remove", rpc: { call, Refusal, notPostgres: NOT_POSTGRES } });
 
   // loop is the poll that runs now; a new one, Back and every way to
   // another screen cancel it.
@@ -987,14 +876,25 @@ export function start(env) {
   let labels = null;
   let labelMode = "skip";
   let reachOk = false;
+  // fixLabels: on an update, the person chose to label the unlabeled
+  // columns (Fix these, or Label on their row).
+  let fixLabels = false;
+  // revoking is the passkey the remove screen asks about.
+  let revoking = null;
   // Back is offered on these screens; on the checking screen only once
   // CheckSetup answered (checkReach shows it).
-  const back = { "s-passkey": "s-bot", "s-paste": "s-passkey", "s-unreach": "s-paste", "s-tables": "s-paste", "s-labels": "s-tables" };
+  const back = {
+    "s-passkey": "s-bot", "s-paste": "s-passkey", "s-unreach": "s-paste", "s-tables": "s-paste", "s-labels": "s-tables",
+    "s-doctor": "s-paste", "s-passkeys": "s-doctor", "s-revoke": "s-passkeys", "s-addpk": "s-doctor",
+  };
+  // checkScreen is where the screens after the check go back to: the
+  // Update check for a code with a target, else the tables.
+  const checkScreen = () => (flow.updateCheck ? "s-doctor" : "s-tables");
 
   const go = (name) => {
     screen = name;
     showScreen(name);
-    const to = name === "s-approve" ? (labelsApply() ? "s-labels" : "s-tables") : back[name];
+    const to = name === "s-approve" ? (labelsApply() ? "s-labels" : checkScreen()) : back[name];
     show("back", Boolean(to));
   };
   const bot = () => botName(flow.summary);
@@ -1078,7 +978,9 @@ export function start(env) {
     }
     show("passkey-lead", !flow.passkeyDone);
     show("passkey-existing", install && !flow.passkeyDone);
-    show("passkey-skip", false);
+    // I don't have it: a person who lost their only device still reaches
+    // the passkey list (CONTRACT.md, The connect page, step 3).
+    show("passkey-skip", !install && !flow.passkeyDone);
     setText("passkey-status", "");
     go("s-passkey");
   };
@@ -1171,27 +1073,36 @@ export function start(env) {
       if (POSTGRES_URL.test(typed.trim())) go("s-checking");
       await flow.checkSetup(typed);
     } catch (err) {
-      if (flow.step === "trust") showTrust("");
-      else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err, flow.connectOnly));
+      if (flow.step === "trust") showConfirm("");
+      else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err));
       return;
     } finally {
       $("check").disabled = false;
     }
-    await checked();
+    showConfirm("");
   });
 
-  // ---- 3a: a certificate authority to trust ----
-  // The question names the host, and the subject, SHA-256 and expiry the
-  // service read with the TLS handshake alone; all of it as text.
-  const showTrust = (problem) => {
-    setText("trust-text", trustText(flow.trustHost, flow.asking));
-    setText("trust-error", problem);
-    show("trust-error", problem !== "");
-    go("s-trust");
+  // ---- 3a: Is this your database? One action: the database, its host,
+  // who the string signs in as and the certificate. For a certificate
+  // authority the provider runs itself (the trust step), Yes is also the
+  // person's trust in it, and it alone sends the trustRoot. The bot's pin
+  // changes only the words (CONTRACT.md, The bot's pin). ----
+  let shownFacts = null; // what the confirm step showed
+  const showConfirm = (problem) => {
+    const view = flow.confirm();
+    shownFacts = view.facts;
+    paintConfirm(document, view);
+    setText("confirm-error", problem);
+    show("confirm-error", problem !== "");
+    go("s-confirm");
   };
-
-  $("trust-go").addEventListener("click", async () => {
-    $("trust-go").disabled = true;
+  $("confirm-go").addEventListener("click", async () => {
+    if (screen !== "s-confirm") return;
+    if (flow.step !== "trust") {
+      await checked();
+      return;
+    }
+    $("confirm-go").disabled = true;
     setText("checking-title", "Checking your database…");
     mark("chk-login", "wait", "Signing in to the database");
     mark("chk-tables", "hidden", "");
@@ -1202,17 +1113,20 @@ export function start(env) {
     try {
       await flow.trust();
     } catch (err) {
-      if (flow.step === "trust") showTrust(err.message);
-      else showPaste(refusalText(err, flow.connectOnly));
+      if (flow.step === "trust") showConfirm(err.message);
+      else showPaste(refusalText(err));
       return;
     } finally {
-      $("trust-go").disabled = false;
+      $("confirm-go").disabled = false;
     }
+    // The step showed what the string names; once signed in, the service
+    // says what it reached. Anything else is asked again.
+    if (factsDiffer(shownFacts, flow.confirm().facts)) return showConfirm("");
     await checked();
   });
-
-  $("trust-cancel").addEventListener("click", () => {
-    flow.cancelTrust();
+  $("confirm-back").addEventListener("click", () => {
+    if (screen !== "s-confirm") return;
+    if (flow.step === "trust") flow.cancelTrust();
     showPaste("");
   });
 
@@ -1223,6 +1137,10 @@ export function start(env) {
     const n = tableRows(flow.summary, flow.check).rows.length;
     if (n > 0) mark("chk-tables", "ok", `Found ${n} ${n === 1 ? "table" : "tables"}`);
     reachOk = false;
+    if (flow.updateCheck) {
+      showDoctor(true);
+      return;
+    }
     if (!flow.reachApplies) {
       showTables(true);
       return;
@@ -1263,7 +1181,7 @@ export function start(env) {
       try {
         await flow.recheck(mine);
       } catch (err) {
-        if (!mine.cancelled) showPaste(refusalText(err, flow.connectOnly));
+        if (!mine.cancelled) showPaste(refusalText(err));
         return;
       }
       // The person went back while CheckSetup ran: stay where they are.
@@ -1282,10 +1200,153 @@ export function start(env) {
   // ---- 4: the database and its tables ----
   const labelsApply = () => {
     const c = flow.check;
-    if (!c || c.alreadyRan || c.nothingToDo || flow.summary.kind === "UPGRADE") return false;
-    return labels !== null && labels.of(tablesNow()).length > 0;
+    if (!c || c.alreadyRan || labels === null) return false;
+    if (flow.updateCheck) return fixLabels && labels.of(labelTables()).length > 0;
+    if (c.nothingToDo || flow.summary.kind === "UPGRADE") return false;
+    return labels.of(tablesNow()).length > 0;
   };
   const tablesNow = () => included ?? tableRows(flow.summary, flow.check).rows.map((r) => r.name);
+  // labelTables are the tables whose columns the labels screen shows: on
+  // an update, those of the unlabeled columns alone (an UPGRADE names no
+  // table: its columns are every readable one).
+  const labelTables = () => (flow.updateCheck ? [...new Set(labels.columns.map((c) => c.table))] : tablesNow());
+
+  // ---- 4 on an update: the check ----
+  // showDoctor shows the check screen; fresh (after CheckSetup) starts the
+  // labels from the unlabeled columns alone.
+  const showDoctor = (fresh = false) => {
+    newLoop();
+    const c = flow.check;
+    if (fresh) {
+      included = null;
+      labels = new Labels(unlabeledColumns(c.columns));
+      fixLabels = false;
+      labelMode = "skip";
+    }
+    const view = checkView(c);
+    const db = c.database?.database ?? flow.summary.target?.database ?? "";
+    setText("doc-top", `BasaltDB / Setup · ${db}`);
+    setText("doc-title", view.title);
+    setText("doc-sub", view.sub);
+    const rows = $("doc-rows");
+    clear(rows);
+    for (const r of view.rows) {
+      const row = el("div", `fix-row ${r.mark}`);
+      row.appendChild(el("span", "fix-mark", r.mark === "good" ? "✓" : "!"));
+      const body = el("div", "fix-body");
+      body.appendChild(el("strong", "", r.title));
+      if (r.text) body.appendChild(el("span", "muted", r.text));
+      row.appendChild(body);
+      if (r.action) {
+        const act = el("button", "link fix-act", r.action);
+        act.type = "button";
+        act.addEventListener("click", () => rowAction(r.kind));
+        row.appendChild(act);
+      }
+      rows.appendChild(row);
+    }
+    show("doc-pending", flow.passkey !== null);
+    const notes = $("doc-notes");
+    clear(notes);
+    for (const n of c.notes) notes.appendChild(el("li", "", n));
+    show("doc-notes", c.notes.length > 0);
+    setText("doc-go", view.button);
+    go("s-doctor");
+  };
+
+  const rowAction = (kind) => {
+    if (kind === "LABELS") {
+      fixLabels = true;
+      showLabels();
+    } else if (kind === "PASSKEY_ADD") showAddPasskey("You'll use it to approve your bot's bigger changes.");
+    else if (kind === "PASSKEYS") showPasskeys("");
+  };
+
+  // Fix these walks the rows in order: the labels, then the approval, which
+  // registers a passkey when the database has no portal one.
+  $("doc-go").addEventListener("click", () => {
+    fixLabels = labels.columns.length > 0;
+    if (labelsApply()) showLabels();
+    else showApprove();
+  });
+
+  // ---- The passkey list ----
+  const showPasskeys = (done) => {
+    const list = $("pk-list");
+    clear(list);
+    for (const p of flow.check.passkeys) {
+      const row = el("div", "fix-row pk-row");
+      const body = el("div", "fix-body");
+      body.appendChild(el("strong", "", passkeyLabel(p)));
+      body.appendChild(el("span", "muted", passkeyLine(p, flow.now())));
+      row.appendChild(body);
+      const rm = el("button", "pk-remove", "Remove");
+      rm.type = "button";
+      rm.addEventListener("click", () => showRevoke(p));
+      row.appendChild(rm);
+      list.appendChild(row);
+    }
+    setText("pk-done", done);
+    show("pk-done", done !== "");
+    show("pk-error", false);
+    go("s-passkeys");
+  };
+
+  const showRevoke = (p) => {
+    revoking = p;
+    const lines = $("revoke-lines");
+    clear(lines);
+    for (const l of revokeLines(p, flow.check.passkeys)) lines.appendChild(el("li", "", l));
+    show("revoke-error", false);
+    go("s-revoke");
+  };
+
+  $("revoke-go").addEventListener("click", async () => {
+    $("revoke-go").disabled = true;
+    try {
+      const out = await flow.revokePasskey(revoking.credentialId);
+      await signalRemoved(env.PublicKeyCredential ?? globalThis.PublicKeyCredential, out.removed);
+      revoking = null;
+      if (out.remaining === 0) showAddPasskey(ADD_AGAIN);
+      else showPasskeys(out.lines.join("\n") || "The passkey is removed.");
+    } catch (err) {
+      if (flow.step === "paste") showPaste(refusalText(err, false));
+      else {
+        setText("revoke-error", err instanceof Refusal ? err.message : refusalText(err, false));
+        show("revoke-error");
+      }
+    } finally {
+      $("revoke-go").disabled = false;
+    }
+  });
+
+  $("revoke-cancel").addEventListener("click", () => showPasskeys(""));
+  $("pk-add").addEventListener("click", () => showAddPasskey("You'll use it to approve your bot's bigger changes."));
+
+  // The add screen makes the passkey now; the approval registers it.
+  const showAddPasskey = (lead) => {
+    setText("addpk-lead", lead);
+    setText("addpk-status", flow.passkey ? "Passkey created. It is registered when you approve." : "");
+    $("addpk-go").textContent = flow.passkey ? "Continue" : "Create passkey";
+    go("s-addpk");
+  };
+
+  $("addpk-go").addEventListener("click", async () => {
+    if (flow.passkey) {
+      showDoctor();
+      return;
+    }
+    $("addpk-go").disabled = true;
+    setText("addpk-status", "");
+    try {
+      await flow.createPasskey();
+      showDoctor();
+    } catch (err) {
+      setText("addpk-status", passkeyError(err));
+    } finally {
+      $("addpk-go").disabled = false;
+    }
+  });
 
   // showTables shows screen 4; fresh (after CheckSetup) ticks every table
   // and starts the labels from the database's classes, else it keeps the
@@ -1359,7 +1420,7 @@ export function start(env) {
   const showLabels = () => {
     const box = $("label-tables");
     clear(box);
-    const cols = labels.of(tablesNow());
+    const cols = labels.of(labelTables());
     const byTable = new Map();
     for (const c of cols) {
       if (!byTable.has(c.table)) byTable.set(c.table, []);
@@ -1379,91 +1440,26 @@ export function start(env) {
     }
     setText("unlabeled-warn", `Columns without a label aren't masked: ${bot()} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
     show("labels-error", false);
-    show("rest-confirm", false);
+    $("rest-mark").checked = labelMode === "rest";
+    $("rest-leave").checked = labelMode !== "rest";
     restCount();
     go("s-labels");
   };
 
+  // restCount shows the choice for the columns left unlabeled only while
+  // there are some, and the note under "Mark them as not personal" while
+  // it is chosen: the choice is the confirmation.
   const restCount = () => {
-    $("labels-rest").disabled = labels.unlabeled(tablesNow()).length === 0;
+    const n = labels.unlabeled(labelTables()).length;
+    show("rest-choice", n > 0);
+    const note = $("rest-note");
+    const lines = $("rest-mark").checked ? restNote({ count: n, forced: labels.changes(labelTables()).length + n > MAX_LABELS }) : [];
+    clear(note);
+    for (const line of lines) note.appendChild(el("span", "", line));
+    note.hidden = lines.length === 0;
   };
 
-  // labelRow is one column with its label: a native select (blank only on
-  // a column without a class), a country box for a phone, and for a class
-  // the page does not offer (PUBLIC, FREE_TEXT) a fixed label with "change".
-  const labelRow = (c) => {
-    const row = el("div", "label-row");
-    const name = `${tableName(c.table)}.${c.column}`;
-    row.appendChild(el("span", "mono col-name", c.column));
-    const was = labelOf(c);
-    const now = labels.current(c);
-    const pick = el("select");
-    pick.setAttribute("aria-label", `Label for ${name}`);
-    const region = el("input", "text region");
-    region.type = "text";
-    region.maxLength = 2;
-    region.autocomplete = "off";
-    region.placeholder = "US";
-    region.setAttribute("aria-label", `Country of the phone numbers in ${name}, two letters`);
-    region.hidden = true;
-    const fixed = was.class === "PUBLIC" || was.class === "FREE_TEXT";
-    const option = (parent, value, text) => {
-      const o = el("option", "", text);
-      o.value = value;
-      parent.appendChild(o);
-    };
-    if (was.class === "UNCLASSIFIED") option(pick, "", "—");
-    if (fixed) {
-      const o = el("option", "", "Choose a label");
-      o.value = "";
-      o.disabled = true;
-      pick.appendChild(o);
-    }
-    const personal = el("optgroup");
-    personal.label = "Personal";
-    for (const [entity, words] of Object.entries(ENTITY_WORDS)) option(personal, `IDENTIFIER:${entity}`, `Personal: ${words}`);
-    if (was.class === "IDENTIFIER" && was.entityType && !ENTITY_WORDS[was.entityType]) option(personal, `IDENTIFIER:${was.entityType}`, `Personal: ${was.entityType.toLowerCase()}`);
-    pick.appendChild(personal);
-    option(pick, "SECRET", "Secret");
-    pick.value = now.class === "IDENTIFIER" ? `IDENTIFIER:${now.entityType}` : now.class === "SECRET" ? "SECRET" : "";
-    region.value = now.phoneRegion;
-    const update = () => {
-      const v = pick.value;
-      region.hidden = v !== "IDENTIFIER:PHONE";
-      if (v === "") {
-        if (was.class === "UNCLASSIFIED") labels.set(c.table, c.column, null);
-      } else if (v === "SECRET") {
-        labels.set(c.table, c.column, { class: "SECRET" });
-      } else {
-        const entityType = v.slice("IDENTIFIER:".length);
-        labels.set(c.table, c.column, { class: "IDENTIFIER", entityType, phoneRegion: entityType === "PHONE" ? region.value.trim().toUpperCase() : "" });
-      }
-      restCount();
-    };
-    pick.addEventListener("change", update);
-    region.addEventListener("input", update);
-    region.hidden = pick.value !== "IDENTIFIER:PHONE";
-    if (fixed) {
-      const label = el("span", "label-fixed", FIXED_WORDS[was.class]);
-      const change = el("button", "link", "change");
-      change.type = "button";
-      change.setAttribute("aria-label", `Change the label of ${name}`);
-      const changed = now.class !== was.class;
-      pick.hidden = !changed;
-      label.hidden = changed;
-      change.hidden = changed;
-      change.addEventListener("click", () => {
-        label.hidden = true;
-        change.hidden = true;
-        pick.hidden = false;
-      });
-      row.appendChild(label);
-      row.appendChild(change);
-    }
-    row.appendChild(pick);
-    row.appendChild(region);
-    return row;
-  };
+  const labelRow = (c) => sharedLabelRow(c, labels, restCount);
 
   const labelsProblem = (text) => {
     setText("labels-error", text);
@@ -1471,31 +1467,15 @@ export function start(env) {
     return text !== "";
   };
 
+  // Continue keeps the labels the person picked, and with "Mark them as
+  // not personal" marks the rest as its note says.
   $("labels-next").addEventListener("click", () => {
-    if (labelsProblem(labels.problem(tablesNow()))) return;
-    labelMode = "changes";
+    if (labelsProblem(labels.problem(labelTables()))) return;
+    labelMode = !$("rest-choice").hidden && $("rest-mark").checked ? "rest" : "changes";
     showApprove();
   });
 
-  $("labels-rest").addEventListener("click", () => {
-    if (labelsProblem(labels.problem(tablesNow()))) return;
-    setText("rest-question", restQuestion(labels.unlabeled(tablesNow())));
-    show("rest-confirm");
-  });
-
-  $("rest-yes").addEventListener("click", () => {
-    show("rest-confirm", false);
-    labelMode = "rest";
-    showApprove();
-  });
-
-  $("rest-no").addEventListener("click", () => show("rest-confirm", false));
-
-  $("labels-skip").addEventListener("click", () => {
-    show("labels-error", false);
-    labelMode = "skip";
-    showApprove();
-  });
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", restCount);
 
   // ---- 6: approve ----
   const showApprove = () => {
@@ -1507,10 +1487,11 @@ export function start(env) {
     const n = tablesNow().length;
     if (!c.alreadyRan && n > 0) parts.push(`${n} ${n === 1 ? "table" : "tables"}`);
     if (labelsApply() && labelMode !== "skip") {
-      const k = labels.changes(tablesNow()).length;
-      parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
-      if (labelMode === "rest" && labels.unlabeled(tablesNow()).length > 0) parts.push("the rest not personal");
+      const k = labels.changes(labelTables()).length;
+      if (k > 0) parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
+      if (labelMode === "rest" && labels.unlabeled(labelTables()).length > 0) parts.push("the rest not personal");
     }
+    if (flow.updateCheck && flow.passkey) parts.push("a passkey added");
     setText("ap-counts", parts.join(" · "));
     show("ap-counts", parts.length > 0);
     show("ap-limits", flow.summary.kind !== "UPGRADE" && !c.alreadyRan && !c.nothingToDo);
@@ -1536,7 +1517,7 @@ export function start(env) {
       }
       const choices = {};
       if (included) choices.includedTables = included;
-      if (labelsApply()) Object.assign(choices, labels.request(tablesNow(), labelMode));
+      if (labelsApply()) Object.assign(choices, labels.request(labelTables(), labelMode));
       setText("approve-status", "Running the setup…");
       let result;
       try {
@@ -1558,7 +1539,7 @@ export function start(env) {
     // the service refused needs a fresh start (a new challenge and a new
     // passkey); sending the same registration again would be refused again.
     if (err instanceof Refusal && (err.reason.startsWith("CHALLENGE_") || err.reason === "PASSKEY_INVALID")) {
-      fail(refusalText(err, flow.connectOnly) + "\nOpen the link from your bot again to start over.");
+      fail(refusalText(err) + "\nOpen the link from your bot again to start over.");
       return;
     }
     // No answer arrived: the setup may have run. Pasting again would be
@@ -1572,7 +1553,7 @@ export function start(env) {
       }
       return;
     }
-    let text = refusalText(err, flow.connectOnly);
+    let text = refusalText(err);
     if (err instanceof Refusal && err.reason === "TABLES_CHANGED") text += "\nPaste the connection string again to see the tables as they are now.";
     else if (err instanceof Refusal && err.reason === "CLASSES_CHANGED") text += "\nPaste the connection string again to see the labels as they are now.";
     else text += "\nPaste the connection string again to retry.";
@@ -1635,10 +1616,15 @@ export function start(env) {
       flow.backTo("passkey");
       showPasskey();
     }
-    else if (screen === "s-checking" || screen === "s-unreach" || screen === "s-tables" || screen === "s-trust") showPaste("");
-    else if (screen === "s-labels") showTables();
-    else if (screen === "s-approve") {
+    else if (["s-checking", "s-unreach", "s-tables", "s-confirm", "s-doctor"].includes(screen)) showPaste("");
+    else if (screen === "s-passkeys" || screen === "s-addpk") showDoctor();
+    else if (screen === "s-revoke") showPasskeys("");
+    else if (screen === "s-labels") {
+      if (flow.updateCheck) showDoctor();
+      else showTables();
+    } else if (screen === "s-approve") {
       if (labelsApply()) showLabels();
+      else if (flow.updateCheck) showDoctor();
       else showTables();
     }
   });

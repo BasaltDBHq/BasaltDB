@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,7 +22,7 @@ import (
 //     service's system directories owned by that user, installs and
 //     starts the unit; init then checks the engine answers on the socket.
 //   - in the foreground as the person (--no-service, an answer of no, or
-//     paths given with --config, --socket-dir or --credential-file):
+//     the engine config found in the person's own config directory):
 //     init writes the config and credential where the person can, and
 //     prints the one command.
 //
@@ -32,140 +30,7 @@ import (
 // falls back to the foreground on its own (checkServiceAnswer).
 
 // perUserDirName is the per-user config directory under os.UserConfigDir.
-const perUserDirName = "basalt"
-
-// setupEngine is init's last step.
-func setupEngine(c *cliIO, f initFlags, dsn string) error {
-	f.initArgs = f.savedArgs(c.goos)
-	asService, err := chooseService(c, f)
-	if err != nil {
-		return err
-	}
-	if asService {
-		if err := installService(c, f, dsn); err != nil {
-			return fmt.Errorf("the guard is installed but the engine service is not (run basalt init again, or with --no-service): %w", err)
-		}
-		if err := servicePin(c, f); err != nil {
-			return err
-		}
-		return offerClaude(c, f)
-	}
-	f, err = perUserPaths(c, f)
-	if err != nil {
-		return err
-	}
-	if f.pin != nil {
-		if err := c.writePin(*f.pin, f.configPath); err != nil {
-			return fmt.Errorf("the guard is installed but the pin is not written (run %s): %w", pinCommand(f.pin.pinTarget, f.configPath, c.goos), err)
-		}
-	}
-	f.initArgs = f.savedArgs(c.goos)
-	cmds, err := f.commands(c.goos)
-	if err != nil {
-		return err
-	}
-	v, err := register(c, f, dsn)
-	if err != nil {
-		return fmt.Errorf("the guard is installed but the engine config was not written (run init again with --rotate-password): %w", err)
-	}
-	fmt.Fprintf(c.stderr, "basalt: credential %s; engine config %s\n", f.credFile, f.configPath)
-	fmt.Fprint(c.stderr, f.vault.line(v))
-	if f.rotated {
-		fmt.Fprintf(c.stderr, "basalt: the agent's password changed; restart the engine so it uses the new one:\n  %s\n",
-			cmds.Foreground().EngineRestart())
-	}
-	fmt.Fprint(c.stderr, foregroundNext(f, c.goos, c.host))
-	return offerClaude(c, f)
-}
-
-// chooseService decides between the service and the foreground engine.
-func chooseService(c *cliIO, f initFlags) (bool, error) {
-	switch {
-	case f.noService || f.pathsGiven:
-		return false, nil
-	case f.yes:
-		return true, nil
-	case !c.interactive:
-		return false, errServiceUnanswered
-	}
-	question := fmt.Sprintf("Install the engine as a background service? This creates the OS user %s", f.engineUser)
-	if c.host.Euid() != 0 {
-		question += " and needs your password once."
-	}
-	return c.confirmYes(question)
-}
-
-// errServiceUnanswered: without a terminal init cannot ask whether to
-// install the engine service, and it never picks the weaker same-user mode
-// for the person.
-var errServiceUnanswered = fmt.Errorf("%w: input is not a terminal, so init cannot ask whether to install the engine as a background service; "+
-	"pass --yes to install it, or --no-service to run the engine in the foreground as you (same-user mode)", errUsage)
-
-// checkServiceAnswer refuses, before anything is written, an init whose
-// engine mode only the person can choose and who cannot be asked.
-func checkServiceAnswer(c *cliIO, f initFlags) error {
-	if c.interactive || f.yes || f.noService || f.pathsGiven || f.dryRun {
-		return nil
-	}
-	return errServiceUnanswered
-}
-
-// perUserPaths moves a foreground setup that kept the system defaults to
-// the person's config directory, which they can write without sudo.
-func perUserPaths(c *cliIO, f initFlags) (initFlags, error) {
-	if f.pathsGiven || c.host.Euid() == 0 {
-		return f, nil
-	}
-	base, err := c.host.UserConfigDir()
-	if err != nil {
-		return f, err
-	}
-	dir := filepath.Join(base, perUserDirName)
-	f.configPath = filepath.Join(dir, "engine.json")
-	f.socketDir = filepath.Join(dir, "run")
-	f.credFile = filepath.Join(dir, "agents", f.agent+".url")
-	if err := config.CheckSocketPath(config.SocketPath(f.socketDir, f.agent)); err != nil {
-		return f, fmt.Errorf("%w; pass --socket-dir", err)
-	}
-	return f, nil
-}
-
-// register writes the credential file and adds the agent to the engine
-// config (foreground setup).
-func register(c *cliIO, f initFlags, dsn string) (config.VaultWritten, error) {
-	if err := writeCredential(f.credFile, dsn, f.keepCredential); err != nil {
-		return config.VaultWritten{}, err
-	}
-	return config.UpsertAgentVault(f.configPath, engineSettings(f, c.goos), config.Agent{
-		Name: f.agent, OSUser: f.osUser, Store: config.PostgresStore(f.credFile), InitArgs: f.initArgs,
-	})
-}
-
-// writeCredential writes the agent's connection string, unless the role
-// kept its password: then the file the engine reads stays, and must exist.
-func writeCredential(path, dsn string, keep bool) error {
-	if !keep {
-		return config.WriteFile(path, []byte(dsn+"\n"))
-	}
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("the agent's role keeps its password but its credential file %s is missing; run init with --rotate-password", path)
-	}
-	return nil
-}
-
-// foregroundNext is the one command that starts the engine, and the MCP
-// server line.
-func foregroundNext(f initFlags, goos string, h host) string {
-	return fmt.Sprintf("next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):\n  basalt engine --config %s\n%s",
-		shellQuote(f.configPath), mcpLine(f, goos, h))
-}
-
-// mcpLine is the MCP server command for the agent's client.
-func mcpLine(f initFlags, goos string, h host) string {
-	bin := mcpBinary(h)
-	return fmt.Sprintf("then add this MCP server to the agent's client, running as OS user %s (docs/mcp-clients.md):\n  %s\n%s",
-		f.osUser, shellJoin(mcpArgs(f, goos, bin, h)), temporaryBinaryWarning(bin, os.TempDir()))
-}
+const perUserDirName = config.UserDirName
 
 // mcpBinary is the program of the printed basalt mcp command: the absolute,
 // link-resolved path of the running binary, which the agent app finds
@@ -195,31 +60,10 @@ func temporaryBinaryWarning(bin, tmp string) string {
 	return fmt.Sprintf("basalt: %s is in a folder that may be cleared; put the binary in a folder that survives and register that path instead\n", bin)
 }
 
-// mcpArgs is basalt mcp for the agent, with bin as the program.
-func mcpArgs(f initFlags, goos, bin string, h host) []string {
-	args := append([]string{bin, "mcp", "--agent", f.agent}, socketDirArgs(f, goos)...)
-	return append(args, mcpConfigArgs(f.configPath, goos, h)...)
-}
-
-// remoteMCPArgs is the mcpCommand of basalt init --remote: mcpArgs, so it
-// carries --socket-dir whenever the socket directory is not the one
-// basalt mcp uses when no --socket-dir is given (it never reads the socket
-// directory from the config), and --config whenever basalt mcp would not
-// find the config by default.
-func remoteMCPArgs(agent, configPath, socketDir, goos string, h host) []string {
-	return mcpArgs(initFlags{agent: agent, configPath: configPath, socketDir: socketDir}, goos, mcpBinary(h), h)
-}
-
-// mcpConfigArgs is --config <path> when basalt mcp, given no --config, would
-// not find the engine config at path (it looks where perUserConfigFallback
-// says), else nothing. basalt mcp needs the config to start the engine when
-// it is down and to answer status.
-func mcpConfigArgs(configPath, goos string, h host) []string {
-	abs := enginePath(configPath)
-	if perUserConfigFallback(h, config.DefaultPath(goos)) == abs {
-		return nil
-	}
-	return []string{"--config", abs}
+// mcpArgs is basalt mcp for the agent, with bin as the program. basalt mcp
+// finds the engine config and the socket directory by itself.
+func mcpArgs(agent, bin string) []string {
+	return []string{bin, "mcp", "--agent", agent}
 }
 
 // shellJoin quotes each argument for display.
@@ -303,53 +147,6 @@ func (a agentInstall) vaultChoice() vaultChoice {
 	return vaultChoice{given: modeOf(a.vault), def: modeOf(a.vaultDefault), why: personDefaultWhy}
 }
 
-// agentInstall is what `service install --agent` needs for this init.
-func (f initFlags) agentInstall(dsn string) agentInstall {
-	return agentInstall{
-		name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
-		vault: f.vault.given.enum(), vaultDefault: f.vault.def.enum(),
-		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs, operatedBy: f.operatedBy.settingOf(f.operatedByGiven),
-		devLocalPages: f.devLocalPages,
-	}
-}
-
-// serviceInstallArgs is the one command init runs under sudo. The
-// credential goes on its stdin, never on the command line; when the role
-// kept its password the credential file stays and nothing goes on stdin.
-func serviceInstallArgs(f initFlags, bin string) []string {
-	args := []string{
-		bin, "service", "install", "--config", f.configPath, "--user", f.engineUser,
-		"--agent", f.agent, "--os-user", f.osUser,
-	}
-	if f.passkeyOrigin != "" {
-		args = append(args, "--pages-url", f.passkeyOrigin)
-	}
-	if f.devLocalPages {
-		args = append(args, "--"+flagDevLocalPages)
-	}
-	// --vault only when the person gave it; else the default, which the
-	// install applies only when the config has no vault yet.
-	switch {
-	case f.vault.given != "":
-		args = append(args, "--"+flagVault+"="+string(f.vault.given))
-	case f.vault.def != "":
-		args = append(args, "--"+flagVaultDefault+"="+string(f.vault.def))
-	}
-	if f.operatedByGiven {
-		args = append(args, "--operated-by", string(f.operatedBy))
-	}
-	for _, a := range f.initArgs {
-		args = append(args, "--"+flagInitArg, a)
-	}
-	for _, uid := range f.personUIDs {
-		args = append(args, "--"+flagPersonUID, strconv.FormatUint(uint64(uid), 10))
-	}
-	if f.keepCredential {
-		return append(args, "--"+flagKeepCredential)
-	}
-	return append(args, "--credential-stdin")
-}
-
 // Flags of basalt service install --agent that carry init's saved flags and
 // say the credential file stays.
 const (
@@ -358,86 +155,30 @@ const (
 	flagPersonUID      = "person-uid"
 )
 
-// installService installs the engine service with the agent in one
-// elevation, then checks the engine answers on the agent's socket.
-func installService(c *cliIO, f initFlags, dsn string) error {
-	uids, err := persons(c, f)
+// dialogScript is the first install's fixed script for the running
+// binary, with every link resolved and checked as root would run it.
+func dialogScript(c *cliIO) (bin, script string, err error) {
+	bin, err = c.host.ResolvedExecutable()
 	if err != nil {
-		return err
-	}
-	f.personUIDs = uids
-	warnAgentIsPerson(c, f)
-	if err := elevateInstall(c, f, dsn); err != nil {
-		return err
-	}
-	socket := config.SocketPath(config.DefaultSocketDir(c.goos), f.agent)
-	if me, _ := invokingUser(); me != f.osUser {
-		// The engine admits only the agent's OS user on its socket.
-		fmt.Fprintf(c.stderr, "basalt: engine service installed as %s; check it as %s with the MCP command below\n", f.engineUser, f.osUser)
-		fmt.Fprint(c.stderr, mcpLine(f, c.goos, c.host))
-		return nil
-	}
-	if err := c.host.Probe(c.ctx, socket); err != nil {
-		return fmt.Errorf("the engine did not answer on %s (%w)%s; see %s", socket, err, engineLogError(c), engineLogHint(c.goos))
-	}
-	fmt.Fprintf(c.stderr, "basalt: engine running as %s; it answered on %s\n", f.engineUser, socket)
-	fmt.Fprint(c.stderr, mcpLine(f, c.goos, c.host))
-	return nil
-}
-
-// elevateInstall runs the service install with the agent: in this process
-// when init already runs as root, else as one sudo command.
-func elevateInstall(c *cliIO, f initFlags, dsn string) error {
-	bin, err := checkedExecutable(c)
-	if err != nil {
-		return err
-	}
-	if c.host.Euid() == 0 {
-		return applyServiceInstall(c, bin, f.configPath, f.engineUser,
-			f.agentInstall(dsn), false)
-	}
-	fmt.Fprintln(c.stderr, "basalt: installing the engine service with sudo:")
-	return c.host.Sudo(c.ctx, serviceInstallArgs(f, bin), dsn+"\n", c.stderr, c.stderr)
-}
-
-// checkedExecutable is this basalt binary, refused (as the person, with
-// lstat only) when anyone but root could change it: init hands it to sudo,
-// so a binary the agent replaced would otherwise run as root.
-func checkedExecutable(c *cliIO) (string, error) {
-	bin, err := c.host.Executable()
-	if err != nil {
-		return "", err
+		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
 	}
 	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
-		return "", fmt.Errorf("%w (or run basalt init with --no-service)", err)
+		return "", "", err
 	}
-	return bin, nil
+	script, err = service.InstallScript(c.goos, bin)
+	return bin, script, err
 }
 
-// mayInstallService reports whether this init can go on to install the
-// engine service (or print its plan): then the binary is checked before
-// anything else, so a refusal leaves the database as it was.
-func mayInstallService(c *cliIO, f initFlags) bool {
-	return !f.noService && !f.pathsGiven && (f.yes || f.dryRun || c.interactive)
+// dialogEngineArgs is the command the first install's unit runs.
+func dialogEngineArgs(goos, bin string) []string {
+	return []string{bin, "engine", "--config", config.DefaultPath(goos), "--supervise"}
 }
 
-// applyServiceInstall builds and runs (or only prints) the service install
-// with an agent. basalt service install runs it under sudo; init runs it
-// itself when already root.
-func applyServiceInstall(c *cliIO, bin, configPath, engineUser string, a agentInstall, printOnly bool) error {
-	if !printOnly {
-		a.report = func(v config.VaultWritten) { fmt.Fprint(c.stderr, a.vaultChoice().line(v)) }
-	}
-	spec, err := agentServiceSpec(c.goos, bin, configPath, engineUser, a, printOnly)
-	if err != nil {
-		return err
-	}
-	sys := c.host.System(c.stderr, c.stderr)
-	steps, err := service.InstallPlan(c.ctx, sys, spec)
-	if err != nil {
-		return err
-	}
-	return service.Apply(c.ctx, sys, steps, printOnly, c.stderr)
+// noDialog is init's stop when no administrator dialog can be shown: it
+// never falls back to running the engine as the person's user.
+func noDialog(err error) error {
+	return fmt.Errorf("basalt init installs the engine service through the system's administrator dialog, which only you can answer, and it cannot be shown here (%w). "+
+		"Run basalt init again in a desktop session on this machine; basalt does not run the engine as your user instead", err)
 }
 
 // darwinEngineLog is the engine service's log on macOS (the unit's
@@ -451,108 +192,8 @@ func engineLogHint(goos string) string {
 	return "journalctl -u " + service.SystemdUnitName
 }
 
-// engineLogError is ", its log's last error: <line>" when init can read
-// the engine service's log, else "".
-func engineLogError(c *cliIO) string {
-	// An unreadable log leaves only the hint.
-	log, _ := c.host.EngineLog(c.ctx, c.goos)
-	line := lastEngineError(log)
-	if line == "" {
-		return ""
-	}
-	return "; its log's last error: " + line
-}
-
-// lastEngineError is the last line of log that reports an error (slog's
-// level=ERROR, in text or JSON), else its last line, cut to
-// maxEngineLogLine characters and made safe to print.
-func lastEngineError(log string) string {
-	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(lines[i], "level=ERROR") || strings.Contains(lines[i], `"level":"ERROR"`) {
-			return visibleText(cutLine(lines[i]))
-		}
-	}
-	return visibleText(cutLine(strings.TrimSpace(lines[len(lines)-1])))
-}
-
-// maxEngineLogLine is the most of a log line init prints, in characters.
-const maxEngineLogLine = 300
-
-// cutLine shortens line to maxEngineLogLine characters, marked with "…".
-func cutLine(line string) string {
-	r := []rune(line)
-	if len(r) <= maxEngineLogLine {
-		return line
-	}
-	return string(r[:maxEngineLogLine]) + "…"
-}
-
-// claudeServerPrefix names the agent's server in Claude Code.
-const claudeServerPrefix = "basalt-"
-
-// offerClaude asks, at a terminal and only when the claude CLI is on PATH,
-// to add the agent's MCP server to Claude Code. Never without a yes, and
-// not when Claude Code already has a server of that name (claude mcp get
-// succeeds), where claude mcp add would fail.
-func offerClaude(c *cliIO, f initFlags) error {
-	if !c.interactive {
-		return nil
-	}
-	claude, err := c.host.LookPath("claude")
-	if err != nil {
-		return nil //nolint:nilerr // no claude CLI: nothing to offer
-	}
-	bin, err := c.host.Executable()
-	if err != nil {
-		return err
-	}
-	name := claudeServerPrefix + f.agent
-	if c.host.Run(c.ctx, []string{claude, "mcp", "get", name}, io.Discard, io.Discard) == nil {
-		fmt.Fprintf(c.stderr, "basalt: Claude Code already has %s\n", name)
-		return nil
-	}
-	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f, c.goos, bin, c.host)...)
-	shown := shellJoin(append([]string{"claude"}, args[1:]...))
-	fmt.Fprintf(c.stderr, "basalt: the server %s is registered for this project directory only (--scope local); sessions in other projects do not see it\n", name)
-	ok, err := c.confirmYes(fmt.Sprintf("Add it to Claude Code now (%s)?", shown))
-	if err != nil || !ok {
-		return err
-	}
-	if err := c.host.Run(c.ctx, args, c.stderr, c.stderr); err != nil {
-		return errors.New("claude mcp add failed; add the server by hand with the line above")
-	}
-	return nil
-}
-
-func socketDirArgs(f initFlags, goos string) []string {
-	if f.socketDir == config.DefaultSocketDir(goos) {
-		return nil
-	}
-	return []string{"--socket-dir", f.socketDir}
-}
-
 // envSudoUID is the uid of the user who ran sudo.
 const envSudoUID = "SUDO_UID"
-
-// persons are the uids the engine's person socket admits (CONTRACT.md, CLI,
-// Recording the person): --person-uid, else the person running init (the
-// user who ran sudo when init runs as root). Never root: without a person
-// the service is not installed.
-func persons(c *cliIO, f initFlags) ([]uint32, error) {
-	uids := f.personUIDs
-	if len(uids) == 0 {
-		uid, err := invokingUID(c)
-		if err != nil {
-			return nil, err
-		}
-		uids = []uint32{uid}
-	}
-	if err := checkPersons(uids); err != nil {
-		return nil, err
-	}
-	return uids, nil
-}
 
 // invokingUID is the uid of the person running init.
 func invokingUID(c *cliIO) (uint32, error) {
@@ -567,8 +208,8 @@ func invokingUID(c *cliIO) (uint32, error) {
 	return parseUID(sudo)
 }
 
-var errNoPerson = errors.New("no person to admit on the engine's person socket (init runs as root without SUDO_UID); " +
-	"give --person-uid N, the OS user id that runs basalt log, approve and revert")
+var errNoPerson = errors.New("no person to record (init runs as root without SUDO_UID); " +
+	"give --person-uid N, the person's OS user id")
 
 // checkPersons refuses no uid and root.
 func checkPersons(uids []uint32) error {
@@ -577,7 +218,7 @@ func checkPersons(uids []uint32) error {
 	}
 	for _, u := range uids {
 		if u == 0 {
-			return errors.New("--person-uid 0 is root; give the OS user id of the person who runs basalt log, approve and revert")
+			return errors.New("--person-uid 0 is root; give the person's OS user id")
 		}
 	}
 	return nil
@@ -590,48 +231,4 @@ func parseUID(v string) (uint32, error) {
 		return 0, fmt.Errorf("%q is not an OS user id", v)
 	}
 	return uint32(uid), nil
-}
-
-// warnAgentIsPerson says when the agent runs as a recorded person: the
-// engine cannot tell two processes of one OS user apart, so that agent can
-// reach the person socket too. Approve and revert still need the passkey.
-func warnAgentIsPerson(c *cliIO, f initFlags) {
-	u, err := user.Lookup(f.osUser)
-	if err != nil {
-		return // the service install reports an unknown OS user
-	}
-	for _, uid := range f.personUIDs {
-		if strconv.FormatUint(uint64(uid), 10) == u.Uid {
-			fmt.Fprintf(c.stderr, "basalt: warning: the agent runs as OS user %s, which is also the person the engine admits on its person socket. "+
-				"While they share that user, basalt log, approve and revert over the socket see only this agent's ledger (the engine cannot tell you and the agent apart), "+
-				"and the agent can use them too (approve and revert still need your passkey). For full isolation, run the agent as its own OS user: basalt init --os-user <user>\n", f.osUser)
-			return
-		}
-	}
-}
-
-// servicePin writes the accepted pin to the service engine's trust.d: in
-// this process as root, else with one sudo basalt trust pin, which reads
-// the chain again and pins it only when it is the one the person accepted
-// (--trust-root).
-func servicePin(c *cliIO, f initFlags) error {
-	if f.pin == nil {
-		return nil
-	}
-	if c.host.Euid() == 0 {
-		return c.writePin(*f.pin, f.configPath)
-	}
-	bin, err := checkedExecutable(c)
-	if err != nil {
-		return err
-	}
-	args := []string{
-		bin, "trust", "pin", "--host", f.pin.host, "--port", strconv.Itoa(f.pin.port),
-		"--trust-root", f.pin.sha256, "--config", f.configPath,
-	}
-	fmt.Fprintln(c.stderr, "basalt: pinning the database's certificate for the engine service with sudo:")
-	if err := c.host.Sudo(c.ctx, args, "", c.stderr, c.stderr); err != nil {
-		return fmt.Errorf("the engine service is installed but the pin is not written (run sudo %s): %w", pinCommand(f.pin.pinTarget, f.configPath, c.goos), err)
-	}
-	return nil
 }

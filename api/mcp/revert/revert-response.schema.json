@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-response.v1.json",
   "title": "Revert response",
-  "description": "What the revert page outputs, as the text basalt-revert.1.<base64url(this JSON)>. Byte fields are base64url without padding. Any relay may carry it; basalt_meta.apply_revert verifies it and runs the revert. See CONTRACT.md, Revert.",
+  "description": "What the revert page posts after the passkey signs: the body of POST /api/v1/reverts/{revertId}/apply, on the engine's own pages or through the Vault. It is never shown to paste. Byte fields are base64url without padding. Any relay may carry it; basalt_meta.apply_revert verifies it and runs the revert. See CONTRACT.md, Revert.",
   "type": "object",
   "additionalProperties": false,
   "required": [

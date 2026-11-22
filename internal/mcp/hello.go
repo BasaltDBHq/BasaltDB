@@ -39,6 +39,12 @@ type Hello struct {
 	Protocol        int    `json:"protocol"`
 	Build           string `json:"build"`
 	MinShimProtocol *int   `json:"minShimProtocol,omitempty"`
+	// OperatedBy and PagesOrigin are in the engine's answer only: who runs
+	// its machine steps (PERSON or AGENT), and the origin of the local pages
+	// it serves ("" when it serves none). The shim opens a link on that
+	// origin only when the engine says PERSON (CONTRACT.md, Auto-open).
+	OperatedBy  string `json:"operatedBy,omitempty"`
+	PagesOrigin string `json:"pagesOrigin,omitempty"`
 }
 
 type helloRequest struct {

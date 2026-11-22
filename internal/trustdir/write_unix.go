@@ -251,6 +251,31 @@ func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool,
 	return wrote, err
 }
 
+// Repin replaces the engine's own pin for host (pin-<host>) with cert, as
+// the setup page's TRUST fix does (the new PEM file, then the profile,
+// then the old PEM file removed, under the config lock), for a certificate
+// the person trusted on the connect page that the engine's own reading
+// matched. Under the lock, the profile that covers host must be that pin:
+// another one (built-in or operator) is ErrCovered and nothing is written,
+// so a replacement never reaches past the engine's own pin. It returns the
+// fingerprints it replaced.
+func Repin(configPath, host string, cert *x509.Certificate, caOnly bool) ([]string, error) {
+	pf, err := trustprofile.NewPin(host, cert, caOnly)
+	if err != nil {
+		return nil, err
+	}
+	var replaced []string
+	err = writeExisting(configPath, func(d *service.TrustedDir, trusted int) error {
+		if cur := Set(configPath).For(host); cur == nil || cur.Name != pf.Profile.Name || !cur.Exact() {
+			return fmt.Errorf("%w: the engine's pin %s is not what covers %s now", ErrCovered, pf.Profile.Name, host)
+		}
+		var err error
+		replaced, err = writePin(d, trusted, pf)
+		return err
+	})
+	return replaced, err
+}
+
 // writePin writes pf in d, replacing the pin of the same name, and returns
 // the fingerprints it replaced. The config lock is held.
 func writePin(d *service.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]string, error) {
@@ -276,14 +301,6 @@ func writePin(d *service.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]s
 		return nil
 	}()
 	return replaced, err
-}
-
-// PinProfile is the pin profile Pin would write for host, built in memory
-// and written nowhere: basalt init verifies its admin connection with it
-// before the engine's trust.d is known.
-func PinProfile(host string, cert *x509.Certificate, caOnly bool) (*trustprofile.Profile, error) {
-	pf, err := trustprofile.NewPin(host, cert, caOnly)
-	return pf.Profile, err
 }
 
 // oldPin is the pin a Pin replaces: its roots files and the fingerprints of

@@ -81,7 +81,7 @@ func (c *BlindCache) Refresh() {
 }
 
 // UpgradeChecker says whether the guard misses only non-breaking migrations,
-// so everything works and basalt upgrade adds them. The default asks the
+// so everything works and the setup page's update adds them. The default asks the
 // service's Probe.
 type UpgradeChecker interface {
 	UpgradeAvailable(ctx context.Context) (bool, error)
@@ -118,25 +118,17 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
 	table := shown(dbName, maxTableChars)
 	b := NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
-	var person string
-	switch {
-	case s.Commands.AgentOperated():
-		b.AgentRunCommand(s.Commands.InitRemote(""), "On the person's yes, run this to make a setup code, then show its personMessage and follow its nextSteps.")
-		person = fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
-			"tell the agent: it gives you a setup code to run on your own computer, which asks about that table. "+
-			"Leave it as it is if the agent should not see that table.", table)
-	default:
-		command := s.Commands.Init("--agent-rls=all-rows")
-		b.RunCommand(command, "To let the agent see all rows, run this: init asks for the admin connection string itself.").
-			TellAgent("Tell the agent once it is done.")
-		person = fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
-			"run: %s then tell the agent. Leave it as it is if the agent should not see that table.", table, command)
+	b.AgentRunCommand(s.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
+	if !s.Commands.AgentOperated() {
+		b.TellAgent("Tell the agent once it is done.")
 	}
+	person := fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
+		"tell the agent: it gives you a link where you answer the row-level security question for that table. "+
+		"Leave it as it is if the agent should not see that table.", table)
 	steps, err := b.Build()
 	if err != nil {
 		return mcp.Warning{}, err
 	}
-	person = fitToSteps(person, steps)
 	return mcp.Warning{
 		Code:  mcp.WarningRLSHidesRows,
 		Table: dbName,
@@ -174,12 +166,13 @@ func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
 }
 
 // upgradeSteps: the person adds the missing non-breaking migrations when it
-// suits them, in a warning and in status.
+// suits them, in a warning and in status, on the page basalt init links to.
 func upgradeSteps(b *Steps, cmds Commands) string {
-	if cmds.AgentOperated() {
-		return remoteSetupSteps(b, cmds, "", "The guard in this database can be upgraded; everything works as it is, so this can wait until it suits you.")
+	b.AskPerson("Tell the person the guard can be updated when it suits them, and ask whether to do it now.")
+	if cmds.updateLink != "" && !cmds.AgentOperated() {
+		b.OpenLink(cmds.updateLink, "On the person's yes, show them this link: nothing stops, and the agent needs no restart.")
+		return "The guard in this database can be updated. Everything works as it is; when it suits you, open the link the agent gives you to update it."
 	}
-	command := cmds.Upgrade()
-	b.RunCommand(command, "Run this to add the missing guard migrations: nothing stops, and the agent needs no restart.")
-	return fmt.Sprintf("The guard in this database can be upgraded. Everything works as it is; when it suits you, run: %s", command)
+	b.AgentRunCommand(cmds.Init(), "On the person's yes, run this and show them the link it prints: nothing stops, and the agent needs no restart.")
+	return "The guard in this database can be updated. Everything works as it is; when it suits you, tell the agent: it gives you a link to update it."
 }

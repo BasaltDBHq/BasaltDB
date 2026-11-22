@@ -3,16 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 )
 
 func runArgs(args ...string) (int, string, string) {
@@ -33,13 +30,17 @@ func TestRun(t *testing.T) {
 		{args: []string{"--version"}, code: exitOK, stdout: "basalt " + buildinfo.Version + "\n"},
 		{args: nil, code: exitUsage, stderrPart: "Usage: basalt"},
 		{args: []string{"serve"}, code: exitUsage, stderrPart: `unknown command "serve"`},
+		// Removed: the setup page's Update check does their jobs.
+		{args: []string{"passkey", "list"}, code: exitUsage, stderrPart: `unknown command "passkey"`},
+		{args: []string{"trust", "pin", "--host", "h"}, code: exitUsage, stderrPart: `unknown command "trust"`},
+		{args: []string{"classify"}, code: exitUsage, stderrPart: `unknown command "classify"`},
 		{args: []string{"mcp"}, code: exitUsage, stderrPart: "-agent"},
 		{args: []string{"mcp", "--agent", "Bad/Name"}, code: exitUsage},
 		// No engine: the shim answers itself; an empty session ends cleanly.
-		{args: []string{"mcp", "--socket", filepath.Join(t.TempDir(), "none.sock")}, code: exitOK},
+		{args: []string{"mcp", "--agent", "nobody_runs_this"}, code: exitOK},
 		{args: []string{"engine", "--config", filepath.Join(t.TempDir(), "none.json")}, code: exitError, stderrPart: "basalt engine:"},
 		{args: []string{"engine", "extra"}, code: exitUsage},
-		{args: []string{"service"}, code: exitUsage, stderrPart: "want install or uninstall"},
+		{args: []string{"service"}, code: exitUsage, stderrPart: "want install"},
 		{args: []string{"service", "restart"}, code: exitUsage},
 	}
 	for _, tc := range cases {
@@ -55,28 +56,5 @@ func TestRun(t *testing.T) {
 	require.Equal(t, exitOK, code)
 	for _, name := range []string{"engine", "mcp", "service", "version"} {
 		require.Contains(t, stdout, name)
-	}
-}
-
-func TestServiceUninstallDryRun(t *testing.T) {
-	t.Parallel()
-	code, stdout, stderr := runArgs("service", "uninstall", "--dry-run", "--binary", "/usr/local/bin/basalt")
-	// The plan stops the service only when its unit file is on this host.
-	installed := func(path string) bool { _, err := os.Stat(path); return err == nil }
-	switch runtime.GOOS {
-	case "linux":
-		require.Equal(t, exitOK, code, stderr)
-		require.Contains(t, stdout, "rm -f "+service.SystemdUnitPath)
-		if installed(service.SystemdUnitPath) {
-			require.Contains(t, stdout, "systemctl disable --now basalt-engine.service")
-		}
-	case "darwin":
-		require.Equal(t, exitOK, code, stderr)
-		require.Contains(t, stdout, "rm -f "+service.LaunchdPlist)
-		if installed(service.LaunchdPlist) {
-			require.Contains(t, stdout, "launchctl bootout system/dev.basaltdb.engine")
-		}
-	default:
-		require.Equal(t, exitError, code)
 	}
 }

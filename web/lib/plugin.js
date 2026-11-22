@@ -17,17 +17,18 @@ import {
   ENDPOINT_REMOTE,
   PluginLinkError,
   SETTINGS_MISMATCH,
+  PORTAL,
   SIGNER_KNOWN,
   WRONG_KIND,
   checkPluginRequest,
-  encodePluginResponse,
   parsePluginRequest,
   pluginResponseJSON,
   relyingParty,
   visibleText,
 } from "./codec.js";
-import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, el, fail, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
+import { $, NO_CARRIER, el, fail, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } from "./relay.js";
 import { agentName } from "./scope.js";
 import { pageTransport } from "./transport.js";
 
@@ -68,7 +69,8 @@ export const SENTENCES = Object.freeze({
   nameCue: "It also sees values from your database that appear in that text.",
   usedFor: "Used for: <agents>.",
   askedBy: "Asked by <agent>.",
-  fingerprint: "Fingerprint: <fingerprint>",
+  fingerprint: "Plugin fingerprint: <fingerprint>",
+  portalSameUser: "Basalt runs on the agent's own computer, as the same user as the agent. Your approval decides whether Basalt runs this plugin. It cannot stop the agent from reading what Basalt can.",
   approved: "Approved. The plugin starts within a few seconds.",
 });
 
@@ -142,14 +144,19 @@ export function changeLines(b) {
   return out;
 }
 
-// whereLines say where it runs, then a declared limit this machine does
-// not enforce. At level 3 the warning already says it runs with Basalt's
+// whereLines say where it runs, then, on the portal, that Basalt and the
+// agent share one OS user, then a declared limit this machine does not
+// enforce. At level 3 the warning already says it runs with Basalt's
 // access.
-function whereLines(b, level) {
+function whereLines(b, level, portal) {
   const out = [];
   if (b.endpoint.kind === ENDPOINT_REMOTE) out.push(fill(SENTENCES.remote, { host: b.endpoint.host }), SENTENCES.remoteOnward);
   else if (b.isolation.files === "OS_USER") out.push(SENTENCES.ownUser);
   else if (level === 1) out.push(SENTENCES.sameAccess);
+  // The one sentence not derived from the binding (CONTRACT.md, Plugin
+  // approval through the portal): only an agent-operated engine hands over
+  // a portal plugin link, and its agent could choose the binding's detail.
+  if (portal) out.push(SENTENCES.portalSameUser);
   if (b.endpoint.kind === ENDPOINT_LOCAL && b.isolation.network !== "ENFORCED") {
     out.push(b.egress.length === 0 ? SENTENCES.noNetwork : fill(SENTENCES.egressLimit, { hosts: hosts(b.egress) }));
   }
@@ -173,15 +180,16 @@ function fingerprint(sha) {
 
 // pluginView is everything the page says about a checked binding, by
 // section: the change first, then the level's line, the tick (level 3),
-// where it runs, what it sees, and who.
-export function pluginView(b) {
+// where it runs, what it sees, and who. portal is true on the portal's
+// origin, where the page adds the shared-user sentence at every level.
+export function pluginView(b, { portal = false } = {}) {
   const level = pluginLevel(b);
   return {
     level,
     change: changeLines(b),
     levelLine: LEVEL_LINES[level],
     tick: level === 3 ? SENTENCES.tick : null,
-    where: whereLines(b, level),
+    where: whereLines(b, level, portal),
     sees: seesLines(b),
     who: [
       fill(SENTENCES.usedFor, { agents: agents(b.agents) }),
@@ -203,10 +211,27 @@ const SETTINGS_DIFFER = "The settings in this link do not match what would be ap
 const LINK_GONE = "This plugin approval link is incomplete, was replaced by a newer one, or the approval is gone. Ask the agent for a new link.";
 const PLUGIN_REFUSALS = { [WRONG_KIND]: NOT_A_PLUGIN, [SETTINGS_MISMATCH]: SETTINGS_DIFFER };
 
+// A session through the Vault that cannot be opened, in a plugin
+// approval's words (CONTRACT.md, Close codes): engine offline, broken, or
+// try later. A plugin approval has no long link to offer instead.
+export const PLUGIN_SESSION_TEXT = Object.freeze({
+  vault: "This page cannot reach the BasaltDB Vault (relay.basaltvault.app), which carries it to your engine. Wait a minute and open the link again.",
+  offline: "Your engine is not connected to the BasaltDB Vault right now. Ask the agent to check its status, then open the link again.",
+  busy: "Your engine or the BasaltDB Vault is busy. Wait a minute and open the link again.",
+  broken: "The secure session to your engine failed, and this page used nothing from it. Open the link again. If it keeps failing, ask the agent to check its status.",
+});
+const SESSION_TEXTS = new Map([[VAULT_UNREACHABLE, PLUGIN_SESSION_TEXT.vault], [ENGINE_NOT_CONNECTED, PLUGIN_SESSION_TEXT.offline], [BUSY, PLUGIN_SESSION_TEXT.busy]]);
+
+function sessionText(told) {
+  if (SESSION_TEXTS.has(told)) return SESSION_TEXTS.get(told);
+  if (told.startsWith("The secure session to your engine failed")) return PLUGIN_SESSION_TEXT.broken;
+  return told;
+}
+
 // describe is the sentence the page shows when its link cannot be used.
 export function describe(err) {
   if (err?.name === "PluginLinkError") return PLUGIN_REFUSALS[err.reason] ?? `This plugin approval link cannot be used: ${err.message}`;
-  const told = err?.name === "RelayError" ? personText(err) : "";
+  const told = err?.name === "RelayError" ? sessionText(personText(err)) : "";
   if (told) return told;
   if (err?.name === "RelayError" && err.code === "NOT_FOUND") return LINK_GONE;
   if (err?.name === "RelayError") return `This plugin approval cannot be shown: ${err.message}`;
@@ -237,7 +262,10 @@ async function loadRequest(hash) {
     }
     const paths = relayPaths("plugins", id);
     const secret = linkSecret(hash);
-    const session = await pageTransport().open({ page: "plugins", id, secret });
+    // On the engine's own pages the same origin; on the portal a session
+    // through the Vault to an agent-operated engine (CONTRACT.md, Plugin
+    // approval through the portal).
+    const session = await openSession(pageTransport(), { page: "plugins", id, secret });
     const req = await checkPluginRequest(await fetchRequest(session, paths.request, secret));
     if (req.approvalId !== id) throw new CodeError("the engine sent another plugin approval than this link's");
     return { req, relay: { path: paths.relay, secret, session } };
@@ -279,9 +307,11 @@ function render(req, view) {
   $("settings").textContent = visibleText(req.settingsText);
 }
 
-// allowed: the approve button works only before the approval expires and,
-// at level 3, only once the tick is set.
+// allowed: the approve button works only on a short link (a long link has
+// no engine to send the signature to), before the approval expires and, at
+// level 3, only once the tick is set.
 function allowed(state) {
+  if (state.relay === null) return false;
   if (state.req.binding.expiresAt.getTime() <= state.now().getTime()) return false;
   return state.view.level !== 3 || $("tick").checked === true;
 }
@@ -291,25 +321,23 @@ const TICK_FIRST = "Set the tick above to approve.";
 function gate(state) {
   const ok = allowed(state);
   $("approve").disabled = !ok;
-  $("status").textContent = !ok && state.view.level === 3 && !$("tick").checked ? TICK_FIRST : "";
+  if (state.relay === null) $("status").textContent = NO_CARRIER;
+  else $("status").textContent = !ok && state.view.level === 3 && !$("tick").checked ? TICK_FIRST : "";
   return ok;
 }
 
-// finish relays the signed response when the page came from a short link,
-// and otherwise (or when the relay fails) shows the code for the agent.
+// finish relays the signed response to the engine that served the short
+// link. Nothing is ever shown to paste: when the relay fails, the person
+// opens the link again or asks the agent for a new one.
 async function finish(response, relay) {
-  if (relay !== null) {
-    try {
-      await postResponse(relay.session, relay.path, relay.secret, pluginResponseJSON(response));
-      showDone(SENTENCES.approved);
-      setPill("state", "Approved", "ok");
-      return;
-    } catch (err) {
-      showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, give the code below to your agent.`);
-    }
+  try {
+    await postResponse(relay.session, relay.path, relay.secret, pluginResponseJSON(response));
+    showDone(SENTENCES.approved);
+    setPill("state", "Approved", "ok");
+  } catch (err) {
+    showRelayFailed(relayFailure(err, "approval"));
+    setPill("state", "Not approved", "bad");
   }
-  showCode(encodePluginResponse(response));
-  setPill("state", "Signed", "ok");
 }
 
 async function approve(rp, state) {
@@ -364,8 +392,9 @@ export async function main({ now = () => new Date() } = {}) {
     fail(expiredText(req.binding.expiresAt));
     return;
   }
-  const state = { req, relay, now, view: pluginView(req.binding) };
+  const state = { req, relay, now, view: pluginView(req.binding, { portal: window.location.origin === PORTAL }) };
   render(req, state.view);
+  showEngine(relay?.session);
   setPill("state", `Waiting · expires ${whenText(req.binding.expiresAt, now())}`, "hold");
   $("main").hidden = false;
   gate(state);

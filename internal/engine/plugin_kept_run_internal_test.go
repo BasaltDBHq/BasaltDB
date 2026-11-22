@@ -22,12 +22,15 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
+	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
 
 // keptWait bounds a wait on the running engine: a cold start of the test
@@ -88,7 +91,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*pluginOptions))
 
 // runSource is a local plugin acme-ner whose command is this test binary,
 // started as the test plugin that reports to report.
-func runSource(t *testing.T, report, hooks string) ([]person.PluginFile, []string) {
+func runSource(t *testing.T, report, hooks string) ([]shim.PluginFile, []string) {
 	t.Helper()
 	exe, err := os.ReadFile(os.Args[0])
 	require.NoError(t, err)
@@ -103,7 +106,7 @@ func runSource(t *testing.T, report, hooks string) ([]person.PluginFile, []strin
   "network": { "egress": [] }
 }
 `, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
-	return []person.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
+	return []shim.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.
@@ -508,4 +511,51 @@ func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
 	require.Empty(t, ep.unrecorded[keptKey]["product_a"].why)
 	require.True(t, w.frozenNow()(sudoKey))
 	require.False(t, w.frozenNow()(keptKey))
+}
+
+// TestAgentOperatedEngineKeepsPlugins: an agent-operated engine on the
+// bot's computer (same-user mode) keeps engine-kept entries, runs one as
+// its own child once its approval is signed, with no restart, and stops it
+// on remove (CONTRACT.md, Plugin approval through the portal). Its config
+// entries are not frozen at start, as a service engine's are: a same-user
+// engine applies engine.json while it runs.
+func TestAgentOperatedEngineKeepsPlugins(t *testing.T) {
+	f := newKeptFixture(t, []string{"product_a"})
+	f.cfg.Mode, f.cfg.OperatedBy = "", mcpcontract.OperatedByAgent
+	f.s.cfg = f.cfg
+	r := f.run(os.Geteuid(), nil)
+	// engine.json as init writes it on the bot's computer, which the
+	// same-user watch reads every second.
+	raw, err := json.Marshal(map[string]any{
+		"socketDir": f.cfg.SocketDir, "stateDir": f.state, "mode": "SAME_USER", "operatedBy": mcpcontract.OperatedByAgent, "pagesUrl": links.Portal,
+		"agents": []map[string]any{{"name": "product_a", "osUser": f.cfg.Agents[0].OSUser, "store": map[string]any{"kind": "POSTGRES", "credentialFile": "/c/product_a"}}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(f.configPath, raw))
+	_, err = config.Load(f.configPath)
+	require.NoError(t, err, "the watch reads engine.json")
+	require.Equal(t, plugin.ModeSameUser, r.ep.mode)
+	require.NotNil(t, r.ep.kept)
+	res := r.add("product_a")
+	r.requireNotRunning()
+	f.sign(res.Approvals[0])
+	r.requireServed(res.Approvals[0], "product_a")
+	var detail map[string]any
+	require.NoError(t, f.d.Admin.QueryRow(context.Background(), `SELECT detail FROM basalt_meta.ledger
+		WHERE agent = $1 AND kind = 'PLUGIN_ENABLED' ORDER BY seq DESC LIMIT 1`, f.roles["product_a"].Role).Scan(&detail))
+	require.Equal(t, map[string]any{"files": "NONE", "network": "NOT_ENFORCED"}, detail["isolation"])
+
+	w := &pluginWatch{ep: r.ep, start: f.cfg, eff: f.cfg}
+	require.False(t, w.serviceKept())
+	require.False(t, w.frozenNow()(plugin.EntryKey{Name: "acme-config", Instance: "default"}), "config entries change while it runs")
+
+	// engine.json that cannot be read holds back hand edits, never a
+	// removal: the plugin stops before request_plugin answers REMOVED.
+	require.NoError(t, config.WriteFile(f.configPath, []byte("{")))
+	r.ep.applyNow(context.Background())
+	require.ElementsMatch(t, []string{"product_a"}, servedTo(r.ep, keptKey), "a bad engine.json changes nothing that runs")
+	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	require.NoError(t, err)
+	require.Empty(t, servedTo(r.ep, keptKey), "stopped when the removal answers")
+	r.requireNotRunning()
 }

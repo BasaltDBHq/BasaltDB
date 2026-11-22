@@ -7,7 +7,7 @@ A write of 11 to 50 rows, or any `DELETE`, is held until you approve it with you
 When a write is held, the agent gets `APPROVAL_REQUIRED` with a `personMessage` and shows it to you as is:
 
 ```
-Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://localhost:8787/approvals/<id>#s=<secret> (or run: basalt approve --agent demo_bot --open <id>). Expires 2026-11-12 07:02 UTC.
+Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://localhost:8787/approvals/<id>#s=<secret> Expires 2026-11-12 07:02 UTC.
 ```
 
 1. Open the link. The engine serves the approval page itself and the page lists every row with its old and new values. Cascaded rows are marked, and you have to confirm them separately.
@@ -22,11 +22,11 @@ After every signature the engine reads what Postgres recorded and signs a receip
 Approved: Update 27 rows in basalt_demo·leads (approval <id>), receipt from engine R68W FYxA cGgI jMEN.
 ```
 
-A revert's line starts with `Signed:` instead. **Compare it with what you meant to sign:** the rows and table, the id from the page's address, and the engine fingerprint with the one `basalt status` shows. The line comes from Postgres, not from the page, so a page that made you sign something else is caught here: the line names what was actually signed. If it does not match, tell the agent to stop and revert the change. If you see `No receipt: the engine's key file is refused`, your signature still applied, but nothing confirms what it was: fix the key file (`basalt status` says how). A revert whose scope was changed on the signing page has no receipt either (the agent cannot see what it covers); if you did not change it, say so at once.
+A revert's line starts with `Signed:` instead. **Compare it with what you meant to sign:** the rows and table, the id from the page's address, and the engine fingerprint with the one the agent's `status` shows. The line comes from Postgres, not from the page, so a page that made you sign something else is caught here: the line names what was actually signed. If it does not match, tell the agent to stop and revert the change. If you see `No receipt: the engine's key file is refused`, your signature still applied, but nothing confirms what it was: fix the key file (the agent's `status` says how). A revert whose scope was changed on the signing page has no receipt either (the agent cannot see what it covers); if you did not change it, say so at once.
 
-Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write, and links survive an engine restart: the engine keeps the secrets' hashes in its state directory (`<stateDir>/<agent>.links.json`, mode `0600`). If the agent lost the link, it calls `list_pending` with `reissueLink: true`, which issues a new link and turns the old one off; a plain `list_pending` touches no link. From the terminal, `basalt approve --open <id>` does the same when the engine serves the pages. To refuse a write, close the page: the write stays blocked and expires after 24 hours.
+Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write, and links survive an engine restart: the engine keeps the secrets' hashes in its state directory (`<stateDir>/<agent>.links.json`, mode `0600`). If the agent lost the link, it calls `list_pending` with `reissueLink: true`, which issues a new link and turns the old one off; a plain `list_pending` touches no link. To refuse a write, close the page: the write stays blocked and expires after 24 hours.
 
-A revert works the same way: `basalt revert --agent NAME --run <runId> --open` opens the revert page, you sign it there, and the command prints the result. Pasting the code the page shows into the prompt still works too.
+A revert works the same way: the agent gives you the link to the revert page, and you sign it there.
 
 ## Rows the agent cannot read
 
@@ -38,13 +38,13 @@ A write can touch rows in tables the agent's role cannot `SELECT`, cascaded rows
 - **Secret columns.** A column classified `SECRET` ([PII classification](../contract/pii-classification.md#pii-classification)) is never shown: it reads "secret · not shown". Postgres left the value out, so the page cannot check that row against what you sign, and it says so under the table, naming the row: "Row id = 8 has a secret column, so this page can't check it against what you sign." `IDENTIFIER` and `FREE_TEXT` columns show as they are; the page is yours, and only what goes to the model is tokenized.
 - **When it refuses.** If your passkey could not be checked, the page says "Your passkey didn't confirm. Nothing was shown; try again." and you can press Show values with passkey again. If the hidden rows changed since the agent asked, it says "These rows changed since the agent asked. This approval can no longer apply; ask the agent to try the write again." (for a revert: "ask the agent to prepare it again").
 - **What the agent sees.** Nothing about the values. Its tools, its views in `basalt_meta` and its chat show the rows as hidden, as before. The ledger records that you looked (`ROWS_REVEALED`, with counts and hashes only).
-- **Long links.** A long link (a `#2.` link) has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name. The CLI cannot show them either: `basalt approve --show` prints `[values hidden]`; use `--open` for the engine's page.
+- **Long links.** A long link (a `#2.` link) has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name.
 
-This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you run `basalt upgrade` (see [next-steps.md](next-steps.md)).
+This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you update the guard from the setup page (see [next-steps.md](next-steps.md)).
 
 ## Reverting from the agent
 
-You can ask the agent to undo a run without opening a terminal ("revert the run that qualified this week's leads"). The agent prepares the revert; only you can sign it.
+You can ask the agent to undo a run ("revert the run that qualified this week's leads"). The agent prepares the revert; only you can sign it.
 
 1. The agent finds the run with `list_runs` (its own runs only, newest first) and looks at what it did with `run_history`.
 2. It checks the current data with `preview_revert` and `query`: which rows would be restored, and which a person changed since (those are left as they are: people win).
@@ -52,7 +52,7 @@ You can ask the agent to undo a run without opening a terminal ("revert the run 
 4. When you agree, it calls `request_revert` with the `runId`, `changeId` or `taskId` and an `intent`, and shows you the `personMessage` with the short link to the revert page.
 5. It then calls `request_revert` with the `revertId` and waits once, about 90 seconds. Sign on the page within that time and it reports `APPLIED`. If you take longer, it ends its turn saying the revert waits for your signature; sign when you are ready and tell it.
 
-If the link was lost, the agent calls `request_revert` with `reissueLink: true` for a fresh short link (the old one stops working). If the page cannot reach the engine, it shows a `basalt-revert.1....` code: paste it into the chat and the agent delivers it with `signature`. The database verifies your passkey either way.
+If the link was lost, the agent calls `request_revert` with `reissueLink: true` for a fresh short link (the old one stops working). The page sends your signature to the engine itself, so there is nothing to paste; if it cannot reach the engine, it says so, and you open the link again or ask the agent for a new one. The database verifies your passkey.
 
 A large plan is signed once, like any other. After you sign, the agent applies it in batches with `apply_revert_batch` until every line is done.
 
@@ -70,69 +70,31 @@ The revert page shows what the agent proposed. You can sign it as it is, change 
 
 Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link) shows the scope read only and can only be signed as it is; to decline from it, close the page. A revert you do not sign expires within the hour.
 
-To start a task revert yourself, run `basalt revert --agent NAME --task <taskId> --open` with an agent that ran in the task. It prepares that agent's own lines (possibly none) and opens the page, where you include the others.
+## Large reverts and whole tasks
 
-## The CLI path
+There are no commands to approve or revert: you sign on the page, and the page sends your signature to the engine (on a bot's computer, through the hosted relay).
 
-The CLI path is a full alternative to the link:
-
-- `basalt approve --agent NAME --open <approvalId>` opens the approval page in your default browser (`open` on macOS, `xdg-open` on Linux). When the engine serves the pages, you get a new short link whose page sends the signature to the engine, so there is nothing to paste: the command waits and ends when you have signed (the agent's earlier link stops working, and the agent still applies the write by its approval id). If you paste a code at that point, it is taken too. Without local pages you get the long link, whose page shows a code to paste.
-- `basalt approve --agent NAME --show <approvalId>` prints the link, for use on another device, and waits for the signature the same way.
-- `basalt approve --agent NAME '<code>'` relays the code that a long-link page shows, for example a page opened on another device.
-
-Add `--config PATH` when the engine runs from a non-default config. The commands that the agent passes on already include it.
+- **A whole task.** Ask an agent that worked in the task to revert it. It requests its own changes in the task (`taskId`), and you include the other agents' changes on the signing page.
+- **A revert too large to prepare.** The agent has 100 seconds to prepare a revert. When that is not enough, it asks you whether a narrower revert will do: some of its runs, some tables, or one change at a time. Each part is signed on its own.
 
 ## Where the pages come from
 
-Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init --passkey-origin` sets it, and the default is the engine's local pages at `http://localhost:8787`, which stays the default until the portal (`https://portal.basaltvault.app`) is live. The paths are the same on both: `/approvals/<id>`, `/reverts/<id>` and `/passkeys/register`. When the base is local, the engine serves the approval, revert and registration pages on `127.0.0.1:<port>` and logs `serving approval pages`. The page files are built into the binary: after editing anything under `web/`, rebuild (`make build`) and restart the engine to see it.
+Every link is built from one base URL, `pagesUrl` in `engine.json`. On a person's own computer it is the engine's local pages at `http://localhost:8787`. On a bot's computer it is the portal, `https://portal.basaltvault.app`, because local pages would sit on the bot's machine. The paths are the same on both: `/approvals/<id>`, `/reverts/<id>` and `/setup/`. The page files are built into the binary: after editing anything under `web/`, rebuild (`make build`) and restart the engine to see it.
 
-- `"pagesAddr": "off"` in `engine.json` turns the pages off. Any address that is not a loopback IP is refused.
+- `"pagesAddr": "off"` in `engine.json` turns the local pages off. Any address that is not a loopback IP is refused.
 - If the port is taken (an old `make serve-web` from an earlier checkout, or a second engine), the engine refuses to start and names the address. `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it; stop that process and start the engine again.
-- With the portal as the base (`https://portal.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#2....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
 
-The pages run on two origins only, compiled into `basalt`: the portal, and `http://localhost:<port>` when you operate the engine yourself. An engine handed to an agent (`--operated-by=agent`) uses the portal, since local pages would sit on the agent's machine. Cloudflare's `*.pages.dev` addresses and every other host are refused. To try agent mode against local pages on your own laptop, `basalt init --operated-by=agent --dev-local-pages` allows it, and every message the agent shows you then starts with a `DEV_LOCAL_PAGES` warning. Never use it with a bot you do not control.
+The pages run on two origins only, compiled into `basalt`: the portal, and `http://localhost:<port>` when you operate the engine yourself. Cloudflare's `*.pages.dev` addresses and every other host are refused.
 
-The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is on by default when an agent operates the engine (`--operated-by=agent`) and off otherwise, and its page side is not finished, so until it connects, the engine hands over long links instead. Turn it off with `--vault=off`. See [vault.md](vault.md). The free alternative is your own tunnel: see [Your own tunnel, without the Vault](#your-own-tunnel-without-the-vault).
+The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is on by default when an agent operates the engine and off otherwise, and its page side is not finished, so until it connects, the engine hands over long links instead (`/approvals/<id>#2....`, which hold the whole preview). See [vault.md](vault.md), and [relay-privacy.md](relay-privacy.md) for what the relay sees and keeps.
 
-## Your own tunnel, without the Vault
+## Revoking an engine
 
-For an engine on a server you cannot sit at, you can approve from the portal without the hosted Vault. You run a tunnel (Cloudflare Tunnel, Tailscale Funnel or a reverse proxy such as Caddy) from an https address of your own to a second, loopback-only listener of the engine. The portal page opens the session straight to your address. Everything in the session is encrypted end to end, so the tunnel sees only ciphertext, the same as the Vault does. This is the free path, and it needs no account. The pages must be the portal's, so it is for an engine you hand to an agent (`--operated-by=agent`) or set up with `basalt init --remote`.
-
-**1. Give the engine a listener.** On the engine's machine, set `directAddr` to a loopback address and port, then restart the engine:
-
-```sh
-basalt init --remote --agent NAME ... --direct-addr 127.0.0.1:8787
-```
-
-(`basalt init --operated-by=agent ... --direct-addr 127.0.0.1:8787` does the same for an agent-operated init.) `off` turns it off again. The listener serves only `GET /v1/engine` and the session route; it answers no other path and serves no page. Until you set it, `basalt status` reports `DIRECT_NOT_SERVED` once your database records an address.
-
-**2. Publish it.** `basalt tunnel` prints the exact commands for the three tunnels, forwarding to your `directAddr`:
-
-```sh
-basalt tunnel --address https://engine.example.com
-```
-
-Whatever you use must pass the public `Host` on unchanged and upgrade WebSockets (the three above do by default). With `--address`, the command then fetches `/v1/engine` from that address and checks that it answers with this engine's key; it prints the engine's fingerprint and what to do next. If it says the engine does not know the address, record it first (step 3) and run it again.
-
-**3. Record the address in your database.** On your own computer, with the admin connection string, as part of the setup code the agent gave you:
-
-```sh
-basalt init --setup-code <code> --engine-url https://engine.example.com
-```
-
-The engine answers only on an address your database records. With the Vault off this record is required: the agent hands over portal short links only when the database records this engine's key, not revoked, with an address, and otherwise hands over long links. The record is the one place the agent cannot change: it has no admin rights. While the engine is running, `basalt status` shows it as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); a stopped engine prints no such line. The agent's `status` tool shows it as `engineRecord`.
-
-**4. Pin the engine on each device.** On the portal, `https://portal.basaltvault.app/engines/add`: type the address and compare the fingerprint it shows with the one `basalt init --setup-code` or `basalt tunnel` printed on your own computer. A device trusts only an engine it pinned, and the page checks the engine's key in every session. Pin it once per device and browser. From then on, the portal short links the agent hands over open straight through your tunnel: approve or revert from that device, with nothing to paste.
-
-**Revoking an engine.** If the server is lost or compromised, `basalt engine list --admin` shows the engines your database records, and `basalt engine revoke` revokes one from your own computer. A revoked engine stops serving portal sessions (`ENGINE_REVOKED`), `status` says so, and approvals go on through long links. Each device should also remove its pin on `https://portal.basaltvault.app/engines`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
-
-**What the tunnel provider sees:** your engine's address, who connects to it and when, and the size and timing of messages. Never a link secret, a row or a signature.
-
-**Limits.** The listener takes at most 4 sessions per link and 64 per engine, counted together with any sessions through the Vault, and 600 session upgrades a minute in all: it cannot tell clients apart behind a tunnel.
+If the server is lost or compromised, remove BasaltDB from the database: ask for the removal page and pick Remove. That drops every `basalt_*` role, so the engine can no longer log in. There is no separate revoke command. A compromised server still cannot sign anything you did not.
 
 ## Authenticators
 
-Passkeys belong to the origin they were registered on: RP ID `localhost` for the local pages, and RP ID `basaltvault.app` (fixed) for the portal at `https://portal.basaltvault.app`. Registration asks for one algorithm, ES256 (`pubKeyCredParams: [{ alg: -7 }]` in [`web/lib/register.js`](../web/lib/register.js)), a discoverable credential, and user verification. Every authenticator below supports ES256. Every database's local pages share RP ID `localhost`, so a person with several databases has several `localhost` passkeys. `basalt init` names a new one `<database> · <agent> · <date>` (for example `postgres · demo_bot · 2026-11-13`; `--passkey-label` picks another name), and the pages ask only for this database's passkeys: links and the engine's pages carry its active credential ids, which the browser uses to offer only those. If the prompt finds none, the page says this device may not hold this database's passkey.
+Passkeys belong to the origin they were registered on: RP ID `localhost` for the local pages, and RP ID `basaltvault.app` (fixed) for the portal at `https://portal.basaltvault.app`. Registration asks for one algorithm, ES256 (`pubKeyCredParams: [{ alg: -7 }]` in [`web/lib/register.js`](../web/lib/register.js)), a discoverable credential, and user verification. Every authenticator below supports ES256. Every database's local pages share RP ID `localhost`, so a person with several databases has several `localhost` passkeys. The setup page names a new one `<database> · <agent> · <date>` (for example `postgres · demo_bot · 2026-11-13`), and the pages ask only for this database's passkeys: links and the engine's pages carry its active credential ids, which the browser uses to offer only those. If the prompt finds none, the page says this device may not hold this database's passkey.
 
 **macOS.** Touch ID (iCloud Keychain), or any of the options listed for Linux.
 
@@ -146,17 +108,6 @@ The passkey is bound to the page's origin. A passkey registered on `http://local
 
 Checked on real devices (Nov 13, 2026): a Touch ID platform passkey, through the engine's pages, approved a held write and signed a revert. A phone through the QR flow is not offered for RP ID `localhost` (Chrome on macOS shows no phone option), so approving from a phone needs the pages on a real domain: the hosted portal.
 
-## Engine on a headless Linux server
+## A machine with no desktop
 
-The engine's pages listen on the server's loopback only. Unless you set up your own tunnel to the portal (see [Your own tunnel, without the Vault](#your-own-tunnel-without-the-vault)), approve from your own computer through an SSH tunnel that uses **the same port on both ends**:
-
-```sh
-ssh -N -L 8787:127.0.0.1:8787 you@server
-```
-
-Then open the short link (`http://localhost:8787/approvals/<id>#s=<secret>`) in the browser on your computer. Inside the tunnel the browser's origin is `http://localhost:8787`, which is the page origin the engine expects. The engine's Host and Origin checks accept it, and your passkey for `localhost` signs it. Use `127.0.0.1` as the tunnel target rather than `localhost`, so that SSH does not try the server's `::1` first, where the engine is not listening.
-
-- The port has to match on both ends. A tunnel from local port 9000 gives the page the origin `http://localhost:9000`, and the engine refuses the signature relay from it (`403`).
-- Register the passkey through the same tunnel. Keep it open while `basalt init` waits for the code, since init serves the registration page on the server's port in the same way.
-- `basalt approve --show <id>` on the server prints the short link to open on your side. It waits until you sign or the approval expires, and the link the agent showed stops working.
-- Without a tunnel there is no page to open on your computer until the portal is live, so keep the tunnel open while you approve.
+The local setup and approval pages need a browser on the machine that runs the engine. On a headless machine, run the bot with `basalt init --remote` instead: its pages are the portal's, and you open them on any device ([bot-setup.md](bot-setup.md)).

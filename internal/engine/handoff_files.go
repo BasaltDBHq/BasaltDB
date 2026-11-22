@@ -71,6 +71,10 @@ func (f handoffFiles) RefuseSetup(id string) error {
 	return f.change(id, func(s *config.Setup) { s.AwaitingAddress, s.Refused = false, true })
 }
 
+func (f handoffFiles) MarkAddressInvalid(id string) error {
+	return f.change(id, func(s *config.Setup) { s.AddressInvalid = true })
+}
+
 // change edits the agent's pending setup id in engine.json; another setup
 // there is a refusal, and nothing is written.
 func (f handoffFiles) change(id string, edit func(*config.Setup)) error {
@@ -94,5 +98,18 @@ func (f handoffFiles) WritePin(host string, pin handoff.Pin) error {
 	if errors.Is(err, trustdir.ErrCovered) {
 		return fmt.Errorf("%w, so the certificate authority trusted on the connect page is not pinned", err)
 	}
+	return err
+}
+
+// repinFiles are an agent's entry in engine.json and the config's trust.d,
+// for a certificateChanged setup (handoff.RepinFiles).
+type repinFiles struct {
+	handoffFiles
+}
+
+// ReplacePin replaces the engine's own pin for host, as the setup page's
+// TRUST fix does: never a profile that is not that pin.
+func (f repinFiles) ReplacePin(host string, pin handoff.Pin) error {
+	_, err := trustdir.Repin(f.configPath, host, pin.Top, pin.CAOnly)
 	return err
 }

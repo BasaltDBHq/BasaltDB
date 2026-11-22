@@ -15,7 +15,7 @@ Every action an agent takes is recorded with who did it, why, what it saw and wh
 
 - **Docs:** https://docs.basaltvault.app
 - **Install guide:** [docs/install.md](docs/install.md), from nothing to an agent's first guarded write
-- **Crash reports:** [docs/crash-reports.md](docs/crash-reports.md), what basalt saves when it crashes and how you file it (nothing is sent for you)
+- **Bot on its own computer:** [docs/bot-setup.md](docs/bot-setup.md), the setup an agent runs when no person can reach the machine
 - **Contract:** [CONTRACT.md](CONTRACT.md) and [`contract/`](contract/), the MCP tools, the CLI, the pages and the `basalt_meta` schema
 
 ## Why
@@ -49,15 +49,9 @@ basalt version
 
 To install from a GitHub release, check the archive against `SHA256SUMS` and put `basalt` on your `PATH`. To build from source, see the [install guide](docs/install.md).
 
-**2. Install the guard on a sample schema.** Skip this if you guard your own tables; the [install guide](docs/install.md) shows `--write` and `--read`.
+**2. Set it up on a sample schema.** Ask your agent to set up BasaltDB with the sample data. Your computer asks for your password once, then a setup page opens. Paste your admin connection string, check the SQL and add a passkey. The string is used once and never stored, and your agent never sees it. You get a `basalt_demo` schema with 30 leads and 20 notes.
 
-```sh
-basalt init --demo
-```
-
-Init asks for your admin connection string once and never stores it. It creates a schema `basalt_demo` with 30 leads and 20 notes, prints a short summary of the setup SQL before running it (the full SQL with `--show-sql`), registers your passkey, and starts the engine as a background service. The agent is `demo_bot`.
-
-**3. Connect your agent.** Any MCP client takes the same command:
+**3. Connect your agent.** The page gives you this line. Any MCP client takes it:
 
 ```json
 {
@@ -72,22 +66,15 @@ Init asks for your admin connection string once and never stores it. It creates 
 
 Use the absolute path of `basalt` (`which basalt`) if the client does not inherit your `PATH`.
 
-**4. See what it did, and take it back.** `RUN_ID` is the UUID the agent returned from `run_start`.
+**4. See what it did, and take it back.** Ask your agent what it changed, or to undo a run. You get a link to a page with the rows. Nothing is restored until you sign there with your passkey.
 
-```sh
-basalt log --agent demo_bot --run RUN_ID
-basalt revert --agent demo_bot --run RUN_ID
-```
-
-`revert` prints a link to a page that shows the rows. Nothing is restored until you sign there with your passkey.
-
-To remove everything, run `basalt uninstall` and then `basalt service uninstall`. Uninstall drops the `basalt_meta` schema, the guard's triggers and policies, the `basalt_*` roles, and the demo schema when `init --demo` created it. Service uninstall stops and removes the engine service.
+To remove everything, ask your agent to remove BasaltDB. On the page that opens, pick Remove: it drops `basalt_meta`, the guard's triggers and policies, the `basalt_*` roles and the sample schema. When the page says Last step, ask your agent to finish: your computer asks for your password once, in its own dialog, and removes the engine service.
 
 ## How it works
 
 **The engine runs next to the agent. The guard runs inside your database.** Enforcement lives in Postgres, so it holds whatever path a write takes.
 
-- **Engine.** One Go binary per agent machine, running as its own OS user behind a local socket. It parses SQL with `libpg_query`, refuses what is not allowed, records reads, and holds only that agent's scoped credential. The agent's MCP server is a thin shim that holds no secrets.
+- **Engine.** One Go binary per agent machine, running as its own OS user behind a local socket, and it serves the setup and approval pages on `localhost`. It parses SQL with `libpg_query`, refuses what is not allowed, records reads, and holds only that agent's scoped credential. The agent's MCP server is a thin shim that holds no secrets.
 - **Guard in `basalt_meta`.** Agent roles have no DDL rights. Triggers act only for agent roles: they require an intent, record old and new rows in the same transaction, and count rows per action, cascaded rows included. Writes by people and by your app are never blocked.
 - **Signatures.** A held write or a revert counts only with a valid signature from a person's passkey, checked inside Postgres. Whatever carries the signed request cannot forge one, and an agent cannot sign for itself.
 
@@ -118,6 +105,7 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 - Data an agent read and leaked, for example through prompt injection. Row limits and per-agent table access limit the damage and leave a trail. Nothing un-leaks it.
 - Actions outside the database taken on bad data: emails sent, payments made.
 - An agent holding a person's or the admin's credential, or `sudo` on the engine's machine.
+- An agent that runs as your own OS user. It could show you a fake setup page and catch your admin string, or swap the `basalt` binary. Before you paste the admin string, check that the page names your agent's OS user and the address bar says `localhost:8787`. Approvals stay safe either way, because Postgres checks the page's exact address.
 - Downstream systems that already consumed a change before it was reverted.
 
 ## Works with
@@ -130,15 +118,11 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 What works today:
 
 - Guarded writes with a stated intent, a per-agent Postgres role, and the engine as its own OS user
-- A record of every read and write, and `basalt log` to read it
+- A record of every read and write, which your agent can show you (`run_history`, `list_runs`)
 - Refusal of a write based on a row that changed after the agent read it
 - Holds for larger writes and every `DELETE`, signed with a passkey and checked inside Postgres
 - Revert by change, by run and by task, with a preview and conflict checks
-- `basalt status`, `basalt upgrade`, `basalt access`, `basalt classify` and `basalt uninstall`, and the MCP `describe` tool
-
-Not there yet:
-
-- Setup from a browser alone, for a person without a terminal.
+- Setup, guard updates and removal on one local page
 
 ## Development
 

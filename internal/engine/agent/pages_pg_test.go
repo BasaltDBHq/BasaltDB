@@ -140,7 +140,7 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	require.Equal(t, pageOrigin+"/approvals/"+id+"#s="+secret, link, "the short link carries its secret in the fragment")
 	msg := str(t, ap["personMessage"])
 	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public·leads.\nApprove it with your passkey here:\n\n"+link+
-		"\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"\nExpires "), msg)
+		"\n\nExpires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, ap))
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
@@ -289,19 +289,10 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	require.NoError(t, err)
 	id := prep.RevertID.String()
 
-	// The CLI asks for a link with proof of the binding text.
+	// The revert's short link, as request_revert issues it.
 	var perr pageError
-	issue := func(proof string) (int, string) {
-		var out struct{ URL string }
-		status := p.post("/api/v1/reverts/"+id+"/links", "", "", []byte(`{"proof":"`+proof+`"}`), &out)
-		return status, out.URL
-	}
-	status, _ := issue(links.IssueProof(prep.BindingText + " "))
-	require.Equal(t, http.StatusNotFound, status, "a wrong proof is an unknown id")
-	status, link := issue(links.IssueProof(prep.BindingText))
-	require.Equal(t, http.StatusOK, status)
-	require.True(t, strings.HasPrefix(link, pageOrigin+"/reverts/"+id+"#s="), link)
-	secret := links.SecretOf(link)
+	secret, err := env.svc.Links.Issue(prep.RevertID, time.Now().Add(time.Hour))
+	require.NoError(t, err)
 
 	var req revert.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &req))
@@ -340,10 +331,8 @@ func TestRevertPageErrorCarriesThePersonsSteps(t *testing.T) {
 	require.Equal(t, "REVERT_EXPIRED", perr.Code)
 	require.Equal(t, "NOT_SIGNED", perr.Reason)
 	require.Contains(t, perr.PersonMessage, "expired")
-	require.Len(t, perr.NextSteps, 1)
-	require.Equal(t, mcp.ActorPerson, perr.NextSteps[0].Actor)
-	require.Equal(t, mcp.ActionRunCommand, perr.NextSteps[0].Action)
-	require.Equal(t, "basalt revert --agent bot --config /etc/basalt-test/engine.json --run "+runID+" --open", perr.NextSteps[0].Command)
+	require.Contains(t, perr.PersonMessage, "ask the agent to prepare it again")
+	require.Empty(t, perr.NextSteps, "the agent prepares it again: the page has no step for the person")
 }
 
 func TestListPendingReissuesTheLink(t *testing.T) {

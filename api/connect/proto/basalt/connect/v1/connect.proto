@@ -55,6 +55,15 @@ service SetupService {
   // The page: puts a hold the service lost (a restart) back, with the
   // ticket's own expiry. No database access.
   rpc OfferAddress(OfferAddressRequest) returns (OfferAddressResponse);
+  // The Remove BasaltDB tab: what removing BasaltDB from the database
+  // drops. No setup code. Changes nothing.
+  rpc CheckRemove(CheckRemoveRequest) returns (CheckRemoveResponse);
+  // The Remove BasaltDB tab: removes BasaltDB from the database in one
+  // transaction, once confirm_name is the database's name.
+  rpc RunRemove(RunRemoveRequest) returns (RunRemoveResponse);
+  // The Update check: revokes one passkey with the admin connection, for a
+  // code with a target, in one transaction. The last one may go.
+  rpc RevokePasskey(RevokePasskeyRequest) returns (RevokePasskeyResponse);
 }
 
 message DescribeSetupRequest {
@@ -92,11 +101,15 @@ message SetupSummary {
   // The engine's fingerprint, when the code carries an engine key.
   string engine_fingerprint = 14;
   // The summary lines that do not depend on the database, in the words
-  // basalt init --setup-code shows.
+  // the removed laptop command showed.
   repeated string lines = 15;
   // The schemas of agent.allTables (public only); empty when the code
   // names its tables in write and read.
   repeated string all_tables_schemas = 16;
+  // The code's trustPin: the SHA-256 of the certificate the bot's engine
+  // has pinned for the target's host, 64 lowercase hex digits; empty when
+  // it has none. A hint for the trust step, never trust by itself.
+  string trust_pin = 17;
 }
 
 // The database the setup code is for.
@@ -143,7 +156,7 @@ message CheckSetupResponse {
   // True when RunSetup needs a passkey registration.
   bool passkey_needed = 2;
   // Lines that depend on the database's state, in the words
-  // basalt init --setup-code shows.
+  // the removed laptop command showed.
   repeated string notes = 3;
   // True for an UPGRADE code with nothing to do: RunSetup then changes and
   // records nothing.
@@ -172,6 +185,42 @@ message CheckSetupResponse {
   // Connect-only codes: true when this database already records the setup,
   // so RunSetup changes nothing and holds the address again (reconnected).
   bool already_ran = 11;
+  // Codes with a target: every active passkey of the database, oldest
+  // first, at most 100, for the Update check's passkey list.
+  repeated ActivePasskey passkeys = 12;
+  // The role the pasted string logged in as (session_user), which the page
+  // shows on its confirm step. Sensitive, as database is.
+  string session_user = 13 [(sensitive) = true];
+  // What verified the database's certificate, for the confirm step.
+  Certificate certificate = 14;
+  // current_database() on the pasted string's login, which the confirm
+  // step names. Sensitive, as database is.
+  string current_database = 15 [(sensitive) = true];
+}
+
+// The database's certificate as the confirm step shows it.
+message Certificate {
+  // PUBLIC (an authority of the system's store), PROVIDER (a built-in trust
+  // profile), OWN (the certificate authority the person trusted on the
+  // page), NOT_VERIFIED or NONE. The service always verifies, so it answers
+  // PUBLIC, PROVIDER or OWN.
+  string kind = 1;
+  // The issuer's short name: the top authority's common name, else its
+  // organization; the provider's name ("Amazon RDS") for PROVIDER. Text the
+  // database server chose otherwise.
+  string issuer = 2;
+}
+
+// An active passkey's public data, as basalt_meta.agent_passkeys shows it.
+message ActivePasskey {
+  // base64url without padding.
+  string credential_id = 1;
+  string label = 2;
+  string rp_id = 3;
+  // RFC 3339 UTC.
+  string created_at = 4;
+  // RFC 3339 UTC; empty when it was never used.
+  string last_used_at = 5;
 }
 
 // A column of a table the agent will get, and its PII class in this
@@ -224,7 +273,7 @@ message Question {
   string kind = 1;
   // schema.table.
   string table = 2;
-  // The question, in the words basalt init --setup-code asks it.
+  // The question, in the words the removed laptop command asked it.
   string text = 3;
   // The answers allowed: ALL_ROWS or NONE.
   repeated string choices = 4;
@@ -383,6 +432,47 @@ message OfferAddressResponse {
   string state = 1;
 }
 
+message CheckRemoveRequest {
+  // The admin connection string the person pasted.
+  string database_url = 1 [(sensitive) = true];
+  // As in CheckSetupRequest: the chain top the person trusted on the page.
+  string trust_root = 2;
+}
+
+message CheckRemoveResponse {
+  // current_database(): the name the person types to confirm.
+  string database = 1;
+  // The bots that lose their access, by name, sorted.
+  repeated string bots = 2;
+  // The summary, in fixed words and catalog names.
+  repeated string lines = 3;
+  // Every statement RunRemove runs now, in order.
+  string sql = 4;
+  // No guard, no bot role and no sample schema: RunRemove drops nothing.
+  bool nothing_to_remove = 5;
+  // The sample schema basalt_demo is dropped too.
+  bool sample_schema = 6;
+}
+
+message RunRemoveRequest {
+  // The admin connection string the person pasted.
+  string database_url = 1 [(sensitive) = true];
+  // As in CheckRemoveRequest.
+  string trust_root = 2;
+  // The database name the person typed. It must equal current_database(),
+  // checked in the removal's transaction (ANSWERS_INVALID otherwise).
+  string confirm_name = 3;
+}
+
+message RunRemoveResponse {
+  string database = 1;
+  // The bots that lost their access.
+  repeated string bots = 2;
+  // What was removed.
+  repeated string lines = 3;
+  repeated string warnings = 4;
+}
+
 // The error detail of every refusal, attached to the ConnectRPC error.
 message Refusal {
   // SCREAMING_SNAKE_CASE, from the refusals table in CONTRACT.md, Connect.
@@ -409,4 +499,22 @@ message TrustRoot {
   string sha256 = 2;
   // RFC 3339 UTC: its notAfter.
   string expires_at = 3;
+}
+
+message RevokePasskeyRequest {
+  // A setup code with a target, live, as for CheckSetup.
+  string code = 1;
+  // The admin connection string the person pasted.
+  string database_url = 2 [(sensitive) = true];
+  // As in CheckSetupRequest.
+  string trust_root = 3;
+  // The passkey to revoke, base64url without padding: an active one.
+  string credential_id = 4;
+}
+
+message RevokePasskeyResponse {
+  // The active passkeys with RP ID basaltvault.app left.
+  int32 remaining = 1;
+  // What was revoked, in fixed words.
+  repeated string lines = 2;
 }

@@ -345,7 +345,7 @@ func (m *Map) warnMissing(refs []ColumnRef) {
 			continue
 		}
 		m.warned[r] = struct{}{}
-		m.log.Warn("pii: a column the agent read is not classified (UNCLASSIFIED); run basalt classify",
+		m.log.Warn("pii: a column the agent read is not classified (UNCLASSIFIED); run basalt init to label it",
 			"tableOid", r.TableOID, "attnum", r.Attnum)
 	}
 }

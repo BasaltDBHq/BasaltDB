@@ -85,8 +85,15 @@ type Payload struct {
 	Agent     *Agent  `json:"agent,omitempty"`
 	ExpiresAt string  `json:"expiresAt"`
 	// Engine is the engine's identity key (M4.1, CO-18), absent when the
-	// code-maker's key file could not be read. Last in the schema's order.
+	// code-maker's key file could not be read.
 	Engine *Engine `json:"engine,omitempty"`
+	// TrustPin is the SHA-256 (DER, 64 lowercase hex digits) of the
+	// certificate the bot's engine has pinned for the target's host, absent
+	// when it has none (CONTRACT.md, The setup code, trustPin): a hint for
+	// the connect page's trust step that adds no trust. Only in a code with
+	// target, of kind AGENT or UPGRADE (setup-code.schema.json). Last in the
+	// schema's order.
+	TrustPin string `json:"trustPin,omitempty"`
 }
 
 // Engine is the engine part of a code: its signing key, which the person's

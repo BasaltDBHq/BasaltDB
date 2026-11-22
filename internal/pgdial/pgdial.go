@@ -24,6 +24,8 @@ package pgdial
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -84,6 +86,38 @@ func ConnConfigTrusting(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, err
 		set = Trust()
 	}
 	trustprofile.Trust(&cfg.Config, set)
+	return cfg, nil
+}
+
+// ConnConfigPinned is ConnConfig for a login that trusts one pinned
+// certificate authority for its host and nothing else: p's roots are the
+// only roots (the system's authorities do not count), whatever roots the
+// string or the environment names (sslrootcert, PGSSLROOTCERT). dsn must be
+// sslmode=verify-full, as the setup page builds it; the pin is then checked
+// as the setup page makes it (the host name too, or the chain alone for a
+// profile with verify: ca).
+func ConnConfigPinned(dsn string, p *trustprofile.Profile) (*pgx.ConnConfig, error) {
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	apply(dsn, cfg)
+	tlsConfigs := []*tls.Config{cfg.TLSConfig}
+	for _, fb := range cfg.Fallbacks {
+		tlsConfigs = append(tlsConfigs, fb.TLSConfig)
+	}
+	for _, t := range tlsConfigs {
+		if t == nil || t.InsecureSkipVerify {
+			return nil, errors.New("pgdial: a pinned login needs sslmode=verify-full")
+		}
+		t.RootCAs = nil // a root the string or the environment named is not the pin
+	}
+	trustprofile.Trust(&cfg.Config, trustprofile.NewSet(nil, []*trustprofile.Profile{p}, nil))
+	if !p.VerifiesCA() {
+		for _, t := range tlsConfigs {
+			t.RootCAs = p.OwnPool()
+		}
+	}
 	return cfg, nil
 }
 
@@ -159,8 +193,8 @@ func WithCertificateHint(dsn string, err error) error {
 			"name its CA with sslrootcert=<CA file> in the connection string", err, a.Host)
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
-	return fmt.Errorf("%w; the certificate of %s does not verify: add its CA with basalt trust add --name NAME --match '=%s' --ca <CA file>, "+
-		"or name it with sslrootcert=<CA file> in the connection string", err, a.Host, a.Host)
+	return fmt.Errorf("%w; the certificate of %s does not verify: trust its certificate authority on the page basalt init opens "+
+		"(basalt init --remote on an agent-operated engine), or name it with sslrootcert=<CA file> in the connection string", err, a.Host)
 }
 
 // apply sets DefaultMode unless dsn names a mode itself (pgx has already

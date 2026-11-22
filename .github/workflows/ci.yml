@@ -172,18 +172,15 @@ jobs:
             exit 1
           fi
 
-  # basalt engine --user in containers without systemd: the privilege drop as
-  # root on every thread, then the compose example end to end (setup,
-  # isolation, agent calls, restart, removal).
+  # Tests that need root in a Linux container without systemd: plugin
+  # isolation (make test-root-container) and the install script as root.
   containers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: privilege drop as root in a container
-        run: make test-privdrop
-      - name: compose example
-        run: make test-compose
+      - name: root tests in a container
+        run: make test-root-container
 
   # A local plugin under its real systemd unit, which no container here has:
   # basalt init installs the engine service, a signed test plugin is trusted,

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/classify-review.v1.json",
-  "title": "basalt classify review",
-  "description": "The review basalt classify --json prints on stdout: every column it shows, grouped by table. Never carries a value from the person's tables. See CONTRACT.md, PII classification.",
+  "title": "PII classification review",
+  "description": "A review of every column's PII class, grouped by table: the classes and entity types the setup page's labels step writes. Never carries a value from the person's tables. See CONTRACT.md, PII classification.",
   "type": "object",
   "additionalProperties": false,
   "required": [

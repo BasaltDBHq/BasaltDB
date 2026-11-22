@@ -55,10 +55,11 @@ type RestartOptions struct {
 	// rides along with the restart options because both are how
 	// basalt engine runs this engine.
 	PluginStderr io.Writer
-	// PersonPeerUID replaces how the person socket reads a peer's uid
-	// (tests only: an engine and its caller in one test process share a
-	// uid, which the socket never admits); nil reads the OS's.
-	PersonPeerUID func(*net.UnixConn) (uint32, error)
+	// PagesListener, when set, is the pages' listener already bound at the
+	// local pages address by an engine that waited for its config
+	// (WaitForConfig): the engine serves its pages on it, so the port is
+	// never free between the two. One the config does not use is closed.
+	PagesListener net.Listener
 	// StartedBy is why this engine started: "hand" (the default when
 	// empty), "mcp" (basalt mcp found it down) or "crash" (the supervisor
 	// restarted it). It is carried here for the status report.

@@ -71,6 +71,9 @@ func TestIndexListsEverySectionFile(t *testing.T) {
 	require.NoError(t, err)
 	onDisk := make([]string, 0, len(entries))
 	for _, e := range entries {
+		if filepath.Ext(e.Name()) != ".md" {
+			continue // surface.json is the surface budget, not a section
+		}
 		onDisk = append(onDisk, e.Name())
 		info, err := e.Info()
 		require.NoError(t, err)

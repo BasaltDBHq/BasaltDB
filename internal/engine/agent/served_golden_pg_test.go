@@ -14,8 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
@@ -49,6 +47,7 @@ var unreachableCodes = map[string]string{
 	"query UNAVAILABLE":                 "needs the database to be down",
 	"query INTERNAL":                    "needs a failure the engine does not expect",
 	"request_revert REVERT_EXPIRED":     "needs a prepared revert past its deadline; the clock is the database's",
+	"request_revert REVERT_INVALID":     "the agent signs nothing; needs a reissue of a widened revert that races the person's signature or reject on the page (reset_revert)",
 	"request_revert QUERY_TIMEOUT":      "needs a statement timeout inside a ledger read",
 	"request_revert UNAVAILABLE":        "needs the database to be down",
 	"request_revert INTERNAL":           "needs a failure the engine does not expect",
@@ -66,6 +65,9 @@ var unreachableCodes = map[string]string{
 	"write QUERY_TIMEOUT":               "needs a write that runs past the statement timeout",
 	"write UNAVAILABLE":                 "needs the database to be down",
 	"write INTERNAL":                    "needs a failure the engine does not expect",
+	"request_plugin NOT_FOUND":          "the harness keeps no engine-kept plugins; tools_plugin_test.go and the engine's plugin_requests tests cover request_plugin",
+	"request_plugin UNAVAILABLE":        "needs the database to be down",
+	"request_plugin INTERNAL":           "needs a failure the engine does not expect",
 }
 
 // declaredErrors reads every served tool's error codes from the contract's
@@ -228,8 +230,9 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	g.callOK("list_runs", "list_runs", map[string]any{})
 	g.callOK("status", "status", map[string]any{})
 
-	// The person approves the held write; the agent applies it with the code.
-	applied := map[string]any{"approvalId": approvalID, "approval": signLink(t, str(t, approvalOf(t, heldBody)["approvalUrl"]), e.person)}
+	// The person approves the held write on the page; the agent applies it.
+	require.NoError(t, relayApproval(e.svc, signLink(t, str(t, approvalOf(t, heldBody)["approvalUrl"]), e.person)))
+	applied := map[string]any{"approvalId": approvalID}
 	for k, v := range held {
 		applied[k] = v
 	}
@@ -258,13 +261,10 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	g.callOK("request_revert_still_pending", "request_revert", map[string]any{
 		"revertId": str(t, requested["revertId"]), "waitForSignature": 0,
 	})
-	forger, err := passkeytest.New(passkey.Production)
-	require.NoError(t, err)
-	forger.ID = e.person.ID
-	revertID, binding := longLinkBinding(t, str(t, requested["revertUrl"]))
-	g.callErr("request_revert_bad_signature", "request_revert", map[string]any{
-		"revertId": revertID.String(), "signature": revertCode(t, revertID, signBinding(t, forger, binding)),
-	}, "REVERT_INVALID")
+	// The agent never carries the person's signature: the page relays it.
+	g.callErr("request_revert_signature_refused", "request_revert", map[string]any{
+		"revertId": str(t, requested["revertId"]), "signature": "basalt-revert.1.abc",
+	}, "INVALID_ARGUMENT")
 	g.callErr("revert_plan_unknown", "revert_plan", map[string]any{"revertId": uuid.Must(uuid.NewV7()).String()}, "NOT_FOUND")
 	g.callErr("list_runs_bad_time", "list_runs", map[string]any{"startTime": "not a time"}, "INVALID_ARGUMENT")
 	g.callErr("run_start_no_intent", "run_start", map[string]any{}, "INVALID_ARGUMENT")
@@ -276,6 +276,11 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	g.callErr("apply_revert_batch_not_signed", "apply_revert_batch", map[string]any{
 		"revertId": str(t, requested["revertId"]), "lines": []any{1},
 	}, "REVERT_INVALID")
+	// request_plugin on this harness, which keeps no engine-kept plugins: a
+	// call with no form is refused for its arguments, and a removal for the
+	// engine it runs on.
+	g.callErr("request_plugin_no_form", "request_plugin", map[string]any{}, "INVALID_ARGUMENT")
+	g.callErr("request_plugin_not_served", "request_plugin", map[string]any{"name": "local-ner", "remove": true}, "PLUGIN_REFUSED")
 	return g, e
 }
 

@@ -431,7 +431,7 @@ func TestOldGuardWithholdsWithTheUpgradeStep(t *testing.T) {
 	l.record(t, f, ep)
 	probs := ep.PluginProblems("product_a")
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
-	require.Contains(t, probs[0].Message, "basalt upgrade")
+	require.Contains(t, probs[0].Message, "basalt init")
 	require.Empty(t, ep.entries)
 }
 

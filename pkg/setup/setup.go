@@ -1,7 +1,6 @@
 // Package setup runs a Basalt setup code against a person's database, as
-// basalt init --setup-code does on their own computer (CONTRACT.md, Setup
-// from your laptop), for a program other than the basalt CLI. The CLI runs
-// on it too, so both run the same checks, questions and SQL.
+// the removed laptop command did on their own computer (CONTRACT.md, The
+// setup checks), for a program other than the basalt CLI.
 //
 // Three steps match a page that runs a setup:
 //
@@ -47,9 +46,6 @@ type Request struct {
 	Code string
 	// Now is the clock the code's times are checked against.
 	Now time.Time
-	// EngineURL is the address to record with the code's engine key
-	// (https://<host>[:<port>]); "" records none.
-	EngineURL string
 	// ConnectPage accepts a connect-only code (no target), which only the
 	// connect service runs, with the database of the connection it opened.
 	// Unset, such a code is refused CONNECT_ONLY first, as the laptop
@@ -135,8 +131,10 @@ type Description struct {
 	// base64url): the key a connect-only setup's CollectAddress must be
 	// signed with. "" when the code carries none.
 	EngineKey string
-	// EngineURL is the request's engine address in its written form.
-	EngineURL string
+	// TrustPin is the SHA-256 (DER, lowercase hex) of the certificate the
+	// bot's engine has pinned for the target's host, "" when the code
+	// carries none: a hint for the connect page's trust step, never trust.
+	TrustPin string
 	// Summary is the summary's fixed lines, without the database's state:
 	// an UPGRADE code's line names the guard version the code was made
 	// against. Check's Summary is the one to show before running.
@@ -144,13 +142,12 @@ type Description struct {
 }
 
 // Describe decodes the code and applies the checks that need no database,
-// in the contract's order: the engine address's rules, the codec
+// in the contract's order: the codec
 // (NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT, DAMAGED, INVALID), the clock
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
-// (BINARY_TOO_OLD, GUARD_TOO_OLD) and ENGINE_KEY_MISSING. A refusal is an
-// *Error.
+// (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
+	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -161,8 +158,9 @@ func describe(s *setuprun.Setup) Description {
 	p := s.P
 	d := Description{
 		SetupID: p.SetupID, Kind: Kind(p.Kind), AgentWord: setuprun.AgentWord(p), AgentRole: p.Role(), Prefix: p.Prefix,
-		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(), EngineURL: s.EngineURL,
-		Summary: setupcode.Summary(p, setupcode.SummaryState{GuardVersion: p.Guard.From}),
+		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(),
+		Summary:  setupcode.Summary(p, setupcode.SummaryState{GuardVersion: p.Guard.From}),
+		TrustPin: p.TrustPin,
 	}
 	if t := p.Target; t != nil {
 		d.Target = &Target{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef}
@@ -203,6 +201,9 @@ type Checked struct {
 	// Database is the database the connection names: the setup's target
 	// for a connect-only code, which the page shows before approval.
 	Database Target
+	// Connected is the database and role the connection reached, as the
+	// server says them, for the confirm step (ConnectedAs).
+	Connected Connected
 	// Tables are, for an agent.allTables code, the tables the agent will
 	// get, in name order; ReadOnly are those among them it may only read
 	// (no primary key, so the guard cannot key its writes); Excluded are the
@@ -211,15 +212,21 @@ type Checked struct {
 	Tables   []string
 	ReadOnly []string
 	Excluded []ExcludedTable
-	// RunsAsInstall is a connect-only recovery AGENT code whose role does
+	// RunsAsInstall is an AGENT code with a verifier whose role does
 	// not exist: Run creates the role as an INSTALL code does.
 	RunsAsInstall bool
 	// Columns are every ordinary column of the tables the agent will get
 	// (Tables, else the code's write and read tables), by table in name
 	// order and then column order, with its class in the database now
 	// (UNCLASSIFIED with none stored, and in a database with no guard
-	// yet). Only with Request.ConnectPage; empty for an UPGRADE code.
+	// yet); for an UPGRADE code, which names no agent, the columns of every
+	// table with a readable column (pii_readable_columns()). Only with
+	// Request.ConnectPage.
 	Columns []ColumnLabel
+	// Passkeys are the database's active passkeys, for a code with a
+	// target (the connect page's passkey list, CONTRACT.md, Update on the
+	// connect page). Only with Request.ConnectPage.
+	Passkeys []ActivePasskey
 }
 
 // ColumnLabel is a column and its class now (CONTRACT.md, Connect, Column
@@ -276,10 +283,6 @@ type Questions struct {
 	// every row from its role: yes lets the agent see all of them (a
 	// policy), no leaves them hidden. Answered in Answers.AllRows.
 	RowSecurity []RowSecurityQuestion
-	// Revoke are the other engines recorded at the request's engine
-	// address: yes revokes one in the setup's transaction. Answered in
-	// Answers.Revoke.
-	Revoke []RevokeQuestion
 	// OutsidePublic are the agent's tables outside schema public. The
 	// summary flags each; nothing is asked and Run takes no answer for
 	// them.
@@ -294,16 +297,6 @@ type RowSecurityQuestion struct {
 	Rows int64
 	// Write is whether the agent may change the table's rows.
 	Write bool
-	// Text is the question as basalt init asks it.
-	Text string
-}
-
-// RevokeQuestion is one other engine recorded at the engine address.
-type RevokeQuestion struct {
-	EngineID    string
-	Fingerprint string
-	URL         string
-	RecordedAt  time.Time
 	// Text is the question as basalt init asks it.
 	Text string
 }
@@ -323,6 +316,9 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 		return Checked{}, asError(err)
 	}
 	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall()}
+	if out.Connected, err = ConnectedAs(ctx, conn); err != nil {
+		return Checked{}, asError(err)
+	}
 	if p.NothingToDo {
 		out.NothingToDo = nothingToDo(p)
 		return out, nil
@@ -339,16 +335,31 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, conn, false); err != nil {
 		return Checked{}, asError(err)
 	}
-	if s.P.Agent != nil && req.ConnectPage { // the laptop command shows no labels
-		labels, err := guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
-		if err != nil {
+	if !req.ConnectPage { // the laptop command shows no labels and no passkeys
+		return out, nil
+	}
+	labels, err := checkLabels(ctx, conn, s)
+	if err != nil {
+		return Checked{}, asError(err)
+	}
+	for _, l := range labels {
+		out.Columns = append(out.Columns, ColumnLabel{Table: l.Table, Column: l.Column, Label: Label(l.Label)})
+	}
+	if s.P.Target != nil {
+		if out.Passkeys, err = activePasskeys(ctx, conn); err != nil {
 			return Checked{}, asError(err)
-		}
-		for _, l := range labels {
-			out.Columns = append(out.Columns, ColumnLabel{Table: l.Table, Column: l.Column, Label: Label(l.Label)})
 		}
 	}
 	return out, nil
+}
+
+// checkLabels are the columns Check shows: the agent's tables', or, for an
+// UPGRADE code, every readable column's table.
+func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guard.ColumnLabel, error) {
+	if s.P.Agent == nil {
+		return guard.ReadReadableLabels(ctx, conn, s.Names)
+	}
+	return guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
 }
 
 // agentTables are the tables the agent gets, in name order.
@@ -361,7 +372,7 @@ func agentTables(s *setuprun.Setup) []string {
 
 // newSetup is setuprun.New for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
+	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return nil, err
 	}
@@ -382,11 +393,6 @@ func questions(p *setuprun.Prepared) Questions {
 			Table: b.Table, Rows: b.Rows, Write: b.Write, Text: setuprun.RLSQuestion(b, p.P.Agent.Name),
 		})
 	}
-	for _, e := range p.Engine.SameAddress {
-		q.Revoke = append(q.Revoke, RevokeQuestion{
-			EngineID: e.ID, Fingerprint: channel.FingerprintOf(e.ID), URL: *e.URL, RecordedAt: e.RecordedAt, Text: setuprun.RevokeQuestion(e),
-		})
-	}
 	if a := p.P.Agent; a != nil {
 		for _, t := range append(slices.Clone(a.Write), a.Read...) {
 			if schema, _, _ := strings.Cut(t, "."); schema != "public" {
@@ -401,8 +407,6 @@ func questions(p *setuprun.Prepared) Questions {
 type Answers struct {
 	// AllRows are the RowSecurity tables the agent may see every row of.
 	AllRows []string
-	// Revoke are the engine ids of the Revoke questions answered yes.
-	Revoke []string
 }
 
 // Plan is the SQL Run is about to run.
@@ -424,7 +428,7 @@ type RunInput struct {
 	// with nothing to do runs nothing, so it stores no passkey either
 	// (Result.NothingToDo set, Result.Passkey nil).
 	Passkey *Passkey
-	// AskPasskey is the laptop's passkey step (basalt init --setup-code,
+	// AskPasskey is the passkey step (The setup checks,
 	// step 7): Run calls it at most once, after the setup committed, and
 	// only when the database has no active portal passkey or AddPasskey is
 	// set. When it fails, the setup has run and Run returns
@@ -451,15 +455,33 @@ type RunInput struct {
 	// RestPublic writes PUBLIC to every other column of the agent's
 	// tables that has no class in the transaction.
 	RestPublic bool
+	// TrustPin, when set, is the certificate the caller's admin login was
+	// verified against with a trustRoot the person trusted on the connect
+	// page: Run records it with basalt_meta.record_trust_pin in the setup's
+	// transaction (in a transaction of its own for an UPGRADE code with
+	// nothing to do). Only a certificate the login was really verified
+	// against: the package does not check it.
+	TrustPin *TrustPin
+}
+
+// TrustPin is a certificate an admin login was verified against: the host
+// and port the login reached and the SHA-256 (DER, 64 lowercase hex digits)
+// of its chain's top.
+type TrustPin struct {
+	Host   string
+	Port   int
+	SHA256 string
 }
 
 // maxColumnClasses bounds RunInput.ColumnClasses.
 const maxColumnClasses = 500
 
 // checkColumnClasses applies the rules of ColumnClasses and RestPublic
-// that need no database (ANSWERS_INVALID): none with an UPGRADE code, at
-// most 500, each on a table the agent gets, at most once per column, with
-// a class the page may set and a Was a column can have.
+// that need no database (ANSWERS_INVALID): at most 500, each on a table the
+// agent gets, at most once per column, with a class the page may set and a
+// Was a column can have. An UPGRADE code names no agent: its columns are
+// the readable ones, checked in the setup's transaction (a column outside
+// them is CLASSES_CHANGED there).
 func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
 	if len(in.ColumnClasses) == 0 && !in.RestPublic {
 		return nil
@@ -467,18 +489,18 @@ func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
 	invalid := func(why string) error {
 		return asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "the column labels: " + why + "; nothing changed"})
 	}
-	if s.P.Agent == nil {
-		return invalid("an upgrade sets no labels")
-	}
 	if len(in.ColumnClasses) > maxColumnClasses {
 		return invalid(fmt.Sprintf("more than %d columns", maxColumnClasses))
 	}
-	tables := agentTables(s)
+	var tables []string
+	if s.P.Agent != nil {
+		tables = agentTables(s)
+	}
 	seen := map[[2]string]bool{}
 	for _, c := range in.ColumnClasses {
 		key := [2]string{c.Table, c.Column}
 		switch {
-		case !slices.Contains(tables, c.Table):
+		case s.P.Agent != nil && !slices.Contains(tables, c.Table):
 			return invalid("a column of a table the agent does not get")
 		case seen[key]:
 			return invalid("a column given twice")
@@ -510,7 +532,7 @@ type Result struct {
 
 // Run checks, plans and runs the setup in one transaction: the migrations,
 // the agent role and its grants, the policies on Answers.AllRows, the
-// engine and the engines in Answers.Revoke, the person's passkey
+// engine, the person's passkey
 // (RunInput.Passkey), and record_setup last. Any failure in it leaves the
 // database as it was. It first applies every refusal of Describe, then
 // refuses a Passkey that PasskeyRequest.Verify did not make
@@ -541,12 +563,19 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		return Result{}, err
 	}
 	if p.NothingToDo {
-		if err := setuprun.RefuseAnswers(in.Answers.AllRows, in.Answers.Revoke); err != nil {
+		if err := setuprun.RefuseAnswers(in.Answers.AllRows); err != nil {
+			return Result{}, asError(err)
+		}
+		if len(in.ColumnClasses) > 0 || in.RestPublic {
+			// Nothing runs, so nothing would carry them: refused, not dropped.
+			return Result{}, asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
+		}
+		if err := recordTrustPinAlone(ctx, conn, in.TrustPin); err != nil {
 			return Result{}, asError(err)
 		}
 		return Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}, nil
 	}
-	script, err := p.Plan(ctx, in.Answers.AllRows, in.Answers.Revoke)
+	script, err := p.Plan(ctx, in.Answers.AllRows)
 	if err != nil {
 		return Result{}, asError(err)
 	}
@@ -564,6 +593,13 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	inTx := func(ctx context.Context, tx pgx.Tx) error {
 		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
 			return err
+		}
+		if t := in.TrustPin; t != nil {
+			// The certificate the caller logged in against, recorded in the
+			// ledger (CONTRACT.md, Pinning on first use, Audit).
+			if err := guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256); err != nil {
+				return err
+			}
 		}
 		switch {
 		case in.Passkey != nil:
@@ -596,17 +632,42 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	return res, nil
 }
 
+// recordTrustPinAlone records t, when set, in a transaction of its own: an
+// UPGRADE code with nothing to do runs no setup transaction, but the
+// certificate its login was verified against is still recorded (the
+// changed-certificate code of an agent saved with every table in public).
+func recordTrustPinAlone(ctx context.Context, conn *pgx.Conn, t *TrustPin) error {
+	if t == nil {
+		return nil
+	}
+	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		return guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256)
+	})
+}
+
 // writeLabels writes in.ColumnClasses and in.RestPublic in the setup's
 // transaction.
 func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput, now time.Time) error {
-	if s.P.Agent == nil {
+	if len(in.ColumnClasses) == 0 && !in.RestPublic {
 		return nil
 	}
 	changes := make([]guard.LabelChange, 0, len(in.ColumnClasses))
 	for _, c := range in.ColumnClasses {
 		changes = append(changes, guard.LabelChange{Table: c.Table, Column: c.Column, Label: guard.Label(c.Label), Was: guard.Label(c.Was)})
 	}
-	_, err := guard.WriteLabels(ctx, tx, s.Names, agentTables(s), changes, in.RestPublic, now)
+	var tables []string
+	switch {
+	case s.P.Agent != nil:
+		tables = agentTables(s)
+	default:
+		// An UPGRADE code: every readable column's table, read after the
+		// migrations in this transaction.
+		var err error
+		if tables, err = guard.ReadableTables(ctx, tx, s.Names); err != nil {
+			return err
+		}
+	}
+	_, err := guard.WriteLabels(ctx, tx, s.Names, tables, changes, in.RestPublic, now)
 	if errors.Is(err, guard.ErrClassesChanged) {
 		return &setuprun.RefusalError{
 			Code: CodeClassesChanged, Err: err,
@@ -633,13 +694,8 @@ func (e *Error) Error() string { return e.Message }
 func (e *Error) Unwrap() error { return e.err }
 
 // Codes this package returns besides the setup code's refusals
-// (CONTRACT.md, The setup code and basalt init --setup-code).
+// (CONTRACT.md, The setup code).
 const (
-	// CodeEngineURLInvalid is an engine address the address rules refuse.
-	CodeEngineURLInvalid = setuprun.CodeEngineURLInvalid
-	// CodeEngineKeyMissing is an engine address for a code without an
-	// engine key.
-	CodeEngineKeyMissing = setuprun.CodeEngineKeyMissing
 	// CodeEngineRevoked is a code whose engine the database revoked.
 	CodeEngineRevoked = setuprun.CodeEngineRevoked
 	// CodeTargetMismatch is a connection to another database than the
@@ -684,7 +740,7 @@ var codes = []string{
 	string(setupcode.RefusalExpiryTooFar), string(setupcode.RefusalBinaryTooOld), string(setupcode.RefusalGuardTooOld),
 	string(setupcode.RefusalPrefixMismatch), string(setupcode.RefusalUsed), string(setupcode.RefusalSuperseded),
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
-	CodeEngineURLInvalid, CodeEngineKeyMissing, CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
+	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
 	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged,
 }

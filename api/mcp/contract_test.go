@@ -115,12 +115,12 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 		require.Equal(t, status, tool.Status, name)
 	}
 	// N12-R8, RS-7: an agent requests reverts of its own changes, runs and
-	// tasks it ran in, and may deliver the person's signed code.
+	// tasks it ran in; it never carries the person's signature.
 	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "request_revert")
 	require.True(t, ok)
 	props, ok := tool.InputSchema["properties"].(map[string]any)
 	require.True(t, ok)
-	require.Contains(t, props, "signature")
+	require.NotContains(t, props, "signature", "the page relays the signature")
 	require.Contains(t, props, "taskId", "RS-7: served now that the engine checks the agent ran in the task")
 	for _, filter := range []string{"runs", "tables"} {
 		require.Contains(t, props, filter, "RS-1: the filters are served")
@@ -377,8 +377,8 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 	}
 }
 
-// TestPIISchemas checks the basalt classify --json review schema (CONTRACT.md,
-// PII classification) follows the same wire rules.
+// TestPIISchemas checks the PII review schema, which holds the classes and
+// entity types (CONTRACT.md, PII classification), follows the same wire rules.
 func TestPIISchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "pii", []string{"classify-review.schema.json"})
@@ -396,10 +396,6 @@ func TestPIIEnums(t *testing.T) {
 		require.Equal(t, docValues, schemaEnum(t, map[string]any{"properties": defs}, def),
 			"CONTRACT.md %s and classify-review.schema.json %s differ", subsection, def)
 	}
-	column := mustMap(t, defs["column"])
-	require.Equal(t, contractSubsectionValues(t, "## PII classification", "### `--json` review"),
-		schemaEnum(t, column, "status"),
-		"CONTRACT.md review status table and classify-review.schema.json status differ")
 }
 
 // contractSubsectionValues reads the first-column enum values of the table

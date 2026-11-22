@@ -10,11 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 // requireEmptyDir fails when dir holds anything: root wrote nothing there.
@@ -38,19 +39,16 @@ func TestInitRemoteAsRootRefusesASymlinkedAgentsDir(t *testing.T) {
 	for name, firstRun := range map[string]bool{"first run": true, "later run": false} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			cfg := tempConfig(t)
+			cfg := withState(t, tempConfig(t))
 			agents := filepath.Join(filepath.Dir(cfg), "agents")
-			if firstRun {
-				require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
-			} else {
-				remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+			if !firstRun {
+				remote(t, cfg, "--agent", testAgentKey)
 				require.NoError(t, os.RemoveAll(agents))
 			}
 			elsewhere := t.TempDir()
 			require.NoError(t, os.Symlink(elsewhere, agents))
 
-			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey, "--write", "public.leads",
-				"--database-url", supabaseURL, "--new-code")
+			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey)
 			require.Equal(t, exitError, r.code, r.stdout)
 			require.Contains(t, r.stderr, "a symlink is refused")
 			requireEmptyDir(t, elsewhere)
@@ -65,7 +63,7 @@ func TestInitRemoteAsRootRefusesASymlinkedAgentsDir(t *testing.T) {
 func TestInitRemoteAsRootUsesTheComputedCredentialPath(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	first := remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+	first := seedCredential(t, noDB(t), cfg, testAgentKey, agentDSN(t, supabaseURL, guard.DefaultPrefix, testAgentKey, "0123abcd"))
 	want := filepath.Join(filepath.Dir(cfg), "agents", testAgentKey+".url")
 	require.Equal(t, want, first.credFile)
 
@@ -78,7 +76,9 @@ func TestInitRemoteAsRootUsesTheComputedCredentialPath(t *testing.T) {
 	dotted := filepath.Join(filepath.Dir(want), "sub") + "/../" + testAgentKey + ".url"
 	setCredentialFile(t, cfg, dotted)
 
-	again := remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--new-code")
+	// The credential stays where the computed path says: init reads it
+	// there, never through agents/sub.
+	again := remote(t, cfg, "--agent", testAgentKey)
 	require.Equal(t, want, again.credFile, "the config gets the computed path back")
 	requireEmptyDir(t, inner)
 	entries, err := os.ReadDir(outside)
@@ -105,7 +105,7 @@ func setCredentialFile(t *testing.T, cfg, path string) {
 	require.NoError(t, config.WriteFile(cfg, raw))
 }
 
-// basalt engine started as root without --user reads its config with the
+// basalt engine started as root reads its config with the
 // hardened read: a link is not followed and a config writable by group or
 // others is refused, before the engine starts. Not as root, the plain read
 // is unchanged.
@@ -161,13 +161,17 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	cfg := filepath.Join(dir, "basalt", "engine.json")
-	install := installed(t, d, dbURL, cfg, "--write", "public.leads")
-	rotate := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	install := installed(t, d, dbURL, cfg, "--write=public.leads")
+	// The database refuses the bot's credential: a new password.
+	role, err := d.Names.Agent("bot")
+	require.NoError(t, err)
+	d.Exec(t, `ALTER ROLE `+pgx.Identifier{role}.Sanitize()+` PASSWORD 'not-the-bots'`)
+	clearSetup(t, cfg)
+	rotate := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	pending := install.credFile + pendingSuffix
 	newPassword := credentialPassword(t, pending)
-	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", rotate.res.Code, "--yes")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	runViaConnect(t, d, rotate.res.Code)
 
 	// Sockets the test can make and no pages server; the rest as root
 	// wrote it.

@@ -3,54 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
-
-// requireRemoteInitSchema checks stdout against remote-init-result.schema.json.
-func requireRemoteInitSchema(t *testing.T, stdout string) {
-	t.Helper()
-	inst, err := jsonschema.UnmarshalJSON(strings.NewReader(stdout))
-	require.NoError(t, err, stdout)
-	require.NoError(t, remoteInitSchema(t).Validate(inst), stdout)
-}
-
-func remoteInitSchema(t *testing.T) *jsonschema.Schema {
-	t.Helper()
-	c := jsonschema.NewCompiler()
-	c.DefaultDraft(jsonschema.Draft2020)
-	c.UseRegexpEngine(func(s string) (jsonschema.Regexp, error) {
-		return regexp.Compile(regexp.MustCompile(`\{([0-9]+),[0-9]{4,}\}`).ReplaceAllString(ecmaEscape.ReplaceAllString(s, `\x{$1}`), `{$1,}`))
-	})
-	// $ref values are resolved against each schema's $id (a version URL
-	// under /schemas/), so ../links/link.schema.json is loaded as
-	// https://basaltvault.app/links/link.schema.json.
-	type res struct{ file, url string }
-	for _, r := range []res{
-		{"../../api/mcp/setup/remote-init-result.schema.json", "https://basaltvault.app/schemas/remote-init-result.v1.json"},
-		{"../../api/mcp/errors/next-step.schema.json", "https://basaltvault.app/errors/next-step.schema.json"},
-		{"../../api/mcp/links/link.schema.json", "https://basaltvault.app/links/link.schema.json"},
-	} {
-		raw, err := os.ReadFile(r.file)
-		require.NoError(t, err)
-		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-		require.NoError(t, err)
-		require.NoError(t, c.AddResource(r.url, doc))
-	}
-	s, err := c.Compile("https://basaltvault.app/schemas/remote-init-result.v1.json")
-	require.NoError(t, err)
-	return s
-}
 
 func skipIfSystemConfig(t *testing.T) {
 	t.Helper()
@@ -59,92 +21,63 @@ func skipIfSystemConfig(t *testing.T) {
 	}
 }
 
-func remoteNoDBOn(t *testing.T, h *fakeHost, jsonOut bool, args ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(string) string { return "" })
-	c.host = h
-	c.agentLogin = refusedLogin
-	c.probe = noNetworkProbe
-	if jsonOut {
-		args = append(args, "--json")
-	}
-	code := runInit(c, args)
-	return result{code, stdout.String(), stderr.String()}
+// userRemote is a run not as root on host h, every agent login refused.
+func userRemote(h *fakeHost) remoteEnv {
+	return remoteEnv{host: h, login: refusedLogin, probe: noNetworkProbe, noNetwork: true}
 }
 
-func decodeRemoteResult(t *testing.T, stdout string) RemoteInitResult {
-	t.Helper()
-	requireRemoteInitSchema(t, stdout)
-	var res RemoteInitResult
-	dec := json.NewDecoder(strings.NewReader(stdout))
-	dec.DisallowUnknownFields()
-	require.NoError(t, dec.Decode(&res), stdout)
-	return res
-}
-
-// Non-root init --remote without --config prints and returns
-// `basalt mcp --agent NAME --socket-dir <user config dir>/run` and no
-// --config: basalt mcp finds the per-user config, but never the socket
-// directory.
+// Non-root init --remote without --config prints `basalt mcp --agent NAME`
+// and no --config: basalt mcp finds the per-user config, and the socket
+// directory in it.
 func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	t.Parallel()
 	skipIfSystemConfig(t)
 	h := newFakeHost(t)
-	args := []string{
-		"--remote", "--agent", "bot", "--write", "public.leads",
-		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
-	}
-	r := remoteNoDBOn(t, h, true, args...)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	res := decodeRemoteResult(t, r.stdout)
-	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
-	want := []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", socketDir}
-	require.Equal(t, want, res.MCPCommand)
-	txt := remoteNoDBOn(t, h, false, args...)
-	require.Equal(t, exitOK, txt.code, txt.stderr)
-	require.Contains(t, txt.stdout, "  "+shellJoin(want)+"\n")
-	require.NotContains(t, txt.stdout, "--config")
+	r := remoteWith(t, userRemote(h), "", "--agent", "bot")
+	want := []string{fakeBin, "mcp", "--agent", "bot"}
+	require.Equal(t, want, r.res.MCPCommand)
+	require.Contains(t, r.stdout, "  "+shellJoin(want)+"\n")
+	require.NotContains(t, r.stdout, "--config")
+	require.FileExists(t, filepath.Join(h.configDir, perUserDirName, "engine.json"))
 }
 
-// Non-root init --remote --config prints and returns the command with
-// --config and the matching --socket-dir next to it.
+// A config in another place gives the same command: basalt mcp finds it.
 func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
 	cfg := filepath.Join(h.configDir, "bot", "engine.json")
-	args := []string{
-		"--remote", "--config", cfg, "--agent", "lead_bot", "--write", "public.leads",
-		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
-	}
-	r := remoteNoDBOn(t, h, true, args...)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	res := decodeRemoteResult(t, r.stdout)
-	abs, err := filepath.Abs(cfg)
-	require.NoError(t, err)
-	want := []string{fakeBin, "mcp", "--agent", "lead_bot", "--socket-dir", filepath.Join(filepath.Dir(abs), "run"), "--config", abs}
-	require.Equal(t, want, res.MCPCommand)
-	txt := remoteNoDBOn(t, h, false, "--remote", "--config", cfg, "--agent", "lead_bot", "--write", "public.leads")
-	require.Equal(t, exitOK, txt.code, txt.stderr)
-	require.Contains(t, txt.stdout, "  "+shellJoin(want)+"\n")
+	r := remoteWith(t, userRemote(h), cfg, "--agent", "lead_bot")
+	want := []string{fakeBin, "mcp", "--agent", "lead_bot"}
+	require.Equal(t, want, r.res.MCPCommand)
+	require.Contains(t, r.stdout, "  "+shellJoin(want)+"\n")
 }
 
 // Root/service init --remote with a service config returns the command the
-// agent's OS user runs for the service socket: no --socket-dir, because
-// the sockets stay at the system default, and --config when the file is
-// not the system default.
+// agent's OS user runs for the service socket: only the agent.
 func TestInitRemoteMCPCommandAsRootService(t *testing.T) {
 	t.Parallel()
-	cfg := tempConfig(t)
-	r := remoteWith(t, func(t *testing.T, a ...string) result {
-		t.Helper()
-		return cliNoDBEnv(t, noNetworkProbe, map[string]string{envSudoUID: "1234"}, a...)
-	}, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
+	r := remoteWith(t, sudo(t, "1234"), withState(t, tempConfig(t)), "--agent", "bot")
 	require.True(t, r.cfg.Service())
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), r.cfg.SocketDir)
-	abs, err := filepath.Abs(cfg)
-	require.NoError(t, err)
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--config", abs}, r.res.MCPCommand)
-	require.NotContains(t, r.res.MCPCommand, "--socket-dir")
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, r.res.MCPCommand)
+}
+
+// Not root, with a system engine config in place, init --remote stops and
+// names it: a second config in the user's folder would make every later
+// command stop on two.
+func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	system := filepath.Join(h.configDir, "etc", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+		func(string) string { return "" })
+	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
+	code := runInit(c, []string{"--remote", "--agent", "bot"})
+	require.Equal(t, exitError, code, stderr.String())
+	require.Contains(t, stderr.String(), system)
+	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
+	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
 }

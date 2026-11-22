@@ -74,7 +74,8 @@ type fixtures struct {
 		AuthenticatorData string `json:"authenticatorData"`
 		ClientDataJSON    string `json:"clientDataJson"`
 		Signature         string `json:"signature"`
-		Code              string `json:"code"`
+		// JSON is the body the page posts to the engine.
+		JSON string `json:"json"`
 	} `json:"response"`
 	RegistrationRequest struct {
 		Challenge   string `json:"challenge"`
@@ -119,14 +120,14 @@ func buildFixtures(t *testing.T) fixtures {
 		ClientDataJSON:    []byte(`{"type":"webauthn.get","challenge":"` + f.Request.Challenge + `","origin":"https://basaltvault.app","crossOrigin":false}`),
 		Signature:         seq(70, 0x30),
 	}
-	code, err := resp.Code()
+	body, err := json.Marshal(resp)
 	require.NoError(t, err)
 	f.Response.ApprovalID = approvalID.String()
 	f.Response.CredentialID = resp.CredentialID.String()
 	f.Response.AuthenticatorData = resp.AuthenticatorData.String()
 	f.Response.ClientDataJSON = resp.ClientDataJSON.String()
 	f.Response.Signature = resp.Signature.String()
-	f.Response.Code = code
+	f.Response.JSON = string(body)
 
 	rreq := passkey.RegistrationRequest{Challenge: seq(32, 0x40), UserID: seq(16, 0x80), UserName: "app", DisplayName: "BasaltDB · app"}
 	rfrag, err := rreq.Fragment()
@@ -328,7 +329,7 @@ func TestBindingLimits(t *testing.T) {
 }
 
 // TestVerify signs a request's challenge with a software passkey, carries it
-// through the response code, and verifies it like submit_approval.
+// through the JSON the page posts, and verifies it like submit_approval.
 func TestVerify(t *testing.T) {
 	t.Parallel()
 	binding := bindingText(previewLines())
@@ -337,9 +338,9 @@ func TestVerify(t *testing.T) {
 
 	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	code, err := approval.NewResponse(approvalID, as).Code()
+	body, err := json.Marshal(approval.NewResponse(approvalID, as))
 	require.NoError(t, err)
-	resp, err := approval.ParseResponse("\n" + code + " ")
+	resp, err := approval.DecodeResponse(body)
 	require.NoError(t, err)
 
 	count, err := approval.Verify(binding, person.Credential(), resp)
@@ -368,16 +369,16 @@ func TestVerify(t *testing.T) {
 	})
 }
 
-func TestParseResponseRefuses(t *testing.T) {
+func TestDecodeResponseRefuses(t *testing.T) {
 	t.Parallel()
-	for _, code := range []string{
+	for _, body := range []string{
 		"",
-		"basalt-passkey.1.e30",
-		approval.ResponsePrefix + passkey.Bytes(`{"approvalId":"0193a4c2-7d1e-7c3a-9f00-0000000000a1"}`).String(),
-		approval.ResponsePrefix + passkey.Bytes(`{"approvalId":"nope","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`).String(),
+		`{"approvalId":"0193a4c2-7d1e-7c3a-9f00-0000000000a1"}`,
+		`{"approvalId":"nope","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`,
+		`{"approvalId":"0193a4c2-7d1e-7c3a-9f00-0000000000a1","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ","extra":1}`,
 	} {
-		_, err := approval.ParseResponse(code)
-		require.ErrorIs(t, err, approval.ErrInvalid, code)
+		_, err := approval.DecodeResponse([]byte(body))
+		require.ErrorIs(t, err, approval.ErrInvalid, body)
 	}
 }
 

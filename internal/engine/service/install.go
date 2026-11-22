@@ -249,8 +249,12 @@ func linuxInstall(sys System, s Spec) ([]Step, error) {
 		run("systemctl", "daemon-reload"),
 	)
 	if installed {
-		// Already running: restart so it reads the new config.
-		steps = append(steps, run("systemctl", "enable", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
+		// Already running: restart so it reads the new config. reset-failed
+		// first clears systemd's start-rate count, so a restart right after
+		// the first install's starts (the dialog's, an engine waiting for its
+		// config) is never refused for starting too often.
+		steps = append(steps, run("systemctl", "enable", SystemdUnitName),
+			run("systemctl", "reset-failed", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
 	} else {
 		steps = append(steps, run("systemctl", "enable", "--now", SystemdUnitName))
 	}
@@ -383,41 +387,6 @@ func freeID(used map[int]bool) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("no free system id between %d and %d", darwinIDMin, darwinIDMax)
-}
-
-// UninstallPlan returns the steps that stop the service and remove its unit.
-// The user, config and credentials stay; basalt init owns them. The
-// service-manager commands are best effort, so the unit is removed even
-// where systemd or launchd does not run (a container). Without a unit file
-// the service is not installed: there is nothing to stop, so running
-// uninstall again does not fail on systemd's "Unit file does not exist" or
-// launchd's "not loaded".
-//
-// Every local plugin entry's unit, socket directory and OS user go too,
-// then the plugin base's run directory and the base itself when nothing
-// else is left in them: installed copies and trusted keys stay, as the
-// config does.
-func UninstallPlan(sys System, s Spec) ([]Step, error) {
-	var steps []Step
-	switch s.GOOS {
-	case goosLinux:
-		if sys.Exists(SystemdUnitPath) {
-			steps = append(steps, tryRun("systemctl", "disable", "--now", SystemdUnitName))
-		}
-		steps = append(steps, Step{Kind: StepRemove, Path: SystemdUnitPath}, tryRun("systemctl", "daemon-reload"))
-	case goosDarwin:
-		if sys.Exists(LaunchdPlist) {
-			steps = append(steps, tryRun("launchctl", "bootout", "system/"+LaunchdLabel))
-		}
-		steps = append(steps, Step{Kind: StepRemove, Path: LaunchdPlist})
-	default:
-		return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
-	}
-	plugins, err := pluginUninstallSteps(sys, s.GOOS, s.Plugins)
-	if err != nil {
-		return nil, err
-	}
-	return append(steps, plugins...), nil
 }
 
 // ErrStepsSkipped is Apply's error, after every step ran, when a

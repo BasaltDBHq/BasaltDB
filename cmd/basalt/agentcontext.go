@@ -37,21 +37,10 @@ func (c *cliIO) agentMarker() string {
 	return ""
 }
 
-// agentFacing is true when what basalt prints is read by an agent rather
-// than a person at a terminal: an agent marker is set, or stdin is not a
-// terminal. Help then shows only the agent-led setup.
-func (c *cliIO) agentFacing() bool {
-	return c.agentMarker() != "" || !c.interactive
-}
-
 // What an agent does instead of a command that needs the admin credential.
 const (
-	hintAgentInit = "To set up an agent, run basalt init --remote --agent NAME --write schema.table,... " +
-		"--database-url 'postgres://user@host:port/database' (the connection string WITHOUT the password) " +
-		"and give the person the setup code it prints: they run basalt init --setup-code on their own computer."
-	hintAgentSetupCode = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads."
-	hintAgentPerson    = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads. " +
-		"To set up or upgrade an agent, run basalt init --remote and give the person the setup code it prints."
+	hintAgentPerson = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads. " +
+		"To set up or change an agent, run basalt init (basalt init --remote on a computer the person cannot reach) and show the person the link it prints."
 )
 
 // agentContextError refuses a command that needs the admin connection
@@ -78,37 +67,6 @@ func (c *cliIO) agentContextError(command, hint string) error {
 const adminEnvLeaked = envAdminURL + " is set where an agent can read it; basalt did not use it. " +
 	"Remove it from this environment and ask the person to change that database password now."
 
-// agentInitUsage is basalt init's help when an agent reads it: only the
-// agent-led setup, never init with the admin credential, which an agent
-// would have to ask the person for.
-const agentInitUsage = `usage: basalt init --remote --agent NAME [--write schema.table,...] [--read schema.table,...] --database-url URL [flags]
-         makes a setup code on this machine with no admin credential; URL is the
-         connection string WITHOUT the password (see basalt init --remote -h)
-       basalt init --setup-code CODE
-         the person runs this on their own computer, in a terminal no agent reads
-
-An agent never asks for, accepts or types the database admin connection string
-or password. If the person pastes one, tell them to change that password now.
-Give the person the setup code, its fingerprint and the basalt init --setup-code
-command, then end your turn.
-
-` + manyAgentsHelp + "\n"
-
-// helpAsked is true when args ask for help, which basalt prints whoever
-// runs it.
-func helpAsked(args []string) bool {
-	for _, a := range args {
-		if a == "--" {
-			return false
-		}
-		switch a {
-		case "-h", "-help", "--h", "--help":
-			return true
-		}
-	}
-	return false
-}
-
 // remoteAdminEnvSet is basalt init --remote's warning when
 // BASALT_ADMIN_DATABASE_URL is set: it never uses it, and an agent on this
 // machine may read it.
@@ -118,5 +76,5 @@ const remoteAdminEnvSet = envAdminURL + " is set here; basalt init --remote neve
 // errAgentNotInConfig: the config has no such agent. Whoever reads it may be
 // an agent, so it names the agent-led setup only.
 func errAgentNotInConfig(agent, configPath string) error {
-	return fmt.Errorf("agent %q is not in %s; set it up with basalt init --remote --agent %s and give the person the setup code it prints", agent, configPath, agent)
+	return fmt.Errorf("agent %q is not in %s; set it up with basalt init --agent %s on the person's own computer, or basalt init --remote --agent %s on one the person cannot reach, and show the person the link it prints", agent, configPath, agent, agent)
 }

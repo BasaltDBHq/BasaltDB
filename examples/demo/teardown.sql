@@ -1,4 +1,4 @@
--- BasaltDB M4 teardown. Run `basalt uninstall` first (it drops basalt_meta,
+-- BasaltDB M4 teardown. Remove BasaltDB on the setup page first (it drops basalt_meta,
 -- the guard's triggers and policies, and the basalt_* roles), then paste
 -- this into the SQL editor or psql. It drops only what examples/demo/seed.sql
 -- and the demo created.

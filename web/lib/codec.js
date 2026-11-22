@@ -23,10 +23,8 @@ export const PORTAL = "https://portal.basaltvault.app";
 export const REQUEST_FORMAT_1 = "1.";
 export const REQUEST_FORMAT_2 = "2.";
 const REQUEST_FORMATS = [REQUEST_FORMAT_1, REQUEST_FORMAT_2];
-export const APPROVAL_RESPONSE_PREFIX = "basalt-approval.1.";
 export const REGISTRATION_REQUEST_PREFIX = "1.";
 export const REGISTRATION_RESPONSE_PREFIX = "basalt-passkey.1.";
-export const REVERT_RESPONSE_PREFIX = "basalt-revert.1.";
 
 export const KIND_APPROVE = "APPROVE";
 export const MAX_ROWS = 50; // foundation, Default policy: over 50 rows is refused
@@ -527,12 +525,6 @@ function checkColumns(req, what) {
   return out;
 }
 
-// encodeApprovalResponse builds the code the person copies. Keys in the
-// contract's order, so Go and the page produce the same text.
-export function encodeApprovalResponse(response) {
-  return APPROVAL_RESPONSE_PREFIX + b64urlEncode(utf8(approvalResponseJSON(response)));
-}
-
 // approvalResponseJSON is the JSON an approval code carries, which the page
 // posts to the engine's relay (POST /api/v1/approvals/{id}/approve).
 export function approvalResponseJSON({ approvalId, ...assertion }) {
@@ -778,11 +770,6 @@ async function checkSample(texts, binding) {
   return lines;
 }
 
-// encodeRevertResponse builds the code the person pastes into basalt revert.
-export function encodeRevertResponse(response) {
-  return REVERT_RESPONSE_PREFIX + b64urlEncode(utf8(revertResponseJSON(response)));
-}
-
 // revertResponseJSON is the JSON a revert code carries, which the page posts
 // to the engine's relay (POST /api/v1/reverts/{id}/apply).
 export function revertResponseJSON({ revertId, ...assertion }) {
@@ -796,7 +783,6 @@ export function revertResponseJSON({ revertId, ...assertion }) {
 // it shows anything. Same as internal/approval/plugin.go, which checks less:
 // the page is where a person reads the binding.
 export const KIND_PLUGIN = "PLUGIN";
-export const PLUGIN_RESPONSE_PREFIX = "basalt-plugin.1.";
 
 // Why a plugin approval link is refused, when the page names the reason:
 // a binding of another kind, or settings that do not hash to
@@ -998,12 +984,6 @@ export async function parsePluginRequest(fragment) {
   const req = { approvalId: r.approvalId, binding: r.binding, settings: r.lines[0] };
   if ("credentialIds" in r) req.credentialIds = r.credentialIds;
   return checkPluginRequest(req);
-}
-
-// encodePluginResponse builds the code the person gives the agent, who
-// runs basalt plugin approve with it.
-export function encodePluginResponse(response) {
-  return PLUGIN_RESPONSE_PREFIX + b64urlEncode(utf8(pluginResponseJSON(response)));
 }
 
 // pluginResponseJSON is the JSON a plugin approval code carries, which the

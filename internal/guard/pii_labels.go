@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -152,6 +151,51 @@ func ReadLabels(ctx context.Context, conn *pgx.Conn, n Names, tables []string) (
 	return out, nil
 }
 
+// ReadableTables are the tables of pii_readable_columns() (schema.table, in
+// name order), read in q as the guard role: the tables an UPGRADE code
+// labels, which names no agent (CONTRACT.md, Connect, Column labels on the
+// connect page). None when the database has no guard yet.
+func ReadableTables(ctx context.Context, q pgx.Tx, n Names) ([]string, error) {
+	var exists bool
+	if err := q.QueryRow(ctx, "SELECT pg_catalog.to_regprocedure('basalt_meta.pii_readable_columns()') IS NOT NULL").Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	var cols []ReadableColumn
+	err := asGuard(ctx, q, n, func() error {
+		var err error
+		cols, err = readableColumns(ctx, q)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(cols))
+	for _, c := range cols {
+		out = append(out, c.Schema+"."+c.Table)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
+}
+
+// ReadReadableLabels is ReadLabels for every readable column of the
+// database (pii_readable_columns()): the labels an UPGRADE code shows. It
+// reads in a transaction of its own and changes nothing.
+func ReadReadableLabels(ctx context.Context, conn *pgx.Conn, n Names) ([]ColumnLabel, error) {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tables, err := ReadableTables(ctx, tx, n)
+	_ = tx.Rollback(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ReadLabels(ctx, conn, n, tables)
+}
+
 // WriteLabels writes the person's labels in tx, the setup's transaction,
 // as the guard role, as basalt classify writes classes: for each change,
 // the column must exist and its class stored now (UNCLASSIFIED with no
@@ -221,13 +265,8 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 				return err
 			}
 		}
-		catalog := psql.Insert("basalt_meta.pii_catalog").
-			Columns("id", "fingerprint", "classified_at", "classified_by").
-			Values(true, sq.Expr("basalt_meta.pii_fingerprint()"), at, sq.Expr("session_user")).
-			Suffix(`ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
-				classified_at = EXCLUDED.classified_at, classified_by = EXCLUDED.classified_by`)
-		if err := execBuilt(ctx, tx, catalog); err != nil {
-			return fmt.Errorf("set the classification catalog: %w", err)
+		if err := setPIICatalog(ctx, tx, at); err != nil {
+			return err
 		}
 		written = len(out)
 		return nil

@@ -2,14 +2,13 @@
 // secrets in a session, Handshake, Frames, Limits): the portal page runs
 // Noise_NNpsk0_P256_AESGCM_SHA256 as the initiator over a WebSocket, then
 // speaks the pages API in padded, encrypted frames. Nothing here knows which
-// socket carries the session; the transports (direct.js, later the relay)
-// open the socket and say which transport the prologue names. Every
-// primitive is WebCrypto. The shared vectors (api/mcp/vault/testdata) check
+// socket carries the session; the transport (relay.js) opens the socket
+// and names the transport for the prologue, which is RELAY, the only one.
+// Every primitive is WebCrypto. The shared vectors (api/mcp/vault/testdata) check
 // it against the Go engine in channel.test.mjs.
 
 import { b64urlDecode, b64urlEncode, utf8 } from "./codec.js";
 
-export const DIRECT = "DIRECT";
 export const RELAY = "RELAY";
 
 const subtle = () => globalThis.crypto.subtle;
@@ -165,6 +164,89 @@ export function fingerprint(engineId) {
   return String(engineId).slice(0, FINGERPRINT_CHARS).match(new RegExp(`.{1,${FINGERPRINT_GROUP}}`, "g")).join(" ");
 }
 
+// --- Signatures and receipts ---
+
+// CONTEXTS are the signing contexts of the engine's key (CONTRACT.md,
+// Primitives and encodings): every message it signs starts with one line.
+export const CONTEXTS = Object.freeze({
+  VAULT_AUTH: "basalt-vault-engine.1\n",
+  SESSION: SESSION_CONTEXT,
+  RECEIPT: "basalt-receipt.1\n",
+  BOX_KEY: "basalt-engine-box-key.1\n",
+  ROTATE: "basalt-engine-rotate.1\n",
+  CONNECT_COLLECT: "basalt-connect-collect.1\n",
+  CONNECT_REACH: "basalt-connect-reach.1\n",
+});
+
+// verifySigned checks sig (64 bytes r || s, base64url) by the engine key
+// spki over message, which must start with the line of context. false for
+// any refusal.
+export async function verifySigned(spki, context, message, sig) {
+  const line = utf8(CONTEXTS[context] ?? "");
+  if (line.length === 0 || message.length < line.length || !equalBytes(message.subarray(0, line.length), line)) return false;
+  const key = await parseEngineKey(spki);
+  let raw;
+  try {
+    raw = b64urlDecode(sig);
+  } catch {
+    return false;
+  }
+  if (key === null || raw.length !== SIG_BYTES) return false;
+  return subtle().verify({ name: "ECDSA", hash: "SHA-256" }, key, raw, message);
+}
+
+const RECEIPT_PREFIX = "basalt-receipt.1.";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const RECEIPT_HEADLINE_MAX = 500;
+// RECEIPT_FIELDS is receipt.schema.json, closed: each field's check.
+const RECEIPT_FIELDS = Object.freeze({
+  format: (v) => v === 1,
+  kind: (v) => v === "APPROVAL" || v === "REVERT",
+  itemId: (v) => typeof v === "string" && UUID.test(v),
+  status: (v) => v === "APPROVED" || v === "APPLIED" || v === "APPLYING",
+  headline: (v) => typeof v === "string" && [...v].length >= 1 && [...v].length <= RECEIPT_HEADLINE_MAX,
+  rowsHash: (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v),
+  agent: (v) => typeof v === "string" && v.length > 0,
+  engineId: (v) => typeof v === "string" && /^[A-Za-z0-9_-]{22}$/.test(v),
+  at: (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(v) && !Number.isNaN(Date.parse(v)),
+  changeId: (v) => typeof v === "string" && UUID.test(v),
+});
+const RECEIPT_OPTIONAL = new Set(["changeId"]);
+
+// checkReceipt verifies a receipt token against spki, the engine key the
+// caller expects from outside the receipt (CONTRACT.md, Receipts), in the
+// contract's order: the signature, the parse, that engineId is that key's
+// id, then the closed schema. It returns the payload, or null for any
+// refusal. In the page the only key there is the session's own, so a
+// receipt checked there proves no more than the fingerprint the page shows.
+export async function checkReceipt(token, spki) {
+  if (typeof token !== "string" || !token.startsWith(RECEIPT_PREFIX)) return null;
+  const parts = token.slice(RECEIPT_PREFIX.length).split(".");
+  if (parts.length !== 2) return null;
+  let payload;
+  try {
+    payload = b64urlDecode(parts[0]);
+  } catch {
+    return null;
+  }
+  if (!(await verifySigned(spki, "RECEIPT", concat(utf8(CONTEXTS.RECEIPT), payload), parts[1]))) return null;
+  let p;
+  try {
+    p = JSON.parse(strictUtf8.decode(payload));
+  } catch {
+    return null;
+  }
+  if (p === null || typeof p !== "object" || Array.isArray(p)) return null;
+  if (p.engineId !== (await engineIdOf(spki))) return null;
+  for (const [k, v] of Object.entries(p)) {
+    if (!Object.hasOwn(RECEIPT_FIELDS, k) || !RECEIPT_FIELDS[k](v)) return null;
+  }
+  for (const k of Object.keys(RECEIPT_FIELDS)) {
+    if (!RECEIPT_OPTIONAL.has(k) && !Object.hasOwn(p, k)) return null;
+  }
+  return p;
+}
+
 // --- Noise ---
 
 async function hmac(key, data) {
@@ -289,9 +371,11 @@ function checkHeader(msg, type) {
   if (msg[1] !== type) throw new ChannelError("PROTOCOL");
 }
 
-// startHandshake makes message 1 for keys (linkKeys) on transport. e is the
-// page's ephemeral key pair, made fresh unless a test passes one.
+// startHandshake makes message 1 for keys (linkKeys) on transport, which
+// must be RELAY. e is the page's ephemeral key pair, made fresh unless a
+// test passes one.
 export async function startHandshake(transport, keys, e = null) {
+  if (transport !== RELAY) throw new Error(`unknown transport ${JSON.stringify(transport)}`);
   const pair = e ?? (await subtle().generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]));
   const ePub = await publicPoint(pair.privateKey);
   const s = await SymmetricState.init(prologue(transport, keys.tokenText));
@@ -482,23 +566,20 @@ function waitOpen(ws, ms) {
 }
 
 // openChannel opens a socket with connect() and runs the handshake on it
-// for the link of secret on transport. expectEngineId, when set (DIRECT:
-// the pin), must be the id of the key message 2 carries; another key closes
-// with HANDSHAKE_FAILED. It resolves with the session.
-export async function openChannel(connect, { transport, secret, expectEngineId = "", handshakeMs = HANDSHAKE_MS, now = () => Date.now() }) {
+// for the link of secret on transport. connect gets the link's token as
+// its base64url text (the relay's socket path) and nothing else of the
+// link. It resolves with the session.
+export async function openChannel(connect, { transport, secret, handshakeMs = HANDSHAKE_MS, now = () => Date.now() }) {
   const keys = await linkKeys(secret);
   const started = now();
   const left = () => Math.max(0, handshakeMs - (now() - started));
-  const ws = connect();
+  const ws = connect(keys.tokenText);
   const reader = socketReader(ws);
   try {
     await waitOpen(ws, left());
     const hs = await startHandshake(transport, keys);
     ws.send(hs.message);
     const welcome = await finishHandshake(hs, await reader.next(left()));
-    if (expectEngineId !== "" && welcome.engineId !== expectEngineId) {
-      throw new ChannelError("ENGINE_KEY_CHANGED", "this address now answers with a different engine than the one this device pinned");
-    }
     return new Session(ws, reader, await sessionKeys(welcome), welcome);
   } catch (err) {
     const e = err instanceof ChannelError ? err : new ChannelError("HANDSHAKE_FAILED");

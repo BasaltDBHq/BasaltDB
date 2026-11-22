@@ -1,7 +1,8 @@
 // DOM helpers shared by the approval and registration pages. Text only goes
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
-import { fingerprint as engineFingerprint } from "./channel.js";
+import { checkReceipt, RELAY, fingerprint as engineFingerprint } from "./channel.js";
+import { visibleText } from "./codec.js";
 import { readPaste, repairHash } from "./repair.js";
 import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } from "./requestfile.js";
 
@@ -46,32 +47,43 @@ export function personText(err) {
 }
 
 // linkFailure is the sentence a page shows when its link cannot be used.
-// kind names the page ("approval", "revert"); reopen says how to open the
-// full link from the terminal. A link that does not decode was most likely
-// cut short when copied, so the person is told to reopen it, not that it
-// is bad.
+// kind names the page ("approval", "revert"); reopen says how to get a
+// working link. A link that does not decode was most likely cut short when
+// copied, so the person is told to get it again, not that it is bad.
 export function linkFailure(err, kind, reopen) {
   const told = err?.name === "RelayError" ? personText(err) : "";
   if (told && err.code === "NOT_FOUND") return told + "\nOr " + reopen + ".";
   if (told) return told;
   if (err?.name === "RelayError" && err.code === "NOT_FOUND") {
     return `This ${kind} link is incomplete, was replaced by a newer one, or the ${kind} is gone. ` +
-      `Ask the agent for the link again (it gets a new one from list_pending), or ${reopen}.`;
+      `${sentenceStart(reopen)}.`;
   }
   if (err?.name === "RelayError") {
     return `This ${kind} cannot be shown: ${err.message}`;
   }
   if (err?.name === "TruncatedLinkError") {
     return `This ${kind} link looks cut short (${err.message}). Long links often break when copied from a terminal or a chat. ` +
-      `Open it from your terminal instead: ${reopen}.`;
+      `${sentenceStart(reopen)}.`;
   }
   return `This ${kind} link cannot be used: ${err?.message ?? err}`;
 }
 
-export const APPROVE_REOPEN =
-  "run basalt approve --agent <name> --open <approvalId> with the approvalId your agent gave you; it opens the full link in your browser";
-export const REVERT_REOPEN =
-  "run your basalt revert command again with --open; it prepares the revert and opens the full link in your browser";
+// sentenceStart starts s with a capital letter.
+function sentenceStart(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// What a cut, replaced or lost link tells the person: the agent gets a new
+// link (list_pending, or request_revert, with reissueLink).
+export const APPROVE_REOPEN = "ask the agent for a new link to this approval";
+export const REVERT_REOPEN = "ask the agent for a new link to this revert";
+
+// NO_CARRIER is what a page says on a long link: it shows the change, but
+// only a short link (from the engine's own pages, or from Basalt Vault)
+// can send a signature to the engine, so the page offers no passkey prompt.
+export const NO_CARRIER =
+  "This link shows the change but cannot send your signature to the engine, so it cannot be signed here. " +
+  "Only a short link from the engine's own pages or from Basalt Vault can. Nothing was signed.";
 
 const NO_LINK_IN_PASTE =
   "No link found in that text. Paste the whole message from your agent, from the line before the link to the line after it.";
@@ -205,15 +217,122 @@ export function fail(message) {
   $("main").hidden = true;
 }
 
-// showEngine names the engine a DIRECT session reached, with the
-// fingerprint the person can compare with basalt status (CONTRACT.md,
-// Engine keys: shown on every portal page with a session). Nothing for the
-// engine's own local pages.
+// showEngine names the engine a portal session reached, with the
+// fingerprint of the key the session verified, for the person to compare
+// with the agent's status (CONTRACT.md, Engine keys: shown on every portal page
+// with a session). Nothing for the engine's own local pages.
 export function showEngine(session) {
   const engine = session?.engine;
   if (!engine) return;
-  $("engine").textContent = `Through your engine at ${engine.address}, fingerprint ${engineFingerprint(engine.engineId)}, pinned on this device.`;
+  const fp = engineFingerprint(engine.engineId);
+  $("engine").textContent = `Through the BasaltDB Vault to the engine with fingerprint ${fp}. Before you sign, check that your agent's status shows the same fingerprint (vault.fingerprint).`;
   $("engine").hidden = false;
+}
+
+// endSession closes a finished page's session to the engine and disables
+// the buttons that would still send it a request.
+export function endSession(session, buttons) {
+  session.close();
+  for (const id of buttons) {
+    const b = $(id);
+    if (b) b.disabled = true;
+  }
+}
+
+// openSession opens transport's session for link, saying so on the page
+// while a RELAY session connects through the Vault.
+export async function openSession(transport, link) {
+  const note = transport.kind === RELAY ? $("connecting") : null;
+  if (note) note.hidden = false;
+  try {
+    return await transport.open(link);
+  } finally {
+    if (note) note.hidden = true;
+  }
+}
+
+// noReceiptText is why an answer carries no receipt (CONTRACT.md,
+// Receipts, No receipt), as the engine's receipt line says it.
+function noReceiptText(result) {
+  switch (result.noReceipt) {
+    case "KEY_ERROR":
+      return "No receipt: the engine's key file is refused (the agent's status tool shows KEY_ERROR), so nothing confirms what was signed.";
+    case "WIDENED": {
+      const rows = result.batched ? `${result.pending ?? 0} rows to restore in batches` : `${result.rows ?? 0} rows restored`;
+      return `No receipt: the revert's scope was changed on the signing page (${rows}). If you did not change it, tell the agent at once.`;
+    }
+    default:
+      return visibleText(`No receipt: ${result.noReceipt}.`);
+  }
+}
+
+export const RECEIPT_REFUSED =
+  "The engine's receipt does not check against the key of this session or does not name what this page signed, " +
+  "so this page shows nothing from it. Tell the agent.";
+
+// receiptText is what the page says of a receipt it checked against the
+// session's own key: what the engine says was signed, and the fingerprint
+// to compare with the one in the chat. It never calls the receipt verified:
+// on the relay the session's key is not pinned (CONTRACT.md, Receipts, In
+// the page), so only the person's comparison checks which engine signed.
+// The headline is the engine's text: it goes through visibleText.
+export function receiptText(payload, fp) {
+  const kind = payload.kind === "REVERT" ? "revert" : "approval";
+  return `Receipt from the engine with fingerprint ${fp}: ${visibleText(payload.headline)} (${kind} ${payload.itemId}, ${payload.status}). ` +
+    "Compare this fingerprint with the one the agent showed you in the chat; this page cannot tell on its own which engine signed it.";
+}
+
+// receiptLine is the line for an approve or apply answer on a session:
+// the receipt checked against the session's key and against what the page
+// signed (expect: kind APPROVAL or REVERT, itemId and the binding's
+// rowsHash), why there is none, or nothing (a same-origin page, an answer
+// without either). A receipt for another item, kind or set of rows is
+// refused like one that does not verify.
+export async function receiptLine(result, session, expect) {
+  const engine = session?.engine;
+  if (!engine?.engineKey) return "";
+  if (typeof result?.noReceipt === "string") return noReceiptText(result);
+  if (typeof result?.receipt !== "string") return "";
+  const payload = await checkReceipt(result.receipt, engine.engineKey);
+  if (payload === null) return RECEIPT_REFUSED;
+  if (payload.kind !== expect?.kind || payload.itemId !== expect?.itemId || payload.rowsHash !== expect?.rowsHash) return RECEIPT_REFUSED;
+  return receiptText(payload, engineFingerprint(engine.engineId));
+}
+
+// showReceipt shows receiptLine's text, when there is one.
+export async function showReceipt(result, session, expect) {
+  const text = await receiptLine(result, session, expect);
+  if (text === "") return;
+  $("receipt").textContent = text;
+  $("receipt").hidden = false;
+}
+
+// What a page says after a relayed signature failed. The engine
+// answered with a refusal (an HTTP status): nothing was signed. No answer
+// came (the session dropped after the request may have gone out): the page
+// cannot tell, and the link shows whether it went through.
+export const RELAY_REFUSED = "Nothing was signed through this page. Open the link again to sign again, or ask the agent for a new link.";
+export const RELAY_NO_ANSWER =
+  "This page did not hear back from the engine, so it cannot tell whether the signature went through. " +
+  "Open the link again: it shows whether it was signed.";
+
+// relayRefused says whether err, a relayed signature that failed, is the
+// engine's own refusal (an answer with an HTTP status).
+function relayRefused(err) {
+  return err?.name === "RelayError" && err.status > 0;
+}
+
+// relayRetry is the sentence for err, a relayed signature that failed.
+export function relayRetry(err) {
+  return relayRefused(err) ? RELAY_REFUSED : RELAY_NO_ANSWER;
+}
+
+// relayFailure is what a page shows when the relayed signature of
+// item ("approval", "revert") failed: the engine's refusal and its reason,
+// or, with no answer, only that the page cannot tell.
+export function relayFailure(err, item) {
+  if (!relayRefused(err)) return RELAY_NO_ANSWER;
+  return `The engine did not take the ${item}: ${personText(err) || err.message}. ${RELAY_REFUSED}`;
 }
 
 // showDone says the engine took the signature: nothing to paste.
@@ -223,8 +342,7 @@ export function showDone(message) {
   $("action").hidden = true;
 }
 
-// showRelayFailed says the engine did not take the signature; the code
-// shown next is the way to finish by hand.
+// showRelayFailed says the engine did not take the signature.
 export function showRelayFailed(message) {
   $("done-text").textContent = message;
   $("done").hidden = false;

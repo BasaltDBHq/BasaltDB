@@ -59,14 +59,6 @@ func (a *pluginAgent) RelayPluginApproval(_ context.Context, r approval.PluginAp
 	return a.at, nil
 }
 
-func (a *pluginAgent) IssuePluginLink(_ context.Context, id uuid.UUID, proof string) (string, error) {
-	if id != a.plugin || proof != links.IssueProof(pluginBinding) {
-		return "", agent.ErrNotThisAgent
-	}
-	secret, err := a.secrets.Issue(id, time.Now().Add(time.Hour))
-	return links.WithSecret(links.PluginApproval(a.origin, id), secret), err
-}
-
 func pluginResponseBody(id uuid.UUID) string {
 	return fmt.Sprintf(`{"approvalId":%q,"credentialId":"AQ","authenticatorData":"Ag","clientDataJson":"Aw","signature":"BA"}`, id)
 }
@@ -172,34 +164,6 @@ func TestPluginApprovalRequestRoute(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, status)
 }
 
-// POST /api/v1/plugins/{id}/links issues a short link to a caller with
-// proof of the binding text, as for held writes.
-func TestPluginLinkRoute(t *testing.T) {
-	t.Parallel()
-	id := uuid.Must(uuid.NewV7())
-	a := &pluginAgent{plugin: id}
-	p := serveAgents(t, a)
-	host := strings.TrimPrefix(p.origin, "http://")
-	path := "/api/v1/plugins/" + id.String() + "/links"
-	proof := fmt.Sprintf(`{"proof":%q}`, links.IssueProof(pluginBinding))
-
-	status, out := p.do(t, http.MethodPost, path, host, "", "application/json", proof)
-	require.Equal(t, http.StatusOK, status, out)
-	var got struct {
-		URL string `json:"url"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &got))
-	require.True(t, strings.HasPrefix(got.URL, p.origin+"/plugins/"+id.String()+"#s="), got.URL)
-	require.True(t, p.secrets.Check(id, strings.SplitN(got.URL, "#s=", 2)[1]))
-
-	status, _ = p.do(t, http.MethodPost, path, host, "", "application/json", `{"proof":"wrong"}`)
-	require.Equal(t, http.StatusNotFound, status, "a wrong proof reads as an unknown id")
-	status, _ = p.do(t, http.MethodPost, path, host, "https://evil.example", "application/json", proof)
-	require.Equal(t, http.StatusForbidden, status)
-	status, _ = p.do(t, http.MethodPost, path, host, "", "text/plain", proof)
-	require.Equal(t, http.StatusUnsupportedMediaType, status)
-}
-
 // The page itself is served at /plugins/<id>, and nothing else under it.
 func TestPluginPageServed(t *testing.T) {
 	t.Parallel()
@@ -215,15 +179,16 @@ func TestPluginPageServed(t *testing.T) {
 	}
 }
 
-// A Vault session carries approvals and reverts only
-// (frame-message.schema.json): every plugin route answers as an unknown
-// id, even for the session's own item and secret.
-func TestNoPluginRoutesInASession(t *testing.T) {
+// A Vault session carries a plugin approval's routes for that approval's
+// own link (CONTRACT.md, Plugin approval through the portal): the read and
+// the relay answer as on loopback, with no receipt; the session's link
+// reaches no other kind's route, and another item's link no plugin route.
+func TestPluginRoutesInASession(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	const origin = links.Portal
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	a := &pluginAgent{plugin: id, at: time.Now()}
+	a := &pluginAgent{plugin: id, at: time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)}
 	a.secrets, a.origin = secrets, origin
 	srv := pages.New(origin, slog.New(slog.DiscardHandler))
 	srv.Add(a)
@@ -233,15 +198,43 @@ func TestNoPluginRoutesInASession(t *testing.T) {
 	require.NoError(t, err)
 	link := vault.SessionLink{Token: keys.Token, Item: id}
 	headers := map[string]string{links.SecretHeader: secret, "origin": origin}
-
 	post := map[string]string{links.SecretHeader: secret, "origin": origin, "content-type": "application/json"}
+
+	got := srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
+	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
+	var req approval.PluginRequest
+	require.NoError(t, json.Unmarshal(got.Body, &req))
+	require.Equal(t, approval.PluginRequest{ApprovalID: id, Binding: pluginBinding, Settings: pluginSettings}, req)
+
+	got = srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))})
+	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
+	var answer map[string]any
+	require.NoError(t, json.Unmarshal(got.Body, &answer))
+	require.Equal(t, map[string]any{"approvalId": id.String(), "status": "APPROVED", "approvedAt": "2026-11-22T10:00:00Z"}, answer, "no receipt")
+	require.Len(t, a.submitted, 1)
+
+	// The plugin link's session reaches no approval or revert route, and
+	// no route the allowlist does not name.
 	for _, req := range []vault.Request{
-		{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers},
-		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
-		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/links", Headers: post, Body: []byte(fmt.Sprintf(`{"proof":%q}`, links.IssueProof(pluginBinding)))},
+		{Method: http.MethodGet, Path: "/api/v1/approvals/" + id.String(), Headers: headers},
+		{Method: http.MethodPost, Path: "/api/v1/approvals/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
+		{Method: http.MethodGet, Path: "/api/v1/reverts/" + id.String(), Headers: headers},
+		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/apply", Headers: post, Body: []byte(pluginResponseBody(id))},
+		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/links", Headers: post, Body: []byte(`{}`)},
 	} {
 		got := srv.Dispatch(context.Background(), link, req)
 		require.Equal(t, http.StatusNotFound, got.Status, req.Path)
 	}
-	require.Empty(t, a.submitted)
+	// Another item's link reaches no plugin route.
+	other := uuid.Must(uuid.NewV7())
+	otherSecret, err := secrets.Issue(other, time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	otherKeys, err := channel.DeriveLink(otherSecret)
+	require.NoError(t, err)
+	otherLink := vault.SessionLink{Token: otherKeys.Token, Item: other}
+	for _, path := range []string{"/api/v1/plugins/" + id.String(), "/api/v1/plugins/" + other.String()} {
+		got := srv.Dispatch(context.Background(), otherLink, vault.Request{Method: http.MethodGet, Path: path, Headers: map[string]string{links.SecretHeader: otherSecret, "origin": origin}})
+		require.Equal(t, http.StatusNotFound, got.Status, path)
+	}
+	require.Len(t, a.submitted, 1)
 }

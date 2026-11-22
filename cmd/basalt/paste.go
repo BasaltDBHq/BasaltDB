@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -103,13 +101,4 @@ func (c *cliIO) pasteInBackground(ctx context.Context) (pastes <-chan paste, sto
 		cancel()
 		<-released
 	}
-}
-
-// reportPasteError tells the person why their paste was not read, unless
-// stdin simply closed or the wait ended; rest says what happens instead.
-func reportPasteError(c *cliIO, err error, rest string) {
-	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || c.ctx.Err() != nil {
-		return
-	}
-	fmt.Fprintf(c.stderr, "\nbasalt: the pasted code was not read (%v); %s\n", err, rest)
 }

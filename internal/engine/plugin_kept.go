@@ -79,8 +79,6 @@ type keptPlugins struct {
 	health func(k plugin.EntryKey, kept bool) string
 }
 
-var _ person.PluginMethods = (*keptPlugins)(nil)
-
 // storeError maps a store refusal to the person socket.
 func storeError(err error) error {
 	var ke *keptplugins.Error
@@ -212,12 +210,12 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 		}
 		if taken != nil {
 			return person.PluginOpenResult{}, person.Refused(reasonNameTaken, fmt.Sprintf(
-				"plugin %s is an entry of engine.json, added with sudo (or was when the engine started: one removed since counts until "+
-					"the engine restarts); an engine-kept entry cannot have its name and instance. Use another --instance, "+
-					"or change it with sudo basalt plugin", k))
+				"plugin %s is an entry of engine.json (or was when the engine started: one removed since counts until "+
+					"the engine restarts); an engine-kept entry cannot have its name and instance. Use another instance, "+
+					"or change it by editing engine.json", k))
 		}
 		return person.PluginOpenResult{}, person.Refused(reasonConfigEntry, fmt.Sprintf(
-			"plugin %s is an entry of engine.json, added with sudo; enable it with sudo basalt plugin enable", k))
+			"plugin %s is an entry of engine.json; it is changed by editing that file", k))
 	}
 	entries, err := s.store.Entries(s.cfg)
 	if err != nil {
@@ -526,7 +524,7 @@ func (s *keptPlugins) checkDatabase(ctx context.Context, g *keptGroup) error {
 	if !holdsPluginApprovals(st) {
 		return person.Refused(reasonGuardOutdated, fmt.Sprintf(
 			"the guard in the database of agent %s is older than schema version %d, which holds plugin approvals; nothing was written. "+
-				"Upgrade it with basalt upgrade --agent %s", name, guard.PluginApprovalsVersion, name))
+				"Update it with the link basalt init prints for agent %s", name, guard.PluginApprovalsVersion, name))
 	}
 	if g.install, err = guard.InstallID(ctx, db); err != nil {
 		return unreachable(name, err)
@@ -662,7 +660,7 @@ func (s *keptPlugins) turnOff(ctx context.Context, scope person.Scope, p person.
 			return notAllowed(k)
 		}
 		return person.Refused(reasonConfigEntry, fmt.Sprintf(
-			"plugin %s is an entry of engine.json, added with sudo; run sudo basalt plugin %s %s", k, verb, k.Name))
+			"plugin %s is an entry of engine.json; to %s it, edit that file", k, verb))
 	}
 	entries, err := s.store.Entries(s.cfg)
 	if err != nil {
@@ -775,7 +773,7 @@ func (s *keptPlugins) Approve(ctx context.Context, p person.PluginApproveParams)
 	}
 	ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 	defer cancel()
-	at, err := guard.SubmitPluginApproval(ctx, s.agents[opener].db, guard.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.PasskeyAssertion()})
+	at, err := guard.SubmitPluginApproval(ctx, s.agents[opener].db, guard.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.Assertion})
 	if err != nil {
 		return person.PluginApproveResult{}, err
 	}
@@ -828,6 +826,11 @@ func (s *keptPlugins) listed(p config.Plugin, source string, scope person.Scope,
 		l.Health = s.health(k, source == person.SourceEngine)
 	}
 	mode, trustMode := plugin.ModeService, plugin.ModeService
+	if !s.cfg.Service() {
+		// An agent-operated engine on the bot's computer: its config
+		// entries are same-user ones.
+		mode, trustMode = plugin.ModeSameUser, plugin.ModeSameUser
+	}
 	var v plugin.Verified
 	var root string
 	var err error
@@ -925,9 +928,12 @@ func newKeptApprovalReader(ctx context.Context, s *keptPlugins, scope person.Sco
 	return r
 }
 
-// stateOf is agent's newest approval of k as basalt plugin list shows it.
+// approvalStateUnavailable is an agent whose approvals could not be read.
+const approvalStateUnavailable = "UNAVAILABLE"
+
+// stateOf is agent's newest approval of k as PLUGIN_LIST shows it.
 func (r *keptApprovalReader) stateOf(agent string, k plugin.EntryKey) person.PluginAgentStatus {
-	st := person.PluginAgentStatus{Agent: agent, State: "UNAVAILABLE"}
+	st := person.PluginAgentStatus{Agent: agent, State: approvalStateUnavailable}
 	if !r.ok[agent] {
 		return st
 	}

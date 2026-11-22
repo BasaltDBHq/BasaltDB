@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/browser"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 )
 
 // host is what basalt init does on the machine beyond Postgres: elevate
@@ -32,6 +34,21 @@ type host interface {
 	// Sudo runs args under sudo with stdin, which carries the agent's
 	// credential; sudo asks for the password on the terminal.
 	Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error
+	// ResolvedExecutable is this basalt binary's path with every link
+	// resolved; an error when a link cannot be resolved.
+	ResolvedExecutable() (string, error)
+	// DialogAvailable says why the system's administrator dialog cannot be
+	// shown here, or nil when it can (service.ErrNoDialog wrapped).
+	DialogAvailable(goos string) error
+	// AdminDialog asks the person, through the system's administrator
+	// dialog, to run script as root (service.DialogCommand), with a fixed
+	// environment and / as its directory.
+	AdminDialog(ctx context.Context, goos, script string, out io.Writer) error
+	// SetupState posts an empty request to the engine's setup check route
+	// at origin and returns the refusal code it answers: JOB_UNAVAILABLE
+	// from an engine that has a config, another code from one waiting for
+	// it. An error when nothing answers.
+	SetupState(ctx context.Context, origin string) (string, error)
 	// LookPath finds a command on PATH.
 	LookPath(name string) (string, error)
 	// Run runs a command as the person.
@@ -47,9 +64,6 @@ type host interface {
 	OpenURL(ctx context.Context, link string) error
 	// PagesUp reports whether the engine serves its local pages at origin.
 	PagesUp(ctx context.Context, origin string) bool
-	// IssueLink asks the engine's pages for a short link (POST .../links)
-	// with proof of the item's binding text, and returns its url.
-	IssueLink(ctx context.Context, endpoint, proof string) (string, error)
 }
 
 // osHost is the real machine.
@@ -61,6 +75,89 @@ func (osHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
 func (osHost) LookPath(name string) (string, error) {
 	return exec.LookPath(name)
 }
+
+func (osHost) ResolvedExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
+}
+
+// darwinConsole is owned by the user logged in at the Mac's screen.
+const darwinConsole = "/dev/console"
+
+func (osHost) DialogAvailable(goos string) error {
+	paths, err := service.DialogPaths(goos)
+	if err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("%w (%s is missing)", service.ErrNoDialog, p)
+		}
+	}
+	if goos != "darwin" {
+		return nil
+	}
+	// The dialog shows on the Mac's screen: only for the person logged in there.
+	uid, err := fileOwnerUID(darwinConsole)
+	if err != nil {
+		return fmt.Errorf("%w (%s: %w)", service.ErrNoDialog, darwinConsole, err)
+	}
+	if uid != os.Geteuid() {
+		return fmt.Errorf("%w (you are not the user logged in at this Mac's screen)", service.ErrNoDialog)
+	}
+	return nil
+}
+
+// dialogEnv is the whole environment of the dialog program: nothing of the
+// caller's reaches the script.
+var dialogEnv = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
+
+func (osHost) AdminDialog(ctx context.Context, goos, script string, out io.Writer) error {
+	argv, err := service.DialogCommand(goos, script)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Env, cmd.Dir = dialogEnv, "/"
+	var said bytes.Buffer
+	cmd.Stdout, cmd.Stderr = out, io.MultiWriter(out, &said)
+	err = cmd.Run()
+	code := -1
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code = exitErr.ExitCode()
+	}
+	return service.DialogError(goos, code, said.String(), err)
+}
+
+func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+localsetup.SetupCheckPath, strings.NewReader("{}"))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxLinkAnswer)).Decode(&out); err != nil {
+		return "", fmt.Errorf("engine answered %d", resp.StatusCode)
+	}
+	return out.Code, nil
+}
+
+// maxLinkAnswer bounds the engine's answer to a pages API request.
+const maxLinkAnswer = 16 << 10
 
 func (osHost) Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error {
 	cmd := exec.CommandContext(ctx, "sudo", args...)
@@ -75,16 +172,7 @@ func (osHost) Run(ctx context.Context, args []string, out, errw io.Writer) error
 }
 
 func (osHost) OpenURL(ctx context.Context, link string) error {
-	name, ok := browserOpener(runtime.GOOS)
-	if !ok {
-		return fmt.Errorf("no browser opener on %s", runtime.GOOS)
-	}
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return fmt.Errorf("%s not found", name)
-	}
-	// The link is one argument, never passed through a shell.
-	return exec.CommandContext(ctx, path, link).Run()
+	return browser.Open(ctx, link)
 }
 
 // pagesProbeTimeout bounds the check that the engine serves its pages: a
@@ -104,51 +192,6 @@ func (osHost) PagesUp(ctx context.Context, origin string) bool {
 	}
 	_ = resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
-}
-
-func (osHost) IssueLink(ctx context.Context, endpoint, proof string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
-	defer cancel()
-	body, err := json.Marshal(map[string]string{"proof": proof})
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var out struct {
-		URL     string `json:"url"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxLinkAnswer)).Decode(&out); err != nil {
-		return "", fmt.Errorf("engine answered %d", resp.StatusCode)
-	}
-	if resp.StatusCode != http.StatusOK || out.URL == "" {
-		return "", fmt.Errorf("engine answered %d: %s", resp.StatusCode, out.Message)
-	}
-	return out.URL, nil
-}
-
-// maxLinkAnswer bounds the engine's answer to a link request.
-const maxLinkAnswer = 16 << 10
-
-// browserOpener is the command that opens a URL in the default browser on
-// goos.
-func browserOpener(goos string) (string, bool) {
-	switch goos {
-	case "darwin":
-		return "open", true
-	case "linux":
-		return "xdg-open", true
-	}
-	return "", false
 }
 
 func (osHost) System(out, errw io.Writer) service.System {

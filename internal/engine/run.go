@@ -4,9 +4,9 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,8 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
@@ -28,18 +27,17 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
-	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/server"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
@@ -64,7 +62,7 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"STOP means do not retry or work around it; END_TURN means end your turn and let the person act. " +
 	"When status says operatedBy PERSON, never start, stop, restart or upgrade anything yourself. " +
 	"Never split a write to avoid a hold, and never retry a refusal in a loop. " +
-	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
+	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +
 	"Over 50 rows, DDL and functions outside the allowlist are refused. " +
 	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert: show its personMessage, then call request_revert once with revertId to wait for their passkey; if that wait runs out, do not wait again. " +
@@ -86,9 +84,9 @@ const updateInstructions = "When a result carries a WARNING: or SECURITY UPDATE:
 // adminInstructions is the sentence CONTRACT.md (Agents and the admin
 // credential, What the agent is told) puts in the initialize instructions,
 // unchanged: the admin credential never reaches the agent.
-const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password, " +
-	"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote " +
-	"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now."
+const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password: " +
+	"to set up, repair or change your access, follow nextSteps or run basalt init (basalt init --remote on a computer the person cannot reach), and show the person the one link it prints; " +
+	"they finish on that page. If the person pastes an admin password, tell them to change it now."
 
 // docsInstructions is the one sentence that points an agent to the public
 // docs (CONTRACT.md, What the agent is told). The .md form of each page is
@@ -117,6 +115,14 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
+	// A listener a waiting engine handed on is closed on any return before
+	// the pages take it (takeHandedListener).
+	handed := restart.PagesListener
+	defer func() {
+		if handed != nil {
+			_ = handed.Close()
+		}
+	}()
 	// Every configured agent's OS user, before any agent is skipped: the
 	// person socket scopes a peer that runs an agent to that agent (SM-4),
 	// served or not, so a skipped agent's user never looks like the person.
@@ -152,8 +158,13 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
 	}
 	var site *pagesSite
+	var jobs pages.SetupJobs
+	rotated := newRotations()
+	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
+	handed = nil
 	if pagesCfg.Addr != "" {
-		site, err = listenPages(pagesCfg, log)
+		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.changed)
+		site, err = listenPages(pagesCfg, pagesLn, jobs, log)
 		if err != nil {
 			return err
 		}
@@ -163,7 +174,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, startedBy: startedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
+	env := agentEnv{cfg: cfg, startedBy: startedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), rotated: rotated}
 	// Plugins are verified now and started below, once the agents serve: a
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
@@ -172,9 +183,12 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
 		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
 	}
-	if cfg.Service() {
-		// A service engine keeps plugin entries of its own, added over the
-		// person socket, and runs them once approved.
+	keepsPlugins := keepsPluginEntries(cfg)
+	if keepsPlugins {
+		// A service engine, and an agent-operated one on the bot's computer,
+		// keeps plugin entries of its own, added with request_plugin, and
+		// runs them once approved (CONTRACT.md, Plugin approval in service
+		// mode, Plugin approval through the portal).
 		pluginOpts.kept = openKeptStore(cfg, env.stateDir, pluginLog)
 	}
 	plugins := newEnginePlugins(cfg, configPath, pluginOpts, pluginLog)
@@ -187,14 +201,15 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.plugins = plugins
 		env.deliverer = plugins.DeliverLinks
 	}
+	if keepsPlugins {
+		env.requests = &pluginRequests{uids: agentUIDs, admitted: pluginCallers(cfg, uint32(os.Geteuid()))}
+	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
 		env.portal = portal
 	}
-	updateCheck := "ON"
 	if !cfg.UpdateCheckOn() || updatecheck.Disabled(os.Getenv) {
 		log.Info("update check is off")
-		updateCheck = "OFF"
 	} else if uc := (&updatecheck.Checker{Dir: env.stateDir, Current: buildinfo.Version}); uc.Current != updatecheck.DevVersion {
 		env.update = uc
 	}
@@ -210,26 +225,24 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	env.dict = dict
 	if site != nil {
 		env.pagesOrigin = site.origin
+		if jobs != nil {
+			env.setupOrigin = site.origin
+		}
 	}
 	relay := newRelayLinks(log.With("component", "vault"))
 	// Link sessions through the Vault are answered by the pages API on the
 	// portal's origin (CONTRACT.md, Vault channel, Frames), with no
 	// listener: only the session reaches these handlers.
-	directAddr, err := cfg.Direct()
-	if err != nil {
-		return err
-	}
 	var sessionPages *pages.Server
 	var dispatch vault.Dispatcher
 	// gate counts the agent calls, person requests and page sessions
 	// running, so a restart onto an upgraded binary waits for them.
 	gate := newCallGate()
-	if cfg.VaultEnabled() || directAddr != "" {
+	if cfg.VaultEnabled() {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
 		dispatch = gatedDispatcher{gate: gate, next: sessionPages}
 	}
-	tally := vault.NewTally()
-	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch, tally)
+	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault, env.receipts = ev, ev.receipts()
 	if ev.keys != nil {
 		env.keys = ev.keys
@@ -249,33 +262,6 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
 	}
-	var direct *directSite
-	if directAddr != "" && ev.keys == nil {
-		log.Error("directAddr is set but the engine key file is refused: no direct listener until it is fixed", "addr", directAddr)
-	}
-	if directAddr != "" && ev.keys != nil {
-		env.records = newEngineRecords(ev.keys.EngineID(), time.Now, log.With("component", "direct"))
-		client := ev.client
-		env.direct = vault.NewDirect(vault.DirectOptions{
-			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch, Tally: tally,
-			Recheck: env.records.revoked,
-			// A widen in a direct session ends the old token's sessions
-			// through the Vault too, without unregistering it.
-			OnRotate: func(old channel.LinkToken) {
-				if client != nil {
-					client.EndSessions(old)
-				}
-			},
-		})
-		relay.setDirect(env.direct)
-		env.relayLinks = relay
-		direct, err = listenDirect(directAddr)
-		if err != nil {
-			return err
-		}
-		closers = append(closers, func() { _ = direct.ln.Close() })
-		log.Info("direct listener", "addr", directAddr)
-	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
 	srv, err := startAgents(ctx, cfg, env, agentUIDs, newAgentRuntime, log)
@@ -283,7 +269,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err != nil {
 		return err
 	}
-	agents, ledgers, upkeeps := srv.agents, srv.ledgers, srv.upkeeps
+	agents, upkeeps := srv.agents, srv.upkeeps
 	for _, svc := range srv.services {
 		if site != nil {
 			site.pages.Add(svc)
@@ -342,35 +328,15 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { _ = ev.client.Run(ctx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
-	if cfg.Service() {
-		o := person.Options{
-			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
-			Engine: engineInfo(cfg.SocketDir, env.stateDir),
-			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
-			Gate:   gate,
-		}
+	if keepsPlugins {
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
-			o.Plugins = kept
+			env.requests.kept.Store(kept)
 			// Ends a disable could not write are tried again now.
 			wg.Go(func() { kept.endDisabled(ctx) })
 		}
-		srv, ln, err := listenPerson(cfg, o, log)
-		if err == nil && restart.PersonPeerUID != nil {
-			srv = person.NewServer(withPeerUID(o, cfg, restart.PersonPeerUID, log))
-		}
-		if err != nil {
-			return err
-		}
-		wg.Go(func() { srv.Serve(ctx, ln) })
 	}
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
-	}
-	if direct != nil {
-		h := newDirectHandler(ctx, env.records, ev.keys.PublicKeySPKI(), env.direct, time.Now)
-		wg.Go(func() { env.records.refresh(ctx) })
-		wg.Go(func() { env.records.watchRevoked(ctx, env.direct, directRecheckEvery) })
-		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
 	err = New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
 	select {
@@ -418,6 +384,26 @@ func upgradeOrReload(up UpgradeFunc, reload <-chan struct{}, reloading chan stru
 // agentOSUIDs is the uid of every configured agent's OS user, by agent
 // name. An OS user that does not resolve stops the engine: the person
 // socket must never mistake an agent's user for the person (fail closed).
+// keepsPluginEntries reports whether the engine keeps plugin entries of
+// its own: a service engine, and an agent-operated engine that runs as the
+// agent's own OS user (the bot's computer). A person-operated engine that
+// runs as the person's own OS user keeps none (SAME_USER_MODE).
+func keepsPluginEntries(cfg config.Config) bool {
+	return cfg.Service() || cfg.AgentOperated()
+}
+
+// pluginCallers are the OS users whose agents may change plugins: on a
+// service engine the person's (personUids); on an agent-operated engine
+// that runs as the agent's own OS user, that user, which every agent of the
+// engine runs as. An agent-operated service engine admits nobody here:
+// request_plugin refuses it AGENT_OPERATED before it asks.
+func pluginCallers(cfg config.Config, euid uint32) []uint32 {
+	if cfg.Service() {
+		return cfg.PersonUIDs
+	}
+	return []uint32{euid}
+}
+
 func agentOSUIDs(agents []config.Agent, lookup func(string) (uint32, error)) (map[string]uint32, error) {
 	out := make(map[string]uint32, len(agents))
 	for _, a := range agents {
@@ -436,8 +422,6 @@ type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *sl
 // startedAgents are the agents the engine serves and what it closes.
 type startedAgents struct {
 	agents   []Agent
-	ledgers  map[string]person.Ledger
-	infos    map[string]person.AgentInfo
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
 	scans    []piidict.ScanSource
@@ -456,8 +440,6 @@ type startedAgents struct {
 // user is in uids, which the person socket scopes by.
 func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
 	out := startedAgents{
-		ledgers:       make(map[string]person.Ledger, len(cfg.Agents)),
-		infos:         make(map[string]person.AgentInfo, len(cfg.Agents)),
 		pluginLedgers: make(map[string]pluginLedger, len(cfg.Agents)),
 		kept:          make(map[string]keptAgent, len(cfg.Agents)),
 	}
@@ -467,7 +449,6 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			return out, fmt.Errorf("agent %s: %w", a.Name, err)
 		}
 		out.closers = append(out.closers, rt.close)
-		out.infos[a.Name] = rt.info
 		if rt.run != nil {
 			out.runs = append(out.runs, rt.run)
 		}
@@ -476,11 +457,10 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, OnPanic: env.onPanic}, rt.tools...),
+				Server: mcp.NewServer(env.serverInfo(nil), rt.tools...),
 			})
 			continue
 		}
-		out.ledgers[a.Name] = rt.ledger
 		if rt.db != nil {
 			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
 		}
@@ -496,40 +476,25 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: rt.svc.UpdateNotice, OnPanic: env.onPanic}, agent.Tools(rt.svc)...),
+			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), agent.Tools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed)),
 		})
 	}
 	return out, nil
 }
 
-// listenPerson opens the person socket of a service-mode engine (CONTRACT.md,
-// The person socket): mode 0666 like the agent sockets, admitting only the
-// recorded person uids.
-func listenPerson(cfg config.Config, o person.Options, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
-	path := config.PersonSocketPath(cfg.SocketDir)
-	ln, err := listenSocket(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("person socket: %w", err)
+// serverInfo is what an agent's MCP server says of itself, with notice as
+// its update notice (nil for none). The hello answer carries who operates
+// the engine and its local page origin, so basalt mcp knows which links it
+// may open in the browser (CONTRACT.md, Auto-open).
+func (env agentEnv) serverInfo(notice func() string) mcp.Info {
+	operatedBy := mcpcontract.OperatedByPerson
+	if env.cfg.AgentOperated() {
+		operatedBy = mcpcontract.OperatedByAgent
 	}
-	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
-	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peercred.UID, log.With("component", "person")
-	return person.NewServer(o), ln, nil
-}
-
-// withPeerUID is o as listenPerson completes it, with peerUID (tests).
-func withPeerUID(o person.Options, cfg config.Config, peerUID func(*net.UnixConn) (uint32, error), log *slog.Logger) person.Options {
-	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peerUID, log.With("component", "person")
-	return o
-}
-
-// engineInfo is what the person socket's STATUS says about this engine:
-// its pid and OS user, and its socket and state directories.
-func engineInfo(socketDir, stateDir string) person.EngineInfo {
-	name := strconv.Itoa(os.Getuid())
-	if u, err := user.Current(); err == nil {
-		name = u.Username
+	return mcp.Info{
+		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic,
+		OperatedBy: operatedBy, PagesOrigin: env.pagesOrigin,
 	}
-	return person.EngineInfo{Engine: person.EngineDTO{PID: os.Getpid(), OSUser: name}, SocketDir: socketDir, StateDir: stateDir}
 }
 
 // pagesSite is the bound local pages listener (CONTRACT.md, Local pages).
@@ -549,14 +514,52 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the approval pages. A port it cannot bind stops the
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
-func listenPages(p config.Pages, log *slog.Logger) (*pagesSite, error) {
+func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log *slog.Logger) (*pagesSite, error) {
 	srv := pages.New(p.Origin, log.With("component", "pages"))
+	if setup != nil {
+		srv.SetSetup(setup)
+	}
+	if handed != nil {
+		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)
+		return &pagesSite{pages: srv, ln: handed, handler: server.Wrap(p.Addr, handed, srv.Handler()), origin: p.Origin}, nil
+	}
 	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
 		return nil, pagesPortError(p.Addr, err)
 	}
 	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
 	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}, nil
+}
+
+// setupJobs is the setup page's UPDATE and REMOVE for a person-operated
+// engine on its own OS user at the local setup origin (CONTRACT.md, The
+// local setup page), or nil: an agent-operated engine never takes the
+// admin connection string, nor does an engine run as root, which reads
+// its agents' files by other rules.
+func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string)) pages.SetupJobs {
+	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != SetupOrigin {
+		return nil
+	}
+	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
+	if err != nil {
+		log.Warn("the setup page cannot update or remove agents", "err", err)
+		return nil
+	}
+	return jobs
+}
+
+// takeHandedListener is the listener a waiting engine handed on, when the
+// config serves its pages at that same address; else it is closed and the
+// pages bind as usual.
+func takeHandedListener(ln net.Listener, addr string) net.Listener {
+	if ln == nil {
+		return nil
+	}
+	if addr == SetupAddr && ln.Addr().String() == addr {
+		return ln
+	}
+	_ = ln.Close()
+	return nil
 }
 
 func pagesPortError(addr string, err error) error {
@@ -588,10 +591,6 @@ const agentPoolConns = 4
 type agentRuntime struct {
 	svc    *agent.Service
 	upkeep *upkeep.Upkeep
-	// ledger serves the person socket on the agent's credential.
-	ledger person.Ledger
-	// info answers the person socket's STATUS and TARGET.
-	info person.AgentInfo
 	// scan is what the engine's PII scan reads for this agent.
 	scan piidict.ScanSource
 	// db is the agent's own connection pool, outside any tool call.
@@ -612,8 +611,14 @@ type agentEnv struct {
 	configPath  string
 	pagesBase   string
 	pagesOrigin string
+	// setupOrigin is the setup page's origin when the engine serves its
+	// UPDATE and REMOVE (setupJobs), else empty.
+	setupOrigin string
 	stateDir    string
 	pins        upkeep.Pins
+	// rotated takes each agent's password setter, for the setup page's
+	// REPAIR.
+	rotated *rotations
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
 	// portal reports the daily portal check in every agent's status; nil
@@ -625,6 +630,9 @@ type agentEnv struct {
 	// deliverer gives each agent where its approval notices go, for the
 	// approval.deliver plugins; nil when the engine keeps no plugins.
 	deliverer func(name string) agent.LinkDeliverer
+	// requests serve request_plugin on a service engine, once its
+	// engine-kept plugins are open; nil on a same-user engine.
+	requests *pluginRequests
 	// update is the daily newer-release check; nil when it is off.
 	update *updatecheck.Checker
 	// receipts signs the receipt of every relayed signature; nil when the
@@ -634,13 +642,9 @@ type agentEnv struct {
 	// each agent registers its portal short links there.
 	relay      *vault.Client
 	relayLinks *relayLinks
-	// direct serves the direct transport's sessions and records reads the
-	// engine's record per agent database; both nil without directAddr.
-	direct  *vault.Direct
-	records *engineRecords
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
-	// asRoot: the engine runs as root (started without --user); it then
+	// asRoot: the engine runs as root; it then
 	// reaches each agent's files through openRootFiles.
 	asRoot bool
 	// keys sign a connect-only agent's collect requests; nil when the key
@@ -652,17 +656,44 @@ type agentEnv struct {
 	reload func()
 }
 
+// commands are agent a's next-step commands: a foreground engine's when it
+// is no service, and the setup page's UPDATE link for a when the engine
+// serves the setup jobs (setupOrigin).
+func (env agentEnv) commands(a config.Agent) (agent.Commands, error) {
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
+	if err != nil {
+		return agent.Commands{}, err
+	}
+	if !env.cfg.Service() {
+		cmds = cmds.Foreground()
+	}
+	if env.setupOrigin != "" {
+		if link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser}); err == nil {
+			cmds = cmds.UpdateLink(link)
+		}
+		// The setup page's REMOVE deletes engine.json with the last agent.
+		cmds = cmds.Removed(configGone(env.configPath))
+	}
+	return cmds, nil
+}
+
+// configGone reports whether the config at path is gone: the setup page's
+// REMOVE deleted it with the engine's last agent.
+func configGone(path string) func() bool {
+	return func() bool {
+		_, err := os.Lstat(path)
+		return errors.Is(err, fs.ErrNotExist)
+	}
+}
+
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
 	limits, err := sqlLimits(env.cfg.Limits)
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, a.InitArgs)
+	cmds, err := env.commands(a)
 	if err != nil {
 		return agentRuntime{}, err
-	}
-	if !env.cfg.Service() {
-		cmds = cmds.Foreground()
 	}
 	// One store per agent (CONTRACT.md, Stores); the config refuses any
 	// kind but POSTGRES, the only adapter there is.
@@ -695,6 +726,12 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		files.close()
 		return agentRuntime{}, err
 	}
+	if env.rotated != nil {
+		env.rotated.add(a.Name, func(pw string) {
+			password.Set(pw)
+			pool.Reset()
+		})
+	}
 	finisher := &setupFinisher{
 		configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile, files: files,
 		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
@@ -714,15 +751,16 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	observer := piidict.NewObserver(classes, env.dict)
 	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
+	readRecord := func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
+		r, err := guard.EngineRecord(ctx, pool, id)
+		return r, postgres.MapError(err)
+	}
 	var relay agent.LinkRelay
 	if env.relay != nil {
 		relay = env.relay
 	}
 	if env.relayLinks != nil {
 		env.relayLinks.add(a.Name, secrets, env.dropLink)
-	}
-	if env.records != nil {
-		env.records.add(a.Name, pool)
 	}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
@@ -731,56 +769,59 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.deliverer != nil {
 		deliverer = env.deliverer(a.Name)
 	}
+	var requests agent.PluginRequests
+	if env.requests != nil {
+		requests = env.requests
+	}
 	svc := agent.NewService(agent.Deps{
-		Name:          a.Name,
-		Deliverer:     deliverer,
-		Store:         store,
-		PagesBase:     env.pagesBase,
-		LinkBudget:    env.cfg.LinkBudgetOrDefault(),
-		Commands:      cmds,
-		PagesOrigin:   env.pagesOrigin,
-		Links:         secrets,
-		Relay:         relay,
-		RLS:           blind,
-		Log:           log,
-		Now:           time.Now,
-		OperatedBy:    env.cfg.OperatedBy,
-		DevLocalPages: env.cfg.DevLocalPages,
-		ConnectBudget: env.cfg.ConnectLinkBudget(),
-		SameUser:      !env.cfg.Service(),
-		StartedBy:     env.startedBy,
-		Setup:         a.Setup,
-		Probe:         probe,
-		Vault:         env.vault,
-		Portal:        env.portal,
-		Plugins:       env.plugins,
-		Update:        env.updateNotice(),
-		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			r, err := guard.EngineRecord(ctx, pool, id)
-			return r, postgres.MapError(err)
-		},
-		DirectServed: env.direct != nil,
-		Trust:        TrustOf(pool),
-		Database:     agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
-		Receipts:     env.receipts,
-		Finisher:     finisher,
-		PII:          observer.On(pool),
-		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
-		Columns:      postgres.NewColumnOrder(budgeted),
+		PluginRequests: requests,
+		Name:           a.Name,
+		Deliverer:      deliverer,
+		Store:          store,
+		PagesBase:      env.pagesBase,
+		LinkBudget:     env.cfg.LinkBudgetOrDefault(),
+		Commands:       cmds,
+		PagesOrigin:    env.pagesOrigin,
+		Links:          secrets,
+		Relay:          relay,
+		RLS:            blind,
+		Log:            log,
+		Now:            time.Now,
+		OperatedBy:     env.cfg.OperatedBy,
+		DevLocalPages:  env.cfg.DevLocalPages,
+		ConnectBudget:  env.cfg.ConnectLinkBudget(),
+		SameUser:       !env.cfg.Service(),
+		StartedBy:      env.startedBy,
+		Setup:          a.Setup,
+		Probe:          probe,
+		Vault:          env.vault,
+		Portal:         env.portal,
+		Plugins:        env.plugins,
+		CrashDirs:      crashDirs(env.stateDir),
+		Access:         func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
+		Update:         env.updateNotice(),
+		EngineRecord:   readRecord,
+		Trust:          TrustOf(pool),
+		Database:       agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
+		Receipts:       env.receipts,
+		Finisher:       finisher,
+		PII:            observer.On(pool),
+		Catalog:        postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
+		Columns:        postgres.NewColumnOrder(budgeted),
 		// The plugin approval routes read and relay on the agent's own
 		// credential, as the approval routes do.
 		PluginApprovals: store,
 		Classes:         storeClasses{BoundMap: classes.On(pool)},
 	})
+	repin := newRepin(env, a, pool.Config().ConnConfig, log)
 	return agentRuntime{
 		svc: svc,
+		run: repin,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
-		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
-		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
-		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
-		db:     pool,
+		scan: piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
+		db:   pool,
 		kept: keptAgent{
 			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,
 			database: pool.Config().ConnConfig.Database, role: pool.Config().ConnConfig.User,
@@ -793,29 +834,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 }
 
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
-// started as root without --user, through directories opened without
+// started as root, through directories opened without
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 	if !env.asRoot {
 		return pathFiles{configPath: env.configPath, credFile: a.Store.CredentialFile}, nil
 	}
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
-}
-
-// agentInfo answers the person socket's STATUS with the agent's status tool
-// and TARGET with the database its credential connects to.
-func agentInfo(svc *agent.Service, conn pgconn.Config) person.AgentInfo {
-	t := setupcode.ConnTarget(conn.Host, int(conn.Port), conn.Database, conn.User)
-	return person.AgentInfo{
-		Status: func(ctx context.Context) (json.RawMessage, error) {
-			r, err := svc.Status(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(r)
-		},
-		Target: person.TargetDTO(t),
-	}
 }
 
 // logGuard logs the agent's guard as the engine starts serving it. A guard
@@ -831,7 +856,7 @@ func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 		log.Error("the guard cannot serve this agent; only status works until it is installed or upgraded",
 			"guard", st.State, "installed", st.Installed, "build", st.Build, "missingBreaking", st.MissingBreaking)
 	case st.State == guard.GuardUpgradeAvailable:
-		log.Warn("the guard misses non-breaking migrations; basalt upgrade adds them", "missingNonBreaking", st.MissingNonBreaking)
+		log.Warn("the guard misses non-breaking migrations; the guard update basalt init links to adds them", "missingNonBreaking", st.MissingNonBreaking)
 	}
 }
 
@@ -909,14 +934,10 @@ func linkSecrets(dir, agent string, log *slog.Logger) *links.Secrets {
 // directory: <stateDir>/<agent>.links.json.
 const linkSecretsSuffix = ".links.json"
 
-// dropLink ends what a dropped link has: its token at the Vault and its
-// direct sessions.
+// dropLink ends what a dropped link has: its token at the Vault.
 func (env agentEnv) dropLink(token channel.LinkToken) {
 	if env.relay != nil {
 		env.relay.Unregister(token)
-	}
-	if env.direct != nil {
-		env.direct.EndLink(token)
 	}
 }
 

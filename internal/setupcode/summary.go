@@ -60,8 +60,8 @@ type ExcludedTable struct {
 	Owner string
 }
 
-// Summary is what basalt init --setup-code shows before the SQL, one line
-// per item (CONTRACT.md, basalt init --setup-code, step 5): what the code
+// Summary is what the setup shows before the SQL, one line
+// per item (CONTRACT.md, The setup checks, step 5): what the code
 // does to the agent's role, in fixed words; the prefix and statement
 // timeout; the fingerprint to compare with the agent's; what the agent
 // gets, in words; and a flag per table outside public. A Payload that
@@ -175,7 +175,7 @@ func listWords(items []string) string {
 }
 
 // UpgradeLine is the fixed sentence for a guard upgrade from version from to
-// version to: an UPGRADE code's summary, and basalt upgrade's.
+// version to: an UPGRADE code's summary.
 func UpgradeLine(from, to int) string {
 	return fmt.Sprintf("This upgrades Basalt's guard from version %d to %d; no agent changes.", from, to)
 }

@@ -1,15 +1,15 @@
 # Install guide
 
-From nothing to your agent's first guarded write, in about three minutes. It works with Supabase and with any plain Postgres you can log in to as an admin (RDS, self-hosted).
+From nothing to your agent's first guarded write. It works with Supabase and with any plain Postgres you can log in to as an admin (RDS, self-hosted).
+
+Type your database's admin connection string only on the setup page, never to the agent.
 
 You need:
 
-- macOS or Linux.
-- A Postgres you own. You need its admin connection string, the one for the `postgres` user.
+- macOS or Linux, with a desktop session. The first install asks for your administrator password in the system's own dialog. On a machine with no desktop, such as an SSH session, setup stops there; for a bot on a machine you cannot reach, use [bot-setup.md](bot-setup.md).
+- A Postgres you own, and its admin connection string, the one for the `postgres` user.
 - A browser on the same machine, with a passkey (your laptop's own, a security key, or your phone through the browser).
-- An MCP client. Examples below use Claude Code; [`mcp-clients.md`](mcp-clients.md) has the JSON for others.
-
-The admin connection string is used once, by `basalt init`, typed into its hidden prompt. It is never stored. Do not export it or put it on a command line.
+- An MCP client. [`mcp-clients.md`](mcp-clients.md) has the configuration for Claude Code, Codex, OpenCode and others.
 
 ## 1. Install `basalt`
 
@@ -79,21 +79,17 @@ Fill in `[PASSWORD]` with your database password, URL-encoding characters such a
 
 **Plain Postgres.** `postgresql://postgres:PASSWORD@HOST:5432/DBNAME?sslmode=require`
 
+Paste it on the setup page only. If you paste it to your agent by mistake, change that database password now.
+
 ### Databases signed by their own CA
 
-Basalt checks the database's certificate whenever it can. Supabase and Amazon RDS sign with their own roots, which Basalt carries, so their hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project. Download that CA from your provider and add it as a trust profile on the engine's machine:
-
-```sh
-basalt trust add --name mydb --match '=db.example.com' --ca ./ca.pem
-```
-
-Or let Basalt read it from the server and pin it for that one host, as SSH does: `basalt init` asks on first use, and `basalt trust pin --host db.example.com` asks any time. It shows the certificate's SHA-256; check it against your provider's console (Cloud SQL: `gcloud sql ssl server-ca-certs list`) before you say yes. Without a terminal, pass `--trust-root <SHA-256>`. If the database later presents another CA, `basalt status` says `TRUST_ROOT_CHANGED` with both fingerprints, and `basalt trust pin` accepts the new one.
-
-`--match` takes one host (`=db.example.com`) or a domain whose hosts it covers (`example.com`), never a bare public suffix such as `com`. Use `sudo` when the engine runs as a service. The engine uses the profile from its next connection; no restart. `basalt trust list` shows every profile, its roots' fingerprints and expiry dates, and which one verifies each agent's database. `basalt status` warns 90 days before a root in use expires. Naming the CA with `sslrootcert=/path/ca.pem` in the connection string still works and wins over any profile.
+Supabase and Amazon RDS hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project. For those, the setup page shows the certificate and asks whether to trust it for that host only. Check the SHA-256 it shows against your provider's console before you say yes. A pin on your provider's own CA accepts any certificate that CA signs, so where the provider shares one CA across customers, someone who is both another customer and on the network path to your database could pose as it. Your password still stays off the wire, because Postgres signs in with SCRAM.
 
 ### Connections
 
-Each agent's engine opens up to 4 connections to the database, plus 1 while `basalt status` runs. Postgres caps each agent role at 8 connections (`CONNECTION LIMIT 8`).
+### Connections
+
+Each agent's engine opens up to 4 connections to the database, plus 1 while the `status` tool runs. Postgres caps each agent role at 8 connections (`CONNECTION LIMIT 8`).
 
 Budget for it. The number of agents times 8 must fit next to your app's own connections, within the limit your database allows in total.
 
@@ -101,51 +97,22 @@ Budget for it. The number of agents times 8 must fit next to your app's own conn
 
 If it does not fit, run fewer agents per database or move to a bigger instance.
 
-When an agent hits its cap, `basalt status` reports `TOO_MANY_CONNECTIONS` with this message:
+When an agent hits its cap, its `status` tool reports `TOO_MANY_CONNECTIONS` with this message:
 
 > The agent <name> has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes.
 
-## 3. Create a table to guard (skip if you have one)
+## 3. Set up with the sample database
 
-[`examples/demo/seed.sql`](../examples/demo/seed.sql) creates a schema `basalt_demo` with `leads` (30 rows) and `lead_notes` (20 rows). Nothing else is touched.
+Ask your agent to set up BasaltDB with the sample data.
 
-- Supabase: paste the file into the SQL editor and run it.
-- Plain Postgres: `psql -h HOST -U postgres DBNAME -f examples/demo/seed.sql` (psql asks for the password).
+1. Enter your administrator password when your system asks, once. It creates the engine's OS user (`_basalt` on macOS, `basalt` on Linux) and starts the engine as a service. `basalt` must sit in a folder only root can change, such as `/usr/local/bin`; a Homebrew install does.
+2. A setup page opens at `http://localhost:8787/setup/`. Your agent shows you the same link if the browser did not open. Port 8787 must be free: `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it.
+3. Check that the page names the OS user your agent runs as. Paste the admin connection string, press **Check**, read the SQL, and press **Set up**. If the database has no passkey for this page, the browser asks you to register one first.
+4. The page ends with `demo ready: leads 30, lead_notes 20`, the `basalt mcp` line for your agent, and your passkey's check code.
 
-To guard your own tables instead, use them in step 4 in place of `basalt_demo.leads` and `basalt_demo.lead_notes`.
+You get the schema `basalt_demo` with `leads` (30 rows) and `lead_notes` (20 rows), the agent `demo_bot` with write access to those two tables and nothing else, the `basalt_meta` guard schema and the `basalt_*` roles. The SQL runs in one transaction. Running setup again keeps the demo rows and the agent's password.
 
-## 4. Install the guard: `basalt init`
-
-You run this step yourself, in your own terminal: it asks for the admin connection string. An agent never runs it. If an agent is setting up Basalt for you, it uses `basalt init --remote` and gives you a setup code instead ([bot-setup.md](bot-setup.md)).
-
-```sh
-basalt init --agent demo_bot \
-  --write basalt_demo.leads --read basalt_demo.lead_notes
-```
-
-`--write` lists tables the agent may read and write, `--read` tables it may only read. Both take a comma-separated list of `schema.table`. Init asks, in order:
-
-1. `Admin connection string (used once, never stored):` Paste the string from step 2. Nothing is echoed.
-2. It prints a short summary of the setup SQL (pass `--show-sql` to print the SQL), then `Run this SQL as postgres? [y/N]`. Type `y`.
-3. `basalt: guard installed; agent role basalt_agent_demo_bot`
-4. It prints a `http://localhost:8787/passkeys/register#...` link. Open it, press the button, confirm with your passkey, copy the `basalt-passkey.1....` code the page shows, and paste it at `Paste the code the page shows:`. Then `basalt: passkey registered for localhost`.
-5. `Install the engine as a background service? This creates the OS user _basalt and needs your password once. [Y/n]` Press Enter. (On Linux the user is `basalt`.) Init runs one `sudo`, installs and starts the service, then checks it:
-
-   `basalt: engine running as _basalt; it answered on /Library/Application Support/Basalt/run/demo_bot.sock` (on Linux, `/run/basalt/demo_bot.sock`)
-
-   It then prints the MCP command to use in step 5.
-
-If some of the agent's tables have row-level security on and no policy lets the agent see rows, init shows a checklist of those tables grouped by schema, every table checked. Arrow keys move, `→` and `←` open and close a schema, Space toggles a table, `a` toggles the whole schema under the cursor, Enter confirms. A checked table gets a policy for the agent role only; an unchecked table stays hidden and the agent reads zero rows from it. Supabase can turn row-level security on for every new table, so this can happen with the demo tables too.
-
-Without a terminal (a script or a non-interactive run, with the answers piped in), init prints the same tables grouped by schema on stderr and reads one line from stdin: `all`, `none`, or a list of `schema.table` and `schema.*` separated by commas. An empty line or the end of input means `all`. The line comes after the admin connection string (when it is not in `BASALT_ADMIN_DATABASE_URL`) and before the `Run this SQL as ...? [y/N]` answer:
-
-```sh
-printf 'us.*,global.user_router\ny\n' | BASALT_ADMIN_DATABASE_URL=... basalt init --agent bot --write us.orders --no-service
-```
-
-To skip the line, give the list as the flag: `--agent-rls=us.*,global.user_router` (also `all-rows` and `none`). A name that matches no table with hidden rows stops init with a usage error before anything is written. With `--yes` or `--dry-run` the line is not read and the answer is `all`: every table with hidden rows gets the policy, and init prints one line naming them. Pass `--agent-rls=none` or a list to change that.
-
-Port 8787 must be free while init waits for the passkey and afterwards for the engine. If it is taken, init says so; `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it.
+An agent that runs as your own OS user could show you a fake `localhost` page that asks for the admin string, or replace a `basalt` binary in a folder you can write to. Before you paste the admin string, check the address bar (`localhost:8787`) and the OS user the page names. Signing stays safe either way: Postgres checks the page's exact origin, port included.
 
 Check the engine:
 
@@ -157,20 +124,15 @@ It prints `ok`.
 
 ### Engine memory
 
-The engine keeps its PII dictionary within `pii.maxMemoryMB` in `engine.json` (default 512). It sets the Go memory limit (`GOMEMLIMIT`) to twice that unless you set `GOMEMLIMIT` yourself. `basalt service install` also writes limits into the service:
+The engine keeps its PII dictionary within `pii.maxMemoryMB` in `engine.json` (default 512). It sets the Go memory limit (`GOMEMLIMIT`) to twice that unless you set `GOMEMLIMIT` yourself. The service's unit carries limits of its own: on Linux, systemd `MemoryHigh` (3 times `maxMemoryMB`) and `MemoryMax` (4 times), written when the service is installed and not changed by later edits of `engine.json`. On macOS the launchd plist carries a `ResidentSetSize` of the same sizes, which current macOS does not enforce, so the engine's only limit there is `GOMEMLIMIT`.
 
-- **Linux:** the systemd unit gets `MemoryHigh` (3 × `maxMemoryMB`) and `MemoryMax` (4 ×). These are written when the service is installed and do not follow later edits of `engine.json`. After you raise `pii.maxMemoryMB`, run `sudo basalt service install` again with the same flags, or systemd may throttle or stop the engine below its new budget.
-- **macOS:** the launchd plist gets `SoftResourceLimits` and `HardResourceLimits` with a `ResidentSetSize` of the same sizes, but current macOS does not enforce `ResidentSetSize`. The engine's only memory limit there is `GOMEMLIMIT`. Under memory pressure the OS can still evict the pages of the memory-mapped dictionary file.
+## 4. Connect your MCP client
 
-## 5. Wire your MCP client
-
-Claude Code:
+Register the `basalt mcp` line the page showed in your MCP client. For Claude Code:
 
 ```sh
 claude mcp add basalt-demo_bot -- /usr/local/bin/basalt mcp --agent demo_bot
 ```
-
-(If the `claude` CLI was on your `PATH`, init offered to run this and may have done it already.) Start `claude` and run `/mcp`: `basalt-demo_bot` should show as connected with its tools (`run_start`, `query`, `write` and others).
 
 Any other client takes the same command and arguments:
 
@@ -185,9 +147,9 @@ Any other client takes the same command and arguments:
 }
 ```
 
-No database URL goes in the client config. The agent never holds one; the engine does.
+Do not put a database URL in the client config. Start the client and check that `basalt-demo_bot` is connected with its tools (`run_start`, `query`, `write` and others).
 
-## 6. First `query` and `write`
+## 5. First `query` and `write`
 
 Give the agent these prompts.
 
@@ -207,33 +169,17 @@ The result is `"status": "APPLIED"` with `"rows": 3`. A write with no intent is 
 
 > Mark every lead whose status is NEW as CONTACTED. Intent: "Mark new leads contacted".
 
-A write of 11 to 50 rows, or any `DELETE`, is held. The agent shows you `Held for your approval: ...` with a `http://localhost:8787/approvals/<id>#s=...` link. Open it, check the rows, and approve with your passkey. The agent's write returns `APPLIED` on its own. If you take longer than about 90 seconds, tell the agent you approved and it applies the write. The agent cannot approve; only your passkey can. More in [`approving.md`](approving.md).
+A write of 11 to 50 rows, or any `DELETE`, is held. The agent shows you `Held for your approval: ...` with a link to `http://localhost:8787/approvals/<id>#s=...`. Open it, check the rows, and approve with your passkey. The agent's write returns `APPLIED` on its own. If you take longer than about 90 seconds, tell the agent you approved and it applies the write. The agent cannot approve; only your passkey can. More in [`approving.md`](approving.md).
 
-**See the record and undo it.** Run both as yourself, without `sudo`. You cannot read the engine's config or the agent's credential, so the commands ask the running engine over its person socket, which admits only the OS users `basalt init` recorded as the person (`--person-uid`, by default the person who ran it). `RUN_ID` is the run id the agent returned from `run_start`.
+**See the record and undo it.** Ask the agent what it did in the run, then to undo it. Open the link it gives you, check the rows and sign with your passkey. Rows you changed after the agent are left as they are. [`approving.md`](approving.md) has the steps.
 
-```sh
-basalt log --agent demo_bot --run RUN_ID
-basalt revert --agent demo_bot --run RUN_ID
-```
+## Update
 
-`basalt approve --agent demo_bot` works the same way. `revert` prints a link to the revert page. Open it, check the rows, and sign with your passkey. If the page shows a code, paste it at the `Paste the code the revert page showed:` prompt. Rows a person changed after the agent are left as they are.
-
-If the engine is stopped, these commands say so and print the command that starts it. If your OS user is not recorded, they print the `basalt init --person-uid` command that adds it.
-
-**When the agent runs as you.** If you leave out `--os-user`, the agent runs as your own OS user, and `basalt init` prints a warning beginning `basalt: warning: the agent runs as OS user ..., which is also the person the engine admits on its person socket`. The engine cannot tell two processes of the same OS user apart, so while you and the agent share a user:
-
-- `basalt log`, `approve` and `revert` over the socket see only this agent's ledger.
-- The agent can run these commands too. It still cannot approve a held write or sign a revert, because both need your passkey.
-
-To keep the agent off the person socket, run it as its own OS user: `basalt init --os-user <user>`.
-
-## Upgrade
-
-Once a day `basalt` looks at the public release list of BasaltDBHq/BasaltDB (nothing else is sent) and, when a newer release is out, prints one line on stderr after a command: yellow normally, red for a security release. To turn the check off, set `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`.
+When a newer release is out, your agent tells you. The engine checks the public release list of BasaltDBHq/BasaltDB once a day and sends nothing else. To turn the check off, set `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`.
 
 Upgrade the binary the way you installed it: `brew upgrade basaltdbhq/tap/basaltdb`, or install the new release over the old one at the same path (for the service, the root-owned copy it runs, for example `sudo install -o root -m 0755 basalt /usr/local/libexec/basalt`).
 
-The engine restarts onto the new binary by itself, with or without the service, and in a container started with `basalt engine --user`:
+The engine restarts onto the new binary by itself, with or without the service, and in a container:
 
 - It looks at the path it was started from every 5 seconds. Once the new file has stopped changing, it runs `basalt version` on it, and when it started from a root-owned binary it checks the new one is root-owned too.
 - It waits for a moment when no agent call is running (up to 2 minutes), stops taking calls, closes its sockets and runs the new binary in the same process: same process id, same OS user, same files. Its log says `a new basalt binary is installed` and then `restarting onto the upgraded binary`.
@@ -246,89 +192,63 @@ To restart it by hand anyway:
 
 You do not restart your agent's MCP client. `basalt mcp`, the process the client started, only relays to the engine and keeps running; it waits up to 15 seconds for the engine to come back. A call the engine turned away because it was restarting was not run, so `basalt mcp` sends it to the new engine. A read the engine was answering when it stopped (`query`, `describe`, `list_pending`, `list_runs`, `run_history`, `status`) is sent once more to the new engine. A `write`, an approval or a revert that may have started is never sent twice: the agent is told the call may or may not have run, and it reads before it writes again.
 
-Then, if `basalt status --agent NAME` says the guard can be upgraded, run `basalt upgrade --agent NAME`; the engine serves again without a restart.
+Then, if the agent's `status` says the guard can be updated, ask the agent for the update link and run the update on that page; the engine serves again without a restart.
 
 How the pieces talk, for reference: the client starts `basalt mcp` over stdio; it dials the engine's Unix socket for that agent and forwards each message. The engine holds the credential and talks to Postgres. When the engine is down, `basalt mcp` answers `status` and the tool list itself and every other call with `ENGINE_UNREACHABLE`.
 
+**The guard in your database.** After a binary upgrade your agent may say the guard can be updated. Ask it to update the guard, open the link it gives you, and paste the admin connection string there. The update applies only the migrations your database lacks. It changes no password, grant or policy.
+
 ## Containers without systemd
 
-A container usually has no service manager: PID 1 is your process or a small init such as `tini`, so `basalt init` cannot install the engine service there. Run the engine as its own OS user with `basalt engine --user` instead, started as root by the container's entrypoint:
-
-```sh
-tini -- basalt engine --user basalt --config /etc/basalt/engine.json
-```
-
-Before it reads anything, the engine:
-
-1. Refuses to go on unless it runs as root or already as `basalt`, and refuses `--user root` and a user whose group, or one of whose groups, is root's (gid 0).
-2. Refuses a `basalt` binary anyone but root could change (the same check as `basalt service install`, step 1).
-3. Makes `/run/basalt` (`0755`, for the sockets) and `/var/lib/basalt` (`0700`, its state), owned by `basalt`, as the systemd unit would.
-4. Sets the supplementary groups, the group and the user to `basalt`'s, sets the umask to `0077` and, on Linux, `no_new_privs`, then checks that every thread runs as `basalt` with no capability left and that root cannot be taken back.
-
-Only then does it open `engine.json`, the agent's credential, the sockets and the pages port. Its first log line is `basalt engine: dropped root; running as basalt (uid ..., gid ...); no_new_privs set`. A failed step stops it with nothing read.
-
-**What does not apply.** The systemd unit's sandbox (`ProtectSystem`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, the kernel and cgroup protections) and its memory limits (`MemoryHigh`, `MemoryMax`, see [Engine memory](#engine-memory)) do not exist without systemd. The engine keeps `GOMEMLIMIT`; set a memory limit on the container yourself. In a container, **the OS user split is what protects the credential**: the config and the credential are `0600` files of `basalt`, and the agent must run as another OS user, best in another container that mounts only the socket directory.
-
-**Setup.** Until `basalt init` sets up a container itself, run it once as the engine's user with explicit paths, so the files it writes are that user's: `basalt init --agent NAME --os-user AGENT_USER --config /etc/basalt/engine.json --socket-dir /run/basalt ...`. The `--os-user` must exist in the engine's container with the uid the agent runs as, and `/etc/basalt` must exist, owned by `basalt`, mode `0750`. Init then prints the foreground start command; use `basalt engine --user basalt --config /etc/basalt/engine.json` as the container's command instead.
-
-[`examples/compose`](../examples/compose/README.md) is a tested `docker compose` setup: Postgres, the engine, and an agent container that shares only the socket volume.
-
-On macOS `--user` works the same way when started as root (a launchd job you write yourself), with `/Library/Application Support/Basalt/run` and `.../state` as the directories, but macOS has no `no_new_privs`. The engine runs no other program, so there is nothing for it to stop.
+A container usually has no service manager: PID 1 is your process or a small init such as `tini`. The administrator dialog cannot install the engine service there. BasaltDB has no container setup of its own: run `basalt engine --config /etc/basalt/engine.json` as an OS user other than the agent's, with that user's files (`0600` config and credential) only that user can read. The systemd unit's sandbox and memory limits do not exist without systemd; set a memory limit on the container yourself.
 
 ## If something is off
 
-- `tables ... not found in database`: step 3 did not run in this database, or the connection string points at another one. Init checks first and changes nothing.
-- The agent reads zero rows from a table that has rows: row-level security is on with no policy for the agent. Run step 4 again and leave the table checked in the row-level security checklist, or add `--agent-rls=all-rows` (or `--agent-rls=schema.table`).
-- `/mcp` shows the server failed, or the connection closes at once: the engine admits only the OS user that ran `init` (`--os-user`, you by default). Start the client as that user. The engine log is `/Library/Logs/Basalt/engine.log` on macOS and `journalctl -u basalt-engine` on Linux.
-- `guard schema vN is older than this build's vM`: run the `basalt init` command from step 4 again with the same flags. It keeps the agent's password.
-- If `basalt init` or `basalt service install` says the binary is not owned by root: the engine service will only run a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy, or use `--no-service`.
-- No `sudo`, or you do not want a service: add `--no-service` to `basalt init`. It then prints the one `basalt engine --config ...` command to run in the foreground as you. Writes are still guarded in Postgres, but your user can read the agent's credential file.
+- `/mcp` shows the server failed, or the connection closes at once: the engine admits only the OS user the setup page named. Start the client as that user. The engine log is `/Library/Logs/Basalt/engine.log` on macOS and `journalctl -u basalt-engine` on Linux.
+- Your agent says the guard is outdated: update it as in "Update" above.
+- Your agent reads zero rows from a table that has rows: row-level security is on with no policy for the agent. Ask your agent for a new setup link and answer the row-level security question for that table on the page.
+- Setup says the binary is not owned by root: the service runs only a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy.
+- Setup says there is no administrator dialog: it needs a desktop session.
+- The page says `JOB_UNAVAILABLE`: the engine is run by a bot, or it is already set up and the page was an install. Ask your agent for a new link.
 
 ## Remove everything
 
-```sh
-basalt uninstall
-sudo basalt service uninstall
-```
+Ask your agent to remove BasaltDB. On the page that opens, pick **Remove BasaltDB**, paste the admin connection string, read the SQL and type the database's name to confirm. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey.
 
-`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds. `basalt uninstall` also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data`.
+If you remove within 90 seconds of the page opening, your computer then asks for your password once, in its own administrator dialog. Otherwise the page says **Last step**: ask your agent to finish removing BasaltDB, and the dialog comes when it runs `basalt init` once more. That stops and removes the engine service, and everything it put on the computer:
 
-### What `service uninstall` leaves behind
-
-`service uninstall` removes only the service unit. It keeps the rest on purpose, so that running `basalt init` again finds its config and credentials and does not have to start over:
-
-| Kept | Linux | macOS |
+| Removed | Linux | macOS |
 |---|---|---|
-| Config directory: `engine.json` and `agents/<name>.url`, the agent's database credential | `/etc/basalt` | `/Library/Application Support/Basalt` |
+| The service unit | `/etc/systemd/system/basalt-engine.service` | `/Library/LaunchDaemons/dev.basaltdb.engine.plist` |
+| Config directory: `engine.json` and the agents' credentials | `/etc/basalt` | `/Library/Application Support/Basalt` |
 | State directory: the engine's keys, PII dictionary, ledger chain heads and link secrets | `/var/lib/basalt` | `/Library/Application Support/Basalt/state` |
-| Logs | none on disk; the engine logs to the journal (`journalctl -u basalt-engine`), which the system keeps | `/Library/Logs/Basalt`: the engine's `engine.log`, and in `plugins/` the stderr log of a plugin that is no longer installed (`service uninstall` deletes the logs of the plugins it removes). After an upgrade from an earlier release, the old logs are in `/Library/Logs/Basalt.old-<time>`, which `service install` printed |
-| The engine's OS user and group | `basalt` | `_basalt` |
+| Socket directory | `/run/basalt` | `/Library/Application Support/Basalt/run` |
+| Logs | none on disk; the journal keeps what the engine logged | `/Library/Logs/Basalt`, and `/Library/Logs/Basalt.old-*` from an upgrade |
+| Plugins: their service units, installed copies, trusted keys, sockets, logs and log rules | `/etc/systemd/system/basalt-plugin-*.service`, `/opt/basalt` | `/Library/LaunchDaemons/dev.basaltdb.plugin-*.plist`, `/etc/newsyslog.d/basalt-plugin-*.conf`, `/Library/Basalt` |
+| OS users and groups | `basalt` and every `basalt-plugin-*` | `_basalt` and every `_basalt-plugin-*` |
 
-The socket directory (`/run/basalt` on Linux, `/Library/Application Support/Basalt/run` on macOS) holds only sockets and the engine's lock. It goes away on Linux when the service stops; on macOS it sits inside the config directory and goes with it.
+The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. An OS user that can log in is never deleted; the dialog names it instead. If you close the dialog, ask your agent again: the dialog comes back, with no page.
 
-Once you have run `basalt uninstall`, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
-
-On Linux:
+**Limit: a restart in between.** If the computer restarted after the page's Remove and before the dialog ran, the engine has no config and waits for a new install, so the agent can no longer finish the removal. Remove the service by hand then. On Linux:
 
 ```sh
-sudo rm -rf /etc/basalt /var/lib/basalt
+sudo systemctl disable --now basalt-engine.service
+sudo rm -f /etc/systemd/system/basalt-engine.service /etc/systemd/system/basalt-plugin-*.service
+sudo systemctl daemon-reload
+sudo rm -rf /etc/basalt /var/lib/basalt /opt/basalt
 sudo userdel basalt
 ```
-
-`userdel` also removes the `basalt` group, which `service install` created with the user. Delete the group with `sudo groupdel basalt` if it is still listed.
 
 On macOS:
 
 ```sh
-sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-*
+sudo launchctl bootout system/dev.basaltdb.engine
+sudo rm -f /Library/LaunchDaemons/dev.basaltdb.engine.plist /Library/LaunchDaemons/dev.basaltdb.plugin-*.plist /etc/newsyslog.d/basalt-plugin-*.conf
+sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-* /Library/Basalt
 sudo dscl . -delete /Users/_basalt
 sudo dscl . -delete /Groups/_basalt
 ```
 
-Remove the user last, after the files it owns. If you plan to run `basalt init` again, you can keep the config directory, the user and the state directory. The state directory holds each agent's ledger chain head. After a new install the engine sees that the head belongs to the old ledger, records that in the new ledger and starts a new head. `basalt status` and `basalt log` then show a notice that the ledger was reinstalled, so that a reinstall nobody on your team made does not go unnoticed.
+Plugin OS users (`basalt-plugin-*`, `_basalt-plugin-*`) are deleted the same way, with `userdel` or `dscl`.
 
-## Coming soon
-
-- Browser-only setup, for a person without a terminal, and the hosted relay that removes the pasting of approval codes.
-
-For a bot on a server you cannot log in to, see [`setup-from-laptop.md`](setup-from-laptop.md) (for you) and [`bot-setup.md`](bot-setup.md) (for the bot).
+For a bot on a server you cannot log in to, see [`bot-setup.md`](bot-setup.md).

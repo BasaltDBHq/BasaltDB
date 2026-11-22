@@ -137,7 +137,7 @@ func TestSystemdUnit(t *testing.T) {
 	for _, want := range []string{
 		"User=basalt\n",
 		"Group=basalt\n",
-		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json\n",
+		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json --supervise\n",
 		"RuntimeDirectory=basalt\n",
 		"RuntimeDirectoryMode=0755\n",
 		"StateDirectory=basalt\n",
@@ -154,7 +154,7 @@ func TestSystemdUnit(t *testing.T) {
 
 	spaced := linuxSpec()
 	spaced.ConfigPath = `/etc/my basalt/engine "x".json`
-	require.Contains(t, service.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json"`)
+	require.Contains(t, service.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise`)
 	require.Contains(t, service.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
 }
 
@@ -163,7 +163,7 @@ func TestLaunchdDaemon(t *testing.T) {
 	plist := service.LaunchdDaemon(darwinSpec())
 	for _, want := range []string{
 		"<string>dev.basaltdb.engine</string>",
-		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>",
+		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
 		"<key>UserName</key>\n\t<string>_basalt</string>",
 		"<key>GroupName</key>\n\t<string>_basalt</string>",
 		"<key>KeepAlive</key>\n\t<true/>",
@@ -287,54 +287,6 @@ func TestApplyStopsAtTheFirstFailure(t *testing.T) {
 	require.Empty(t, sys.written, "no unit written after a failed step")
 }
 
-func TestUninstallPlan(t *testing.T) {
-	t.Parallel()
-	sys := newFake()
-	sys.exists[service.SystemdUnitPath] = true
-	steps, err := service.UninstallPlan(sys, linuxSpec())
-	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
-	require.Equal(t, []string{"systemctl disable --now basalt-engine.service", "systemctl daemon-reload"}, sys.ran)
-	require.Equal(t, []string{service.SystemdUnitPath}, sys.removed)
-
-	sys = newFake()
-	sys.exists[service.LaunchdPlist] = true
-	steps, err = service.UninstallPlan(sys, darwinSpec())
-	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
-	require.Equal(t, []string{"launchctl bootout system/dev.basaltdb.engine"}, sys.ran)
-	require.Equal(t, []string{service.LaunchdPlist}, sys.removed)
-
-	// The plugins' log directory goes when it is there and empty.
-	sys = newFake()
-	sys.exists["/Library/Logs/Basalt/plugins"] = true
-	steps, err = service.UninstallPlan(sys, darwinSpec())
-	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
-	require.Equal(t, []string{service.LaunchdPlist, "/Library/Logs/Basalt/plugins"}, sys.removed)
-}
-
-// Uninstalling again, the unit already gone: nothing to stop, so systemd's
-// "Unit file does not exist" or launchd's "not loaded" never fails it on a
-// host where the service manager runs.
-func TestUninstallAgainSucceeds(t *testing.T) {
-	t.Parallel()
-	for name, spec := range map[string]service.Spec{"linux": linuxSpec(), "darwin": darwinSpec()} {
-		sys := newFake()
-		sys.exists["/run/systemd/system"] = true
-		// Stopping a service that is not there fails, as it does for real.
-		sys.failOn = map[string]string{"linux": "systemctl disable", "darwin": "launchctl bootout"}[name]
-		steps, err := service.UninstallPlan(sys, spec)
-		require.NoError(t, err)
-		err = service.Apply(context.Background(), sys, steps, false, &strings.Builder{})
-		require.NoError(t, service.Settle(err, sys, spec.GOOS), name)
-		for _, ran := range sys.ran {
-			require.NotContains(t, ran, sys.failOn, name)
-		}
-		require.Len(t, sys.removed, 1, "a missing unit file is not an error: %s", name)
-	}
-}
-
 // Whether the service manager runs decides whether a skipped step is
 // expected: launchd always runs; systemd only when it booted the system.
 func TestManagerRunning(t *testing.T) {
@@ -360,32 +312,6 @@ func TestSettleSkippedSteps(t *testing.T) {
 	require.ErrorIs(t, service.Settle(skipped, sys, "linux"), service.ErrStepsSkipped)
 }
 
-// Without a running service manager (a container without systemd) the
-// unit is still removed; the steps that failed are named as skipped.
-func TestUninstallWithoutAServiceManager(t *testing.T) {
-	t.Parallel()
-	for name, spec := range map[string]service.Spec{"linux": linuxSpec(), "darwin": darwinSpec()} {
-		sys := newFake()
-		sys.exists[service.SystemdUnitPath], sys.exists[service.LaunchdPlist] = true, true
-		sys.failOn = map[string]string{"linux": "systemctl", "darwin": "launchctl"}[name]
-		steps, err := service.UninstallPlan(sys, spec)
-		require.NoError(t, err)
-		var out strings.Builder
-		require.ErrorIs(t, service.Apply(context.Background(), sys, steps, false, &out), service.ErrStepsSkipped, name)
-		require.Empty(t, sys.ran, name)
-		require.Len(t, sys.removed, 1, "the unit file is removed: %s", name)
-		require.Contains(t, out.String(), "skipped "+sys.failOn, name)
-		require.Contains(t, out.String(), "exit status 1", name)
-	}
-
-	// An install step that fails still stops the install.
-	sys := newFake()
-	sys.failOn = "systemctl"
-	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
-	require.NoError(t, err)
-	require.Error(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
-}
-
 func TestSpecValidate(t *testing.T) {
 	t.Parallel()
 	bad := []service.Spec{
@@ -399,8 +325,6 @@ func TestSpecValidate(t *testing.T) {
 		_, err := service.InstallPlan(context.Background(), newFake(), s)
 		require.Error(t, err, "%+v", s)
 	}
-	_, err := service.UninstallPlan(newFake(), service.Spec{GOOS: "windows"})
-	require.Error(t, err)
 }
 
 func TestPickFreeID(t *testing.T) {
@@ -445,6 +369,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 		"mkdir -m 0700 -o basalt /etc/basalt/agents",
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
+		"systemctl reset-failed basalt-engine.service",
 		"systemctl restart basalt-engine.service",
 		"mkdir -m 0755 -o root /opt/basalt",
 		"mkdir -m 0755 -o root /opt/basalt/run",
@@ -469,8 +394,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
 }
 
-// basalt engine --user makes the directories a container has no service
-// manager to make, with the modes the unit gives them.
+// The install makes the directories with the modes the unit gives them.
 func TestEngineDirsMatchTheUnit(t *testing.T) {
 	dirs := service.EngineDirs("linux")
 	require.Len(t, dirs, 2)

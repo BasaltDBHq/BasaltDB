@@ -105,14 +105,6 @@ func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.Applie
 	return action.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
 }
 
-func (a *heldAgent) IssueApprovalLink(context.Context, uuid.UUID, string) (string, error) {
-	return "", agent.ErrNotThisAgent
-}
-
-func (a *heldAgent) IssueRevertLink(context.Context, uuid.UUID, string) (string, error) {
-	return "", agent.ErrNotThisAgent
-}
-
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
 func (a *heldAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }
@@ -166,6 +158,12 @@ type vaultSession struct {
 func newVaultSession(t *testing.T) *vaultSession {
 	t.Helper()
 	w := &wire{}
+	return newVaultSessionWith(t, w, vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe})
+}
+
+// newVaultSessionWith is newVaultSession behind a fake Vault with opts.
+func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSession {
+	t.Helper()
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	id := uuid.Must(uuid.NewV7())
@@ -175,7 +173,7 @@ func newVaultSession(t *testing.T) *vaultSession {
 		secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential(),
 		receipt: agent.Receipt{Token: "basalt-receipt.1.cA.cw"},
 	}
-	s := serveOverVault(t, w, held, store, id)
+	s := serveOverVaultWith(t, w, opts, held, store, id)
 	s.agent, s.person = held, person
 	return s
 }
@@ -184,13 +182,19 @@ func newVaultSession(t *testing.T) *vaultSession {
 // that records into w, and issues and registers a relay link for item id.
 func serveOverVault(t *testing.T, w *wire, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
 	t.Helper()
-	v := vaulttest.New(vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe})
+	return serveOverVaultWith(t, w, vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe}, a, store, id)
+}
+
+// serveOverVaultWith is serveOverVault with the fake Vault's options.
+func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+	t.Helper()
+	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
 	relay := newRelayLinks(quietLog())
 	site := pages.New(links.Portal, quietLog())
 	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, site, nil)
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, site)
 	require.NotNil(t, ev.client)
 	relay.add("bot", store, ev.client.Unregister)
 	ctx, cancel := context.WithCancel(context.Background())

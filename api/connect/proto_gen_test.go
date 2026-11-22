@@ -87,12 +87,15 @@ func TestGeneratedCodeMatchesProto(t *testing.T) {
 	sort.Strings(want)
 	sort.Strings(got)
 	require.Equal(t, []string{
+		"SetupService.CheckRemove(CheckRemoveRequest) CheckRemoveResponse",
 		"SetupService.CheckSetup(CheckSetupRequest) CheckSetupResponse",
 		"SetupService.CollectAddress(CollectAddressRequest) CollectAddressResponse",
 		"SetupService.DescribeSetup(DescribeSetupRequest) DescribeSetupResponse",
 		"SetupService.HandoffStatus(HandoffStatusRequest) HandoffStatusResponse",
 		"SetupService.OfferAddress(OfferAddressRequest) OfferAddressResponse",
 		"SetupService.ReportReach(ReportReachRequest) ReportReachResponse",
+		"SetupService.RevokePasskey(RevokePasskeyRequest) RevokePasskeyResponse",
+		"SetupService.RunRemove(RunRemoveRequest) RunRemoveResponse",
 		"SetupService.RunSetup(RunSetupRequest) RunSetupResponse",
 	}, want, "connect.proto's service")
 	require.Equal(t, want, got, "the generated service differs from connect.proto: run make proto")
@@ -125,7 +128,7 @@ func TestConnectionStringIsSensitive(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, 2, found, "CheckSetupRequest and RunSetupRequest carry database_url")
+	require.Equal(t, 5, found, "CheckSetupRequest, RunSetupRequest, CheckRemoveRequest, RunRemoveRequest and RevokePasskeyRequest carry database_url")
 	require.Equal(t, 5, tickets, "CheckSetupResponse, RunSetupResponse, HandoffStatusRequest, HandoffStatusResponse and OfferAddressRequest carry the hand-off ticket, which holds the address")
 	require.Equal(t, 3, addresses, "the database CheckSetup names, the address CollectAddress returns and the address ReportReach sends are marked")
 }

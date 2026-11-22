@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -613,83 +614,104 @@ func isHex(s string) bool {
 // Roles are cluster objects that
 // DROP SCHEMA leaves behind; DROP OWNED BY revokes their grants in this
 // database. A role with privileges in another database fails to drop.
+// It runs what PlanUninstall plans, in order.
 func Uninstall(ctx context.Context, q Querier, n Names) error {
-	if err := n.Validate(); err != nil {
+	drops, err := PlanUninstall(ctx, q, n)
+	if err != nil {
 		return err
 	}
-	// Plain SQL: catalog join over role memberships. Only agent roles: from
-	// Postgres 16 an admin with CREATEROLE is also a member of the group
-	// (ADMIN, no INHERIT), and must never be dropped.
+	for _, sql := range drops {
+		if _, err := q.Exec(ctx, sql); err != nil {
+			return fmt.Errorf("uninstall: %w", err)
+		}
+	}
+	return nil
+}
+
+// PlanUninstall is the SQL Uninstall runs, read from the catalog and
+// changing nothing: the DROP POLICY of each policy named after an agent
+// role or the guard role, the DROP SCHEMA of basalt_meta, and for each of
+// those roles, the group and the owner that exists, its DROP OWNED and
+// DROP ROLE. It always drops basalt_meta (IF EXISTS), so a plan on a
+// database without Basalt still ends with that statement.
+func PlanUninstall(ctx context.Context, q Querier, n Names) ([]string, error) {
+	if err := n.Validate(); err != nil {
+		return nil, err
+	}
+	agents, err := AgentRoles(ctx, q, n)
+	if err != nil {
+		return nil, err
+	}
+	var drops []string
+	for _, role := range append(slices.Clone(agents), n.Guard()) {
+		policies, err := namedPolicyDrops(ctx, q, role)
+		if err != nil {
+			return nil, err
+		}
+		drops = append(drops, policies...)
+	}
+	// Plain SQL: DDL.
+	drops = append(drops, `DROP SCHEMA IF EXISTS basalt_meta CASCADE`)
+	for _, role := range append(agents, n.Agents(), n.Guard()) {
+		sql, err := roleDrop(ctx, q, role)
+		if err != nil {
+			return nil, err
+		}
+		if sql != "" {
+			drops = append(drops, sql)
+		}
+	}
+	return drops, nil
+}
+
+// AgentRoles are the agent roles of n: the members of its agents group
+// named with its agent infix. Only agent roles: from Postgres 16 an admin
+// with CREATEROLE is also a member of the group (ADMIN, no INHERIT), and
+// must never be dropped.
+func AgentRoles(ctx context.Context, q Querier, n Names) ([]string, error) {
+	// Plain SQL: catalog join over role memberships.
 	rows, err := q.Query(ctx, `SELECT r.rolname::text FROM pg_catalog.pg_auth_members m
 		JOIN pg_catalog.pg_roles r ON r.oid = m.member
 		JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
 		WHERE g.rolname = $1 AND pg_catalog.pg_has_role(m.member, m.roleid, 'USAGE')
 		  AND starts_with(r.rolname::text, $2) ORDER BY 1`, n.Agents(), n.Prefix+agentInfix)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	agents, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return err
-	}
-	for _, role := range append(agents, n.Guard()) {
-		if err := dropNamedPolicies(ctx, q, role); err != nil {
-			return err
-		}
-	}
-	// Plain SQL: DDL.
-	if _, err := q.Exec(ctx, `DROP SCHEMA IF EXISTS basalt_meta CASCADE`); err != nil {
-		return err
-	}
-	for _, role := range append(agents, n.Agents(), n.Guard()) {
-		if err := dropRole(ctx, q, role); err != nil {
-			return err
-		}
-	}
-	return nil
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// dropNamedPolicies drops the row-level security policies named after role
-// and naming it: the guard's (attach, decision N12-7) and an agent's (init,
-// after the person confirmed it, decision "Agent RLS").
-func dropNamedPolicies(ctx context.Context, q Querier, role string) error {
+// namedPolicyDrops are the DROP POLICY statements of the row-level
+// security policies named after role and naming it: the guard's (attach,
+// decision N12-7) and an agent's (init, after the person confirmed it,
+// decision "Agent RLS").
+func namedPolicyDrops(ctx context.Context, q Querier, role string) ([]string, error) {
 	// Plain SQL: catalog lookup building DDL with quoted identifiers.
-	rows, err := q.Query(ctx, `SELECT format('DROP POLICY %I ON %s', p.polname, p.polrelid::regclass)
+	rows, err := q.Query(ctx, `SELECT pg_catalog.format('DROP POLICY %I ON %s', p.polname, p.polrelid::pg_catalog.regclass)
 		FROM pg_catalog.pg_policy p JOIN pg_catalog.pg_roles r ON r.oid = ANY (p.polroles)
 		WHERE p.polname = $1 AND r.rolname = $1 ORDER BY 1`, role)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	drops, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return err
-	}
-	for _, sql := range drops {
-		if _, err := q.Exec(ctx, sql); err != nil {
-			return fmt.Errorf("drop policy of %s: %w", role, err)
-		}
-	}
-	return nil
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-func dropRole(ctx context.Context, q Querier, role string) error {
+// roleDrop is the SQL that drops role, or "" when it does not exist.
+func roleDrop(ctx context.Context, q Querier, role string) (string, error) {
 	var exists bool
 	// Plain SQL: catalog lookup.
 	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
-		return err
+		return "", err
 	}
 	if !exists {
-		return nil
+		return "", nil
 	}
 	ident := pgx.Identifier{role}.Sanitize()
 	// Plain SQL: DDL on a quoted role name. DROP OWNED BY needs the role's
 	// privileges, which an admin that is not a superuser holds only through
 	// an inherited membership: from Postgres 16 its automatic ADMIN grant
 	// does not inherit, so take the membership first. DROP ROLE removes it.
-	if _, err := q.Exec(ctx, "GRANT "+ident+" TO CURRENT_USER;\nDROP OWNED BY "+ident+";\nDROP ROLE "+ident); err != nil {
-		return fmt.Errorf("drop role %s: %w", role, err)
-	}
-	return nil
+	return "GRANT " + ident + " TO CURRENT_USER;\nDROP OWNED BY " + ident + ";\nDROP ROLE " + ident, nil
 }
 
 // supabasePoolerHost is the host suffix of Supabase's pooler (Supavisor),

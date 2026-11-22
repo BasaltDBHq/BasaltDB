@@ -94,9 +94,8 @@ type ApprovalNotice struct {
 	ApprovalURL string `json:"approvalUrl,omitempty"`
 	// RequestFile is the request beside a hash link in ApprovalURL (CONTRACT.md,
 	// The request file and pasted blocks); nil with any other link.
-	RequestFile    *links.RequestFile `json:"requestFile,omitempty"`
-	ApproveCommand string             `json:"approveCommand"`
-	PersonMessage  string             `json:"personMessage"`
+	RequestFile   *links.RequestFile `json:"requestFile,omitempty"`
+	PersonMessage string             `json:"personMessage"`
 	// Links equals the body's links: the URLs of PersonMessage.
 	Links []Link `json:"links,omitempty"`
 }

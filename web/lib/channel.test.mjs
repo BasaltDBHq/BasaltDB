@@ -1,14 +1,13 @@
 // The page's side of a link session against the shared vectors the Go
 // engine runs too (api/mcp/vault/testdata), and its socket handling with a
-// fake WebSocket. internal/vault/direct_page_test.go runs a whole session
-// of this module against the engine's direct listener.
+// fake WebSocket.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   ChannelError,
+  checkReceipt,
   CLOSE,
-  DIRECT,
   engineIdOf,
   finishHandshake,
   fingerprint,
@@ -17,9 +16,11 @@ import {
   openFrame,
   pad,
   parseEngineKey,
+  RELAY,
   sealFrame,
   startHandshake,
   unpad,
+  verifySigned,
 } from "./channel.js";
 
 const subtle = globalThis.crypto.subtle;
@@ -56,6 +57,14 @@ for (const c of cases("link-derivation.json", "LINK_DERIVATION")) {
 test("a secret that is not 16 bytes is refused before any socket", async () => {
   for (const s of ["", "AAAA", "AAAAAAAAAAAAAAAAAAAAAAAA", "not base64url!!!!!!!!!"]) {
     assert.equal(await outcome(() => linkKeys(s)), "LINK");
+  }
+});
+
+test("message 1 is made only for the RELAY transport", async () => {
+  const keys = await linkKeys(load("handshake.json").cases[0].secret);
+  assert.equal((await startHandshake(RELAY, keys)).message.length, 99);
+  for (const t of ["DIRECT", "relay", "", undefined]) {
+    await assert.rejects(startHandshake(t, keys), /unknown transport/);
   }
 });
 
@@ -191,7 +200,7 @@ async function opened(options) {
 }
 
 test("the page sends exactly one 99-byte message 1 after the socket opens", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   await tick();
   assert.equal(ws.sent.length, 0, "nothing before open");
   ws.open();
@@ -203,7 +212,7 @@ test("the page sends exactly one 99-byte message 1 after the socket opens", asyn
 });
 
 test("a text message during the handshake closes with PROTOCOL", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   ws.open();
   await untilSent(ws);
   ws.message("hello");
@@ -212,7 +221,7 @@ test("a text message during the handshake closes with PROTOCOL", async () => {
 });
 
 test("a garbled message 2 closes with HANDSHAKE_FAILED and shows nothing", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   ws.open();
   await untilSent(ws);
   const junk = new Uint8Array(2 + 65 + 16 + 10);
@@ -225,16 +234,49 @@ test("a garbled message 2 closes with HANDSHAKE_FAILED and shows nothing", async
 });
 
 test("a socket that never opens fails without sending", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   ws.remoteClose(1006);
   await assert.rejects(opening, (e) => e.code === "CONNECTION_FAILED");
   assert.equal(ws.sent.length, 0);
 });
 
 test("the handshake times out", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET, handshakeMs: 200 });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET, handshakeMs: 200 });
   ws.open();
   await untilSent(ws);
   await assert.rejects(opening, (e) => e.code === "TIMEOUT");
   assert.equal(ws.closed, CLOSE.TIMEOUT);
+});
+
+// Every signing context: the page's verifier accepts the vectors' valid
+// signatures and refuses another context, key, message or encoding.
+for (const c of cases("signature.json", "SIGNATURE")) {
+  test(`signature: ${c.name}`, async () => {
+    const ok = await verifySigned(c.publicKey, c.context, fromHex(c.message), c.sig);
+    assert.equal(ok ? "ACCEPT" : "REFUSE", c.expect);
+  });
+}
+
+// Receipts, checked against the key the verifier expects (CONTRACT.md,
+// Receipts): a receipt signed by another key, naming another engine, or off
+// the closed schema is refused.
+for (const c of cases("receipt.json", "RECEIPT")) {
+  test(`receipt: ${c.name}`, async () => {
+    const payload = await checkReceipt(c.token, c.engineKey);
+    assert.equal(payload === null ? "REFUSE" : "ACCEPT", c.expect);
+    if (c.expect !== "ACCEPT") return;
+    assert.equal(payload.engineId, await engineIdOf(c.engineKey));
+    if (c.payloadJson !== undefined) assert.deepEqual(payload, JSON.parse(c.payloadJson));
+  });
+}
+
+test("a receipt token in another shape is refused", async () => {
+  const key = cases("receipt.json", "RECEIPT")[0].engineKey;
+  for (const token of ["", "basalt-receipt.1.", "basalt-receipt.2.a.b", "basalt-receipt.1.a.b.c", "basalt-receipt.1.!!.AA", null]) {
+    assert.equal(await checkReceipt(token, key), null, String(token));
+  }
+});
+
+test("the fingerprint is the engine id's first 16 characters in four groups of four", () => {
+  assert.equal(fingerprint("R68WFYxAcGgIjMENS5Oqrw"), "R68W FYxA cGgI jMEN");
 });

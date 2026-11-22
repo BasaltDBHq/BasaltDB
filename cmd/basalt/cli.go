@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
@@ -52,6 +51,11 @@ type cliIO struct {
 	// width is the terminal's width in columns, 0 when stdout is no
 	// terminal; tests set it.
 	width func() int
+	// systemConfigPath replaces the system path of engine.json in tests
+	// (empty: config.DefaultPath(goos)).
+	systemConfigPath string
+	// paths point commands at temporary files in tests.
+	paths pathOverrides
 	// goos is the platform whose paths and service manager init uses.
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,
@@ -65,32 +69,20 @@ type cliIO struct {
 	// probe tries a login bound to fail, to confirm a credential's TLS
 	// protection (hardenedCredential); probeLogin outside tests.
 	probe func(ctx context.Context, dsn string) error
-	// handoff reaches the connect service and the collected database when
-	// basalt status collects while the engine is down; the zero value is
-	// the contract's, and tests give their own.
-	handoff engine.HandoffOptions
-	// engine tells service mode from same-user mode and finds the person
-	// socket (log, approve, revert); tests replace it.
-	engine engineAccess
 	// fetchChain reads the chain a database presents with the TLS
 	// handshake alone, before a pin is offered (fetchChain outside tests;
 	// nil offers no pin).
 	fetchChain func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
-	// tunnelProbe fetches an engine address's /v1/engine for basalt tunnel
-	// (engineProbe outside tests).
-	tunnelProbe func(ctx context.Context, url string) (probeAnswer, error)
 }
 
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 	c := &cliIO{
 		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
-		agentLogin:  loginAsAgent,
-		dial:        connect,
-		engine:      osEngineAccess(runtime.GOOS),
-		tunnelProbe: engineProbe,
-		fetchChain:  fetchChain,
-		width:       func() int { return terminalWidth(std.out) },
+		agentLogin: loginAsAgent,
+		dial:       connect,
+		fetchChain: fetchChain,
+		width:      func() int { return terminalWidth(std.out) },
 	}
 	c.probe = probeLogin(c)
 	stdin := std.in
@@ -137,8 +129,23 @@ func (c *cliIO) fail(err error) int {
 const failIndent = "  "
 
 func (c *cliIO) flags(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs := newFlagSet(name)
 	fs.SetOutput(c.stderr)
+	return fs
+}
+
+// flagSetMade, when set, sees every flag set newFlagSet makes. Only the
+// surface test sets it, to read the flags the binary really has
+// (contract/surface.json).
+var flagSetMade func(*flag.FlagSet)
+
+// newFlagSet makes the flag set of a command or subcommand. Every command
+// makes its flag set here, so the surface test sees all of them.
+func newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	if flagSetMade != nil {
+		flagSetMade(fs)
+	}
 	return fs
 }
 
@@ -172,6 +179,12 @@ func (c *cliIO) adminURL() (string, error) {
 	if v := c.getenv(envAdminURL); v != "" {
 		return v, nil
 	}
+	return c.promptAdminURL()
+}
+
+// promptAdminURL asks for the admin connection string with a hidden
+// prompt; it never reads the environment.
+func (c *cliIO) promptAdminURL() (string, error) {
 	fmt.Fprint(c.stderr, "Admin connection string (used once, never stored): ")
 	if c.terminal != nil {
 		b, err := term.ReadPassword(int(c.terminal.Fd()))
@@ -179,26 +192,6 @@ func (c *cliIO) adminURL() (string, error) {
 		return strings.TrimSpace(string(b)), err
 	}
 	return c.line()
-}
-
-// confirm asks a yes/no question on stderr.
-func (c *cliIO) confirm(question string) (bool, error) {
-	fmt.Fprintf(c.stderr, "%s [y/N] ", question)
-	answer, err := c.line()
-	if err != nil {
-		return false, err
-	}
-	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
-}
-
-// confirmYes asks a yes/no question whose default (an empty answer) is yes.
-func (c *cliIO) confirmYes(question string) (bool, error) {
-	fmt.Fprintf(c.stderr, "%s [Y/n] ", question)
-	answer, err := c.line()
-	if err != nil {
-		return false, err
-	}
-	return answer == "" || strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
 }
 
 // connect opens one connection, usable through a transaction pooler

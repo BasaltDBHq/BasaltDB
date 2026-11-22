@@ -41,18 +41,6 @@ type stubAgent struct {
 	receipt agent.Receipt
 }
 
-func (a *stubAgent) IssueApprovalLink(_ context.Context, id uuid.UUID, proof string) (string, error) {
-	if id != a.known || proof != "good" {
-		return "", agent.ErrNotThisAgent
-	}
-	secret, err := a.secrets.Issue(id, time.Now().Add(time.Hour))
-	return links.WithSecret(links.Approval(a.origin, id), secret), err
-}
-
-func (a *stubAgent) IssueRevertLink(context.Context, uuid.UUID, string) (string, error) {
-	return "", agent.ErrNotThisAgent
-}
-
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
 func (a *stubAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }
@@ -196,9 +184,8 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 		"/reverts/" + id:         "../lib/revert.js",
 		"/plugins/" + id:         "../lib/plugin.js",
 		"/passkeys/register":     "../lib/register.js",
-		"/passkeys/check":        "../lib/passkeys.js",
-		"/passkeys/forget":       "../lib/passkeys.js",
-		"/lib/manage.js":         "signalUnknownCredential",
+		"/passkeys/check":        "404",
+		"/passkeys/forget":       "404",
 		"/passkeys/":             "404",
 		"/lib/approve.js":        "pageId",
 		"/lib/local.js":          "RelayError",
@@ -263,8 +250,8 @@ func TestPagesRelayChecks(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, status, out)
 	require.Empty(t, a.relayed)
 
-	// The page's own post: through the tunnel the browser's Origin is
-	// http://localhost:<port>, the page origin.
+	// The page's own post: forwarded to localhost, the browser's Origin
+	// is http://localhost:<port>, the page origin.
 	// The answer carries the engine's receipt of the signature.
 	a.receipt = agent.Receipt{Token: "basalt-receipt.1.cA.cw", Line: "Approved: ..."}
 	status, out = s.do(t, http.MethodPost, path, host, s.origin, "application/json", body, secret)

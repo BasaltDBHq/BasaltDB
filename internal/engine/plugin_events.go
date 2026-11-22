@@ -40,14 +40,14 @@ const pluginEventTimeout = 15 * time.Second
 // what to do; the engine writes the record at its next start.
 const (
 	whyNoPluginEvents = "this agent's guard is older than schema version 3, so its plugin record could not be written; " +
-		"run basalt upgrade for this agent, then restart the engine"
+		"update it through the link basalt init prints for this agent, then restart the engine"
 	whyNoGuard = "this agent's database has no guard, so its plugin record could not be written; " +
 		"install the guard, then restart the engine"
 	whyNotAdmitted = "this agent is served status only until its guard or setup is ready, so its plugin record was not written; " +
 		"restart the engine once it is"
 	whyRefused       = "the guard refused its plugin record (see the engine's log); restart the engine once it is fixed"
 	whyKeyNotTrusted = "the key that signed it is no longer in the trust store, so it is not served; " +
-		"trust the key again with basalt plugin trust, or disable the plugin, then restart the engine"
+		"put the key back in the trust store, or disable the plugin, then restart the engine"
 	whyTrustUnread = "the trust store could not be read, so the record of the key that signed it was not written; " +
 		"restart the engine once the trust store can be read"
 	whyUnreachable = "its plugin record could not be written to this agent's ledger; " +

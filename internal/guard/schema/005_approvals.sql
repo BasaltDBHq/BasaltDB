@@ -598,7 +598,7 @@ BEGIN
     IF v_remaining = 0 AND NOT coalesce(p_force, false) THEN
         RAISE EXCEPTION USING ERRCODE = 'BS007', MESSAGE = 'NOT_ALLOWED',
             DETAIL = 'this is the last active passkey: nothing held could be approved or reverted without one',
-            HINT = 'pass force to revoke it anyway, then register another with basalt init --add-passkey';
+            HINT = 'pass force to revoke it anyway, then register another on the setup page (basalt init)';
     END IF;
     UPDATE basalt_meta.passkeys k SET revoked_at = clock_timestamp(), revoked_by = session_user
      WHERE k.credential_id = p_credential_id;

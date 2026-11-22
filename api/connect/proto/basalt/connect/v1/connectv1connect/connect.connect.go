@@ -71,6 +71,14 @@ const (
 	// SetupServiceOfferAddressProcedure is the fully-qualified name of the SetupService's OfferAddress
 	// RPC.
 	SetupServiceOfferAddressProcedure = "/basalt.connect.v1.SetupService/OfferAddress"
+	// SetupServiceCheckRemoveProcedure is the fully-qualified name of the SetupService's CheckRemove
+	// RPC.
+	SetupServiceCheckRemoveProcedure = "/basalt.connect.v1.SetupService/CheckRemove"
+	// SetupServiceRunRemoveProcedure is the fully-qualified name of the SetupService's RunRemove RPC.
+	SetupServiceRunRemoveProcedure = "/basalt.connect.v1.SetupService/RunRemove"
+	// SetupServiceRevokePasskeyProcedure is the fully-qualified name of the SetupService's
+	// RevokePasskey RPC.
+	SetupServiceRevokePasskeyProcedure = "/basalt.connect.v1.SetupService/RevokePasskey"
 )
 
 // SetupServiceClient is a client for the basalt.connect.v1.SetupService service.
@@ -97,6 +105,15 @@ type SetupServiceClient interface {
 	// The page: puts a hold the service lost (a restart) back, with the
 	// ticket's own expiry. No database access.
 	OfferAddress(context.Context, *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error)
+	// The Remove BasaltDB tab: what removing BasaltDB from the database
+	// drops. No setup code. Changes nothing.
+	CheckRemove(context.Context, *connect.Request[v1.CheckRemoveRequest]) (*connect.Response[v1.CheckRemoveResponse], error)
+	// The Remove BasaltDB tab: removes BasaltDB from the database in one
+	// transaction, once confirm_name is the database's name.
+	RunRemove(context.Context, *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error)
+	// The Update check: revokes one passkey with the admin connection, for a
+	// code with a target, in one transaction. The last one may go.
+	RevokePasskey(context.Context, *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error)
 }
 
 // NewSetupServiceClient constructs a client for the basalt.connect.v1.SetupService service. By
@@ -152,6 +169,24 @@ func NewSetupServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(setupServiceMethods.ByName("OfferAddress")),
 			connect.WithClientOptions(opts...),
 		),
+		checkRemove: connect.NewClient[v1.CheckRemoveRequest, v1.CheckRemoveResponse](
+			httpClient,
+			baseURL+SetupServiceCheckRemoveProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("CheckRemove")),
+			connect.WithClientOptions(opts...),
+		),
+		runRemove: connect.NewClient[v1.RunRemoveRequest, v1.RunRemoveResponse](
+			httpClient,
+			baseURL+SetupServiceRunRemoveProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("RunRemove")),
+			connect.WithClientOptions(opts...),
+		),
+		revokePasskey: connect.NewClient[v1.RevokePasskeyRequest, v1.RevokePasskeyResponse](
+			httpClient,
+			baseURL+SetupServiceRevokePasskeyProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("RevokePasskey")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -164,6 +199,9 @@ type setupServiceClient struct {
 	reportReach    *connect.Client[v1.ReportReachRequest, v1.ReportReachResponse]
 	handoffStatus  *connect.Client[v1.HandoffStatusRequest, v1.HandoffStatusResponse]
 	offerAddress   *connect.Client[v1.OfferAddressRequest, v1.OfferAddressResponse]
+	checkRemove    *connect.Client[v1.CheckRemoveRequest, v1.CheckRemoveResponse]
+	runRemove      *connect.Client[v1.RunRemoveRequest, v1.RunRemoveResponse]
+	revokePasskey  *connect.Client[v1.RevokePasskeyRequest, v1.RevokePasskeyResponse]
 }
 
 // DescribeSetup calls basalt.connect.v1.SetupService.DescribeSetup.
@@ -201,6 +239,21 @@ func (c *setupServiceClient) OfferAddress(ctx context.Context, req *connect.Requ
 	return c.offerAddress.CallUnary(ctx, req)
 }
 
+// CheckRemove calls basalt.connect.v1.SetupService.CheckRemove.
+func (c *setupServiceClient) CheckRemove(ctx context.Context, req *connect.Request[v1.CheckRemoveRequest]) (*connect.Response[v1.CheckRemoveResponse], error) {
+	return c.checkRemove.CallUnary(ctx, req)
+}
+
+// RunRemove calls basalt.connect.v1.SetupService.RunRemove.
+func (c *setupServiceClient) RunRemove(ctx context.Context, req *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error) {
+	return c.runRemove.CallUnary(ctx, req)
+}
+
+// RevokePasskey calls basalt.connect.v1.SetupService.RevokePasskey.
+func (c *setupServiceClient) RevokePasskey(ctx context.Context, req *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error) {
+	return c.revokePasskey.CallUnary(ctx, req)
+}
+
 // SetupServiceHandler is an implementation of the basalt.connect.v1.SetupService service.
 type SetupServiceHandler interface {
 	// What the code asks for, in words, and a passkey challenge. No database
@@ -225,6 +278,15 @@ type SetupServiceHandler interface {
 	// The page: puts a hold the service lost (a restart) back, with the
 	// ticket's own expiry. No database access.
 	OfferAddress(context.Context, *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error)
+	// The Remove BasaltDB tab: what removing BasaltDB from the database
+	// drops. No setup code. Changes nothing.
+	CheckRemove(context.Context, *connect.Request[v1.CheckRemoveRequest]) (*connect.Response[v1.CheckRemoveResponse], error)
+	// The Remove BasaltDB tab: removes BasaltDB from the database in one
+	// transaction, once confirm_name is the database's name.
+	RunRemove(context.Context, *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error)
+	// The Update check: revokes one passkey with the admin connection, for a
+	// code with a target, in one transaction. The last one may go.
+	RevokePasskey(context.Context, *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error)
 }
 
 // NewSetupServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -276,6 +338,24 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(setupServiceMethods.ByName("OfferAddress")),
 		connect.WithHandlerOptions(opts...),
 	)
+	setupServiceCheckRemoveHandler := connect.NewUnaryHandler(
+		SetupServiceCheckRemoveProcedure,
+		svc.CheckRemove,
+		connect.WithSchema(setupServiceMethods.ByName("CheckRemove")),
+		connect.WithHandlerOptions(opts...),
+	)
+	setupServiceRunRemoveHandler := connect.NewUnaryHandler(
+		SetupServiceRunRemoveProcedure,
+		svc.RunRemove,
+		connect.WithSchema(setupServiceMethods.ByName("RunRemove")),
+		connect.WithHandlerOptions(opts...),
+	)
+	setupServiceRevokePasskeyHandler := connect.NewUnaryHandler(
+		SetupServiceRevokePasskeyProcedure,
+		svc.RevokePasskey,
+		connect.WithSchema(setupServiceMethods.ByName("RevokePasskey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/basalt.connect.v1.SetupService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SetupServiceDescribeSetupProcedure:
@@ -292,6 +372,12 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 			setupServiceHandoffStatusHandler.ServeHTTP(w, r)
 		case SetupServiceOfferAddressProcedure:
 			setupServiceOfferAddressHandler.ServeHTTP(w, r)
+		case SetupServiceCheckRemoveProcedure:
+			setupServiceCheckRemoveHandler.ServeHTTP(w, r)
+		case SetupServiceRunRemoveProcedure:
+			setupServiceRunRemoveHandler.ServeHTTP(w, r)
+		case SetupServiceRevokePasskeyProcedure:
+			setupServiceRevokePasskeyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -327,4 +413,16 @@ func (UnimplementedSetupServiceHandler) HandoffStatus(context.Context, *connect.
 
 func (UnimplementedSetupServiceHandler) OfferAddress(context.Context, *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.OfferAddress is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) CheckRemove(context.Context, *connect.Request[v1.CheckRemoveRequest]) (*connect.Response[v1.CheckRemoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.CheckRemove is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) RunRemove(context.Context, *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.RunRemove is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) RevokePasskey(context.Context, *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.RevokePasskey is not implemented"))
 }

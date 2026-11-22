@@ -48,8 +48,8 @@ const (
 	maxField = 64
 )
 
-// Report is one saved crash. Its JSON is exactly what `basalt crash show`
-// prints and what the issue body is built from.
+// Report is one saved crash. Its JSON is what the issue body is built
+// from.
 type Report struct {
 	ID        string    `json:"id"`
 	Time      time.Time `json:"time"`
@@ -270,7 +270,7 @@ func (l *limitedReader) Read(p []byte) (int, error) {
 }
 
 // ErrNotFound is what Find returns for an id that matches no report.
-var ErrNotFound = errors.New("no crash report has that id (basalt crash list shows them)")
+var ErrNotFound = errors.New("no crash report has that id")
 
 // Find returns the report whose id is id. (Ids are UUIDv7, whose leading
 // characters are the time, so a prefix would rarely be unique.)
@@ -284,8 +284,7 @@ func Find(id string, dirs ...string) (Report, error) {
 	return Report{}, ErrNotFound
 }
 
-// Show is the text `basalt crash show` prints: exactly the report's JSON,
-// which is all that `basalt crash report` puts in the issue.
+// Show is the report's JSON, indented: all that its issue link carries.
 func (rep Report) Show() string {
 	raw, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {

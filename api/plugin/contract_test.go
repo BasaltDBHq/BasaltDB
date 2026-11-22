@@ -69,8 +69,6 @@ var kinds = []exampleKind{
 	{"person-result-remove", "approval/person.schema.json#/$defs/removeResult", nil},
 	{"person-error", "approval/person.schema.json#/$defs/error", nil},
 	{"engine-entries", "engine-entries.schema.json", []rule{ruleUniqueEntries, ruleConfigSize, ruleConfigNoCredential}},
-	{"wait-result", "approval/wait.schema.json", nil},
-	{"check-result", "check.schema.json", nil},
 }
 
 type exampleKind struct {
@@ -138,8 +136,6 @@ var wantFailure = map[string]string{
 	"invalid-person-error-unknown-reason.json":               "schema:/$defs/error/properties/error/properties/reason/enum",
 	"invalid-person-error-reason-without-refusal.json":       "schema:/$defs/error/properties/error/else",
 	"invalid-engine-entries-no-approval.json":                "schema:/items/allOf/1/required",
-	"invalid-wait-result-unknown-state.json":                 "schema:/properties/state/enum",
-	"invalid-check-result-not-ready.json":                    "schema:/properties/health/properties/status/const",
 	"invalid-person-result-list-unknown-health.json":         "schema:/$defs/listedEntry/properties/health/enum",
 	"invalid-engine-entries-auth.json":                       "schema:/items/allOf/2",
 	"invalid-engine-entries-duplicate-instance.json":         "rule:uniqueEntries",
@@ -244,8 +240,8 @@ func newCompiler(t *testing.T) *jsonschema.Compiler {
 		"manifest.schema.json", "config.schema.json", "events.schema.json", "signature.schema.json",
 		"protocol/initialize.schema.json", "protocol/health.schema.json", "protocol/shutdown.schema.json",
 		"approval/binding.schema.json", "approval/request.schema.json", "approval/response.schema.json",
-		"approval/result.schema.json", "approval/person.schema.json", "engine-entries.schema.json",
-		"approval/wait.schema.json", "protocol/feed.schema.json", "protocol/deliver.schema.json", "check.schema.json",
+		"approval/person.schema.json", "engine-entries.schema.json",
+		"protocol/feed.schema.json", "protocol/deliver.schema.json",
 	} {
 		raw, err := os.ReadFile(f)
 		require.NoError(t, err)
@@ -693,8 +689,11 @@ const (
 	sentNameCue         = "It also sees values from your database that appear in that text."
 	sentUsedFor         = "Used for: <agents>."
 	sentAskedBy         = "Asked by <agent>."
-	sentFingerprint     = "Fingerprint: <fingerprint>"
-	computerBasaltRuns  = "the computer Basalt runs on"
+	sentFingerprint     = "Plugin fingerprint: <fingerprint>"
+	// sentPortalSameUser is the portal page's one sentence not derived
+	// from the binding (CONTRACT.md, Plugin approval through the portal).
+	sentPortalSameUser = "Basalt runs on the agent's own computer, as the same user as the agent. Your approval decides whether Basalt runs this plugin. It cannot stop the agent from reading what Basalt can."
+	computerBasaltRuns = "the computer Basalt runs on"
 )
 
 // hookSentence is what each hook sees, in plain words; hookLabel names that
@@ -1081,16 +1080,15 @@ type approvalVector struct {
 // binding, and the settings check, level, tick and sentences follow the
 // page's rules. The ledger details derived from each binding pass
 // events.schema.json, and one that lists agents fails it. The response code
-// decodes to response.schema.json and the result example passes
-// result.schema.json. Every fixed sentence is written in CONTRACT.md.
+// decodes to response.schema.json. Every fixed sentence is written in
+// CONTRACT.md.
 func TestPluginApprovalVectors(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("approval", "vectors.json"))
 	require.NoError(t, err)
 	var doc struct {
-		Vectors       []approvalVector `json:"vectors"`
-		Response      json.RawMessage  `json:"response"`
-		ResultExample json.RawMessage  `json:"resultExample"`
+		Vectors  []approvalVector `json:"vectors"`
+		Response json.RawMessage  `json:"response"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &doc))
 
@@ -1185,13 +1183,8 @@ func TestPluginApprovalVectors(t *testing.T) {
 	require.Positive(t, mismatches, "a settings mismatch")
 	require.Positive(t, wrongKinds, "a binding of another kind")
 
-	// The response travels as basalt-plugin.1.<base64url(json)>: carry it
-	// there and back, then check it.
-	const codePrefix = "basalt-plugin.1."
-	code := codePrefix + base64.RawURLEncoding.EncodeToString(doc.Response)
-	body, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(code, codePrefix))
-	require.NoError(t, err)
-	require.JSONEq(t, string(doc.Response), string(body))
+	// The page posts the response as JSON: check it against its schema.
+	body := []byte(doc.Response)
 	responseSchema := compile("approval/response.schema.json")
 	require.NoError(t, validate(responseSchema, body))
 	var incomplete map[string]any
@@ -1200,7 +1193,6 @@ func TestPluginApprovalVectors(t *testing.T) {
 	missing, err := json.Marshal(incomplete)
 	require.NoError(t, err)
 	require.Error(t, validate(responseSchema, missing), "a response without its signature")
-	require.NoError(t, validate(compile("approval/result.schema.json"), doc.ResultExample))
 
 	contract, err := contractdoc.Read()
 	require.NoError(t, err)
@@ -1209,7 +1201,7 @@ func TestPluginApprovalVectors(t *testing.T) {
 		sentChangeIsolation, sentHooksAdded, sentHooksRemoved, sentNamesAdded, sentValuesAdded, sentNamesRemoved,
 		sentValuesRemoved, sentEgressAdded, sentEgressRemoved, sentAgentsAdded, sentAgentsRemoved, sentSettingsChanged,
 		sentLevel1, sentLevel2, sentLevel3, sentTick, sentRemote, sentRemoteOnward, sentOwnUser, sentSameAccess,
-		sentNoNetwork, sentEgressLimit, sentNameCue, sentUsedFor, sentAskedBy, sentFingerprint,
+		sentNoNetwork, sentEgressLimit, sentNameCue, sentUsedFor, sentAskedBy, sentFingerprint, sentPortalSameUser,
 	}
 	for _, m := range []map[string]string{hookSentence, hookLabel} {
 		for _, s := range m {

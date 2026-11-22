@@ -4,7 +4,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,50 +69,6 @@ func TestChooseVault(t *testing.T) {
 	}
 }
 
-func TestInitRefusesVaultOnWithLocalPagesBeforeAnything(t *testing.T) {
-	t.Parallel()
-	for _, args := range [][]string{
-		{"--vault=on"},
-		{"--vault", "on", "--passkey-origin", "http://localhost:7777"},
-		{"--vault=on", "--passkey-origin", "https://console.basaltvault.app"},
-		{"--vault=maybe"},
-	} {
-		cfg := tempConfig(t)
-		r := cliNoDB(t, append([]string{"init", "--agent", "bot", "--write", "public.leads", "--no-service", "--config", cfg}, args...)...)
-		require.Equal(t, exitUsage, r.code, "%v: %s", args, r.stderr)
-		require.Empty(t, r.stdout, "no SQL: nothing ran")
-		require.NoFileExists(t, cfg)
-	}
-}
-
-func TestEngineSettingsCarryTheVaultChoice(t *testing.T) {
-	t.Parallel()
-	f := initFlags{configPath: "/etc/basalt/engine.json", socketDir: "/run/basalt", vault: vaultChoice{def: VaultModeOff, why: personDefaultWhy}}
-	s := engineSettings(f, "linux")
-	require.Empty(t, s.Vault, "no --vault: nothing forced")
-	require.Equal(t, config.VaultOff, s.VaultDefault)
-	f.vault.given = VaultModeOn
-	s = engineSettings(f, "linux")
-	require.Equal(t, config.VaultOn, s.Vault)
-}
-
-func TestServiceInstallPassesVaultOnlyWhenThePersonGaveIt(t *testing.T) {
-	t.Parallel()
-	f := initFlags{
-		agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman",
-		vault: vaultChoice{def: VaultModeOff, why: personDefaultWhy},
-	}
-	args := serviceInstallArgs(f, "/b")
-	require.Contains(t, args, "--vault-default=off")
-	for _, a := range args {
-		require.False(t, strings.HasPrefix(a, "--vault="), "no --vault without the person's choice: %v", args)
-	}
-	f.vault.given = VaultModeOff
-	args = serviceInstallArgs(f, "/b")
-	require.Contains(t, args, "--vault=off")
-	require.NotContains(t, args, "--vault-default=off")
-}
-
 func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
@@ -149,65 +104,23 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 
 func TestInitRemoteWritesTheVault(t *testing.T) {
 	t.Parallel()
-	base := []string{"--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL}
-	for _, tc := range []struct {
-		name  string
-		args  []string
-		want  string
-		line  string
-		dials bool
-	}{
-		{
-			"person default", nil, config.VaultOff,
-			"basalt: vault: off (default for --operated-by=person; --vault=on to turn it on)\n", false,
-		},
-		{
-			"agent default",
-			[]string{"--operated-by", "agent"},
-			config.VaultOn,
-			"basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n", true,
-		},
-		{
-			"agent turns it off",
-			[]string{"--operated-by", "agent", "--vault=off"},
-			config.VaultOff,
-			"basalt: vault: off (--vault=off)\n", false,
-		},
-		{"person turns it on", []string{"--vault", "on"}, config.VaultOn, "basalt: vault: on (--vault=on)\n", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			cfg := tempConfig(t)
-			r := remote(t, cfg, append(append([]string{}, base...), tc.args...)...)
-			require.Equal(t, tc.want, r.cfg.Vault)
-			require.Equal(t, tc.dials, r.cfg.VaultEnabled(), "the portal's pages: the engine dials out exactly when vault is ON")
-			require.Contains(t, r.stderr, tc.line)
-			fi, err := os.Stat(cfg)
-			require.NoError(t, err)
-			require.Equal(t, os.FileMode(config.FileMode), fi.Mode().Perm())
-		})
-	}
+	cfg := withState(t, tempConfig(t))
+	r := remote(t, cfg, "--agent", "bot")
+	require.Equal(t, config.VaultOn, r.cfg.Vault, "a new engine is agent-operated with the Vault on")
+	require.True(t, r.cfg.VaultEnabled(), "the portal's pages: the engine dials out exactly when vault is ON")
+	require.Contains(t, r.stderr, "basalt: vault: on\n")
+	fi, err := os.Stat(cfg)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(config.FileMode), fi.Mode().Perm())
 
-	t.Run("a rerun keeps the person's choice", func(t *testing.T) {
-		t.Parallel()
-		cfg := tempConfig(t)
-		first := remote(t, cfg, append(append([]string{}, base...), "--operated-by", "agent", "--vault=off")...)
-		require.Equal(t, config.VaultOff, first.cfg.Vault)
-		again := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--operated-by", "agent")
-		require.Equal(t, config.VaultOff, again.cfg.Vault, "no --vault: the engine never starts dialing out on its own")
-		require.False(t, again.cfg.VaultEnabled())
-		require.Contains(t, again.stderr, "basalt: vault: off (kept from engine.json; --vault=on to change)\n")
-	})
-
-	t.Run("a new operatedBy takes its default", func(t *testing.T) {
-		t.Parallel()
-		cfg := tempConfig(t)
-		first := remote(t, cfg, base...)
-		require.Equal(t, config.VaultOff, first.cfg.Vault)
-		again := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--operated-by", "agent")
-		require.Equal(t, config.VaultOn, again.cfg.Vault, "person to agent: the agent default, printed")
-		require.Contains(t, again.stderr, "basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n")
-	})
+	// A rerun keeps the config's choice: the engine never starts dialing
+	// out on its own.
+	installedAgent(t, noDB(t), cfg, supabaseDSN(t))
+	editConfig(t, cfg, func(c *config.Config) { c.Vault = config.VaultOff })
+	again := remote(t, cfg, "--agent", "bot")
+	require.Equal(t, config.VaultOff, again.cfg.Vault)
+	require.False(t, again.cfg.VaultEnabled())
+	require.Contains(t, again.stderr, "basalt: vault: off (kept from engine.json)\n")
 }
 
 func TestConfigUpsertAppliesTheVaultDefaultOnlyWhenThereIsNone(t *testing.T) {
@@ -260,44 +173,6 @@ func engineKeys(t *testing.T) (string, *channel.EngineKeys) {
 	keys, err := channel.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
 	require.NoError(t, err)
 	return stateDir, keys
-}
-
-// keyMaterial is every private value in the key file: what no output may
-// carry.
-func keyMaterial(t *testing.T, stateDir string) []string {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(stateDir, channel.KeyFileName))
-	require.NoError(t, err)
-	var f map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw, &f))
-	var out []string
-	for _, k := range []string{"signingKey", "boxKey"} {
-		v, ok := f[k]
-		require.True(t, ok, k)
-		var s string
-		if json.Unmarshal(v, &s) == nil {
-			out = append(out, s)
-			continue
-		}
-		var obj map[string]string
-		require.NoError(t, json.Unmarshal(v, &obj), k)
-		for _, s := range obj {
-			out = append(out, s)
-		}
-	}
-	require.NotEmpty(t, out)
-	return out
-}
-
-func requireNoKeyMaterial(t *testing.T, stateDir, out string) {
-	t.Helper()
-	for _, secret := range keyMaterial(t, stateDir) {
-		require.NotEmpty(t, secret)
-		require.NotContains(t, out, secret, "a private key")
-		if len(secret) > 32 {
-			require.NotContains(t, out, secret[:32], "part of a private key")
-		}
-	}
 }
 
 func TestLocalVault(t *testing.T) {
@@ -358,82 +233,4 @@ func TestLocalVault(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, os.FileMode(0o644), fi.Mode().Perm())
 	})
-}
-
-func TestPrintStatusShowsEveryVaultState(t *testing.T) {
-	t.Parallel()
-	stateDir, keys := engineKeys(t)
-	id := agent.VaultStatus{EngineID: keys.EngineID(), Fingerprint: keys.Fingerprint()}
-	idLine := "Engine id:    " + keys.Fingerprint() + " (id " + keys.EngineID() + ")\n"
-	for _, tc := range []struct {
-		state, want string
-		withID      bool
-	}{
-		{"OFF", "Vault:        OFF (approval links are the engine's own)\n", true},
-		{"CONNECTING", "Vault:        CONNECTING (approvals use long links until it is connected)\n", true},
-		{"CONNECTED", "Vault:        CONNECTED (approvals use portal short links)\n", true},
-		{"UNREACHABLE", "Vault:        UNREACHABLE (approvals still work, through long links)\n", true},
-		{"KEY_ERROR", "Vault:        KEY_ERROR (the engine's key file " + filepath.Join(stateDir, channel.KeyFileName) + " is refused", false},
-	} {
-		v := agent.VaultStatus{State: tc.state}
-		if tc.withID {
-			v.EngineID, v.Fingerprint = id.EngineID, id.Fingerprint
-		}
-		var w bytes.Buffer
-		printStatus(&w, statusOut{StatusReport: agent.StatusReport{Agent: "bot", Vault: &v}, StateDir: stateDir})
-		require.Contains(t, w.String(), tc.want, tc.state)
-		if tc.withID {
-			require.Contains(t, w.String(), idLine, tc.state)
-		} else {
-			require.NotContains(t, w.String(), "Engine id:", tc.state)
-		}
-		requireNoKeyMaterial(t, stateDir, w.String())
-	}
-
-	// Same-user mode with the Vault on: the id, and who knows the state.
-	var w bytes.Buffer
-	printStatus(&w, statusOut{StatusReport: agent.StatusReport{Agent: "bot"}, StateDir: stateDir, vaultID: &id})
-	require.Contains(t, w.String(), "Vault:        ON in the config; only the running engine knows whether it is connected")
-	require.Contains(t, w.String(), idLine)
-
-	// Nothing known: no vault lines.
-	w.Reset()
-	printStatus(&w, statusOut{StatusReport: agent.StatusReport{Agent: "bot"}, StateDir: stateDir})
-	require.NotContains(t, w.String(), "Vault:")
-	require.NotContains(t, w.String(), "Engine id:")
-}
-
-func TestStatusShowsTheEnginesVaultThroughThePersonSocket(t *testing.T) {
-	t.Parallel()
-	stateDir, keys := engineKeys(t)
-	for _, state := range []vault.State{vault.StateOff, vault.StateConnecting, vault.StateConnected, vault.StateUnreachable, vault.StateKeyError} {
-		t.Run(string(state), func(t *testing.T) {
-			t.Parallel()
-			v := &agent.VaultStatus{State: string(state)}
-			if state != vault.StateKeyError {
-				v.EngineID, v.Fingerprint = keys.EngineID(), keys.Fingerprint()
-			}
-			report := agent.StatusReport{Agent: "bot", OperatedBy: "PERSON", Engine: agent.EngineStatus{Reachable: true}, Vault: v, Problems: []agent.Problem{}}
-			socket := fakeEngine(t, report, dbTarget(t, "postgres://agent@db.example.com:5432/app"))
-
-			r := serviceCmd(t, runStatus, socket, nil, "--agent", "bot", "--json")
-			require.Equal(t, exitOK, r.code, r.stderr)
-			var out map[string]any
-			require.NoError(t, json.Unmarshal([]byte(r.stdout), &out))
-			got := out["vault"].(map[string]any)
-			require.Equal(t, string(state), got["state"])
-			if state == vault.StateKeyError {
-				require.Equal(t, map[string]any{"state": "KEY_ERROR"}, got)
-			} else {
-				require.Equal(t, keys.EngineID(), got["engineId"])
-				require.Equal(t, keys.Fingerprint(), got["fingerprint"])
-			}
-
-			text := serviceCmd(t, runStatus, socket, nil, "--agent", "bot")
-			require.Equal(t, exitOK, text.code, text.stderr)
-			require.Contains(t, text.stdout, "Vault:        "+string(state))
-			require.Equal(t, state != vault.StateKeyError, strings.Contains(text.stdout, "Engine id:    "+keys.Fingerprint()))
-			requireNoKeyMaterial(t, stateDir, r.stdout+r.stderr+text.stdout+text.stderr)
-		})
-	}
 }

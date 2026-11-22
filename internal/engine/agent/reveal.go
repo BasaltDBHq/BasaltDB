@@ -53,7 +53,7 @@ func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret strin
 		return approval.RevealAnswer{}, err
 	}
 	defer clear(key)
-	a, err := s.openApproval(ctx, id, nil)
+	a, err := s.openApproval(ctx, id)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
@@ -89,7 +89,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 		return approval.RevealAnswer{}, err
 	}
 	defer release()
-	r, err := s.openRevert(ctx, id, nil)
+	r, err := s.openRevert(ctx, id)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
@@ -228,7 +228,7 @@ func revealRefused(code, link string) error {
 		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Your passkey didn't confirm. Nothing was shown; try again.",
 	}
-	steps, err := NewSteps().OpenLink(link, "", "Open this page again and press Show values with passkey once more.").Build()
+	steps, err := NewSteps().OpenLink(link, "Open this page again and press Show values with passkey once more.").Build()
 	if err != nil {
 		return err
 	}

@@ -118,7 +118,7 @@ const ConnectPageFile = "connect/index.html"
 // same.
 func Options(base string) portalverify.Options {
 	o := portalverify.Options{
-		Base: base, Files: web.Files, Headers: websec.Expected(),
+		Base: base, Files: web.Files, Headers: websec.ExpectedPortal(),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
 		FileHeaders: map[string]http.Header{ConnectPageFile: websec.ExpectedConnectPage()},
@@ -172,7 +172,7 @@ func (c *Checker) Check(ctx context.Context) Result {
 	c.mu.Unlock()
 	switch {
 	case res.Mismatch():
-		c.log.Warn("the portal serves pages that differ from this build; run basalt portal verify for the files",
+		c.log.Warn("the portal serves pages that differ from this build",
 			"portal", res.PortalURL, "paths", res.Summary())
 	case res.Error != "":
 		c.log.Warn("the portal could not be checked", "portal", res.PortalURL, "err", res.Error)

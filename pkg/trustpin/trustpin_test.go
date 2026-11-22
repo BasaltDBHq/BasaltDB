@@ -195,6 +195,9 @@ func TestValidSHA256AndSubject(t *testing.T) {
 	long := *ca
 	long.Subject = pkix.Name{CommonName: strings.Repeat("é", 600)}
 	require.Len(t, []rune(trustpin.Seen{Top: &long}.Subject()), 512)
+	dirty := *seen.Top
+	dirty.Subject = pkix.Name{CommonName: "a\x00b\u202ec\u0085d\u2067e"}
+	require.Equal(t, "CN=abcde", trustpin.Seen{Top: &dirty}.Subject(), "controls and bidi controls are removed")
 }
 
 // A chain from an authority in the system's trust store is never pinned,

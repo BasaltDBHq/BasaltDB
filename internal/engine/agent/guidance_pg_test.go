@@ -63,7 +63,7 @@ func TestErrorsFromARealGuardCarryTheCatalogsSteps(t *testing.T) {
 	requireCatalogSteps(t, body, isError, "query", "SQL_ERROR", "")
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT amount FROM payroll", "runId": runID})
 	steps = requireCatalogSteps(t, body, isError, "query", "PERMISSION_DENIED", "")
-	require.Contains(t, str(t, steps[2]["command"]), "--dry-run", "Postgres names the table without its schema: the person sees the plan")
+	require.Equal(t, "basalt init --agent bot", str(t, steps[4]["command"]), "the setup page grants the table")
 
 	// STALE_READ: the first step is the query that reads the row again;
 	// following it and then the write goes through.
@@ -126,7 +126,7 @@ func TestHeldWriteStepsCarryTheLinkAndTheRepeat(t *testing.T) {
 	steps := requireCatalogSteps(t, body, isError, "write", "APPROVAL_REQUIRED", "HELD")
 	approval := approvalOf(t, body)
 	require.Equal(t, approval["approvalUrl"], steps[0]["url"])
-	require.Equal(t, approval["approveCommand"], steps[0]["command"])
+	require.Nil(t, steps[0]["command"], "the step is the link alone")
 	require.Equal(t, true, steps[1]["repeatCall"])
 	require.Equal(t, map[string]any{"approvalId": approval["approvalId"]}, stepArgs(t, steps[1]))
 	require.Equal(t, approval["personMessage"], body["personMessage"])
@@ -138,7 +138,7 @@ func TestHeldWriteStepsCarryTheLinkAndTheRepeat(t *testing.T) {
 	again["approvalId"] = approval["approvalId"]
 	body, isError = env.h.call(t, "write", again)
 	steps = requireCatalogSteps(t, body, isError, "write", "APPROVAL_INVALID", "NOT_SIGNED")
-	require.Equal(t, approval["approvalId"], str(t, steps[0]["command"])[len(str(t, steps[0]["command"]))-len(str(t, approval["approvalId"])):])
+	require.Nil(t, steps[0]["command"], "the person opens the link they were given, no command")
 }
 
 // The redo (AE-14): the person reverted the agent's run; preview_revert says
@@ -171,7 +171,8 @@ func TestRedoARevertedRun(t *testing.T) {
 	req := requestRevert(t, env.h, args)
 	require.Equal(t, "CHANGE", req["scope"])
 	require.Equal(t, revertChange, req["scopeId"])
-	done := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "signature": personCode(t, env, str(t, req["revertUrl"]))})
+	personSigns(t, env, str(t, req["revertUrl"]))
+	done := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "waitForSignature": 0})
 	require.Equal(t, "APPLIED", done["status"])
 	require.Equal(t, "won", leadStatus(t, env.d, 91), "the agent's values are back")
 	require.Equal(t, "person", leadStatus(t, env.d, 92), "the person's later change is skipped")

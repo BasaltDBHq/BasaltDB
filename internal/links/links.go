@@ -34,15 +34,6 @@ const (
 	// approval page).
 	PluginsPath  = "/plugins/"
 	RegisterPath = "/passkeys/register"
-	// CheckPath and ForgetPath are the passkey management page (M4.1):
-	// which passkeys a device has, and forgetting a removed one.
-	CheckPath  = "/passkeys/check"
-	ForgetPath = "/passkeys/forget"
-	// EnginesPath and EnginesAddPath are the portal's pin page (M4.1,
-	// CONTRACT.md, Direct transport): the engines this device pinned, and
-	// pinning one. Portal only: the engine's local pages never serve them.
-	EnginesPath    = "/engines"
-	EnginesAddPath = "/engines/add"
 	// ConnectPath is the portal's connect page (CONTRACT.md, The connect
 	// page): run a setup code through the connect service. Portal only.
 	ConnectPath = "/connect"
@@ -67,16 +58,6 @@ func PluginApproval(base string, id uuid.UUID) string {
 // Register is the passkey registration page: <base>/passkeys/register.
 func Register(base string) string {
 	return trim(base) + RegisterPath
-}
-
-// Check is the passkey check page: <base>/passkeys/check.
-func Check(base string) string {
-	return trim(base) + CheckPath
-}
-
-// Forget is the page that forgets a removed passkey: <base>/passkeys/forget.
-func Forget(base string) string {
-	return trim(base) + ForgetPath
 }
 
 func trim(base string) string {

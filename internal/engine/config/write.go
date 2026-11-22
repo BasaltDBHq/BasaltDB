@@ -26,9 +26,6 @@ type Settings struct {
 	// exception goes with the pages it is for.
 	PagesURL      string
 	DevLocalPages bool
-	// DirectAddr replaces directAddr when not empty ("off" turns it off);
-	// empty keeps what engine.json has.
-	DirectAddr string
 	// OperatedBy replaces the config's operatedBy when set.
 	OperatedBy string
 	// Mode replaces the config's mode when set.
@@ -196,9 +193,6 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	c.Vault = vault.Vault
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage, c.DevLocalPages = s.PagesURL, "", s.DevLocalPages
-	}
-	if s.DirectAddr != "" {
-		c.DirectAddr = s.DirectAddr
 	}
 	if s.OperatedBy != "" {
 		c.OperatedBy = s.OperatedBy
@@ -370,4 +364,39 @@ func addUIDs(have, add []uint32) []uint32 {
 		}
 	}
 	return have
+}
+
+// RemoveAgents removes the agents names from the config at path, and from
+// every plugin entry's agents, under the config's lock (lockConfig). When no agent is left, it removes the file
+// whole: a config needs one agent, and an engine with no config waits for
+// a first install. It returns whether it removed the file. A name the
+// config does not have is skipped.
+func RemoveAgents(path string, names []string) (removedFile bool, err error) {
+	f := pathFile(path)
+	unlock, err := f.lock()
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	c, err := load(f.path(), f.open)
+	if err != nil {
+		return false, err
+	}
+	c.Agents = slices.DeleteFunc(c.Agents, func(a Agent) bool { return slices.Contains(names, a.Name) })
+	// A plugin entry names the agents it serves; it keeps serving the
+	// others, and an empty list serves none.
+	for i := range c.Plugins {
+		c.Plugins[i].Agents = slices.DeleteFunc(slices.Clone(c.Plugins[i].Agents), func(a string) bool { return slices.Contains(names, a) })
+	}
+	if len(c.Agents) == 0 {
+		return true, os.Remove(path)
+	}
+	if err := c.check(); err != nil {
+		return false, fmt.Errorf("config %s: %w", path, err)
+	}
+	raw, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return false, f.write(append(raw, '\n'))
 }

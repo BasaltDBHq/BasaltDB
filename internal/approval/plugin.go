@@ -25,8 +25,6 @@ import (
 const (
 	// KindPlugin is the binding kind of a plugin approval.
 	KindPlugin = "PLUGIN"
-	// PluginResponsePrefix starts the code the plugin approval page outputs.
-	PluginResponsePrefix = "basalt-plugin.1."
 )
 
 // PluginBinding is the parsed binding text of a plugin approval, for the
@@ -201,18 +199,12 @@ func (r PluginApprovalResponse) Assertion() passkey.Assertion {
 	}
 }
 
-// Code returns the text the person gives the agent:
-// basalt-plugin.1.<base64url(json)>.
-func (r PluginApprovalResponse) Code() (string, error) {
-	return passkey.EncodeCode(PluginResponsePrefix, r)
-}
-
-// ParsePluginResponse decodes a pasted plugin approval code. Surrounding
-// whitespace is ignored; an unknown field, a missing one or another code's
-// prefix is refused.
-func ParsePluginResponse(code string) (PluginApprovalResponse, error) {
+// DecodePluginResponse decodes the signed response the plugin approval
+// page posts (its JSON), strictly: an unknown field or a missing one is
+// refused.
+func DecodePluginResponse(raw []byte) (PluginApprovalResponse, error) {
 	var r PluginApprovalResponse
-	if err := passkey.DecodeCode(PluginResponsePrefix, strings.TrimSpace(code), &r); err != nil {
+	if err := passkey.DecodeStrict(raw, &r); err != nil {
 		return PluginApprovalResponse{}, invalid("%v", err)
 	}
 	if r.ApprovalID == uuid.Nil || len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {

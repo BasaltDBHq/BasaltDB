@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/action"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -92,7 +91,7 @@ func TestApprovalNoticeHandsOverTheShortLinkFirst(t *testing.T) {
 	require.Contains(t, n.PersonMessage, "\n\n"+n.shortURL+"\n\n")
 	require.NotContains(t, n.PersonMessage, "#2.", "the long link stays out of the message")
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.shortURL}}, n.Links)
-	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "long", "no warning with a short link")
 }
 
@@ -105,7 +104,7 @@ func TestApprovalNoticeHandsOverALongLinkWithinTheBudget(t *testing.T) {
 	require.Equal(t, n.longURL, n.ApprovalURL)
 	require.Contains(t, n.PersonMessage, "\n\n"+n.longURL+"\n\n")
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.longURL}}, n.Links)
-	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "may arrive", "no warning within the budget")
 }
 
@@ -125,7 +124,7 @@ func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
 	require.NotContains(t, n.PersonMessage, "#2.", "no result hands over a long link over the budget")
 	require.Contains(t, n.PersonMessage, "open the request file the agent sends you (or paste its text blocks)")
 	require.Contains(t, n.PersonMessage, "\n\n"+n.ApprovalURL+"\n\n")
-	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.ApprovalURL}}, n.Links)
 }
 
@@ -144,12 +143,13 @@ func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
 	require.Empty(t, n.shortURL, "the engine keeps only the hash of the link it gave")
 	require.NotContains(t, n.PersonMessage, "http", "the person has the link the agent gave them")
 	require.Empty(t, n.Links)
-	require.Contains(t, n.PersonMessage, n.ApproveCommand)
+	require.Contains(t, n.PersonMessage, "Approve with the link you were given.")
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 }
 
 func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin", nil)
+	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin")
 	require.NoError(t, err)
 	lines := make([]string, 0, 40)
 	for i := range 40 { // many cascaded tables with long names make a long headline
@@ -221,7 +221,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.NotNil(t, over.File)
 	require.Equal(t, links.RevertFile(uuid.MustParse(caseRevertID)), over.File.FileName)
 	require.Equal(t, links.RequestHash(over.File.Text), over.URL[strings.Index(over.URL, "#h=")+3:])
-	require.Contains(t, over.Message, "Sign it with your passkey: open this link, then open the request file the agent sends you")
+	require.Contains(t, over.Message, "Review only, this link cannot be signed: open this link, then open the request file the agent sends you")
 	require.Contains(t, over.Message, "\n\n"+over.URL)
 	require.NotContains(t, over.Message, "#2.")
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
@@ -238,7 +238,7 @@ func TestRevertNoticeNamesOnlyTheFileWithoutBlocks(t *testing.T) {
 	require.NotNil(t, n.File)
 	require.Greater(t, len(n.File.Text), links.RequestPieceChars*links.RequestMaxBlocks, "the fixture must need more than ten blocks")
 	require.Nil(t, n.File.Blocks)
-	require.Contains(t, n.Message, "open the request file the agent sends you. The page")
+	require.Contains(t, n.Message, "open the request file the agent sends you:")
 	require.NotContains(t, n.Message, "text blocks")
 	requirePersonMessage(t, n.Message, n.Links)
 }
@@ -256,42 +256,14 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	}
 }
 
-// TestApprovalMessageStaysWithinTheLimitWithALongConfigPath: the approve
-// command names --config, so a long path would push the message over 500
-// characters; the message then points to the command in the step instead.
-func TestApprovalMessageStaysWithinTheLimitWithALongConfigPath(t *testing.T) {
+// TestPersonMessagesNameNoCommandWithALongConfigPath builds the
+// personMessages that once offered a command named after --config, with a
+// 252-character path: each stays within the limit and names no basalt
+// command, since the person acts on a link (CONTRACT.md, Next steps).
+func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	t.Parallel()
 	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux", nil)
-	require.NoError(t, err)
-	id := uuid.New()
-	command := cmds.Approve(id)
-	require.Contains(t, command, long)
-	lead := "Held for your approval: " + strings.Repeat("Delete 1 row in a table with many cascaded rows ", 2)[:96] + "."
-	for _, pick := range []handOver{
-		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort},
-		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#h=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkHash, File: &links.RequestFile{Blocks: []string{"b"}}},
-	} {
-		text, _ := approvalMessage(lead, pick, command, "Expires 2026-11-12 07:02 UTC.")
-		require.NoError(t, CheckPersonMessage(text), text)
-		require.Contains(t, text, "approve command the agent shows you")
-		require.NotContains(t, text, long)
-	}
-
-	// A short path keeps the command in the message.
-	short, err := NewCommands("pbot", "/etc/basalt/engine.json", "linux", nil)
-	require.NoError(t, err)
-	text, _ := approvalMessage(lead, handOver{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort}, short.Approve(id))
-	require.Contains(t, text, short.Approve(id))
-}
-
-// TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath builds
-// every personMessage that carries a command named after --config with a
-// 252-character path.
-func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testing.T) {
-	t.Parallel()
-	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux", nil)
+	cmds, err := NewCommands("pbot", long, "linux")
 	require.NoError(t, err)
 	s := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
 	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
@@ -307,20 +279,22 @@ func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testin
 	var te *mcp.ToolError
 	require.ErrorAs(t, err, &te)
 	messages["nothing to revert, task"] = te.PersonMessage
-	require.Equal(t, cmds.Revert(scope), te.NextSteps[len(te.NextSteps)-1].Command, "the command stays in a PERSON step")
+	for _, st := range te.NextSteps {
+		require.Empty(t, st.Command, "no command for other agents' changes in the task")
+	}
 	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
 	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
 	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)
 	messages["rls warning"] = w.PersonMessage
-	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", cmds.Approve(uuid.New()), time.Now().Add(time.Hour))
+	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", time.Now().Add(time.Hour))
 
 	for name, m := range messages {
 		require.NoError(t, CheckPersonMessage(m), "%s: %s", name, m)
+		require.NotContains(t, m, long, name)
+		require.NotContains(t, m, "basalt ", "%s: the person runs no command", name)
 	}
-	// The preview timeout holds two commands: it must have been cut.
-	require.Contains(t, messages["timeout "+toolPreviewRevert], commandElsewhere)
 }
 
 // requireSendRequestFirst checks a result over the budget: requestFile beside
@@ -334,7 +308,7 @@ func requireSendRequestFirst(t *testing.T, steps []mcp.NextStep, file *links.Req
 	require.Equal(t, mcp.ActionSendRequest, steps[0].Action, where)
 	require.Equal(t, sendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, "", fmt.Sprintf("%s step %d", where, i+1))
+		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}
 	require.NotEqual(t, mcp.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
 }

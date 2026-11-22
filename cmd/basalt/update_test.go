@@ -3,10 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
@@ -82,28 +76,15 @@ func releaseBuild(t *testing.T) {
 	t.Cleanup(func() { buildinfo.Version = old })
 }
 
-func engineSays(state string, err error) func(context.Context) (person.PagesDTO, error) {
-	return func(context.Context) (person.PagesDTO, error) {
-		return person.PagesDTO{UpdateCheck: state}, err
-	}
-}
-
-func noEngine(t *testing.T) func(context.Context) (person.PagesDTO, error) {
-	return func(context.Context) (person.PagesDTO, error) {
-		t.Error("the engine was asked although the config was read")
-		return person.PagesDTO{}, errors.New("unexpected")
-	}
-}
-
 func TestUpdateOffFollowsAReadableConfig(t *testing.T) {
 	releaseBuild(t)
 	getenv := func(string) string { return "" }
 	h := newFakeHost(t)
 	writeUserConfig(t, h, configWith("OFF"), 0o600)
-	require.True(t, updateOff(context.Background(), getenv, "linux", h, noEngine(t)))
+	require.True(t, updateOff(getenv, h))
 	h = newFakeHost(t)
 	writeUserConfig(t, h, configWith("ON"), 0o600)
-	require.False(t, updateOff(context.Background(), getenv, "linux", h, noEngine(t)))
+	require.False(t, updateOff(getenv, h))
 }
 
 func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
@@ -112,67 +93,5 @@ func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
 	}
-	require.False(t, updateOff(context.Background(), func(string) string { return "" }, "linux", h, noEngine(t)))
-}
-
-// In service mode engine.json is the engine's own (0600): an admin's OFF
-// reaches the person's CLI through the engine, never through the file.
-func TestUpdateOffFollowsTheEngineWhenTheConfigCannotBeRead(t *testing.T) {
-	releaseBuild(t)
-	if os.Geteuid() == 0 {
-		t.Skip("root reads any file")
-	}
-	getenv := func(string) string { return "" }
-	h := newFakeHost(t)
-	writeUserConfig(t, h, configWith("OFF"), 0)
-	ctx := context.Background()
-	require.True(t, updateOff(ctx, getenv, "linux", h, engineSays("OFF", nil)), "the engine says OFF")
-	require.False(t, updateOff(ctx, getenv, "linux", h, engineSays("ON", nil)), "the engine says ON")
-	require.True(t, updateOff(ctx, getenv, "linux", h, engineSays("", errors.New("down"))), "no engine answer, no request")
-	require.True(t, updateOff(ctx, getenv, "linux", h, engineSays("", nil)), "an engine that does not say stays off")
-}
-
-func TestStatusUpdateIsTheStatusToolShape(t *testing.T) {
-	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
-		t.Skip("a system engine.json exists on this machine")
-	}
-	old := buildinfo.Version
-	buildinfo.Version = "0.0.1"
-	t.Cleanup(func() { buildinfo.Version = old })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`[{"tag_name":"v0.0.2","body":"Security: fixes a leak"}]`))
-	}))
-	defer srv.Close()
-	dir := t.TempDir()
-	ck := &updatecheck.Checker{Dir: dir, Current: "0.0.1", URL: srv.URL}
-	require.NoError(t, ck.Refresh(context.Background()))
-
-	newCLI := func(cacheDir string) *cliIO {
-		return &cliIO{
-			ctx: context.Background(), goos: "linux", host: newFakeHost(t),
-			getenv: func(k string) string {
-				if k == envCacheDir {
-					return cacheDir
-				}
-				return ""
-			},
-			engine: engineAccess{personSocket: filepath.Join(t.TempDir(), "none.sock")},
-		}
-	}
-	fromEngine := &agent.UpdateInfo{Current: "0.0.1", Latest: "0.0.3", URL: "u", Message: "WARNING: from the engine"}
-
-	got := statusUpdate(newCLI(dir), fromEngine)
-	require.NotNil(t, got)
-	require.Equal(t, "0.0.2", got.Latest)
-	require.True(t, got.Security)
-	require.True(t, strings.HasPrefix(got.Message, "SECURITY UPDATE: "), got.Message)
-	raw, err := json.Marshal(statusOut{StatusReport: agent.StatusReport{Update: got}})
-	require.NoError(t, err)
-	require.Contains(t, string(raw), `"update":{"current":"0.0.1","latest":"0.0.2","security":true,"url":`)
-	require.Contains(t, string(raw), `"message":"SECURITY UPDATE:`)
-
-	// An empty cache falls back to the engine's own notice.
-	require.Equal(t, fromEngine, statusUpdate(newCLI(t.TempDir()), fromEngine))
-	require.Nil(t, statusUpdate(newCLI(t.TempDir()), nil))
+	require.False(t, updateOff(func(string) string { return "" }, h))
 }

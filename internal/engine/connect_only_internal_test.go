@@ -66,7 +66,7 @@ func TestConnectOnlyAgentWaits(t *testing.T) {
 	require.True(t, names["confirm_database"])
 }
 
-// An engine started as root without --user serves the waiting agent
+// An engine started as root serves the waiting agent
 // degraded with ENGINE_AS_ROOT, never collects, and touches none of its
 // files, even a confirmation it stopped in; it does not stop.
 func TestConnectOnlyAgentAsRootDegrades(t *testing.T) {
@@ -85,8 +85,15 @@ func TestConnectOnlyAgentAsRootDegrades(t *testing.T) {
 	require.NoError(t, os.Remove(a.Store.CredentialFile))
 	rt, err := newConnectOnlyRuntime(env, a, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	raw, err := rt.info.Status(context.Background())
-	require.NoError(t, err)
+	var raw []byte
+	for _, tool := range rt.tools {
+		if tool.Name == "status" {
+			out, err := tool.Call(context.Background(), json.RawMessage(`{}`))
+			require.NoError(t, err)
+			raw, err = json.Marshal(out)
+			require.NoError(t, err)
+		}
+	}
 	var st struct {
 		Problems []struct {
 			Code string `json:"code"`

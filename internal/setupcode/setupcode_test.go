@@ -496,20 +496,64 @@ func TestFingerprintOfTheDecodedCode(t *testing.T) {
 	require.Equal(t, p.Fingerprint(), decoded.Fingerprint())
 }
 
-// A connect-only code relaxes ROLE_MISSING for its recovery AGENT code
-// only: an INSTALL still refuses an existing role, and an AGENT code with a
-// target still needs its role.
-func TestConnectOnlyRoleRules(t *testing.T) {
+// An AGENT code with a verifier runs as an INSTALL when its role is
+// missing (a recovery code, or a new password for a dropped role), with a
+// target or without; an INSTALL still refuses an existing role, and an
+// AGENT code without a verifier still needs its role.
+func TestRoleRules(t *testing.T) {
 	t.Parallel()
 	base := validPayload(t)
 	role := base.Role()
 	install := base
 	install.Target = nil
 	require.Equal(t, setupcode.RefusalRoleExists, refusalOf(t, setupcode.CheckDatabase(install, setupcode.Database{Roles: []string{role}})))
-	withTarget := base
-	withTarget.Kind = setupcode.KindAgent
-	require.Equal(t, setupcode.RefusalRoleMissing, refusalOf(t, setupcode.CheckDatabase(withTarget, setupcode.Database{})))
-	recovery := withTarget
+	rotate := base
+	rotate.Kind = setupcode.KindAgent
+	require.NotEmpty(t, rotate.Agent.Verifier)
+	require.NoError(t, setupcode.CheckDatabase(rotate, setupcode.Database{}), "a new password for a dropped role")
+	recovery := rotate
 	recovery.Target = nil
 	require.NoError(t, setupcode.CheckDatabase(recovery, setupcode.Database{}))
+	change := rotate
+	agentPart := *rotate.Agent
+	agentPart.Verifier = ""
+	change.Agent = &agentPart
+	require.Equal(t, setupcode.RefusalRoleMissing, refusalOf(t, setupcode.CheckDatabase(change, setupcode.Database{})))
+}
+
+// trustPin rides in a code with target only, never in an INSTALL, and the
+// fingerprint covers it: the same code with another pin is another code.
+func TestTrustPin(t *testing.T) {
+	t.Parallel()
+	pin := strings.Repeat("ab", 32)
+	var agent setupcode.Payload
+	for _, v := range loadFixtures(t).Valid {
+		if v.Name == "agent change keeping the password" {
+			p, err := setupcode.Decode(v.Code)
+			require.NoError(t, err)
+			agent = p
+		}
+	}
+	require.NotEmpty(t, agent.SetupID)
+	without := agent.Fingerprint()
+	agent.TrustPin = pin
+	code, err := setupcode.Encode(agent)
+	require.NoError(t, err)
+	got, err := setupcode.Decode(code)
+	require.NoError(t, err)
+	require.Equal(t, pin, got.TrustPin)
+	require.NotEqual(t, without, got.Fingerprint(), "the fingerprint covers trustPin")
+
+	for name, edit := range map[string]func(p *setupcode.Payload){
+		"no target":  func(p *setupcode.Payload) { p.Target = nil },
+		"an install": func(p *setupcode.Payload) { p.Kind = setupcode.KindInstall },
+		"upper case": func(p *setupcode.Payload) { p.TrustPin = strings.ToUpper(pin) },
+		"too short":  func(p *setupcode.Payload) { p.TrustPin = pin[:62] },
+	} {
+		p := agent
+		edit(&p)
+		_, err := setupcode.Encode(p)
+		require.Error(t, err, name)
+		require.Equal(t, setupcode.RefusalInvalid, refusalOf(t, err), name)
+	}
 }

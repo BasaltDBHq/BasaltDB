@@ -52,23 +52,13 @@ var PageRoutes = []PageRoute{
 	// (#2., #s=, #h=).
 	{Path: links.PluginsPath, ID: true, File: "plugin/index.html"},
 	{Path: links.RegisterPath, File: "register/index.html"},
-	// The passkey management page (M4.1): static, input in the fragment,
-	// no relay.
-	{Path: links.CheckPath, File: "passkeys/index.html"},
-	{Path: links.ForgetPath, File: "passkeys/index.html"},
 }
 
-// PortalRoutes are pages only the portal serves: the pin page of the
-// DIRECT transport (CONTRACT.md, Direct transport) and the connect page
-// (CONTRACT.md, The connect page). The engine embeds their files, so basalt
-// portal verify checks them, but never serves them: a pin belongs to the
-// portal's origin, the local pages have no DIRECT, and the connect service
-// allows only the portal.
+// PortalRoutes are pages only the portal serves: the connect page
+// (CONTRACT.md, The connect page), where the connect service runs a setup
+// code. The engine embeds its file, so basalt portal verify checks it, but
+// never serves it: the connect service allows only the portal.
 var PortalRoutes = []PageRoute{
-	{Path: links.EnginesPath, File: "engines/index.html"},
-	{Path: links.EnginesAddPath, File: "engines/index.html"},
-	// The connect page (CONTRACT.md, The connect page): the connect
-	// service runs a setup code. Portal only, like the pin page.
 	{Path: links.ConnectPath, File: "connect/index.html"},
 }
 
@@ -103,8 +93,6 @@ type Agent interface {
 	// from the agent), for the page holding secret.
 	RevealApproval(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
 	RevealRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
-	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
-	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	// CheckLink reports whether secret is the live link secret of one of
 	// this agent's items (CONTRACT.md, Link secrets).
 	CheckLink(id uuid.UUID, secret string) bool
@@ -131,9 +119,6 @@ type PluginApprovals interface {
 	// submit_plugin_approval, which verifies it, and returns when Postgres
 	// recorded the approval.
 	RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error)
-	// IssuePluginLink issues a new short link for the approval to a caller
-	// that shows proof of its binding text (links.IssueProof).
-	IssuePluginLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
@@ -144,6 +129,9 @@ type Server struct {
 	files  fs.FS
 	mu     sync.RWMutex
 	agents []Agent
+	// setup runs the setup page's UPDATE and REMOVE (SetSetup); nil
+	// refuses every setup request JOB_UNAVAILABLE without reading it.
+	setup SetupJobs
 }
 
 // New returns the pages for origin, the approval page's origin, which a
@@ -162,6 +150,11 @@ func (s *Server) Add(a Agent) {
 	defer s.mu.Unlock()
 	s.agents = append(s.agents, a)
 }
+
+// SetSetup serves the setup page's jobs for this engine's agents
+// (CONTRACT.md, The local setup page): the only routes that read the admin
+// connection string. Call it before Handler.
+func (s *Server) SetSetup(jobs SetupJobs) { s.setup = jobs }
 
 // Handler routes the pages, their files and the relay.
 func (s *Server) Handler() http.Handler {
@@ -191,12 +184,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.postReject)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/reveal", s.postApprovalReveal)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.postRevertReveal)
-	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
+	mux.HandleFunc("GET "+SetupPagePath+"{$}", serveSetupPage)
+	if s.setup != nil {
+		st := setupRoutes{origin: s.origin, jobs: s.setup, log: s.log.With("component", "setup")}
+		mux.HandleFunc("POST "+SetupCheckPath, st.check)
+		mux.HandleFunc("POST "+SetupRunPath, st.run)
+		mux.HandleFunc("POST "+SetupDoctorPath, st.doctor)
+	} else {
+		mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupDoctorPath, s.configuredSetup)
+	}
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
-	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/links", s.postPluginLink)
-	return mux
+	return refuseDatabaseURL(s.origin, mux)
 }
 
 // libFile serves the pages' scripts, lib/*.js, and nothing else there.
@@ -265,13 +266,11 @@ func (s *Server) postApproval(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r, pageOnly)
+	body, ok := s.body(w, r)
 	if !ok {
 		return
 	}
-	// The body is the JSON the approval code carries; parsing it as that
-	// code reuses the code's strict decoding (unknown fields, base64url).
-	resp, err := approval.ParseResponse(approval.ResponsePrefix + passkey.Bytes(body).String())
+	resp, err := approval.DecodeResponse(body)
 	if err != nil || resp.ApprovalID != id {
 		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
 		return
@@ -293,8 +292,8 @@ type approvedDTO struct {
 	NoReceipt  string `json:"noReceipt,omitempty"`
 }
 
-// appliedDTO is the relay's answer for a revert: the result basalt revert
-// --apply --json prints, with the engine's receipt or why there is none.
+// appliedDTO is the relay's answer for a revert: the applied revert, with
+// the engine's receipt or why there is none.
 type appliedDTO struct {
 	action.AppliedRevert
 	Receipt   string `json:"receipt,omitempty"`
@@ -326,11 +325,11 @@ func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r, pageOnly)
+	body, ok := s.body(w, r)
 	if !ok {
 		return
 	}
-	resp, err := revert.ParseResponse(revert.ResponsePrefix + passkey.Bytes(body).String())
+	resp, err := revert.DecodeResponse(body)
 	if err != nil || resp.RevertID != id {
 		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
 		return
@@ -356,7 +355,7 @@ func (s *Server) postScope(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r, pageOnly)
+	body, ok := s.body(w, r)
 	if !ok {
 		return
 	}
@@ -389,7 +388,7 @@ func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r, pageOnly)
+	body, ok := s.body(w, r)
 	if !ok {
 		return
 	}
@@ -438,7 +437,7 @@ func (s *Server) reveal(w http.ResponseWriter, r *http.Request, name string,
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r, pageOnly)
+	body, ok := s.body(w, r)
 	if !ok {
 		return
 	}
@@ -473,29 +472,6 @@ func revealBody(body []byte) (agent.RevealRequest, bool) {
 	p := in.Proof
 	complete := len(p.CredentialID) > 0 && len(p.AuthenticatorData) > 0 && len(p.ClientDataJSON) > 0 && len(p.Signature) > 0
 	return in, complete && in.RevealSecret != ""
-}
-
-// issueDTO asks for a short link (POST .../links): proof of the item's
-// binding text (links.IssueProof).
-type issueDTO struct {
-	Proof string `json:"proof"`
-}
-
-// linkDTO is a newly issued short link.
-type linkDTO struct {
-	URL string `json:"url"`
-}
-
-func (s *Server) postApprovalLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
-		return a.IssueApprovalLink(ctx, id, proof)
-	})
-}
-
-func (s *Server) postRevertLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, revertParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
-		return a.IssueRevertLink(ctx, id, proof)
-	})
 }
 
 // The plugin approval routes (CONTRACT.md, Local pages): the same link
@@ -543,13 +519,11 @@ func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r, pageOnly)
+	body, ok := s.body(w, r)
 	if !ok {
 		return
 	}
-	// The body is the JSON the plugin approval code carries; parsing it as
-	// that code reuses the code's strict decoding.
-	resp, err := approval.ParsePluginResponse(approval.PluginResponsePrefix + passkey.Bytes(body).String())
+	resp, err := approval.DecodePluginResponse(body)
 	if err != nil || resp.ApprovalID != id {
 		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
 		return
@@ -562,42 +536,6 @@ func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reply(w, pluginApprovedDTO{ApprovalID: id.String(), Status: "APPROVED", ApprovedAt: at.UTC()})
-}
-
-func (s *Server) postPluginLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
-		return asPlugins(func(ctx context.Context, p PluginApprovals) (string, error) {
-			return p.IssuePluginLink(ctx, id, proof)
-		})(ctx, a)
-	})
-}
-
-// issueLink issues a short link for the CLI, to a caller that shows proof
-// of the item's binding text; a wrong proof is answered as an unknown id.
-func (s *Server) issueLink(w http.ResponseWriter, r *http.Request, name string,
-	issue func(context.Context, Agent, uuid.UUID, string) (string, error),
-) {
-	id, ok := s.pathID(w, r, name)
-	if !ok {
-		return
-	}
-	body, ok := s.body(w, r, cliOrPage)
-	if !ok {
-		return
-	}
-	var in issueDTO
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || in.Proof == "" {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body must be {\"proof\": \"...\"}"})
-		return
-	}
-	link, err := find(r.Context(), s, func(ctx context.Context, a Agent) (string, error) { return issue(ctx, a, id, in.Proof) })
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, linkDTO{URL: link})
 }
 
 // linkedID is the path's id when the request carries that item's live link
@@ -710,19 +648,11 @@ func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uu
 	return id, true
 }
 
-// Who may post: the relay only from the page's own origin; a link request
-// also from the CLI, which sends no Origin.
-const (
-	pageOnly  = false
-	cliOrPage = true
-)
-
-// body reads a posted body: from an allowed origin, only JSON, at most
+// body reads a posted body: only from the page's own origin, only JSON, at most
 // maxBody bytes. With no CORS headers on this listener, another site's
 // page can make none of these posts.
-func (s *Server) body(w http.ResponseWriter, r *http.Request, fromCLI bool) ([]byte, bool) {
-	origin := r.Header.Get("Origin")
-	if origin != s.origin && (!fromCLI || origin != "") {
+func (s *Server) body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	if r.Header.Get("Origin") != s.origin {
 		writeError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the approval page")
 		return nil, false
 	}

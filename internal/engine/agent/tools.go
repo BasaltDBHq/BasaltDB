@@ -44,6 +44,7 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
 		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
+		contractTool(toolRequestPlugin, h.wrap(toolRequestPlugin, h.requestPlugin)),
 		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
 		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
 		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
@@ -244,8 +245,7 @@ type writeArgs struct {
 	Params     []any  `json:"params" validate:"max=1000"`
 	Intent     string `json:"intent" validate:"required,max=500"`
 	RunID      string `json:"runId" validate:"omitempty,uuid"`
-	ApprovalID string `json:"approvalId" validate:"required_with=Approval,omitempty,uuid"`
-	Approval   string `json:"approval" validate:"omitempty,max=8192"`
+	ApprovalID string `json:"approvalId" validate:"omitempty,uuid"`
 	// WaitForApproval is seconds to wait for a held write's approval
 	// (CONTRACT.md, Approvals, Waiting write); nil means the default.
 	WaitForApproval *int `json:"waitForApproval" validate:"omitempty,min=0,max=110"`
@@ -293,7 +293,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 	}
 	out, err := h.svc.Write(ctx, WriteParams{
 		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: optionalID(args.RunID),
-		ApprovalID: optionalID(args.ApprovalID), Approval: args.Approval, Wait: args.wait(),
+		ApprovalID: optionalID(args.ApprovalID), Wait: args.wait(),
 	})
 	if err != nil {
 		return nil, err

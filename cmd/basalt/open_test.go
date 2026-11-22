@@ -14,18 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
-// cliHost is cli with host h, which records the links basalt opens instead
-// of starting a browser.
-func cliHost(t *testing.T, h host, args ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(string) string { return "" })
-	c.host = h
-	code := guardCommands[args[0]](c, args[1:])
-	return result{code, stdout.String(), stderr.String()}
-}
-
 func TestOpenLink(t *testing.T) {
 	t.Parallel()
 	link := "http://localhost:8787/approvals/0190a3f2-7c1e-7000-8000-000000000001#1.abc"
@@ -48,17 +36,6 @@ func TestOpenLink(t *testing.T) {
 	require.Error(t, openLink(c, "-a Calculator", &stdout, linkRef{}))
 	require.Len(t, h.opened, 2, "a page that is not a web URL never reaches the opener")
 	require.Empty(t, stdout.String(), "a bad URL is not printed either")
-}
-
-func TestBrowserOpener(t *testing.T) {
-	t.Parallel()
-	for goos, want := range map[string]string{"darwin": "open", "linux": "xdg-open"} {
-		got, ok := browserOpener(goos)
-		require.True(t, ok, goos)
-		require.Equal(t, want, got)
-	}
-	_, ok := browserOpener("windows")
-	require.False(t, ok)
 }
 
 func TestConfiguredBase(t *testing.T) {

@@ -79,13 +79,23 @@ const (
 // it as text blocks too.
 func requestBeside(withBlocks, sent bool) string {
 	if sent {
-		return "open this link, then open the request file the agent sent you earlier (or paste its text blocks). The page then shows a code for the agent:"
+		return "open this link, then open the request file the agent sent you earlier (or paste its text blocks):"
 	}
 	if withBlocks {
-		return "open this link, then open the request file the agent sends you (or paste its text blocks). The page then shows a code for the agent:"
+		return "open this link, then open the request file the agent sends you (or paste its text blocks):"
 	}
-	return "open this link, then open the request file the agent sends you. The page then shows a code for the agent:"
+	return "open this link, then open the request file the agent sends you:"
 }
+
+// reviewOnly is how a message that hands over a long or hash link says the
+// page cannot be signed: only a short link (the engine's own pages, or the
+// portal through Basalt Vault) carries a signature back to the engine. An
+// engine whose Vault connection is down hands one over too; once it is back,
+// a new link from the agent (reissueLink) is a short link.
+const (
+	reviewOnly       = "Review only: this link cannot be signed. Ask the agent for a new link later."
+	reviewOnlyBeside = "Review only, this link cannot be signed: "
+)
 
 // Limits that keep what the agent supplies, and what the database names,
 // from pushing a message over its 500 characters.
@@ -250,28 +260,8 @@ func shown(s string, n int) string { return clip(plainText(s), n) }
 
 // approvalMessage is the personMessage of a held write at the link handed
 // over: lead says what happened, tail lines follow the link.
-func approvalMessage(lead string, pick handOver, command string, tail ...string) (string, []mcp.Link) {
-	return fitCommand(
-		func(c commandPhrases) (string, []mcp.Link) { return buildApprovalMessage(lead, pick, c, tail) },
-		commandPhrases{orRun: "Or run: " + command},
-		commandPhrases{orRun: "Or run the approve command the agent shows you."},
-	)
-}
-
-// commandPhrases is the line of a message that offers the approve command,
-// after the link.
-type commandPhrases struct{ orRun string }
-
-// fitCommand builds a message with the full command and, when that breaks
-// the 500-character limit (a long --config path), again with a line that
-// sends the person to the command in the step the agent shows. The full
-// command stays in approval.approveCommand and in the step.
-func fitCommand(build func(commandPhrases) (string, []mcp.Link), full, short commandPhrases) (string, []mcp.Link) {
-	text, ls := build(full)
-	if CheckPersonMessage(text) == nil {
-		return text, ls
-	}
-	return build(short)
+func approvalMessage(lead string, pick handOver, tail ...string) (string, []mcp.Link) {
+	return buildApprovalMessage(lead, pick, tail)
 }
 
 // commandElsewhere stands for a command a message would offer when the
@@ -303,17 +293,17 @@ func fitToSteps(message string, steps []NextStep) string {
 	return fitMessage(message, commands...)
 }
 
-func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []string) (string, []mcp.Link) {
+func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []mcp.Link) {
 	msg := newMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
-		msg.Text("Approve it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent))
+		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent))
 	case linkLong:
-		msg.Text("Approve it with your passkey here; the page then shows a code for the agent:")
+		msg.Text(reviewOnly)
 	default:
 		msg.Text("Approve it with your passkey here:")
 	}
-	msg.Link(labelApprove, pick.URL).Text(c.orRun)
+	msg.Link(labelApprove, pick.URL)
 	for _, line := range tail {
 		msg.Text(line)
 	}
@@ -331,9 +321,9 @@ func revertMessage(summary string, pick handOver, extra ...string) (string, []mc
 	switch pick.Kind {
 	case linkShort, linkPage, linkNone:
 	case linkHash:
-		sign = "Sign it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent)
+		sign = reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent)
 	case linkLong:
-		sign = "Sign it with your passkey here; the page then shows a code for the agent:"
+		sign = reviewOnly
 	}
 	return msg.Text(sign).Link(labelRevert, pick.URL).Build()
 }

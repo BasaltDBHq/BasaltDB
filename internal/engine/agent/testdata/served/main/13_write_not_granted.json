@@ -12,21 +12,26 @@
       {
         "action": "ASK_PERSON",
         "actor": "AGENT",
-        "text": "Tell the person which access is missing and ask them to grant it."
-      },
-      {
-        "action": "RUN_COMMAND",
-        "actor": "PERSON",
-        "command": "basalt init --agent bot --config /etc/basalt-test/engine.json --dry-run",
-        "text": "Show the person this command: it gives the agent the missing access, and init asks for the admin connection string itself."
+        "text": "Tell the person which access is missing and ask whether you should have it."
       },
       {
         "action": "TELL_AGENT",
         "actor": "PERSON",
-        "text": "Tell the agent once the access is granted."
+        "text": "Tell the agent to add the access once you decide it should have it."
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "End your turn: the person decides."
+      },
+      {
+        "action": "RUN_COMMAND",
+        "actor": "AGENT",
+        "command": "basalt init --agent bot",
+        "text": "When the person tells you to add it, run this and show them the link it prints, where they grant the access."
       }
     ],
-    "personMessage": "The agent was denied access to what it asked for. If it should have it, run the command the agent shows you, then tell the agent.",
+    "personMessage": "The agent was denied write access to payroll. If it should have it, tell the agent: it gives you a link where you grant it.",
     "sqlState": "42501"
   },
   "isError": true,

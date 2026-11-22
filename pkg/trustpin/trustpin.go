@@ -20,7 +20,9 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -178,13 +180,47 @@ func hostnameFailed(leaf *x509.Certificate, host string, target *x509.HostnameEr
 // server chooses it.
 const maxSubject = 512
 
-// Subject is the subject of s's top, RFC 2253, cut to 512 characters.
-func (s Seen) Subject() string {
-	sub := s.Top.Subject.String()
-	if r := []rune(sub); len(r) > maxSubject {
-		sub = string(r[:maxSubject])
+// Subject is the subject of s's top, RFC 2253, with the control characters
+// (C0, C1) and the bidirectional controls removed, cut to 512 characters:
+// the server chooses it, and a person reads it.
+func (s Seen) Subject() string { return SubjectOf(s.Top) }
+
+// SubjectOf is c's subject as Subject gives a chain top's: RFC 2253,
+// cleaned and cut to 512 characters.
+func SubjectOf(c *x509.Certificate) string { return clean(c.Subject.String(), maxSubject) }
+
+// clean is text a server chose with the control characters (C0, C1) and
+// the bidirectional controls removed, cut to max characters.
+func clean(text string, maxChars int) string {
+	r := []rune(strings.Map(func(c rune) rune {
+		if unicode.IsControl(c) || bidiControl(c) {
+			return -1
+		}
+		return c
+	}, text))
+	if len(r) > maxChars {
+		r = r[:maxChars]
 	}
-	return sub
+	return string(r)
+}
+
+// bidiControl is a Unicode bidirectional control, which can reorder what a
+// person reads.
+func bidiControl(c rune) bool {
+	const (
+		arabicLetterMark      = 0x061c
+		leftToRightMark       = 0x200e
+		rightToLeftMark       = 0x200f
+		leftToRightEmbedding  = 0x202a
+		rightToLeftOverride   = 0x202e
+		leftToRightIsolate    = 0x2066
+		popDirectionalIsolate = 0x2069
+	)
+	switch c {
+	case arabicLetterMark, leftToRightMark, rightToLeftMark:
+		return true
+	}
+	return (c >= leftToRightEmbedding && c <= rightToLeftOverride) || (c >= leftToRightIsolate && c <= popDirectionalIsolate)
 }
 
 // ErrMismatch: the chain's top is not the certificate the person approved.

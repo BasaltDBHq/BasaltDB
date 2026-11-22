@@ -122,11 +122,15 @@ type Deps struct {
 	// that do not serve it (problems PLUGIN_UNAVAILABLE and
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
+	// CrashDirs are the directories crash reports are saved in, for
+	// status.crash; Access
+	// lists the agent role's tables, for status.access. Each is left out of
+	// status when nil or empty.
+	CrashDirs []string
+	Access    AccessReader
 	// EngineRecord reads this engine's row in the agent's database for the
-	// status tool's engineRecord; nil makes its state UNKNOWN. DirectServed
-	// is whether the engine has a direct listener (directAddr is not off).
+	// status tool's engineRecord; nil makes its state UNKNOWN.
 	EngineRecord EngineRecordReader
-	DirectServed bool
 	// Trust says what verifies the agent's database certificate now (status
 	// trust, problems TRUST_ROOT_EXPIRING and TRUST_PROFILE_REFUSED); status
 	// leaves trust out when nil.
@@ -158,6 +162,10 @@ type Deps struct {
 	// credential, for the plugin approval routes of the pages; optional,
 	// and those routes know no plugin approval of this agent when nil.
 	PluginApprovals PluginApprovalStore
+	// PluginRequests serve request_plugin with the engine-kept plugin
+	// entries of a service engine; nil on any other engine, where the tool
+	// is refused (CONTRACT.md, MCP tools, request_plugin).
+	PluginRequests PluginRequests
 	// Classes are the agent's PII classes for describe; optional, and
 	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
 	// column.
@@ -234,9 +242,9 @@ func NewService(d Deps) *Service {
 	if d.Links == nil {
 		d.Links = links.NewSecrets(time.Now, rand.Reader)
 	}
-	if d.Commands.flags == "" {
-		// A name and no config path or init arguments cannot fail.
-		d.Commands, _ = NewCommands(d.Name, "", "", nil)
+	if d.Commands.agent == "" {
+		// A name and no config path cannot fail.
+		d.Commands, _ = NewCommands(d.Name, "", "")
 	}
 	d.Commands = d.Commands.OperatedBy(d.OperatedBy)
 	if d.LinkBudget <= 0 {
@@ -345,10 +353,8 @@ type WriteParams struct {
 	Params []any
 	Intent string
 	RunID  uuid.UUID // uuid.Nil starts a one-write run with the intent
-	// ApprovalID applies a held write; Approval is the person's signed
-	// code, relayed when given.
+	// ApprovalID applies a held write the person approved on the page.
 	ApprovalID uuid.UUID
-	Approval   string
 	// Wait is how long to wait for the person to sign a held write before
 	// answering APPROVAL_REQUIRED (CONTRACT.md, Waiting write); 0 answers
 	// at once.

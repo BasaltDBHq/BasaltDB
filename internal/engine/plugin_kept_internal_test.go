@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -39,6 +38,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
 
 // Uids of the kept-plugin cases: the person, and an agent's own OS user.
@@ -67,7 +67,7 @@ type keptFixture struct {
 	agents     map[string]keptAgent
 	s          *keptPlugins
 	pk         *passkeytest.Authenticator
-	client     person.Client
+	client     keptClient
 	peer       atomic.Uint32
 	cfg        config.Config
 }
@@ -120,24 +120,13 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 	require.NoError(t, guard.RegisterPasskey(context.Background(), f.d.Admin, f.pk.Credential(), "app"))
 
 	f.peer.Store(keptPerson)
-	srv := person.NewServer(person.Options{
-		Allow: []uint32{keptPerson}, AgentUIDs: uids, Plugins: f.s, Log: slog.New(slog.DiscardHandler),
-		PeerUID: func(*net.UnixConn) (uint32, error) { return f.peer.Load(), nil },
-	})
-	sock := filepath.Join(base, "p.sock")
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sock, Net: "unix"})
-	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { srv.Serve(ctx, ln); close(done) }()
-	t.Cleanup(func() { cancel(); <-done })
-	f.client = person.Client{Path: sock}
+	f.client = keptClient{s: f.s, uid: f.peer.Load}
 	return f
 }
 
 // source is an unsigned local plugin acme-ner at version: its files as the
 // command uploads them, and the executables it names.
-func source(version string) ([]person.PluginFile, []string) {
+func source(version string) ([]shim.PluginFile, []string) {
 	exe := []byte("#!/bin/sh\nexit 0\n" + version)
 	manifest := fmt.Sprintf(`{
   "manifestVersion": 1, "name": "acme-ner", "version": %q, "publisher": "Acme",
@@ -148,7 +137,7 @@ func source(version string) ([]person.PluginFile, []string) {
   "network": { "egress": [] }
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
-	return []person.PluginFile{
+	return []shim.PluginFile{
 		{Path: plugin.ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
@@ -173,7 +162,7 @@ func (f *keptFixture) sign(a person.PluginOpenedApproval) {
 	require.NotNil(f.t, a.ApprovalID, a.Refused)
 	as, err := f.pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(f.t, err)
-	res, err := f.client.PluginApprove(context.Background(), person.NewPluginApproveParams(*a.ApprovalID, as))
+	res, err := f.client.PluginApprove(context.Background(), person.PluginApproveParams{ApprovalID: *a.ApprovalID, Assertion: as})
 	require.NoError(f.t, err)
 	require.Equal(f.t, "APPROVED", res.Status)
 }
@@ -194,7 +183,7 @@ func (f *keptFixture) state0(agentName string, k plugin.EntryKey) string {
 func requirePersonError(t *testing.T, err error, code person.Code, reason string) {
 	t.Helper()
 	var pe *person.Error
-	require.True(t, errors.As(err, &pe), "a person socket error: %v", err)
+	require.True(t, errors.As(err, &pe), "an engine-kept plugin error: %v", err)
 	require.Equal(t, code, pe.Code, pe.Message)
 	require.Equal(t, reason, pe.Reason, pe.Message)
 }
@@ -423,29 +412,18 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.Equal(t, []string{"default:CONFIG:READY", "other:ENGINE:UNAVAILABLE"}, sources)
 }
 
-// TestAgentOsUserThatIsNotAPersonRefused: an agent's own OS user that is
-// not in personUids is refused at the greeting and reaches nothing; a
-// person uid that is also an agent's osUser is scoped to its agents.
-func TestAgentOsUserThatIsNotAPersonRefused(t *testing.T) {
-	f := newKeptFixture(t, []string{"product_a", "product_b"}, "product_a")
-
-	f.peer.Store(keptAgentUID) // product_a's osUser, not a person
-	_, err := f.client.PluginUploadBegin(context.Background())
-	require.ErrorIs(t, err, person.ErrUIDNotAllowed)
-	_, err = f.client.PluginList(context.Background())
-	require.ErrorIs(t, err, person.ErrUIDNotAllowed)
-	require.NoDirExists(t, filepath.Join(f.state, keptplugins.UploadsDir))
-	require.Zero(t, f.s.store.Open())
-
-	// The same uid recorded as a person too: scoped to product_a.
+// TestScopedCallerReachesOnlyItsOwnAgents: a caller scoped to its own
+// agents (an agent asking through request_plugin) can add for those alone,
+// and can neither disable, remove nor widen an entry the person made for more.
+func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	f2 := newKeptFixture(t, []string{"product_a", "product_b"}, "product_a")
-	srvScoped := scopedServer(t, f2)
-	_, err = f2.addVia(srvScoped, "1.0.0", "default", "product_a", "product_b")
+	srvScoped := keptClient{s: f2.s, uid: func() uint32 { return keptAgentUID }, scope: person.Scope{"product_a": true}}
+	_, err := f2.addVia(srvScoped, "1.0.0", "default", "product_a", "product_b")
 	requirePersonError(t, err, person.CodeAgentNotAllowed, "")
 	require.Empty(t, f2.entries(), "nothing was written")
 	require.Equal(t, 1, f2.s.store.Open(), "a request refused for its scope does not use up its upload")
 
-	// The person adds for both; the scoped peer can neither disable nor
+	// The person adds for both; the scoped caller can neither disable nor
 	// remove it, nor enable it, and sees only its own agent.
 	_, err = f2.add("default", "product_a", "product_b")
 	require.NoError(t, err)
@@ -465,66 +443,14 @@ func TestAgentOsUserThatIsNotAPersonRefused(t *testing.T) {
 	res, err := f2.addVia(srvScoped, "1.0.0", "mine", "product_a")
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
-
-	// A top-level agent is refused on every plugin method.
-	raw, err := rawCall(f2.client.Path, `{"method":"PLUGIN_LIST","agent":"product_a","params":{}}`)
-	require.NoError(t, err)
-	require.Contains(t, raw, `"INVALID_ARGUMENT"`)
-	raw, err = rawCall(f2.client.Path, `{"method":"PLUGIN_UPLOAD_BEGIN","agent":"","params":{}}`)
-	require.NoError(t, err)
-	require.Contains(t, raw, `"INVALID_ARGUMENT"`)
 }
 
-// scopedServer serves f's methods on a second socket whose every peer is
-// keptAgentUID recorded as a person as well: the SM-4 scope applies.
-func scopedServer(t *testing.T, f *keptFixture) person.Client {
-	t.Helper()
-	srv := person.NewServer(person.Options{
-		Allow: []uint32{keptPerson, keptAgentUID}, AgentUIDs: map[string]uint32{"product_a": keptAgentUID, "product_b": keptOtherUID},
-		Plugins: f.s, Log: slog.New(slog.DiscardHandler),
-		PeerUID: func(*net.UnixConn) (uint32, error) { return keptAgentUID, nil },
-	})
-	sock := filepath.Join(f.base, "s.sock")
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sock, Net: "unix"})
-	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { srv.Serve(ctx, ln); close(done) }()
-	t.Cleanup(func() { cancel(); <-done })
-	return person.Client{Path: sock}
-}
-
-func (f *keptFixture) addVia(c person.Client, version, instance string, agents ...string) (person.PluginOpenResult, error) {
+func (f *keptFixture) addVia(c keptClient, version, instance string, agents ...string) (person.PluginOpenResult, error) {
 	f.t.Helper()
 	files, exec := source(version)
 	id, err := c.PluginUpload(context.Background(), files)
 	require.NoError(f.t, err)
 	return c.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: instance, Agents: agents, Executables: exec})
-}
-
-// rawCall writes one request line and returns the response line.
-func rawCall(sock, line string) (string, error) {
-	c, err := net.Dial("unix", sock)
-	if err != nil {
-		return "", err
-	}
-	defer c.Close()
-	buf := make([]byte, 4096)
-	n, err := c.Read(buf) // the greeting
-	if err != nil || !bytes.Contains(buf[:n], []byte(`"ok":true`)) {
-		return string(buf[:n]), err
-	}
-	if _, err := c.Write([]byte(line + "\n")); err != nil {
-		return "", err
-	}
-	var out []byte
-	for {
-		n, err := c.Read(buf)
-		out = append(out, buf[:n]...)
-		if err != nil || bytes.HasSuffix(out, []byte("\n")) {
-			return string(out), nil
-		}
-	}
 }
 
 // failingDB fails every exec of record_plugin_event while fail is set: a
@@ -650,7 +576,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "other-name", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, person.CodePluginRefused, keptplugins.ReasonBadManifest)
-	id, err = f.client.PluginUpload(context.Background(), append(slices.Clone(files), person.PluginFile{Path: "extra", Data: []byte("x")}))
+	id, err = f.client.PluginUpload(context.Background(), append(slices.Clone(files), shim.PluginFile{Path: "extra", Data: []byte("x")}))
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, person.CodePluginRefused, keptplugins.ReasonBadManifest)
@@ -660,15 +586,11 @@ func TestKeptOpenRefusals(t *testing.T) {
 	requirePersonError(t, err, person.CodePluginRefused, keptplugins.ReasonBadManifest)
 	// A file whose hash is not the manifest's.
 	bad := slices.Clone(files)
-	bad[2] = person.PluginFile{Path: "share/model.txt", Data: []byte("other")}
+	bad[2] = shim.PluginFile{Path: "share/model.txt", Data: []byte("other")}
 	id, err = f.client.PluginUpload(context.Background(), bad)
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, person.CodePluginRefused, keptplugins.ReasonNotTrusted)
-	// auth is no setting of an engine-kept entry.
-	raw, err := rawCall(f.client.Path, `{"method":"PLUGIN_OPEN","params":{"name":"acme-ner","instance":"default","agents":["product_a"],"settings":{"auth":{"credentialFile":"/etc/passwd"}}}}`)
-	require.NoError(t, err)
-	require.Contains(t, raw, `"INVALID_ARGUMENT"`)
 	// An engine running as root refuses a local plugin.
 	f.s.euid = 0
 	_, err = f.add("default", "product_a")
@@ -686,7 +608,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	manifest := strings.Replace(string(files[0].Data), fmt.Sprintf(`"files": { "bin/acme-ner": "sha256:%x", "share/model.txt": "sha256:%x" },`,
 		sha256.Sum256(files[1].Data), sha256.Sum256([]byte("model"))), empty, 1)
 	files[0].Data = []byte(manifest)
-	id, err = f.client.PluginUpload(context.Background(), append(files, person.PluginFile{Path: "pkg/__init__.py"}))
+	id, err = f.client.PluginUpload(context.Background(), append(files, shim.PluginFile{Path: "pkg/__init__.py"}))
 	require.NoError(t, err)
 	res, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	require.NoError(t, err)

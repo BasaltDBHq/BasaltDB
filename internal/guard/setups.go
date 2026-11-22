@@ -45,8 +45,8 @@ type Setup struct {
 
 // RecordSetup records s with the admin connection, in the transaction that
 // applies the code, and returns the seq of its AGENT_SETUP ledger row. Kept
-// for tests, which run record_setup through it and read the seq back; basalt
-// init --setup-code runs RecordSetupStatement, the SQL the person reads.
+// for tests, which run record_setup through it and read the seq back; the
+// setup shows RecordSetupStatement, the SQL the person reads.
 // Postgres refuses a used, superseded, expired or forged-time code with
 // SETUP_REFUSED (see SetupRefusal).
 func RecordSetup(ctx context.Context, q Querier, n Names, s Setup) (int64, error) {

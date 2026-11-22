@@ -13,7 +13,8 @@ import { deflateRawSync } from "node:zlib";
 
 import { b64urlDecode, b64urlEncode, sha256, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { HOOK_LABELS, HOOK_SEES, SENTENCES, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
+import { HOOK_LABELS, HOOK_SEES, PLUGIN_SESSION_TEXT, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
+import { NO_CARRIER } from "./page.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
@@ -64,7 +65,7 @@ function fakeNode(id, attrs) {
 // fakePage builds the page's elements by id, in document order, and the
 // browser around them: the location, fetch for a short link's engine, and
 // the passkey prompt.
-function fakePage({ href, fetch = null }) {
+function fakePage({ href, fetch = null, WebSocket = undefined }) {
   const nodes = new Map();
   for (const m of PAGE.matchAll(/<[a-z0-9]+(\s[^>]*?\bid="([^"]+)"[^>]*)>/g)) nodes.set(m[2], fakeNode(m[2], m[1]));
   globalThis.document = {
@@ -76,6 +77,7 @@ function fakePage({ href, fetch = null }) {
   globalThis.window = {
     location: { protocol: url.protocol, hostname: url.hostname, port: url.port, pathname: url.pathname, hash: url.hash, origin: url.origin },
     fetch,
+    WebSocket,
   };
   const prompts = [];
   Object.defineProperty(globalThis, "navigator", {
@@ -134,8 +136,8 @@ async function settle(page) {
 
 // open runs the page on a link and waits until it settled: a page that
 // shows a paste box waits for the person, so main is not awaited.
-async function open(href, { now = BEFORE, fetch = null } = {}) {
-  const page = fakePage({ href, fetch });
+async function open(href, { now = BEFORE, fetch = null, WebSocket = undefined } = {}) {
+  const page = fakePage({ href, fetch, WebSocket });
   main({ now });
   await settle(page);
   return page;
@@ -172,8 +174,20 @@ for (const v of vectors.filter((x) => x.expect.settingsMatch === true)) {
     }
   });
 
-  test(`${v.name}: the approve button ${v.expect.tick ? "waits for the tick" : "works without a tick"}`, async () => {
+  test(`${v.name}: a long link shows the approval but cannot be signed`, async () => {
     const page = await open(goLinks.get(v.name).url);
+    assert.equal(page.$("main").hidden, false, "the approval is shown for review");
+    assert.equal(page.$("approve").disabled, true, "no engine to send a signature to");
+    assert.equal(page.$("status").textContent, NO_CARRIER);
+    await page.$("approve").listeners.click();
+    assert.equal(page.prompts.length, 0, "no passkey prompt");
+  });
+
+  test(`${v.name}: the approve button ${v.expect.tick ? "waits for the tick" : "works without a tick"}`, async () => {
+    const id = JSON.parse(v.binding).approvalId;
+    const e = engine({ approvalId: id, binding: v.binding, settings: v.settings, credentialIds: goLinks.get(v.name).credentialIds },
+      { status: 200, body: JSON.stringify({ approvalId: id, status: "APPROVED", approvedAt: "2026-11-19T12:00:01Z" }) });
+    const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch: e.fetch });
     const approve = page.$("approve");
     if (v.expect.tick) {
       assert.equal(approve.disabled, true, "level 3: off until the tick is set");
@@ -196,13 +210,11 @@ for (const v of vectors.filter((x) => x.expect.settingsMatch === true)) {
     assert.equal(b64urlEncode(prompt.challenge), v.challenge, "the passkey signs sha256 of the binding text");
     assert.equal(prompt.userVerification, "required");
     assert.deepEqual(prompt.allowCredentials.map((c) => b64urlEncode(c.id)), goLinks.get(v.name).credentialIds);
-    // A long link has no engine: the code for the agent.
-    const code = page.$("code").value;
-    assert.ok(code.startsWith("basalt-plugin.1."), code);
-    const body = JSON.parse(new TextDecoder().decode(b64urlDecode(code.slice("basalt-plugin.1.".length))));
+    // The page posts the signature to the engine; nothing to paste.
+    const body = JSON.parse(e.seen[1].init.body);
     assert.deepEqual(Object.keys(body), ["approvalId", "credentialId", "authenticatorData", "clientDataJson", "signature"]);
-    assert.equal(body.approvalId, JSON.parse(v.binding).approvalId);
-    assert.equal(page.$("result").hidden, false);
+    assert.equal(body.approvalId, id);
+    assert.ok(!page.$("code"), "the page has no code to copy");
   });
 }
 
@@ -364,10 +376,10 @@ test("a short link reads the request from the engine and relays the signature", 
   assert.equal(post.init.headers["content-type"], "application/json");
   assert.equal(JSON.parse(post.init.body).approvalId, id);
   assert.equal(page.$("done-text").textContent, SENTENCES.approved);
-  assert.equal(page.$("result").hidden, true, "no code to give: the engine took it");
+  assert.ok(!page.$("code"), "no code to give: the engine took it");
 });
 
-test("a relay the engine refuses shows its error and the code to give by hand", async () => {
+test("a relay the engine refuses shows its error, and nothing to give by hand", async () => {
   const v = vector("level-1-known-local");
   const id = JSON.parse(v.binding).approvalId;
   const e = engine({ approvalId: id, binding: v.binding, settings: v.settings },
@@ -375,7 +387,8 @@ test("a relay the engine refuses shows its error and the code to give by hand", 
   const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch: e.fetch });
   await page.$("approve").listeners.click();
   assert.match(page.$("done-text").textContent, /a newer approval replaced this one/);
-  assert.ok(page.$("code").value.startsWith("basalt-plugin.1."));
+  assert.match(page.$("done-text").textContent, /Open the link again/);
+  assert.ok(!page.$("code"));
 });
 
 test("the engine's request is checked as a link's: settings that do not match are refused", async () => {
@@ -471,4 +484,65 @@ test("every fixed sentence is written in CONTRACT.md word for word", () => {
   for (const s of [...Object.values(SENTENCES), ...Object.values(HOOK_SEES), ...Object.values(HOOK_LABELS)]) {
     assert.ok(contract.includes(s), `CONTRACT.md does not state: ${s}`);
   }
+});
+
+test("on the portal the page says, at every level, that Basalt and the agent share one user, between where it runs and a declared limit", () => {
+  for (const b of [binding({}), binding({ signer: "KNOWN" }), binding({ endpoint: { kind: "REMOTE", host: "ner.example:443" }, isolation: undefined })]) {
+    const here = pluginView(b, { portal: true });
+    assert.ok(here.where.includes(SENTENCES.portalSameUser), JSON.stringify(b.endpoint));
+    assert.ok(!pluginView(b).where.includes(SENTENCES.portalSameUser), "not on the engine's own pages");
+    const limit = here.where.findIndex((s) => s === SENTENCES.noNetwork || s.startsWith("It says it connects only to"));
+    if (limit >= 0) assert.ok(here.where.indexOf(SENTENCES.portalSameUser) < limit, "before the declared limit");
+  }
+  assert.equal(SENTENCES.fingerprint, "Plugin fingerprint: <fingerprint>", "named apart from the engine's fingerprint");
+});
+
+const PORTAL_ORIGIN = "https://portal.basaltvault.app";
+
+test("on the portal the page shows the shared-user sentence in its slot, and names the plugin's fingerprint apart", async () => {
+  for (const name of ["level-1-known-local", "level-3-unknown-local", "level-2-unknown-remote"]) {
+    const v = vector(name);
+    const page = await open(goLinks.get(name).url.replace(ORIGIN, PORTAL_ORIGIN));
+    assert.equal(page.$("error").hidden, true, page.$("error-text").textContent);
+    const got = shown(page.nodes);
+    const at = got.indexOf(SENTENCES.portalSameUser);
+    assert.ok(at >= 0, name);
+    // Every other sentence is the vector's, in its order.
+    assert.deepEqual(got.filter((s) => s !== SENTENCES.portalSameUser), v.expect.sentences, name);
+    const limit = got.findIndex((s) => s === SENTENCES.noNetwork || s.startsWith("It says it connects only to"));
+    if (limit >= 0) assert.equal(at, limit - 1, `${name}: right before the declared limit`);
+    const firstSees = got.findIndex((s) => Object.values(HOOK_SEES).includes(s));
+    assert.ok(at < firstSees, `${name}: before what it sees`);
+    assert.ok(got.some((s) => s.startsWith("Plugin fingerprint: ")), name);
+    // A long link has no session, so no engine line.
+    assert.equal(page.$("engine").hidden, true);
+  }
+  const local = await open(goLinks.get("level-3-unknown-local").url);
+  assert.ok(!shown(local.nodes).includes(SENTENCES.portalSameUser), "not on the engine's own pages");
+});
+
+test("on the portal a short link opens a session through the Vault, and a Vault it cannot reach shows an error and no approve button", async () => {
+  const sockets = [];
+  class NoVault {
+    constructor(url) {
+      sockets.push(url);
+      throw new Error("the Vault is not reachable");
+    }
+  }
+  const id = vectors[0].binding.match(/"approvalId": "([^"]+)"/)[1];
+  const page = await open(`${PORTAL_ORIGIN}/plugins/${id}#s=AAAAAAAAAAAAAAAAAAAAAA`, { WebSocket: NoVault });
+  assert.equal(sockets.length, 1, "one socket, to the Vault");
+  assert.match(sockets[0], /^wss:\/\/relay\.basaltvault\.app\/v1\/links\//);
+  assertNoApprove(page, PLUGIN_SESSION_TEXT.vault);
+});
+
+test("a session that fails says so in a plugin approval's words, never offering a long link", async () => {
+  const { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } = await import("./relay.js");
+  const { RelayError } = await import("./local.js");
+  const told = (personMessage) => describe(new RelayError("x", "UNAVAILABLE", 0, { personMessage }));
+  assert.equal(told(VAULT_UNREACHABLE), PLUGIN_SESSION_TEXT.vault);
+  assert.equal(told(ENGINE_NOT_CONNECTED), PLUGIN_SESSION_TEXT.offline);
+  assert.equal(told(BUSY), PLUGIN_SESSION_TEXT.busy);
+  assert.equal(told("The secure session to your engine failed (PROTOCOL), and this page used nothing from it."), PLUGIN_SESSION_TEXT.broken);
+  for (const text of Object.values(PLUGIN_SESSION_TEXT)) assert.doesNotMatch(text, /long link|basalt approve|basalt revert/);
 });

@@ -25,16 +25,16 @@ func requireConnectPending(t *testing.T, kind, code, reason string, pm string, l
 	require.Equal(t, v.Steps, kinds(steps), "the catalog's connectLink variant")
 	require.Equal(t, url, steps[0].URL)
 	require.Equal(t, "OPEN_LINK", steps[0].Action)
-	require.Equal(t, SetupCode(testSetupCode), steps[1].Command)
+	require.Equal(t, "TELL_AGENT", steps[1].Action, "no laptop command after the link")
 	require.Equal(t, []mcp.Link{{Label: LabelConnect, URL: url}}, ls)
 	require.Contains(t, pm, "\n\n"+url+"\n\n", "the link on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
 	require.Contains(t, pm, testFingerprint)
-	require.Contains(t, pm, "basalt init --setup-code")
-	require.Less(t, strings.Index(pm, url), strings.Index(pm, "basalt init --setup-code"), "the link first")
+	require.NotContains(t, pm, "basalt init", "the person runs no command")
+	require.True(t, strings.Index(pm, url) > 0, "the link is in the message")
 	requirePersonMessage(t, pm, ls)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{}, "", kind+code+reason+string(rune('0'+i)))
+		requireStepObeysRules(t, st, catalogCase{}, kind+code+reason+string(rune('0'+i)))
 	}
 }
 
@@ -53,7 +53,7 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			s := operatedService(t, "linux", "", []string{"--agent=bot", "--write=public.leads"}, tc.operatedBy)
+			s := operatedService(t, "linux", "", tc.operatedBy)
 			s.ConnectBudget = tc.budget
 			te := s.Failure("query", queryArgs0, &SetupError{Code: testSetupCode, Fingerprint: testFingerprint})
 			if tc.link {
@@ -63,7 +63,8 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 			require.Empty(t, te.Links)
 			require.NotContains(t, te.PersonMessage, "Vault")
 			require.Equal(t, "RUN_COMMAND", te.NextSteps[0].Action)
-			requireObeysCatalog(t, catalogCase{tool: "query", args: queryArgs0}, te, "", tc.operatedBy)
+			require.Equal(t, "AGENT", te.NextSteps[0].Actor, "the agent's basalt init prints the link")
+			requireObeysCatalog(t, catalogCase{tool: "query", args: queryArgs0}, te, tc.operatedBy)
 		})
 	}
 }
@@ -90,7 +91,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			setApprovals(&d, keys{n: 1})
 			d.Setup = pendingSetup(tc.kind, soon)
 			d.Now = func() time.Time { return statusNow }
-			cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
 			d.Commands = cmds
 			r, err := NewService(d).Status(context.Background())
@@ -100,7 +101,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
 			requireStatusSchema(t, statusTool, r)
 
-			// With no connect budget the problem keeps the laptop command first.
+			// With no connect budget the agent's basalt init comes first.
 			d.ConnectBudget = 0
 			r, err = NewService(d).Status(context.Background())
 			require.NoError(t, err)

@@ -42,7 +42,7 @@ var ErrNoInstall = errors.New("basalt_meta has no install record; run basalt ini
 
 // InstallID identifies this install of the guard: the random id the
 // install wrote (basalt_meta.install_id), which no other install has, a new
-// install after basalt uninstall or DROP SCHEMA included, and which a copy
+// install after a removal or DROP SCHEMA included, and which a copy
 // of basalt_meta keeps. A chain pin carries it, so a pin of an earlier
 // install is set aside instead of checked against a new ledger.
 func InstallID(ctx context.Context, q Querier) (uuid.UUID, error) {

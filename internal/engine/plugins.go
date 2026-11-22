@@ -201,6 +201,12 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 			ep.groupErr = ep.agentsInEngineGroup(cfg)
 			ep.startCfg = ep.reloadKept(cfg, configPath)
 		}
+	} else if o.kept != nil {
+		// An agent-operated engine on the bot's computer: its engine-kept
+		// entries run as its own children, as every local plugin does in
+		// same-user mode, and its config entries change while it runs.
+		ep.kept = o.kept
+		ep.startCfg = ep.reloadKept(cfg, configPath)
 	}
 	configured := configuredPlugins(ep.startCfg)
 	ep.configured = configured
@@ -462,7 +468,7 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 			out = append(out, agent.PluginProblem{
 				Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
 				Message: "the engine-kept plugin " + k.String() + " is not served: engine.json holds an entry of the same name and instance, " +
-					"added with sudo, and that one is served; remove one of them (basalt plugin remove " + k.Name + " --instance " + k.Instance + ")",
+					"added by hand, and that one is served; remove one of them (the agent removes the engine-kept one with request_plugin, or the person edits engine.json)",
 			})
 		}
 	}
@@ -506,6 +512,22 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 				"(the plugin did not take them within about a minute, they expired first, or too many were waiting). "+
 				"The agent's answers carried the links all the same", dn.key, noticeCount(dn.count)),
 		})
+	}
+	return out
+}
+
+// PluginEntries implements agent.PluginLister: the enabled entries that list
+// name, for status.plugins.
+func (ep *enginePlugins) PluginEntries(name string) []agent.PluginEntry {
+	ep.mu.Lock()
+	configured := slices.Clone(ep.configured)
+	ep.mu.Unlock()
+	var out []agent.PluginEntry
+	for _, p := range configured {
+		if slices.Contains(p.Agents, name) {
+			k := p.Key()
+			out = append(out, agent.PluginEntry{Name: k.Name, Instance: k.Instance})
+		}
 	}
 	return out
 }

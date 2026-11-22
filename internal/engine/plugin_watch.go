@@ -81,6 +81,13 @@ type pluginWatch struct {
 	retry bool
 	// serving is PluginServingFile as last written.
 	serving []byte
+	// On a same-user engine that keeps entries of its own: base is the
+	// config entries last read from engine.json (effective), and keptRaw
+	// the entries file last applied. A change of the entries file applies
+	// over base also while engine.json cannot be read: request_plugin's
+	// changes never wait on a hand edit.
+	base    *config.Config
+	keptRaw []byte
 }
 
 type cachedCheck struct {
@@ -140,7 +147,7 @@ func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
 // engine.json that cannot be read or fails validation changes nothing: no
 // pass runs until it can be read again, and status says so.
 func (w *pluginWatch) step(ctx context.Context) {
-	if w.ep.kept != nil {
+	if w.serviceKept() {
 		w.stepKept(ctx)
 		return
 	}
@@ -148,6 +155,14 @@ func (w *pluginWatch) step(ctx context.Context) {
 	if readErr != nil {
 		raw = nil
 	}
+	var kept []byte
+	if w.ep.kept != nil {
+		var err error
+		if kept, err = os.ReadFile(w.ep.kept.EntriesPath()); err != nil {
+			kept = []byte(err.Error())
+		}
+	}
+	keptChanged := w.ep.kept != nil && (w.keptRaw == nil || !bytes.Equal(kept, w.keptRaw))
 	if w.raw == nil || !bytes.Equal(raw, w.raw) {
 		w.raw = raw
 		cfg, err := config.Load(w.path)
@@ -160,6 +175,7 @@ func (w *pluginWatch) step(ctx context.Context) {
 			}
 			w.bad = true
 			w.ep.setConfigProblem(true)
+			w.applyKept(ctx, kept, keptChanged)
 			return
 		}
 		if w.bad {
@@ -168,12 +184,44 @@ func (w *pluginWatch) step(ctx context.Context) {
 		w.bad = false
 		w.ep.setConfigProblem(false)
 		w.eff = w.effective(cfg)
+		if w.ep.kept != nil {
+			base := w.eff
+			w.base, w.keptRaw = &base, kept
+			w.eff = w.ep.reloadKept(w.eff, w.path)
+		}
 		w.pass(ctx, true)
+		return
+	}
+	if w.bad || keptChanged {
+		w.applyKept(ctx, kept, keptChanged)
 		return
 	}
 	if !w.bad && !w.next.IsZero() && !w.now().Before(w.next) {
 		w.pass(ctx, false)
 	}
+}
+
+// applyKept applies a change of the engine-kept entries while engine.json
+// cannot be read: over the config entries last read (the start's before
+// any), which keep running or stopped as they were.
+func (w *pluginWatch) applyKept(ctx context.Context, kept []byte, changed bool) {
+	if !changed {
+		return
+	}
+	base := w.start
+	if w.base != nil {
+		base = *w.base
+	}
+	w.keptRaw = kept
+	w.eff = w.ep.reloadKept(base, w.path)
+	w.pass(ctx, true)
+}
+
+// serviceKept reports a service engine that keeps entries of its own: only
+// those change while it runs. A same-user engine that keeps entries (an
+// agent-operated one) applies its config entries while it runs too.
+func (w *pluginWatch) serviceKept() bool {
+	return w.ep.kept != nil && w.ep.mode == plugin.ModeService
 }
 
 // stepKept is step on a service engine: only its engine-kept entries change
@@ -420,7 +468,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 // changes while the engine runs: in service mode the engine reads plugins at
 // start only), and the watch neither checks it nor changes it.
 func (w *pluginWatch) frozenNow() func(plugin.EntryKey) bool {
-	if w.ep.kept == nil {
+	if !w.serviceKept() {
 		return func(plugin.EntryKey) bool { return false }
 	}
 	// The start config's entries, as wanted holds them: an engine-kept
@@ -438,7 +486,7 @@ func (w *pluginWatch) frozenNow() func(plugin.EntryKey) bool {
 // ends or withholds anything of theirs.
 func (w *pluginWatch) wanted(copyOf func(plugin.EntryKey) (plugin.Verified, bool)) pluginWant {
 	ep := w.ep
-	if ep.kept == nil {
+	if !w.serviceKept() {
 		return wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, w.trust, ep.isKept)
 	}
 	eff := w.eff
@@ -713,7 +761,7 @@ func (w *pluginWatch) writeServing() {
 		return
 	}
 	if err := writeFileAtomic(w.ep.o.stateDir, PluginServingFile, raw); err != nil {
-		w.log.Warn("which plugins run could not be written to the state directory; basalt plugin enable --approval-id cannot see them", "err", err)
+		w.log.Warn("which plugins run could not be written to the state directory", "err", err)
 		return
 	}
 	w.serving = raw

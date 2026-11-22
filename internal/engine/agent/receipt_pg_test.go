@@ -87,17 +87,6 @@ func TestApprovalReceipt(t *testing.T) {
 	msg := str(t, body["personMessage"])
 	require.Equal(t, "Approved: Update 15 rows in public·leads (approval "+id+"), receipt from engine "+env.keys.Fingerprint()+".", msg)
 	mcptest.Require(t, msg, nil)
-
-	// The approval code the person gives the agent: the same receipt.
-	args, id, secret = heldApproval(t, env, 41, 52)
-	var resp approval.Response
-	require.NoError(t, json.Unmarshal(p.signApproval(id, secret, env.person), &resp))
-	code, err := resp.Code()
-	require.NoError(t, err)
-	args["approvalId"], args["approval"] = id, code
-	body, isError = env.h.call(t, "write", args)
-	require.False(t, isError, "%v", body)
-	requireApprovalReceipt(t, env, verifiedReceipt(t, env, body["receipt"]), id, 12)
 }
 
 // A page that sends another item's binding is refused by Postgres and no
@@ -152,7 +141,7 @@ func TestApprovalWithoutReceiptOnKeyError(t *testing.T) {
 	require.Equal(t, "closed", leadStatus(t, d, 21), "the approval applies all the same")
 	require.NotContains(t, body, "receipt")
 	require.Equal(t, "KEY_ERROR", body["noReceipt"])
-	require.Equal(t, "No receipt: the engine's key file is refused (basalt status shows KEY_ERROR), so nothing confirms what was signed.", body["personMessage"])
+	require.Equal(t, "No receipt: the engine's key file is refused (Basalt's status reports KEY_ERROR), so nothing confirms what was signed.", body["personMessage"])
 }
 
 func requireRevertReceipt(t *testing.T, env agentEnv, r channel.Receipt, id, changeID string) {
@@ -205,14 +194,14 @@ func TestRevertReceipt(t *testing.T) {
 	mcptest.Require(t, msg, nil)
 }
 
-// The person's code delivered with request_revert's signature: the result
-// carries the receipt.
-func TestRevertReceiptForADeliveredSignature(t *testing.T) {
+// A revert the page signed: the agent's wait returns the receipt.
+func TestRevertReceiptForAPageSignature(t *testing.T) {
 	t.Parallel()
 	env := agentHarness(t)
 	runID, _ := winLeads(t, env.h, "87, 88")
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	body := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "signature": personCode(t, env, str(t, req["revertUrl"]))})
+	personSigns(t, env, str(t, req["revertUrl"]))
+	body := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "waitForSignature": 0})
 	require.Equal(t, "APPLIED", body["status"])
 	requireRevertReceipt(t, env, verifiedReceipt(t, env, body["receipt"]), str(t, req["revertId"]), str(t, body["changeId"]))
 }

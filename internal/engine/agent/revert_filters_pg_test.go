@@ -120,7 +120,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 		"the request the steps lead to is the one previewed, filters included")
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, "task "+env.taskID+", only 1 of its runs and table public·leads would restore 1 rows", msg)
-	require.Contains(t, msg, "without these filters", msg)
+	require.NotContains(t, msg, "basalt ", "the person runs no command")
 
 	for _, tc := range []struct {
 		args    map[string]any

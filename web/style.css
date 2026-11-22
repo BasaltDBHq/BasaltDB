@@ -325,6 +325,7 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .checks { list-style: none; margin: 0; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .check::before { content: ""; width: 14px; height: 14px; flex: none; }
+.check.gone::before { content: "✕"; color: var(--diff-del-fg); font-weight: 700; text-align: center; line-height: 14px; }
 .check.ok::before { content: "✓"; color: var(--diff-add-fg); font-weight: 700; text-align: center; line-height: 14px; }
 .check.wait::before { border: 2px solid var(--ui-focus); border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -337,6 +338,14 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .tick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 4px 0; font-size: 13px; }
 .tick input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--ui-primary); }
 .tick .muted { font-size: 12px; }
+/* The local setup page's tables: a wider cell for the Read / Read + change
+   switch of each ticked table. */
+.access-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.seg { display: inline-flex; border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); overflow: hidden; margin-left: auto; }
+.seg button { min-height: 28px; padding: 0 8px; font-size: 12px; font-weight: 500; border: 0; border-radius: 0; background: var(--ui-subtle); color: var(--ui-text-2); }
+.seg button + button { border-left: 1px solid var(--ui-border-strong); }
+.seg button[aria-pressed="true"] { background: var(--ui-primary); color: var(--ui-on-primary); }
+.seg button:disabled { opacity: 0.5; }
 .label-tables { display: flex; flex-direction: column; gap: 8px; }
 .label-table { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 8px 12px; }
 .label-table summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 4px; list-style: none; }
@@ -345,8 +354,17 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .label-table[open] summary::before { content: "▾"; }
 .label-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid var(--ui-border); }
 .label-row .col-name { flex: 1 1 8rem; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
-.label-row select { font: inherit; font-size: 13px; min-height: 36px; max-width: 12rem; background: var(--ui-subtle); color: var(--ui-text); border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); padding: 0 6px; }
+.label-row select { font: inherit; font-size: 13px; min-height: 36px; width: 100%; background: var(--ui-subtle); color: var(--ui-text); border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); padding: 0 6px; }
 .label-row input.region { width: 4.5em; text-transform: uppercase; padding: 6px; }
+/* One width for every picker, wide enough for "Personal: address
+   (suggested)", at the row's right edge; the country box and the
+   suggestion go under it, right-aligned. */
+.label-pick { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; width: 14.5rem; max-width: 100%; margin-left: auto; }
+.label-suggested { font-size: 12px; color: var(--ui-text-2); text-align: right; }
+.rest-choice { margin: 0; min-width: 0; }
+.rest-choice legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-size: 14px; font-weight: 600; }
+.rest-note { display: flex; flex-direction: column; gap: 2px; margin: 0 0 0 26px; font-size: 12px; color: var(--ui-text-2); overflow-wrap: anywhere; }
+.label-fixed-line { display: flex; align-items: center; gap: 6px; min-height: 36px; }
 .label-fixed { font-size: 12px; border-radius: 10px; padding: 1px 8px; background: var(--ui-subtle); color: var(--ui-text-2); }
 
 /* Lists of the other pages (passkeys): one bordered line each. */
@@ -433,3 +451,50 @@ button.widen { display: flex; gap: 12px; align-items: center; width: 100%; min-h
   .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: var(--radius-ui) var(--radius-ui) 0 0; max-height: 85vh; overflow-y: auto; }
   button.scope-done { display: block; width: 100%; }
 }
+
+/* The connect page's two tabs: Connect a bot and Remove BasaltDB. */
+.tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--ui-border); }
+.tabs [role="tab"] { min-height: 40px; padding: 0 14px; background: transparent; color: var(--ui-text-2); border: 0; border-bottom: 2px solid transparent; border-radius: 0; font-weight: 500; }
+.tabs [role="tab"][aria-selected="true"] { color: var(--ui-primary); border-bottom-color: var(--ui-primary); }
+pre.sql { white-space: pre-wrap; word-break: break-word; font-size: 0.85em; }
+
+/* The setup page's Update check (CONTRACT.md, The Update check): one row
+   per finding, a mark, its words and its action; and the passkey list. */
+.check-row { display: flex; align-items: flex-start; gap: 10px; background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 10px 12px; }
+.check-row .mark { width: 16px; flex: none; font-weight: 700; text-align: center; }
+.check-row.need .mark { color: var(--diff-hold-fg); }
+.check-row.good .mark { color: var(--diff-add-fg); }
+.check-row.later .mark { color: var(--ui-text-2); }
+.check-row .words { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.check-row .words strong { font-size: 14px; overflow-wrap: anywhere; }
+.check-row .words span { font-size: 13px; color: var(--ui-text-2); overflow-wrap: anywhere; }
+.check-row button { min-height: 0; padding: 0; margin-left: auto; background: transparent; color: var(--ui-primary); border: 0; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.check-row button.remove { padding: 4px 10px; color: var(--diff-del-fg); border: 1px solid var(--diff-del-fg); border-radius: var(--radius-ui-sm); background: var(--ui-panel); }
+/* The connect page's Update check: one bordered row per finding, a mark,
+   the finding and its action; the passkey list in the same rows. */
+.connect-page .doc-top { margin: 0; }
+.connect-page .fix-rows { display: flex; flex-direction: column; gap: 8px; }
+.connect-page .fix-row { display: flex; align-items: flex-start; gap: 10px; background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 10px 12px; }
+.connect-page .fix-mark { width: 16px; flex: none; font-weight: 700; }
+.connect-page .fix-row.warn .fix-mark { color: var(--diff-hold-fg); }
+.connect-page .fix-row.good .fix-mark { color: var(--diff-add-fg); }
+.connect-page .fix-body { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.connect-page .fix-body strong { font-size: 14px; }
+.connect-page .fix-body .muted { font-size: 13px; }
+.connect-page .fix-act { margin-left: auto; white-space: nowrap; text-decoration: none; font-weight: 600; }
+.connect-page .pk-row { align-items: center; }
+.connect-page .pk-remove { margin-left: auto; flex: none; min-height: 32px; padding: 0 10px; background: var(--ui-panel); color: var(--diff-del-fg); border: 1px solid var(--diff-del-fg); font-weight: 600; }
+.connect-page .revoke-lines { list-style: none; margin: 0; font-size: 14px; }
+.connect-page .small-fp { font-size: 15px; }
+.connect-page .cert-box p { margin: 0; }
+.connect-page .cert-new { font-weight: 600; overflow-wrap: anywhere; }
+.connect-page .cert-was { color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }
+/* The confirm step, "Is this your database?" (confirm.js). */
+.id-facts { display: flex; flex-direction: column; gap: 6px; }
+.id-facts div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.id-facts span { color: var(--ui-text-2); flex: none; }
+.id-facts strong { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.id-facts strong.same, .ok-line { color: var(--diff-add-fg); }
+.id-facts strong.diff { color: var(--diff-del-fg); }
+.ok-line { font-size: 14px; font-weight: 600; }
+#s-confirm button.link { display: block; margin: 12px auto 0; }

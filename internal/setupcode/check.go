@@ -56,15 +56,18 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 }
 
 // CheckNotConnectOnly refuses a connect-only code (no target) on the laptop
-// path, basalt init --setup-code, before the clock checks: only the connect
+// path (removed), before the clock checks: only the connect
 // page runs it (CONNECT_ONLY).
 func CheckNotConnectOnly(p Payload) error {
 	if !p.ConnectOnly() {
 		return nil
 	}
-	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+
-		" sent, or ask it for a code for this command (basalt init --remote --database-url <the database, without password>).")
+	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+" sent.")
 }
+
+// HasVerifier reports whether p sets the agent's password: an INSTALL
+// code, or an AGENT code that rotates it.
+func (p Payload) HasVerifier() bool { return p.Agent != nil && p.Agent.Verifier != "" }
 
 func futureMessage(agent string) string {
 	return "This setup code claims a time in the future. Check this computer's clock, or ask " + agent + " for a new code."
@@ -121,11 +124,12 @@ func CheckDatabase(p Payload, db Database) error {
 	exists := role != "" && slices.Contains(db.Roles, role)
 	switch {
 	case p.Kind == KindInstall && exists:
-		return refuseWith(RefusalRoleExists, role+" already exists. This code would replace its password: ask "+agent+
-			" for a new code, or run basalt init --remote --new-code for that agent if it is yours.")
-	case p.Kind == KindAgent && !exists && !p.ConnectOnly():
-		// A connect-only recovery code whose role does not exist runs as
-		// an INSTALL instead (CONTRACT.md, Connect-only setup codes).
+		return refuseWith(RefusalRoleExists, role+" already exists. This code would replace its password: ask "+agent+" for a new code.")
+	case p.Kind == KindAgent && !exists && !p.HasVerifier():
+		// An AGENT code with a verifier whose role does not exist runs as
+		// an INSTALL instead (CONTRACT.md, The setup code, Kinds): a
+		// connect-only recovery code, or a new password for a role
+		// someone dropped.
 		return refuseWith(RefusalRoleMissing, role+" does not exist. Ask "+agent+" for a new code.")
 	}
 	return nil

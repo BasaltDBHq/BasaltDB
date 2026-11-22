@@ -43,8 +43,9 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 	var te mcp.ToolError
 	require.NoError(t, json.Unmarshal([]byte(text), &te))
 	require.Equal(t, "INTERNAL", te.Code)
-	require.Contains(t, te.PersonMessage, "basalt crash show report-id-1")
-	require.Contains(t, te.PersonMessage, "basalt crash report report-id-1")
+	require.Contains(t, te.PersonMessage, "report-id-1")
+	require.Contains(t, te.PersonMessage, "status tool")
+	require.NotContains(t, te.PersonMessage, "basalt crash")
 	require.NotEmpty(t, te.NextSteps)
 }
 

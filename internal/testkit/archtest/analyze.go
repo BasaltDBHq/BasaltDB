@@ -110,6 +110,9 @@ type regRow struct {
 	extras          []string // standard-library packages the row allows, e.g. crypto/rand
 }
 
+// regCells is the number of columns in a register row.
+const regCells = 5
+
 var regLine = regexp.MustCompile("^\\|\\s*`([a-z0-9]+)`\\s*\\|")
 
 func parseRegister(file string) (*register, error) {
@@ -127,7 +130,7 @@ func parseRegister(file string) (*register, error) {
 			continue
 		}
 		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
-		if len(cells) < 5 {
+		if len(cells) < regCells {
 			return nil, fmt.Errorf("register row for %s needs 5 cells (package, area, kind, admitted by, extras): %q", m[1], line)
 		}
 		for i := range cells {

@@ -127,10 +127,9 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		h := newFakeHost(t)
 		h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
 		h.setupCodes = []string{localsetup.CodeJobUnavailable}
-		r, read := localInit(t, h, args...)
+		r, read := localInitWithin(t, 2*time.Second, h, args...)
 		require.Equal(t, exitOK, r.code, "%v: %s", args, r.stderr)
-		require.Equal(t, 1, h.setupCalls, "init exits once it opened the link: it does not wait for the page")
-		require.Contains(t, r.stderr, "After a Remove, run basalt init once more")
+		require.Contains(t, r.stderr, "after a Remove on that page, run basalt init once more", "no Remove within the wait: init returns, and removes nothing")
 		require.Empty(t, h.dialogs, "no password: the service is there")
 		lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
 		require.Len(t, lines, 1, "stdout is the link only: the agent is registered already")
@@ -228,4 +227,25 @@ func TestInitRemovalStops(t *testing.T) {
 		require.Equal(t, exitError, r.code, v.name)
 		require.Contains(t, r.stderr, v.want, v.name)
 	}
+}
+
+// A Remove on the page within the wait: the init that opened the link goes
+// straight on to the administrator dialog and the removal script.
+func TestInitRemovesTheServiceWhenTheRemoveLandsWithinTheWait(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+	h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeEngineRemoved}
+	r, _ := localInit(t, h)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Len(t, h.opened, 1, "init opened the Update/Remove link first")
+	script, err := service.RemoveScript("linux")
+	require.NoError(t, err)
+	require.Equal(t, []string{script}, h.dialogs)
+	require.Contains(t, r.stderr, "the engine service is removed")
+}
+
+func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, 90*time.Second, removalWait)
 }

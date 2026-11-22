@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/demo"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 )
@@ -20,6 +21,10 @@ import (
 const (
 	setupWait     = 30 * time.Second
 	setupWaitStep = 250 * time.Millisecond
+	// removalWait is how long init waits, after it opened the Update/Remove
+	// link, for the page's Remove: as long as an approval wait.
+	removalWait     = agent.DefaultApprovalWait
+	removalWaitStep = 500 * time.Millisecond
 )
 
 // runInitLocal is basalt init on a person-operated engine (CONTRACT.md,
@@ -85,8 +90,31 @@ func changeLink(c *cliIO, job localsetup.Job) int {
 	if err := c.host.OpenURL(c.ctx, link); err != nil {
 		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
 	}
-	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here. After a Remove, run basalt init once more: it removes the engine service.")
+	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+	if waitForRemoval(c) {
+		return removeEngineService(c)
+	}
+	fmt.Fprintln(c.stderr, "basalt: after a Remove on that page, run basalt init once more: it removes the engine service.")
 	return exitOK
+}
+
+// waitForRemoval asks the engine, for up to removalWait (as long as an
+// approval wait), whether the page's Remove deleted engine.json
+// (ENGINE_REMOVED). Any other answer, an Update included, keeps waiting
+// until the time is up.
+func waitForRemoval(c *cliIO) bool {
+	ctx, cancel := context.WithTimeout(c.ctx, removalWait)
+	defer cancel()
+	for {
+		if code, err := c.host.SetupState(ctx, engine.SetupOrigin); err == nil && code == localsetup.CodeEngineRemoved {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(removalWaitStep):
+		}
+	}
 }
 
 // removeEngineService removes the engine service after the setup page

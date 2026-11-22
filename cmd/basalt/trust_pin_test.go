@@ -167,34 +167,6 @@ func TestTrustPinReplaces(t *testing.T) {
 	require.Len(t, entries, 2, "one profile and one PEM file")
 }
 
-// init --remote reads the chain of the credential's database before any
-// probe. The agent runs it, so it never pins: it says the person's command
-// and goes on, with or without an agent marker.
-func TestInitRemotePins(t *testing.T) {
-	t.Parallel()
-	const host = "db.internal.example.com"
-	s := newPinServer(t, host)
-	dsn := agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guard.DefaultPrefix, "bot", "0123abcd")
-	for name, env := range map[string]map[string]string{"no marker": nil, "agent marker": {"CLAUDECODE": "1"}} {
-		cfg := tempConfig(t)
-		installedAgent(t, noDB(t), cfg, dsn)
-		e := noDB(t)
-		e.env = env
-		e.noNetwork = false
-		var stdout, stderr bytes.Buffer
-		c := e.io(&stdout, &stderr)
-		c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
-			return trustpin.Fetch(ctx, s.dial, h, p)
-		}
-		code := runInit(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
-		require.Equal(t, exitOK, code, "%s: %s", name, stderr.String())
-		require.Contains(t, stderr.String(), "an agent never pins one", name)
-		require.Contains(t, stderr.String(), "basalt trust pin --host "+host+" --port 5432", name)
-		require.NotContains(t, stderr.String(), "--trust-root", "the agent is not handed the flag")
-		require.NoFileExists(t, filepath.Join(trustdir.Path(cfg), trustprofile.FileName(trustprofile.PinName(host))), name)
-	}
-}
-
 // init --remote reads the chain before it logs in with a credential it
 // already holds: nothing but the handshake reaches the server first.
 func TestInitRemotePinsBeforeLogin(t *testing.T) {
@@ -219,27 +191,6 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	require.Equal(t, exitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
-}
-
-// A connection string that names its own roots gets no pin offer: the
-// pin would not apply to it.
-func TestInitPinSkipsOwnRoots(t *testing.T) {
-	t.Parallel()
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
-	fetched := false
-	c.fetchChain = func(context.Context, string, int) ([]*x509.Certificate, error) {
-		fetched = true
-		return nil, errors.New("not reached")
-	}
-	file := filepath.Join(t.TempDir(), "ca.pem")
-	ca, _ := trustprofiletest.Chain(t, "x")
-	require.NoError(t, os.WriteFile(file, trustprofiletest.PEM(ca), 0o600))
-	_, ok, err := c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=verify-full&sslrootcert="+file, "", trustConfig(t), false)
-	require.NoError(t, err)
-	require.False(t, ok)
-	_, _, err = c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=disable", "abc", trustConfig(t), false)
-	require.ErrorIs(t, err, errUsage, "--trust-root with no TLS is a usage error")
-	require.False(t, fetched)
 }
 
 func TestTargetOf(t *testing.T) {

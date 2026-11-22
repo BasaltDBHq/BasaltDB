@@ -180,11 +180,6 @@ func (c *cliIO) writePin(choice pinChoice, configPath string) error {
 	return nil
 }
 
-// pinCommand is the basalt trust pin command the person runs for t.
-func pinCommand(t pinTarget) string {
-	return "basalt trust pin --host " + shellQuote(t.host) + " --port " + strconv.Itoa(t.port)
-}
-
 // trustPin is basalt trust pin --host H [--port P] [--trust-root SHA256].
 func trustPin(c *cliIO, args []string) int {
 	fs := c.flags("trust pin")
@@ -238,48 +233,6 @@ func withoutProfile(set *trustprofile.Set, name string) *trustprofile.Set {
 	return set.Replacing(name, nil)
 }
 
-// initPin is the pin an init offers for dsn's host before anything else
-// reaches the server: the choice and true, or false when none is needed,
-// it is declined, or it cannot be made (an agent runs init, the chain
-// cannot be read): init then goes on as before. A usage error (no terminal
-// and no --trust-root, or one that does not match) ends init.
-func (c *cliIO) initPin(dsn, trustRoot, configPath string, agentOperated bool) (pinChoice, bool, error) {
-	t, ok := targetOf(dsn)
-	if !ok || namesOwnRoots(dsn) {
-		if trustRoot != "" {
-			return pinChoice{}, false, fmt.Errorf("%w: --trust-root is given, but the connection string names its own roots "+
-				"(sslrootcert) or does not use TLS, so no pin applies", errUsage)
-		}
-		return pinChoice{}, false, nil
-	}
-	choice, err := c.askPin(t, trustRoot, configPath, "", agentOperated)
-	switch {
-	case err == nil:
-		return choice, true, nil
-	case errors.Is(err, errNoPinNeeded):
-		if trustRoot != "" {
-			return pinChoice{}, false, fmt.Errorf("%w: --trust-root is given, but %s needs no pin: its certificate verifies already", errUsage, t.host)
-		}
-	case errors.Is(err, errPublicPin) && trustRoot != "":
-		return pinChoice{}, false, fmt.Errorf("%w: --trust-root is refused: %w", errUsage, err)
-	case errors.Is(err, errPublicPin):
-		fmt.Fprintf(c.stderr, "basalt: %s\n", terminalText(err.Error()))
-	case errors.Is(err, errPinDeclined):
-		fmt.Fprintf(c.stderr, "basalt: nothing pinned for %s; its certificate is not verified\n", terminalText(t.host))
-	case errors.Is(err, errAgentPin) && trustRoot != "":
-		return pinChoice{}, false, fmt.Errorf("%w: --trust-root is refused: an agent never pins a certificate; the person runs %s",
-			errUsage, pinCommand(t))
-	case errors.Is(err, errAgentPin):
-		fmt.Fprintf(c.stderr, "basalt: %s presents a certificate no authority here verifies, and an agent never pins one. "+
-			"The person checks it and pins it on this machine:\n  %s\n", terminalText(t.host), pinCommand(t))
-	case errors.Is(err, errUsage):
-		return pinChoice{}, false, err
-	}
-	// Otherwise the chain cannot be read (no route, no TLS): nothing to
-	// offer, and the probes and the connection that follow say what is wrong.
-	return pinChoice{}, false, nil
-}
-
 // codeTrustRootChanged starts the error of a connection to a pinned host
 // that presents another root.
 const codeTrustRootChanged = "TRUST_ROOT_CHANGED"
@@ -323,15 +276,4 @@ func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Di
 	return fmt.Errorf("%w; %s: %s presents the certificate authority SHA-256 %s, but it is pinned to %s. Check it against your "+
 		"provider's console; to accept it run: basalt trust pin --host %s --port %d", err, codeTrustRootChanged, host,
 		trustprofile.Fingerprint(top), strings.Join(pinnedTo, ", "), shellQuote(host), cfg.Port)
-}
-
-// namesOwnRoots reports whether dsn names its own roots (sslrootcert,
-// PGSSLROOTCERT, ~/.postgresql/root.crt) or uses no TLS: no profile, and so
-// no pin, applies to it.
-func namesOwnRoots(dsn string) bool {
-	cfg, err := pgconn.ParseConfig(dsn)
-	if err != nil {
-		return false
-	}
-	return cfg.TLSConfig == nil || cfg.TLSConfig.RootCAs != nil
 }

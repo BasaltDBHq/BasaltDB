@@ -143,8 +143,10 @@ func RunRemove(ctx context.Context, tx pgx.Tx, prefix, confirmName string) (p Re
 	}
 	for _, sql := range p.Drops {
 		if _, err := tx.Exec(ctx, sql); err != nil {
-			return RemovePlan{}, false, &RefusalError{Code: CodeSetupFailed,
-				Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed.", Err: err}
+			return RemovePlan{}, false, &RefusalError{
+				Code:    CodeSetupFailed,
+				Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed.", Err: err,
+			}
 		}
 	}
 	if demoKept, err = demo.ApplyDrop(ctx, tx, p.DemoDrops); err != nil {

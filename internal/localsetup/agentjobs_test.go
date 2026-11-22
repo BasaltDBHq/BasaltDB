@@ -236,7 +236,7 @@ func TestRemoveFinishesOnADatabaseBasaltIsGoneFrom(t *testing.T) {
 
 	checked, err := svc.Check(ctx, f.agentJob(localsetup.JobRemove))
 	require.NoError(t, err)
-	require.Contains(t, checked.Lines[0], "Basalt is no longer in the database")
+	require.Contains(t, checked.Lines[0], "BasaltDB is no longer in the database")
 	_, err = svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	_, err = os.Stat(f.config)

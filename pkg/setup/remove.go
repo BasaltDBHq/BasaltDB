@@ -114,4 +114,3 @@ func removalPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
 	}
 	return guard.DefaultPrefix, nil
 }
-

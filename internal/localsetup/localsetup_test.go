@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -302,3 +303,74 @@ func TestInstallWithoutTheSampleDatabaseIsNotOfferedYet(t *testing.T) {
 
 // okUsers admits alice.
 type okUsers struct{ fakeUsers }
+
+// A run whose engine.json write failed after the commit leaves the role and
+// the credential: the next run finishes with that role, its password kept,
+// and writes the config.
+func TestRunFinishesAnInstallWhoseConfigWriteFailed(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into a folder without write permission")
+	}
+	f := newFixture(t)
+	ctx := context.Background()
+	dir := filepath.Dir(f.config)
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "agents"), 0o700))
+	checked, err := f.svc.Check(ctx, f.request())
+	require.NoError(t, err)
+	req := f.request()
+	req.Challenge, req.Passkey = &checked.Challenge, register(t, checked.Challenge)
+
+	// The engine's folder takes the credential (agents/) but not engine.json.
+	require.NoError(t, os.Chmod(dir, 0o500))
+	_, err = f.svc.Run(ctx, req)
+	require.NoError(t, os.Chmod(dir, 0o700))
+	refusal(t, err, localsetup.CodeSetupFailed)
+	var r *localsetup.RefusalError
+	require.ErrorAs(t, err, &r)
+	require.Equal(t, 500, r.Status)
+	require.True(t, exists(t, f.db, "basalt_meta"), "the database part committed")
+	cred := filepath.Join(dir, "agents", "demo_bot.url")
+	before, err := os.ReadFile(cred)
+	require.NoError(t, err, "the credential is kept")
+
+	checked, err = f.svc.Check(ctx, f.request())
+	require.NoError(t, err)
+	require.False(t, checked.PasskeyNeeded, "the passkey committed with the role")
+	require.Contains(t, strings.Join(checked.Lines, "\n"), "this finishes its setup")
+	done, err := f.svc.Run(ctx, f.request())
+	require.NoError(t, err)
+	require.Equal(t, "demo_bot", done.Agent)
+	after, err := os.ReadFile(cred)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "the password stays")
+	cfg, err := config.Load(f.config)
+	require.NoError(t, err)
+	require.Len(t, cfg.Agents, 1)
+	dsn, err := config.ReadCredential(cred)
+	require.NoError(t, err)
+	conn, err := pgdial.Connect(ctx, dsn)
+	require.NoError(t, err, "the kept password still logs in")
+	require.NoError(t, conn.Close(ctx))
+}
+
+// A role of the same name this engine holds no password for is never taken
+// over, even with a credential file next to it.
+func TestRunNeverTakesOverAForeignRole(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	role := f.db.Names.Prefix + "_agent_demo_bot"
+	f.db.Exec(t, `CREATE ROLE `+role+` LOGIN PASSWORD 'someone-elses'`)
+	_, err := f.svc.Check(ctx, f.request())
+	refusal(t, err, localsetup.CodeRoleExists)
+
+	// A credential that does not log in as that role changes nothing.
+	u, err := url.Parse(f.db.URL)
+	require.NoError(t, err)
+	u.User = url.UserPassword(role, "guessed")
+	require.NoError(t, config.WriteFile(filepath.Join(filepath.Dir(f.config), "agents", "demo_bot.url"), []byte(u.String()+"\n")))
+	_, err = f.svc.Run(ctx, f.request())
+	refusal(t, err, localsetup.CodeRoleExists)
+	require.False(t, exists(t, f.db, "basalt_meta"), "nothing changed")
+}

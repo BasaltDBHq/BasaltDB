@@ -74,7 +74,7 @@ The job is an `INSTALL` with `demo` `false`, on the same page, the same two rout
 
 Persona 1. Running `basalt init` again on an engine already set up opens the `CHANGE` link ([Which link `basalt init` prints](#the-local-setup-page)). The page checks first and shows what needs the person, then only the screens that fix it. It replaces `basalt passkey`, `basalt trust` and `basalt classify`. Persona 2's version is [Update on the connect page](connect.md#update-on-the-connect-page).
 
-**The check.** `POST /api/v1/setup/doctor` with `{ "agent", "osUser" }`, checked as `check` checks them (an agent `engine.json` lacks, another OS user: `400 INVALID_ARGUMENT`). It takes no `databaseUrl`: a body with one is refused as on every route but `check` and `run`. The engine reads with the agent's own credential and its own state, so the answer holds only what the agent can read through its own role (its readable columns' names, the passkeys' public data in `basalt_meta.agent_passkeys`) and what the engine knows itself (its pin and the certificate the host presents). It changes nothing and is not a setup run (`BUSY` does not apply). The page sends it when it opens and again after each fix.
+**The check.** `POST /api/v1/setup/doctor` with `{ "agent", "osUser" }`, checked as `check` checks them (an agent `engine.json` lacks, another OS user: `400 INVALID_ARGUMENT`). It takes no `databaseUrl`: a body with one is refused as on every route but `check` and `run`. The engine reads with the agent's own credential and its own state, so the answer holds only what the agent can read through its own role (its readable columns' names, the passkeys' public data in `basalt_meta.agent_passkeys`) and what the engine knows itself (its pin and the certificate the host presents). It changes nothing and is not a setup run (`BUSY` does not apply). The page sends it when it opens and again after each fix. Limit: the caller is not authenticated (Host and Origin can be forged on loopback), so a program on this computer can ask for any agent of the engine and read that agent's database name, unlabeled column names and passkey labels and dates. None of it is secret and none of it lets the caller change anything; an engine serves one person's agents.
 
 | Field | Meaning |
 |---|---|
@@ -89,7 +89,7 @@ While the certificate is `CHANGED`, or `login` is set, the engine reads nothing 
 
 **The page.** It shows `BasaltDB / Setup · <database>` at the top.
 
-- **Something needs the person:** `<N> things need you` (`1 thing needs you`) and `Everything else is working.`, then one row per finding, each with a mark and an action:
+- **Something needs the person:** `<N> things need you` (`1 thing needs you`), `N` counting the rows below that need an action, and `Everything else is working.`, or `The rest is checked once BasaltDB can connect.` while `labels` and `passkeys` are `UNKNOWN`; then one row per finding, each with a mark and an action:
   - `certificate` `CHANGED`: `Your database has a new certificate`, `BasaltDB stopped connecting until you check it.`, **Check**. `MISMATCH`: `Your database's ledger names another certificate`, `Check it is the one you trust.`, **Check**.
   - `guard` `OUTDATED`: `BasaltDB's guard in your database needs an update`, **Update** (the `UPDATE` job, unchanged).
   - `labels` `UNLABELED`: `<count> new columns have no label` (`1 new column has no label`), the names joined by `, ` (with `…` when `count` is over 20), **Label**.

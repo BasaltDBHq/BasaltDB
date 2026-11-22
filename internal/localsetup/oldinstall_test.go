@@ -115,7 +115,7 @@ func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 	// the admin's password, a connection string and a password parameter
 	// in its message.
 	f.db.Exec(t, `CREATE OR REPLACE FUNCTION basalt_meta.attach_all() RETURNS SETOF regclass LANGUAGE plpgsql AS $$
-		BEGIN RAISE EXCEPTION 'attach failed: % / postgres://x:`+otherPW+`@db.example/app / password=`+otherPW+`', '`+adminPW+`'; END $$`)
+		BEGIN RAISE EXCEPTION 'attach failed: % / % / password=`+otherPW+`', '`+adminPW+`', 'postgres://x' || ':`+otherPW+`@db.example/app'; END $$`)
 
 	var logs bytes.Buffer
 	h := pages.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))

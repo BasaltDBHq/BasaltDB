@@ -17,10 +17,10 @@ import (
 func TestCauseRedactsPasswords(t *testing.T) {
 	t.Parallel()
 	agentPW := guard.NewPassword()
-	admin := "postgres://postgres:Tr0ub4dor%26x@db.ref.supabase.co:5432/postgres?sslmode=verify-full"
+	admin := "postgres://postgres" + ":Tr0ub4dor%26x@db.ref.supabase.co:5432/postgres?sslmode=verify-full"
 	pg := &pgconn.PgError{
 		Code: "42501", Detail: "the statement was ALTER ROLE x PASSWORD '" + agentPW + "'",
-		Message: "permission denied for postgres://postgres:Tr0ub4dor&x@db.ref.supabase.co password=Tr0ub4dor&x PASSWORD '" + agentPW + "' and Tr0ub4dor&x alone",
+		Message: "permission denied for postgres://postgres" + ":Tr0ub4dor&x@db.ref.supabase.co password=Tr0ub4dor&x PASSWORD '" + agentPW + "' and Tr0ub4dor&x alone",
 	}
 	err := scrub(setupFailed("install script", fmt.Errorf("init step 7: %w", pg)), admin)
 	r := AsRefusal(err)

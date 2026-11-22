@@ -43,11 +43,6 @@ func Open(path string, now func() time.Time, rand io.Reader) (*links.Secrets, er
 	return s, nil
 }
 
-// New is an empty store persisted at path.
-func New(path string, now func() time.Time, rand io.Reader) *links.Secrets {
-	return links.NewSecretsWith(File{Path: path}, now, rand)
-}
-
 // Save writes raw atomically (write, then rename).
 func (f File) Save(raw []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(f.Path), filepath.Base(f.Path)+".*.tmp")

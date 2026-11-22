@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -90,7 +91,7 @@ func TestDoctorRefusesWhatIsNotTheEnginesAgent(t *testing.T) {
 	// An engine with no config, and one running as root, check nothing.
 	_, err := f.svc.Doctor(ctx, f.doctor())
 	refusal(t, err, localsetup.CodeJobUnavailable)
-	root, err := localsetup.New(localsetup.Options{ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true, Euid: func() int { return 0 }})
+	root, err := localsetup.New(localsetup.Options{Backend: setupbackend.Backend{}, ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true, Euid: func() int { return 0 }})
 	require.NoError(t, err)
 	_, err = root.Doctor(ctx, f.doctor())
 	refusal(t, err, localsetup.CodeJobUnavailable)
@@ -265,6 +266,7 @@ func TestRepairSetsANewPasswordForAnAgentThatCannotLogIn(t *testing.T) {
 	f, _ := installed(t)
 	var told atomic.Value
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now: func() time.Time { return f.now }, CredentialChanged: func(agent, password string) { told.Store(agent + ":" + password) },
 	})
@@ -338,6 +340,7 @@ func newTrustFixture(t *testing.T) *trustFixture {
 	_, err = trustdir.PinNew(f.config, pinHost, tf.oldCA, false)
 	require.NoError(t, err)
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now:      func() time.Time { return f.now },
 		Profiles: func() *trustprofile.Set { return trustdir.Set(f.config) },

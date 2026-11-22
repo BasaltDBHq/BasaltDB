@@ -10,8 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -30,12 +28,12 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 	if j.missing {
 		return "", nil // no credential to try: the fix writes a new one
 	}
-	dsn, err := config.ReadCredential(j.agent.Store.CredentialFile)
+	dsn, err := s.be.ReadCredential(j.agent.Store.CredentialFile)
+	if errors.Is(err, setuprun.ErrForeignCredential) {
+		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
+	}
 	if err != nil {
 		return "", refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
-	}
-	if pgdial.CheckForeignDSN(dsn) != nil {
-		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
 	}
 	conn, err := s.opts.Dial(ctx, dsn)
 	var pg *pgconn.PgError
@@ -48,7 +46,7 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 		}
 	case errors.As(err, &pg) && len(pg.Code) >= 2 && pg.Code[:2] == "28":
 		// The database refuses the credential: the fix applies.
-	case pgdial.CertificateNotVerified(err):
+	case s.be.CertificateNotVerified(err):
 		return "", refuse(CodeCertificateNotVerified, "The database's TLS certificate could not be verified, so the agent's login was not tried. Check the certificate first; nothing changed.")
 	default:
 		return "", timeLimit(ctx, refuse(CodeDatabaseUnreachable, "The database could not be reached with the agent's credential, so its login was not tried. Nothing changed."))
@@ -57,10 +55,10 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 }
 
 // repairPlan is the REPAIR script for a new password, with its words.
-func (s *Service) repairPlan(j agentJob, password string) (guard.Script, []string, error) {
-	script, err := guard.RepairScript(j.names, j.req.Agent, password, statementTimeout.Milliseconds())
+func (s *Service) repairPlan(j agentJob, password string) (setuprun.Script, []string, error) {
+	script, err := s.be.RepairScript(j.names, j.req.Agent, password, statementTimeout.Milliseconds())
 	if err != nil {
-		return guard.Script{}, nil, setupFailed("plan the repair", err)
+		return setuprun.Script{}, nil, setupFailed("plan the repair", err)
 	}
 	lines := []string{fmt.Sprintf("This sets a new password for %s. Only this computer's BasaltDB knows it.", j.role)}
 	if j.missing {
@@ -88,7 +86,7 @@ func (s *Service) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, err
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
-	script, lines, err := s.repairPlan(j, guard.NewPassword())
+	script, lines, err := s.repairPlan(j, s.be.NewPassword())
 	if err != nil {
 		return CheckAnswer{}, err
 	}
@@ -104,7 +102,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 	if err != nil {
 		return RunAnswer{}, err
 	}
-	password := guard.NewPassword()
+	password := s.be.NewPassword()
 	next, err := s.newCredential(j, dsn, password)
 	if err != nil {
 		return RunAnswer{}, err
@@ -169,7 +167,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 func (s *Service) newCredential(j agentJob, dsn, password string) (string, error) {
 	var out string
 	if j.missing {
-		made, err := guard.AgentConnString(j.req.DatabaseURL, j.role, password)
+		made, err := s.be.AgentConnString(j.req.DatabaseURL, j.role, password)
 		if err != nil {
 			return "", refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 		}

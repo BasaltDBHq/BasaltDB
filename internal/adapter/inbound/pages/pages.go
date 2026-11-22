@@ -24,9 +24,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -646,14 +646,14 @@ func (s *Server) body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // statuses maps contract error codes to HTTP statuses (CONTRACT.md, Local
 // pages, Errors).
 var statuses = map[string]int{
-	agent.CodeNotFound:              http.StatusNotFound,
-	agent.CodeApprovalExpired:       http.StatusGone,
-	string(guard.CodeRevertExpired): http.StatusGone,
-	agent.CodeApprovalInvalid:       http.StatusConflict,
-	string(guard.CodeRevertInvalid): http.StatusConflict,
-	agent.CodeInvalidArgument:       http.StatusBadRequest,
-	agent.CodeUnavailable:           http.StatusServiceUnavailable,
-	agent.CodeQueryTimeout:          http.StatusGatewayTimeout,
+	agent.CodeNotFound:                   http.StatusNotFound,
+	agent.CodeApprovalExpired:            http.StatusGone,
+	string(guardmodel.CodeRevertExpired): http.StatusGone,
+	agent.CodeApprovalInvalid:            http.StatusConflict,
+	string(guardmodel.CodeRevertInvalid): http.StatusConflict,
+	agent.CodeInvalidArgument:            http.StatusBadRequest,
+	agent.CodeUnavailable:                http.StatusServiceUnavailable,
+	agent.CodeQueryTimeout:               http.StatusGatewayTimeout,
 }
 
 // fail answers err as the contract's error body. Unexpected errors are

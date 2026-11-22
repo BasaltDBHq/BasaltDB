@@ -12,9 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -45,8 +42,14 @@ type pin struct {
 
 // pinnedDial opens the admin connection with the pin's certificate as the
 // only root for its host (pgdial.ConnConfigTrusting).
-func pinnedDial(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
-	cfg, err := pgdial.ConnConfigPinned(dsn, p)
+func pinnedDial(be Backend) func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
+	return func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
+		return dialPinned(ctx, be, dsn, p)
+	}
+}
+
+func dialPinned(ctx context.Context, be Backend, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
+	cfg, err := be.ConnConfigPinned(dsn, p)
 	if err != nil {
 		return nil, err
 	}
@@ -63,10 +66,10 @@ func notVerified() *RefusalError {
 }
 
 // connectError is the fixed refusal of a failed connection.
-func connectError(ctx context.Context, err error) *RefusalError {
+func (s *Service) connectError(ctx context.Context, err error) *RefusalError {
 	var pg *pgconn.PgError
 	switch {
-	case pgdial.CertificateNotVerified(err):
+	case s.be.CertificateNotVerified(err):
 		return notVerified()
 	case errors.As(err, &pg) && len(pg.Code) >= 2 && pg.Code[:2] == "28":
 		return refuse(CodeLoginFailed, "The database refused the login. Check the admin user and password.")
@@ -87,8 +90,8 @@ func (s *Service) connectAdmin(ctx context.Context, req Request) (*pgx.Conn, *pi
 	if err == nil {
 		return conn, s.keptPin(req), nil
 	}
-	if !pgdial.CertificateNotVerified(err) {
-		return nil, nil, connectError(ctx, err)
+	if !s.be.CertificateNotVerified(err) {
+		return nil, nil, s.connectError(ctx, err)
 	}
 	p, err := s.readPin(ctx, req)
 	if err != nil {
@@ -96,7 +99,7 @@ func (s *Service) connectAdmin(ctx context.Context, req Request) (*pgx.Conn, *pi
 	}
 	conn, err = s.opts.DialPinned(ctx, pinDSN(req.DatabaseURL), p.profile)
 	if err != nil {
-		return nil, nil, connectError(ctx, err)
+		return nil, nil, s.connectError(ctx, err)
 	}
 	return conn, p, nil
 }
@@ -138,11 +141,11 @@ func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
 // write records the pin in the ledger, in the run's transaction, and writes
 // it to trust.d next to engine.json. A profile that covers the host by now
 // refuses, unless it is this pin.
-func (p *pin) write(ctx context.Context, tx pgx.Tx, configPath string) error {
-	if err := guard.RecordTrustPin(ctx, tx, p.host, p.port, p.sha256); err != nil {
+func (p *pin) write(ctx context.Context, be Backend, tx pgx.Tx, configPath string) error {
+	if err := be.RecordTrustPin(ctx, tx, p.host, p.port, p.sha256); err != nil {
 		return setupFailed("record the trust pin", err)
 	}
-	if _, err := trustdir.PinNew(configPath, p.host, p.top, p.caOnly); err != nil {
+	if _, err := be.PinFileNew(configPath, p.host, p.top, p.caOnly); err != nil {
 		return setupFailed("write the trust pin", err)
 	}
 	return nil

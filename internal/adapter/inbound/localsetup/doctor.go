@@ -9,11 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 )
 
@@ -163,8 +161,8 @@ var errNoLogin = errors.New("the agent cannot log in")
 // alone, and a pinned host presenting another chain top is CHANGED.
 func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (*pgx.Conn, error) {
 	rejected := &DoctorLogin{Code: action.ReasonCredentialRejected, Message: "The database refuses the agent's credential, or this engine has none for it."}
-	dsn, err := config.ReadCredential(a.Store.CredentialFile)
-	if err != nil || pgdial.CheckForeignDSN(dsn) != nil {
+	dsn, err := s.be.ReadCredential(a.Store.CredentialFile)
+	if err != nil {
 		out.Login = rejected
 		return nil, errNoLogin
 	}
@@ -176,7 +174,7 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 	switch {
 	case ctx.Err() != nil:
 		return nil, refuse(CodeTimeLimit, "The check ran out of time.")
-	case pgdial.CertificateNotVerified(err):
+	case s.be.CertificateNotVerified(err):
 		if s.certificateChanged(ctx, a, out) {
 			return nil, errNoLogin
 		}
@@ -218,16 +216,16 @@ func (s *Service) readDoctor(ctx context.Context, conn *pgx.Conn, a config.Agent
 	if err := conn.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&out.Database); err != nil {
 		return err
 	}
-	st, err := guard.AgentStatus(ctx, conn, guard.Migrations())
+	st, err := s.be.AgentStatus(ctx, conn, s.be.Migrations())
 	if err != nil {
 		return err
 	}
-	out.Guard = guardRow(st)
+	out.Guard = s.guardRow(st)
 	if out.Guard.State == StateMissing {
 		return nil
 	}
 	if h, err := s.hostOf(a); err == nil && h.pin != nil {
-		if rec, ok, err := guard.RecordedTrustPin(ctx, conn, h.host, h.port); err == nil && ok && !pinHolds(h.pin, rec) {
+		if rec, ok, err := s.be.RecordedTrustPin(ctx, conn, h.host, h.port); err == nil && ok && !pinHolds(h.pin, rec) {
 			out.Certificate = DoctorCertificate{State: StateMismatch, Host: h.host, Port: h.port, Pinned: pinnedSHA(h.pin, ""), Recorded: rec}
 		}
 	}
@@ -238,10 +236,10 @@ func (s *Service) readDoctor(ctx context.Context, conn *pgx.Conn, a config.Agent
 
 // guardRow is the guard by the test UPDATE makes: OUTDATED exactly when an
 // UPDATE has migrations to add.
-func guardRow(st guard.Status) DoctorGuard {
-	latest := guard.LatestVersion()
+func (s *Service) guardRow(st guardmodel.Status) DoctorGuard {
+	latest := s.be.LatestVersion()
 	switch {
-	case st.State == guard.GuardMissing || st.Installed == 0:
+	case st.State == guardmodel.GuardMissing || st.Installed == 0:
 		return DoctorGuard{State: StateMissing}
 	case st.Installed > latest:
 		return DoctorGuard{State: StateNewer}
@@ -255,7 +253,7 @@ func guardRow(st guard.Status) DoctorGuard {
 // agent's role with why NEW or UNCLASSIFIED, and names the first 20.
 func (s *Service) doctorLabels(ctx context.Context, conn *pgx.Conn) DoctorLabels {
 	out := DoctorLabels{State: StateUnknown, Columns: []string{}}
-	cols, err := guard.PIIUnclassified(ctx, conn)
+	cols, err := s.be.PIIUnclassified(ctx, conn)
 	if err != nil {
 		return out
 	}
@@ -280,7 +278,7 @@ func (s *Service) doctorLabels(ctx context.Context, conn *pgx.Conn) DoctorLabels
 // origin.
 func (s *Service) doctorPasskeys(ctx context.Context, conn *pgx.Conn) DoctorPasskeys {
 	out := DoctorPasskeys{State: StateUnknown, Items: []DoctorPasskey{}}
-	keys, err := ledger.ListPasskeys(ctx, conn)
+	keys, err := s.be.ListPasskeys(ctx, conn)
 	if err != nil {
 		return out
 	}

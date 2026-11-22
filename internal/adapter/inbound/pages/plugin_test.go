@@ -16,7 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -196,17 +195,17 @@ func TestPluginRoutesInASession(t *testing.T) {
 	require.NoError(t, err)
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
-	link := vault.SessionLink{Token: keys.Token, Item: id}
+	link := pages.SessionLink{Token: keys.Token, Item: id}
 	headers := map[string]string{links.SecretHeader: secret, "origin": origin}
 	post := map[string]string{links.SecretHeader: secret, "origin": origin, "content-type": "application/json"}
 
-	got := srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
+	got := srv.Dispatch(context.Background(), link, pages.SessionRequest{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
 	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
 	var req approval.PluginRequest
 	require.NoError(t, json.Unmarshal(got.Body, &req))
 	require.Equal(t, approval.PluginRequest{ApprovalID: id, Binding: pluginBinding, Settings: pluginSettings}, req)
 
-	got = srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))})
+	got = srv.Dispatch(context.Background(), link, pages.SessionRequest{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))})
 	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
 	var answer map[string]any
 	require.NoError(t, json.Unmarshal(got.Body, &answer))
@@ -215,7 +214,7 @@ func TestPluginRoutesInASession(t *testing.T) {
 
 	// The plugin link's session reaches no approval or revert route, and
 	// no route the allowlist does not name.
-	for _, req := range []vault.Request{
+	for _, req := range []pages.SessionRequest{
 		{Method: http.MethodGet, Path: "/api/v1/approvals/" + id.String(), Headers: headers},
 		{Method: http.MethodPost, Path: "/api/v1/approvals/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
 		{Method: http.MethodGet, Path: "/api/v1/reverts/" + id.String(), Headers: headers},
@@ -231,9 +230,9 @@ func TestPluginRoutesInASession(t *testing.T) {
 	require.NoError(t, err)
 	otherKeys, err := channel.DeriveLink(otherSecret)
 	require.NoError(t, err)
-	otherLink := vault.SessionLink{Token: otherKeys.Token, Item: other}
+	otherLink := pages.SessionLink{Token: otherKeys.Token, Item: other}
 	for _, path := range []string{"/api/v1/plugins/" + id.String(), "/api/v1/plugins/" + other.String()} {
-		got := srv.Dispatch(context.Background(), otherLink, vault.Request{Method: http.MethodGet, Path: path, Headers: map[string]string{links.SecretHeader: otherSecret, "origin": origin}})
+		got := srv.Dispatch(context.Background(), otherLink, pages.SessionRequest{Method: http.MethodGet, Path: path, Headers: map[string]string{links.SecretHeader: otherSecret, "origin": origin}})
 		require.Equal(t, http.StatusNotFound, got.Status, path)
 	}
 	require.Len(t, a.submitted, 1)

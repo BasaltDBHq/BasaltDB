@@ -95,6 +95,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | `setupcode` | setup | codec | 3 | `crypto/rand` | - |
 | `pluginproto` | plugins | codec | 3 | - | - |
 | `largevalue` | large values | codec | 3 | - | - |
+| `toolresult` | agent | types | 2 | - | - |
 
 ## Known violations
 

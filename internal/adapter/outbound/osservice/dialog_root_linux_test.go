@@ -1,6 +1,6 @@
 //go:build linux
 
-package service_test
+package osservice_test
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 // The install script runs as root only in a throwaway Linux container
@@ -24,7 +24,7 @@ const rootBinary = "/usr/local/bin/basalt"
 // runInstall runs the Linux install script for binary as root.
 func runInstall(t *testing.T, binary string) (string, error) {
 	t.Helper()
-	script, err := service.InstallScript("linux", binary)
+	script, err := osservice.InstallScript("linux", binary)
 	require.NoError(t, err)
 	out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
 	return string(out), err
@@ -49,7 +49,7 @@ func requireRefused(t *testing.T, binary, want string) {
 	require.Equal(t, 1, exitErr.ExitCode(), out)
 	require.Contains(t, out, want)
 	require.False(t, exists("getent passwd basalt"), "no OS user is left behind: %s", out)
-	require.NoFileExists(t, service.SystemdUnitPath)
+	require.NoFileExists(t, osservice.SystemdUnitPath)
 }
 
 func TestInstallScriptAsRoot(t *testing.T) {
@@ -60,7 +60,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	sh(t, `printf '#!/bin/sh\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
-		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+service.SystemdUnitPath+
+		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+osservice.SystemdUnitPath+
 			"; chmod 0755 /etc/systemd/system /usr/local/bin; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
 	}
 	clean()
@@ -100,7 +100,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		out, err := runInstall(t, rootBinary)
 		require.Error(t, err)
 		require.Contains(t, out, "the OS user basalt exists with uid 1500, not a system account")
-		require.NoFileExists(t, service.SystemdUnitPath)
+		require.NoFileExists(t, osservice.SystemdUnitPath)
 	})
 	t.Run("an existing system account with a login shell", func(t *testing.T) {
 		defer clean()
@@ -108,7 +108,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		out, err := runInstall(t, rootBinary)
 		require.Error(t, err)
 		require.Contains(t, out, "the OS user basalt exists with the login shell /bin/bash")
-		require.NoFileExists(t, service.SystemdUnitPath)
+		require.NoFileExists(t, osservice.SystemdUnitPath)
 	})
 	t.Run("a group without the user", func(t *testing.T) {
 		defer clean()
@@ -125,8 +125,8 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		require.True(t, exists("getent passwd basalt | grep -q ':/usr/sbin/nologin$'"), "a system user that cannot log in")
 		require.True(t, exists(`[ "$(stat -c '%U:%G %a' /etc/basalt)" = "basalt:basalt 750" ]`))
 		require.True(t, exists(`[ "$(stat -c '%U:%G %a' /opt/basalt /opt/basalt/run | sort -u)" = "root:root 755" ]`), "the plugin base, root's")
-		require.True(t, exists(`[ "$(stat -c '%U:%G %a' `+service.SystemdUnitPath+`)" = "root:root 644" ]`))
-		unit, err := os.ReadFile(service.SystemdUnitPath)
+		require.True(t, exists(`[ "$(stat -c '%U:%G %a' `+osservice.SystemdUnitPath+`)" = "root:root 644" ]`))
+		unit, err := os.ReadFile(osservice.SystemdUnitPath)
 		require.NoError(t, err)
 		require.Contains(t, string(unit), "ExecStart="+rootBinary+" engine --config /etc/basalt/engine.json --supervise\n")
 		log, err := os.ReadFile("/tmp/systemctl.log")
@@ -138,7 +138,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 // runRemove runs the Linux removal script as root.
 func runRemove(t *testing.T) (string, error) {
 	t.Helper()
-	script, err := service.RemoveScript("linux")
+	script, err := osservice.RemoveScript("linux")
 	require.NoError(t, err)
 	out, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
 	return string(out), err
@@ -178,7 +178,7 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 		require.ErrorAs(t, err, &exitErr, out)
 		require.Equal(t, 1, exitErr.ExitCode(), out)
 		require.Contains(t, out, "/etc/basalt/engine.json still exists")
-		require.FileExists(t, service.SystemdUnitPath)
+		require.FileExists(t, osservice.SystemdUnitPath)
 		require.FileExists(t, "/etc/systemd/system/basalt-plugin-ner-default.service")
 		require.True(t, exists("getent passwd basalt"))
 		require.NoFileExists(t, "/tmp/systemctl.log", "nothing was stopped")
@@ -190,7 +190,7 @@ func TestRemoveScriptAsRoot(t *testing.T) {
 		sh(t, "useradd --system --shell /bin/sh basalt-plugin-shell-default")
 		out, err := runRemove(t)
 		require.NoError(t, err, out)
-		require.NoFileExists(t, service.SystemdUnitPath)
+		require.NoFileExists(t, osservice.SystemdUnitPath)
 		require.NoFileExists(t, "/etc/systemd/system/basalt-plugin-ner-default.service")
 		for _, d := range []string{"/etc/basalt", "/var/lib/basalt", "/opt/basalt"} {
 			require.NoDirExists(t, d)

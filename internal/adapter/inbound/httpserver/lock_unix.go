@@ -1,6 +1,6 @@
 //go:build unix
 
-package server
+package httpserver
 
 import (
 	"errors"

@@ -11,7 +11,7 @@ import (
 
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // notifierService answers the two notifier hooks and keeps what it got.
@@ -47,8 +47,8 @@ func TestNotifierHooksCarryTheEventBytes(t *testing.T) {
 	tr := dialServer(t, newServer(t, mux, nil), "")
 
 	events := json.RawMessage(`[{"specversion":"1.0","id":"x:9007199254740993","type":"dev.basaltdb.write.applied","data":{"seq":9007199254740993,"table":"a<b"}}]`)
-	var res protocol.FeedObserveResponse
-	if err := tr.Call(context.Background(), protocol.MethodFeedObserve, protocol.FeedObserveRequest{Agent: "product_a", Events: events}, &res); err != nil {
+	var res pluginproto.FeedObserveResponse
+	if err := tr.Call(context.Background(), pluginproto.MethodFeedObserve, pluginproto.FeedObserveRequest{Agent: "product_a", Events: events}, &res); err != nil {
 		t.Fatal(err)
 	}
 	got := svc.feed.Load()
@@ -61,7 +61,7 @@ func TestNotifierHooksCarryTheEventBytes(t *testing.T) {
 
 	// Any result type that has the JSON field works, as for every method.
 	var loose map[string]json.Number
-	if err := tr.Call(context.Background(), protocol.MethodFeedObserve, &protocol.FeedObserveRequest{Agent: "product_a", Events: events}, &loose); err != nil {
+	if err := tr.Call(context.Background(), pluginproto.MethodFeedObserve, &pluginproto.FeedObserveRequest{Agent: "product_a", Events: events}, &loose); err != nil {
 		t.Fatal(err)
 	}
 	if loose["lastSeq"] != "9007199254740993" {
@@ -69,7 +69,7 @@ func TestNotifierHooksCarryTheEventBytes(t *testing.T) {
 	}
 
 	notice := json.RawMessage(`{"specversion":"1.0","id":"n","type":"dev.basaltdb.approval.requested","data":{"kind":"APPROVAL_REQUESTED"}}`)
-	if err := tr.Call(context.Background(), protocol.MethodApprovalDeliver, protocol.ApprovalDeliverRequest{Agent: "product_a", Event: notice}, &protocol.ApprovalDeliverResponse{}); err != nil {
+	if err := tr.Call(context.Background(), pluginproto.MethodApprovalDeliver, pluginproto.ApprovalDeliverRequest{Agent: "product_a", Event: notice}, &pluginproto.ApprovalDeliverResponse{}); err != nil {
 		t.Fatal(err)
 	}
 	if d := svc.deliver.Load(); d.GetAgent() != "product_a" || string(d.GetEvent()) != string(notice) {
@@ -83,11 +83,11 @@ func TestNotifierParamsThatAreNotJSONAreNotSent(t *testing.T) {
 	s := newServer(t, http.NotFoundHandler(), nil)
 	tr := dialServer(t, s, "")
 	before := s.hits.Load()
-	err := tr.Call(context.Background(), protocol.MethodFeedObserve, protocol.FeedObserveRequest{Agent: "a", Events: json.RawMessage(`[{`)}, nil)
+	err := tr.Call(context.Background(), pluginproto.MethodFeedObserve, pluginproto.FeedObserveRequest{Agent: "a", Events: json.RawMessage(`[{`)}, nil)
 	if err == nil {
 		t.Fatal("sent")
 	}
-	err = tr.Call(context.Background(), protocol.MethodApprovalDeliver, protocol.ApprovalDeliverRequest{Agent: "a", Event: json.RawMessage(`nope`)}, nil)
+	err = tr.Call(context.Background(), pluginproto.MethodApprovalDeliver, pluginproto.ApprovalDeliverRequest{Agent: "a", Event: json.RawMessage(`nope`)}, nil)
 	if err == nil {
 		t.Fatal("sent")
 	}

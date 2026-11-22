@@ -23,7 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -571,7 +571,7 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 type slowReverts struct{ agent.SQLStore }
 
 func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
-	return action.RescopedRevert{}, postgres.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	return action.RescopedRevert{}, store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
 }
 
 // A rescope past 100 seconds is 504 QUERY_TIMEOUT TIME_LIMIT, with what the

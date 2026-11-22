@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -128,7 +128,7 @@ func (h *fakeHost) OpenURL(_ context.Context, link string) error {
 
 func (h *fakeHost) PagesUp(context.Context, string) bool { return h.pagesUp }
 
-func (h *fakeHost) System(io.Writer, io.Writer) service.System { return h.sys }
+func (h *fakeHost) System(io.Writer, io.Writer) osservice.System { return h.sys }
 
 func (h *fakeHost) Probe(_ context.Context, socket string) error {
 	h.probed = append(h.probed, socket)
@@ -206,7 +206,7 @@ func me(t *testing.T) string {
 func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
-	spec := service.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
+	spec := osservice.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
 	a := agentInstall{name: "bot", osUser: agentOSUser(t), personUIDs: []uint32{4242}}
 
 	_, err := agentSpecFromStdin(strings.NewReader("postgres://x\n"), spec, a, false, false)

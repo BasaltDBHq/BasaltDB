@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -35,7 +35,7 @@ func (g olderGuard) startEngine(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- engine.Run(ctx, cfg, g.configPath, slog.New(slog.DiscardHandler)) }()
+	go func() { done <- app.Run(ctx, cfg, g.configPath, slog.New(slog.DiscardHandler)) }()
 	t.Cleanup(func() {
 		cancel()
 		require.NoError(t, <-done)

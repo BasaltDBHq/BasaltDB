@@ -1,4 +1,4 @@
-package plugin
+package pluginhost
 
 // publisherKeys are the Basalt publisher keys built into the binary, each a
 // PEM PUBLIC KEY. Each key's id is computed from the key when the trust

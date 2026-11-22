@@ -3,7 +3,7 @@
 // one sudo prompt at basalt init. Install and uninstall are
 // plans of steps, printed before they run, so a person sees every command
 // that needs root.
-package service
+package osservice
 
 import (
 	"bytes"

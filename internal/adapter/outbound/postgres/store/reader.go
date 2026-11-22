@@ -2,7 +2,7 @@
 // statements on that agent's scoped Postgres credential. Agent SQL is run
 // as given, with bound parameters, never rewritten; the engine's policy
 // (internal/core/sqlguard) has already allowed it.
-package postgres
+package store
 
 import (
 	"bytes"

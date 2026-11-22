@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"cmp"
@@ -19,7 +19,7 @@ import (
 	"time"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
@@ -135,7 +135,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err := ensureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
 		return err
 	}
-	lock, err := server.AcquireLock(LockPath(cfg.SocketDir))
+	lock, err := httpserver.AcquireLock(LockPath(cfg.SocketDir))
 	if err != nil {
 		return err
 	}
@@ -521,9 +521,9 @@ func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log
 	}
 	if handed != nil {
 		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)
-		return &pagesSite{pages: srv, ln: handed, handler: server.Wrap(p.Addr, handed, srv.Handler()), origin: p.Origin}, nil
+		return &pagesSite{pages: srv, ln: handed, handler: httpserver.Wrap(p.Addr, handed, srv.Handler()), origin: p.Origin}, nil
 	}
-	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
+	ln, h, err := httpserver.Listen(httpserver.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
 		return nil, pagesPortError(p.Addr, err)
 	}

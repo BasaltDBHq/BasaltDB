@@ -1,4 +1,4 @@
-package websec_test
+package httpsec_test
 
 import (
 	"net"
@@ -8,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	websec "github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 )
 
 func TestWrongHostRejected(t *testing.T) {
 	t.Parallel()
-	h := websec.Host([]string{"127.0.0.1", "localhost"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := httpsec.Host([]string{"127.0.0.1", "localhost"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(http.MethodGet, "http://evil.example/", nil)
 	req.Host = "evil.example"
 	w := httptest.NewRecorder()
@@ -23,7 +23,7 @@ func TestWrongHostRejected(t *testing.T) {
 
 func TestCrossOriginPostRejected(t *testing.T) {
 	t.Parallel()
-	h := websec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := httpsec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/x", nil)
 	req.Header.Set("Origin", "http://other:8080")
 	w := httptest.NewRecorder()
@@ -33,7 +33,7 @@ func TestCrossOriginPostRejected(t *testing.T) {
 
 func TestCLIWithoutOriginAllowed(t *testing.T) {
 	t.Parallel()
-	h := websec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := httpsec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/x", nil)
@@ -44,7 +44,7 @@ func TestCLIWithoutOriginAllowed(t *testing.T) {
 
 func TestOtherLocalhostPortOriginRejected(t *testing.T) {
 	t.Parallel()
-	h := websec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := httpsec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/x", nil)
 	req.Header.Set("Origin", "http://127.0.0.1:9090")
 	w := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestOtherLocalhostPortOriginRejected(t *testing.T) {
 
 func TestFramingBlocked(t *testing.T) {
 	t.Parallel()
-	h := websec.Headers()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := httpsec.Headers()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -68,8 +68,8 @@ func TestWrapOrder(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
-	allowed := websec.AllowedHostsForListener(ln.Addr().String(), ln.Addr())
-	h := websec.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	allowed := httpsec.AllowedHostsForListener(ln.Addr().String(), ln.Addr())
+	h := httpsec.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}), allowed, "http", ln.Addr())
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -85,8 +85,8 @@ func TestLocalhostOriginAllowed(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
-	allowed := websec.AllowedHostsForListener(ln.Addr().String(), ln.Addr())
-	h := websec.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	allowed := httpsec.AllowedHostsForListener(ln.Addr().String(), ln.Addr())
+	h := httpsec.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}), allowed, "http", ln.Addr())
 

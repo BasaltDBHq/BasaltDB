@@ -12,7 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -26,7 +26,7 @@ type slowPrepare struct {
 
 func (s slowPrepare) PrepareRevert(_ context.Context, _ action.Scope, _ string, timeout time.Duration) (action.PreparedRevert, error) {
 	*s.timeout = timeout
-	return action.PreparedRevert{}, postgres.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
+	return action.PreparedRevert{}, store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
 }
 
 // A prepare too large for an MCP call is QUERY_TIMEOUT, and its message

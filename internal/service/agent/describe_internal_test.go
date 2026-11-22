@@ -16,7 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -686,10 +686,10 @@ func TestDescribeErrorsStayInTheContract(t *testing.T) {
 			err  error
 			code string
 		}{
-			{postgres.MapError(&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}), CodeInternal},
-			{postgres.MapError(&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}), CodeInternal},
-			{postgres.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}), CodeQueryTimeout},
-			{postgres.MapError(&pgconn.PgError{Code: "08006", Message: "connection failure"}), CodeUnavailable},
+			{store.MapError(&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}), CodeInternal},
+			{store.MapError(&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}), CodeInternal},
+			{store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}), CodeQueryTimeout},
+			{store.MapError(&pgconn.PgError{Code: "08006", Message: "connection failure"}), CodeUnavailable},
 			{errors.New("boom"), CodeInternal},
 		} {
 			s := describeService(t, &errCatalog{err: c.err}, fakeClasses{}, "")

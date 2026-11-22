@@ -1,4 +1,4 @@
-package plugin
+package pluginhost
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // errBadBatch: the engine built a feed batch the contract does not allow. It
@@ -34,9 +34,9 @@ func (h *Host) ObserveFeedOn(ctx context.Context, k EntryKey, reg Registration, 
 	if err != nil {
 		return 0, fmt.Errorf("plugin %s: %w", k, err)
 	}
-	var res protocol.FeedObserveResponse
-	if err := h.CallOn(ctx, k, reg, []string{agent}, protocol.MethodFeedObserve,
-		protocol.FeedObserveRequest{Agent: agent, Events: events}, &res); err != nil {
+	var res pluginproto.FeedObserveResponse
+	if err := h.CallOn(ctx, k, reg, []string{agent}, pluginproto.MethodFeedObserve,
+		pluginproto.FeedObserveRequest{Agent: agent, Events: events}, &res); err != nil {
 		return 0, err
 	}
 	if !slices.Contains(seqs, res.LastSeq) {
@@ -54,8 +54,8 @@ func (h *Host) DeliverApproval(ctx context.Context, k EntryKey, agent string, ev
 	if json.Unmarshal(event, &obj) != nil || obj == nil {
 		return fmt.Errorf("plugin %s: a notice must be one JSON object", k)
 	}
-	return h.Call(ctx, k, []string{agent}, protocol.MethodApprovalDeliver,
-		protocol.ApprovalDeliverRequest{Agent: agent, Event: event}, &protocol.ApprovalDeliverResponse{})
+	return h.Call(ctx, k, []string{agent}, pluginproto.MethodApprovalDeliver,
+		pluginproto.ApprovalDeliverRequest{Agent: agent, Event: event}, &pluginproto.ApprovalDeliverResponse{})
 }
 
 // batchSeqs reads data.seq of every event of a batch.
@@ -65,7 +65,7 @@ func batchSeqs(events json.RawMessage) ([]int64, error) {
 			Seq *int64 `json:"seq"`
 		} `json:"data"`
 	}
-	if json.Unmarshal(events, &batch) != nil || len(batch) == 0 || len(batch) > protocol.MaxFeedEvents {
+	if json.Unmarshal(events, &batch) != nil || len(batch) == 0 || len(batch) > pluginproto.MaxFeedEvents {
 		return nil, errBadBatch
 	}
 	seqs := make([]int64, len(batch))

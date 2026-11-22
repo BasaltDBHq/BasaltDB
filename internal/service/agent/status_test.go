@@ -25,10 +25,10 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/app/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -208,11 +208,11 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return r
 		}},
 		problemDatabaseUnreachable: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
-		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{
+		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "53300",
 			Message: `too many connections for role "basalt_agent_bot"`,
 		})}, 1, nil)},
-		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{
+		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",
 		})}, 1, nil)},
@@ -221,7 +221,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		problemUpgradeAvailable:   {state: guard.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
 		problemNoPasskey:          {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
 		problemSetupNotRun:        {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon))},
-		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guard.SetupInstall, past))},
+		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guard.SetupInstall, past))},
 		problemSetupChangePending: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon))},
 		problemLockFileUnusable: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
@@ -459,7 +459,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	require.False(t, r.Engine.Reachable)
 	require.False(t, r.Ready)
 	require.Equal(t, setupNone, r.Setup.State)
-	require.Equal(t, service.StartCommand("linux"), r.Problems[0].NextSteps[0].Command)
+	require.Equal(t, osservice.StartCommand("linux"), r.Problems[0].NextSteps[0].Command)
 
 	// A same-user config the shim reads: its operator and its foreground engine.
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
@@ -637,7 +637,7 @@ func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
 
 // errNoRole is the error a pending INSTALL code's agent gets: its role does
 // not exist yet, so the database refuses the login.
-var errNoRole = postgres.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})
+var errNoRole = store.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})
 
 func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	t.Parallel()
@@ -721,7 +721,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 		require.NotEmpty(t, body["errorId"], tool)
 		require.NotEmpty(t, body["personMessage"], tool)
 		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool)
-		require.Equal(t, service.StartCommand("linux"), body["nextSteps"].([]any)[0].(map[string]any)["command"], tool)
+		require.Equal(t, osservice.StartCommand("linux"), body["nextSteps"].([]any)[0].(map[string]any)["command"], tool)
 	}
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError)
@@ -756,7 +756,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	require.Equal(t, v.Steps, steps(t, body))
 	require.Nil(t, body["personMessage"], "the agent starts it: nothing for the person")
 	first := body["nextSteps"].([]any)[0].(map[string]any)
-	require.Equal(t, service.StartCommand("linux"), first["command"])
+	require.Equal(t, osservice.StartCommand("linux"), first["command"])
 	second := body["nextSteps"].([]any)[1].(map[string]any)
 	require.Equal(t, "query", second["tool"])
 	require.Equal(t, true, second["repeatCall"])
@@ -777,7 +777,7 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 	ok := guardAt(guard.GuardOK, nil, nil)
 	soon := statusNow.Add(time.Hour)
 	reports := map[string]func(t *testing.T) StatusReport{
-		"credential rejected":  operatedStatusWith(&fakeProbe{err: postgres.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long),
+		"credential rejected":  operatedStatusWith(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long),
 		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long),
 		"guard missing":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long),
 		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long),

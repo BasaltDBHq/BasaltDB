@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // The test binary doubles as the plugin: TestMain runs peerMain when the
@@ -96,7 +96,7 @@ func serve(r io.Reader, w io.Writer, mode string, opts map[string]string) {
 		write(b.Bytes())
 	}
 
-	br := bufio.NewReaderSize(r, protocol.MaxMessageBytes+2)
+	br := bufio.NewReaderSize(r, pluginproto.MaxMessageBytes+2)
 	for {
 		line, err := br.ReadBytes('\n')
 		if err != nil {
@@ -128,7 +128,7 @@ func serve(r io.Reader, w io.Writer, mode string, opts map[string]string) {
 		case "garbage":
 			write([]byte(adaptertest.GarbageMarker + " this is not json\n"))
 		case "oversized":
-			writeLine(write, req.ID, protocol.MaxMessageBytes+1000)
+			writeLine(write, req.ID, pluginproto.MaxMessageBytes+1000)
 		case "size":
 			n, _ := strconv.Atoi(opts["n"])
 			writeLine(write, req.ID, n)

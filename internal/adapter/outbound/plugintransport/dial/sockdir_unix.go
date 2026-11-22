@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // SocketDirIs reports whether dir, not followed if it is a link, is a
@@ -59,7 +59,7 @@ func makeSocketDir(base, name string) error {
 	if err != nil {
 		return fmt.Errorf("the plugin socket base %s cannot be read", base)
 	}
-	if err := plugin.CheckSocketBaseInfo(base, bfi); err != nil {
+	if err := pluginhost.CheckSocketBaseInfo(base, bfi); err != nil {
 		return err
 	}
 	bfd := int(bf.Fd())

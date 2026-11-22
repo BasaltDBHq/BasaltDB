@@ -1,4 +1,4 @@
-package service_test
+package osservice_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 const pluginUnit = "basalt-plugin-acme-ner-default.service"
@@ -38,9 +38,9 @@ func (m machine) link(t *testing.T, path, target string) {
 	require.NoError(t, os.Symlink(target, p))
 }
 
-func (m machine) fs() service.SystemdFS {
+func (m machine) fs() osservice.SystemdFS {
 	at := func(p string) string { return filepath.Join(string(m), p) }
-	return service.SystemdFS{
+	return osservice.SystemdFS{
 		ReadDir:  func(p string) ([]fs.DirEntry, error) { return os.ReadDir(at(p)) },
 		Lstat:    func(p string) (fs.FileInfo, error) { return os.Lstat(at(p)) },
 		Readlink: func(p string) (string, error) { return os.Readlink(at(p)) },
@@ -50,7 +50,7 @@ func (m machine) fs() service.SystemdFS {
 
 func (m machine) overrides(t *testing.T) []string {
 	t.Helper()
-	found, err := service.SystemdOverrides(pluginUnit, m.fs())
+	found, err := osservice.SystemdOverrides(pluginUnit, m.fs())
 	require.NoError(t, err)
 	return found
 }
@@ -163,7 +163,7 @@ func TestSystemdOverridesFailsClosed(t *testing.T) {
 		}
 		return readDir(p)
 	}
-	_, err := service.SystemdOverrides(pluginUnit, m)
+	_, err := osservice.SystemdOverrides(pluginUnit, m)
 	require.ErrorIs(t, err, os.ErrPermission)
 }
 
@@ -179,12 +179,12 @@ func TestPluginInstallRefusesAUserInTheEnginesGroup(t *testing.T) {
 		sys := newFake()
 		sys.users[user] = true
 		sys.inGroup = map[string]bool{user + " " + h.EngineUser: true}
-		_, err := service.PluginInstallPlan(context.Background(), sys, h, []service.PluginEntry{entry(goos, "default")})
+		_, err := osservice.PluginInstallPlan(context.Background(), sys, h, []osservice.PluginEntry{entry(goos, "default")})
 		require.ErrorContains(t, err, "its OS user "+user+" is in the engine's group "+h.EngineUser, goos)
 		require.ErrorContains(t, err, fix, goos)
 
 		sys.inGroup = nil
-		_, err = service.PluginInstallPlan(context.Background(), sys, h, []service.PluginEntry{entry(goos, "default")})
+		_, err = osservice.PluginInstallPlan(context.Background(), sys, h, []osservice.PluginEntry{entry(goos, "default")})
 		require.NoError(t, err, goos)
 	}
 }
@@ -196,7 +196,7 @@ func TestSystemdOverridesOnThisMachine(t *testing.T) {
 	if os.Getenv("BASALT_TEST_SYSTEMD_HOST") != "1" {
 		t.Skip("reads this machine's systemd directories: run in a distribution image")
 	}
-	found, err := service.SystemdOverridesOnMachine(pluginUnit)
+	found, err := osservice.SystemdOverridesOnMachine(pluginUnit)
 	require.NoError(t, err)
 	require.Empty(t, found)
 }

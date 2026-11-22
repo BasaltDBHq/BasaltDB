@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -117,7 +117,7 @@ func (f *setupFinisher) PendingRecorded(ctx context.Context, id uuid.UUID) (reco
 	defer cancel()
 	conn, err := f.connect(ctx, dsn)
 	// The service reads store errors mapped (postgres.MapError).
-	err = postgres.MapError(err)
+	err = store.MapError(err)
 	switch {
 	case agent.LoginRefused(err):
 		return false, false, nil // the person has not run the code yet

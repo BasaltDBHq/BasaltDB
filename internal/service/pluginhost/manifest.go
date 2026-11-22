@@ -1,4 +1,4 @@
-package plugin
+package pluginhost
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // The files of a plugin's directory that are not in its manifest's files.
@@ -170,8 +170,8 @@ func (p *manifestParser) protocols() error {
 			return badManifest("protocol lists a value that is not a basalt-plugin/N version")
 		}
 	}
-	if !slices.Contains(list, protocol.Version1) {
-		return badManifest("protocol must include " + protocol.Version1)
+	if !slices.Contains(list, pluginproto.Version1) {
+		return badManifest("protocol must include " + pluginproto.Version1)
 	}
 	p.m.Protocol = list
 	return nil
@@ -182,7 +182,7 @@ func (p *manifestParser) hooks() error {
 	if !ok || len(obj) == 0 {
 		return badManifest("hooks must be an object with at least one hook")
 	}
-	p.m.Hooks = make(map[string]protocol.HookDecl, len(obj))
+	p.m.Hooks = make(map[string]pluginproto.HookDecl, len(obj))
 	for name, raw := range obj {
 		h := Hook(name)
 		if h == HookWireVerdict {
@@ -211,13 +211,13 @@ func (p *manifestParser) has(h Hook) bool {
 	return ok
 }
 
-func (p *manifestParser) hookDecl(h Hook, raw json.RawMessage) (protocol.HookDecl, error) {
+func (p *manifestParser) hookDecl(h Hook, raw json.RawMessage) (pluginproto.HookDecl, error) {
 	where := "hooks." + string(h)
 	obj, ok := objectOf(raw)
 	if !ok {
-		return protocol.HookDecl{}, badManifest(where + " must be an object")
+		return pluginproto.HookDecl{}, badManifest(where + " must be an object")
 	}
-	var d protocol.HookDecl
+	var d pluginproto.HookDecl
 	rawContract, present := obj["contract"]
 	if !present {
 		return d, badManifest(where + ".contract is missing")

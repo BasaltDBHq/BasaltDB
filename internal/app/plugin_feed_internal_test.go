@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"bytes"
@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // fastFeed is the feed's timing in tests: the contract's numbers, shrunk.
@@ -87,8 +87,8 @@ type gotCall struct {
 // the host's cap, timeout and agent check. It checks every request it gets
 // against feed.schema.json and keeps its bytes.
 type feedPlugin struct {
-	key    plugin.EntryKey
-	m      plugin.Manifest
+	key    pluginhost.EntryKey
+	m      pluginhost.Manifest
 	schema *jsonschema.Schema
 
 	mu      sync.Mutex
@@ -104,14 +104,14 @@ func (p *feedPlugin) setMode(m string) {
 }
 
 func (p *feedPlugin) Call(ctx context.Context, method string, params, result any) error {
-	if method == protocol.MethodInitialize {
-		*result.(*protocol.InitializeResponse) = protocol.InitializeResponse{Protocol: protocol.Version1, Name: p.m.Name, Version: p.m.Version, Hooks: p.m.Hooks}
+	if method == pluginproto.MethodInitialize {
+		*result.(*pluginproto.InitializeResponse) = pluginproto.InitializeResponse{Protocol: pluginproto.Version1, Name: p.m.Name, Version: p.m.Version, Hooks: p.m.Hooks}
 		return nil
 	}
-	if method != protocol.MethodFeedObserve {
+	if method != pluginproto.MethodFeedObserve {
 		return nil
 	}
-	raw, err := protocol.Marshal(params) // the bytes the transports send
+	raw, err := pluginproto.Marshal(params) // the bytes the transports send
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (p *feedPlugin) Call(ctx context.Context, method string, params, result any
 	var last int64
 	switch mode {
 	case crashMode:
-		return plugin.Fail(plugin.ClassExited)
+		return pluginhost.Fail(pluginhost.ClassExited)
 	case hangMode:
 		<-ctx.Done()
 		return ctx.Err()
@@ -178,14 +178,14 @@ type feedEnv struct {
 	t        *testing.T
 	l        pluginLedgers
 	pools    map[string]pluginLedger
-	host     *plugin.Host
+	host     *pluginhost.Host
 	stateDir string
 	schema   *jsonschema.Schema
 	logs     *syncBuffer
 	log      *slog.Logger
 
 	mu      sync.Mutex
-	entries []plugin.Entry
+	entries []pluginhost.Entry
 
 	stop func()
 	// feed is the feed last started.
@@ -198,7 +198,7 @@ func newFeedEnv(t *testing.T) *feedEnv {
 	l := newPluginLedgers(t, f)
 	logs := &syncBuffer{}
 	e := &feedEnv{
-		t: t, l: l, pools: l.pools(t), host: plugin.NewHost(), stateDir: t.TempDir(), schema: feedSchema(t),
+		t: t, l: l, pools: l.pools(t), host: pluginhost.NewHost(), stateDir: t.TempDir(), schema: feedSchema(t),
 		logs: logs, log: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
 	t.Cleanup(func() {
@@ -209,11 +209,11 @@ func newFeedEnv(t *testing.T) *feedEnv {
 	return e
 }
 
-func feedManifest(name string) plugin.Manifest {
-	return plugin.Manifest{
-		ManifestVersion: 1, Name: name, Version: "1.0.0", Publisher: "t", Protocol: []string{protocol.Version1},
-		Hooks:    map[string]protocol.HookDecl{string(plugin.HookFeedObserve): {Contract: "feed/1"}},
-		Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/p"}},
+func feedManifest(name string) pluginhost.Manifest {
+	return pluginhost.Manifest{
+		ManifestVersion: 1, Name: name, Version: "1.0.0", Publisher: "t", Protocol: []string{pluginproto.Version1},
+		Hooks:    map[string]pluginproto.HookDecl{string(pluginhost.HookFeedObserve): {Contract: "feed/1"}},
+		Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/p"}},
 	}
 }
 
@@ -221,7 +221,7 @@ func feedManifest(name string) plugin.Manifest {
 // the supervisor does, and makes the engine serve it.
 func (e *feedEnv) serve(name string, agents ...string) *feedPlugin {
 	e.t.Helper()
-	k := plugin.EntryKey{Name: name, Instance: "default"}
+	k := pluginhost.EntryKey{Name: name, Instance: "default"}
 	p := &feedPlugin{key: k, m: feedManifest(name), schema: e.schema, mode: answerAll}
 	e.t.Cleanup(func() {
 		p.mu.Lock()
@@ -235,7 +235,7 @@ func (e *feedEnv) serve(name string, agents ...string) *feedPlugin {
 // serveAgain registers p again, a new registration, served to agents.
 func (e *feedEnv) serveAgain(p *feedPlugin, agents ...string) {
 	e.t.Helper()
-	en := plugin.Entry{Key: p.key, Manifest: p.m, Agents: agents, Timeout: 2 * time.Second}
+	en := pluginhost.Entry{Key: p.key, Manifest: p.m, Agents: agents, Timeout: 2 * time.Second}
 	require.NoError(e.t, e.host.Register(context.Background(), en, p))
 	e.mu.Lock()
 	e.entries = append(e.entries, en)
@@ -243,14 +243,14 @@ func (e *feedEnv) serveAgain(p *feedPlugin, agents ...string) {
 }
 
 // unserve stops serving entry k: the engine no longer runs it.
-func (e *feedEnv) unserve(k plugin.EntryKey) {
+func (e *feedEnv) unserve(k pluginhost.EntryKey) {
 	e.mu.Lock()
-	e.entries = slices.DeleteFunc(e.entries, func(en plugin.Entry) bool { return en.Key == k })
+	e.entries = slices.DeleteFunc(e.entries, func(en pluginhost.Entry) bool { return en.Key == k })
 	e.mu.Unlock()
 	e.host.Unregister(k)
 }
 
-func (e *feedEnv) served() []plugin.Entry {
+func (e *feedEnv) served() []pluginhost.Entry {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return slices.Clone(e.entries)
@@ -265,7 +265,7 @@ func (e *feedEnv) start() {
 
 func (e *feedEnv) startWith(ledgers map[string]pluginLedger) {
 	e.t.Helper()
-	f := newPluginFeed(e.host, e.served, ledgers, e.stateDir, newPluginSenders(e.host, time.Now), plugin.RealClock(), e.log)
+	f := newPluginFeed(e.host, e.served, ledgers, e.stateDir, newPluginSenders(e.host, time.Now), pluginhost.RealClock(), e.log)
 	f.timing = fastFeed
 	e.feed = f
 	ctx, cancel := context.WithCancel(context.Background())
@@ -283,7 +283,7 @@ func (e *feedEnv) startWith(ledgers map[string]pluginLedger) {
 }
 
 // cursor is entry k's cursor for agent, false while there is none.
-func (e *feedEnv) cursor(k plugin.EntryKey, agent string) (feedCursor, bool) {
+func (e *feedEnv) cursor(k pluginhost.EntryKey, agent string) (feedCursor, bool) {
 	raw, err := os.ReadFile(filepath.Join(e.stateDir, pluginCursorsDirName, k.Name, k.Instance, agent+".json"))
 	if err != nil {
 		return feedCursor{}, false
@@ -293,7 +293,7 @@ func (e *feedEnv) cursor(k plugin.EntryKey, agent string) (feedCursor, bool) {
 }
 
 // started waits until entry k's cursor for agent is written, and returns it.
-func (e *feedEnv) started(k plugin.EntryKey, agent string) feedCursor {
+func (e *feedEnv) started(k pluginhost.EntryKey, agent string) feedCursor {
 	e.t.Helper()
 	var c feedCursor
 	require.Eventually(e.t, func() bool {
@@ -305,7 +305,7 @@ func (e *feedEnv) started(k plugin.EntryKey, agent string) feedCursor {
 }
 
 // waitCursor waits until entry k's cursor for product_a is written at seq.
-func (e *feedEnv) waitCursor(k plugin.EntryKey, seq int64) feedCursor {
+func (e *feedEnv) waitCursor(k pluginhost.EntryKey, seq int64) feedCursor {
 	e.t.Helper()
 	var c feedCursor
 	require.Eventually(e.t, func() bool {
@@ -450,7 +450,7 @@ func TestFeedDeliversInOrder(t *testing.T) {
 	waitSeqs(t, p, "product_a", want...)
 	install := e.installID()
 	for i, c := range p.received() {
-		require.LessOrEqual(t, len(c.events), protocol.MaxFeedEvents, "call %d", i)
+		require.LessOrEqual(t, len(c.events), pluginproto.MaxFeedEvents, "call %d", i)
 		for _, ev := range c.events {
 			require.Equal(t, fmt.Sprintf("%s:%d", install, ev.seq()), ev.ID)
 			require.Equal(t, "urn:uuid:"+install.String(), ev.Source)
@@ -461,7 +461,7 @@ func TestFeedDeliversInOrder(t *testing.T) {
 	}
 	calls := p.received()
 	require.Len(t, calls, 3)
-	require.Len(t, calls[1].events, protocol.MaxFeedEvents)
+	require.Len(t, calls[1].events, pluginproto.MaxFeedEvents)
 	require.Len(t, calls[2].events, 30)
 	// The cursor is written after the plugin answers, so wait for it.
 	c := e.waitCursor(p.key, want[len(want)-1])
@@ -612,7 +612,7 @@ func TestNewCursorStartsAtHead(t *testing.T) {
 
 // recordServed writes the record that begins serving entry k to product_a, as
 // the engine writes it before it serves the entry, and returns its seq.
-func (e *feedEnv) recordServed(k plugin.EntryKey, kind guard.PluginEventKind, egress ...string) int64 {
+func (e *feedEnv) recordServed(k pluginhost.EntryKey, kind guard.PluginEventKind, egress ...string) int64 {
 	e.t.Helper()
 	if egress == nil {
 		egress = []string{}
@@ -685,7 +685,7 @@ func TestNewInstallStartsAtHead(t *testing.T) {
 	dir := filepath.Join(e.stateDir, pluginCursorsDirName)
 	old, err := json.Marshal(feedCursor{InstallID: uuid.Must(uuid.NewV7()), Seq: 1})
 	require.NoError(t, err)
-	for _, k := range []plugin.EntryKey{p.key, q.key} {
+	for _, k := range []pluginhost.EntryKey{p.key, q.key} {
 		require.NoError(t, writeFileAtomic(filepath.Join(dir, k.Name, k.Instance), "product_a.json", old))
 	}
 	e.applied("product_a")
@@ -1057,7 +1057,7 @@ func TestFeedNeverSlowsAnAgentCall(t *testing.T) {
 				require.Less(t, time.Since(begun), time.Second, "write %d", i)
 				if mode == crashMode {
 					// The supervisor would start it again: it crashes again.
-					e.host.SetState(p.key, plugin.StateReady)
+					e.host.SetState(p.key, pluginhost.StateReady)
 				}
 				time.Sleep(fastFeed.poll / 4)
 			}

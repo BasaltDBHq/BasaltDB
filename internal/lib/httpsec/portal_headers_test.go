@@ -1,4 +1,4 @@
-package websec_test
+package httpsec_test
 
 import (
 	"bufio"
@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	websec "github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 )
 
 const portalHeadersFile = "../../../web/_headers"
@@ -52,7 +52,7 @@ func TestPortalHeadersMatchEngine(t *testing.T) {
 	rules := parseHeadersFile(t, portalHeadersFile)
 
 	rec := httptest.NewRecorder()
-	websec.Headers()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).
+	httpsec.Headers()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	// Every header the engine sets, so a new one cannot be added to one side only.
 	engine := map[string]string{}
@@ -69,10 +69,10 @@ func TestPortalHeadersMatchEngine(t *testing.T) {
 	hsts := portal["Strict-Transport-Security"]
 	delete(portal, "Strict-Transport-Security")
 	// The CSP is the engine's with the portal's connect-src, the Vault.
-	require.Equal(t, websec.PortalCSP, portal["Content-Security-Policy"], "web/_headers CSP drifted from websec.PortalCSP")
-	engine["Content-Security-Policy"] = websec.PortalCSP
+	require.Equal(t, httpsec.PortalCSP, portal["Content-Security-Policy"], "web/_headers CSP drifted from websec.PortalCSP")
+	engine["Content-Security-Policy"] = httpsec.PortalCSP
 	require.Equal(t, engine, portal, "web/_headers /* block drifted from internal/lib/httpsec")
-	for name, values := range websec.ExpectedPortal() {
+	for name, values := range httpsec.ExpectedPortal() {
 		require.Equal(t, values[0], portal[name], name)
 	}
 	require.Equal(t, "max-age=31536000; includeSubDomains", hsts)
@@ -88,17 +88,17 @@ func TestConnectPageCSPMatchesEdgeFunction(t *testing.T) {
 	require.NoError(t, err)
 	m := regexp.MustCompile(`(?m)^export const CONNECT_CSP = "([^"]*)";$`).FindSubmatch(edge)
 	require.NotNil(t, m, "web/edge/portal.js has no CONNECT_CSP")
-	require.Equal(t, websec.ConnectPageCSP, string(m[1]))
+	require.Equal(t, httpsec.ConnectPageCSP, string(m[1]))
 
-	def := websec.Expected().Get("Content-Security-Policy")
-	require.Equal(t, strings.Replace(def, "default-src 'self'; ", "default-src 'self'; connect-src https://connect.basaltvault.app; ", 1), websec.ConnectPageCSP)
+	def := httpsec.Expected().Get("Content-Security-Policy")
+	require.Equal(t, strings.Replace(def, "default-src 'self'; ", "default-src 'self'; connect-src https://connect.basaltvault.app; ", 1), httpsec.ConnectPageCSP)
 
-	h := websec.ExpectedConnectPage()
-	require.Equal(t, websec.ConnectPageCSP, h.Get("Content-Security-Policy"))
+	h := httpsec.ExpectedConnectPage()
+	require.Equal(t, httpsec.ConnectPageCSP, h.Get("Content-Security-Policy"))
 	require.Equal(t, "no-store", h.Get("Cache-Control"))
-	for name := range websec.Expected() {
+	for name := range httpsec.Expected() {
 		if name != "Content-Security-Policy" {
-			require.Equal(t, websec.Expected().Get(name), h.Get(name), name)
+			require.Equal(t, httpsec.Expected().Get(name), h.Get(name), name)
 		}
 	}
 }
@@ -121,10 +121,10 @@ func TestPortalCSPHasNoInlineOrRemoteSources(t *testing.T) {
 // their policy has no connect-src (it falls back to default-src 'self').
 func TestEngineCSPHasNoConnectSrc(t *testing.T) {
 	t.Parallel()
-	csp := websec.Expected().Get("Content-Security-Policy")
+	csp := httpsec.Expected().Get("Content-Security-Policy")
 	require.NotContains(t, csp, "connect-src")
 	require.NotRegexp(t, regexp.MustCompile(`https?:|wss?:|\*`), csp)
-	require.Equal(t, strings.Replace(csp, "default-src 'self'; ", "default-src 'self'; connect-src wss://relay.basaltvault.app; ", 1), websec.PortalCSP)
+	require.Equal(t, strings.Replace(csp, "default-src 'self'; ", "default-src 'self'; connect-src wss://relay.basaltvault.app; ", 1), httpsec.PortalCSP)
 }
 
 func TestPortalPagesHaveNoInlineScriptsOrHandlers(t *testing.T) {

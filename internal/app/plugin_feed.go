@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Feed timing (CONTRACT.md, Plugins, Notifier messages, Limits and numbers).
@@ -56,13 +56,13 @@ var defaultFeedTiming = feedTiming{poll: feedPoll, minBackoff: feedMinBackoff, m
 // notifier hook. It holds no event in memory between rounds: events wait in
 // the ledger. Nothing an agent does waits on it.
 type pluginFeed struct {
-	host    *plugin.Host
-	served  func() []plugin.Entry
+	host    *pluginhost.Host
+	served  func() []pluginhost.Entry
 	ledgers map[string]pluginLedger
 	// dir is <stateDir>/plugin-cursors.
 	dir     string
 	senders *pluginSenders
-	clock   plugin.Clock
+	clock   pluginhost.Clock
 	log     *slog.Logger
 	timing  feedTiming
 
@@ -74,15 +74,15 @@ type pluginFeed struct {
 
 // feedPair is one entry and one agent it is served to.
 type feedPair struct {
-	key   plugin.EntryKey
+	key   pluginhost.EntryKey
 	agent string
 }
 
 // newPluginFeed feeds the entries served returns, with the agents' ledgers,
 // keeping cursors under stateDir; with no stateDir it feeds nothing and
 // only keeps the senders.
-func newPluginFeed(host *plugin.Host, served func() []plugin.Entry, ledgers map[string]pluginLedger, stateDir string,
-	senders *pluginSenders, clock plugin.Clock, log *slog.Logger,
+func newPluginFeed(host *pluginhost.Host, served func() []pluginhost.Entry, ledgers map[string]pluginLedger, stateDir string,
+	senders *pluginSenders, clock pluginhost.Clock, log *slog.Logger,
 ) *pluginFeed {
 	if host == nil || served == nil || senders == nil || clock == nil || log == nil {
 		panic("engine: the plugin feed needs a host, the served entries, senders, a clock and a log")
@@ -122,11 +122,11 @@ func (f *pluginFeed) run(ctx context.Context) {
 // others, and keeps a sender for each served entry that declares a
 // notifier hook.
 func (f *pluginFeed) follow(ctx context.Context) {
-	var notifiers []plugin.EntryKey
+	var notifiers []pluginhost.EntryKey
 	want := map[feedPair]bool{}
 	for _, e := range f.served() {
-		_, feeds := e.Manifest.Hooks[string(plugin.HookFeedObserve)]
-		_, delivers := e.Manifest.Hooks[string(plugin.HookApprovalDeliver)]
+		_, feeds := e.Manifest.Hooks[string(pluginhost.HookFeedObserve)]
+		_, delivers := e.Manifest.Hooks[string(pluginhost.HookApprovalDeliver)]
 		if feeds || delivers {
 			notifiers = append(notifiers, e.Key)
 		}
@@ -253,7 +253,7 @@ func nextFeedBackoff(prev time.Duration, t feedTiming) time.Duration {
 func (r *feedReader) round(ctx context.Context) roundResult {
 	k := r.pair.key
 	reg, ok := r.f.host.Registration(k)
-	if !ok || r.f.host.State(k) != plugin.StateReady {
+	if !ok || r.f.host.State(k) != pluginhost.StateReady {
 		// Not logged: status shows the entry PLUGIN_UNAVAILABLE.
 		r.failing = true
 		return roundFailed
@@ -273,7 +273,7 @@ func (r *feedReader) round(ctx context.Context) roundResult {
 
 // send sends batch b on registration reg and moves the cursor to the
 // answer.
-func (r *feedReader) send(ctx context.Context, reg plugin.Registration, b feedRead) roundResult {
+func (r *feedReader) send(ctx context.Context, reg pluginhost.Registration, b feedRead) roundResult {
 	k := r.pair.key
 	raw, seqs, err := feedBatch(b.events)
 	if err != nil {
@@ -287,7 +287,7 @@ func (r *feedReader) send(ctx context.Context, reg plugin.Registration, b feedRe
 	outcome := make(chan error, 1)
 	agent := r.pair.agent
 	err = s.Send(ctx, pluginCall{
-		run: func(ctx context.Context, h *plugin.Host, k plugin.EntryKey) error {
+		run: func(ctx context.Context, h *pluginhost.Host, k pluginhost.EntryKey) error {
 			var err error
 			last, err = h.ObserveFeedOn(ctx, k, reg, agent, raw)
 			return err
@@ -309,7 +309,7 @@ func (r *feedReader) send(ctx context.Context, reg plugin.Registration, b feedRe
 		return r.failed("the call failed", callFailure(err))
 	}
 	r.moveTo(b.install, last)
-	if last != seqs[len(seqs)-1] || len(seqs) == protocol.MaxFeedEvents {
+	if last != seqs[len(seqs)-1] || len(seqs) == pluginproto.MaxFeedEvents {
 		return r.ok(roundMore)
 	}
 	return r.ok(roundIdle)
@@ -341,16 +341,16 @@ func (r *feedReader) failed(why string, class *string) roundResult {
 // callFailure is a failed call's class.
 func callFailure(err error) *string {
 	c := ""
-	var ce *plugin.CallError
+	var ce *pluginhost.CallError
 	switch {
 	case errors.As(err, &ce):
 		c = string(ce.Class)
-	case errors.Is(err, plugin.ErrAgentNotListed):
+	case errors.Is(err, pluginhost.ErrAgentNotListed):
 		c = "NOT_LISTED"
 	case errors.Is(err, errSenderStopped):
 		c = "STOPPED"
 	default:
-		c = string(plugin.ClassUnavailable)
+		c = string(pluginhost.ClassUnavailable)
 	}
 	return &c
 }
@@ -475,7 +475,7 @@ func (r *feedReader) readIn(ctx context.Context, tx pgx.Tx) (feedRead, error) {
 	if len(out.events) > 0 {
 		after = out.events[0].Data.Seq
 	}
-	rows, err := guard.ReadFeedRows(ctx, tx, max(after, r.floor), protocol.MaxFeedEvents-len(out.events))
+	rows, err := guard.ReadFeedRows(ctx, tx, max(after, r.floor), pluginproto.MaxFeedEvents-len(out.events))
 	if err != nil {
 		return out, err
 	}

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // exitGrace is how long, after the child has exited, the reader may still
@@ -25,7 +25,7 @@ const exitGrace = 200 * time.Millisecond
 // whole process group at once; a graceful stop is the shutdown call, made
 // before Close. The transport's Exited channel is closed once the child has
 // exited.
-func Spawn(ctx context.Context, s child.Spec) (plugin.Transport, error) {
+func Spawn(ctx context.Context, s child.Spec) (pluginhost.Transport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func Spawn(ctx context.Context, s child.Spec) (plugin.Transport, error) {
 		select {
 		case <-c.done:
 		case <-time.After(exitGrace):
-			c.abort(plugin.ClassExited)
+			c.abort(pluginhost.ClassExited)
 		}
 	}()
 	return &spawned{conn: c, p: p}, nil

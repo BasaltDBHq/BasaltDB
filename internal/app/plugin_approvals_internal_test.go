@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"context"
@@ -28,7 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Hooks of the test plugin's manifest.
@@ -77,19 +77,19 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
   "network": { "egress": [] }
 }
 `, hooks, transport, args, sha256.Sum256(exe))
-	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
 	if signed {
-		key, err := plugin.GenerateKey()
+		key, err := pluginhost.GenerateKey()
 		require.NoError(t, err)
-		pemBytes, err := plugin.MarshalPublicKey(&key.PublicKey)
+		pemBytes, err := pluginhost.MarshalPublicKey(&key.PublicKey)
 		require.NoError(t, err)
 		_, _, err = f.trust.Add(pemBytes)
 		require.NoError(t, err)
-		sig, err := plugin.SignManifest([]byte(manifest), key)
+		sig, err := pluginhost.SignManifest([]byte(manifest), key)
 		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(src, plugin.SignatureFile), sig, 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
 	}
-	v, err := plugin.Install(src, f.root, instance, f.trust, plugin.ModeSameUser, plugin.RequireApproval(!signed))
+	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(!signed))
 	require.NoError(t, err)
 	// The longest timeout: the plugin is this test binary, built with -race.
 	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
@@ -154,7 +154,7 @@ func (l pluginLedgers) approve(t *testing.T, pk *passkeytest.Authenticator, p co
 
 // servedTo are the agents the host serves entry k to, none when it is not
 // started.
-func servedTo(ep *enginePlugins, k plugin.EntryKey) []string {
+func servedTo(ep *enginePlugins, k pluginhost.EntryKey) []string {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	for _, e := range ep.entries {
@@ -168,7 +168,7 @@ func servedTo(ep *enginePlugins, k plugin.EntryKey) []string {
 // requireNotWithheld: entry k is served to agentName, and status reports
 // no approval or record problem for it (the plugin itself is not running
 // in these tests, so it is not READY).
-func requireNotWithheld(t *testing.T, ep *enginePlugins, k plugin.EntryKey, agentName string) {
+func requireNotWithheld(t *testing.T, ep *enginePlugins, k pluginhost.EntryKey, agentName string) {
 	t.Helper()
 	require.Contains(t, servedTo(ep, k), agentName)
 	require.Empty(t, ep.unrecordedFor(k, agentName), agentName)
@@ -702,7 +702,7 @@ func TestCommandsApprovalIsServed(t *testing.T) {
 			f.cfg.Plugins = append(f.cfg.Plugins, p)
 			l := newPluginLedgers(t, f)
 
-			v, err := plugin.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+			v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
 			require.NoError(t, err)
 			d := PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]})
 			l.sign(t, l.person(t), "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
@@ -729,8 +729,8 @@ func (f *pluginFixture) installRemote() config.Plugin {
   "network": { "egress": ["ner.acme.example:443"] }
 }
 `
-	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
-	v, err := plugin.Install(src, f.root, "default", f.trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
+	v, err := pluginhost.Install(src, f.root, "default", f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
 }

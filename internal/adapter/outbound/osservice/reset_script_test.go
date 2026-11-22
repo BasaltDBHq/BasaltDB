@@ -1,4 +1,4 @@
-package service_test
+package osservice_test
 
 import (
 	"os/exec"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 // The reset's script is built from constants only: it checks, changing
@@ -43,14 +43,14 @@ func TestResetScriptIsBuiltFromConstants(t *testing.T) {
 	} {
 		t.Run(v.goos, func(t *testing.T) {
 			t.Parallel()
-			script, err := service.ResetScript(v.goos)
+			script, err := osservice.ResetScript(v.goos)
 			require.NoError(t, err)
-			again, err := service.ResetScript(v.goos)
+			again, err := osservice.ResetScript(v.goos)
 			require.NoError(t, err)
 			require.Equal(t, script, again, "nothing varies between runs")
-			_, rest, ok := strings.Cut(script, service.ScriptHelpersEnd)
+			_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 			require.True(t, ok)
-			pre, after, ok := strings.Cut(rest, service.ScriptPreflightEnd)
+			pre, after, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
 			require.True(t, ok)
 			for _, c := range v.checks {
 				require.Contains(t, pre, c)
@@ -68,6 +68,6 @@ func TestResetScriptIsBuiltFromConstants(t *testing.T) {
 			require.NoError(t, err, "the script parses: %s", out)
 		})
 	}
-	_, err := service.ResetScript("windows")
+	_, err := osservice.ResetScript("windows")
 	require.Error(t, err)
 }

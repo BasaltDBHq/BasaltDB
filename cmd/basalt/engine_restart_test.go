@@ -8,18 +8,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 func TestTheEngineRunsTheNewBinaryAfterItStopsForARestart(t *testing.T) {
 	t.Parallel()
 	runs, execs := 0, 0
 	upgrade := func(context.Context) error { return nil }
-	run := func(_ context.Context, o engine.RestartOptions) error {
+	run := func(_ context.Context, o app.RestartOptions) error {
 		runs++
 		require.NotNil(t, o.Upgrade, "the engine is told when to restart")
 		if runs == 1 {
-			return engine.ErrRestart
+			return app.ErrRestart
 		}
 		return errors.New("stopped")
 	}
@@ -36,7 +36,7 @@ func TestTheEngineRunsTheNewBinaryAfterItStopsForARestart(t *testing.T) {
 func TestTheEngineWithoutARestartRunsOnce(t *testing.T) {
 	t.Parallel()
 	runs := 0
-	run := func(_ context.Context, o engine.RestartOptions) error {
+	run := func(_ context.Context, o app.RestartOptions) error {
 		runs++
 		require.Nil(t, o.Upgrade)
 		return nil
@@ -52,10 +52,10 @@ func noReload() error { return errors.New("no reload expected") }
 func TestTheEngineServesItsConfigAgainAfterAReload(t *testing.T) {
 	t.Parallel()
 	runs, reloads := 0, 0
-	run := func(context.Context, engine.RestartOptions) error {
+	run := func(context.Context, app.RestartOptions) error {
 		runs++
 		if runs == 1 {
-			return engine.ErrReload
+			return app.ErrReload
 		}
 		return errors.New("stopped")
 	}

@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"bytes"
@@ -23,9 +23,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // pluginLedgers is a guard with the fixture's two agents, each with its own
@@ -303,7 +303,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	require.Contains(t, probs[0].Message, "the guard refused its plugin record")
 	require.NotContains(t, probs[0].Message, "product_a")
 	err := ep.host.Call(context.Background(), p.Key(), []string{"client_x"}, "detect", nil, nil)
-	require.ErrorIs(t, err, plugin.ErrAgentNotListed, "the host refuses a call naming the withheld agent")
+	require.ErrorIs(t, err, pluginhost.ErrAgentNotListed, "the host refuses a call naming the withheld agent")
 
 	// The only listed agent unrecorded: the entry does not start at all.
 	solo := newPluginFixture(t)
@@ -314,7 +314,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	probs = ep.PluginProblems("client_x")
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "database is reachable")
-	require.NotEqual(t, plugin.StateReady, ep.host.State(q.Key()))
+	require.NotEqual(t, pluginhost.StateReady, ep.host.State(q.Key()))
 
 	// Next start, database reachable: recorded and served.
 	l.record(t, f, f.plugins(nil))
@@ -338,19 +338,19 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 	sch, err := c.Compile(base + "events.schema.json")
 	require.NoError(t, err)
 
-	k := plugin.EntryKey{Name: "acme-ner", Instance: "client_x"}
+	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "client_x"}
 	sha := strings.Repeat("ab", 32)
-	local := plugin.Manifest{
-		Name: "acme-ner", Version: "1.4.0", Hooks: map[string]protocol.HookDecl{"wire.detect": {Roles: []string{"NAME_CUE", "VALUE"}}},
-		Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}},
+	local := pluginhost.Manifest{
+		Name: "acme-ner", Version: "1.4.0", Hooks: map[string]pluginproto.HookDecl{"wire.detect": {Roles: []string{"NAME_CUE", "VALUE"}}},
+		Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}},
 	}
-	remote := plugin.Manifest{
-		Name: "acme-ner", Version: "2.0.0-rc.1", Hooks: map[string]protocol.HookDecl{"feed.observe": {}, "approval.deliver": {}},
-		Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example/v1"}},
-		Network:  plugin.Network{Egress: []string{"ner.acme.example:443"}},
+	remote := pluginhost.Manifest{
+		Name: "acme-ner", Version: "2.0.0-rc.1", Hooks: map[string]pluginproto.HookDecl{"feed.observe": {}, "approval.deliver": {}},
+		Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example/v1"}},
+		Network:  pluginhost.Network{Egress: []string{"ner.acme.example:443"}},
 	}
-	for _, m := range []plugin.Manifest{local, remote} {
-		d := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser, "linux")
+	for _, m := range []pluginhost.Manifest{local, remote} {
+		d := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux")
 		for _, kind := range []guard.PluginEventKind{guard.PluginEnabled, guard.PluginDisabled, guard.PluginChanged} {
 			b, err := json.Marshal(map[string]any{"kind": kind, "detail": d})
 			require.NoError(t, err)
@@ -359,7 +359,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 			require.NoError(t, sch.Validate(inst), string(b))
 		}
 	}
-	d := pluginDetail(k, plugin.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser, "linux")
+	d := pluginDetail(k, pluginhost.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux")
 	require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	require.Nil(t, d.Isolation, "a remote entry records no local isolation")
 	require.Equal(t, []string{"approval.deliver", "feed.observe"}, d.Hooks)
@@ -388,10 +388,10 @@ func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
 	require.NotNil(t, l.db)
 	require.NotNil(t, l.admit)
 
-	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	want := pluginWant{
-		served: map[string]map[plugin.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
-		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
+		served: map[string]map[pluginhost.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
+		held:   map[string]map[pluginhost.EntryKey]bool{"bot": {}},
 		trust:  trustWant{read: true, added: []string{testDetail(k).SignerKeyID}},
 	}
 	require.Empty(t, withheldBy(context.Background(), want, srv.pluginLedgers, slog.New(slog.DiscardHandler)))
@@ -404,13 +404,13 @@ func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
 	pending := newRemoteAgent(t, d.NewAgent(t, "other", demoTables, nil).URL, guard.SetupInstall)
 	rt := pending.start(t)
 	got := withheldBy(context.Background(), pluginWant{
-		served: map[string]map[plugin.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
-		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
+		served: map[string]map[pluginhost.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
+		held:   map[string]map[pluginhost.EntryKey]bool{"bot": {}},
 	}, map[string]pluginLedger{"bot": {db: rt.db, admit: pluginAdmit(rt.svc)}}, slog.New(slog.DiscardHandler))
 	require.Equal(t, map[string][]unrecordedEntry{"bot": {{key: k, why: whyNotAdmitted}}}, got)
 }
 
-func testDetail(k plugin.EntryKey) guard.PluginDetail {
+func testDetail(k pluginhost.EntryKey) guard.PluginDetail {
 	return guard.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: "1.4.0", ManifestSHA256: strings.Repeat("ab", 32),
 		SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA", Hooks: []string{"feed.observe"}, Egress: []string{},
@@ -444,7 +444,7 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 	a := d.NewAgent(t, "bot", demoTables, nil)
 	version := "1.0.0-" + strings.Repeat("a", 58)
 	for _, remote := range []bool{false, true} {
-		var m plugin.Manifest
+		var m pluginhost.Manifest
 		for n := 1; ; n++ {
 			egress := make([]string, 0, n)
 			for i := range n {
@@ -464,7 +464,7 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 			if remote {
 				raw = strings.Replace(raw, `"files": {"bin/p": "sha256:`+strings.Repeat("0", 64)+`"},`, "", 1)
 			}
-			next, err := plugin.ParseManifest([]byte(raw))
+			next, err := pluginhost.ParseManifest([]byte(raw))
 			if err != nil {
 				require.ErrorContains(t, err, "too large to record")
 				break
@@ -472,8 +472,8 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 			m = next
 		}
 		require.NotEmpty(t, m.Network.Egress)
-		k := plugin.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
-		det := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser, "linux")
+		k := pluginhost.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
+		det := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux")
 		if det.Isolation != nil {
 			det.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkNotEnforced}
 		}
@@ -486,11 +486,11 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 // rule, service.PluginNetwork). A remote entry records none.
 func TestPluginIsolationIsWhatRuns(t *testing.T) {
 	t.Parallel()
-	local := func(egress ...string) plugin.Manifest {
-		return plugin.Manifest{
-			Name: "acme-ner", Version: "1.0.0", Hooks: map[string]protocol.HookDecl{"feed.observe": {}},
-			Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}},
-			Network:  plugin.Network{Egress: egress},
+	local := func(egress ...string) pluginhost.Manifest {
+		return pluginhost.Manifest{
+			Name: "acme-ner", Version: "1.0.0", Hooks: map[string]pluginproto.HookDecl{"feed.observe": {}},
+			Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}},
+			Network:  pluginhost.Network{Egress: egress},
 		}
 	}
 	iso := func(files, network string) *guard.PluginIsolation {
@@ -498,25 +498,25 @@ func TestPluginIsolationIsWhatRuns(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name string
-		mode plugin.Mode
+		mode pluginhost.Mode
 		goos string
-		m    plugin.Manifest
+		m    pluginhost.Manifest
 		want *guard.PluginIsolation
 	}{
-		{"same-user", plugin.ModeSameUser, "linux", local(), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
-		{"same-user with egress", plugin.ModeSameUser, "darwin", local("x.example:443"), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
-		{"service linux no egress", plugin.ModeService, "linux", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkEnforced)},
-		{"service linux egress", plugin.ModeService, "linux", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkDeclared)},
-		{"service macos", plugin.ModeService, "darwin", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
-		{"service macos egress", plugin.ModeService, "darwin", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
+		{"same-user", pluginhost.ModeSameUser, "linux", local(), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
+		{"same-user with egress", pluginhost.ModeSameUser, "darwin", local("x.example:443"), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
+		{"service linux no egress", pluginhost.ModeService, "linux", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkEnforced)},
+		{"service linux egress", pluginhost.ModeService, "linux", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkDeclared)},
+		{"service macos", pluginhost.ModeService, "darwin", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
+		{"service macos egress", pluginhost.ModeService, "darwin", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
 	} {
-		d := pluginDetail(plugin.EntryKey{Name: "acme-ner", Instance: "default"}, plugin.Verified{Manifest: tc.m}, tc.mode, tc.goos)
+		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: tc.m}, tc.mode, tc.goos)
 		require.Equal(t, tc.want, d.Isolation, tc.name)
 	}
 	remote := local("ner.acme.example:443")
-	remote.Endpoint = plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example"}}
-	for _, mode := range []plugin.Mode{plugin.ModeSameUser, plugin.ModeService} {
-		d := pluginDetail(plugin.EntryKey{Name: "acme-ner", Instance: "default"}, plugin.Verified{Manifest: remote}, mode, "linux")
+	remote.Endpoint = pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example"}}
+	for _, mode := range []pluginhost.Mode{pluginhost.ModeSameUser, pluginhost.ModeService} {
+		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: remote}, mode, "linux")
 		require.Nil(t, d.Isolation)
 		require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	}

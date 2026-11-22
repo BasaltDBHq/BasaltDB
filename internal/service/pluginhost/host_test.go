@@ -1,4 +1,4 @@
-package plugin
+package pluginhost
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // fake is a Transport that answers initialize from the manifest and runs
@@ -21,8 +21,8 @@ import (
 type fake struct {
 	mu       sync.Mutex
 	calls    []string
-	initResp *protocol.InitializeResponse
-	initReq  protocol.InitializeRequest
+	initResp *pluginproto.InitializeResponse
+	initReq  pluginproto.InitializeRequest
 	onCall   func(ctx context.Context, method string) error
 	// answer, when set, answers a hook call with its params and result.
 	answer func(method string, params, result any) error
@@ -33,9 +33,9 @@ func (f *fake) Call(ctx context.Context, method string, params, result any) erro
 	f.mu.Lock()
 	f.calls = append(f.calls, method)
 	f.mu.Unlock()
-	if method == protocol.MethodInitialize {
-		f.initReq, _ = params.(protocol.InitializeRequest)
-		out, _ := result.(*protocol.InitializeResponse)
+	if method == pluginproto.MethodInitialize {
+		f.initReq, _ = params.(pluginproto.InitializeRequest)
+		out, _ := result.(*pluginproto.InitializeResponse)
 		*out = *f.initResp
 		return nil
 	}
@@ -59,8 +59,8 @@ func (f *fake) methods() []string {
 func manifest(name string) Manifest {
 	return Manifest{
 		ManifestVersion: 1, Name: name, Version: "1.0.0", Publisher: "t",
-		Protocol: []string{protocol.Version1},
-		Hooks: map[string]protocol.HookDecl{
+		Protocol: []string{pluginproto.Version1},
+		Hooks: map[string]pluginproto.HookDecl{
 			string(HookWireDetect): {Contract: "detector/1", Roles: []string{"VALUE"}, EntityTypes: []string{"EMAIL", "PHONE"}},
 		},
 		Endpoint: Endpoint{Local: &LocalEndpoint{Transport: "jsonrpc-stdio", Command: "p"}},
@@ -71,12 +71,12 @@ func entry(name, instance string, agents ...string) Entry {
 	return Entry{Key: EntryKey{name, instance}, Manifest: manifest(name), Agents: agents, Timeout: 100 * time.Millisecond}
 }
 
-func goodInit(m Manifest) *protocol.InitializeResponse {
-	hooks := map[string]protocol.HookDecl{}
+func goodInit(m Manifest) *pluginproto.InitializeResponse {
+	hooks := map[string]pluginproto.HookDecl{}
 	for h, d := range m.Hooks {
 		hooks[h] = d
 	}
-	return &protocol.InitializeResponse{Protocol: protocol.Version1, Name: m.Name, Version: m.Version, Hooks: hooks}
+	return &pluginproto.InitializeResponse{Protocol: pluginproto.Version1, Name: m.Name, Version: m.Version, Hooks: hooks}
 }
 
 func register(t *testing.T, h *Host, e Entry) *fake {
@@ -117,7 +117,7 @@ func TestCallRefusesLifecycleMethods(t *testing.T) {
 	e := entry("acme", "default", "product-a")
 	f := register(t, h, e)
 	before := len(f.methods())
-	for _, m := range []string{protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown} {
+	for _, m := range []string{pluginproto.MethodInitialize, pluginproto.MethodHealth, pluginproto.MethodShutdown} {
 		err := h.Call(context.Background(), e.Key, []string{"product-a"}, m, nil, nil)
 		if err == nil {
 			t.Fatalf("Call sent %q", m)
@@ -178,8 +178,8 @@ func TestFifthCallWaitsThenTimesOut(t *testing.T) {
 	}
 	wg.Wait()
 	close(errs)
-	if peak.Load() > protocol.MaxInFlight {
-		t.Fatalf("peak in flight = %d, want <= %d", peak.Load(), protocol.MaxInFlight)
+	if peak.Load() > pluginproto.MaxInFlight {
+		t.Fatalf("peak in flight = %d, want <= %d", peak.Load(), pluginproto.MaxInFlight)
 	}
 	var timeouts int
 	for err := range errs {
@@ -235,20 +235,22 @@ func TestFifthCallProceedsWhenSlotFrees(t *testing.T) {
 func TestInitializeHookMismatchRefused(t *testing.T) {
 	h := NewHost()
 	e := entry("acme", "default", "a")
-	cases := map[string]func(r *protocol.InitializeResponse){
-		"extra hook": func(r *protocol.InitializeResponse) { r.Hooks["feed.observe"] = protocol.HookDecl{Contract: "feed/1"} },
-		"no hooks":   func(r *protocol.InitializeResponse) { r.Hooks = map[string]protocol.HookDecl{} },
-		"other contract": func(r *protocol.InitializeResponse) {
-			r.Hooks["wire.detect"] = protocol.HookDecl{Contract: "detector/2"}
+	cases := map[string]func(r *pluginproto.InitializeResponse){
+		"extra hook": func(r *pluginproto.InitializeResponse) {
+			r.Hooks["feed.observe"] = pluginproto.HookDecl{Contract: "feed/1"}
 		},
-		"more types": func(r *protocol.InitializeResponse) {
+		"no hooks": func(r *pluginproto.InitializeResponse) { r.Hooks = map[string]pluginproto.HookDecl{} },
+		"other contract": func(r *pluginproto.InitializeResponse) {
+			r.Hooks["wire.detect"] = pluginproto.HookDecl{Contract: "detector/2"}
+		},
+		"more types": func(r *pluginproto.InitializeResponse) {
 			d := r.Hooks["wire.detect"]
 			d.EntityTypes = append(append([]string(nil), d.EntityTypes...), "CARD")
 			r.Hooks["wire.detect"] = d
 		},
-		"other protocol": func(r *protocol.InitializeResponse) { r.Protocol = "basalt-plugin/2" },
-		"other name":     func(r *protocol.InitializeResponse) { r.Name = "evil" },
-		"other version":  func(r *protocol.InitializeResponse) { r.Version = "9.9.9" },
+		"other protocol": func(r *pluginproto.InitializeResponse) { r.Protocol = "basalt-plugin/2" },
+		"other name":     func(r *pluginproto.InitializeResponse) { r.Name = "evil" },
+		"other version":  func(r *pluginproto.InitializeResponse) { r.Version = "9.9.9" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -278,7 +280,7 @@ func TestInitializeRequestHoldsOnlyEntryData(t *testing.T) {
 	e.Config = []byte(`{"k":1}`)
 	f := register(t, h, e)
 	r := f.initReq
-	if len(r.Protocols) != 1 || r.Protocols[0] != protocol.Version1 || len(r.Hooks) != 1 || r.Hooks[0] != "wire.detect" {
+	if len(r.Protocols) != 1 || r.Protocols[0] != pluginproto.Version1 || len(r.Hooks) != 1 || r.Hooks[0] != "wire.detect" {
 		t.Fatalf("initialize request = %+v", r)
 	}
 	if string(r.Config) != `{"k":1}` || r.Limits.MaxInFlight != 4 || r.Limits.MaxMessageBytes != 4<<20 || r.Limits.TimeoutMs != 100 {
@@ -397,8 +399,8 @@ func TestRegisterValidation(t *testing.T) {
 		"no instance":  func(e *Entry) { e.Key.Instance = "" },
 		"timeout low":  func(e *Entry) { e.Timeout = 49 * time.Millisecond },
 		"timeout high": func(e *Entry) { e.Timeout = 60001 * time.Millisecond },
-		"verdict hook": func(e *Entry) { e.Manifest.Hooks = map[string]protocol.HookDecl{string(HookWireVerdict): {}} },
-		"unknown hook": func(e *Entry) { e.Manifest.Hooks = map[string]protocol.HookDecl{"x.y": {}} },
+		"verdict hook": func(e *Entry) { e.Manifest.Hooks = map[string]pluginproto.HookDecl{string(HookWireVerdict): {}} },
+		"unknown hook": func(e *Entry) { e.Manifest.Hooks = map[string]pluginproto.HookDecl{"x.y": {}} },
 		"no hooks":     func(e *Entry) { e.Manifest.Hooks = nil },
 	}
 	for name, mutate := range bad {
@@ -448,7 +450,7 @@ func TestControlOnlyLifecycle(t *testing.T) {
 	h := NewHost()
 	e := entry("acme", "default", "a")
 	register(t, h, e)
-	if err := h.Control(context.Background(), e.Key, protocol.MethodHealth, protocol.HealthRequest{}, &protocol.HealthResponse{}); err != nil {
+	if err := h.Control(context.Background(), e.Key, pluginproto.MethodHealth, pluginproto.HealthRequest{}, &pluginproto.HealthResponse{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.Control(context.Background(), e.Key, "detect", nil, nil); err == nil {
@@ -537,7 +539,7 @@ func TestLifecycleCallsAreOutsideTheCap(t *testing.T) {
 		}
 	}
 	var wg sync.WaitGroup
-	for range protocol.MaxInFlight {
+	for range pluginproto.MaxInFlight {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -547,7 +549,7 @@ func TestLifecycleCallsAreOutsideTheCap(t *testing.T) {
 		}()
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for held.Load() < protocol.MaxInFlight {
+	for held.Load() < pluginproto.MaxInFlight {
 		if time.Now().After(deadline) {
 			t.Fatal("the four hook calls never started")
 		}
@@ -555,15 +557,15 @@ func TestLifecycleCallsAreOutsideTheCap(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	var resp protocol.HealthResponse
-	if err := h.Control(ctx, e.Key, protocol.MethodHealth, protocol.HealthRequest{}, &resp); err != nil {
+	var resp pluginproto.HealthResponse
+	if err := h.Control(ctx, e.Key, pluginproto.MethodHealth, pluginproto.HealthRequest{}, &resp); err != nil {
 		t.Fatalf("health with four hook calls in flight: %v", err)
 	}
-	if err := h.Control(ctx, e.Key, protocol.MethodShutdown, protocol.ShutdownRequest{}, nil); err != nil {
+	if err := h.Control(ctx, e.Key, pluginproto.MethodShutdown, pluginproto.ShutdownRequest{}, nil); err != nil {
 		t.Fatalf("shutdown with four hook calls in flight: %v", err)
 	}
-	if n := held.Load(); n != protocol.MaxInFlight {
-		t.Fatalf("hook calls held = %d, want %d", n, protocol.MaxInFlight)
+	if n := held.Load(); n != pluginproto.MaxInFlight {
+		t.Fatalf("hook calls held = %d, want %d", n, pluginproto.MaxInFlight)
 	}
 	close(release)
 	wg.Wait()

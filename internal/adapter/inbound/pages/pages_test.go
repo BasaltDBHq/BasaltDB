@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -139,7 +139,7 @@ func serveAgents(t *testing.T, agents ...testAgent) site {
 		a.wire(secrets, origin)
 		p.Add(a)
 	}
-	ln, h, err := server.Listen(server.Options{}, "approval pages", addr, p.Handler())
+	ln, h, err := httpserver.Listen(httpserver.Options{}, "approval pages", addr, p.Handler())
 	require.NoError(t, err)
 	hs := &http.Server{Handler: h, ReadHeaderTimeout: 0}
 	go func() { _ = hs.Serve(ln) }()

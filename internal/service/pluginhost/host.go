@@ -1,4 +1,4 @@
-package plugin
+package pluginhost
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // State is whether an entry can take calls.
@@ -82,25 +82,25 @@ func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
 		return fmt.Errorf("plugin %s: already registered", e.Key)
 	}
 
-	req := protocol.InitializeRequest{
-		Protocols: []string{protocol.Version1},
+	req := pluginproto.InitializeRequest{
+		Protocols: []string{pluginproto.Version1},
 		Hooks:     hookNames(e.Manifest),
-		Config:    protocol.RawObject(e.Config),
-		Limits: protocol.Limits{
-			MaxMessageBytes: protocol.MaxMessageBytes,
-			MaxInFlight:     protocol.MaxInFlight,
+		Config:    pluginproto.RawObject(e.Config),
+		Limits: pluginproto.Limits{
+			MaxMessageBytes: pluginproto.MaxMessageBytes,
+			MaxInFlight:     pluginproto.MaxInFlight,
 			TimeoutMs:       int(e.Timeout / time.Millisecond),
 		},
 	}
 	s := &slot{
 		entry: e, t: t,
-		sem:    make(chan struct{}, protocol.MaxInFlight),
+		sem:    make(chan struct{}, pluginproto.MaxInFlight),
 		health: make(chan struct{}, 1), shutdown: make(chan struct{}, 1),
 		down: make(chan struct{}), state: StateUnavailable,
 		reg: Registration(h.regs.Add(1)),
 	}
-	var resp protocol.InitializeResponse
-	if err := s.do(ctx, s.sem, protocol.MethodInitialize, req, &resp); err != nil {
+	var resp pluginproto.InitializeResponse
+	if err := s.do(ctx, s.sem, pluginproto.MethodInitialize, req, &resp); err != nil {
 		return err
 	}
 	if !initializeMatches(e, resp) {
@@ -147,7 +147,7 @@ func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method str
 // is any registration, as Call.
 func (h *Host) CallOn(ctx context.Context, k EntryKey, reg Registration, agents []string, method string, params, result any) error {
 	switch method {
-	case protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown:
+	case pluginproto.MethodInitialize, pluginproto.MethodHealth, pluginproto.MethodShutdown:
 		return fmt.Errorf("plugin %s: %q is a lifecycle method, not a hook call", k, method)
 	}
 	s := h.lookup(k)
@@ -213,9 +213,9 @@ func (h *Host) Control(ctx context.Context, k EntryKey, method string, params, r
 	}
 	var sem chan struct{}
 	switch method {
-	case protocol.MethodHealth:
+	case pluginproto.MethodHealth:
 		sem = s.health
-	case protocol.MethodShutdown:
+	case pluginproto.MethodShutdown:
 		sem = s.shutdown
 	default:
 		return fmt.Errorf("plugin %s: %q is not a lifecycle method", k, method)
@@ -380,8 +380,8 @@ func hookNames(m Manifest) []string {
 	return out
 }
 
-func initializeMatches(e Entry, r protocol.InitializeResponse) bool {
-	if r.Protocol != protocol.Version1 || r.Name != e.Manifest.Name || r.Version != e.Manifest.Version {
+func initializeMatches(e Entry, r pluginproto.InitializeResponse) bool {
+	if r.Protocol != pluginproto.Version1 || r.Name != e.Manifest.Name || r.Version != e.Manifest.Version {
 		return false
 	}
 	if len(r.Hooks) != len(e.Manifest.Hooks) {

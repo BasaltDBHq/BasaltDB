@@ -21,7 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -146,7 +146,7 @@ func jsonFields(v any) []string {
 func TestToolErrorMapping(t *testing.T) {
 	t.Parallel()
 	pg := func(code, msg string) error {
-		return postgres.MapError(fmt.Errorf("exec: %w", &pgconn.PgError{Code: code, Message: msg}))
+		return store.MapError(fmt.Errorf("exec: %w", &pgconn.PgError{Code: code, Message: msg}))
 	}
 	cases := []struct {
 		err                    error
@@ -158,7 +158,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("BS004", "STALE_READ"), CodeStaleRead, "", "BS004"},
 		{pg("BS005", "APPROVAL_EXPIRED"), CodeApprovalExpired, "", "BS005"},
 		{pg("BS005", "APPROVAL_INVALID: approval already used"), CodeApprovalInvalid, reasonBadSignature, "BS005"},
-		{postgres.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}), CodeApprovalInvalid, reasonAlreadyUsed, "BS005"},
+		{store.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}), CodeApprovalInvalid, reasonAlreadyUsed, "BS005"},
 		{pg("BS006", "PREVIEW_CANNOT_COMMIT"), CodeInternal, "", "BS006"},
 		{pg("BS007", "NOT_ALLOWED: unknown basalt.mode"), CodeStatementRefused, ReasonNotAllowed, "BS007"},
 		{pg("BS008", "LEDGER_INPUT_INVALID"), CodeInternal, "", "BS008"},
@@ -172,15 +172,15 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&action.RefusalError{Reason: action.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", action.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
-		{fmt.Errorf("read: %w", postgres.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
-		{postgres.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})), CodeInternal, "", ""},
+		{fmt.Errorf("read: %w", store.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
+		{store.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
 		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
 		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},
 		{fmt.Errorf("list: %w", ledger.ErrInvalidParams), CodeInvalidArgument, "", ""},
 		{guard.ErrInvalidIntent, CodeInvalidArgument, "", ""},
 		{fmt.Errorf("list: %w: invalid cursor: missing id", ledger.ErrInvalidParams), CodeInvalidArgument, ReasonStaleCursor, ""},
-		{postgres.MapError(&pgconn.PgError{Code: "BS007", Message: "NOT_ALLOWED", Detail: "table public.t has no primary key"}), CodeStatementRefused, ReasonNoPrimaryKey, "BS007"},
+		{store.MapError(&pgconn.PgError{Code: "BS007", Message: "NOT_ALLOWED", Detail: "table public.t has no primary key"}), CodeStatementRefused, ReasonNoPrimaryKey, "BS007"},
 		{errors.New("password=hunter2 something broke"), CodeInternal, "", ""},
 	}
 	for _, c := range cases {

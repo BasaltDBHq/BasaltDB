@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
@@ -50,22 +50,22 @@ func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
 
 func TestPluginUnitEntries(t *testing.T) {
 	t.Parallel()
-	local := plugin.Verified{
+	local := pluginhost.Verified{
 		Dir: "/opt/basalt/plugins/acme-ner/default/abc",
-		Manifest: plugin.Manifest{
-			Endpoint:  plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: "jsonrpc-unix", Command: "bin/acme", Args: []string{"--serve"}}},
-			Network:   plugin.Network{Egress: []string{"hooks.slack.com:443"}},
-			Resources: &plugin.Resources{MemoryMB: 256},
+		Manifest: pluginhost.Manifest{
+			Endpoint:  pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-unix", Command: "bin/acme", Args: []string{"--serve"}}},
+			Network:   pluginhost.Network{Egress: []string{"hooks.slack.com:443"}},
+			Resources: &pluginhost.Resources{MemoryMB: 256},
 		},
 	}
 	e, ok := unitEntry(config.Plugin{Name: "acme-ner", Enabled: true}, local)
 	require.True(t, ok)
-	require.Equal(t, service.PluginEntry{
+	require.Equal(t, osservice.PluginEntry{
 		Name: "acme-ner", Instance: "default", Dir: local.Dir, Command: "bin/acme", Args: []string{"--serve"},
 		Egress: []string{"hooks.slack.com:443"}, MemoryMB: 256, Enabled: true,
 	}, e)
 
-	remote := plugin.Verified{Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: "connectrpc", URL: "https://x.example"}}}}
+	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: "connectrpc", URL: "https://x.example"}}}}
 	_, ok = unitEntry(config.Plugin{Name: "acme-ner"}, remote)
 	require.False(t, ok, "a remote entry has no unit")
 
@@ -81,7 +81,7 @@ func TestPluginUnitEntries(t *testing.T) {
 		},
 	}
 	h := servicePluginHost(cfg, "linux", "/etc/basalt/engine.json", "basalt")
-	require.Equal(t, service.PluginHost{
+	require.Equal(t, osservice.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: config.DefaultStateDir("linux"), SocketDir: "/run/basalt",
 		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url"},
 	}, h)

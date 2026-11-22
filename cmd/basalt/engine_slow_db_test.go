@@ -16,7 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -81,7 +81,7 @@ func TestRunServesBeforeTheDatabaseAnswers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), engine.RestartOptions{})
+		done <- app.RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), app.RestartOptions{})
 	}()
 	t.Cleanup(func() {
 		cancel()

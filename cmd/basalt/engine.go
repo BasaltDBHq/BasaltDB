@@ -22,8 +22,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -68,7 +68,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	// config: the first run serves its own pages on it.
 	var handed net.Listener
 	if waitsForConfig(h.Euid(), enginePath(*configPath)) {
-		ln, err := engine.WaitForConfig(ctx, engine.WaitOptions{Addr: engine.SetupAddr, Origin: engine.SetupOrigin, ConfigPath: *configPath, Log: log})
+		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
 				return exitOK
@@ -81,13 +81,13 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
-	run := func(ctx context.Context, o engine.RestartOptions) error {
+	run := func(ctx context.Context, o app.RestartOptions) error {
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		if *pluginDebug {
 			o.PluginStderr = io.err
 		}
-		return engine.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
+		return app.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
@@ -135,7 +135,7 @@ func waitsForConfigAt(euid int, configPath, systemPath string) bool {
 // restart is how the engine restarts onto an upgraded binary: upgrade says
 // when (nil turns it off) and exec runs the new binary in this process.
 type restart struct {
-	upgrade engine.UpgradeFunc
+	upgrade app.UpgradeFunc
 	exec    func() error
 }
 
@@ -173,10 +173,10 @@ func osRestart(log *slog.Logger) restart {
 // runs the new binary in this process; each time it stops for a reload, it
 // reads the config again and runs the engine anew. When that fails, this binary serves
 // on, until the binary changes again.
-func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
+func serveRestarting(ctx context.Context, run func(context.Context, app.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
 	for {
-		err := run(ctx, engine.RestartOptions{Upgrade: r.upgrade})
-		if errors.Is(err, engine.ErrReload) && ctx.Err() == nil {
+		err := run(ctx, app.RestartOptions{Upgrade: r.upgrade})
+		if errors.Is(err, app.ErrReload) && ctx.Err() == nil {
 			// Same binary, same process: the config is read again and the
 			// engine serves anew. A config it cannot read now stops it.
 			log.Info("serving the engine config again: an agent's connect-only setup changed")
@@ -185,7 +185,7 @@ func serveRestarting(ctx context.Context, run func(context.Context, engine.Resta
 			}
 			continue
 		}
-		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
+		if !errors.Is(err, app.ErrRestart) || ctx.Err() != nil {
 			// A stop that came during the restart wins: never run the new
 			// binary after the engine was told to stop.
 			return err
@@ -272,7 +272,7 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 		opts.Start, failure = engineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
-	if err := shim.ServeWith(ctx, path, down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), io.in, io.out, opts); err != nil {
+	if err := shim.ServeWith(ctx, path, down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: app.Instructions}), io.in, io.out, opts); err != nil {
 		return fail(io.err, "mcp", err)
 	}
 	return exitOK
@@ -309,7 +309,7 @@ func engineDownServer(name, configPath string, log *slog.Logger) (agent.EngineDo
 	if err != nil {
 		return agent.EngineDownServer{}, err
 	}
-	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), nil
+	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: app.Instructions}), nil
 }
 
 // engineDown is what basalt mcp answers with while the engine is down, with
@@ -400,7 +400,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	action := args[0]
 	fs := newFlagSet("service " + action)
 	fs.SetOutput(io.err)
-	user := fs.String("user", service.DefaultUser(runtime.GOOS), "OS user the engine runs as")
+	user := fs.String("user", osservice.DefaultUser(runtime.GOOS), "OS user the engine runs as")
 	binary := fs.String("binary", "", "absolute path of the basalt binary (default: this binary)")
 	dryRun := fs.Bool("dry-run", false, "print the steps without running them")
 	var a agentInstall
@@ -457,7 +457,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	if err != nil {
 		return fail(io.err, "service", err)
 	}
-	spec := service.Spec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: configPath, User: *user}
+	spec := osservice.Spec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: configPath, User: *user}
 	// The unit's memory limits follow the installed config's
 	// pii.maxMemoryMB (the default when there is none yet), so running
 	// install again after raising it rewrites them.
@@ -482,7 +482,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 			// Hold the config lock from reading engine.json until the new
 			// one is in place, as every config writer does; the lock file
 			// goes to the engine's user (CONTRACT.md, Lock files).
-			held, err := config.LockConfigAs(configPath, service.LookupUID(*user))
+			held, err := config.LockConfigAs(configPath, osservice.LookupUID(*user))
 			if err != nil {
 				return fail(io.err, "service", err)
 			}
@@ -501,18 +501,18 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	} else if !errors.Is(err, os.ErrNotExist) {
 		_, _ = fmt.Fprintf(io.err, "basalt: %s cannot be read, so plugin service units are left as they are\n", configPath)
 	}
-	sys := service.OSSystem{Stdout: io.out, Stderr: io.err}
+	sys := osservice.OSSystem{Stdout: io.out, Stderr: io.err}
 
-	steps, err := service.InstallPlan(ctx, sys, spec)
+	steps, err := osservice.InstallPlan(ctx, sys, spec)
 	if err != nil {
 		return fail(io.err, "service", err)
 	}
-	if err := service.Settle(service.Apply(ctx, sys, steps, *dryRun, io.out), sys, runtime.GOOS); err != nil {
+	if err := osservice.Settle(osservice.Apply(ctx, sys, steps, *dryRun, io.out), sys, runtime.GOOS); err != nil {
 		return fail(io.err, "service", err)
 	}
 	// The install may have just made the engine's user.
 	if lock != nil {
-		if err := lock.HandTo(service.LookupUID(*user)); err != nil {
+		if err := lock.HandTo(osservice.LookupUID(*user)); err != nil {
 			return fail(io.err, "service", fmt.Errorf("give %s.lock to %s: %w", configPath, *user, err))
 		}
 	}
@@ -525,7 +525,7 @@ const maxCredentialBytes = 4096
 // agentSpecFromStdin is basalt service install --agent: the agent and its
 // credential (one line on stdin, never an argument) go into the service's
 // own directories, owned by the engine's user.
-func agentSpecFromStdin(in io.Reader, spec service.Spec, a agentInstall, credStdin, dryRun bool) (service.Spec, error) {
+func agentSpecFromStdin(in io.Reader, spec osservice.Spec, a agentInstall, credStdin, dryRun bool) (osservice.Spec, error) {
 	switch {
 	case !config.ValidAgentName(a.name):
 		return spec, fmt.Errorf("agent name %q is not valid", a.name)
@@ -572,7 +572,7 @@ func agentSpecFromStdin(in io.Reader, spec service.Spec, a agentInstall, credStd
 // keptCredentialSpec is the install when the agent's role kept its password:
 // the existing credential file must exist. It is written back unchanged, so
 // it is owned by the engine's user even when the user changed.
-func keptCredentialSpec(spec service.Spec, a agentInstall, dryRun bool) (service.Spec, error) {
+func keptCredentialSpec(spec osservice.Spec, a agentInstall, dryRun bool) (osservice.Spec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
 	raw, err := readKeptCredential(cred, spec.User)
 	if err != nil && waitingForAddress(spec, a.name, cred) {
@@ -596,7 +596,7 @@ func keptCredentialSpec(spec service.Spec, a agentInstall, dryRun bool) (service
 // waitingForAddress reports whether the config gives agent name a pending
 // connect-only setup and no credential file exists at cred: the agent
 // waits for its database's address.
-func waitingForAddress(spec service.Spec, name, cred string) bool {
+func waitingForAddress(spec osservice.Spec, name, cred string) bool {
 	cfg, err := loadEngineConfigAs(os.Geteuid(), spec.ConfigPath)
 	if err != nil {
 		return false

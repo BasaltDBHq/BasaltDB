@@ -3,7 +3,7 @@
 // refused on any other bind unless TLS is set or the operator opts in, and
 // the websec Host, Origin and header hardening. It also holds the pidfile
 // lock for a long-running process.
-package server
+package httpserver
 
 import (
 	"fmt"

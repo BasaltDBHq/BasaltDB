@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/uuid"
 
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Names under the state directory.
@@ -159,14 +159,14 @@ func New(stateDir string, now func() time.Time) (*Store, error) {
 func (s *Store) StateDir() string { return s.stateDir }
 
 // Root is where the installed copies live: <stateDir>/plugins.
-func (s *Store) Root() string { return filepath.Join(s.stateDir, plugin.PluginsDirName) }
+func (s *Store) Root() string { return filepath.Join(s.stateDir, pluginhost.PluginsDirName) }
 
 // Trust is the trust store engine-kept copies are verified with: same-user
 // rules under the state directory, the engine's user as the owner. It holds
 // no added key; an engine-kept copy is verified with plugin.RequireApproval,
 // so only a built-in key makes a publisher known.
-func (s *Store) Trust() (plugin.TrustStore, error) {
-	return plugin.NewTrustStore(plugin.ModeSameUser, s.goos, s.stateDir)
+func (s *Store) Trust() (pluginhost.TrustStore, error) {
+	return pluginhost.NewTrustStore(pluginhost.ModeSameUser, s.goos, s.stateDir)
 }
 
 func (s *Store) uploadsDir() string { return filepath.Join(s.stateDir, UploadsDir) }

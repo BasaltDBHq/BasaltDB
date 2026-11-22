@@ -18,7 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -190,7 +190,7 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 			return guard.RLSBlindTables(ctx, pool, "", tables)
 		})
 		d.Store, d.Notifier = watchedReverts, sent
-		d.Columns = postgres.NewColumnOrder(pool)
+		d.Columns = store.NewColumnOrder(pool)
 		d.Commands, d.PagesOrigin, d.Poll, d.RLS, d.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
 	})).Svc
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}

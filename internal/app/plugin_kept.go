@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/service/keptplugins"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // keptDatabaseTimeout bounds each database's part of a plugin method: the
@@ -72,11 +72,11 @@ type keptPlugins struct {
 	changed func(ctx context.Context)
 	// serving is what the running engine serves of entry k; nil serves
 	// nothing.
-	serving func(k plugin.EntryKey) []person.PluginServing
+	serving func(k pluginhost.EntryKey) []person.PluginServing
 	// health is what the running engine knows of the entry k, engine-kept
 	// (kept) or of engine.json: person.HealthReady and the like; nil runs
 	// nothing.
-	health func(k plugin.EntryKey, kept bool) string
+	health func(k pluginhost.EntryKey, kept bool) string
 }
 
 // storeError maps a store refusal to the person socket.
@@ -97,7 +97,7 @@ func storeError(err error) error {
 
 // notAllowed is AGENT_NOT_ALLOWED for a request that reaches an agent
 // outside the peer's scope.
-func notAllowed(k plugin.EntryKey) error {
+func notAllowed(k pluginhost.EntryKey) error {
 	return &person.Error{Code: person.CodeAgentNotAllowed, Message: fmt.Sprintf(
 		"this OS user runs agents, so it may change plugin %s only for its own agents, and this request reaches another one; "+
 			"run the agent as another OS user (basalt init --os-user) so the person can change every agent's plugins", k)}
@@ -155,7 +155,7 @@ func (s *keptPlugins) configEntries() []config.Plugin {
 }
 
 // configEntry is engine.json's entry k, false when it holds none.
-func (s *keptPlugins) configEntry(k plugin.EntryKey) (config.Plugin, bool) {
+func (s *keptPlugins) configEntry(k pluginhost.EntryKey) (config.Plugin, bool) {
 	for _, p := range s.configEntries() {
 		if p.Key() == k {
 			return p, true
@@ -164,7 +164,7 @@ func (s *keptPlugins) configEntry(k plugin.EntryKey) (config.Plugin, bool) {
 	return config.Plugin{}, false
 }
 
-func keptIndex(entries []config.Plugin, k plugin.EntryKey) int {
+func keptIndex(entries []config.Plugin, k pluginhost.EntryKey) int {
 	return slices.IndexFunc(entries, func(p config.Plugin) bool { return p.Key() == k })
 }
 
@@ -175,7 +175,7 @@ func keptIndex(entries []config.Plugin, k plugin.EntryKey) int {
 func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, p person.PluginOpenParams) (person.PluginOpenResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := plugin.EntryKey{Name: p.Name, Instance: p.Instance}
+	k := pluginhost.EntryKey{Name: p.Name, Instance: p.Instance}
 	// The scope first, before the upload is touched: a scoped peer learns
 	// nothing it may not reach, not even which agent names exist, and a
 	// request refused for its scope leaves its upload where it is.
@@ -241,8 +241,8 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	}
 
 	// The copy: staged from the upload, or the installed one.
-	var staged *plugin.Staged
-	var v plugin.Verified
+	var staged *pluginhost.Staged
+	var v pluginhost.Verified
 	if taken != nil {
 		if err := s.refuseLocalAsRoot(taken); err != nil {
 			return person.PluginOpenResult{}, err
@@ -365,7 +365,7 @@ func (s *keptPlugins) refuseLocalAsRoot(t *keptplugins.Taken) error {
 	// which names the rule it breaks.
 	raw, readErr := t.Manifest()
 	if readErr == nil {
-		if m, err := plugin.ParseManifest(raw); err == nil && !m.Endpoint.IsRemote() {
+		if m, err := pluginhost.ParseManifest(raw); err == nil && !m.Endpoint.IsRemote() {
 			return engineIsRoot()
 		}
 	}
@@ -380,7 +380,7 @@ func engineIsRoot() error {
 // keptRefusal is a verification failure of an installed copy as the store
 // maps it.
 func keptRefusal(err error) error {
-	var ve *plugin.VerifyError
+	var ve *pluginhost.VerifyError
 	if !errors.As(err, &ve) {
 		return err
 	}
@@ -552,7 +552,7 @@ func holdsPluginApprovals(st guard.Status) bool {
 // writeOwedEnds writes, in parallel and each within 15 seconds, every
 // PLUGIN_DISABLED agents owe for k (guard.OwedPluginEnd). One that cannot be written
 // refuses the request: DATABASE_UNREACHABLE.
-func (s *keptPlugins) writeOwedEnds(ctx context.Context, k plugin.EntryKey, agents []string) error {
+func (s *keptPlugins) writeOwedEnds(ctx context.Context, k pluginhost.EntryKey, agents []string) error {
 	errs := s.endAll(ctx, k, agents)
 	for _, name := range agents {
 		if err := errs[name]; err != nil {
@@ -564,7 +564,7 @@ func (s *keptPlugins) writeOwedEnds(ctx context.Context, k plugin.EntryKey, agen
 
 // endAll writes each agent's owed PLUGIN_DISABLED for k, in parallel, and
 // returns the error of each agent whose end could not be read or written.
-func (s *keptPlugins) endAll(ctx context.Context, k plugin.EntryKey, agents []string) map[string]error {
+func (s *keptPlugins) endAll(ctx context.Context, k pluginhost.EntryKey, agents []string) map[string]error {
 	var mu sync.Mutex
 	errs := map[string]error{}
 	var wg sync.WaitGroup
@@ -591,7 +591,7 @@ func (s *keptPlugins) endAll(ctx context.Context, k plugin.EntryKey, agents []st
 
 // openApprovals opens one approval per group for entry p and copy v, with
 // the first agent's credential, naming every agent of the group.
-func (s *keptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p config.Plugin, v plugin.Verified) []person.PluginOpenedApproval {
+func (s *keptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p config.Plugin, v pluginhost.Verified) []person.PluginOpenedApproval {
 	out := make([]person.PluginOpenedApproval, len(groups))
 	var wg sync.WaitGroup
 	for i, g := range groups {
@@ -650,7 +650,7 @@ func (s *keptPlugins) Remove(ctx context.Context, scope person.Scope, p person.P
 func (s *keptPlugins) turnOff(ctx context.Context, scope person.Scope, p person.PluginEntryParams, remove bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := plugin.EntryKey{Name: p.Name, Instance: p.Instance}
+	k := pluginhost.EntryKey{Name: p.Name, Instance: p.Instance}
 	verb := "disable"
 	if remove {
 		verb = "remove"
@@ -825,32 +825,32 @@ func (s *keptPlugins) listed(p config.Plugin, source string, scope person.Scope,
 	if s.health != nil {
 		l.Health = s.health(k, source == person.SourceEngine)
 	}
-	mode, trustMode := plugin.ModeService, plugin.ModeService
+	mode, trustMode := pluginhost.ModeService, pluginhost.ModeService
 	if !s.cfg.Service() {
 		// An agent-operated engine on the bot's computer: its config
 		// entries are same-user ones.
-		mode, trustMode = plugin.ModeSameUser, plugin.ModeSameUser
+		mode, trustMode = pluginhost.ModeSameUser, pluginhost.ModeSameUser
 	}
-	var v plugin.Verified
+	var v pluginhost.Verified
 	var root string
 	var err error
 	if source == person.SourceEngine {
-		mode = plugin.ModeSameUser
+		mode = pluginhost.ModeSameUser
 		v, err = s.store.Verify(k, p.ManifestSHA256)
 	} else {
-		root, err = plugin.Root(trustMode, s.goos, filepath.Dir(s.configPath))
+		root, err = pluginhost.Root(trustMode, s.goos, filepath.Dir(s.configPath))
 		if err == nil {
-			var trust plugin.TrustStore
-			trust, err = plugin.NewTrustStore(trustMode, s.goos, filepath.Dir(s.configPath))
+			var trust pluginhost.TrustStore
+			trust, err = pluginhost.NewTrustStore(trustMode, s.goos, filepath.Dir(s.configPath))
 			if err == nil {
-				v, err = plugin.Verify(root, k, p.ManifestSHA256, trust, trustMode)
+				v, err = pluginhost.Verify(root, k, p.ManifestSHA256, trust, trustMode)
 			}
 		}
 	}
 	if err == nil {
 		d := pluginDetail(k, v, mode, s.goos)
 		l.Version, l.Signer = v.Manifest.Version, string(v.Signer)
-		if v.Signer == plugin.SignerKnown {
+		if v.Signer == pluginhost.SignerKnown {
 			l.SignerKeyID = v.SignerKeyID
 		}
 		l.Endpoint, err = json.Marshal(d.Endpoint)
@@ -932,7 +932,7 @@ func newKeptApprovalReader(ctx context.Context, s *keptPlugins, scope person.Sco
 const approvalStateUnavailable = "UNAVAILABLE"
 
 // stateOf is agent's newest approval of k as PLUGIN_LIST shows it.
-func (r *keptApprovalReader) stateOf(agent string, k plugin.EntryKey) person.PluginAgentStatus {
+func (r *keptApprovalReader) stateOf(agent string, k pluginhost.EntryKey) person.PluginAgentStatus {
 	st := person.PluginAgentStatus{Agent: agent, State: approvalStateUnavailable}
 	if !r.ok[agent] {
 		return st

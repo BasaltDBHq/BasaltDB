@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
@@ -37,7 +37,7 @@ func loadConfigAsRoot(path string) (cfg config.Config, trusted int, err error) {
 		return config.Config{}, 0, err
 	}
 	cfg, err = config.LoadOpen(abs, func(p string) (*os.File, error) {
-		f, err := service.OpenTrustedFile(p, trusted)
+		f, err := osservice.OpenTrustedFile(p, trusted)
 		if err != nil {
 			return nil, err
 		}

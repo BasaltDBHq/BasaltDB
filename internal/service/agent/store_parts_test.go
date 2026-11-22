@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -61,13 +61,13 @@ func (p parts) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]by
 
 // Check is the Postgres store's policy check, which needs no connection.
 func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
-	return postgres.Check(sql, tool)
+	return store.Check(sql, tool)
 }
 
 // HoldColumns is the Postgres store's, reading a table's columns from the
 // approvals part.
 func (p parts) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
-	return postgres.HoldColumns(ctx, sql, params, p.TableColumns)
+	return store.HoldColumns(ctx, sql, params, p.TableColumns)
 }
 
 // setApprovals and setReverts replace one part of d's store.

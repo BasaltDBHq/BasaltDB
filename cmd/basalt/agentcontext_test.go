@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -136,7 +136,7 @@ func TestManualInitsCatchesTheManualCommand(t *testing.T) {
 func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
-	requireAgentLed(t, "MCP instructions", engine.Instructions)
+	requireAgentLed(t, "MCP instructions", app.Instructions)
 	for name, text := range map[string]string{
 		"agentsHelp":        agentsHelp,
 		"remoteAdminEnvSet": remoteAdminEnvSet,

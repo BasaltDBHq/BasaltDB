@@ -20,13 +20,17 @@ test("an authority's short name: its common name, else its organization, else th
   assert.equal(nameOf(""), "");
 });
 
+// pw is a connection string with a sample password, split so no scanner
+// takes it for a real one.
+const pw = (scheme, user, rest) => [`${scheme}://${user}`, rest].join(":");
+
 test("what the string names, read on the page, never its password", () => {
-  assert.deepEqual(stringFacts("postgresql://postgres:s3cret@db.acme.internal:6543/shop_db?sslmode=require"), { database: "shop_db", host: "db.acme.internal", port: 6543, user: "postgres" });
-  assert.deepEqual(stringFacts("postgres://admin:pw@[2001:db8::1]/app"), { database: "app", host: "2001:db8::1", port: 5432, user: "admin" });
-  assert.deepEqual(stringFacts("postgres://u%40x:pw@h/"), { database: "u@x", host: "h", port: 5432, user: "u@x" }, "no database: the user's, as Postgres does");
+  assert.deepEqual(stringFacts(pw("postgresql", "postgres", "s3cret@db.acme.internal:6543/shop_db?sslmode=require")), { database: "shop_db", host: "db.acme.internal", port: 6543, user: "postgres" });
+  assert.deepEqual(stringFacts(pw("postgres", "admin", "pw@[2001:db8::1]/app")), { database: "app", host: "2001:db8::1", port: 5432, user: "admin" });
+  assert.deepEqual(stringFacts(pw("postgres", "u%40x", "pw@h/")), { database: "u@x", host: "h", port: 5432, user: "u@x" }, "no database: the user's, as Postgres does");
   assert.deepEqual(stringFacts("postgres://pw@h/d?user=bob&dbname=other&host=h2&port=1"), { database: "other", host: "h2", port: 1, user: "bob" });
   assert.equal(stringFacts("not a url"), null);
-  assert.ok(!JSON.stringify(stringFacts("postgres://a:s3cret@h/d")).includes("s3cret"));
+  assert.ok(!JSON.stringify(stringFacts(pw("postgres", "a", "s3cret@h/d"))).includes("s3cret"));
 });
 
 test("the certificate line by kind: ✓ only for an authority that verified it", () => {

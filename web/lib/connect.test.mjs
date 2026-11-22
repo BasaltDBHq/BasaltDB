@@ -448,6 +448,33 @@ test("tables get ticks only when CheckSetup says ticked and the setup has not ru
   assert.deepEqual(listed.rows, [{ name: "public.leads", access: "write" }, { name: "public.notes", access: "read" }]);
 });
 
+test("without ticked (an older service), an allTables INSTALL still gets ticks; with it, ticked decides", () => {
+  const absent = connectOnlyCheck();
+  delete absent.ticked;
+  assert.equal(tableRows(connectOnly(), absent).ticks, true, "field absent: the old rule");
+  assert.equal(tableRows(connectOnly("AGENT"), absent).ticks, false, "field absent: no ticks for an AGENT code");
+  assert.equal(tableRows(keepGrants(), absent).ticks, false, "field absent: no ticks for a keep-grants code");
+  assert.equal(tableRows(connectOnly(), connectOnlyCheck({ ticked: false })).ticks, false, "ticked false: none");
+  assert.equal(tableRows(connectOnly(), connectOnlyCheck({ ticked: true })).ticks, true, "ticked true: ticks");
+  assert.equal(tableRows(keepGrants(), connectOnlyCheck({ ticked: true })).ticks, true);
+});
+
+test("a connect-only INSTALL against a service with no ticked field still shows ticks and sends the ticked tables", async () => {
+  const nodes = fakeDocument();
+  const body = connectOnlyCheck({ ticket: "", columns: [] });
+  delete body.ticked;
+  const { calls, fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: connectOnly(), challenge: challenge() } }),
+    CheckSetup: () => ({ body }),
+  });
+  await toPaste(nodes, env(fetchFn));
+  await paste(nodes);
+  await nodes["go-on"].click();
+  assert.equal(shown(nodes), "s-tables");
+  assert.equal([...nodes.tables.walk()].filter((n) => n.tagName === "INPUT").length, 3);
+  assert.equal(calls.filter((c) => c.method === "RunSetup").length, 0);
+});
+
 test("a keep-grants AGENT code: ticks over the listing for a dropped or empty role, no tables for a kept one", () => {
   const dropped = tableRows(keepGrants(), connectOnlyCheck());
   assert.equal(dropped.ticks, true);

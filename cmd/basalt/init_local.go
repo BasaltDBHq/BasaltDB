@@ -39,9 +39,6 @@ func runInitLocal(c *cliIO, args []string) int {
 	if c.host.Euid() == 0 {
 		return c.fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", errUsage))
 	}
-	if !job.Demo && !c.host.System(io.Discard, io.Discard).Exists(service.UnitPath(c.goos)) {
-		return c.fail(errOnlyDemo)
-	}
 	me, err := user.Current()
 	if err != nil {
 		return c.fail(fmt.Errorf("your OS user cannot be read: %w", err))
@@ -57,9 +54,6 @@ func runInitLocal(c *cliIO, args []string) int {
 	if state == engineSetUp {
 		return changeLink(c, job)
 	}
-	if !job.Demo {
-		return c.fail(errOnlyDemo)
-	}
 	link, err := localsetup.Link(engine.SetupOrigin, job)
 	if err != nil {
 		return c.fail(err)
@@ -72,10 +66,6 @@ func runInitLocal(c *cliIO, args []string) int {
 	fmt.Fprintln(c.stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
 	return exitOK
 }
-
-// errOnlyDemo refuses a first install without --demo: the page offers only
-// the sample database for now.
-var errOnlyDemo = fmt.Errorf("%w: the setup page offers only the sample database for now: run basalt init --demo", errUsage)
 
 // changeLink is basalt init on an engine that is already set up: it prints
 // and opens the setup page's CHANGE link for the agent, where the person
@@ -100,8 +90,8 @@ func changeLink(c *cliIO, job localsetup.Job) int {
 func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 	fs := newFlagSet("init")
 	fs.SetOutput(c.stderr)
-	agent := fs.String("agent", "", "the agent's name (default: "+demo.Agent+" with --demo)")
-	demoFlag := fs.Bool("demo", false, "set up the sample database")
+	agent := fs.String("agent", "", "the agent's name (default: "+demo.Agent+")")
+	demoFlag := fs.Bool("demo", false, "set up the sample database instead of your own tables")
 	fs.Usage = func() {
 		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--demo]\n\n"+
 			"Installs the engine service when needed, then prints and opens the setup link. Finish the setup on that page:\n"+

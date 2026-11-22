@@ -15,7 +15,12 @@
 // step. The hand-off ticket is kept the same way and never shown.
 import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256, utf8 } from "./codec.js";
 import { pairingCoordinates } from "./pairing.js";
+import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
+import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
+
+// The pieces the local setup page shares with this one.
+export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText };
 
 // CONNECT_SERVICE is the only origin this page connects to; the page's
 // policy (its meta CSP and the edge function's header) allows it alone.
@@ -56,9 +61,6 @@ export const POLL_MS = 5000;
 export const REACH_WAIT_MS = 60000;
 export const LATE_MS = 120000;
 export const WATCH_MS = 30 * 60000;
-// columnClasses holds at most 500 entries; past that, "Mark the rest as not
-// personal" goes as restPublic.
-export const MAX_LABELS = 500;
 
 // Refusal is a refusal of the connect service: reason and message come from
 // its basalt.connect.v1.Refusal detail, or are fixed words of this page.
@@ -73,49 +75,6 @@ export class Refusal extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
     this.trustRoot = trustRoot;
   }
-}
-
-// The refusals that may carry a certificate authority to trust.
-const TRUST_REASONS = new Set(["CERTIFICATE_NOT_VERIFIED", "TRUST_ROOT_MISMATCH"]);
-const SHA256_HEX = /^[0-9a-f]{64}$/;
-// The server chooses the subject; the service cuts it to 512 characters.
-const MAX_SUBJECT_CHARS = 512;
-const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-
-// trustRootFrom is a Refusal detail's trustRoot, checked: its subject as
-// text, its SHA-256 as 64 lowercase hex digits and its expiry as RFC 3339
-// UTC. null when there is none or any part is unreadable: the refusal is
-// then shown as it is.
-export function trustRootFrom(reason, t) {
-  if (!TRUST_REASONS.has(reason) || !t || typeof t !== "object") return null;
-  const { subject, sha256: fp, expiresAt } = t;
-  if (typeof subject !== "string" || subject === "" || [...subject].length > MAX_SUBJECT_CHARS) return null;
-  if (typeof fp !== "string" || !SHA256_HEX.test(fp)) return null;
-  if (typeof expiresAt !== "string" || !RFC3339_UTC.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) return null;
-  return { subject, sha256: fp, expiresAt };
-}
-
-// fingerprintText is a SHA-256 as the laptop command shows it: uppercase
-// hex pairs with colons.
-export function fingerprintText(fp) {
-  return fp.toUpperCase().match(/../g).join(":");
-}
-
-// trustText is the question the page asks about trustRoot for host.
-export function trustText(host, trustRoot) {
-  const date = trustRoot.expiresAt.slice(0, 10);
-  return `${host} presents a certificate authority Basalt does not know: ${trustRoot.subject}, SHA-256 ${fingerprintText(trustRoot.sha256)}, valid until ${date}. Check it against your provider's console. Trust it for this host only?`;
-}
-
-// hostOf is the host a pasted connection string names, or a plain word.
-export function hostOf(url) {
-  try {
-    const h = new URL(url).hostname;
-    if (h !== "") return h.replace(/^\[|\]$/g, "");
-  } catch {
-    // Fall through.
-  }
-  return "This database";
 }
 
 const UNREACHABLE = "The connect service could not be reached. Check your connection and try again.";
@@ -353,12 +312,6 @@ export function databaseView(t) {
   return { big: host, sub: `Port ${port} · database ${db}`, line: `${host}:${port}, database ${db}` };
 }
 
-// tableName is a table as the page shows it: without public., which most
-// databases put everything in.
-export function tableName(t) {
-  return t.startsWith("public.") ? t.slice("public.".length) : t;
-}
-
 // tableRows is screen 4's list: the tables the agent will get, each with
 // what it may do, and whether the person may untick them. Ticks are only
 // for an allTables INSTALL code (CONTRACT.md, Tables on the connect page);
@@ -375,127 +328,6 @@ export function tableRows(summary, check) {
   const ticks = summary?.kind === "INSTALL" && allTables && !check?.alreadyRan && !check?.nothingToDo;
   const excluded = (Array.isArray(check?.excluded) ? check.excluded : []).filter((e) => typeof e?.table === "string");
   return { rows, ticks, excluded };
-}
-
-// answersFor answers every row-level security question for an included
-// table with ALL_ROWS (CONTRACT.md, The connect page, step 6): a ticked
-// table gives the bot every row. included is null when every table is.
-export function answersFor(questions, included) {
-  const out = [];
-  for (const q of Array.isArray(questions) ? questions : []) {
-    if (included && !included.includes(q.table)) continue;
-    out.push({ kind: q.kind, table: q.table, choice: "ALL_ROWS" });
-  }
-  return out;
-}
-
-// ---- Column labels (CONTRACT.md, Column labels on the connect page) ----
-
-export const ENTITY_WORDS = { EMAIL: "email", PHONE: "phone", PERSON_NAME: "name", ADDRESS: "address", OTHER: "other" };
-const FIXED_WORDS = { PUBLIC: "Not personal", FREE_TEXT: "Free text" };
-const REGION = /^[A-Z]{2}$/;
-
-const key = (table, column) => `${table}\u0000${column}`;
-
-// labelOf is a column's class as CheckSetup read it, UNCLASSIFIED when it
-// has none.
-export function labelOf(c) {
-  const cls = typeof c?.class === "string" && c.class !== "" ? c.class : "UNCLASSIFIED";
-  // As CheckSetup sent it: the service compares all three fields with what
-  // is stored, so was echoes them unchanged.
-  return {
-    class: cls,
-    entityType: typeof c.entityType === "string" ? c.entityType : "",
-    phoneRegion: typeof c.phoneRegion === "string" ? c.phoneRegion : "",
-  };
-}
-
-const sameLabel = (a, b) => a.class === b.class && a.entityType === b.entityType && a.phoneRegion === b.phoneRegion;
-
-// Labels is screen 5's state: the columns of the included tables, each with
-// its class now, and what the person chose.
-export class Labels {
-  constructor(columns) {
-    this.columns = (Array.isArray(columns) ? columns : []).filter((c) => typeof c?.table === "string" && typeof c?.column === "string");
-    this.chosen = new Map();
-  }
-
-  // set records the person's choice for a column: a class with its entity
-  // type and region, or null for blank (only offered on a column without a
-  // class, so it never erases one).
-  set(table, column, label) {
-    if (label === null) this.chosen.delete(key(table, column));
-    else this.chosen.set(key(table, column), { class: label.class, entityType: label.entityType ?? "", phoneRegion: label.phoneRegion ?? "" });
-  }
-
-  current(c) {
-    return this.chosen.get(key(c.table, c.column)) ?? labelOf(c);
-  }
-
-  of(included) {
-    const set = new Set(included);
-    return this.columns.filter((c) => set.has(c.table));
-  }
-
-  // changes are the columns of the included tables the person changed, as
-  // columnClasses entries, each with the class it had (was).
-  changes(included) {
-    const out = [];
-    for (const c of this.of(included)) {
-      const was = labelOf(c);
-      const now = this.chosen.get(key(c.table, c.column));
-      if (!now || sameLabel(now, was)) continue;
-      const entry = { table: c.table, column: c.column, class: now.class, was: { class: was.class } };
-      if (was.entityType) entry.was.entityType = was.entityType;
-      if (was.phoneRegion) entry.was.phoneRegion = was.phoneRegion;
-      if (now.class === "IDENTIFIER") entry.entityType = now.entityType;
-      if (now.class === "IDENTIFIER" && now.entityType === "PHONE") entry.phoneRegion = now.phoneRegion;
-      out.push(entry);
-    }
-    return out;
-  }
-
-  // unlabeled are the columns of the included tables that have no class
-  // and that the person left blank: what "Mark the rest as not personal"
-  // marks, folded tables included.
-  unlabeled(included) {
-    return this.of(included).filter((c) => this.current(c).class === "UNCLASSIFIED");
-  }
-
-  // problem is what stops Continue: a phone without its country.
-  problem(included) {
-    for (const e of this.changes(included)) {
-      if (e.class === "IDENTIFIER" && e.entityType === "PHONE" && !REGION.test(e.phoneRegion ?? "")) {
-        return `Enter the country of the phone numbers in ${tableName(e.table)}.${e.column} as two letters, such as US.`;
-      }
-    }
-    if (this.changes(included).length > MAX_LABELS) return `Label at most ${MAX_LABELS} columns at once.`;
-    return "";
-  }
-
-  // request is what RunSetup carries: nothing on Skip, the changes on
-  // Continue, and with "Mark the rest" the rest as PUBLIC entries when all
-  // fit in 500, else restPublic.
-  request(included, mode) {
-    if (mode === "skip") return {};
-    const changes = this.changes(included);
-    const out = {};
-    if (mode === "rest") {
-      const rest = this.unlabeled(included).map((c) => ({ table: c.table, column: c.column, class: "PUBLIC", was: { class: "UNCLASSIFIED" } }));
-      if (changes.length + rest.length <= MAX_LABELS) changes.push(...rest);
-      else if (rest.length > 0) out.restPublic = true;
-    }
-    if (changes.length > 0) out.columnClasses = changes;
-    return out;
-  }
-}
-
-// restQuestion is the confirm before "Mark the rest as not personal", with
-// the count of what it marks.
-export function restQuestion(columns) {
-  const tables = new Set(columns.map((c) => c.table)).size;
-  const n = columns.length;
-  return `Mark ${n} ${n === 1 ? "column" : "columns"} in ${tables} ${tables === 1 ? "table" : "tables"} as not personal?`;
 }
 
 // reachText is screen 3c's advice for the reason the engine reported.
@@ -1379,91 +1211,26 @@ export function start(env) {
     }
     setText("unlabeled-warn", `Columns without a label aren't masked: ${bot()} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
     show("labels-error", false);
-    show("rest-confirm", false);
+    $("rest-mark").checked = labelMode === "rest";
+    $("rest-leave").checked = labelMode !== "rest";
     restCount();
     go("s-labels");
   };
 
+  // restCount shows the choice for the columns left unlabeled only while
+  // there are some, and the note under "Mark them as not personal" while
+  // it is chosen: the choice is the confirmation.
   const restCount = () => {
-    $("labels-rest").disabled = labels.unlabeled(tablesNow()).length === 0;
+    const n = labels.unlabeled(tablesNow()).length;
+    show("rest-choice", n > 0);
+    const note = $("rest-note");
+    const lines = $("rest-mark").checked ? restNote({ count: n, forced: labels.changes(tablesNow()).length + n > MAX_LABELS }) : [];
+    clear(note);
+    for (const line of lines) note.appendChild(el("span", "", line));
+    note.hidden = lines.length === 0;
   };
 
-  // labelRow is one column with its label: a native select (blank only on
-  // a column without a class), a country box for a phone, and for a class
-  // the page does not offer (PUBLIC, FREE_TEXT) a fixed label with "change".
-  const labelRow = (c) => {
-    const row = el("div", "label-row");
-    const name = `${tableName(c.table)}.${c.column}`;
-    row.appendChild(el("span", "mono col-name", c.column));
-    const was = labelOf(c);
-    const now = labels.current(c);
-    const pick = el("select");
-    pick.setAttribute("aria-label", `Label for ${name}`);
-    const region = el("input", "text region");
-    region.type = "text";
-    region.maxLength = 2;
-    region.autocomplete = "off";
-    region.placeholder = "US";
-    region.setAttribute("aria-label", `Country of the phone numbers in ${name}, two letters`);
-    region.hidden = true;
-    const fixed = was.class === "PUBLIC" || was.class === "FREE_TEXT";
-    const option = (parent, value, text) => {
-      const o = el("option", "", text);
-      o.value = value;
-      parent.appendChild(o);
-    };
-    if (was.class === "UNCLASSIFIED") option(pick, "", "—");
-    if (fixed) {
-      const o = el("option", "", "Choose a label");
-      o.value = "";
-      o.disabled = true;
-      pick.appendChild(o);
-    }
-    const personal = el("optgroup");
-    personal.label = "Personal";
-    for (const [entity, words] of Object.entries(ENTITY_WORDS)) option(personal, `IDENTIFIER:${entity}`, `Personal: ${words}`);
-    if (was.class === "IDENTIFIER" && was.entityType && !ENTITY_WORDS[was.entityType]) option(personal, `IDENTIFIER:${was.entityType}`, `Personal: ${was.entityType.toLowerCase()}`);
-    pick.appendChild(personal);
-    option(pick, "SECRET", "Secret");
-    pick.value = now.class === "IDENTIFIER" ? `IDENTIFIER:${now.entityType}` : now.class === "SECRET" ? "SECRET" : "";
-    region.value = now.phoneRegion;
-    const update = () => {
-      const v = pick.value;
-      region.hidden = v !== "IDENTIFIER:PHONE";
-      if (v === "") {
-        if (was.class === "UNCLASSIFIED") labels.set(c.table, c.column, null);
-      } else if (v === "SECRET") {
-        labels.set(c.table, c.column, { class: "SECRET" });
-      } else {
-        const entityType = v.slice("IDENTIFIER:".length);
-        labels.set(c.table, c.column, { class: "IDENTIFIER", entityType, phoneRegion: entityType === "PHONE" ? region.value.trim().toUpperCase() : "" });
-      }
-      restCount();
-    };
-    pick.addEventListener("change", update);
-    region.addEventListener("input", update);
-    region.hidden = pick.value !== "IDENTIFIER:PHONE";
-    if (fixed) {
-      const label = el("span", "label-fixed", FIXED_WORDS[was.class]);
-      const change = el("button", "link", "change");
-      change.type = "button";
-      change.setAttribute("aria-label", `Change the label of ${name}`);
-      const changed = now.class !== was.class;
-      pick.hidden = !changed;
-      label.hidden = changed;
-      change.hidden = changed;
-      change.addEventListener("click", () => {
-        label.hidden = true;
-        change.hidden = true;
-        pick.hidden = false;
-      });
-      row.appendChild(label);
-      row.appendChild(change);
-    }
-    row.appendChild(pick);
-    row.appendChild(region);
-    return row;
-  };
+  const labelRow = (c) => sharedLabelRow(c, labels, restCount);
 
   const labelsProblem = (text) => {
     setText("labels-error", text);
@@ -1471,31 +1238,15 @@ export function start(env) {
     return text !== "";
   };
 
+  // Continue keeps the labels the person picked, and with "Mark them as
+  // not personal" marks the rest as its note says.
   $("labels-next").addEventListener("click", () => {
     if (labelsProblem(labels.problem(tablesNow()))) return;
-    labelMode = "changes";
+    labelMode = !$("rest-choice").hidden && $("rest-mark").checked ? "rest" : "changes";
     showApprove();
   });
 
-  $("labels-rest").addEventListener("click", () => {
-    if (labelsProblem(labels.problem(tablesNow()))) return;
-    setText("rest-question", restQuestion(labels.unlabeled(tablesNow())));
-    show("rest-confirm");
-  });
-
-  $("rest-yes").addEventListener("click", () => {
-    show("rest-confirm", false);
-    labelMode = "rest";
-    showApprove();
-  });
-
-  $("rest-no").addEventListener("click", () => show("rest-confirm", false));
-
-  $("labels-skip").addEventListener("click", () => {
-    show("labels-error", false);
-    labelMode = "skip";
-    showApprove();
-  });
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", restCount);
 
   // ---- 6: approve ----
   const showApprove = () => {
@@ -1508,7 +1259,7 @@ export function start(env) {
     if (!c.alreadyRan && n > 0) parts.push(`${n} ${n === 1 ? "table" : "tables"}`);
     if (labelsApply() && labelMode !== "skip") {
       const k = labels.changes(tablesNow()).length;
-      parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
+      if (k > 0) parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
       if (labelMode === "rest" && labels.unlabeled(tablesNow()).length > 0) parts.push("the rest not personal");
     }
     setText("ap-counts", parts.join(" · "));

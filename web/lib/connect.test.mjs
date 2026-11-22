@@ -29,7 +29,7 @@ import {
   readCode,
   refusalFrom,
   refusalText,
-  restQuestion,
+  restNote,
   start,
   tableRows,
   expiryCountdown,
@@ -451,7 +451,8 @@ test("labels: only the changes, each with the class it had, and the rest as PUBL
   const over = many.request(["public.t"], "rest");
   assert.equal(over.restPublic, true, "over 500 entries, the rest goes as one flag");
   assert.deepEqual(over.columnClasses, [{ table: "public.t", column: "c0", class: "SECRET", was: { class: "UNCLASSIFIED" } }]);
-  assert.equal(restQuestion(many.unlabeled(["public.t"])), "Mark 500 columns in 1 table as not personal?");
+  assert.deepEqual(restNote({ count: 500, forced: true }), ["All 500 unlabeled columns will be marked not personal."]);
+  assert.deepEqual(restNote({ count: 1 }), ["1 column will be marked not personal."]);
 });
 
 test("the flow refuses a step out of order", async () => {
@@ -606,18 +607,23 @@ test("a connect-only INSTALL: the code, the passkey, the reach check, ticks, lab
   select("users.email").fire("change");
   select("users.phone").value = "IDENTIFIER:PHONE";
   select("users.phone").fire("change");
-  await nodes["labels-rest"].click();
+  // The choice for the columns left unlabeled: leave them, by default.
+  assert.equal(nodes["rest-choice"].hidden, false);
+  assert.equal(nodes["rest-leave"].checked, true);
+  assert.equal(nodes["rest-mark"].checked, false);
+  nodes["rest-mark"].checked = true;
+  nodes["rest-mark"].fire("change");
+  await nodes["labels-next"].click();
   assert.match(nodes["labels-error"].textContent, /country of the phone numbers in users\.phone/);
   const region = find(nodes["label-tables"], (n) => n.tagName === "INPUT" && /users\.phone/.test(n.getAttribute("aria-label") ?? ""));
   assert.equal(region.hidden, false);
   region.value = "de";
   region.fire("input");
-  // Mark the rest: the count first (logs.at, in a folded table), then the
-  // approval.
-  await nodes["labels-rest"].click();
-  assert.equal(nodes["rest-confirm"].hidden, false);
-  assert.equal(nodes["rest-question"].textContent, "Mark 1 column in 1 table as not personal?");
-  await nodes["rest-yes"].click();
+  // Mark them as not personal: the note under it counts what it marks
+  // (logs.at, in a folded table); Continue goes straight to the approval.
+  assert.equal(nodes["rest-note"].hidden, false);
+  assert.equal(nodes["rest-note"].textContent, "1 column will be marked not personal.");
+  await nodes["labels-next"].click();
 
   // 6: approve.
   assert.equal(shown(nodes), "s-approve");

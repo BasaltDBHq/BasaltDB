@@ -20,7 +20,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-Q1m3QQtbg+xk1uZb36uII5xh2Xzz/sqP3cyPw+rJsJM3Yd3l8/2QbDneJ9kkIJPG"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-6v9F7w2Uq5pKwpKFjfc3k58Az8ec89y1uA+gEObdieUGqB4AbFWWv99+RupmOf51"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -53,7 +53,7 @@
       <label><input id="confirm-os-user" type="checkbox"> This is the OS user my agent runs as.</label>
     </section>
 
-    <section class="panel">
+    <section id="admin-panel" class="panel">
       <h2>Your database's admin connection string</h2>
       <p class="muted">Used once, on this computer, to set up the database. It is never stored, and the agent never sees it.</p>
       <input id="database-url" type="password" autocomplete="off" spellcheck="false" aria-label="Admin connection string" placeholder="postgres://… as your provider shows it">

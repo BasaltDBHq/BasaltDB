@@ -321,3 +321,17 @@ func TestRemoveAlsoDropsAnAgentWhoseCredentialCannotBeRead(t *testing.T) {
 	_, err = os.Stat(f.config)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestAgentJobsCheckTheAgentBeforeTheAdminString(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	probe := f.agentJob(localsetup.JobUpdate)
+	probe.DatabaseURL = ""
+	_, err := svc.Check(ctx, probe)
+	refusal(t, err, localsetup.CodeConnectionStringRefused)
+	probe.Agent = "sales_bot"
+	_, err = svc.Check(ctx, probe)
+	refusal(t, err, localsetup.CodeInvalidArgument)
+	require.Contains(t, err.Error(), "basalt init --agent NAME")
+}

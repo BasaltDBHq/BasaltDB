@@ -73,6 +73,9 @@ func (c Commands) UpdateLink(link string) Commands {
 	return c
 }
 
+// UpdateLinkURL is the setup page's UPDATE link UpdateLink set, or "".
+func (c Commands) UpdateLinkURL() string { return c.updateLink }
+
 // AgentOperated reports whether the engine's operatedBy is AGENT.
 func (c Commands) AgentOperated() bool { return c.agentOperated }
 

@@ -640,14 +640,13 @@ type agentEnv struct {
 	reload func()
 }
 
-func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
-	limits, err := sqlLimits(env.cfg.Limits)
-	if err != nil {
-		return agentRuntime{}, err
-	}
+// commands are agent a's next-step commands: a foreground engine's when it
+// is no service, and the setup page's UPDATE link for a when the engine
+// serves the setup jobs (setupOrigin).
+func (env agentEnv) commands(a config.Agent) (agent.Commands, error) {
 	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
 	if err != nil {
-		return agentRuntime{}, err
+		return agent.Commands{}, err
 	}
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
@@ -656,6 +655,18 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		if link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser}); err == nil {
 			cmds = cmds.UpdateLink(link)
 		}
+	}
+	return cmds, nil
+}
+
+func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
+	limits, err := sqlLimits(env.cfg.Limits)
+	if err != nil {
+		return agentRuntime{}, err
+	}
+	cmds, err := env.commands(a)
+	if err != nil {
+		return agentRuntime{}, err
 	}
 	// One store per agent (CONTRACT.md, Stores); the config refuses any
 	// kind but POSTGRES, the only adapter there is.

@@ -78,7 +78,7 @@ func (s *Service) validateAgentJob(req Request) (agentJob, error) {
 	}
 	i := slices.IndexFunc(cfg.Agents, func(a config.Agent) bool { return a.Name == req.Agent })
 	if i < 0 {
-		return agentJob{}, refuse(CodeInvalidArgument, fmt.Sprintf("This engine has no agent %s. Ask the agent for a new link.", req.Agent))
+		return agentJob{}, refuse(CodeInvalidArgument, fmt.Sprintf("This engine has no agent %s. Ask the agent to run basalt init --agent NAME with the name of the agent it uses.", req.Agent))
 	}
 	a := cfg.Agents[i]
 	if req.OSUser == "" || req.OSUser != a.OSUser {

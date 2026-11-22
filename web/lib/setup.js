@@ -95,6 +95,29 @@ export function parseSetupLink(hash) {
   return { job: job.job, agent: job.agent, osUser: job.osUser, demo: job.demo };
 }
 
+// agentProbe asks the engine, before the admin-string field opens, whether
+// the link's agent is one of its own: a check with no admin string, which
+// the engine refuses CONNECTION_STRING_REFUSED only after the agent passed
+// (CONTRACT.md, The local setup page). It returns null when the agent is
+// this engine's, else the engine's message. An INSTALL link needs none.
+export async function agentProbe(fetchFn, link) {
+  if (link.job === "INSTALL") return null;
+  const job = link.job === "CHANGE" ? { ...link, job: "UPDATE" } : link;
+  try {
+    await postSetup(fetchFn, CHECK_PATH, setupRequest(job, ""));
+  } catch (err) {
+    if (err.code === "CONNECTION_STRING_REFUSED") return null;
+    return err.message;
+  }
+  return null;
+}
+
+// answerFits reports whether a check's answer, asked for job asked, is
+// still the one to run: a pick changed during the check makes it stale.
+export function answerFits(asked, current) {
+  return asked !== null && asked === current;
+}
+
 // setupRequest is the body of a check or run: the job and the string,
 // plus the passkey on a run.
 export function setupRequest(job, databaseUrl, extra = {}) {
@@ -199,8 +222,21 @@ async function main() {
   $("choice").hidden = link.job !== "CHANGE";
   $("main").hidden = false;
   const fetchFn = browserFetch;
+  $("admin-panel").hidden = true;
+  const refused = await agentProbe(fetchFn, link);
+  if (refused !== null) {
+    $("main").hidden = true;
+    $("error-text").textContent = refused;
+    $("error").hidden = false;
+    return;
+  }
+  $("admin-panel").hidden = false;
   let databaseUrl = "";
   let checked = null;
+  let checkedFor = null;
+  const setChoices = (disabled) => {
+    for (const name of CHOICES) $("choice-" + name.toLowerCase()).disabled = disabled;
+  };
   const confirmed = () => job !== null && $("confirm-os-user").checked && (job.job !== "REMOVE" || $("confirm-remove").checked);
   const sync = () => {
     $("check").disabled = !confirmed() || $("database-url").value === "";
@@ -210,6 +246,8 @@ async function main() {
     $("choice-" + name.toLowerCase()).addEventListener("change", () => {
       job = pickJob(link, name);
       checked = null;
+      checkedFor = null;
+      $("confirm-remove").checked = false;
       $("review").hidden = true;
       showJob();
       sync();
@@ -227,13 +265,25 @@ async function main() {
     $("check").disabled = true;
     $("status").textContent = "Checking your database…";
     databaseUrl = $("database-url").value;
+    const asked = job;
+    setChoices(true);
+    let answer;
     try {
-      checked = await postSetup(fetchFn, CHECK_PATH, setupRequest(job, databaseUrl));
+      answer = await postSetup(fetchFn, CHECK_PATH, setupRequest(asked, databaseUrl));
     } catch (err) {
+      setChoices(false);
       showError(err);
       sync();
       return;
     }
+    setChoices(false);
+    if (!answerFits(asked, job)) {
+      $("status").textContent = "";
+      sync();
+      return;
+    }
+    checked = answer;
+    checkedFor = asked;
     $("status").textContent = "";
     $("database").textContent = checked.database;
     list("lines", checked.lines);
@@ -245,8 +295,10 @@ async function main() {
     sync();
   });
   $("run").addEventListener("click", async () => {
-    if (!checked || !confirmed()) return;
+    if (!checked || !confirmed() || !answerFits(checkedFor, job)) return;
+    const running = checkedFor;
     $("run").disabled = true;
+    setChoices(true);
     let extra = {};
     try {
       if (checked.passkeyNeeded) {
@@ -256,18 +308,20 @@ async function main() {
     } catch (err) {
       $("status").textContent = webauthnError(err);
       $("run").disabled = false;
+      setChoices(false);
       return;
     }
     $("status").textContent = "Setting up…";
     try {
-      const done = await postSetup(fetchFn, RUN_PATH, setupRequest(job, databaseUrl, extra));
+      const done = await postSetup(fetchFn, RUN_PATH, setupRequest(running, databaseUrl, extra));
       databaseUrl = "";
       $("database-url").value = "";
       $("status").textContent = "";
-      showDone(job, done);
+      showDone(running, done);
     } catch (err) {
       showError(err);
       $("run").disabled = false;
+      setChoices(false);
     }
   });
 }

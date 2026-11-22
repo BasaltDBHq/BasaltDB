@@ -27,7 +27,7 @@ Never put a real credential or someone else's data in a report. Use a throwaway 
 - **Guard:** everything installed in `basalt_meta` (roles, grants, triggers, ledger, and the functions that check passkey signatures), including any way for an agent to write, approve or revert around it.
 - **CLI:** the `basalt` command, including `init`, and anything that leaks or stores the admin credential or a secret.
 - **Portal pages:** the approval, revert and passkey pages, including the handling of link secrets in the URL fragment.
-- **Vault channel protocol:** the handshake, frame format, link tokens and keys described in [CONTRACT.md](CONTRACT.md) (Vault channel), and the engine's side of the connection to the relay. A relay that can read, alter, replay or forge a session is in scope.
+- **Vault channel protocol:** the handshake, frame format, link tokens and keys described in [CONTRACT.md](CONTRACT.md) (Vault channel), and the engine's side of the connection to the relay. A relay that can read, alter, replay or forge a session is in scope. [docs/security/vault-channel-spec.md](docs/security/vault-channel-spec.md) is a self-contained description of the protocol for reviewers: byte layouts, derivations, checks, test vectors, and the questions we most want answered.
 
 Out of scope: problems in Postgres itself, in your own deployment or network setup, social engineering of a person, and findings that need an attacker who already holds the person's passkey or the admin credential.
 

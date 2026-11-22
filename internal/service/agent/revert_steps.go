@@ -237,7 +237,7 @@ func (s *Service) longRevertLink(ctx context.Context, r action.Revert) (string, 
 	if err != nil {
 		return "", err
 	}
-	return revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(s.PagesBase)
+	return revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(s.deps.Core.PagesBase)
 }
 
 func revertNotFound(id uuid.UUID) error {
@@ -303,7 +303,7 @@ func (s *Service) restatedRevertLink(ctx context.Context, r action.Revert) (hand
 	if s.shortLinked(r.ID) {
 		return handOver{URL: long, Kind: linkLong}, nil
 	}
-	return chooseLink("", long, s.LinkBudget, links.RevertFile(r.ID))
+	return chooseLink("", long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))
 }
 
 // revertTitle names revert r for the person, starting lowercase: its scope,
@@ -374,7 +374,7 @@ func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) 
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
 			sentence(revertTitle(r))),
 		NextSteps: []toolresult.NextStep{
-			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: passkeyInitText, Command: s.Commands.Init()},
+			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: passkeyInitText, Command: s.deps.Core.Commands.Init()},
 			open,
 			agentStep(toolresult.ActionEndTurn, stepEndTurnPersonActsNext),
 		},
@@ -472,10 +472,10 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 // statementTimeout is the agent's statement timeout, 0 when the service
 // knows no catalog.
 func (s *Service) statementTimeout() time.Duration {
-	if s.Catalog == nil {
+	if s.deps.Describe.Catalog == nil {
 		return 0
 	}
-	return s.Catalog.Limits().StatementTimeout
+	return s.deps.Describe.Catalog.Limits().StatementTimeout
 }
 
 // statementLimitText names the agent's statement timeout d in a message.
@@ -494,11 +494,11 @@ func statementLimitText(d time.Duration) string {
 // a revert could restore (READS_ONLY), every row was already reverted, or
 // people changed every row since (people win).
 func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, err error) error {
-	detail := ToolError(err).Message
+	detail := s.deps.Core.Errors.ToolError(err).Message
 	if strings.Contains(detail, "changed no rows") {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, detail)
 	}
-	pv, perr := s.Store.PreviewRevert(ctx, scope, "", 1)
+	pv, perr := s.deps.Revert.Store.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
 		pv = action.PreviewPage{}
 	}
@@ -520,9 +520,9 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope a
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	case reasonAlreadyReverted:
-		by, err := s.Store.RevertedBy(ctx, scope)
+		by, err := s.deps.Revert.Store.RevertedBy(ctx, scope)
 		if err != nil {
-			s.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
+			s.deps.Core.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}
 		args, named := map[string]any{}, ""
 		if by != uuid.Nil {

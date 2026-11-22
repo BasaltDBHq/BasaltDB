@@ -78,7 +78,9 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := pg.service(func(d *agent.Deps) { d.PagesBase, d.Links, d.Relay = links.Portal, secrets, relay })
+	svc := pg.service(func(d *agent.Deps) {
+		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = links.Portal, secrets, relay
+	})
 	s := serveOverVault(t, &wire{}, svc, secrets, id)
 	relay.c.Store(s.client)
 

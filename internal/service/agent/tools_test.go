@@ -53,15 +53,14 @@ func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page
 }
 
 func deps() Deps {
-	return Deps{
-		Name: "bot",
-		Store: parts{
-			reader: nopReader{}, runStore: nopStore{}, readRecorder: nopRecorder{},
-			approvalStore: struct{ approvalStore }{}, // never called by these tests
-			Reverts:       struct{ Reverts }{},
-		},
-		Log: slog.New(slog.DiscardHandler), Now: time.Now,
-	}
+	d := testDeps()
+	d.Core.Name, d.Core.Log, d.Core.Now = "bot", slog.New(slog.DiscardHandler), time.Now
+	useStore(&d, parts{
+		reader: nopReader{}, runStore: nopStore{}, readRecorder: nopRecorder{},
+		approvalStore: struct{ approvalStore }{}, // never called by these tests
+		Reverts:       struct{ Reverts }{},
+	})
+	return d
 }
 
 // TestServedToolsMatchTheContracts is the contract test for the served tool
@@ -184,7 +183,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{errors.New("password=hunter2 something broke"), CodeInternal, "", ""},
 	}
 	for _, c := range cases {
-		te := ToolError(c.err)
+		te := testErrors().ToolError(c.err)
 		require.Equal(t, c.code, te.Code, c.err.Error())
 		require.Equal(t, c.reason, te.Reason, c.err.Error())
 		require.Equal(t, c.sqlState, te.SQLState, c.err.Error())
@@ -194,16 +193,36 @@ func TestToolErrorMapping(t *testing.T) {
 
 func TestNewServicePanicsWithoutDeps(t *testing.T) {
 	t.Parallel()
-	for _, breakIt := range []func(*Deps){
-		func(d *Deps) { d.Name = "" },
-		func(d *Deps) { d.Store = nil },
-		func(d *Deps) { d.Log = nil },
-		func(d *Deps) { d.Now = nil },
+	for name, breakIt := range map[string]func(*Deps){
+		"Core.Name":                     func(d *Deps) { d.Core.Name = "" },
+		"Core.Store":                    func(d *Deps) { d.Core.Store = nil },
+		"Core.Log":                      func(d *Deps) { d.Core.Log = nil },
+		"Core.Now":                      func(d *Deps) { d.Core.Now = nil },
+		"Core.ServiceManager":           func(d *Deps) { d.Core.ServiceManager = ServiceManager{} },
+		"Core.Errors.InvalidParams":     func(d *Deps) { d.Core.Errors.InvalidParams = nil },
+		"Core.Errors.InvalidIntent":     func(d *Deps) { d.Core.Errors.InvalidIntent = nil },
+		"Core.Errors.RowTooLarge":       func(d *Deps) { d.Core.Errors.RowTooLarge = nil },
+		"Write.Store":                   func(d *Deps) { d.Write.Store = nil },
+		"Write.Record":                  func(d *Deps) { d.Write.Record = nil },
+		"Approval.Store":                func(d *Deps) { d.Approval.Store = nil },
+		"Approval.ErrNotFound":          func(d *Deps) { d.Approval.ErrNotFound = nil },
+		"Revert.Store":                  func(d *Deps) { d.Revert.Store = nil },
+		"Revert.ErrNotFound":            func(d *Deps) { d.Revert.ErrNotFound = nil },
+		"Revert.AfterAnswer":            func(d *Deps) { d.Revert.AfterAnswer = nil },
+		"Revert.RotateSession":          func(d *Deps) { d.Revert.RotateSession = nil },
+		"Delivery.VaultConflict":        func(d *Deps) { d.Delivery.VaultConflict = nil },
+		"Delivery.ErrVaultNotConnected": func(d *Deps) { d.Delivery.ErrVaultNotConnected = nil },
+		"Status.Passkeys":               func(d *Deps) { d.Status.Passkeys = nil },
+		"Status.CrashReports":           func(d *Deps) { d.Status.CrashReports = nil },
+		"Status.LatestGuardVersion":     func(d *Deps) { d.Status.LatestGuardVersion = nil },
+		"Status.UpdateMessage":          func(d *Deps) { d.Status.UpdateMessage = nil },
+		"Status.StartHoldOffUntil":      func(d *Deps) { d.Status.StartHoldOffUntil = nil },
 	} {
 		d := deps()
 		breakIt(&d)
-		require.Panics(t, func() { NewService(d) })
+		require.PanicsWithValue(t, "agent: required dependencies missing: "+name, func() { NewService(d) }, name)
 	}
+	require.NotPanics(t, func() { NewService(deps()) })
 	require.Panics(t, func() { Tools(nil) })
 }
 
@@ -224,7 +243,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 	} {
 		var logged strings.Builder
 		d := deps()
-		d.Log = slog.New(slog.NewTextHandler(&logged, nil))
+		d.Core.Log = slog.New(slog.NewTextHandler(&logged, nil))
 		h := handlers{svc: NewService(d)}
 		call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
 

@@ -90,9 +90,9 @@ func openedPlugin() PluginOpened {
 func pluginService(t *testing.T, f *fakePluginRequests) *Service {
 	t.Helper()
 	s := resultService(t, "linux", "")
-	s.PluginRequests = f
-	s.Poll = time.Millisecond
-	setApprovals(&s.Deps, keys{n: 1})
+	s.deps.Plugin.Requests = f
+	s.deps.Delivery.Poll = time.Millisecond
+	setApprovals(&s.deps, keys{n: 1})
 	return s
 }
 
@@ -116,7 +116,7 @@ func callPlugin(t *testing.T, s *Service, args map[string]any, meta json.RawMess
 
 func requireReason(t *testing.T, err error, code, reason string) *mcp.ToolError {
 	t.Helper()
-	te := ToolError(err)
+	te := testErrors().ToolError(err)
 	require.Equal(t, code, te.Code, te.Message)
 	require.Equal(t, reason, te.Reason)
 	return te
@@ -132,13 +132,13 @@ func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 		name, reason string
 		set          func(s *Service)
 	}{
-		{"agent operated service", ReasonPluginAgentOperated, func(s *Service) { s.Commands = s.Commands.OperatedBy(mcpcontract.OperatedByAgent) }},
+		{"agent operated service", ReasonPluginAgentOperated, func(s *Service) { s.deps.Core.Commands = s.deps.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent) }},
 		{"agent operated without engine-kept plugins", ReasonPluginAgentOperated, func(s *Service) {
-			s.Commands, s.SameUser, s.PluginRequests = s.Commands.OperatedBy(mcpcontract.OperatedByAgent), true, nil
+			s.deps.Core.Commands, s.deps.Status.SameUser, s.deps.Plugin.Requests = s.deps.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent), true, nil
 		}},
-		{"same user", ReasonPluginSameUserMode, func(s *Service) { s.SameUser = true }},
-		{"no engine-kept plugins", ReasonPluginSameUserMode, func(s *Service) { s.PluginRequests = nil }},
-		{"no local pages", ReasonPluginNoLocalPages, func(s *Service) { s.PagesOrigin = "" }},
+		{"same user", ReasonPluginSameUserMode, func(s *Service) { s.deps.Status.SameUser = true }},
+		{"no engine-kept plugins", ReasonPluginSameUserMode, func(s *Service) { s.deps.Plugin.Requests = nil }},
+		{"no local pages", ReasonPluginNoLocalPages, func(s *Service) { s.deps.Core.PagesOrigin = "" }},
 	} {
 		t.Run(kase.name, func(t *testing.T) {
 			t.Parallel()
@@ -148,7 +148,7 @@ func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 			_, err := callPlugin(t, s, map[string]any{"source": "/home/me/local-ner"}, uploadMeta())
 			requireReason(t, err, codePluginRefused, kase.reason)
 			require.Empty(t, f.opens, "nothing is asked of the engine")
-			if s.PluginRequests != nil {
+			if s.deps.Plugin.Requests != nil {
 				require.Equal(t, []uuid.UUID{uuid.MustParse(casePluginUpload)}, f.dropped, "the refused call's upload is dropped")
 			}
 		})
@@ -156,7 +156,7 @@ func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 	// Removing needs no page.
 	f := &fakePluginRequests{}
 	s := pluginService(t, f)
-	s.PagesOrigin = ""
+	s.deps.Core.PagesOrigin = ""
 	_, err := callPlugin(t, s, map[string]any{"name": "local-ner", "remove": true}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"local-ner/default"}, f.removes)
@@ -234,7 +234,7 @@ func TestRequestPluginOpensAnApproval(t *testing.T) {
 	// With no passkey registered, the person registers one first.
 	f = &fakePluginRequests{opened: openedPlugin()}
 	s = pluginService(t, f)
-	setApprovals(&s.Deps, keys{n: 0})
+	setApprovals(&s.deps, keys{n: 0})
 	out, err = callPlugin(t, s, map[string]any{"source": "/home/me/local-ner"}, uploadMeta())
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(out.PersonMessage, "Nobody can approve this yet"), out.PersonMessage)
@@ -279,7 +279,7 @@ func TestRequestPluginWaitOnlyReads(t *testing.T) {
 	// No entry holds it any more (removed, or replaced for every agent), but
 	// the caller's guard still has it: ENDED.
 	s := pluginService(t, &fakePluginRequests{err: ErrPluginNotFound})
-	s.PluginApprovals = endedApprovals{id: uuid.MustParse(casePluginApproval)}
+	s.deps.Plugin.Approvals = endedApprovals{id: uuid.MustParse(casePluginApproval)}
 	out, err = callPlugin(t, s, map[string]any{"approvalId": casePluginApproval}, nil)
 	require.NoError(t, err)
 	require.Equal(t, PluginStateEnded, out.State)
@@ -320,7 +320,7 @@ func pluginResultCases() map[string]resultCase {
 	state := func(st string) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
 		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 			out, err := s.pluginWaited(uuid.MustParse(casePluginApproval), PluginApprovalState{
-				Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: st, ExpiresAt: s.Now().Add(time.Hour),
+				Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: st, ExpiresAt: s.deps.Core.Now().Add(time.Hour),
 			}, true)
 			require.NoError(t, err)
 			return out.PersonMessage, out.Links, out.NextSteps
@@ -329,8 +329,8 @@ func pluginResultCases() map[string]resultCase {
 	wait := map[string]any{"approvalId": casePluginApproval}
 	call := func(args map[string]any, opened PluginOpened) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
 		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-			s.PluginRequests = &fakePluginRequests{opened: opened}
-			setApprovals(&s.Deps, keys{n: 1})
+			s.deps.Plugin.Requests = &fakePluginRequests{opened: opened}
+			setApprovals(&s.deps, keys{n: 1})
 			out, err := callPlugin(t, s, args, uploadMeta())
 			require.NoError(t, err)
 			return out.PersonMessage, out.Links, out.NextSteps
@@ -358,7 +358,7 @@ func pluginCatalogCases() map[string]catalogCase {
 	source := map[string]any{"source": "/home/me/local-ner"}
 	own := func(set func(s *Service)) func(*testing.T, *Service) error {
 		return func(t *testing.T, s *Service) error {
-			s.PluginRequests = &fakePluginRequests{}
+			s.deps.Plugin.Requests = &fakePluginRequests{}
 			set(s)
 			_, err := callPlugin(t, s, source, uploadMeta())
 			return err
@@ -366,20 +366,20 @@ func pluginCatalogCases() map[string]catalogCase {
 	}
 	engine := func(reason string) func(*testing.T, *Service) error {
 		return func(t *testing.T, s *Service) error {
-			s.PagesOrigin = "http://localhost:7878"
-			s.PluginRequests = &fakePluginRequests{err: &PluginRefusedError{Reason: reason, Message: "refused: " + reason}}
+			s.deps.Core.PagesOrigin = "http://localhost:7878"
+			s.deps.Plugin.Requests = &fakePluginRequests{err: &PluginRefusedError{Reason: reason, Message: "refused: " + reason}}
 			_, err := callPlugin(t, s, source, uploadMeta())
 			return err
 		}
 	}
 	cases := map[string]catalogCase{
 		caseKey(codePluginRefused, ReasonPluginAgentOperated, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) {
-			s.Commands = s.Commands.OperatedBy(mcpcontract.OperatedByAgent)
+			s.deps.Core.Commands = s.deps.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent)
 		})},
-		caseKey(codePluginRefused, ReasonPluginSameUserMode, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) { s.SameUser = true })},
-		caseKey(codePluginRefused, ReasonPluginNoLocalPages, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) { s.PagesOrigin = "" })},
+		caseKey(codePluginRefused, ReasonPluginSameUserMode, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) { s.deps.Status.SameUser = true })},
+		caseKey(codePluginRefused, ReasonPluginNoLocalPages, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) { s.deps.Core.PagesOrigin = "" })},
 		caseKey(codePluginRefused, ReasonPluginNoPortalLink, toolRequestPlugin): {toolRequestPlugin, source, own(func(s *Service) {
-			s.Commands, s.SameUser, s.PagesOrigin = s.Commands.OperatedBy(mcpcontract.OperatedByAgent), true, ""
+			s.deps.Core.Commands, s.deps.Status.SameUser, s.deps.Core.PagesOrigin = s.deps.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent), true, ""
 		})},
 	}
 	for _, reason := range []string{

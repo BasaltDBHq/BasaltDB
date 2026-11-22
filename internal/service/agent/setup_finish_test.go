@@ -60,11 +60,11 @@ func (f *fakeFinisher) finished() []finishCall {
 // and n passkeys.
 func finishing(probe *fakeProbe, fin *fakeFinisher, setup *config.Setup, passkeys int) *Service {
 	d := deps()
-	d.Probe = probe
-	d.Finisher = fin
+	d.Status.Probe = probe
+	d.Status.Finisher = fin
 	setApprovals(&d, keys{n: passkeys})
-	d.Setup = setup
-	d.Now = func() time.Time { return statusNow }
+	d.Status.Setup = setup
+	d.Core.Now = func() time.Time { return statusNow }
 	return NewService(d)
 }
 
@@ -241,9 +241,9 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 	probe := &countingProbe{fakeProbe: &fakeProbe{err: errNoRole, recordedErr: errNoRole}}
 	now := statusNow
 	d := deps()
-	d.Probe, d.Finisher, d.Setup = probe, &fakeFinisher{}, pendingInstall()
+	d.Status.Probe, d.Status.Finisher, d.Status.Setup = probe, &fakeFinisher{}, pendingInstall()
 	setApprovals(&d, keys{n: 1})
-	d.Now = func() time.Time { return now }
+	d.Core.Now = func() time.Time { return now }
 	svc := NewService(d)
 
 	for range 5 {
@@ -273,12 +273,12 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	t.Parallel()
 	const lock = "/etc/basalt/engine.json.lock"
 	d := deps()
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
 	setApprovals(&d, keys{n: 1})
-	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
-	d.Now = func() time.Time { return statusNow }
+	d.Status.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
+	d.Core.Now = func() time.Time { return statusNow }
 	fin := &fakeFinisher{finishErr: &config.LockUnusableError{Path: lock, Err: os.ErrPermission}}
-	d.Finisher = fin
+	d.Status.Finisher = fin
 	svc := NewService(d)
 
 	r, err := svc.Status(context.Background())

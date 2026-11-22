@@ -56,7 +56,7 @@ func (s *Service) PageFailure(err error) *toolresult.ToolError {
 	if errors.As(err, &pe) {
 		return pe.ToolError
 	}
-	te := ToolError(err)
+	te := s.deps.Core.Errors.ToolError(err)
 	if s.pageSignatureFailure(te) {
 		return te
 	}
@@ -88,7 +88,7 @@ func (s *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 			TellAgent(askAgentForRegisterLinkText).
 			Build()
 		if err != nil {
-			s.Log.Error("cannot build the page's passkey steps", "err", err)
+			s.deps.Core.Log.Error("cannot build the page's passkey steps", "err", err)
 			return false
 		}
 		te.NextSteps = steps

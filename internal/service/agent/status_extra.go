@@ -65,7 +65,10 @@ type AccessReader func(ctx context.Context) (CatalogAccess, error)
 
 // crashStatus is the newest report in the crash directory, or nil.
 func (s statusDeps) crashStatus() *CrashStatus {
-	reports := theHost().CrashReports(s.crashDirs...)
+	if s.crashReports == nil || len(s.crashDirs) == 0 {
+		return nil
+	}
+	reports := s.crashReports(s.crashDirs...)
 	if len(reports) == 0 {
 		return nil
 	}

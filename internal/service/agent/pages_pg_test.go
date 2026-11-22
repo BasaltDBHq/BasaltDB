@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // pageOrigin is the origin the test pages claim, as the engine's config
@@ -291,7 +292,7 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 
 	// The revert's short link, as request_revert issues it.
 	var perr pageError
-	secret, err := env.svc.Links.Issue(prep.RevertID, time.Now().Add(time.Hour))
+	secret, err := agent.LinkSecrets(env.svc).Issue(prep.RevertID, time.Now().Add(time.Hour))
 	require.NoError(t, err)
 
 	var req revert.Request

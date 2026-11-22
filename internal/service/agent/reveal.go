@@ -58,16 +58,16 @@ func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret strin
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	held, err := heldWrite(a, s.Store)
+	held, err := heldWrite(a, s.deps.Write.Store)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	ticket, err := s.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
+	ticket, err := s.deps.Approval.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
 		return approval.RevealAnswer{}, s.revealApprovalError(err, s.pageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
-	rows, err := s.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
+	rows, err := s.deps.Approval.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
 		return approval.RevealAnswer{}, s.revealApprovalError(err, s.pageLink(links.Approval, id, secret))
 	}
@@ -101,7 +101,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 	lines := r.Lines
 	if r.Widened {
 		if !held {
-			nonce, err := s.Store.RevertNonce(ctx, id)
+			nonce, err := s.deps.Revert.Store.RevertNonce(ctx, id)
 			if err != nil {
 				return approval.RevealAnswer{}, err
 			}
@@ -109,7 +109,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 		}
 		lines = st.request.Lines
 	}
-	out, err := s.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
+	out, err := s.deps.Revert.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
 		return approval.RevealAnswer{}, s.revealRevertError(r, err, s.pageLink(links.Revert, id, secret))
 	}
@@ -239,7 +239,7 @@ func revealRefused(code, link string) error {
 
 // pageLink is the page's own short link, with the secret it holds.
 func (s *Service) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
-	return links.WithSecret(page(s.PagesBase, id), secret)
+	return links.WithSecret(page(s.deps.Core.PagesBase, id), secret)
 }
 
 // revealRowsChanged is a reveal whose hidden rows changed since the agent

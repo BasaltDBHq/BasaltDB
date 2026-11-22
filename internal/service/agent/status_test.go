@@ -154,16 +154,16 @@ func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, ope
 	return func(t *testing.T) StatusReport {
 		t.Helper()
 		d := deps()
-		d.OperatedBy = operatedBy
-		d.Probe = probe
+		d.Status.OperatedBy = operatedBy
+		d.Status.Probe = probe
 		setApprovals(&d, keys{n: passkeys})
-		d.Setup = setup
-		d.Now = func() time.Time { return statusNow }
+		d.Status.Setup = setup
+		d.Core.Now = func() time.Time { return statusNow }
 		// The credential file is at init's default, so no saved flag names it
 		// (a saved --credential-file stays in init commands, AE-15).
-		cmds, err := NewCommands("bot", configPath, "linux")
+		cmds, err := NewCommands("bot", configPath, "linux", testManager())
 		require.NoError(t, err)
-		d.Commands = cmds
+		d.Core.Commands = cmds
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
 		return r
@@ -183,30 +183,30 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 	cases := map[string]statusCase{
 		problemEngineUnreachable: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux")
+			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+			r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
 		problemEngineStartFailed: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux")
+			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
+			r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
 			require.NoError(t, err)
 			return r
 		}},
 		problemEngineGaveUp: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux")
+			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
 			cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+			r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
@@ -453,9 +453,9 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	require.Equal(t, mcpcontract.OperatedByPerson, operatedBy(""))
 
 	// The shim that cannot read the config: PERSON and GUARD_ONLY.
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	r, err := EngineDownStatus("bot", cmds, nil, nil, "test", statusNow)
+	r, err := EngineDownStatus(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByPerson, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
@@ -468,7 +468,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
 	}}}
-	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, nil, "test", statusNow)
+	r, err = EngineDownStatus(testEngineHost(), "bot", cmds.Foreground(), cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByAgent, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
@@ -482,7 +482,7 @@ func TestStatusVaultHook(t *testing.T) {
 	t.Parallel()
 	d := deps()
 	setApprovals(&d, keys{n: 1})
-	d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
+	d.Status.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, &VaultStatus{State: "KEY_ERROR"}, r.Vault)
@@ -539,10 +539,10 @@ func TestSetupStates(t *testing.T) {
 func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server, []mcp.Tool) {
 	t.Helper()
 	d := deps()
-	d.Probe = probe
+	d.Status.Probe = probe
 	setApprovals(&d, keys{n: 1})
-	d.Setup = setup
-	d.Now = func() time.Time { return statusNow }
+	d.Status.Setup = setup
+	d.Core.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
 	return mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...), mcp.ToolsFrom(tools, WithMeta)
 }
@@ -699,9 +699,9 @@ func TestStatusRefusesArguments(t *testing.T) {
 
 func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "/srv/basalt/engine.json", "linux")
+	cmds, err := NewCommands("bot", "/srv/basalt/engine.json", "linux", testManager())
 	require.NoError(t, err)
-	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
+	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
 
 	served := make([]string, 0, len(down.Tools()))
@@ -743,13 +743,13 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 // that cannot read the config keeps the person's steps (the default above).
 func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	cfg := &config.Config{
 		SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
-	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
+	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
 
 	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, CodeUnavailable, reasonEngineUnreachable, "")
@@ -804,15 +804,15 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
+	d.Status.OperatedBy = operatedBy
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
 	setApprovals(&d, keys{n: 1})
-	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
-	d.Now = func() time.Time { return statusNow }
-	d.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Status.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
+	d.Core.Now = func() time.Time { return statusNow }
+	d.Status.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r
@@ -837,15 +837,15 @@ func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error)
 func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordReader) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.OperatedBy = operatedBy
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
-	d.Now = func() time.Time { return statusNow }
-	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
-	d.EngineRecord = read
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	d.Status.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
+	d.Status.EngineRecord = read
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r
@@ -891,8 +891,8 @@ func TestStatusEngineRecord(t *testing.T) {
 		t.Parallel()
 		d := deps()
 		setApprovals(&d, keys{n: 1})
-		d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
-		d.EngineRecord = recordOf(true)
+		d.Status.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
+		d.Status.EngineRecord = recordOf(true)
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord)
@@ -915,9 +915,10 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 	t.Parallel()
 	local := func(key *string, read EngineRecordReader) StatusReport {
 		t.Helper()
-		cmds, err := NewCommands("bot", "", "linux")
+		cmds, err := NewCommands("bot", "", "linux", testManager())
 		require.NoError(t, err)
 		r, err := LocalStatus{
+			Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
 			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
 			Probe: &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)},
 			Passkeys: func(context.Context) ([]passkey.Credential, error) {
@@ -957,9 +958,9 @@ func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c/bot.cred"}]}`), 0o600))
 	_, cfgErr := config.Load(path)
-	cmds, err := NewCommands("bot", path, "linux")
+	cmds, err := NewCommands("bot", path, "linux", testManager())
 	require.NoError(t, err)
-	r, err := EngineDownStatus("bot", cmds, nil, cfgErr, "test", statusNow)
+	r, err := EngineDownStatus(testEngineHost(), "bot", cmds, nil, cfgErr, "test", statusNow)
 	require.NoError(t, err)
 	require.Len(t, r.Problems, 1)
 	require.Contains(t, r.Problems[0].Message, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
@@ -1072,14 +1073,14 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...string) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.PagesBase = base
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.OperatedBy = operatedBy
+	d.Core.PagesBase = base
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, originKeys{origins: origins})
-	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds.UpdateLink(update)
+	d.Core.Commands = cmds.UpdateLink(update)
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r
@@ -1089,12 +1090,12 @@ func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...strin
 // status and in every other call, with the log's path.
 func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	const why = "basalt mcp could not start the engine: the engine did not start within 15s. Its log is /s/engine.log."
-	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
+	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
 
-	r, err := EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, why, "")
+	r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow, why, "")
 	require.NoError(t, err)
 	require.Equal(t, problemEngineStartFailed, r.Problems[0].Code, "the start failure comes first")
 	require.Equal(t, why, r.Problems[0].Message)
@@ -1113,7 +1114,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Contains(t, te.Message, why)
 
 	// Without a failure nothing is added.
-	r, err = EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, "", "")
+	r, err = EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow, "", "")
 	require.NoError(t, err)
 	require.Equal(t, problemEngineUnreachable, r.Problems[0].Code)
 	require.Len(t, r.Problems, 1)
@@ -1123,9 +1124,9 @@ func TestStatusStartedBy(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{"hand": "HAND", "mcp": "MCP", "crash": "CRASH", "": ""} {
 		d := deps()
-		d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+		d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
-		d.StartedBy = in
+		d.Status.StartedBy = in
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, want, r.Engine.StartedBy, in)
@@ -1135,17 +1136,17 @@ func TestStatusStartedBy(t *testing.T) {
 
 func TestEngineDownStatusLastStop(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	dir := t.TempDir()
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 
-	r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+	r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Nil(t, r.Engine.LastStop, "no file, no last stop")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte("{\"reason\":\"the engine crashed 5 times within 10s; last: exit status 1\\u0007\",\"at\":\"2026-11-20T01:02:03Z\"}"), 0o600))
-	r, err = EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+	r, err = EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.NotNil(t, r.Engine.LastStop)
 	require.Equal(t, "the engine crashed 5 times within 10s; last: exit status 1 ", r.Engine.LastStop.Reason, "unprintable characters are blanked")
@@ -1156,7 +1157,7 @@ func TestEngineDownStatusLastStop(t *testing.T) {
 
 	// A file that is not a record shows nothing.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte("not json"), 0o600))
-	r, err = EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+	r, err = EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Nil(t, r.Engine.LastStop)
 }
@@ -1177,7 +1178,7 @@ func TestReadLastStopRefusesASymlinkAndAFifo(t *testing.T) {
 
 func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "engine.json")
@@ -1192,7 +1193,7 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 	now := at.Add(30 * time.Second)
 
-	r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", now, "", cfgPath)
+	r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", now, "", cfgPath)
 	require.NoError(t, err)
 	p := findProblem(t, r, problemEngineGaveUp)
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1. The next try is at 2026-11-21T08:01:00Z.", p.Message)
@@ -1203,14 +1204,14 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	require.JSONEq(t, `{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-21T08:00:00Z"}`, string(raw))
 
 	// After the minute, the next-try sentence is gone; the reason stays.
-	r, err = EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", at.Add(time.Minute), "", cfgPath)
+	r, err = EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", at.Add(time.Minute), "", cfgPath)
 	require.NoError(t, err)
 	p = findProblem(t, r, problemEngineGaveUp)
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
 
 	// Editing engine.json ends the hold-off message too.
 	require.NoError(t, os.WriteFile(cfgPath, []byte("v2\n"), 0o600))
-	r, err = EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", now, "", cfgPath)
+	r, err = EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", now, "", cfgPath)
 	require.NoError(t, err)
 	p = findProblem(t, r, problemEngineGaveUp)
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
@@ -1218,7 +1219,7 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 
 func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "engine.json")
@@ -1232,7 +1233,7 @@ func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), rec, 0o600))
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 	now := at.Add(30 * time.Second)
-	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, ConfigPath: cfgPath, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}
+	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, ConfigPath: cfgPath, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}
 
 	_, callErr := down.unreachable("query")(context.Background(), nil)
 	require.Error(t, callErr)

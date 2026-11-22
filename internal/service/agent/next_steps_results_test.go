@@ -144,7 +144,7 @@ func resultCases() map[string]resultCase {
 		}
 	}
 	tooLargeRevert := func(t *testing.T, s *Service) ledger.Revert {
-		s.PagesOrigin = ""
+		s.deps.Core.PagesOrigin = ""
 		r := caseRevertWith(t, ledger.RevertPending)
 		r.Lines, r.LinesLeftOut, r.LinesCost = nil, true, 2<<20
 		return r
@@ -176,7 +176,7 @@ func resultCases() map[string]resultCase {
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				n := tooLargeNotice(t, s, keepLink)
 				item := PendingItem{
-					Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.Now().Add(time.Hour)},
+					Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.deps.Core.Now().Add(time.Hour)},
 					Notice:   n.ApprovalNotice, tooLargeSteps: n.steps,
 				}
 				person, links, steps, err := s.itemGuidance(item)
@@ -212,7 +212,7 @@ func resultCases() map[string]resultCase {
 		resultKey("request_revert", "REQUESTED_NO_PAGES"): {
 			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-				s.PagesOrigin = "" // no local pages and no Vault: a long link, review only
+				s.deps.Core.PagesOrigin = "" // no local pages and no Vault: a long link, review only
 				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
 				return out.PersonMessage, out.Links, out.NextSteps
@@ -230,7 +230,7 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "PENDING"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.Now().Add(time.Hour)))
+				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -238,7 +238,7 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "EXPIRED"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.Now().Add(-time.Hour)))
+				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -331,8 +331,8 @@ func resultCases() map[string]resultCase {
 func resultService(t *testing.T, goos, config string) *Service {
 	t.Helper()
 	s := serviceFor(t, goos, config)
-	s.PagesOrigin = "http://localhost:7878"
-	s.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
+	s.deps.Core.PagesOrigin = "http://localhost:7878"
+	s.deps.Core.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
 	return s
 }
 
@@ -405,7 +405,7 @@ func TestWaitEndedNamesTheLongLinkOnlyWithoutPages(t *testing.T) {
 	require.Empty(t, short.NextSteps[0].URL, "the short link was given earlier: no url")
 	require.NotContains(t, short.PersonMessage, "http")
 
-	s.PagesOrigin = ""
+	s.deps.Core.PagesOrigin = ""
 	long, err := s.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
 	require.NoError(t, err)
 	require.NotEmpty(t, long.NextSteps[0].URL, "no pages: the long link is the only link")
@@ -416,7 +416,7 @@ func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 	for _, pages := range []bool{true, false} {
 		s := resultService(t, "linux", "")
 		if !pages {
-			s.PagesOrigin = ""
+			s.deps.Core.PagesOrigin = ""
 		}
 		n, err := s.revertNotice(context.Background(), caseRevertWith(t, ledger.RevertPending))
 		require.NoError(t, err)
@@ -440,7 +440,7 @@ func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 func TestAnApprovedPendingItemNeedsNothingFromThePerson(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	_, _, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalApproved, s.Now().Add(time.Hour)))
+	_, _, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)))
 	require.NoError(t, err)
 	require.Empty(t, steps)
 }
@@ -455,11 +455,11 @@ type warningCase struct {
 func warningCases() map[string]warningCase {
 	return map[string]warningCase{
 		mcp.WarningRLSHidesRows: {tool: "query", build: func(t *testing.T, s *Service) []mcp.Warning {
-			s.RLS = &fakeRLS{hidden: map[string]bool{"public.leads": true}}
+			s.deps.Write.RLS = &fakeRLS{hidden: map[string]bool{"public.leads": true}}
 			return s.rlsWarnings(context.Background(), []string{"public.leads"}, 0)
 		}},
 		mcp.WarningGuardUpgradeAvailable: {tool: "run_start", build: func(t *testing.T, s *Service) []mcp.Warning {
-			s.Upgrade = fakeUpgrade{available: true}
+			s.deps.Status.Upgrade = fakeUpgrade{available: true}
 			return s.upgradeWarnings(context.Background())
 		}},
 	}
@@ -514,7 +514,7 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 		t.Run(entry.Code, func(t *testing.T) {
 			t.Parallel()
 			s := operatedService(t, "linux", "", mcpcontract.OperatedByAgent)
-			s.PagesOrigin = "http://localhost:7878"
+			s.deps.Core.PagesOrigin = "http://localhost:7878"
 			warnings := kase.build(t, s)
 			require.Len(t, warnings, 1)
 			w := warnings[0]
@@ -538,7 +538,7 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
 	rls := &fakeRLS{hidden: map[string]bool{"public.secrets": true}}
-	s.RLS = rls
+	s.deps.Write.RLS = rls
 
 	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.secrets"}, 3), "rows came back: no warning, no check")
 	require.Zero(t, rls.asked)
@@ -553,11 +553,11 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	s.RLS = &fakeRLS{err: errors.New("down")}
+	s.deps.Write.RLS = &fakeRLS{err: errors.New("down")}
 	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
-	s.Upgrade = fakeUpgrade{err: errors.New("down")}
+	s.deps.Status.Upgrade = fakeUpgrade{err: errors.New("down")}
 	require.Empty(t, s.upgradeWarnings(context.Background()))
-	s.Upgrade = fakeUpgrade{}
+	s.deps.Status.Upgrade = fakeUpgrade{}
 	require.Empty(t, s.upgradeWarnings(context.Background()), "no migration missing: no warning")
 }
 
@@ -628,7 +628,7 @@ func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
 	require.Len(t, urlLinesOf(n.Message), 1)
 
 	table := "public.x\n\nhttps://evil.example/pay\n\ny"
-	s.RLS = &fakeRLS{hidden: map[string]bool{table: true}}
+	s.deps.Write.RLS = &fakeRLS{hidden: map[string]bool{table: true}}
 	warnings := s.rlsWarnings(context.Background(), []string{table}, 0)
 	require.Len(t, warnings, 1)
 	mcptest.Require(t, warnings[0].PersonMessage, nil)

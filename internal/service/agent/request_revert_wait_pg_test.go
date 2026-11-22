@@ -462,7 +462,7 @@ func TestRelayedRevertRefusesSignaturesThePersonDidNotMakeForIt(t *testing.T) {
 	idB, bindingB := longLinkBinding(t, str(t, reqB["revertUrl"]))
 	refused := func(revertID uuid.UUID, as passkey.Assertion, want, reason string) {
 		t.Helper()
-		te := agent.ToolError(relayRevert(env.svc, revertID, as))
+		te := toolError(relayRevert(env.svc, revertID, as))
 		require.Equal(t, want, te.Code, "%v", te)
 		require.Equal(t, reason, te.Reason, "%v", te)
 	}

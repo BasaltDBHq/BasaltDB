@@ -54,7 +54,7 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			s := operatedService(t, "linux", "", tc.operatedBy)
-			s.ConnectBudget = tc.budget
+			s.deps.Status.ConnectBudget = tc.budget
 			te := s.Failure("query", queryArgs0, &SetupError{Code: testSetupCode, Fingerprint: testFingerprint})
 			if tc.link {
 				requireConnectPending(t, mcpcontract.VariantError, "UNAVAILABLE", reasonSetupPending, te.PersonMessage, te.Links, te.NextSteps)
@@ -85,15 +85,15 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 		t.Run(tc.problem, func(t *testing.T) {
 			t.Parallel()
 			d := deps()
-			d.OperatedBy = mcpcontract.OperatedByAgent
-			d.ConnectBudget = links.DefaultBudget
-			d.Probe = tc.probe
+			d.Status.OperatedBy = mcpcontract.OperatedByAgent
+			d.Status.ConnectBudget = links.DefaultBudget
+			d.Status.Probe = tc.probe
 			setApprovals(&d, keys{n: 1})
-			d.Setup = pendingSetup(tc.kind, soon)
-			d.Now = func() time.Time { return statusNow }
-			cmds, err := NewCommands("bot", "", "linux")
+			d.Status.Setup = pendingSetup(tc.kind, soon)
+			d.Core.Now = func() time.Time { return statusNow }
+			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
-			d.Commands = cmds
+			d.Core.Commands = cmds
 			r, err := NewService(d).Status(context.Background())
 			require.NoError(t, err)
 			p := findProblem(t, r, tc.problem)
@@ -102,7 +102,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			requireStatusSchema(t, statusTool, r)
 
 			// With no connect budget the agent's basalt init comes first.
-			d.ConnectBudget = 0
+			d.Status.ConnectBudget = 0
 			r, err = NewService(d).Status(context.Background())
 			require.NoError(t, err)
 			p = findProblem(t, r, tc.problem)

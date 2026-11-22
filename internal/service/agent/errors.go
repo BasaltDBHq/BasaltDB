@@ -100,7 +100,7 @@ func declares(tool, code string) bool {
 // ToolError maps any error from a tool's service call to the contract's
 // error body. Unexpected errors become INTERNAL without their text, which can
 // name hosts or roles; the caller logs the original.
-func ToolError(err error) *toolresult.ToolError {
+func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 	var (
 		te *toolresult.ToolError
 		re *action.RefusalError
@@ -116,8 +116,8 @@ func ToolError(err error) *toolresult.ToolError {
 		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
 	case errors.Is(err, action.ErrRowLimit):
 		return &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
-	case isRowTooLarge(err):
-		return &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowTooLarge, Message: rowTooLargeMessage(err) + rowTooLargeHint}
+	case m.isRowTooLarge(err):
+		return &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowTooLarge, Message: m.rowTooLargeMessage(err) + rowTooLargeHint}
 	case errors.Is(err, budget.ErrSizeLimit):
 		return sizeLimitError()
 	case errors.As(err, &se):
@@ -130,7 +130,7 @@ func ToolError(err error) *toolresult.ToolError {
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: reasonDatabaseNotConfirmed, Message: dn.Error()}
 	case errors.As(err, &ae):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
-	case sentinel(err, theHost().ErrInvalidParams), sentinel(err, theHost().ErrInvalidIntent):
+	case sentinel(err, m.InvalidParams), sentinel(err, m.InvalidIntent):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
 	case errors.As(err, &pe):
 		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, SQLState: pe.SQLState}
@@ -142,13 +142,19 @@ func ToolError(err error) *toolresult.ToolError {
 
 // isRowTooLarge reports whether err is one row over the result budget on
 // its own; rowTooLargeMessage is its message.
-func isRowTooLarge(err error) bool {
-	_, ok := theHost().RowTooLarge(err)
+func (m ErrorMap) isRowTooLarge(err error) bool {
+	if m.RowTooLarge == nil {
+		return false
+	}
+	_, ok := m.RowTooLarge(err)
 	return ok
 }
 
-func rowTooLargeMessage(err error) string {
-	msg, _ := theHost().RowTooLarge(err)
+func (m ErrorMap) rowTooLargeMessage(err error) string {
+	if m.RowTooLarge == nil {
+		return ""
+	}
+	msg, _ := m.RowTooLarge(err)
 	return msg
 }
 

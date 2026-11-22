@@ -127,7 +127,7 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 // no credential, no connection, status and confirm_database only, and the
 // collect loop. Its runtime closes nothing.
 func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil {
 		return agentRuntime{}, err
 	}
@@ -163,6 +163,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(), StartedBy: env.startedBy,
 		PagesBase: env.pagesBase, PagesOrigin: env.pagesOrigin, ConnectBudget: env.cfg.ConnectLinkBudget(),
 		Vault: env.vault, Handoff: pending, Log: log, Now: env.handoff.now(),
+		Errors: AgentErrors(), LatestGuardVersion: AgentEngineHost().LatestGuardVersion,
 	}
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{

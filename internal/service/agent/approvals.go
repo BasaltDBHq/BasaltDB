@@ -76,7 +76,7 @@ func (noNotifier) NotifyRevert(context.Context, RevertNotice) error { return nil
 // approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
 // the error that kept it from being held.
 func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
-	assigned, err := s.Store.HoldColumns(ctx, p.SQL, p.Params)
+	assigned, err := s.deps.Approval.Store.HoldColumns(ctx, p.SQL, p.Params)
 	var notRepeatable *action.RefusalError
 	if errors.As(err, &notRepeatable) {
 		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
@@ -84,7 +84,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
-	lines, err := s.Store.Preview(ctx, in, p.SQL, p.Params, assigned)
+	lines, err := s.deps.Approval.Store.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
 		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
@@ -95,7 +95,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	if te := holdTooLarge(lines, nil); te != nil {
 		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 	}
-	held, err := s.Store.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
+	held, err := s.deps.Approval.Store.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
 			return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
@@ -111,12 +111,12 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
 	sent := HeldNotice{
-		ApprovalID: held.ApprovalID, Agent: s.Name, Intent: p.Intent, Statement: p.SQL,
+		ApprovalID: held.ApprovalID, Agent: s.deps.Core.Name, Intent: p.Intent, Statement: p.SQL,
 		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
 		ShortURL: notice.shortURL,
 	}
-	if err := s.Notifier.NotifyHeld(context.WithoutCancel(ctx), sent); err != nil {
-		s.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
+	if err := s.deps.Delivery.Notifier.NotifyHeld(context.WithoutCancel(ctx), sent); err != nil {
+		s.deps.Core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
 	return held.ApprovalID, held.ExpiresAt, approvalRequiredError(notice)
 }
@@ -160,7 +160,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 		return heldNotice{}, err
 	}
 	long, tooLarge, err := longOrTooLarge(req, func() (string, error) {
-		return approval.Request{ApprovalID: id, Binding: req.Binding, Lines: req.Lines, CredentialIDs: ids}.URL(s.PagesBase)
+		return approval.Request{ApprovalID: id, Binding: req.Binding, Lines: req.Lines, CredentialIDs: ids}.URL(s.deps.Core.PagesBase)
 	})
 	if err != nil {
 		return heldNotice{}, err
@@ -177,7 +177,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	if err != nil {
 		return heldNotice{}, err
 	}
-	pick, err := chooseLink(short, long, s.LinkBudget, links.ApprovalFile(id))
+	pick, err := chooseLink(short, long, s.deps.Core.LinkBudget, links.ApprovalFile(id))
 	if err != nil {
 		return heldNotice{}, err
 	}
@@ -250,14 +250,14 @@ func (s *Service) shortLink(ctx context.Context, page func(string, uuid.UUID) st
 // localLink issues a new short link to the pages this engine serves,
 // revoking the item's earlier link; "" when it serves none.
 func (s *Service) localLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
-	if s.PagesOrigin == "" {
+	if s.deps.Core.PagesOrigin == "" {
 		return "", nil
 	}
-	secret, err := s.Links.Issue(id, expires)
+	secret, err := s.deps.Delivery.Links.Issue(id, expires)
 	if err != nil {
 		return "", err
 	}
-	return links.WithSecret(page(s.PagesOrigin, id), secret), nil
+	return links.WithSecret(page(s.deps.Core.PagesOrigin, id), secret), nil
 }
 
 // approvalRequiredError is the APPROVAL_REQUIRED answer for a new hold:
@@ -366,11 +366,11 @@ const DefaultApprovalWait = 90 * time.Second
 // agent's links open (pagesPasskeys), for the request's allowCredentials:
 // none is a request nobody can sign yet.
 func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
-	all, err := s.Store.Passkeys(ctx)
+	all, err := s.deps.Approval.Store.Passkeys(ctx)
 	if err != nil {
 		return nil, err
 	}
-	keys, _ := pagesPasskeys(all, s.PagesBase)
+	keys, _ := pagesPasskeys(all, s.deps.Core.PagesBase)
 	ids := make([]passkey.Bytes, 0, len(keys))
 	for _, k := range keys {
 		ids = append(ids, k.ID)
@@ -408,8 +408,8 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if err != nil {
 		return WriteOutcome{}, err
 	}
-	a, err := s.Store.FindApproval(ctx, p.ApprovalID)
-	if sentinel(err, theHost().ErrApprovalNotFound) {
+	a, err := s.deps.Approval.Store.FindApproval(ctx, p.ApprovalID)
+	if sentinel(err, s.deps.Approval.ErrNotFound) {
 		return WriteOutcome{}, approvalInvalid(reasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
@@ -424,7 +424,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	// The receipt is built from Postgres's record of the approval after the
 	// signature (CONTRACT.md, Receipts), and handed over only once the write
 	// is applied.
-	if a, err = s.Store.FindApproval(ctx, a.ID); err != nil {
+	if a, err = s.deps.Approval.Store.FindApproval(ctx, a.ID); err != nil {
 		return WriteOutcome{}, err
 	}
 	var receipt *Receipt
@@ -436,13 +436,13 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		receipt = &r
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
-	start := s.Now()
-	stmt, err := s.Store.Check(p.SQL, action.ToolWrite)
+	start := s.deps.Core.Now()
+	stmt, err := s.deps.Write.Store.Check(p.SQL, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
+	res, err := s.deps.Write.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
 	if err != nil {
 		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, op, p.SQL, p.Params, start, err))
 	}
@@ -456,7 +456,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 // approval page (not signed yet, a bad signature, a passkey the database
 // does not accept) the page's link in its steps; any other error passes.
 func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
-	te := ToolError(err)
+	te := s.deps.Core.Errors.ToolError(err)
 	if te.Code != CodeApprovalInvalid || len(te.NextSteps) > 0 {
 		return err
 	}
@@ -534,15 +534,15 @@ type PendingItem struct {
 // DefaultPoll is how often a waiting call reads whether the person signed.
 const DefaultPoll = time.Second
 
-// awaitWhile polls while pending reports true: every s.Poll it calls
-// refresh, until pending is false, the wait is over by s.Now, or ctx ends
+// awaitWhile polls while pending reports true: every s.deps.Delivery.Poll it calls
+// refresh, until pending is false, the wait is over by s.deps.Core.Now, or ctx ends
 // (then ctx's error). It holds no transaction between reads. The waiting
 // write and request_revert's wait share it.
 func (s *Service) awaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error {
-	deadline := s.Now().Add(wait)
-	tick := time.NewTicker(s.Poll)
+	deadline := s.deps.Core.Now().Add(wait)
+	tick := time.NewTicker(s.deps.Delivery.Poll)
 	defer tick.Stop()
-	for pending() && s.Now().Before(deadline) {
+	for pending() && s.deps.Core.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -559,7 +559,7 @@ func (s *Service) awaitSigned(ctx context.Context, a action.Approval, wait time.
 	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
-		next, err := s.Store.FindApproval(budget.With(ctx), a.ID)
+		next, err := s.deps.Approval.Store.FindApproval(budget.With(ctx), a.ID)
 		if err != nil {
 			return err
 		}

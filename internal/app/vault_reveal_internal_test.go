@@ -105,7 +105,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
 
 	e.svc = pg.service(func(d *agent.Deps) {
-		d.Log, d.PagesBase, d.Links, d.Relay = log, links.Portal, e.secrets, &lateRelay{}
+		d.Core.Log, d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = log, links.Portal, e.secrets, &lateRelay{}
 	})
 	return e
 }

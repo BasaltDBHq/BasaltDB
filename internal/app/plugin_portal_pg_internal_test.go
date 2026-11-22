@@ -57,10 +57,10 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	relay := &lateRelay{}
 	pg := newPGAgent(t, f.roles["bot"].URL, 4)
 	svc := pg.service(func(d *agent.Deps) {
-		d.PagesBase, d.Links, d.Relay, d.Receipts, d.Poll = links.Portal, secrets, relay, keys, relayPoll
-		d.Commands = d.Commands.OperatedBy(mcpcontract.OperatedByAgent)
-		d.OperatedBy, d.SameUser = mcpcontract.OperatedByAgent, true
-		d.PluginRequests, d.PluginApprovals = p, pg.store
+		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay, d.Delivery.Receipts, d.Delivery.Poll = links.Portal, secrets, relay, keys, relayPoll
+		d.Core.Commands = d.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent)
+		d.Status.OperatedBy, d.Status.SameUser = mcpcontract.OperatedByAgent, true
+		d.Plugin.Requests, d.Plugin.Approvals = p, pg.store
 	})
 	server := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)
 	files, executables := source("1.0.0")

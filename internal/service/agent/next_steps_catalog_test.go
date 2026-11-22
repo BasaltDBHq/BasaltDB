@@ -162,7 +162,7 @@ func approvalLink(reason string) func(*testing.T, *Service) error {
 
 func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *Service) error {
 	return func(t *testing.T, s *Service) error {
-		setReverts(&s.Deps, catalogReverts{lines: lines, by: by})
+		setReverts(&s.deps, catalogReverts{lines: lines, by: by})
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
 		return s.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
 	}
@@ -184,9 +184,9 @@ var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascade
 // engine has can carry: no local pages, no Vault.
 func tooLargeNotice(t *testing.T, s *Service, issue bool) heldNotice {
 	t.Helper()
-	s.PagesOrigin = ""
-	if p, _ := s.Store.(parts); p.approvalStore == nil {
-		setApprovals(&s.Deps, catalogApprovals{})
+	s.deps.Core.PagesOrigin = ""
+	if p, _ := s.deps.Core.Store.(parts); p.approvalStore == nil {
+		setApprovals(&s.deps, catalogApprovals{})
 	}
 	req := sizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
 	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
@@ -463,11 +463,11 @@ func serviceFor(t *testing.T, goos, configPath string) *Service {
 // operatedService is serviceFor on an engine whose operatedBy is operatedBy.
 func operatedService(t *testing.T, goos, configPath, operatedBy string) *Service {
 	t.Helper()
-	cmds, err := NewCommands("bot", configPath, goos)
+	cmds, err := NewCommands("bot", configPath, goos, testManager())
 	require.NoError(t, err)
 	d := deps()
-	d.Commands = cmds
-	d.OperatedBy = operatedBy
+	d.Core.Commands = cmds
+	d.Status.OperatedBy = operatedBy
 	setApprovals(&d, catalogApprovals{})
 	setReverts(&d, catalogReverts{})
 	return NewService(d)

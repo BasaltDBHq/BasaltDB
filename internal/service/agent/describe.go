@@ -290,21 +290,21 @@ type Resource struct {
 // DescribeOverview counts what the agent can see, lists it (up to 50
 // tables) or its schemas, and tells the person how to see what it cannot.
 func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
-	visible, notGranted, err := s.Catalog.Relations(ctx)
+	visible, notGranted, err := s.deps.Describe.Catalog.Relations(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	lines, err := s.Catalog.Structure(ctx)
+	lines, err := s.deps.Describe.Catalog.Structure(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	pii, err := s.Classes.CatalogFingerprint(ctx)
+	pii, err := s.deps.Describe.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	limits := s.Catalog.Limits()
+	limits := s.deps.Describe.Catalog.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: string(s.Store.Kind()), Database: s.Catalog.Database(), Host: s.Catalog.Host()},
+		Store:       StoreInfo{Kind: string(s.deps.Core.Store.Kind()), Database: s.deps.Describe.Catalog.Database(), Host: s.deps.Describe.Catalog.Host()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
 		Update:      s.updateInfo(),
@@ -415,7 +415,7 @@ func (s *Service) describeNotFoundSteps(b *Steps, f failure) string {
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the table once you decide it should have it, or which table to use instead.")
-	b.AgentRunCommand(s.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the table.")
+	b.AgentRunCommand(s.deps.Core.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the table.")
 	return "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. " +
 		"An agent uses one database; a table in another database needs its own agent. " +
 		"To give the agent a table, tell it: it gives you a link where you pick the tables."
@@ -445,7 +445,7 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 		}
 		after = &c
 	}
-	secrets, err := s.Classes.Secrets(ctx)
+	secrets, err := s.deps.Describe.Classes.Secrets(ctx)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
@@ -453,7 +453,7 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 	for _, r := range secrets {
 		exclude = append(exclude, CatalogColumnKey{OID: r.TableOID, Attnum: r.Attnum})
 	}
-	matches, err := s.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
+	matches, err := s.deps.Describe.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
@@ -521,14 +521,14 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 	if err != nil {
 		return Resource{}, &ArgumentError{Message: "invalid arguments: resource " + err.Error()}
 	}
-	rel, ok, err := s.Catalog.Find(ctx, schema, name)
+	rel, ok, err := s.deps.Describe.Catalog.Find(ctx, schema, name)
 	if err != nil {
 		return Resource{}, err
 	}
 	if !ok {
 		return Resource{}, describeNotFound(resource)
 	}
-	d, err := s.Catalog.Describe(ctx, rel.OID)
+	d, err := s.deps.Describe.Catalog.Describe(ctx, rel.OID)
 	if errors.Is(err, action.ErrNotFound) { // dropped since Find
 		return Resource{}, describeNotFound(resource)
 	}
@@ -539,17 +539,17 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 	for i, c := range d.Columns {
 		refs[i] = piidict.ColumnRef{TableOID: d.OID, Attnum: c.Attnum}
 	}
-	classes, err := s.Classes.Resolve(ctx, refs)
+	classes, err := s.deps.Describe.Classes.Resolve(ctx, refs)
 	if err != nil {
 		return Resource{}, err
 	}
-	pii, err := s.Classes.CatalogFingerprint(ctx)
+	pii, err := s.deps.Describe.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Resource{}, err
 	}
 	detail := hideColumns(d, classes)
 	if slices.ContainsFunc(detail.Actions, func(a string) bool { return a != privSelect }) {
-		guarded, err := s.Catalog.Guarded(ctx, d.OID)
+		guarded, err := s.deps.Describe.Catalog.Guarded(ctx, d.OID)
 		if err != nil {
 			return Resource{}, err
 		}
@@ -858,8 +858,8 @@ var quotedKeywords = func() map[string]bool {
 // (INVALID_ARGUMENT, NOT_FOUND, QUERY_TIMEOUT, UNAVAILABLE, INTERNAL): any
 // other, such as a Postgres error reading the catalog, is the engine's
 // failure, INTERNAL, logged with its cause and never shown to the agent.
-func describeError(err error) error {
-	switch ToolError(err).Code {
+func (s *Service) describeError(err error) error {
+	switch s.deps.Core.Errors.ToolError(err).Code {
 	case CodeInvalidArgument, CodeNotFound, CodeQueryTimeout, CodeUnavailable, CodeInternal:
 		return err
 	}

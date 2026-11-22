@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -21,7 +22,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -37,56 +40,135 @@ const (
 // History is one page of a run's change records with the rows each wrote.
 type History = action.History[action.Change, action.RowChange]
 
-// Deps are a Service's dependencies, all required.
+// Deps are a Service's dependencies, grouped by use case so each use case
+// reads only its own group and can be lifted out with it. Core is shared by
+// all of them. A port documented as optional may be nil; every other port
+// is required and NewService refuses a Deps without it.
 type Deps struct {
+	Core     CoreDeps
+	Write    WriteDeps
+	Approval ApprovalDeps
+	Revert   RevertDeps
+	Delivery DeliveryDeps
+	Status   StatusDeps
+	Describe DescribeDeps
+	Plugin   PluginDeps
+}
+
+// CoreDeps is what every use case shares: who the agent is, the ledger kept
+// next to its store, the log and clock, the commands the person runs, how
+// errors map to the contract, and where the pages are.
+type CoreDeps struct {
 	Name string
-	// Store is the agent's store: its runs, reads, writes, approvals and
-	// reverts, on the agent's own credential.
-	Store SQLStore
+	// Store is the agent's store, as far as every use case needs it: its
+	// kind, what it can do, and its runs.
+	Store Store
 	Log   *slog.Logger
 	Now   func() time.Time
+	// Commands builds the commands the person runs for this agent; the
+	// default ones for Name and the platform's default config when zero.
+	Commands Commands
+	// ServiceManager is the host's service manager, for the default
+	// Commands.
+	ServiceManager ServiceManager
+	// Errors tells apart the error values of the adapters.
+	Errors ErrorMap
+	// PagesBase is the base URL of the approval and revert pages (links);
+	// links.DefaultLocal when empty.
+	PagesBase string
+	// PagesOrigin is the origin of the pages the engine serves itself
+	// (CONTRACT.md, Local pages), for short links; empty when it serves
+	// none, and held actions then carry the long link.
+	PagesOrigin string
+	// LinkBudget is the longest long link, in characters of the whole URL,
+	// handed to an agent as the way to open a page (CONTRACT.md, The link
+	// budget); links.DefaultBudget when zero.
+	LinkBudget int
+}
+
+// WriteDeps is what the query and write tools use.
+type WriteDeps struct {
+	// Store checks a statement against the policy and runs it, through the
+	// guard for a write.
+	Store WriteStore
+	// RLS says whether row-level security hides a table from the agent
+	// (the RLS_HIDES_ROWS warning); optional, nothing is hidden when nil.
+	RLS RLSChecker
+	// PII sees every read's rows before they are returned and adds the
+	// values of IDENTIFIER columns to the dictionary (M5.1); optional,
+	// nothing is added when nil.
+	PII PIIObserver
+	// Record is the wire record of one change and its rows, as the ledger
+	// renders it (run_history).
+	Record func(ch action.Change, rows []action.RowChange) any
+}
+
+// ApprovalDeps is what held writes use: the approvals in the store and the
+// ledger's values the agent maps to tool errors.
+type ApprovalDeps struct {
+	Store Approvals
+	// ErrNotFound is the ledger's answer for an approval the role does not
+	// hold.
+	ErrNotFound error
+	// SortSpec whitelists the approval list sort.
+	SortSpec pagination.SortSpec
+	// Columns reads each table's columns in table order for the pages;
+	// optional, and the pages show the order the rows carry when nil.
+	Columns ColumnOrder
+}
+
+// RevertDeps is what reverts use.
+type RevertDeps struct {
+	Store Reverts
+	// ErrNotFound is the ledger's answer for a revert the role did not
+	// prepare.
+	ErrNotFound error
+	// AfterAnswer runs f after the answer of the Vault session ctx belongs
+	// to (false: there is none). RotateSession moves that session onto
+	// token.
+	AfterAnswer   func(ctx context.Context, f func()) bool
+	RotateSession func(ctx context.Context, token channel.LinkToken) bool
+}
+
+// DeliveryDeps is how a held write or a revert reaches the person: the
+// notices, the short links and the receipts of what the person signed.
+type DeliveryDeps struct {
 	// Notifier is optional: no notification when nil.
 	Notifier Notifier
 	// Deliverer takes the notice of each answer that holds a write, prepares
 	// a revert or issues a new link on the agent's request, for the
 	// approval.deliver plugins; optional, none when nil.
 	Deliverer LinkDeliverer
-	// PagesBase is the base URL of the approval and revert pages (links);
-	// links.DefaultLocal when empty.
-	PagesBase string
-	// Commands builds the commands the person runs for this agent; the
-	// default ones for Name and the platform's default config when zero.
-	Commands Commands
-	// PagesOrigin is the origin of the pages the engine serves itself
-	// (CONTRACT.md, Local pages), for short links; empty when it serves
-	// none, and held actions then carry the long link.
-	PagesOrigin string
 	// Links holds the short links' secrets, shared with the pages; a store
 	// of its own when nil.
 	Links *links.Secrets
 	// Relay registers portal short links with the Vault; optional, none
 	// when nil (the Vault is off).
 	Relay LinkRelay
-	// LinkBudget is the longest long link, in characters of the whole URL,
-	// handed to an agent as the way to open a page (CONTRACT.md, The link
-	// budget); links.DefaultBudget when zero.
-	LinkBudget int
+	// VaultConflict reports whether err is the Vault's answer that another
+	// engine holds a link's token. ErrVaultNotConnected is what a relay
+	// answers when no Vault is connected.
+	VaultConflict        func(err error) bool
+	ErrVaultNotConnected error
 	// Poll is how often a waiting call reads whether the person signed;
 	// DefaultPoll when zero.
 	Poll time.Duration
-	// RLS says whether row-level security hides a table from the agent
-	// (the RLS_HIDES_ROWS warning); optional, nothing is hidden when nil.
-	RLS RLSChecker
-	// Upgrade says whether only non-breaking guard migrations are missing
-	// (the GUARD_UPGRADE_AVAILABLE warning); optional, Probe answers when nil.
-	Upgrade UpgradeChecker
+	// Receipts is the engine's signing key, which signs the receipt of
+	// every signature the engine relays (CONTRACT.md, Vault channel,
+	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then
+	// carry noReceipt.
+	Receipts ReceiptSigner
+}
 
-	// What the status tool reports beyond the database, all optional
-	// (CONTRACT.md, MCP tools, status). OperatedBy is engine.json operatedBy
-	// (PERSON when empty); SameUser is an engine run as the person's own OS
-	// user (enforcement GUARD_ONLY); Setup is the agent's pending setup code
-	// from the config; Build is the engine's build (buildinfo.Version when
-	// empty).
+// StatusDeps is what the status tool reports beyond the database, all
+// optional unless noted (CONTRACT.md, MCP tools, status).
+type StatusDeps struct {
+	// Passkeys lists the person's passkeys, to count them; required.
+	Passkeys PasskeyLister
+	// OperatedBy is engine.json operatedBy (PERSON when empty); SameUser is
+	// an engine run as the person's own OS user (enforcement GUARD_ONLY);
+	// Setup is the agent's pending setup code from the config; Build is the
+	// engine's build (buildinfo.Version when empty).
 	OperatedBy string
 	SameUser   bool
 	// DevLocalPages is engine.json devLocalPages: every personMessage starts
@@ -106,6 +188,9 @@ type Deps struct {
 	// credential, for status and to admit each call; a current guard when
 	// nil.
 	Probe Probe
+	// Upgrade says whether only non-breaking guard migrations are missing
+	// (the GUARD_UPGRADE_AVAILABLE warning); optional, Probe answers when nil.
+	Upgrade UpgradeChecker
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
@@ -122,9 +207,8 @@ type Deps struct {
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
 	// CrashDirs are the directories crash reports are saved in, for
-	// status.crash; Access
-	// lists the agent role's tables, for status.access. Each is left out of
-	// status when nil or empty.
+	// status.crash; Access lists the agent role's tables, for
+	// status.access. Each is left out of status when nil or empty.
 	CrashDirs []string
 	Access    AccessReader
 	// EngineRecord reads this engine's row in the agent's database for the
@@ -138,37 +222,77 @@ type Deps struct {
 	// status names a connect-only setup's database ("<host>:<port>, database
 	// <db>"); empty when unknown.
 	Database string
-	// Receipts is the engine's signing key, which signs the receipt of
-	// every signature the engine relays (CONTRACT.md, Vault channel,
-	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then
-	// carry noReceipt.
-	Receipts ReceiptSigner
 	// Finisher finishes a setup the database shows recorded: it promotes a
 	// rotated credential and clears setup from engine.json. Optional: the
 	// setup is then only forgotten in memory.
 	Finisher SetupFinisher
-	// PII sees every read's rows before they are returned and adds the
-	// values of IDENTIFIER columns to the dictionary (M5.1); optional,
-	// nothing is added when nil.
-	PII PIIObserver
+	// The functions that read the host: all required.
+	// CrashReports are the crash reports in dirs, newest first.
+	CrashReports func(dirs ...string) []CrashReport
+	// LatestGuardVersion is the basalt_meta version this build installs.
+	LatestGuardVersion func() int
+	// UpdateMessage is the notice for the agent to relay, for the binary
+	// at exe.
+	UpdateMessage func(n UpdateNotice, exe string) string
+	// StartHoldOffUntil is when the supervisor tries the engine again after
+	// it gave up (false when it holds nothing off).
+	StartHoldOffUntil func(stop LastStop, configPath string, now time.Time) (time.Time, bool)
+}
+
+// DescribeDeps is what the describe tool reads.
+type DescribeDeps struct {
 	// Catalog reads the database's structure for describe; optional, and
 	// describe answers INTERNAL when nil.
 	Catalog Catalog
-	// Columns reads each table's columns in table order for the pages;
-	// optional, and the pages show the order the rows carry when nil.
-	Columns ColumnOrder
-	// PluginApprovals are the guard's plugin approvals on the agent's
-	// credential, for the plugin approval routes of the pages; optional,
-	// and those routes know no plugin approval of this agent when nil.
-	PluginApprovals PluginApprovalStore
-	// PluginRequests serve request_plugin with the engine-kept plugin
-	// entries of a service engine; nil on any other engine, where the tool
-	// is refused (CONTRACT.md, MCP tools, request_plugin).
-	PluginRequests PluginRequests
 	// Classes are the agent's PII classes for describe; optional, and
 	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
 	// column.
 	Classes ClassResolver
+}
+
+// PluginDeps is what the plugin tools and the plugin approval pages use.
+type PluginDeps struct {
+	// Approvals are the guard's plugin approvals on the agent's credential,
+	// for the plugin approval routes of the pages; optional, and those
+	// routes know no plugin approval of this agent when nil.
+	Approvals PluginApprovalStore
+	// Requests serve request_plugin with the engine-kept plugin entries of
+	// a service engine; nil on any other engine, where the tool is refused
+	// (CONTRACT.md, MCP tools, request_plugin).
+	Requests PluginRequests
+	// ApprovalsVersion is the basalt_meta version that holds plugin
+	// approvals.
+	ApprovalsVersion int
+}
+
+// WriteStore is the part of the agent's store the query and write tools
+// run on.
+type WriteStore interface {
+	statementChecker
+	// Read runs one read, with the versions of the rows of the statement's
+	// sources it can identify.
+	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
+	// Write runs one write through the guard.
+	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
+	// WriteApproved is Write under the person's signed approval.
+	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
+}
+
+// PasskeyLister lists the person's passkeys.
+type PasskeyLister interface {
+	Passkeys(ctx context.Context) ([]passkey.Credential, error)
+}
+
+// ErrorMap holds the error values of the adapters the agent tells apart to
+// map a failure to the contract's tool error. A nil value matches nothing.
+type ErrorMap struct {
+	// InvalidParams is the ledger's, InvalidIntent the guard's: values the
+	// agent maps to INVALID_ARGUMENT.
+	InvalidParams error
+	InvalidIntent error
+	// RowTooLarge says whether err is one row over the result budget on its
+	// own, with its message.
+	RowTooLarge func(err error) (message string, ok bool)
 }
 
 // PIIObserver adds the PII values of rows the agent is about to get to the
@@ -184,9 +308,9 @@ func (noPII) Observe(context.Context, []action.Column, []map[string]any) error {
 
 // Service runs one agent's tool calls.
 type Service struct {
-	Deps
-	// setupMu guards setup, the agent's pending setup: Deps.Setup until the
-	// database shows it recorded.
+	deps Deps
+	// setupMu guards setup, the agent's pending setup: Status.Setup until
+	// the database shows it recorded.
 	setupMu sync.Mutex
 	setup   *config.Setup
 	// notRecorded is the held calls' cache of a setup not recorded yet.
@@ -200,59 +324,93 @@ type Service struct {
 }
 
 // NewService returns the service for one agent. It panics on a missing
-// dependency.
+// required port, naming it.
 func NewService(d Deps) *Service {
-	if d.Name == "" || d.Store == nil || d.Log == nil || d.Now == nil {
-		panic("agent: name, store, logger and clock required")
+	if missing := d.missing(); len(missing) > 0 {
+		panic("agent: required dependencies missing: " + strings.Join(missing, ", "))
 	}
-	if d.Notifier == nil {
-		d.Notifier = noNotifier{}
+	if d.Delivery.Notifier == nil {
+		d.Delivery.Notifier = noNotifier{}
 	}
-	if d.RLS == nil {
-		d.RLS = noRLS{}
+	if d.Write.RLS == nil {
+		d.Write.RLS = noRLS{}
 	}
-	if d.Probe == nil {
-		d.Probe = noProbe{}
+	if d.Status.Probe == nil {
+		d.Status.Probe = noProbe{latest: d.Status.LatestGuardVersion}
 	}
-	if d.Finisher == nil {
-		d.Finisher = noFinisher{}
+	if d.Status.Finisher == nil {
+		d.Status.Finisher = noFinisher{}
 	}
-	if d.Upgrade == nil {
-		d.Upgrade = guardUpgrade{probe: d.Probe}
+	if d.Status.Upgrade == nil {
+		d.Status.Upgrade = guardUpgrade{probe: d.Status.Probe}
 	}
-	if d.Build == "" {
-		d.Build = buildinfo.Version
+	if d.Status.Build == "" {
+		d.Status.Build = buildinfo.Version
 	}
-	if d.Relay == nil {
-		d.Relay = noRelay{}
+	if d.Delivery.Relay == nil {
+		d.Delivery.Relay = noRelay{notConnected: d.Delivery.ErrVaultNotConnected}
 	}
-	if d.PII == nil {
-		d.PII = noPII{}
+	if d.Write.PII == nil {
+		d.Write.PII = noPII{}
 	}
-	if d.Catalog == nil {
-		d.Catalog = noCatalog{}
+	if d.Describe.Catalog == nil {
+		d.Describe.Catalog = noCatalog{}
 	}
-	if d.Classes == nil {
-		d.Classes = noClasses{}
+	if d.Describe.Classes == nil {
+		d.Describe.Classes = noClasses{}
 	}
-	if d.PagesBase == "" {
-		d.PagesBase = links.DefaultLocal
+	if d.Core.PagesBase == "" {
+		d.Core.PagesBase = links.DefaultLocal
 	}
-	if d.Links == nil {
-		d.Links = links.NewSecrets(time.Now, rand.Reader)
+	if d.Delivery.Links == nil {
+		d.Delivery.Links = links.NewSecrets(time.Now, rand.Reader)
 	}
-	if d.Commands.agent == "" {
+	if d.Core.Commands.agent == "" {
 		// A name and no config path cannot fail.
-		d.Commands, _ = NewCommands(d.Name, "", "")
+		d.Core.Commands, _ = NewCommands(d.Core.Name, "", "", d.Core.ServiceManager)
 	}
-	d.Commands = d.Commands.OperatedBy(d.OperatedBy)
-	if d.LinkBudget <= 0 {
-		d.LinkBudget = links.DefaultBudget
+	d.Core.Commands = d.Core.Commands.OperatedBy(d.Status.OperatedBy)
+	if d.Core.LinkBudget <= 0 {
+		d.Core.LinkBudget = links.DefaultBudget
 	}
-	if d.Poll <= 0 {
-		d.Poll = DefaultPoll
+	if d.Delivery.Poll <= 0 {
+		d.Delivery.Poll = DefaultPoll
 	}
-	return &Service{Deps: d, setup: d.Setup, rescopes: newRescopes()}
+	return &Service{deps: d, setup: d.Status.Setup, rescopes: newRescopes()}
+}
+
+// missing names the required ports d lacks.
+func (d Deps) missing() []string {
+	var out []string
+	need := func(name string, nilPort bool) {
+		if nilPort {
+			out = append(out, name)
+		}
+	}
+	need("Core.Name", d.Core.Name == "")
+	need("Core.Store", d.Core.Store == nil)
+	need("Core.Log", d.Core.Log == nil)
+	need("Core.Now", d.Core.Now == nil)
+	need("Core.Errors.InvalidParams", d.Core.Errors.InvalidParams == nil)
+	need("Core.Errors.InvalidIntent", d.Core.Errors.InvalidIntent == nil)
+	need("Core.Errors.RowTooLarge", d.Core.Errors.RowTooLarge == nil)
+	need("Core.ServiceManager", d.Core.ServiceManager.StartCommand == nil || d.Core.ServiceManager.RestartArgs == nil)
+	need("Write.Store", d.Write.Store == nil)
+	need("Write.Record", d.Write.Record == nil)
+	need("Approval.Store", d.Approval.Store == nil)
+	need("Approval.ErrNotFound", d.Approval.ErrNotFound == nil)
+	need("Revert.Store", d.Revert.Store == nil)
+	need("Revert.ErrNotFound", d.Revert.ErrNotFound == nil)
+	need("Revert.AfterAnswer", d.Revert.AfterAnswer == nil)
+	need("Revert.RotateSession", d.Revert.RotateSession == nil)
+	need("Delivery.VaultConflict", d.Delivery.VaultConflict == nil)
+	need("Delivery.ErrVaultNotConnected", d.Delivery.ErrVaultNotConnected == nil)
+	need("Status.Passkeys", d.Status.Passkeys == nil)
+	need("Status.CrashReports", d.Status.CrashReports == nil)
+	need("Status.LatestGuardVersion", d.Status.LatestGuardVersion == nil)
+	need("Status.UpdateMessage", d.Status.UpdateMessage == nil)
+	need("Status.StartHoldOffUntil", d.Status.StartHoldOffUntil == nil)
+	return out
 }
 
 // RunInfo is a started run.
@@ -283,8 +441,8 @@ func (s *Service) startRun(ctx context.Context, intent string, taskID uuid.UUID)
 	if taskID == uuid.Nil {
 		taskID = newID()
 	}
-	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: s.Now().UTC()}
-	if err := s.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
+	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: s.deps.Core.Now().UTC()}
+	if err := s.deps.Core.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
 		return RunInfo{}, err
 	}
 	return run, nil
@@ -315,28 +473,28 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 		return QueryOutcome{}, err
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
-	start := s.Now()
-	stmt, err := s.Store.Check(p.SQL, action.ToolQuery)
+	start := s.deps.Core.Now()
+	stmt, err := s.deps.Write.Store.Check(p.SQL, action.ToolQuery)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
 	if err != nil {
 		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Store.Read(ctx, p.SQL, p.Params, stmt)
+	res, err := s.deps.Write.Store.Read(ctx, p.SQL, p.Params, stmt)
 	if err != nil {
 		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
 	// keeps the rows from the agent.
-	if err := s.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
-		s.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
+	if err := s.deps.Write.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
+		s.deps.Core.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
 		// An engine failure, not the agent's SQL: INTERNAL even when a
 		// Postgres error (a map reload) caused it. The cause is logged above.
 		return QueryOutcome{}, &toolresult.ToolError{Code: CodeInternal, Message: "internal engine error"}
 	}
-	change, err := s.Store.RecordRead(ctx, action.Read{
+	change, err := s.deps.Core.Store.RecordRead(ctx, action.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
 		Rows: len(res.Rows), Duration: res.Duration, Versions: res.Versions,
 	})
@@ -383,8 +541,8 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		return WriteOutcome{}, err
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
-	start := s.Now()
-	stmt, err := s.Store.Check(p.SQL, action.ToolWrite)
+	start := s.deps.Core.Now()
+	stmt, err := s.deps.Write.Store.Check(p.SQL, action.ToolWrite)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
@@ -392,7 +550,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Store.Write(ctx, in, op, p.SQL, p.Params)
+	res, err := s.deps.Write.Store.Write(ctx, in, op, p.SQL, p.Params)
 	if errors.Is(err, action.ErrApprovalRequired) {
 		id, expires, err := s.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil {
@@ -440,12 +598,12 @@ func (s *Service) History(ctx context.Context, p action.ChangeListParams) (Histo
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
 		return History{}, err
 	}
-	return s.Store.History(ctx, p)
+	return s.deps.Core.Store.History(ctx, p)
 }
 
 // ListRuns returns one page of the agent's own runs with what each did.
 func (s *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return s.Store.ListRuns(ctx, p)
+	return s.deps.Core.Store.ListRuns(ctx, p)
 }
 
 // findRun returns the agent's run, the zero run for uuid.Nil, or NOT_FOUND.
@@ -453,7 +611,7 @@ func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error)
 	if id == uuid.Nil {
 		return action.Run{}, nil
 	}
-	run, err := s.Store.FindRun(ctx, id)
+	run, err := s.deps.Core.Store.FindRun(ctx, id)
 	if errors.Is(err, action.ErrRunNotFound) {
 		return action.Run{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}
@@ -475,16 +633,16 @@ func recorded(code string) bool {
 // keeps, and returns err. A failure to record is logged; the agent still
 // gets the original refusal.
 func (s *Service) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
-	te := messageTooLarge(actionTool(op), err, ToolError(err))
+	te := messageTooLarge(actionTool(op), err, s.deps.Core.Errors.ToolError(err))
 	if !recorded(te.Code) {
 		return err
 	}
 	r := action.Refusal{
 		Intent: in, Op: refusalOp(op), Statement: sql, Params: params,
-		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: s.Now().Sub(start),
+		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: s.deps.Core.Now().Sub(start),
 	}
-	if recErr := s.Store.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
-		s.Log.Error("record refusal", "code", te.Code, "err", recErr)
+	if recErr := s.deps.Core.Store.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
+		s.deps.Core.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err
 }

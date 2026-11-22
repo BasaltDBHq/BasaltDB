@@ -29,6 +29,15 @@ type Commands struct {
 	// removed reports a person-operated engine whose engine.json a setup
 	// page REMOVE deleted (Removed); nil when it cannot happen.
 	removed func() bool
+	// manager is the host's service manager.
+	manager ServiceManager
+}
+
+// ServiceManager is the host's service manager: the command that starts the
+// engine service and the command line that restarts it, for goos.
+type ServiceManager struct {
+	StartCommand func(goos string) string
+	RestartArgs  func(goos string) []string
 }
 
 // cmdBasalt is the CLI every command runs.
@@ -36,8 +45,9 @@ const cmdBasalt = "basalt"
 
 // NewCommands returns the commands for agent. configPath is the absolute
 // path the engine was started with ("" when the default); goos picks the
-// default path and the service manager (runtime.GOOS when empty).
-func NewCommands(agent, configPath, goos string) (Commands, error) {
+// default path and the service manager (runtime.GOOS when empty); manager
+// is the service manager's commands.
+func NewCommands(agent, configPath, goos string, manager ServiceManager) (Commands, error) {
 	if !config.ValidAgentName(agent) {
 		return Commands{}, fmt.Errorf("%q is not a valid agent name", agent)
 	}
@@ -47,7 +57,7 @@ func NewCommands(agent, configPath, goos string) (Commands, error) {
 	if configPath != "" && !filepath.IsAbs(configPath) {
 		return Commands{}, fmt.Errorf("config path %q must be absolute", configPath)
 	}
-	return Commands{agent: agent, goos: goos, configPath: configPath}, nil
+	return Commands{agent: agent, goos: goos, configPath: configPath, manager: manager}, nil
 }
 
 // Foreground returns c for an engine that runs in the foreground as the
@@ -112,7 +122,7 @@ func (c Commands) EngineStart() string {
 	if c.foreground {
 		return c.foregroundEngine()
 	}
-	return theHost().StartCommand(c.goos)
+	return c.manager.StartCommand(c.goos)
 }
 
 // EngineRestart restarts the engine: the foreground command again, or the
@@ -121,7 +131,7 @@ func (c Commands) EngineRestart() string {
 	if c.foreground {
 		return c.foregroundEngine()
 	}
-	return "sudo " + strings.Join(theHost().RestartArgs(c.goos), " ")
+	return "sudo " + strings.Join(c.manager.RestartArgs(c.goos), " ")
 }
 
 func (c Commands) foregroundEngine() string {

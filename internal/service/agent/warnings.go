@@ -97,9 +97,9 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 	}
 	var out []toolresult.Warning
 	for _, table := range tables {
-		name, err := s.RLS.Hides(ctx, table)
+		name, err := s.deps.Write.RLS.Hides(ctx, table)
 		if err != nil {
-			s.Log.Error("check row-level security", "table", table, "err", err)
+			s.deps.Core.Log.Error("check row-level security", "table", table, "err", err)
 			continue
 		}
 		if name == "" {
@@ -107,7 +107,7 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 		}
 		w, err := s.rlsWarning(name)
 		if err != nil {
-			s.Log.Error("cannot build the row-level security warning", "table", table, "err", err)
+			s.deps.Core.Log.Error("cannot build the row-level security warning", "table", table, "err", err)
 			continue
 		}
 		out = append(out, w)
@@ -118,8 +118,8 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 func (s *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
 	table := shown(dbName, maxTableChars)
 	b := NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
-	b.AgentRunCommand(s.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
-	if !s.Commands.AgentOperated() {
+	b.AgentRunCommand(s.deps.Core.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
+	if !s.deps.Core.Commands.AgentOperated() {
 		b.TellAgent("Tell the agent once it is done.")
 	}
 	person := fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
@@ -142,19 +142,19 @@ func (s *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
 // upgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
 // only non-breaking guard migrations are missing.
 func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
-	available, err := s.Upgrade.UpgradeAvailable(ctx)
+	available, err := s.deps.Status.Upgrade.UpgradeAvailable(ctx)
 	if err != nil {
-		s.Log.Error("check for a guard upgrade", "err", err)
+		s.deps.Core.Log.Error("check for a guard upgrade", "err", err)
 		return nil
 	}
 	if !available {
 		return nil
 	}
 	b := NewSteps()
-	person := upgradeSteps(b, s.Commands)
+	person := upgradeSteps(b, s.deps.Core.Commands)
 	steps, err := b.Build()
 	if err != nil {
-		s.Log.Error("cannot build the guard upgrade warning", "err", err)
+		s.deps.Core.Log.Error("cannot build the guard upgrade warning", "err", err)
 		return nil
 	}
 	return []toolresult.Warning{{

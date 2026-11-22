@@ -49,10 +49,9 @@ func (unsafeGuard) ReinstallNotice(context.Context, int) (string, bool, error) {
 // empty interfaces: a call that got past Admit would panic, so a test that
 // passes relayed nothing.
 func gatedService(store *links.Secrets) *agent.Service {
-	return agent.NewService(agent.Deps{
-		Name: "demo_bot", Store: struct{ agent.SQLStore }{}, Log: quietLog(), Now: time.Now,
-		PagesBase: links.Portal, Links: store, Probe: unsafeGuard{},
-	})
+	d := testAgentDeps("demo_bot", struct{ agent.SQLStore }{})
+	d.Core.PagesBase, d.Delivery.Links, d.Status.Probe = links.Portal, store, unsafeGuard{}
+	return agent.NewService(d)
 }
 
 // On a guard the engine calls unsafe, a session's reads and relays get the

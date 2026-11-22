@@ -77,7 +77,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
 	svc := newPGAgent(t, bot.URL, 4).service(func(dp *agent.Deps) {
-		dp.PagesBase, dp.Links, dp.Relay, dp.Receipts, dp.Poll = links.Portal, secrets, relay, keys, relayPoll
+		dp.Core.PagesBase, dp.Delivery.Links, dp.Delivery.Relay, dp.Delivery.Receipts, dp.Delivery.Poll = links.Portal, secrets, relay, keys, relayPoll
 	})
 
 	v := vaulttest.New(opts)

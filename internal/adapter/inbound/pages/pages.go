@@ -659,7 +659,12 @@ var statuses = map[string]int{
 // fail answers err as the contract's error body. Unexpected errors are
 // logged and answered INTERNAL without their text.
 func (s *Server) fail(w http.ResponseWriter, err error) {
-	te := agent.ToolError(err)
+	// Every failure here is the pages' own or the agent's PageFailure, so it
+	// is already the contract's error body; anything else is the engine's.
+	var te *mcp.ToolError
+	if !errors.As(err, &te) {
+		te = &mcp.ToolError{Code: agent.CodeInternal, Message: "internal engine error"}
+	}
 	status, ok := statuses[te.Code]
 	if !ok {
 		status = http.StatusInternalServerError

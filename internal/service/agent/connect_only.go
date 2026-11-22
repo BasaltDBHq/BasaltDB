@@ -259,18 +259,25 @@ type ConnectOnly struct {
 	Handoff       Handoff
 	Log           *slog.Logger
 	Now           func() time.Time
+	// Errors maps a failure to the contract's tool error; LatestGuardVersion
+	// is the basalt_meta version this build installs.
+	Errors             ErrorMap
+	LatestGuardVersion func() int
 }
 
 // guide is a Service with only what the error guidance reads.
 func (c ConnectOnly) guide() *Service {
-	return &Service{Deps: Deps{Name: c.Name, Commands: c.Commands.OperatedBy(c.OperatedBy), ConnectBudget: c.ConnectBudget, Log: c.Log, Now: c.Now}}
+	return &Service{deps: Deps{
+		Core:   CoreDeps{Name: c.Name, Commands: c.Commands.OperatedBy(c.OperatedBy), Log: c.Log, Now: c.Now, Errors: c.Errors},
+		Status: StatusDeps{ConnectBudget: c.ConnectBudget},
+	}}
 }
 
 // Tools are every IMPLEMENTED tool of the contracts: status and
 // confirm_database answer, every other tool is refused.
 func (c ConnectOnly) Tools() []Tool {
-	if c.Handoff == nil || c.Log == nil || c.Now == nil {
-		panic("agent: a connect-only agent needs its hand-off, a logger and a clock")
+	if c.Handoff == nil || c.Log == nil || c.Now == nil || c.LatestGuardVersion == nil {
+		panic("agent: a connect-only agent needs its hand-off, a logger, a clock and the guard version")
 	}
 	contracts := mcpcontract.MustLoad()
 	out := make([]Tool, 0, len(contracts))
@@ -367,7 +374,7 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 	r := StatusReport{
 		Agent: c.Name, OperatedBy: operatedBy(c.OperatedBy), Enforcement: enforcement(c.OperatedBy, c.SameUser),
 		Engine: EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: startedByEnum(c.StartedBy)},
-		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()},
+		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: c.LatestGuardVersion()},
 		Pages:  PagesStatus{Served: c.PagesOrigin != "", URL: base},
 	}
 	if c.Vault != nil {
@@ -452,7 +459,7 @@ func ConnectDatabaseName(host string, port uint16, database string) string {
 // reachable when it runs, or from l.Collected, what the CLI collected
 // while the engine is down. It never collects itself.
 func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
-	if l.Setup == nil || l.Now == nil {
+	if l.Setup == nil || l.Now == nil || l.LatestGuardVersion == nil {
 		panic("agent: a connect-only local status needs the pending setup and a clock")
 	}
 	cmds := l.Commands.OperatedBy(l.OperatedBy)
@@ -463,7 +470,7 @@ func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
 	r := StatusReport{
 		Agent: l.Name, OperatedBy: operatedBy(l.OperatedBy), Enforcement: enforcement(l.OperatedBy, true),
 		Engine: EngineStatus{Reachable: l.EngineRunning, Build: buildinfo.Version},
-		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()},
+		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: l.LatestGuardVersion()},
 		Pages:  PagesStatus{Served: l.PagesOrigin != "", URL: base},
 	}
 	ps := problems{cmds: cmds, connectBudget: l.ConnectBudget}

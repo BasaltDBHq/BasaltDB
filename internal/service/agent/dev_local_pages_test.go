@@ -20,14 +20,14 @@ import (
 func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
 	t.Helper()
 	d := deps()
-	d.OperatedBy = operatedBy
-	d.DevLocalPages = true
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.OperatedBy = operatedBy
+	d.Status.DevLocalPages = true
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
-	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r
@@ -35,7 +35,7 @@ func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
 
 func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux")
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	b := NewSteps()
 	person := devLocalPagesSteps(b, cmds.OperatedBy(mcpcontract.OperatedByAgent))
@@ -50,14 +50,14 @@ func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	t.Parallel()
 	d := deps()
-	d.OperatedBy = mcpcontract.OperatedByAgent
-	d.DevLocalPages = true
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.OperatedBy = mcpcontract.OperatedByAgent
+	d.Status.DevLocalPages = true
+	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 0}) // NO_PASSKEY too: two problems
-	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux")
+	d.Core.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	d.Commands = cmds
+	d.Core.Commands = cmds
 	srv, _ := serverOf(NewService(d))
 	body, isErr := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isErr)

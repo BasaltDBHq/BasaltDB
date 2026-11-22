@@ -36,7 +36,7 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 	if err != nil {
 		return approval.Request{}, err
 	}
-	reveal, err := s.Store.RevealNonce(ctx, approval.KindApprove, id)
+	reveal, err := s.deps.Approval.Store.RevealNonce(ctx, approval.KindApprove, id)
 	if err != nil {
 		return approval.Request{}, err
 	}
@@ -57,7 +57,7 @@ type ColumnOrder interface {
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.
 func (s *Service) columnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
-	if s.Columns == nil {
+	if s.deps.Approval.Columns == nil {
 		return nil
 	}
 	seen := map[string]bool{}
@@ -75,9 +75,9 @@ func (s *Service) columnsOf(ctx context.Context, lines []string) approval.Column
 	if len(tables) == 0 {
 		return nil
 	}
-	cols, err := s.Columns.ColumnOrder(ctx, tables)
+	cols, err := s.deps.Approval.Columns.ColumnOrder(ctx, tables)
 	if err != nil {
-		s.Log.WarnContext(ctx, "pages: column order not read; the page shows the rows' order", "err", err)
+		s.deps.Core.Log.WarnContext(ctx, "pages: column order not read; the page shows the rows' order", "err", err)
 		return nil
 	}
 	if len(cols) == 0 {
@@ -92,7 +92,7 @@ func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (Recei
 	if _, err := s.openApproval(ctx, r.ApprovalID); err != nil {
 		return Receipt{}, err
 	}
-	if _, err := s.Store.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
+	if _, err := s.deps.Approval.Store.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
 		return Receipt{}, err
 	}
 	// Postgres accepted the signature: the receipt names the approval as
@@ -109,15 +109,15 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Approv
 	if err := s.Admit(ctx); err != nil {
 		return action.Approval{}, err
 	}
-	a, err := s.Store.FindApproval(ctx, id)
-	if sentinel(err, theHost().ErrApprovalNotFound) {
+	a, err := s.deps.Approval.Store.FindApproval(ctx, id)
+	if sentinel(err, s.deps.Approval.ErrNotFound) {
 		return action.Approval{}, ErrNotThisAgent
 	}
 	if err != nil {
 		return action.Approval{}, err
 	}
 	switch {
-	case a.Status == approvalExpired || !s.Now().Before(a.ExpiresAt):
+	case a.Status == approvalExpired || !s.deps.Core.Now().Before(a.ExpiresAt):
 		return a, &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(personTime))}
 	case a.Status == approvalApproved:
 		return a, approvalInvalid(reasonAlreadyUsed, "this write is already approved; the agent applies it")
@@ -148,11 +148,11 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return revert.Request{}, err
 	}
-	nonce, err := s.Store.RevertNonce(ctx, id)
+	nonce, err := s.deps.Revert.Store.RevertNonce(ctx, id)
 	if err != nil {
 		return revert.Request{}, err
 	}
-	reveal, err := s.Store.RevealNonce(ctx, approval.KindRevert, id)
+	reveal, err := s.deps.Revert.Store.RevealNonce(ctx, approval.KindRevert, id)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -183,13 +183,13 @@ func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.Ap
 	if err != nil {
 		return action.AppliedRevert{}, Receipt{}, err
 	}
-	applied, err := s.Store.ApplyRevert(ctx, r.RevertID, r.Assertion())
+	applied, err := s.deps.Revert.Store.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
 		return action.AppliedRevert{}, Receipt{}, s.applyRevertError(ctx, open, err)
 	}
 	// Postgres accepted the signature: the receipt names the revert as
 	// Postgres records it now.
-	signed, err := s.Store.FindRevert(ctx, r.RevertID)
+	signed, err := s.deps.Revert.Store.FindRevert(ctx, r.RevertID)
 	if err != nil {
 		return action.AppliedRevert{}, Receipt{}, err
 	}
@@ -206,15 +206,15 @@ func (s *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert, 
 	if err := s.Admit(ctx); err != nil {
 		return action.Revert{}, err
 	}
-	r, err := s.Store.FindRevert(ctx, id)
-	if sentinel(err, theHost().ErrRevertNotFound) {
+	r, err := s.deps.Revert.Store.FindRevert(ctx, id)
+	if sentinel(err, s.deps.Revert.ErrNotFound) {
 		return action.Revert{}, ErrNotThisAgent
 	}
 	if err != nil {
 		return action.Revert{}, err
 	}
 	switch {
-	case r.Status == revertExpired || (r.Status == revertPending && !s.Now().Before(r.ExpiresAt)):
+	case r.Status == revertExpired || (r.Status == revertPending && !s.deps.Core.Now().Before(r.ExpiresAt)):
 		return r, s.revertExpired(r)
 	case r.Status != revertPending:
 		return r, alreadySigned(r)
@@ -225,7 +225,7 @@ func (s *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert, 
 // CheckLink reports whether secret is the live link secret of one of this
 // agent's items.
 func (s *Service) CheckLink(id uuid.UUID, secret string) bool {
-	return s.Links.Check(id, secret)
+	return s.deps.Delivery.Links.Check(id, secret)
 }
 
 // issuedLink is a newly issued short link; this engine must serve the

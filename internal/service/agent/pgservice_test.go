@@ -12,9 +12,22 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
+
+// useStore binds every port of d that reads the agent's store to s.
+func useStore(d *agent.Deps, s agent.SQLStore) {
+	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
+}
+
+// toolError and serviceManager are the adapters' values, as the
+// app wires them.
+func toolError(err error) *toolresult.ToolError { return app.AgentErrors().ToolError(err) }
+
+func serviceManager() agent.ServiceManager { return app.AgentServiceManager() }
 
 // pgWiring is what pgService builds the service from; a pgOption changes it.
 type pgWiring struct {
@@ -92,10 +105,9 @@ func pgService(t *testing.T, url string, opts ...pgOption) pgEnv {
 		store = store.WithReturned(w.returned)
 	}
 	reader := postgres.NewReader(db, w.limits, time.Now)
-	d := agent.Deps{
-		Name: "bot", Store: store,
-		Log: slog.New(slog.DiscardHandler), Now: time.Now,
-	}
+	d := app.AgentHostDeps()
+	d.Core.Name, d.Core.Log, d.Core.Now = "bot", slog.New(slog.DiscardHandler), time.Now
+	useStore(&d, store)
 	for _, f := range w.deps {
 		f(&d, pool)
 	}

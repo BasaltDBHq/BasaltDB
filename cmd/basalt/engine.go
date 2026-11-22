@@ -322,7 +322,7 @@ func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, er
 	if err != nil {
 		return agent.EngineDown{}, err
 	}
-	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath}, nil
+	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: app.AgentEngineHost()}, nil
 }
 
 // shimExecutable is the path of this binary as a starter runs it: the
@@ -348,7 +348,7 @@ func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, 
 	if !config.ValidAgentName(name) {
 		name = fallbackAgentName
 	}
-	cmds, err := agent.NewCommands(name, configPath, runtime.GOOS)
+	cmds, err := agent.NewCommands(name, configPath, runtime.GOOS, app.AgentServiceManager())
 	if err != nil || cfg == nil {
 		return cmds, err
 	}
@@ -537,7 +537,7 @@ func agentSpecFromStdin(in io.Reader, spec app.OSSpec, a agentInstall, credStdin
 	if err != nil {
 		return spec, err
 	}
-	if _, err := agent.NewCommands(a.name, cfgPath, spec.GOOS); err != nil {
+	if _, err := agent.NewCommands(a.name, cfgPath, spec.GOOS, app.AgentServiceManager()); err != nil {
 		return spec, err
 	}
 	if err := refuseSecretInitArgs(a.initArgs); err != nil {

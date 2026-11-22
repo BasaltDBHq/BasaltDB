@@ -24,14 +24,14 @@ func TestInitIsTheOneSetupCommand(t *testing.T) {
 
 func TestCommandsRefuseARelativeConfigPath(t *testing.T) {
 	t.Parallel()
-	_, err := NewCommands("bot", "engine.json", "linux")
+	_, err := NewCommands("bot", "engine.json", "linux", testManager())
 	require.Error(t, err)
 }
 
 func TestCommandsRefuseABadAgentName(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"", "Bot", "bot; rm -rf /", "a b", "$(x)"} {
-		_, err := NewCommands(name, "", "linux")
+		_, err := NewCommands(name, "", "linux", testManager())
 		require.Error(t, err, name)
 	}
 }
@@ -62,7 +62,7 @@ func TestShellQuoteALeadingEquals(t *testing.T) {
 
 func mustCommands(t *testing.T, path, goos string) Commands {
 	t.Helper()
-	c, err := NewCommands("bot", path, goos)
+	c, err := NewCommands("bot", path, goos, testManager())
 	require.NoError(t, err)
 	return c
 }

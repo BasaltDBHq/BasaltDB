@@ -83,12 +83,12 @@ func standaloneLink(link string) string {
 // deliverer that panics is logged and costs the agent nothing: the answer
 // is returned as it was built.
 func (s *Service) deliver(n LinkNotice) {
-	if s.Deliverer == nil {
+	if s.deps.Delivery.Deliverer == nil {
 		return
 	}
 	defer func() {
 		if v := recover(); v != nil {
-			s.Log.Error("approval notice not made: the deliverer panicked", "kind", string(n.Kind))
+			s.deps.Core.Log.Error("approval notice not made: the deliverer panicked", "kind", string(n.Kind))
 		}
 	}()
 	n.Headline = NoticeHeadline(n.Headline)
@@ -96,7 +96,7 @@ func (s *Service) deliver(n LinkNotice) {
 	if n.Headline == "" || n.ExpiresAt.IsZero() || (n.ApprovalID == uuid.Nil) == (n.RevertID == uuid.Nil) {
 		return
 	}
-	s.Deliverer.DeliverLink(n)
+	s.deps.Delivery.Deliverer.DeliverLink(n)
 }
 
 // deliverHeld makes the notice of answer, the APPROVAL_REQUIRED answer of

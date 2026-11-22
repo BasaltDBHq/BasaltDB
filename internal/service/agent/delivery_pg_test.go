@@ -58,7 +58,7 @@ func deliveryHarness(t *testing.T, pages bool) (agentEnv, *delivered) {
 	}
 	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads), origin...)
 	rec := &delivered{}
-	env.svc.Deliverer = rec
+	agent.SetDeliverer(env.svc, rec)
 	return env, rec
 }
 
@@ -137,7 +137,7 @@ func (panics) DeliverLink(agent.LinkNotice) { panic("the deliverer broke") }
 func TestDelivererCannotChangeTheAnswer(t *testing.T) {
 	t.Parallel()
 	env, _ := deliveryHarness(t, true)
-	env.svc.Deliverer = panics{}
+	agent.SetDeliverer(env.svc, panics{})
 	body, isError := env.h.call(t, "write", holdWrite(t, env.h, nil))
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	require.Contains(t, str(t, approvalOf(t, body)["approvalUrl"]), "#s=")
@@ -220,7 +220,7 @@ func TestWaitingWriteSignedFromItsNotice(t *testing.T) {
 func TestNoticeWithoutStandaloneLinkHasNone(t *testing.T) {
 	t.Parallel()
 	env, rec := deliveryHarness(t, false)
-	env.svc.LinkBudget = 200
+	agent.SetLinkBudget(env.svc, 200)
 	body, isError := env.h.call(t, "write", holdWrite(t, env.h, nil))
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)

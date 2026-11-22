@@ -38,6 +38,17 @@ type EngineDown struct {
 	// ConfigPath is the engine.json path, used to end the start hold-off
 	// when that file has changed since the supervisor gave up.
 	ConfigPath string
+	// Host is what the status of an engine that is down reads from the
+	// host.
+	Host EngineHost
+}
+
+// EngineHost is what the status of an engine that is down reads from the
+// host: the guard version this build installs, and when the supervisor
+// tries the engine again after it gave up.
+type EngineHost struct {
+	LatestGuardVersion func() int
+	StartHoldOffUntil  func(stop LastStop, configPath string, now time.Time) (time.Time, bool)
 }
 
 func (d EngineDown) startFailure() string {
@@ -57,10 +68,10 @@ func (d EngineDown) gaveUpMessage() string {
 	if !ok {
 		return ""
 	}
-	if _, holding := theHost().StartHoldOffUntil(stop, d.ConfigPath, d.Now()); !holding {
+	if _, holding := d.Host.StartHoldOffUntil(stop, d.ConfigPath, d.Now()); !holding {
 		return ""
 	}
-	return engineGaveUpMessage(stop, d.ConfigPath, d.Now())
+	return engineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
 }
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
@@ -89,7 +100,7 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
-	return EngineDownStatusAfterStart(d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
+	return EngineDownStatusAfterStart(d.Host, d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
 }
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {

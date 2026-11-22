@@ -62,7 +62,7 @@ type describeResourceResult struct {
 func (h handlers) describe(ctx context.Context, raw json.RawMessage) (any, error) {
 	out, err := h.describeForm(ctx, raw)
 	if err != nil {
-		return nil, describeError(err)
+		return nil, h.svc.describeError(err)
 	}
 	return out, nil
 }

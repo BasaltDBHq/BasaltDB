@@ -65,7 +65,7 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 		}
 	}()
 
-	cmds, err := agent.NewCommands("bot", "", "linux")
+	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	inR, inW := io.Pipe()
@@ -122,4 +122,13 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 	require.EqualValues(t, 2, dials.Load())
 	require.NoError(t, inW.Close())
 	require.NoError(t, <-served)
+}
+
+// testServiceManager is a service manager with fixed commands: no shim test
+// reads them.
+func testServiceManager() agent.ServiceManager {
+	return agent.ServiceManager{
+		StartCommand: func(string) string { return "start-the-engine" },
+		RestartArgs:  func(string) []string { return []string{"restart-the-engine"} },
+	}
 }

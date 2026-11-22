@@ -188,6 +188,24 @@ message CheckSetupResponse {
   // Codes with a target: every active passkey of the database, oldest
   // first, at most 100, for the Update check's passkey list.
   repeated ActivePasskey passkeys = 12;
+  // The role the pasted string logged in as (session_user), which the page
+  // shows on its confirm step. Sensitive, as database is.
+  string session_user = 13 [(sensitive) = true];
+  // What verified the database's certificate, for the confirm step.
+  Certificate certificate = 14;
+}
+
+// The database's certificate as the confirm step shows it.
+message Certificate {
+  // PUBLIC (an authority of the system's store), PROVIDER (a built-in trust
+  // profile), OWN (the certificate authority the person trusted on the
+  // page), NOT_VERIFIED or NONE. The service always verifies, so it answers
+  // PUBLIC, PROVIDER or OWN.
+  string kind = 1;
+  // The issuer's short name: the top authority's common name, else its
+  // organization; the provider's name ("Amazon RDS") for PROVIDER. Text the
+  // database server chose otherwise.
+  string issuer = 2;
 }
 
 // An active passkey's public data, as basalt_meta.agent_passkeys shows it.

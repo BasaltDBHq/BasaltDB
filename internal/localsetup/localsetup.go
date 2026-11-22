@@ -127,6 +127,13 @@ type CheckAnswer struct {
 	// another pin: the engine's SHA-256 and the ledger's.
 	Pinned   string `json:"pinned,omitempty"`
 	Recorded string `json:"recorded,omitempty"`
+	// Host, Port, SessionUser and Certificate are the confirm step's, on
+	// an install's check: the admin connection's host and port, the role
+	// it logged in as and what verified its certificate.
+	Host        string              `json:"host,omitempty"`
+	Port        int                 `json:"port,omitempty"`
+	SessionUser string              `json:"sessionUser,omitempty"`
+	Certificate *ConfirmCertificate `json:"certificate,omitempty"`
 }
 
 // RegisteredPasskey is one passkey the run registered.
@@ -514,6 +521,10 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
+	facts, err := s.readConfirm(ctx, tx, conn, req.DatabaseURL, pinned)
+	if err != nil {
+		return CheckAnswer{}, timeLimit(ctx, err)
+	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
 	p, err := s.plan(ctx, tx, j, guard.NewPassword(), database, req.Answers)
 	if err != nil {
@@ -524,7 +535,12 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, timeLimit(ctx, setupFailed())
 	}
 	if !req.Demo && j.picks == nil {
-		return listingAnswer(j, database, p, needed)
+		out, err := listingAnswer(j, database, p, needed)
+		if err != nil {
+			return CheckAnswer{}, err
+		}
+		facts.apply(&out)
+		return out, nil
 	}
 	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req), trustRoot: req.TrustRoot})
 	if err != nil {
@@ -535,6 +551,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 			Database: database, Lines: realSummary(j, database, p.write, p.read, needed, p.keep), SQL: p.script.SQL() + labelsSQL(req),
 			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch,
 		}
+		facts.apply(&out)
 		if pinned != nil {
 			out.Lines = append(out.Lines, "It trusts the certificate authority SHA-256 "+pinned.sha256+" for "+pinned.host+" only, and the agent connects with sslmode=verify-full.")
 		}
@@ -546,10 +563,12 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		}
 		return out, nil
 	}
-	return CheckAnswer{
+	out := CheckAnswer{
 		Database: database, Lines: summary(j, database, p.seeded, needed, p.keep), SQL: p.seeded.Shown() + p.script.SQL(),
 		Questions: []Question{}, Notes: notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch,
-	}, nil
+	}
+	facts.apply(&out)
+	return out, nil
 }
 
 // listingAnswer is the answer of a check with no picks: the tables the

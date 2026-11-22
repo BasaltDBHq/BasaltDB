@@ -388,6 +388,17 @@ CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
 	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.logs", CanWrite: false})
 	require.Contains(t, listing.Excluded, localsetup.ExcludedTable{Table: "public.Mixed", Owner: "unsupported name"})
 	require.False(t, exists(t, f.db, "basalt_demo"), "a real install never makes the sample schema")
+	// The confirm step's facts: where the string logged in, as whom, and
+	// what verified the certificate; never the string itself.
+	adminCfg := f.db.Admin.Config()
+	require.Equal(t, adminCfg.User, listing.SessionUser)
+	require.Equal(t, strings.ToLower(adminCfg.Host), listing.Host)
+	require.Equal(t, int(adminCfg.Port), listing.Port)
+	require.NotNil(t, listing.Certificate)
+	require.Contains(t, []string{"NONE", "NOT_VERIFIED", "PUBLIC", "OWN"}, listing.Certificate.Kind)
+	raw, err := json.Marshal(listing)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), mustPassword(t, f.db.URL), "the answer never echoes the password")
 
 	// Write on a table with no primary key: the listing says it cannot.
 	req := f.real()
@@ -889,6 +900,8 @@ func TestRealInstallPinsTheTrustedAuthorityBeforeTheCommit(t *testing.T) {
 	checked, err := p.svc.Check(ctx, req)
 	require.NoError(t, err)
 	require.Len(t, p.pinnedWith, 1)
+	require.Equal(t, pinHost, checked.Host, "the confirm step names the string's host")
+	require.Equal(t, 5432, checked.Port)
 	require.Equal(t, "pin-db-pin-example", p.pinnedWith[0].Name, "the login trusts that one certificate")
 	require.Contains(t, strings.Join(checked.Lines, " "), trustprofile.DERSHA256(p.ca))
 

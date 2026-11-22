@@ -526,3 +526,16 @@ func DERSHA256(c *x509.Certificate) string {
 	sum := sha256.Sum256(c.Raw)
 	return hex.EncodeToString(sum[:])
 }
+
+// providerNames are the providers of the built-in profiles as a person names
+// them.
+var providerNames = map[string]string{"aws-rds": "Amazon RDS", "supabase": "Supabase"}
+
+// ProviderName is the provider a built-in profile is for, as the confirm
+// step names it ("Amazon RDS"); another profile's own name.
+func ProviderName(profile string) string {
+	if n, ok := providerNames[profile]; ok {
+		return n
+	}
+	return profile
+}

@@ -201,6 +201,9 @@ type Checked struct {
 	// Database is the database the connection names: the setup's target
 	// for a connect-only code, which the page shows before approval.
 	Database Target
+	// SessionUser is the role the connection logged in as (session_user),
+	// for the confirm step (SessionUser).
+	SessionUser string
 	// Tables are, for an agent.allTables code, the tables the agent will
 	// get, in name order; ReadOnly are those among them it may only read
 	// (no primary key, so the guard cannot key its writes); Excluded are the
@@ -313,6 +316,9 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 		return Checked{}, asError(err)
 	}
 	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall()}
+	if out.SessionUser, err = SessionUser(ctx, conn); err != nil {
+		return Checked{}, asError(err)
+	}
 	if p.NothingToDo {
 		out.NothingToDo = nothingToDo(p)
 		return out, nil

@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- `basalt passkey`, `basalt trust` and `basalt classify`, with their flags, and the `/passkeys/check` and `/passkeys/forget` pages. Passkeys, a changed certificate and column labels are fixed on the page `basalt init` opens (`basalt init --remote` on an agent-operated engine), and every hint that named one of these commands now says to run `basalt init`.
 - `docs/setup-from-laptop.md` and `docs/crash-reports.md`, with the commands and flags they described.
 - `basalt service uninstall`, with its flags. Removing BasaltDB on the setup page now also removes the engine service: when you remove within 90 seconds, the `basalt init` that opened the page asks for your password once; otherwise the page's last step asks you to tell your agent to finish, and its next `basalt init` asks for your password once in the system's administrator dialog, which stops the engine and plugin services and removes their units, the system directories (config, state, sockets, logs, the plugin base) and the engine's and plugins' OS users. The service stays while the engine still serves an agent of another database.
 - `basalt engine revoke` and its `--yes` flag, and the engine's handling of a revoked key on the relay. To cut an engine off, remove BasaltDB from the database on the setup page: that drops every `basalt_*` role, so the engine can no longer log in. A key revoked by hand in SQL still shows as `REVOKED` in `status`, and the engine no longer ends its relay links for it.

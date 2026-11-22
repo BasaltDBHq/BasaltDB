@@ -121,7 +121,8 @@ func TestConnConfigTrustingVerifiesASupabaseChain(t *testing.T) {
 	require.True(t, pgdial.CertificateNotVerified(err))
 	hinted := pgdial.WithCertificateHint("postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full", err)
 	require.ErrorAs(t, hinted, &verify)
-	require.Contains(t, hinted.Error(), "basalt trust add --name NAME --match '=db.example.com'")
+	require.Contains(t, hinted.Error(), "the certificate of db.example.com does not verify: trust its certificate authority on the page basalt init opens")
+	require.NotContains(t, hinted.Error(), "basalt trust")
 	require.Contains(t, hinted.Error(), "sslrootcert")
 	for dsn, want := range map[string]string{
 		"postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full&sslrootcert=system": "fix that root file",
@@ -129,7 +130,7 @@ func TestConnConfigTrustingVerifiesASupabaseChain(t *testing.T) {
 	} {
 		h := pgdial.WithCertificateHint(dsn, err)
 		require.Contains(t, h.Error(), want, dsn)
-		require.NotContains(t, h.Error(), "basalt trust add", dsn)
+		require.NotContains(t, h.Error(), "basalt init", dsn)
 	}
 	plain := errors.New("connection refused")
 	require.Same(t, plain, pgdial.WithCertificateHint("postgres://h/db", plain))

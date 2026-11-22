@@ -24,8 +24,7 @@ var connectSrc = regexp.MustCompile(`connect-src ([^;"]+)`)
 // portal the approve, revert and plugin pages reach the engine through the Vault
 // instead, so theirs adds wss://relay.basaltvault.app and nothing else. So must
 // the registration page, which posts the passkey back to basalt init when
-// init serves it. The passkey management page never fetches and keeps
-// 'none'.
+// init serves it.
 func TestPageCSPConnectSrc(t *testing.T) {
 	cases := map[string]string{
 		"approve/index.html":  "'self' wss://relay.basaltvault.app",
@@ -33,8 +32,7 @@ func TestPageCSPConnectSrc(t *testing.T) {
 		"plugin/index.html":   "'self' wss://relay.basaltvault.app",
 		"register/index.html": "'self'",
 		// The setup page posts the job to the engine's own setup routes.
-		"setup/index.html":    "'self'",
-		"passkeys/index.html": "'none'",
+		"setup/index.html": "'self'",
 		// The pin page reaches only the address it checks, which the
 		// portal's edge function adds for that request.
 		// The connect page reaches the connect service and nothing else.
@@ -91,7 +89,7 @@ func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
 		require.NotContains(t, strings.ToLower(string(body)), "touch id", p)
 		return nil
 	}))
-	for _, page := range []string{"approve", "revert", "plugin", "register", "passkeys", "connect", "setup"} {
+	for _, page := range []string{"approve", "revert", "plugin", "register", "connect", "setup"} {
 		body, err := web.Files.ReadFile(page + "/index.html")
 		require.NoError(t, err)
 		require.Contains(t, string(body), line, page)

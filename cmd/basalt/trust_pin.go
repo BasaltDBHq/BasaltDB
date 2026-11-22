@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/url"
 	"strconv"
@@ -86,15 +87,11 @@ var errNoPinNeeded = errors.New("no pin needed")
 // terminal and without it, the usage error names the flag and the
 // fingerprint seen. Under an agent marker or on an engine operatedBy AGENT
 // it pins nothing (refuseAgentTrust): an agent never creates trust.
-func (c *cliIO) askPin(t pinTarget, trustRoot, configPath, repinning string, agentOperated bool) (pinChoice, error) {
+func (c *cliIO) askPin(t pinTarget, trustRoot, configPath string, agentOperated bool) (pinChoice, error) {
 	if c.fetchChain == nil {
 		return pinChoice{}, errNoPinNeeded
 	}
-	set := trustdir.Set(configPath)
-	if repinning != "" {
-		set = withoutProfile(set, repinning)
-	}
-	if p := set.For(t.host); p != nil {
+	if p := trustdir.Set(configPath).For(t.host); p != nil {
 		return pinChoice{}, errNoPinNeeded
 	}
 	chain, err := c.fetchChain(c.ctx, t.host, t.port)
@@ -117,7 +114,7 @@ func (c *cliIO) askPin(t pinTarget, trustRoot, configPath, repinning string, age
 	if agentOperated {
 		return pinChoice{}, fmt.Errorf("%w: the engine is operatedBy AGENT", errAgentPin)
 	}
-	if err := c.refuseAgentTrust("pin", configPath); err != nil {
+	if err := c.refuseAgentTrust(configPath); err != nil {
 		return pinChoice{}, fmt.Errorf("%w: %w", errAgentPin, err)
 	}
 	c.showChainTop(t, seen)
@@ -168,7 +165,10 @@ func (c *cliIO) showChainTop(t pinTarget, seen trustpin.Seen) {
 func (c *cliIO) writePin(choice pinChoice, configPath string) error {
 	_, replaced, err := trustdir.Pin(configPath, choice.host, choice.top, choice.caOnly)
 	if err != nil {
-		return trustWriteError(c, "pin", err)
+		if errors.Is(err, fs.ErrPermission) && c.host.Euid() != 0 {
+			return fmt.Errorf("%w; trust.d belongs to the engine's user: run it with sudo", err)
+		}
+		return err
 	}
 	pgdial.SetTrust(trustdir.Source(configPath))
 	fmt.Fprintf(c.stderr, "basalt: pinned %s for %s in %s\n", trustprofile.Fingerprint(choice.top), choice.host, trustdir.Path(configPath))
@@ -185,57 +185,25 @@ func pinCommand(t pinTarget) string {
 	return "basalt trust pin --host " + shellQuote(t.host) + " --port " + strconv.Itoa(t.port)
 }
 
-// trustPin is basalt trust pin --host H [--port P] [--trust-root SHA256].
-func trustPin(c *cliIO, args []string) int {
-	fs := c.flags("trust pin")
-	host := fs.String("host", "", "the database host to pin, as the connection string names it")
-	port := fs.Int("port", defaultPGPort, "the database port")
-	trustRoot := fs.String("trust-root", "", "without a terminal: the SHA-256 of the certificate to pin, which must match what the server presents")
-	if err := parse(fs, args); err != nil {
-		return c.fail(err)
+// refuseAgentTrust refuses a pin when an agent marker is set or the engine
+// is operatedBy AGENT: an agent never adds a root. An engine.json that
+// exists and cannot be read is refused too.
+func (c *cliIO) refuseAgentTrust(configPath string) error {
+	if marker := c.agentMarker(); marker != "" {
+		return fmt.Errorf("the pin is refused: %s is set, so an agent is running it, and an agent never changes which root certificates "+
+			"are trusted. Nothing was written. The person trusts it on the page basalt init opens", marker)
 	}
-	configPath, err := c.findConfig()
-	if err != nil {
-		return c.fail(err)
-	}
-	if *host == "" {
-		return c.fail(fmt.Errorf("%w: --host is required: basalt trust pin --host H [--port P]", errUsage))
-	}
-	t := pinTarget{host: trustprofile.NormalizeHost(*host), port: *port}
-	choice, err := c.askPin(t, *trustRoot, configPath, c.repin(t, configPath), false)
+	cfg, err := loadEngineConfig(c, configPath)
 	switch {
-	case errors.Is(err, errNoPinNeeded):
-		fmt.Fprintf(c.stdout, "basalt: %s needs no pin: its certificate verifies already\n", t.host)
-		return exitOK
-	case errors.Is(err, errPinDeclined):
-		return c.fail(errors.New("you did not confirm; nothing was pinned"))
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
 	case err != nil:
-		return c.fail(err)
+		return fmt.Errorf("the pin is refused: %s cannot be read (%w), so whether an agent operates this engine is not known. Nothing was written", configPath, err)
+	case cfg.AgentOperated():
+		return fmt.Errorf("the pin is refused: this engine is operatedBy AGENT, so an agent could have run it, and an agent never changes which " +
+			"root certificates are trusted. Nothing was written. Name the root in the agent's connection string with sslrootcert instead")
 	}
-	if err := c.writePin(choice, configPath); err != nil {
-		return c.fail(err)
-	}
-	fmt.Fprintln(c.stderr, "basalt: the engine uses it from its next connection; no restart is needed")
-	return exitOK
-}
-
-// repin, when t.host already has a pin, shows it and names it, so askPin
-// leaves it out and asks about what the server presents now: a new root
-// after TRUST_ROOT_CHANGED. Nothing is written until the yes. "" when the
-// host has no pin.
-func (c *cliIO) repin(t pinTarget, configPath string) string {
-	p := trustdir.Set(configPath).For(t.host)
-	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(t.host) {
-		return ""
-	}
-	fmt.Fprintf(c.stderr, "basalt: %s is pinned to:\n", terminalText(t.host))
-	printRoots(c.stderr, p.Certificates())
-	return p.Name
-}
-
-// withoutProfile is set without the operator profile name.
-func withoutProfile(set *trustprofile.Set, name string) *trustprofile.Set {
-	return set.Replacing(name, nil)
+	return nil
 }
 
 // initPin is the pin an init offers for dsn's host before anything else
@@ -252,7 +220,7 @@ func (c *cliIO) initPin(dsn, trustRoot, configPath string, agentOperated bool) (
 		}
 		return pinChoice{}, false, nil
 	}
-	choice, err := c.askPin(t, trustRoot, configPath, "", agentOperated)
+	choice, err := c.askPin(t, trustRoot, configPath, agentOperated)
 	switch {
 	case err == nil:
 		return choice, true, nil
@@ -287,7 +255,7 @@ const codeTrustRootChanged = "TRUST_ROOT_CHANGED"
 // rootChanged is TRUST_ROOT_CHANGED for err, a certificate of dsn's host
 // that did not verify, when that host is pinned and the chain top it
 // presents now (read with the TLS handshake alone) is not the pinned one:
-// both fingerprints and the command that accepts the new one. Nil
+// both fingerprints and where the new one is accepted. Nil
 // otherwise. Never accepted automatically.
 func rootChanged(ctx context.Context, dsn string, err error) error {
 	return rootChangedVia(ctx, dsn, err, nil)
@@ -321,8 +289,8 @@ func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Di
 		pinnedTo = append(pinnedTo, trustprofile.Fingerprint(c))
 	}
 	return fmt.Errorf("%w; %s: %s presents the certificate authority SHA-256 %s, but it is pinned to %s. Check it against your "+
-		"provider's console; to accept it run: basalt trust pin --host %s --port %d", err, codeTrustRootChanged, host,
-		trustprofile.Fingerprint(top), strings.Join(pinnedTo, ", "), shellQuote(host), cfg.Port)
+		"provider's console; to accept it, run basalt init (basalt init --remote on an agent-operated engine) and trust it on the page it opens",
+		err, codeTrustRootChanged, host, trustprofile.Fingerprint(top), strings.Join(pinnedTo, ", "))
 }
 
 // namesOwnRoots reports whether dsn names its own roots (sslrootcert,

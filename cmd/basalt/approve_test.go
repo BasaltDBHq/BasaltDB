@@ -27,17 +27,6 @@ import (
 // same registration request basalt init builds.
 func fixedRand() io.Reader { return bytes.NewReader(bytes.Repeat([]byte{0x42}, 1024)) }
 
-// cliRand is cli with a fixed randomness source.
-func cliRand(t *testing.T, env map[string]string, stdin string, args ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr},
-		func(k string) string { return env[k] })
-	c.rand = fixedRand()
-	code := runGuard(c, args)
-	return result{code, stdout.String(), stderr.String()}
-}
-
 // registrationCode is what the registration page returns for the request
 // basalt init makes with fixedRand on database db.
 func registrationCode(t *testing.T, person *passkeytest.Authenticator, db string) string {

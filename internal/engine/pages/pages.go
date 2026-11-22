@@ -52,10 +52,6 @@ var PageRoutes = []PageRoute{
 	// (#2., #s=, #h=).
 	{Path: links.PluginsPath, ID: true, File: "plugin/index.html"},
 	{Path: links.RegisterPath, File: "register/index.html"},
-	// The passkey management page (M4.1): static, input in the fragment,
-	// no relay.
-	{Path: links.CheckPath, File: "passkeys/index.html"},
-	{Path: links.ForgetPath, File: "passkeys/index.html"},
 }
 
 // PortalRoutes are pages only the portal serves: the connect page

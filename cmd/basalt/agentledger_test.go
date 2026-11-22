@@ -14,7 +14,7 @@ import (
 
 // A person (not root) on a service engine cannot read its config or the
 // agent's credential, and no socket answers for them any more: approve,
-// revert and passkey say to use sudo and never read the files.
+// and revert say to use sudo and never read the files.
 func TestServiceModeAsAPersonSaysToUseSudo(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -24,7 +24,6 @@ func TestServiceModeAsAPersonSaysToUseSudo(t *testing.T) {
 	}{
 		{"approve", runApprove, []string{"--agent", "bot", "--show", "0190b4a0-0000-7000-8000-000000000000"}},
 		{"revert", runRevert, []string{"--agent", "bot", "--status", "0190b4a0-0000-7000-8000-000000000000"}},
-		{"passkey list", runPasskey, []string{"list", "--agent", "bot"}},
 	} {
 		var stderr bytes.Buffer
 		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })

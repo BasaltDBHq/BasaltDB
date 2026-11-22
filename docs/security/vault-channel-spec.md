@@ -185,7 +185,7 @@ Every failure from step 3 to step 5 closes with `LINK_REFUSED`, alike, so a prob
 | 4010 | `RATE_LIMITED` | engine, Vault | Too many handshakes, requests or connections |
 | 4011 | `SESSION_LIMIT` | engine, Vault | Too many open sessions for the link or the engine |
 | 4012 | `TIMEOUT` | page, engine, Vault | Handshake over 10 s, idle 5 minutes, or 30 minutes lifetime or link expiry |
-| 4013 | `ENGINE_REVOKED` | engine | The engine's key is revoked in the database of the session's agent: it closes that agent's open sessions with this code (section 8) |
+| 4013 | `ENGINE_REVOKED` | engine | Not sent: the engine does not act on a revocation (section 8). Kept so a page that gets it shows the engine offline |
 | 4014 | `ENGINE_SHUTDOWN` | engine | The engine is stopping |
 
 ```constants close-codes

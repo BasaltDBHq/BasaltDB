@@ -18,16 +18,16 @@
       "text": "Tell the person the table was not found or is not granted to you, and ask whether you should have it."
     },
     {
-      "action": "RUN_COMMAND",
-      "actor": "PERSON",
-      "command": "basalt access --agent bot",
-      "text": "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each."
-    },
-    {
       "action": "TELL_AGENT",
       "actor": "PERSON",
-      "text": "Tell the agent when it has the access, or which table to use instead."
+      "text": "Tell the agent to add the table once you decide it should have it, or which table to use instead."
+    },
+    {
+      "action": "RUN_COMMAND",
+      "actor": "AGENT",
+      "command": "basalt init --agent bot",
+      "text": "When the person tells you to add it, run this and show them the link it prints, where they grant the table."
     }
   ],
-  "personMessage": "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. An agent uses one database; a table in another database needs its own agent, added with basalt init --remote --agent NAME. To list the tables the agent cannot read, run: basalt access --agent bot"
+  "personMessage": "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. An agent uses one database; a table in another database needs its own agent. To give the agent a table, tell it: it gives you a link where you pick the tables."
 }

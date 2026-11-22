@@ -156,7 +156,7 @@ func ordersDetail() pgcatalog.Detail {
 func describeService(t *testing.T, cat Catalog, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	d.OperatedBy = operatedBy
@@ -374,11 +374,10 @@ func TestOverviewNotGrantedHasNoAskPerson(t *testing.T) {
 		body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, operatedBy), map[string]any{})
 		require.False(t, isError, body)
 		m := decodeBody(t, body)
-		require.Equal(t, []string{"PERSON RUN_COMMAND", "PERSON TELL_AGENT"}, stepKinds(t, m), operatedBy)
-		require.Contains(t, m["personMessage"], "basalt access --agent bot", operatedBy)
+		require.Equal(t, []string{"PERSON TELL_AGENT"}, stepKinds(t, m), operatedBy)
+		require.NotContains(t, m["personMessage"], "basalt ", "the person runs no command")
 		require.Contains(t, m["personMessage"], "3", operatedBy)
-		step := m["nextSteps"].([]any)[0].(map[string]any)
-		require.Equal(t, "basalt access --agent bot", step["command"], operatedBy)
+		require.Contains(t, m["personMessage"], "a link where you pick the tables", operatedBy)
 		require.EqualValues(t, 3, m["counts"].(map[string]any)["notGranted"])
 	}
 }
@@ -388,7 +387,7 @@ func TestOverviewLargeAndNotGrantedCarriesBoth(t *testing.T) {
 	cat := &fakeCatalog{visible: manyRelations(60), notGranted: 1}
 	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
 	require.False(t, isError, body)
-	require.Equal(t, []string{"AGENT CALL_TOOL", "PERSON RUN_COMMAND", "PERSON TELL_AGENT"}, stepKinds(t, decodeBody(t, body)))
+	require.Equal(t, []string{"AGENT CALL_TOOL", "PERSON TELL_AGENT"}, stepKinds(t, decodeBody(t, body)))
 }
 
 func TestOverviewFingerprintFollowsStructureGrantsAndPII(t *testing.T) {
@@ -420,11 +419,15 @@ func TestDescribeNotFoundSameForAbsentAndHidden(t *testing.T) {
 
 		m := decodeBody(t, absent)
 		require.Equal(t, CodeNotFound, m["code"])
-		require.Equal(t, []string{"AGENT CALL_TOOL", "AGENT ASK_PERSON", "PERSON RUN_COMMAND", "PERSON TELL_AGENT"}, stepKinds(t, m), operatedBy)
+		require.Equal(t, []string{"AGENT CALL_TOOL", "AGENT ASK_PERSON", "PERSON TELL_AGENT", "AGENT RUN_COMMAND"}, stepKinds(t, m), operatedBy)
 		steps := m["nextSteps"].([]any)
 		require.Equal(t, map[string]any{"query": "nosuch"}, steps[0].(map[string]any)["arguments"])
-		require.Equal(t, "basalt access --agent bot", steps[2].(map[string]any)["command"])
-		require.Contains(t, m["personMessage"], "basalt access --agent bot")
+		want := "basalt init --agent bot"
+		if operatedBy == mcpcontract.OperatedByAgent {
+			want += " --remote"
+		}
+		require.Equal(t, want, steps[3].(map[string]any)["command"])
+		require.NotContains(t, m["personMessage"], "basalt ", "the person runs no command")
 	}
 }
 
@@ -798,11 +801,11 @@ func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
 
 func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
+	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux")
 	require.NoError(t, err)
 	s := &Service{Deps: Deps{Commands: cmds}}
 	msg := s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
-	require.Contains(t, msg, "basalt init --remote --agent NAME")
-	require.Contains(t, msg, "another database")
+	require.Contains(t, msg, "another database needs its own agent")
+	require.NotContains(t, msg, "basalt ", "the person runs no command")
 	require.NoError(t, CheckPersonMessage(msg))
 }

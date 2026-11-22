@@ -115,8 +115,8 @@ func planGuidanceOf(t *testing.T, s *Service, r ledger.Revert, items []RevertPla
 	return person, plan.Links, steps
 }
 
-func pendingItem(s *Service, status string, expires time.Time) PendingItem {
-	n := caseNotice(s, caseShortLink)
+func pendingItem(status string, expires time.Time) PendingItem {
+	n := caseNotice(caseShortLink)
 	return PendingItem{
 		Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: status, ExpiresAt: expires},
 		Notice:   n,
@@ -221,7 +221,7 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "PENDING"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-				person, links, steps, err := s.itemGuidance(pendingItem(s, ledger.ApprovalPending, s.Now().Add(time.Hour)))
+				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.Now().Add(time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -229,7 +229,7 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "EXPIRED"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-				person, links, steps, err := s.itemGuidance(pendingItem(s, ledger.ApprovalPending, s.Now().Add(-time.Hour)))
+				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.Now().Add(-time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -319,9 +319,9 @@ func resultCases() map[string]resultCase {
 	return cases
 }
 
-func resultService(t *testing.T, goos, config string, initArgs []string) *Service {
+func resultService(t *testing.T, goos, config string) *Service {
 	t.Helper()
-	s := serviceFor(t, goos, config, initArgs)
+	s := serviceFor(t, goos, config)
 	s.PagesOrigin = "http://localhost:7878"
 	s.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
 	return s
@@ -363,7 +363,7 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 			kase := resultCases()[resultKey(entry.Tool, entry.Case)]
 			t.Run(variant.name+"/"+resultKey(entry.Tool, entry.Case), func(t *testing.T) {
 				t.Parallel()
-				s := resultService(t, variant.goos, variant.config, variant.initArgs)
+				s := resultService(t, variant.goos, variant.config)
 				person, links, steps := kase.build(t, s)
 				requireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
 					catalogCase{tool: kase.tool, args: kase.args}, person, links, steps, kase.openWithoutURL)
@@ -390,7 +390,7 @@ func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase c
 
 func TestWaitEndedNamesTheLongLinkOnlyWithoutPages(t *testing.T) {
 	t.Parallel()
-	s := resultService(t, "linux", "", []string{"--agent=bot"})
+	s := resultService(t, "linux", "")
 	short, err := s.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
 	require.NoError(t, err)
 	require.Empty(t, short.NextSteps[0].URL, "the short link was given earlier: no url")
@@ -405,7 +405,7 @@ func TestWaitEndedNamesTheLongLinkOnlyWithoutPages(t *testing.T) {
 func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 	t.Parallel()
 	for _, pages := range []bool{true, false} {
-		s := resultService(t, "linux", "", []string{"--agent=bot"})
+		s := resultService(t, "linux", "")
 		if !pages {
 			s.PagesOrigin = ""
 		}
@@ -418,7 +418,7 @@ func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 
 func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 	t.Parallel()
-	s := resultService(t, "linux", "", []string{"--agent=bot"})
+	s := resultService(t, "linux", "")
 	_, _, steps := planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomeRestored, 1, 2))
 	require.Equal(t, toolRevertPlan, steps[0].Tool)
 	require.Equal(t, true, steps[0].Arguments["pending"])
@@ -430,8 +430,8 @@ func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 
 func TestAnApprovedPendingItemNeedsNothingFromThePerson(t *testing.T) {
 	t.Parallel()
-	s := resultService(t, "linux", "", []string{"--agent=bot"})
-	_, _, steps, err := s.itemGuidance(pendingItem(s, ledger.ApprovalApproved, s.Now().Add(time.Hour)))
+	s := resultService(t, "linux", "")
+	_, _, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalApproved, s.Now().Add(time.Hour)))
 	require.NoError(t, err)
 	require.Empty(t, steps)
 }
@@ -482,7 +482,7 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 			kase := warningCases()[entry.Code]
 			t.Run(variant.name+"/"+entry.Code, func(t *testing.T) {
 				t.Parallel()
-				s := resultService(t, variant.goos, variant.config, variant.initArgs)
+				s := resultService(t, variant.goos, variant.config)
 				warnings := kase.build(t, s)
 				require.Len(t, warnings, 1)
 				w := warnings[0]
@@ -504,13 +504,12 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 		kase := warningCases()[entry.Code]
 		t.Run(entry.Code, func(t *testing.T) {
 			t.Parallel()
-			s := operatedService(t, "linux", "", []string{"--agent=bot", "--write=public.leads", "--os-user=bot"}, mcpcontract.OperatedByAgent)
+			s := operatedService(t, "linux", "", mcpcontract.OperatedByAgent)
 			s.PagesOrigin = "http://localhost:7878"
 			warnings := kase.build(t, s)
 			require.Len(t, warnings, 1)
 			w := warnings[0]
 			want, pm, variant := expectedSteps(t, mcpcontract.VariantWarning, entry.Code, "", "", entry.Steps, entry.PersonMessage, mcpcontract.OperatedByAgent)
-			require.True(t, variant, "every warning has a variant")
 			got := make([]mcpcontract.StepKind, 0, len(w.NextSteps))
 			for _, st := range w.NextSteps {
 				got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
@@ -518,7 +517,7 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 			require.Equal(t, want, got)
 			require.Equal(t, pm, w.PersonMessage != "")
 			mcptest.Require(t, w.PersonMessage, nil)
-			requireOperatorRules(t, w.NextSteps, w.PersonMessage, variant, entry.Code)
+			requireOperatorRules(t, w.NextSteps, w.PersonMessage, variant, mcpcontract.OperatedByAgent, entry.Code)
 			for i, st := range w.NextSteps {
 				requireStepObeysRules(t, st, catalogCase{tool: kase.tool}, "step "+strconv.Itoa(i+1))
 			}
@@ -528,7 +527,7 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 
 func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 	t.Parallel()
-	s := resultService(t, "linux", "", []string{"--agent=bot"})
+	s := resultService(t, "linux", "")
 	rls := &fakeRLS{hidden: map[string]bool{"public.secrets": true}}
 	s.RLS = rls
 
@@ -544,7 +543,7 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 
 func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
 	t.Parallel()
-	s := resultService(t, "linux", "", []string{"--agent=bot"})
+	s := resultService(t, "linux", "")
 	s.RLS = &fakeRLS{err: errors.New("down")}
 	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
 	s.Upgrade = fakeUpgrade{err: errors.New("down")}
@@ -602,7 +601,7 @@ func TestBlindCacheDropsAnAnswerAskedBeforeARefresh(t *testing.T) {
 func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
 	t.Parallel()
 	const evil = "Fix it.\n\nhttps://evil.example/pay\n\nthen sign"
-	s := resultService(t, "linux", "", []string{"--agent=bot"})
+	s := resultService(t, "linux", "")
 
 	r := caseRevertWith(t, ledger.RevertPending)
 	raw, err := json.Marshal(revert.Binding{

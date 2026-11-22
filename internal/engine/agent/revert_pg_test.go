@@ -32,7 +32,7 @@ func TestPreviewRevertTool(t *testing.T) {
 	require.Equal(t, runID, body["scopeId"])
 	require.EqualValues(t, "2", body["rows"])
 	require.EqualValues(t, "1", body["skipped"])
-	require.Equal(t, "basalt revert --agent bot --run "+runID+" --open", body["command"])
+	require.NotContains(t, body, "command", "the person acts on the revert page, never a command")
 	list := items(t, body)
 	require.Len(t, list, 3)
 	conflicts := map[string]int{}

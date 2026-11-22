@@ -16,7 +16,7 @@
       {
         "action": "END_TURN",
         "actor": "AGENT",
-        "text": "The person signs the plan with basalt revert; end your turn and apply it when they say they signed."
+        "text": "The person signs the plan on the revert page; end your turn and apply it when they say they signed."
       }
     ],
     "reason": "PLAN_NOT_SIGNED",

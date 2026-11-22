@@ -28,12 +28,11 @@ type PreviewRevertParams struct {
 }
 
 // RevertPreview is one page of what a revert would do, with the totals of
-// the whole preview and the command the person runs to revert.
+// the whole preview.
 type RevertPreview struct {
 	Scope   action.Scope
 	Rows    int
 	Skipped int
-	Command string
 	Page    pagination.Page[revert.Line]
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
@@ -63,7 +62,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
 		return RevertPreview{}, s.nothingToRevertError(ctx, toolPreviewRevert, p.Scope, skipReason(pv), "every row is skipped")
 	}
-	out := RevertPreview{Scope: p.Scope, Command: s.Commands.Revert(p.Scope), Rows: pv.Restore, Skipped: pv.Lines - pv.Restore}
+	out := RevertPreview{Scope: p.Scope, Rows: pv.Restore, Skipped: pv.Lines - pv.Restore}
 	out.Page.Items = make([]revert.Line, 0, len(pv.Page))
 	for _, pl := range pv.Page {
 		l, err := revert.ParseMarkedLine(pl.Text)
@@ -137,7 +136,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 	}
 	if !r.Batched {
 		return RevertPlan{}, &ArgumentError{Message: fmt.Sprintf(
-			"revert %s has %d lines: basalt revert applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
+			"revert %s has %d lines: the revert page applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
 	page, err := s.Store.RevertLines(ctx, p)
 	if err != nil {
@@ -579,24 +578,22 @@ func notOwnScope(scope action.Scope) error {
 		Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
 			"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
 				"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
-				"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
+				"a person can revert any change, run or task on the revert page that agent's request opens", kind, scope.ID, kind),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
 			"This id is not one of your runs or changes; list your runs.")},
 	}
 }
 
 // notOwnTask is a task this agent has no run in (RS-6): NOT_FOUND reason
-// TASK, the same answer whether or not other agents ran in it. The command
-// leaves the agent for the person to fill in: this agent cannot see who ran
-// in the task (N12-R1).
+// TASK, the same answer whether or not other agents ran in it. The message
+// names no agent: this agent cannot see who ran in the task (N12-R1).
 func notOwnTask(scope action.Scope) error {
 	return &mcp.ToolError{
 		Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
 			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
 				"check the task id in list_runs", scope.ID),
-		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, run "+
-			"basalt revert --agent <agent> --task %s --open with an agent that ran in it, or ask that agent to request the revert.",
-			scope.ID, scope.ID),
+		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, ask an agent that ran in it "+
+			"to request the revert: you can include the other agents' changes on its signing page.", scope.ID),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
 			"This task has none of your runs; list your runs.")},
 	}

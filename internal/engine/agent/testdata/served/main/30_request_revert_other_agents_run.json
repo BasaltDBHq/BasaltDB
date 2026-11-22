@@ -2,7 +2,7 @@
   "body": {
     "code": "NOT_FOUND",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
-    "message": "run <id-23> is not one of this agent's runs; nothing was prepared. An agent reverts only its own changes, runs and tasks it ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; a person can revert any change, run or task with basalt revert",
+    "message": "run <id-23> is not one of this agent's runs; nothing was prepared. An agent reverts only its own changes, runs and tasks it ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; a person can revert any change, run or task on the revert page that agent's request opens",
     "nextSteps": [
       {
         "action": "CALL_TOOL",

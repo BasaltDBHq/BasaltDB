@@ -74,7 +74,7 @@
       "type": "object",
       "description": "APPROVAL_REQUIRED only: the held write (CONTRACT.md, Error codes).",
       "additionalProperties": false,
-      "required": ["approvalId", "expiresAt", "rows", "headline", "approveCommand", "personMessage"],
+      "required": ["approvalId", "expiresAt", "rows", "headline", "personMessage"],
       "properties": {
         "approvalId": { "type": "string", "format": "uuid" },
         "expiresAt": { "type": "string", "format": "date-time" },
@@ -85,7 +85,6 @@
           "$ref": "../links/request-file.schema.json",
           "description": "Only with a hash link in approvalUrl: the request to send the person as a file or text blocks (CONTRACT.md, The request file and pasted blocks)."
         },
-        "approveCommand": { "type": "string" },
         "personMessage": { "type": "string" },
         "links": {
           "type": "array",

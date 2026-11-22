@@ -255,7 +255,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,
 	}, a.Setup)
 	require.Contains(t, a.InitArgs, "--operated-by=agent")
-	_, err = agent.NewCommands(a.Name, cfg, "linux", a.InitArgs)
+	_, err = agent.NewCommands(a.Name, cfg, "linux")
 	require.NoError(t, err, "the saved flags are ones the engine accepts")
 	pages, err := r.cfg.Pages()
 	require.NoError(t, err)
@@ -304,14 +304,17 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	for _, s := range res.NextSteps {
 		got = append(got, mcpcontract.StepKind{Actor: s.Actor, Action: s.Action})
 	}
-	require.Equal(t, want, got, "P RUN_COMMAND, P TELL_AGENT, A END_TURN, A CALL_TOOL status")
+	// The laptop command, which goes with the laptop setup code, stands in
+	// the catalog's first step, the agent's basalt init.
+	require.Equal(t, append([]mcpcontract.StepKind{{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand}}, want[1:]...), got,
+		"P RUN_COMMAND, P TELL_AGENT, A END_TURN, A CALL_TOOL status")
 	require.Equal(t, "basalt init --setup-code "+res.Code, res.NextSteps[0].Command)
 	require.Equal(t, "status", res.NextSteps[3].Tool)
 }
 
 // requireConnectGuidance checks a result that carries the connect link: the
 // link is the code in the portal's fragment, on a line of its own in the
-// message with its label, and the first step; the laptop command is the second.
+// message with its label, and the first step; no laptop command follows.
 func requireConnectGuidance(t *testing.T, res RemoteInitResult, want []mcpcontract.StepKind) {
 	t.Helper()
 	require.Equal(t, links.Portal+"/connect#"+res.Code, res.ConnectURL)
@@ -319,8 +322,7 @@ func requireConnectGuidance(t *testing.T, res RemoteInitResult, want []mcpcontra
 	pm := res.PersonMessage
 	require.Contains(t, pm, "\n\n"+res.ConnectURL+"\n\n", "the link stands on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
-	require.Contains(t, pm, "basalt init --setup-code")
-	require.Less(t, strings.Index(pm, res.ConnectURL), strings.Index(pm, "basalt init --setup-code"), "the link first")
+	require.NotContains(t, pm, "basalt init", "the person runs no command")
 	mcptest.Require(t, pm, res.Links)
 	got := make([]mcpcontract.StepKind, 0, len(res.NextSteps))
 	for _, st := range res.NextSteps {
@@ -328,8 +330,8 @@ func requireConnectGuidance(t *testing.T, res RemoteInitResult, want []mcpcontra
 	}
 	require.Equal(t, want, got)
 	require.Equal(t, res.ConnectURL, res.NextSteps[0].URL)
-	require.Equal(t, "basalt init --setup-code "+res.Code, res.NextSteps[1].Command)
-	require.Equal(t, "status", res.NextSteps[4].Tool)
+	require.Equal(t, mcp.ActionTellAgent, res.NextSteps[1].Action, "no laptop command after the link")
+	require.Equal(t, "status", res.NextSteps[3].Tool)
 }
 
 // An agent-operated engine with the Vault on prints the connect link; a

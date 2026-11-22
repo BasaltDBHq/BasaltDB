@@ -63,6 +63,8 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	list := cliOn(t, h, nil, "", "access", "--agent", "bot")
 	require.Equal(t, exitOK, list.code, list.stderr)
 	require.Contains(t, list.stdout, "Can write\n  public.leads")
+	// access prints no command: the person grants a table on a page.
+	require.NotContains(t, list.stdout, "basalt init")
 	// The commands access prints name the per-user config.
 	require.NotContains(t, list.stdout, "--config")
 

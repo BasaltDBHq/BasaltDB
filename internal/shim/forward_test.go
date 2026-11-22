@@ -63,7 +63,7 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 		}
 	}()
 
-	cmds, err := agent.NewCommands("bot", "", "linux", nil)
+	cmds, err := agent.NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	inR, inW := io.Pipe()

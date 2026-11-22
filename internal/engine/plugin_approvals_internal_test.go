@@ -643,7 +643,7 @@ func TestApprovalsUnreadableWriteNothing(t *testing.T) {
 			require.Equal(t, agent.ProblemPluginUnavailable, prob.Code)
 			require.Contains(t, prob.Message, c.want)
 			if name == "guard older than 5" {
-				require.Contains(t, prob.Message, "basalt upgrade")
+				require.Contains(t, prob.Message, "basalt init")
 			}
 			require.Equal(t, before, kindsOf(l.events(t, "product_a")), "nothing written: the approval does not end")
 

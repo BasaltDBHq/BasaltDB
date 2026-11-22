@@ -96,7 +96,7 @@ const (
 	noticeMoreReports = ", and %d more reports"
 	noticeMoreAgents  = "and %d more agents"
 	noticeEarlier     = "and %d earlier reinstalls"
-	noticeRunLog      = "Run basalt log to see every report."
+	noticeRunLog      = "Older reports stay in the ledger's install records."
 )
 
 // Cuts that keep the status personMessage within its limit.

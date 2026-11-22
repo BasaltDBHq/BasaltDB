@@ -13,7 +13,7 @@
       "revertId": {
         "type": "string",
         "format": "uuid",
-        "description": "The revert id basalt revert printed."
+        "description": "The revert id request_revert returned."
       },
       "pending": {
         "type": "boolean",

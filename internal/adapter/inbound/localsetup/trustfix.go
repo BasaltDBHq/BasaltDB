@@ -203,7 +203,7 @@ func (s *Service) trustPlan(ctx context.Context, tx pgx.Tx, j agentJob, tc trust
 	}
 	recorded, ok, err := guard.RecordedTrustPinTx(ctx, tx, j.names, tc.host, tc.port)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("read the recorded trust pin", err)
 	}
 	if !ok || pinHolds(tc.pin, recorded) {
 		return CheckAnswer{}, nothingToFix()
@@ -234,7 +234,7 @@ func (s *Service) checkTrust(ctx context.Context, j agentJob) (CheckAnswer, erro
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	out, err := s.trustPlan(ctx, tx, j, tc)
@@ -273,7 +273,7 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 			sha = plan.Pinned
 		}
 		if err := guard.RecordTrustPin(ctx, tx, tc.host, tc.port, sha); err != nil {
-			return setupFailed()
+			return setupFailed("record the trust pin", err)
 		}
 		if !tc.changed {
 			now, err := s.hostOf(j.agent)

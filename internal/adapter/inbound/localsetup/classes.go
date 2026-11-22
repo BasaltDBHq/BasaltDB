@@ -173,7 +173,7 @@ func writeLabels(ctx context.Context, tx pgx.Tx, names guard.Names, picks []Tabl
 		return 0, refuse(CodeClassesChanged, "A column's label changed since the page showed it (someone classified it, or the column is gone), so nothing changed. Read the labels again.")
 	}
 	if err != nil {
-		return 0, setupFailed()
+		return 0, setupFailed("write the labels", err)
 	}
 	return n, nil
 }

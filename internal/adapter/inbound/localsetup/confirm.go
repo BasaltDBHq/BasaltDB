@@ -39,7 +39,7 @@ func (s *Service) readConfirm(ctx context.Context, tx pgx.Tx, conn *pgx.Conn, ds
 	var user string
 	// A SQL keyword squirrel cannot express.
 	if err := tx.QueryRow(ctx, `SELECT session_user::text`).Scan(&user); err != nil {
-		return confirmFacts{}, setupFailed()
+		return confirmFacts{}, setupFailed("read the admin user", err)
 	}
 	kind, provider := setup.CertificateOwn, ""
 	if pinned == nil {

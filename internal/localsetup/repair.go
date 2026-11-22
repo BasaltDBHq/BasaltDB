@@ -167,7 +167,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 // install makes it. On a host this engine pins the credential uses
 // sslmode=verify-full with no sslrootcert, so the pin applies.
 func (s *Service) newCredential(j agentJob, dsn, password string) (string, error) {
-	out := ""
+	var out string
 	if j.missing {
 		made, err := guard.AgentConnString(j.req.DatabaseURL, j.role, password)
 		if err != nil {

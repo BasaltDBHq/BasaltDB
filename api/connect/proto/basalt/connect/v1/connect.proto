@@ -193,6 +193,9 @@ message CheckSetupResponse {
   string session_user = 13 [(sensitive) = true];
   // What verified the database's certificate, for the confirm step.
   Certificate certificate = 14;
+  // current_database() on the pasted string's login, which the confirm
+  // step names. Sensitive, as database is.
+  string current_database = 15 [(sensitive) = true];
 }
 
 // The database's certificate as the confirm step shows it.

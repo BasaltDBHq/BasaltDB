@@ -1195,7 +1195,7 @@ function trustService(first = ROOT) {
     DescribeSetup: () => ({ body: { summary: summary("INSTALL"), challenge: challenge() } }),
     CheckSetup: (req) => (++checks === 1 || req.trustRoot !== first.sha256
       ? { status: 400, body: refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, first) }
-      : { body: { questions: [], database: { host: "34.120.1.2", port: 5432, database: "app" } } }),
+      : { body: { questions: [], database: { host: "34.120.1.2", port: 5432, database: "app" }, currentDatabase: "app", sessionUser: "admin" } }),
     RunSetup: () => ({ body: { warnings: [], passkeys: [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }] } }),
   });
 }
@@ -1231,6 +1231,25 @@ test("the provider's own certificate authority: one confirm step that also trust
   assert.equal(shown(nodes), "s-done");
   assert.equal(flow.holdsConnectionString, false);
   assert.ok(!methods().includes("HandoffStatus"));
+});
+
+test("signed in somewhere else than the string named: the confirm step again, with what the service reached", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: summary("INSTALL"), challenge: challenge() } }),
+    CheckSetup: (req) => (req.trustRoot !== ROOT.sha256
+      ? { status: 400, body: refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, ROOT) }
+      : { body: { questions: [], database: { host: "34.120.1.2", port: 5432, database: "app" }, currentDatabase: "postgres", sessionUser: "admin" } }),
+  });
+  await toPaste(nodes, env(fetchFn));
+  await paste(nodes, BY_IP);
+  await nodes["confirm-go"].click();
+  assert.equal(shown(nodes), "s-confirm", "asked again");
+  assert.deepEqual(facts(nodes), ["Database: postgres", "Host: 34.120.1.2:5432", "Signed in as: admin", "Certificate: Not known"]);
+  const sent = calls.length;
+  await nodes["confirm-go"].click();
+  assert.equal(shown(nodes), "s-tables");
+  assert.equal(calls.length, sent);
 });
 
 test("No, go back drops the string and sends nothing: no trustRoot without the click", async () => {
@@ -1652,7 +1671,7 @@ function pinService(trustPin) {
     check: (req) => {
       checks++;
       if (req.trustRoot !== ROOT.sha256) return { status: 412, body: refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, ROOT) };
-      return { body: { columns: [], passkeys: [PORTAL_KEY] } };
+      return { body: { columns: [], passkeys: [PORTAL_KEY], database: { host: "db.example.com", port: 5432, database: "app" }, currentDatabase: "app", sessionUser: "admin" } };
     },
   });
 }

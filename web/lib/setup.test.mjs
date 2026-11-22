@@ -642,6 +642,21 @@ test("the provider's own certificate: the same confirm step trusts it on Yes, th
   assert.equal(e.bodies.at(-1).body.trustRoot, FP);
 });
 
+test("signed in somewhere else than the string named: the confirm step again, with what the engine reached", async () => {
+  const nodes = fakePage();
+  const refusal = { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: { subject: "CN=Acme Root", sha256: FP, expiresAt: "2031-05-01T00:00:00Z" } };
+  const e = fakeEngine({ answer: (path, body) => body.trustRoot ? (body.tables ? null : new Response(JSON.stringify({ ...listing, database: "other_db", sessionUser: "cloudsqladmin", certificate: { kind: "OWN", issuer: "Acme Root" } }), { status: 200 })) : new Response(JSON.stringify(refusal), { status: 409 }) });
+  await toTables(nodes, e);
+  await nodes["confirm-go"].click();
+  assert.equal(screenOf(nodes), "s-confirm", "asked again");
+  assert.deepEqual(facts(nodes), ["Database: other_db", "Host: db.example.com:5432", "Signed in as: cloudsqladmin", "Certificate: Acme Root"]);
+  assert.equal(nodes["confirm-details"].hidden, true, "nothing more to trust");
+  const sent = e.bodies.length;
+  await nodes["confirm-go"].click();
+  assert.equal(screenOf(nodes), "s-tables");
+  assert.equal(e.bodies.length, sent, "the second Yes sends nothing");
+});
+
 test("a run refused because the tables changed goes back to the string", async () => {
   const nodes = fakePage();
   const e = fakeEngine({ answer: (path) => path === RUN_PATH ? new Response(JSON.stringify({ code: "TABLES_CHANGED", message: "A table changed." }), { status: 409 }) : null });
@@ -763,7 +778,7 @@ const allGood = {
 };
 const needs = {
   ...allGood,
-  certificate: { state: "CHANGED", host: "db.example.com", port: 5432, pinned: FP, presented: ROOT, pinnedSubject: "CN=Provider Root,O=Provider", database: "shop_db" },
+  certificate: { state: "CHANGED", host: "db.example.com", port: 5432, pinned: FP, presented: ROOT, pinnedSubject: "CN=Provider Root,O=Provider", database: "shop_db", sameIssuer: true },
   labels: { state: "UNKNOWN", count: 0, columns: [] }, passkeys: { state: "UNKNOWN", items: [] },
 };
 
@@ -875,7 +890,7 @@ test("the Update check shows what needs the person, then Fix these walks the fix
 
 test("a certificate from a new issuer: the cautious words, Trust it anyway the weaker button, Stop here trusts nothing", async () => {
   const nodes = fakePage();
-  const other = { ...needs, certificate: { ...needs.certificate, pinnedSubject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc" } };
+  const other = { ...needs, certificate: { ...needs.certificate, pinnedSubject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc", sameIssuer: false } };
   const e = updateEngine([other, allGood], {
     TRUST: (path, body) => (body.trustRoot ? { database: "shop_db", lines: [], sql: "" } : { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: ROOT, pinned: FP }),
   });

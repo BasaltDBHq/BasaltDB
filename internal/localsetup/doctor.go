@@ -84,6 +84,9 @@ type DoctorCertificate struct {
 	// reads nothing from the database then).
 	PinnedSubject string `json:"pinnedSubject,omitempty"`
 	Database      string `json:"database,omitempty"`
+	// SameIssuer is CHANGED's: the presented top has the public key of the
+	// pinned certificate, or the pinned certificate signed it (sameIssuer).
+	SameIssuer bool `json:"sameIssuer"`
 }
 
 // DoctorLogin is why the agent could not log in: status's problem code and
@@ -203,7 +206,7 @@ func (s *Service) certificateChanged(ctx context.Context, a config.Agent, out *D
 	}
 	out.Certificate = DoctorCertificate{
 		State: StateChanged, Host: h.host, Port: h.port, Pinned: pinnedSHA(h.pin, ""), Presented: presentedRoot(seen),
-		PinnedSubject: pinnedSubject(h.pin, ""), Database: h.database,
+		PinnedSubject: pinnedSubject(h.pin, ""), Database: h.database, SameIssuer: sameIssuer(h.pin, seen.Top),
 	}
 	return true
 }

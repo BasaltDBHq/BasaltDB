@@ -7,7 +7,7 @@ import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./
 import { $, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
-import { confirmView, paintConfirm, stringFacts } from "./confirm.js";
+import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
 import { checkView, fixQueue, passkeyItems, PASSKEYS_NOTE, signalRemoved } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
@@ -824,10 +824,12 @@ export function startReal(link, env) {
   // ---- 2b: Is this your database? One action: the database, its host,
   // who the string signs in as and the certificate. For a certificate
   // authority the provider runs itself, Yes is also the trust in it. ----
+  let shownFacts = null; // what the confirm step showed
   const showConfirm = () => {
     const view = install.asking
       ? confirmView({ facts: install.stringFacts, asking: install.asking })
       : confirmView({ facts: install.listing.facts, certificate: install.listing.certificate });
+    shownFacts = view.facts;
     paintConfirm(document, view);
     show("confirm-error", false);
     go("s-confirm");
@@ -844,6 +846,9 @@ export function startReal(link, env) {
       showPaste(err.message);
       return;
     }
+    // The step showed what the string names; once signed in, the engine
+    // says what it reached. Anything else is asked again.
+    if (answer !== null && factsDiffer(shownFacts, install.listing.facts)) return showConfirm();
     listed(answer);
   });
   $("confirm-back").addEventListener("click", () => {
@@ -1440,7 +1445,7 @@ export function startUpdate(link, env) {
       user: String(named.user ?? ""),
     };
     const pinnedSubject = typeof cert.pinnedSubject === "string" ? cert.pinnedSubject : "";
-    paintConfirm(document, confirmView({ facts, asking: trustRoot, renewal: { pinnedSubject }, trustPin: pinned }));
+    paintConfirm(document, confirmView({ facts, asking: trustRoot, renewal: { pinnedSubject, sameIssuer: cert.sameIssuer === true }, trustPin: pinned }));
     problem("confirm-error", "");
     go("s-confirm");
   };

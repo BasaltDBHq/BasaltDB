@@ -425,6 +425,7 @@ func TestTrustFixReplacesThePinOfAChangedCertificate(t *testing.T) {
 	require.Equal(t, newSHA, got.Certificate.Presented.SHA256)
 	require.Equal(t, trustpin.SubjectOf(tf.oldCA), got.Certificate.PinnedSubject, "the old pin's issuer, read from its PEM in trust.d")
 	require.Equal(t, "app", got.Certificate.Database, "the database the agent's credential names")
+	require.False(t, got.Certificate.SameIssuer, "another key under the same name is a new issuer")
 	require.Nil(t, got.Login)
 	require.Equal(t, localsetup.StateUnknown, got.Labels.State, "nothing is read while the certificate changed")
 	require.Equal(t, localsetup.StateUnknown, got.Passkeys.State)

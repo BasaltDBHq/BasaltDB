@@ -195,12 +195,13 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 		if d, derr := setup.Describe(req); derr == nil && d.Target == nil {
 			at := setup.ConnDatabase(conn.Config())
 			if !s.otherTarget(d, at) {
-				user, uerr := setup.SessionUser(ctx, conn)
+				who, uerr := setup.ConnectedAs(ctx, conn)
 				if uerr != nil {
 					return nil, refuse(uerr)
 				}
 				return connect.NewResponse(&connectv1.CheckSetupResponse{
-					Database: target(at), AlreadyRan: true, SessionUser: user, Certificate: certificateOf(conn, r.Msg.GetTrustRoot()),
+					Database: target(at), AlreadyRan: true, SessionUser: who.User, CurrentDatabase: who.Database,
+					Certificate: certificateOf(conn, r.Msg.GetTrustRoot()),
 				}), nil
 			}
 		}
@@ -210,7 +211,7 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	}
 	out := &connectv1.CheckSetupResponse{
 		PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil, Database: target(c.Database), Tables: slices.Clone(c.Tables),
-		SessionUser: c.SessionUser, Certificate: certificateOf(conn, r.Msg.GetTrustRoot()),
+		SessionUser: c.Connected.User, CurrentDatabase: c.Connected.Database, Certificate: certificateOf(conn, r.Msg.GetTrustRoot()),
 	}
 	for _, e := range c.Excluded {
 		out.Excluded = append(out.Excluded, &connectv1.ExcludedTable{Table: e.Table, Owner: e.Owner})

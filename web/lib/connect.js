@@ -20,7 +20,7 @@ import { browserFetch } from "./transport.js";
 import { startTabs } from "./remove.js";
 import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
 import { ADD_AGAIN, activePasskeys, checkView, passkeyLabel, passkeyLine, revokeLines, signalRemoved, unlabeledColumns } from "./connectupdate.js";
-import { confirmView, paintConfirm, stringFacts } from "./confirm.js";
+import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
 
 // The pieces the local setup page shares with this one.
 export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText };
@@ -442,7 +442,7 @@ export class Flow {
       return confirmView({ facts: stringFacts(this.#databaseUrl), asking: this.asking, trustPin: this.summary?.trustPin ?? "", bot });
     }
     const t = this.check?.database ?? {};
-    const facts = { database: t.database, host: t.host, port: t.port, user: this.check?.sessionUser ?? "" };
+    const facts = { database: this.check?.currentDatabase || t.database, host: t.host, port: t.port, user: this.check?.sessionUser ?? "" };
     return confirmView({ facts, certificate: this.check?.certificate ?? null, bot });
   }
 
@@ -554,6 +554,7 @@ export class Flow {
       // The confirm step's: the role the string signed in as, and what
       // verified the certificate.
       sessionUser: typeof out.sessionUser === "string" ? out.sessionUser : "",
+      currentDatabase: typeof out.currentDatabase === "string" ? out.currentDatabase : "",
       certificate: out.certificate && typeof out.certificate === "object" ? out.certificate : null,
       // For a code with a target: every active passkey of the database
       // (CONTRACT.md, Update on the connect page).
@@ -1086,8 +1087,11 @@ export function start(env) {
   // authority the provider runs itself (the trust step), Yes is also the
   // person's trust in it, and it alone sends the trustRoot. The bot's pin
   // changes only the words (CONTRACT.md, The bot's pin). ----
+  let shownFacts = null; // what the confirm step showed
   const showConfirm = (problem) => {
-    paintConfirm(document, flow.confirm());
+    const view = flow.confirm();
+    shownFacts = view.facts;
+    paintConfirm(document, view);
     setText("confirm-error", problem);
     show("confirm-error", problem !== "");
     go("s-confirm");
@@ -1115,6 +1119,9 @@ export function start(env) {
     } finally {
       $("confirm-go").disabled = false;
     }
+    // The step showed what the string names; once signed in, the service
+    // says what it reached. Anything else is asked again.
+    if (factsDiffer(shownFacts, flow.confirm().facts)) return showConfirm("");
     await checked();
   });
   $("confirm-back").addEventListener("click", () => {

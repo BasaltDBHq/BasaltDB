@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { certificateLine, confirmView, nameOf, paintConfirm, stringFacts } from "./confirm.js";
+import { certificateLine, confirmView, factsDiffer, nameOf, paintConfirm, stringFacts } from "./confirm.js";
 
 const FACTS = { database: "shop_db", host: "db.acme.internal", port: 5432, user: "postgres" };
 const CLOUD_SQL = "CN=Google Cloud SQL Server CA,O=Google\\, Inc,C=US,2.5.4.46=#130131";
@@ -79,9 +79,9 @@ test("the bot's pin matches: ✓ Matches what <bot> trusts, still a click", () =
   for (const bad of ["", "AB".repeat(32), "ab".repeat(31), undefined]) assert.equal(confirmView({ facts: FACTS, asking: ASKING, trustPin: bad }).variant, "OWN", String(bad));
 });
 
-test("renewed by the same issuer: Is this still your database?", () => {
-  const v = confirmView({ facts: FACTS, asking: ASKING, renewal: { pinnedSubject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc,C=US,2.5.4.46=#130132" }, trustPin: "cd".repeat(32) });
-  assert.equal(v.variant, "RENEWED", "the name, not the whole subject: a provider's renewal changes its serial attributes");
+test("renewed by the same issuer, as the engine says from the keys: Is this still your database?", () => {
+  const v = confirmView({ facts: FACTS, asking: ASKING, renewal: { pinnedSubject: CLOUD_SQL, sameIssuer: true }, trustPin: "cd".repeat(32) });
+  assert.equal(v.variant, "RENEWED");
   assert.equal(v.title, "Is this still your database?");
   assert.equal(v.sub, "Providers renew certificates about once a year.");
   assert.equal(v.ok, "✓ Same issuer as before");
@@ -89,6 +89,22 @@ test("renewed by the same issuer: Is this still your database?", () => {
   assert.equal(v.weak, false);
   assert.equal(v.back, "Not expecting this? Stop here");
   assert.equal(v.trusts, true);
+});
+
+test("the same name under another key is a new issuer: names are never compared", () => {
+  const v = confirmView({ facts: FACTS, asking: ASKING, renewal: { pinnedSubject: CLOUD_SQL, sameIssuer: false }, trustPin: "cd".repeat(32) });
+  assert.equal(v.variant, "NEW_ISSUER");
+  assert.equal(v.ok, "");
+  assert.equal(v.go, "Trust it anyway");
+  assert.equal(v.before, "Before: Google Cloud SQL Server CA");
+  assert.equal(confirmView({ facts: FACTS, asking: ASKING, renewal: { pinnedSubject: CLOUD_SQL } }).variant, "NEW_ISSUER", "no answer is not the same");
+});
+
+test("what the server reached differs from what the string named: asked again", () => {
+  assert.equal(factsDiffer(FACTS, { ...FACTS, host: "DB.ACME.INTERNAL" }), false);
+  assert.equal(factsDiffer(FACTS, { ...FACTS, port: undefined }), false, "5432 by default");
+  for (const k of ["database", "host", "user"]) assert.equal(factsDiffer(FACTS, { ...FACTS, [k]: "other" }), true, k);
+  assert.equal(factsDiffer(FACTS, { ...FACTS, port: 6543 }), true);
 });
 
 test("a new issuer, or one not known: the cautious words and the weaker button", () => {

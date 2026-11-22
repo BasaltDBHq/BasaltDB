@@ -60,10 +60,17 @@ func CertificateOf(conn *pgx.Conn, kind CertificateKind, provider string) Certif
 	return Certificate{Kind: kind, Issuer: trustpin.IssuerOf(tc.ConnectionState())}
 }
 
-// SessionUser is the role conn logged in as, as the server says it.
-func SessionUser(ctx context.Context, conn *pgx.Conn) (string, error) {
-	var user string
-	// A SQL keyword squirrel cannot express.
-	err := conn.QueryRow(ctx, `SELECT session_user::text`).Scan(&user)
-	return user, err
+// Connected is the database and the role a connection reached, as the
+// server says them: current_database() and session_user, never a name read
+// from the connection string.
+type Connected struct {
+	Database, User string
+}
+
+// ConnectedAs is what conn reached (Connected).
+func ConnectedAs(ctx context.Context, conn *pgx.Conn) (Connected, error) {
+	var c Connected
+	// A catalog function and a SQL keyword squirrel cannot express.
+	err := conn.QueryRow(ctx, `SELECT pg_catalog.current_database()::text, session_user::text`).Scan(&c.Database, &c.User)
+	return c, err
 }

@@ -102,11 +102,14 @@ const OWN_SUB = "Your provider signs its own security certificate, so confirming
 //   certificate: the check's certificate, when the string logged in;
 //   asking: the refusal's certificate authority to trust ({ subject,
 //     sha256, expiresAt }), when it did not;
-//   renewal: { pinnedSubject } on the Update check's new certificate (the
-//     subject of the certificate the engine has pinned);
+//   renewal: { pinnedSubject, sameIssuer } on the Update check's new
+//     certificate: the subject of the certificate the engine has pinned,
+//     shown as Before, and the engine's answer whether the new one has its
+//     key or was signed by it (names are never compared: anyone can give a
+//     certificate any name);
 //   trustPin, bot: the connect page's code's pin and the bot's name.
-// It returns { variant, title, sub, rows, ok, before, go, weak, back,
-// fingerprint, trusts }. trusts says that Yes sends asking's SHA-256 as
+// It returns { variant, facts, title, sub, rows, ok, before, go, weak,
+// back, fingerprint, trusts }. trusts says that Yes sends asking's SHA-256 as
 // trustRoot: only a click on Yes does.
 export function confirmView({ facts, certificate = null, asking = null, renewal = null, trustPin = "", bot = "your bot" }) {
   const f = facts ?? { database: "", host: "", port: DEFAULT_PORT, user: "" };
@@ -116,7 +119,7 @@ export function confirmView({ facts, certificate = null, asking = null, renewal 
     { label: "Signed in as", value: String(f.user ?? ""), tone: "" },
     { label: "Certificate", ...cert },
   ];
-  const base = { title: "Is this your database?", sub: SUB, ok: "", before: "", go: "Yes, this is it", weak: false, back: "No, go back", fingerprint: "", trusts: false };
+  const base = { facts: f, title: "Is this your database?", sub: SUB, ok: "", before: "", go: "Yes, this is it", weak: false, back: "No, go back", fingerprint: "", trusts: false };
   if (!asking) {
     const line = certificateLine(certificate);
     return { ...base, variant: "VERIFIED", rows: rows({ value: line.text, tone: line.tone }) };
@@ -129,10 +132,10 @@ export function confirmView({ facts, certificate = null, asking = null, renewal 
   if (!renewal && pin === "") return { ...own, variant: "OWN", sub: `${SUB} ${OWN_SUB}` };
   // A certificate other than the one pinned: the Update check's, or the
   // connect page's for a bot whose pin differs. Same issuer only when the
-  // old one's name is known and is this one's; otherwise the cautious words.
+  // engine says so from the keys; otherwise the cautious words.
   const before = renewal?.pinnedSubject ? nameOf(renewal.pinnedSubject) : "";
   const renewed = { ...own, title: "Is this still your database?", back: "Not expecting this? Stop here" };
-  if (before !== "" && before === name) {
+  if (renewal?.sameIssuer === true) {
     return { ...renewed, variant: "RENEWED", sub: "Providers renew certificates about once a year.", ok: "✓ Same issuer as before", go: "Yes, trust the new certificate" };
   }
   let was = "";
@@ -148,6 +151,14 @@ export function confirmView({ facts, certificate = null, asking = null, renewal 
     weak: true,
     back: "Stop here",
   };
+}
+
+// factsDiffer reports whether what the server says it reached (after) is
+// not what the confirm step showed from the string (before): then the
+// person is asked again, with the server's facts.
+export function factsDiffer(before, after) {
+  const norm = (f) => [String(f?.database ?? ""), String(f?.host ?? "").toLowerCase(), Number(f?.port) || DEFAULT_PORT, String(f?.user ?? "")].join("\u0000");
+  return norm(before) !== norm(after);
 }
 
 // paintConfirm shows view on the page's confirm screen: the elements

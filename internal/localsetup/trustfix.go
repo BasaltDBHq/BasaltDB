@@ -2,6 +2,7 @@ package localsetup
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"slices"
@@ -82,6 +83,21 @@ func pinnedCert(p *trustprofile.Profile, presented string) *x509.Certificate {
 		return certs[0]
 	}
 	return nil
+}
+
+// sameIssuer reports whether top, the chain top a pinned host presents now,
+// comes from the authority the pin holds: it has the public key of one of
+// the pin's certificates (the same key, renewed), or one of them signed it.
+// Names are never compared: anyone can give a certificate any name. A
+// provider that rotates its authority to a new key is not the same issuer.
+func sameIssuer(p *trustprofile.Profile, top *x509.Certificate) bool {
+	if top == nil {
+		return false
+	}
+	key := sha256.Sum256(top.RawSubjectPublicKeyInfo)
+	return slices.ContainsFunc(p.Certificates(), func(c *x509.Certificate) bool {
+		return sha256.Sum256(c.RawSubjectPublicKeyInfo) == key || top.CheckSignatureFrom(c) == nil
+	})
 }
 
 // pinnedSubject is the subject of the certificate pinnedSHA names, as the

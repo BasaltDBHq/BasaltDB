@@ -11,10 +11,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
-// TestCertificateOfAndSessionUser: the confirm step's facts of an open
+// TestCertificateOfAndConnectedAs: the confirm step's facts of an open
 // connection. A connection without TLS is NONE whatever the dial says, and
 // session_user is the role the string logged in as.
-func TestCertificateOfAndSessionUser(t *testing.T) {
+func TestCertificateOfAndConnectedAs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t)
@@ -24,7 +24,7 @@ func TestCertificateOfAndSessionUser(t *testing.T) {
 	for _, kind := range []setup.CertificateKind{setup.CertificatePublic, setup.CertificateProvider, setup.CertificateOwn} {
 		require.Equal(t, setup.Certificate{Kind: setup.CertificateNone}, setup.CertificateOf(d.Admin, kind, "supabase"))
 	}
-	user, err := setup.SessionUser(ctx, d.Admin)
+	got, err := setup.ConnectedAs(ctx, d.Admin)
 	require.NoError(t, err)
-	require.Equal(t, d.Admin.Config().User, user)
+	require.Equal(t, setup.Connected{Database: d.Admin.Config().Database, User: d.Admin.Config().User}, got)
 }

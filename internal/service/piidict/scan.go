@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
@@ -72,7 +71,7 @@ type Builder interface {
 
 // Pool is an agent's connection pool.
 type Pool interface {
-	guard.Querier
+	Querier
 	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
 }
 
@@ -363,7 +362,7 @@ func (k keyColumn) sql() string {
 
 // keysetOf reads a table's relkind and its primary key columns with their
 // types; no key when any key column is not readable by the agent.
-func keysetOf(ctx context.Context, db guard.Querier, oid uint32) ([]keyColumn, string, error) {
+func keysetOf(ctx context.Context, db Querier, oid uint32) ([]keyColumn, string, error) {
 	q, args, err := psql.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
 	if err != nil {
 		return nil, "", err

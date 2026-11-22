@@ -18,14 +18,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 )
 
 // DefaultInterval is how often the engine checks in. Far below
-// ledger.DeadManAfter, so a running engine never looks silent.
+// DeadManAfter, so a running engine never looks silent.
 const DefaultInterval = time.Hour
+
+// DeadManAfter is how long without an engine heartbeat before the engine,
+// checking in again, records that it was silent (D14). It is the same span
+// basalt log warns after (the ledger adapter holds the other copy; a test
+// keeps the two equal).
+const DeadManAfter = 7 * 24 * time.Hour
 
 // Store is the agent's store as the timer uses it, on the agent's own
 // credential (the Postgres adapter's postgres.Upkeep).
@@ -196,7 +201,7 @@ func (u *Upkeep) Run(ctx context.Context, interval time.Duration) {
 }
 
 // Tick verifies the chain from the pinned head, writes a DEAD_MAN row when
-// the last heartbeat is older than ledger.DeadManAfter, writes a heartbeat,
+// the last heartbeat is older than DeadManAfter, writes a heartbeat,
 // records the unguarded tables when they changed, and prunes old values.
 func (u *Upkeep) Tick(ctx context.Context) error {
 	if err := u.admit(ctx); err != nil {
@@ -347,7 +352,7 @@ func (u *Upkeep) settle(ctx context.Context, install uuid.UUID) error {
 }
 
 // checkDeadMan writes the DEAD_MAN row (D14) when the engine checks in
-// after more than ledger.DeadManAfter without a heartbeat. Nothing is
+// after more than DeadManAfter without a heartbeat. Nothing is
 // disabled; basalt log shows the row.
 func (u *Upkeep) checkDeadMan(ctx context.Context) error {
 	last, err := u.db.LastHeartbeat(ctx)
@@ -355,7 +360,7 @@ func (u *Upkeep) checkDeadMan(ctx context.Context) error {
 		return fmt.Errorf("last heartbeat: %w", err)
 	}
 	silence := u.now().Sub(last)
-	if last.IsZero() || silence <= ledger.DeadManAfter {
+	if last.IsZero() || silence <= DeadManAfter {
 		return nil
 	}
 	u.log.Warn("engine was silent past the dead-man limit", "agent", u.agent, "lastHeartbeat", last)

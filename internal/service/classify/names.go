@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // nameRule is one row of the name rules: any of its phrases (word sequences
@@ -33,46 +33,46 @@ func words(s ...string) [][]string {
 // addresses before person names so street_name is an address.
 var nameRules = []nameRule{
 	{
-		class: guard.ClassSecret,
+		class: guardmodel.ClassSecret,
 		phrases: words("password", "passwd", "secret", "token", "api key", "apikey", "hash", "ssn",
 			"national id", "passport", "tax id", "card number", "cvv", "cvc", "nik", "pin", "otp", "passcode",
 			"security code"),
 		kinds: []kind{kindText, kindInt, kindNumeric, kindOther},
 	},
 	{
-		class: guard.ClassIdentifier, entity: guard.EntityEmail,
+		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityEmail,
 		phrases: words("email", "e mail", "mail"),
 		kinds:   []kind{kindText},
 	},
 	{
-		class: guard.ClassIdentifier, entity: guard.EntityPhone,
+		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPhone,
 		phrases: words("phone", "mobile", "tel", "msisdn", "telephone", "whatsapp"),
 		kinds:   []kind{kindText, kindInt, kindNumeric},
 	},
 	{
-		class: guard.ClassIdentifier, entity: guard.EntityOther,
+		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther,
 		phrases: words("ip address", "mac address", "wallet address"),
 		kinds:   []kind{kindText, kindOther},
 	},
 	{
-		class: guard.ClassIdentifier, entity: guard.EntityAddress,
+		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityAddress,
 		phrases:        words("address", "street", "addr", "postcode", "zip", "zipcode", "postal code"),
 		kinds:          []kind{kindText, kindInt, kindNumeric},
 		numericPhrases: words("postcode", "zip", "zipcode", "postal code"),
 	},
 	{
-		class: guard.ClassIdentifier, entity: guard.EntityOther,
+		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther,
 		phrases: words("dob", "birth date", "date of birth", "birthdate", "birthday", "iban",
 			"account number", "imei"),
 		kinds: []kind{kindText, kindInt, kindNumeric, kindDate},
 	},
 	{
-		class: guard.ClassIdentifier, entity: guard.EntityPersonName,
+		class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPersonName,
 		phrases: words("name", "surname", "firstname", "lastname", "fullname", "givenname"),
 		kinds:   []kind{kindText},
 	},
 	{
-		class:   guard.ClassFreeText,
+		class:   guardmodel.ClassFreeText,
 		phrases: words("notes", "note", "comment", "comments", "message", "messages", "body", "description", "bio"),
 		kinds:   []kind{kindText},
 	},
@@ -161,7 +161,7 @@ func ruleMatches(r nameRule, phrases [][]string, ws []string) match {
 			if !slices.Equal(ws[i:i+len(p)], p) {
 				continue
 			}
-			if r.entity == guard.EntityPersonName && p[0] == "name" && i > 0 && nonPersonNames[ws[i-1]] {
+			if r.entity == guardmodel.EntityPersonName && p[0] == "name" && i > 0 && nonPersonNames[ws[i-1]] {
 				continue
 			}
 			end := i + len(p)

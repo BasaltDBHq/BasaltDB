@@ -25,11 +25,6 @@ import (
 const connectPageTrust = "the person checks its certificate authority and trusts it on the connect page; " +
 	"the bot's engine pins it only after its own reading of the chain matches"
 
-// errNoTableList: a changed certificate needs an AGENT code that keeps the
-// agent's tables, and basalt has not seen them yet.
-var errNoTableList = errors.New("the database's certificate changed before basalt saw which tables the agent was given " +
-	"(its role has not logged in since the setup), so a code that keeps them cannot be made: nothing changed")
-
 // errNoEngineForTrust: the engine collects the certificate the person
 // trusted with its key, so a code without one could never finish.
 var errNoEngineForTrust = errors.New("the database's certificate changed, and the setup code that replaces the engine's pin " +
@@ -118,12 +113,20 @@ func pinned(certs []*x509.Certificate, top *x509.Certificate) bool {
 }
 
 // certificatePlan is the code for a changed certificate (CONTRACT.md,
-// basalt init --remote, step 3): an AGENT code with no change and no
-// verifier, carrying engine, for the agent's saved tables. Never a new
-// password: the credential is not refused, its server's certificate is.
+// basalt init --remote, step 3): a code that changes no grant, no password
+// and no policy, carrying engine. Never a new password: the credential is
+// not refused, its server's certificate is. For an agent whose tables are
+// known (named in its saved flags), an AGENT code with no change and no
+// verifier, which grants the same tables again. For an agent saved with
+// every table in public, whose tables basalt has not read yet (its role
+// has not logged in since the setup), an UPGRADE code from guard version 0:
+// an AGENT code with allTables would grant every table in public now,
+// more than the person may have ticked, and an UPGRADE code names no
+// tables; its migrations are the ones the database lacks, none when it
+// has them.
 func (r *remoteInit) certificatePlan() (plan, error) {
 	if r.f.allTables {
-		return plan{}, errNoTableList
+		return plan{kind: setupcode.KindUpgrade}, nil
 	}
 	return plan{kind: setupcode.KindAgent}, nil
 }

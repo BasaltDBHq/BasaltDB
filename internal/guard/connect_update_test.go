@@ -147,3 +147,32 @@ func TestCheckPasskeysWithoutAGuard(t *testing.T) {
 	require.Empty(t, checked.Passkeys)
 	require.True(t, checked.PasskeyNeeded)
 }
+
+// The changed-certificate code of a bot saved with every table in public
+// is an UPGRADE code from guard version 0: on a database whose guard is
+// current it has nothing to do, changes no grant, and still records the
+// certificate its login was verified against. Labels with it are refused.
+func TestUpgradeWithNothingToDoRecordsTheTrustPin(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	d.NewAgent(t, "bot", leads, leads)
+	code := updateCode(t, d, func(p *setupcode.Payload) {
+		p.Kind, p.Agent, p.Guard.From = setupcode.KindUpgrade, nil, 0
+	})
+	req := setup.Request{Code: code, Now: time.Now(), ConnectPage: true}
+	const pin = "5f9b77951a7aa1303f9b58eea9bfa89e5f9b77951a7aa1303f9b58eea9bfa89e"
+	_, err := setup.Run(ctx, d.Admin, req, setup.RunInput{RestPublic: true, TrustPin: &setup.TrustPin{Host: "db.internal.example.com", Port: 5432, SHA256: pin}})
+	require.Equal(t, setup.CodeAnswersInvalid, setupCodeOf(t, err))
+	require.Equal(t, 0, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'TRUST_PIN_RECORDED'`))
+
+	res, err := setup.Run(ctx, d.Admin, req, setup.RunInput{TrustPin: &setup.TrustPin{Host: "db.internal.example.com", Port: 5432, SHA256: pin}})
+	require.NoError(t, err)
+	require.NotNil(t, res.NothingToDo)
+	require.False(t, res.Ran)
+	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'TRUST_PIN_RECORDED'`))
+	sha, ok, err := guard.RecordedTrustPin(ctx, d.Admin, "db.internal.example.com", 5432)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, pin, sha)
+}

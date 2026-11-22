@@ -49,11 +49,14 @@ const pinnedHost = "db.internal.example.com"
 // pinnedAgent is an installed bot whose credential names pinnedHost with
 // verify-full, its saved tables explicit, and the engine's pin for that
 // host to first's CA in the config's trust.d.
-func pinnedAgent(t *testing.T, first caServer) string {
+func pinnedAgent(t *testing.T, first caServer, saved ...string) string {
 	t.Helper()
 	cfg := tempConfig(t)
 	dsn := agentDSN(t, "postgres://postgres@"+pinnedHost+":5432/postgres?sslmode=verify-full", guard.DefaultPrefix, "bot", "0123abcd")
-	seedCredential(t, noDB(t), cfg, "bot", dsn, "--write=public.leads")
+	if len(saved) == 0 {
+		saved = []string{"--write=public.leads"}
+	}
+	seedCredential(t, noDB(t), cfg, "bot", dsn, saved...)
 	clearSetup(t, cfg)
 	_, _, err := trustdir.Pin(cfg, pinnedHost, first.ca, false)
 	require.NoError(t, err)
@@ -172,4 +175,27 @@ func TestInitRemotePins(t *testing.T) {
 		require.NoFileExists(t, filepath.Join(trustdir.Path(cfg), trustprofile.FileName(trustprofile.PinName(pinnedHost))), name)
 		require.True(t, strings.Contains(stderr.String(), pinnedHost), name)
 	}
+}
+
+// A bot saved with every table in public, whose tables basalt has not read
+// yet, gets an UPGRADE code from guard version 0 for a changed
+// certificate: it names no table, so it grants nothing new, and it still
+// carries engine and the engine's pin and is marked certificateChanged.
+func TestInitRemoteChangedCertificateAllTables(t *testing.T) {
+	t.Parallel()
+	first, second := newCAServer(t), newCAServer(t)
+	cfg := pinnedAgent(t, first, "--"+flagAllTables+"=true")
+	res, stderr, err := certRun(t, cfg, second)
+	require.NoError(t, err, stderr)
+	p, err := setupcode.Decode(res.Code)
+	require.NoError(t, err)
+	require.Equal(t, setupcode.KindUpgrade, p.Kind)
+	require.Nil(t, p.Agent, "no tables, no password")
+	require.Equal(t, 0, p.Guard.From)
+	require.NotNil(t, p.Engine)
+	require.Equal(t, trustprofile.DERSHA256(first.ca), p.TrustPin)
+	c, err := config.Load(cfg)
+	require.NoError(t, err)
+	require.True(t, c.Agents[0].Setup.CertificateChanged)
+	require.NoFileExists(t, c.Agents[0].Store.CredentialFile+pendingSuffix)
 }

@@ -452,7 +452,8 @@ type RunInput struct {
 	// TrustPin, when set, is the certificate the caller's admin login was
 	// verified against with a trustRoot the person trusted on the connect
 	// page: Run records it with basalt_meta.record_trust_pin in the setup's
-	// transaction. Only a certificate the login was really verified
+	// transaction (in a transaction of its own for an UPGRADE code with
+	// nothing to do). Only a certificate the login was really verified
 	// against: the package does not check it.
 	TrustPin *TrustPin
 }
@@ -559,9 +560,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		if err := setuprun.RefuseAnswers(in.Answers.AllRows); err != nil {
 			return Result{}, asError(err)
 		}
-		if len(in.ColumnClasses) > 0 || in.RestPublic || in.TrustPin != nil {
+		if len(in.ColumnClasses) > 0 || in.RestPublic {
 			// Nothing runs, so nothing would carry them: refused, not dropped.
-			return Result{}, asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label and records no certificate; nothing changed"})
+			return Result{}, asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
+		}
+		if err := recordTrustPinAlone(ctx, conn, in.TrustPin); err != nil {
+			return Result{}, asError(err)
 		}
 		return Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}, nil
 	}
@@ -620,6 +624,19 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	}
 	res.Passkey = asked
 	return res, nil
+}
+
+// recordTrustPinAlone records t, when set, in a transaction of its own: an
+// UPGRADE code with nothing to do runs no setup transaction, but the
+// certificate its login was verified against is still recorded (the
+// changed-certificate code of an agent saved with every table in public).
+func recordTrustPinAlone(ctx context.Context, conn *pgx.Conn, t *TrustPin) error {
+	if t == nil {
+		return nil
+	}
+	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		return guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256)
+	})
 }
 
 // writeLabels writes in.ColumnClasses and in.RestPublic in the setup's

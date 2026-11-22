@@ -29,6 +29,15 @@ const (
 	maxSchemas = 5
 	maxTables  = 500
 
+	// Unicode bidirectional controls.
+	arabicLetterMark      = 0x061c
+	leftToRightMark       = 0x200e
+	rightToLeftMark       = 0x200f
+	leftToRightEmbedding  = 0x202a
+	rightToLeftOverride   = 0x202e
+	leftToRightIsolate    = 0x2066
+	popDirectionalIsolate = 0x2069
+
 	// unsupportedName is the owner shown for a table whose name cannot be
 	// picked.
 	unsupportedName = "unsupported name"
@@ -130,11 +139,11 @@ func printable(s string) string {
 // bidiControl is a Unicode bidirectional control, which can reorder what a
 // person reads.
 func bidiControl(r rune) bool {
-	switch {
-	case r == 0x061c, r == 0x200e, r == 0x200f:
+	switch r {
+	case arabicLetterMark, leftToRightMark, rightToLeftMark:
 		return true
 	}
-	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+	return (r >= leftToRightEmbedding && r <= rightToLeftOverride) || (r >= leftToRightIsolate && r <= popDirectionalIsolate)
 }
 
 // answersKey is the answers as the challenge binds them.

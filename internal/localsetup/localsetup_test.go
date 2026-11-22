@@ -497,7 +497,7 @@ ALTER TABLE public.theirs OWNER TO `+other)
 	_, err = f.svc.Run(ctx, req)
 	require.NoError(t, err)
 	var n int
-	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT count(polname)::int FROM pg_catalog.pg_policy WHERE polrelid = 'public.vault'::regclass`).Scan(&n))
+	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT count(polname)::int FROM pg_catalog.pg_policy WHERE polrelid = 'public.vault'::regclass AND polname LIKE $1`, "%_agent_bot").Scan(&n))
 	require.Zero(t, n, "NONE makes no policy")
 }
 

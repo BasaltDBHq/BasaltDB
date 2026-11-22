@@ -445,7 +445,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
-	p, err := s.plan(ctx, tx, j, guard.NewPassword(), database, nil)
+	p, err := s.plan(ctx, tx, j, guard.NewPassword(), database, req.Answers)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}

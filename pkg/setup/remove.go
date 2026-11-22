@@ -35,6 +35,9 @@ type Removal struct {
 	// NothingToRemove: the database has no guard, no bot role and no
 	// sample schema. RunRemove still runs, and drops nothing.
 	NothingToRemove bool
+	// SampleSchema: the sample schema basalt_demo, which the sample-database
+	// setup made, is dropped too. The person's own tables always stay.
+	SampleSchema bool
 }
 
 // Removed is a finished removal.
@@ -68,7 +71,7 @@ func CheckRemove(ctx context.Context, conn *pgx.Conn) (Removal, error) {
 	if err != nil {
 		return Removal{}, asError(err)
 	}
-	return Removal{Database: p.Database, Bots: slices.Clone(p.Agents), Lines: p.Lines(), SQL: p.SQL(), NothingToRemove: p.Nothing()}, nil
+	return Removal{Database: p.Database, Bots: slices.Clone(p.Agents), Lines: p.Lines(), SQL: p.SQL(), NothingToRemove: p.Nothing(), SampleSchema: len(p.DemoDrops) > 0}, nil
 }
 
 // RunRemove removes BasaltDB from conn's database in one transaction:

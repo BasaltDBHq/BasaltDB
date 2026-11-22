@@ -2030,6 +2030,284 @@ func (x *OfferAddressResponse) GetState() string {
 	return ""
 }
 
+type CheckRemoveRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The admin connection string the person pasted.
+	DatabaseUrl string `protobuf:"bytes,1,opt,name=database_url,json=databaseUrl,proto3" json:"database_url,omitempty"`
+	// As in CheckSetupRequest: the chain top the person trusted on the page.
+	TrustRoot     string `protobuf:"bytes,2,opt,name=trust_root,json=trustRoot,proto3" json:"trust_root,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRemoveRequest) Reset() {
+	*x = CheckRemoveRequest{}
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRemoveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRemoveRequest) ProtoMessage() {}
+
+func (x *CheckRemoveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRemoveRequest.ProtoReflect.Descriptor instead.
+func (*CheckRemoveRequest) Descriptor() ([]byte, []int) {
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CheckRemoveRequest) GetDatabaseUrl() string {
+	if x != nil {
+		return x.DatabaseUrl
+	}
+	return ""
+}
+
+func (x *CheckRemoveRequest) GetTrustRoot() string {
+	if x != nil {
+		return x.TrustRoot
+	}
+	return ""
+}
+
+type CheckRemoveResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// current_database(): the name the person types to confirm.
+	Database string `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	// The bots that lose their access, by name, sorted.
+	Bots []string `protobuf:"bytes,2,rep,name=bots,proto3" json:"bots,omitempty"`
+	// The summary, in fixed words and catalog names.
+	Lines []string `protobuf:"bytes,3,rep,name=lines,proto3" json:"lines,omitempty"`
+	// Every statement RunRemove runs now, in order.
+	Sql string `protobuf:"bytes,4,opt,name=sql,proto3" json:"sql,omitempty"`
+	// No guard, no bot role and no sample schema: RunRemove drops nothing.
+	NothingToRemove bool `protobuf:"varint,5,opt,name=nothing_to_remove,json=nothingToRemove,proto3" json:"nothing_to_remove,omitempty"`
+	// The sample schema basalt_demo is dropped too.
+	SampleSchema  bool `protobuf:"varint,6,opt,name=sample_schema,json=sampleSchema,proto3" json:"sample_schema,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRemoveResponse) Reset() {
+	*x = CheckRemoveResponse{}
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRemoveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRemoveResponse) ProtoMessage() {}
+
+func (x *CheckRemoveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRemoveResponse.ProtoReflect.Descriptor instead.
+func (*CheckRemoveResponse) Descriptor() ([]byte, []int) {
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *CheckRemoveResponse) GetDatabase() string {
+	if x != nil {
+		return x.Database
+	}
+	return ""
+}
+
+func (x *CheckRemoveResponse) GetBots() []string {
+	if x != nil {
+		return x.Bots
+	}
+	return nil
+}
+
+func (x *CheckRemoveResponse) GetLines() []string {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+func (x *CheckRemoveResponse) GetSql() string {
+	if x != nil {
+		return x.Sql
+	}
+	return ""
+}
+
+func (x *CheckRemoveResponse) GetNothingToRemove() bool {
+	if x != nil {
+		return x.NothingToRemove
+	}
+	return false
+}
+
+func (x *CheckRemoveResponse) GetSampleSchema() bool {
+	if x != nil {
+		return x.SampleSchema
+	}
+	return false
+}
+
+type RunRemoveRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The admin connection string the person pasted.
+	DatabaseUrl string `protobuf:"bytes,1,opt,name=database_url,json=databaseUrl,proto3" json:"database_url,omitempty"`
+	// As in CheckRemoveRequest.
+	TrustRoot string `protobuf:"bytes,2,opt,name=trust_root,json=trustRoot,proto3" json:"trust_root,omitempty"`
+	// The database name the person typed. It must equal current_database(),
+	// checked in the removal's transaction (ANSWERS_INVALID otherwise).
+	ConfirmName   string `protobuf:"bytes,3,opt,name=confirm_name,json=confirmName,proto3" json:"confirm_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunRemoveRequest) Reset() {
+	*x = RunRemoveRequest{}
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunRemoveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunRemoveRequest) ProtoMessage() {}
+
+func (x *RunRemoveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunRemoveRequest.ProtoReflect.Descriptor instead.
+func (*RunRemoveRequest) Descriptor() ([]byte, []int) {
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *RunRemoveRequest) GetDatabaseUrl() string {
+	if x != nil {
+		return x.DatabaseUrl
+	}
+	return ""
+}
+
+func (x *RunRemoveRequest) GetTrustRoot() string {
+	if x != nil {
+		return x.TrustRoot
+	}
+	return ""
+}
+
+func (x *RunRemoveRequest) GetConfirmName() string {
+	if x != nil {
+		return x.ConfirmName
+	}
+	return ""
+}
+
+type RunRemoveResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Database string                 `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	// The bots that lost their access.
+	Bots []string `protobuf:"bytes,2,rep,name=bots,proto3" json:"bots,omitempty"`
+	// What was removed.
+	Lines         []string `protobuf:"bytes,3,rep,name=lines,proto3" json:"lines,omitempty"`
+	Warnings      []string `protobuf:"bytes,4,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunRemoveResponse) Reset() {
+	*x = RunRemoveResponse{}
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunRemoveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunRemoveResponse) ProtoMessage() {}
+
+func (x *RunRemoveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunRemoveResponse.ProtoReflect.Descriptor instead.
+func (*RunRemoveResponse) Descriptor() ([]byte, []int) {
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RunRemoveResponse) GetDatabase() string {
+	if x != nil {
+		return x.Database
+	}
+	return ""
+}
+
+func (x *RunRemoveResponse) GetBots() []string {
+	if x != nil {
+		return x.Bots
+	}
+	return nil
+}
+
+func (x *RunRemoveResponse) GetLines() []string {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+func (x *RunRemoveResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 // The error detail of every refusal, attached to the ConnectRPC error.
 type Refusal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2050,7 +2328,7 @@ type Refusal struct {
 
 func (x *Refusal) Reset() {
 	*x = Refusal{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2062,7 +2340,7 @@ func (x *Refusal) String() string {
 func (*Refusal) ProtoMessage() {}
 
 func (x *Refusal) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[26]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2075,7 +2353,7 @@ func (x *Refusal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Refusal.ProtoReflect.Descriptor instead.
 func (*Refusal) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{26}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Refusal) GetReason() string {
@@ -2124,7 +2402,7 @@ type TrustRoot struct {
 
 func (x *TrustRoot) Reset() {
 	*x = TrustRoot{}
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2136,7 +2414,7 @@ func (x *TrustRoot) String() string {
 func (*TrustRoot) ProtoMessage() {}
 
 func (x *TrustRoot) ProtoReflect() protoreflect.Message {
-	mi := &file_basalt_connect_v1_connect_proto_msgTypes[27]
+	mi := &file_basalt_connect_v1_connect_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2149,7 +2427,7 @@ func (x *TrustRoot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrustRoot.ProtoReflect.Descriptor instead.
 func (*TrustRoot) Descriptor() ([]byte, []int) {
-	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{27}
+	return file_basalt_connect_v1_connect_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *TrustRoot) GetSubject() string {
@@ -2357,7 +2635,28 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x13OfferAddressRequest\x12\x1c\n" +
 	"\x06ticket\x18\x01 \x01(\tB\x04\x88\xaa\x19\x01R\x06ticket\",\n" +
 	"\x14OfferAddressResponse\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05state\"\xa8\x01\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\"\\\n" +
+	"\x12CheckRemoveRequest\x12'\n" +
+	"\fdatabase_url\x18\x01 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\x12\x1d\n" +
+	"\n" +
+	"trust_root\x18\x02 \x01(\tR\ttrustRoot\"\xbe\x01\n" +
+	"\x13CheckRemoveResponse\x12\x1a\n" +
+	"\bdatabase\x18\x01 \x01(\tR\bdatabase\x12\x12\n" +
+	"\x04bots\x18\x02 \x03(\tR\x04bots\x12\x14\n" +
+	"\x05lines\x18\x03 \x03(\tR\x05lines\x12\x10\n" +
+	"\x03sql\x18\x04 \x01(\tR\x03sql\x12*\n" +
+	"\x11nothing_to_remove\x18\x05 \x01(\bR\x0fnothingToRemove\x12#\n" +
+	"\rsample_schema\x18\x06 \x01(\bR\fsampleSchema\"}\n" +
+	"\x10RunRemoveRequest\x12'\n" +
+	"\fdatabase_url\x18\x01 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\x12\x1d\n" +
+	"\n" +
+	"trust_root\x18\x02 \x01(\tR\ttrustRoot\x12!\n" +
+	"\fconfirm_name\x18\x03 \x01(\tR\vconfirmName\"u\n" +
+	"\x11RunRemoveResponse\x12\x1a\n" +
+	"\bdatabase\x18\x01 \x01(\tR\bdatabase\x12\x12\n" +
+	"\x04bots\x18\x02 \x03(\tR\x04bots\x12\x14\n" +
+	"\x05lines\x18\x03 \x03(\tR\x05lines\x12\x1a\n" +
+	"\bwarnings\x18\x04 \x03(\tR\bwarnings\"\xa8\x01\n" +
 	"\aRefusal\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12.\n" +
@@ -2368,7 +2667,7 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\tR\x06sha256\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\tR\texpiresAt2\xac\x05\n" +
+	"expires_at\x18\x03 \x01(\tR\texpiresAt2\xe2\x06\n" +
 	"\fSetupService\x12b\n" +
 	"\rDescribeSetup\x12'.basalt.connect.v1.DescribeSetupRequest\x1a(.basalt.connect.v1.DescribeSetupResponse\x12Y\n" +
 	"\n" +
@@ -2377,7 +2676,9 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x0eCollectAddress\x12(.basalt.connect.v1.CollectAddressRequest\x1a).basalt.connect.v1.CollectAddressResponse\x12\\\n" +
 	"\vReportReach\x12%.basalt.connect.v1.ReportReachRequest\x1a&.basalt.connect.v1.ReportReachResponse\x12b\n" +
 	"\rHandoffStatus\x12'.basalt.connect.v1.HandoffStatusRequest\x1a(.basalt.connect.v1.HandoffStatusResponse\x12_\n" +
-	"\fOfferAddress\x12&.basalt.connect.v1.OfferAddressRequest\x1a'.basalt.connect.v1.OfferAddressResponse:=\n" +
+	"\fOfferAddress\x12&.basalt.connect.v1.OfferAddressRequest\x1a'.basalt.connect.v1.OfferAddressResponse\x12\\\n" +
+	"\vCheckRemove\x12%.basalt.connect.v1.CheckRemoveRequest\x1a&.basalt.connect.v1.CheckRemoveResponse\x12V\n" +
+	"\tRunRemove\x12#.basalt.connect.v1.RunRemoveRequest\x1a$.basalt.connect.v1.RunRemoveResponse:=\n" +
 	"\tsensitive\x12\x1d.google.protobuf.FieldOptions\x18\xa1\x95\x03 \x01(\bR\tsensitiveBNZLgithub.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1;connectv1b\x06proto3"
 
 var (
@@ -2392,7 +2693,7 @@ func file_basalt_connect_v1_connect_proto_rawDescGZIP() []byte {
 	return file_basalt_connect_v1_connect_proto_rawDescData
 }
 
-var file_basalt_connect_v1_connect_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_basalt_connect_v1_connect_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_basalt_connect_v1_connect_proto_goTypes = []any{
 	(*DescribeSetupRequest)(nil),      // 0: basalt.connect.v1.DescribeSetupRequest
 	(*DescribeSetupResponse)(nil),     // 1: basalt.connect.v1.DescribeSetupResponse
@@ -2420,9 +2721,13 @@ var file_basalt_connect_v1_connect_proto_goTypes = []any{
 	(*Reach)(nil),                     // 23: basalt.connect.v1.Reach
 	(*OfferAddressRequest)(nil),       // 24: basalt.connect.v1.OfferAddressRequest
 	(*OfferAddressResponse)(nil),      // 25: basalt.connect.v1.OfferAddressResponse
-	(*Refusal)(nil),                   // 26: basalt.connect.v1.Refusal
-	(*TrustRoot)(nil),                 // 27: basalt.connect.v1.TrustRoot
-	(*descriptorpb.FieldOptions)(nil), // 28: google.protobuf.FieldOptions
+	(*CheckRemoveRequest)(nil),        // 26: basalt.connect.v1.CheckRemoveRequest
+	(*CheckRemoveResponse)(nil),       // 27: basalt.connect.v1.CheckRemoveResponse
+	(*RunRemoveRequest)(nil),          // 28: basalt.connect.v1.RunRemoveRequest
+	(*RunRemoveResponse)(nil),         // 29: basalt.connect.v1.RunRemoveResponse
+	(*Refusal)(nil),                   // 30: basalt.connect.v1.Refusal
+	(*TrustRoot)(nil),                 // 31: basalt.connect.v1.TrustRoot
+	(*descriptorpb.FieldOptions)(nil), // 32: google.protobuf.FieldOptions
 }
 var file_basalt_connect_v1_connect_proto_depIdxs = []int32{
 	2,  // 0: basalt.connect.v1.DescribeSetupResponse.summary:type_name -> basalt.connect.v1.SetupSummary
@@ -2441,8 +2746,8 @@ var file_basalt_connect_v1_connect_proto_depIdxs = []int32{
 	3,  // 13: basalt.connect.v1.CollectAddressResponse.address:type_name -> basalt.connect.v1.Target
 	3,  // 14: basalt.connect.v1.ReportReachRequest.address:type_name -> basalt.connect.v1.Target
 	23, // 15: basalt.connect.v1.HandoffStatusResponse.reach:type_name -> basalt.connect.v1.Reach
-	27, // 16: basalt.connect.v1.Refusal.trust_root:type_name -> basalt.connect.v1.TrustRoot
-	28, // 17: basalt.connect.v1.sensitive:extendee -> google.protobuf.FieldOptions
+	31, // 16: basalt.connect.v1.Refusal.trust_root:type_name -> basalt.connect.v1.TrustRoot
+	32, // 17: basalt.connect.v1.sensitive:extendee -> google.protobuf.FieldOptions
 	0,  // 18: basalt.connect.v1.SetupService.DescribeSetup:input_type -> basalt.connect.v1.DescribeSetupRequest
 	5,  // 19: basalt.connect.v1.SetupService.CheckSetup:input_type -> basalt.connect.v1.CheckSetupRequest
 	13, // 20: basalt.connect.v1.SetupService.RunSetup:input_type -> basalt.connect.v1.RunSetupRequest
@@ -2450,15 +2755,19 @@ var file_basalt_connect_v1_connect_proto_depIdxs = []int32{
 	19, // 22: basalt.connect.v1.SetupService.ReportReach:input_type -> basalt.connect.v1.ReportReachRequest
 	21, // 23: basalt.connect.v1.SetupService.HandoffStatus:input_type -> basalt.connect.v1.HandoffStatusRequest
 	24, // 24: basalt.connect.v1.SetupService.OfferAddress:input_type -> basalt.connect.v1.OfferAddressRequest
-	1,  // 25: basalt.connect.v1.SetupService.DescribeSetup:output_type -> basalt.connect.v1.DescribeSetupResponse
-	6,  // 26: basalt.connect.v1.SetupService.CheckSetup:output_type -> basalt.connect.v1.CheckSetupResponse
-	15, // 27: basalt.connect.v1.SetupService.RunSetup:output_type -> basalt.connect.v1.RunSetupResponse
-	18, // 28: basalt.connect.v1.SetupService.CollectAddress:output_type -> basalt.connect.v1.CollectAddressResponse
-	20, // 29: basalt.connect.v1.SetupService.ReportReach:output_type -> basalt.connect.v1.ReportReachResponse
-	22, // 30: basalt.connect.v1.SetupService.HandoffStatus:output_type -> basalt.connect.v1.HandoffStatusResponse
-	25, // 31: basalt.connect.v1.SetupService.OfferAddress:output_type -> basalt.connect.v1.OfferAddressResponse
-	25, // [25:32] is the sub-list for method output_type
-	18, // [18:25] is the sub-list for method input_type
+	26, // 25: basalt.connect.v1.SetupService.CheckRemove:input_type -> basalt.connect.v1.CheckRemoveRequest
+	28, // 26: basalt.connect.v1.SetupService.RunRemove:input_type -> basalt.connect.v1.RunRemoveRequest
+	1,  // 27: basalt.connect.v1.SetupService.DescribeSetup:output_type -> basalt.connect.v1.DescribeSetupResponse
+	6,  // 28: basalt.connect.v1.SetupService.CheckSetup:output_type -> basalt.connect.v1.CheckSetupResponse
+	15, // 29: basalt.connect.v1.SetupService.RunSetup:output_type -> basalt.connect.v1.RunSetupResponse
+	18, // 30: basalt.connect.v1.SetupService.CollectAddress:output_type -> basalt.connect.v1.CollectAddressResponse
+	20, // 31: basalt.connect.v1.SetupService.ReportReach:output_type -> basalt.connect.v1.ReportReachResponse
+	22, // 32: basalt.connect.v1.SetupService.HandoffStatus:output_type -> basalt.connect.v1.HandoffStatusResponse
+	25, // 33: basalt.connect.v1.SetupService.OfferAddress:output_type -> basalt.connect.v1.OfferAddressResponse
+	27, // 34: basalt.connect.v1.SetupService.CheckRemove:output_type -> basalt.connect.v1.CheckRemoveResponse
+	29, // 35: basalt.connect.v1.SetupService.RunRemove:output_type -> basalt.connect.v1.RunRemoveResponse
+	27, // [27:36] is the sub-list for method output_type
+	18, // [18:27] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name
 	17, // [17:18] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -2475,7 +2784,7 @@ func file_basalt_connect_v1_connect_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_basalt_connect_v1_connect_proto_rawDesc), len(file_basalt_connect_v1_connect_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   32,
 			NumExtensions: 1,
 			NumServices:   1,
 		},

@@ -59,6 +59,7 @@ func TestRemoveWithTheAdminConnectionOnly(t *testing.T) {
 	require.Equal(t, database, r.Database)
 	require.Equal(t, []string{"ops_bot", "sales_bot"}, r.Bots)
 	require.False(t, r.NothingToRemove)
+	require.True(t, r.SampleSchema, "the sample schema is dropped too")
 	require.Contains(t, r.SQL, "DROP SCHEMA IF EXISTS basalt_meta CASCADE;")
 	require.Contains(t, r.SQL, "DROP ROLE ")
 	require.Contains(t, r.SQL, "DROP TABLE basalt_demo.leads;")

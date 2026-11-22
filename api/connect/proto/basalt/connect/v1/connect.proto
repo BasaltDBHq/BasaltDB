@@ -55,6 +55,12 @@ service SetupService {
   // The page: puts a hold the service lost (a restart) back, with the
   // ticket's own expiry. No database access.
   rpc OfferAddress(OfferAddressRequest) returns (OfferAddressResponse);
+  // The Remove BasaltDB tab: what removing BasaltDB from the database
+  // drops. No setup code. Changes nothing.
+  rpc CheckRemove(CheckRemoveRequest) returns (CheckRemoveResponse);
+  // The Remove BasaltDB tab: removes BasaltDB from the database in one
+  // transaction, once confirm_name is the database's name.
+  rpc RunRemove(RunRemoveRequest) returns (RunRemoveResponse);
 }
 
 message DescribeSetupRequest {
@@ -381,6 +387,47 @@ message OfferAddressRequest {
 message OfferAddressResponse {
   // HELD or COLLECTED, as the ticket records it.
   string state = 1;
+}
+
+message CheckRemoveRequest {
+  // The admin connection string the person pasted.
+  string database_url = 1 [(sensitive) = true];
+  // As in CheckSetupRequest: the chain top the person trusted on the page.
+  string trust_root = 2;
+}
+
+message CheckRemoveResponse {
+  // current_database(): the name the person types to confirm.
+  string database = 1;
+  // The bots that lose their access, by name, sorted.
+  repeated string bots = 2;
+  // The summary, in fixed words and catalog names.
+  repeated string lines = 3;
+  // Every statement RunRemove runs now, in order.
+  string sql = 4;
+  // No guard, no bot role and no sample schema: RunRemove drops nothing.
+  bool nothing_to_remove = 5;
+  // The sample schema basalt_demo is dropped too.
+  bool sample_schema = 6;
+}
+
+message RunRemoveRequest {
+  // The admin connection string the person pasted.
+  string database_url = 1 [(sensitive) = true];
+  // As in CheckRemoveRequest.
+  string trust_root = 2;
+  // The database name the person typed. It must equal current_database(),
+  // checked in the removal's transaction (ANSWERS_INVALID otherwise).
+  string confirm_name = 3;
+}
+
+message RunRemoveResponse {
+  string database = 1;
+  // The bots that lost their access.
+  repeated string bots = 2;
+  // What was removed.
+  repeated string lines = 3;
+  repeated string warnings = 4;
 }
 
 // The error detail of every refusal, attached to the ConnectRPC error.

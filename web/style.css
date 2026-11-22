@@ -450,3 +450,9 @@ button.widen { display: flex; gap: 12px; align-items: center; width: 100%; min-h
   .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: var(--radius-ui) var(--radius-ui) 0 0; max-height: 85vh; overflow-y: auto; }
   button.scope-done { display: block; width: 100%; }
 }
+
+/* The connect page's two tabs: Connect a bot and Remove BasaltDB. */
+.tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--ui-border); }
+.tabs [role="tab"] { min-height: 40px; padding: 0 14px; background: transparent; color: var(--ui-text-2); border: 0; border-bottom: 2px solid transparent; border-radius: 0; font-weight: 500; }
+.tabs [role="tab"][aria-selected="true"] { color: var(--ui-primary); border-bottom-color: var(--ui-primary); }
+pre.sql { white-space: pre-wrap; word-break: break-word; font-size: 0.85em; }

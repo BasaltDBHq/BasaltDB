@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- The portal connect page has two tabs, Connect a bot and Remove BasaltDB. Remove takes only the database's admin connection string: it shows what goes (the ledger, the guard, the bots by name; your tables stay) with the SQL, and removes BasaltDB once you type the database's name. It needs no bot and no setup code. The connect service's `CheckRemove` and `RunRemove` calls are added to the protocol.
 - An agent on a computer the person cannot reach can now ask for a plugin with `request_plugin`. The person approves it with their passkey on the portal page the agent links to, which reaches the engine through the BasaltDB Vault, and the engine runs the plugin only once the database has verified the signature. On that computer the agent and BasaltDB run as one user, so the approval is consent, not containment: a plugin you approve can read what BasaltDB can, and the page says so. Without a connection to the Vault, `request_plugin` refuses (`NO_PORTAL_LINK`) and writes nothing.
 
 ### Changed

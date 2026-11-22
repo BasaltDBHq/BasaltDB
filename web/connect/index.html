@@ -19,11 +19,12 @@
   <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
   <link rel="modulepreload" href="../lib/pickviews.js" integrity="sha384-BytItDacs/UqEsTyea9Pdd56yhISnBMtmq29BahV7Ip57MbFIOlSsp1vHJpFGDcE">
   <link rel="modulepreload" href="../lib/relay.js" integrity="sha384-g5ofSPBggf8WSqlFpPeopNczsKc9h4pSnafynEPzMCuutdkSDtU1N4ibHFNDj4vQ">
+  <link rel="modulepreload" href="../lib/remove.js" integrity="sha384-94sah4K2KDhFZBDxGs1DSAf5XSXCDfw7Xa27zTd0w5+YVKOke5+UK0S3vPkzrezS">
   <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-HkJl9aDNug2+VopgohfSBPxXO+/AOQLiGndqOl2w/dv8zQ3JJzzjif2AyVXG19tI">
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/connect.js" integrity="sha384-mFuNsdGMumPNvFaRSl0hOGol1l9n2mPvvoma+9TE9fs2VbYPfhsXEcqn1x5U8Rc1"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-m7SJ6RP6R3KEQzJytQgULjbNphMv2qdl1reMCXrkmbG081XWlTo4l9UoianknegX"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
@@ -43,6 +44,11 @@
       <p><output id="error-check-code" class="fp" aria-label="Passkey check code"></output></p>
     </div>
   </section>
+
+  <div id="tabs" class="tabs" role="tablist" aria-label="What to do" hidden>
+    <button id="tab-connect" type="button" role="tab" aria-selected="true" aria-controls="main">Connect a bot</button>
+    <button id="tab-remove" type="button" role="tab" aria-selected="false" aria-controls="remove">Remove BasaltDB</button>
+  </div>
 
   <main id="main" hidden>
     <p id="addr-warn" class="strip warn">⚠ Only continue on <strong id="host"></strong></p>
@@ -199,6 +205,61 @@
       </div>
       <p id="check-problem" class="strip bad" role="alert" hidden></p>
       <p id="waitlist" class="muted">Want to hear when Basalt Vault launches? <a href="https://basaltvault.app/#waitlist" target="_blank" rel="noopener noreferrer">Join the list</a></p>
+    </section>
+  </main>
+
+  <main id="remove" hidden>
+    <p class="strip warn">⚠ Only continue on <strong>portal.basaltvault.app</strong></p>
+    <div class="nav-row">
+      <button id="r-back" type="button" class="back" hidden>‹ Back</button>
+    </div>
+
+    <section id="r-paste" class="screen" hidden>
+      <h1><label for="r-database-url">Remove BasaltDB from a database</label></h1>
+      <p class="muted">Paste the database's admin connection string. Nothing is removed until you confirm on the next screen. You need no bot and no setup code.</p>
+      <input id="r-database-url" class="text" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="postgresql://…">
+      <p class="strip warn">Never paste this into the chat. Used once, never stored.</p>
+      <p id="r-paste-error" class="strip bad" role="alert" hidden></p>
+      <button id="r-check" type="button">Continue</button>
+    </section>
+
+    <section id="r-trust" class="screen" hidden>
+      <h1>Trust this certificate authority?</h1>
+      <p id="r-trust-text" class="box"></p>
+      <p id="r-trust-error" class="strip bad" role="alert" hidden></p>
+      <button id="r-trust-go" type="button">Trust and continue</button>
+      <button id="r-trust-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="r-checking" class="screen" hidden>
+      <h1>Reading your database…</h1>
+      <ul class="box checks"><li class="check wait">Signing in to the database</li></ul>
+    </section>
+
+    <section id="r-review" class="screen" hidden>
+      <div class="box db-card">
+        <p class="eyebrow">Database</p>
+        <p id="r-db-name" class="db-name"></p>
+      </div>
+      <h2>What gets removed</h2>
+      <ul id="r-items" class="box checks"></ul>
+      <p id="r-nothing" class="strip ok" hidden>BasaltDB is not in this database: there is nothing to drop.</p>
+      <details class="more">
+        <summary>The SQL that runs</summary>
+        <pre id="r-sql" class="mono sql"></pre>
+        <ul id="r-lines" class="muted"></ul>
+      </details>
+      <p><label for="r-confirm">This cannot be undone. To confirm, type the database name <strong id="r-confirm-name"></strong>:</label></p>
+      <input id="r-confirm" class="text" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p id="r-review-error" class="strip bad" role="alert" hidden></p>
+      <button id="r-remove" type="button" class="reject" disabled>Remove BasaltDB</button>
+    </section>
+
+    <section id="r-done" class="screen" hidden>
+      <p class="strip ok done-title">BasaltDB is removed from <strong id="r-done-db"></strong>.</p>
+      <p id="r-done-bots" class="muted"></p>
+      <ul id="r-done-warnings" hidden></ul>
+      <p class="muted">Your tables and their rows are still there. The bots' engines can no longer log in; you can uninstall them when you like.</p>
     </section>
   </main>
   </div>

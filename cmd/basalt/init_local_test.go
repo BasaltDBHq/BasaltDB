@@ -95,6 +95,22 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	require.NotContains(t, r.stdout+r.stderr, "pw@db.example")
 }
 
+// Without --demo the link opens the page's install of the person's own
+// tables: the same dialog, link and MCP line, with demo false.
+func TestInitWithoutDemoOpensTheInstallOfARealDatabase(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	r, read := localInit(t, h, "--agent", "sales_bot")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Len(t, h.dialogs, 1, "the engine service is installed through the dialog, as for --demo")
+	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
+	require.Len(t, lines, 2, r.stdout)
+	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "sales_bot", OSUser: me752(t), Demo: false}, linkJob(t, lines[0]))
+	require.Equal(t, "basalt mcp --agent sales_bot", lines[1])
+	require.Equal(t, []string{lines[0]}, h.opened)
+	require.NotContains(t, read, envAdminURL)
+}
+
 func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
@@ -138,7 +154,6 @@ func TestInitStopsBeforeTheDialog(t *testing.T) {
 	}{
 		{"an admin-flow flag", []string{"--demo", "--write", "public.leads"}, nil, exitUsage, "takes only --agent and --demo"},
 		{"the old --yes", []string{"--demo", "--yes"}, nil, exitUsage, "takes only --agent and --demo"},
-		{"no sample database", nil, nil, exitUsage, "basalt init --demo"},
 		{"a bad agent name", []string{"--demo", "--agent", "Bad-Name"}, nil, exitUsage, "is not a name an agent can have"},
 		{"root", []string{"--demo"}, func(h *fakeHost) { h.euid = 0 }, exitUsage, "not root"},
 		{"no dialog", []string{"--demo"}, func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (/usr/bin/pkexec is missing)", service.ErrNoDialog) }, exitError, "cannot be shown here"},

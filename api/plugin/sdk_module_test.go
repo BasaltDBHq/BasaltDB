@@ -104,12 +104,14 @@ func TestSDKModuleMatchesTheContract(t *testing.T) {
 	})
 }
 
-// goCode is a Go file's code with every comment dropped.
+// goCode is a Go file's code with every comment dropped and the package
+// name left out: the engine's package is pluginproto, the SDK's is protocol.
 func goCode(t *testing.T, path string) string {
 	t.Helper()
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 	require.NoError(t, err)
+	f.Name.Name = "_"
 	var b bytes.Buffer
 	require.NoError(t, printer.Fprint(&b, fset, f))
 	return b.String()

@@ -7,17 +7,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
@@ -170,40 +167,6 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		run:   pending.Run,
 		close: func() {},
 	}, nil
-}
-
-// CollectWhileDown is basalt status for agent a's connect-only setup while
-// the engine is down, in same-user mode, where the CLI runs as the
-// engine's user (CONTRACT.md, The engine and a connect-only code,
-// Collecting): one collect, check, probe and, for a PREVIEW address,
-// report, signed with the engine's own key, and the state after. It never
-// reads .secret and never confirms: only the engine's confirm_database
-// does. It probes a PREVIEW address only when the engine's probe cache has
-// no probe of it, and a SET_UP address not at all (the engine probes it, or
-// reuses a passed preview probe), so a flow still leaves at most two
-// failed logins.
-func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos string, a config.Agent, o HandoffOptions, log *slog.Logger) (handoff.State, error) {
-	if a.Setup == nil || !a.Setup.ConnectOnly() || cfg.Service() || os.Geteuid() == 0 {
-		return handoff.State{}, errors.New("basalt status collects only for a waiting connect-only agent of a same-user engine, and never as root")
-	}
-	o = wireHandoff(o)
-	keys, err := keyfile.LoadKeys(filepath.Join(cfg.StateDirFor(goos), channel.KeyFileName))
-	if err != nil {
-		return handoff.State{}, fmt.Errorf("the engine's key cannot be read, so the address cannot be collected: %w", err)
-	}
-	pending, err := handoff.New(handoff.Options{
-		Agent: a.Name, Setup: *a.Setup, Collector: handoff.NewClient(o.HTTP, o.serviceURL(), keys, o.now()), Prober: o.Prober,
-		Files:   handoffFiles{configPath: configPath, agent: a.Name, credFile: a.Store.CredentialFile},
-		Changed: func() {}, Log: log, Now: o.now(),
-		// The engine's own cache, so a reached preview is probed once
-		// whichever process collects it; a SET_UP address waits for the
-		// engine, which asks the person.
-		Cache: handoff.FileCache{Dir: cfg.StateDirFor(goos)}, NoSetUpProbe: true,
-	})
-	if err != nil {
-		return handoff.State{}, err
-	}
-	return pending.StatusCollect(ctx), nil
 }
 
 // newRepin is the collect loop of agent a's certificateChanged setup

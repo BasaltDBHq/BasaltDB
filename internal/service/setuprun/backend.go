@@ -49,6 +49,18 @@ type Backend interface {
 	Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, error)
 	RecordEngineStatement(publicKey []byte, guardVersion int) Statement
 
+	// HasPasskeyFor reports whether an active passkey of this database
+	// belongs to origin.
+	HasPasskeyFor(ctx context.Context, q Querier, origin string) (bool, error)
+	// CurrentDatabase is current_database() on q.
+	CurrentDatabase(ctx context.Context, q Querier) (string, error)
+	// MetaOwner is the role that owns basalt_meta, "" when it does not exist.
+	MetaOwner(ctx context.Context, q Querier) (string, error)
+	// Run executes one statement on q.
+	Run(ctx context.Context, q Querier, sql string) error
+	// ApplyScript runs the script's statements on tx, in order.
+	ApplyScript(ctx context.Context, tx pgx.Tx, s Script) error
+
 	DemoSchema() string
 	DemoPlanDrop(ctx context.Context, q Querier) ([]string, error)
 	DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (kept bool, err error)

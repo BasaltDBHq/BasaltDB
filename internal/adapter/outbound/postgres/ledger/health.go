@@ -11,13 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
-
-// DeadManAfter is how long without an engine heartbeat before basalt log
-// warns that the engine stopped checking in (D14), and how long it keeps
-// showing the DEAD_MAN row the engine wrote when it came back. Nothing
-// gets disabled.
-const DeadManAfter = 7 * 24 * time.Hour
 
 // HealthOptions chooses how CheckHealth verifies the chain.
 type HealthOptions struct {
@@ -37,7 +32,7 @@ type HealthOptions struct {
 }
 
 // DeadMan is the last DEAD_MAN row: the engine checked in after a silence
-// longer than DeadManAfter.
+// longer than guardmodel.DeadManAfter.
 type DeadMan struct {
 	At            time.Time
 	LastHeartbeat string
@@ -72,7 +67,7 @@ type Health struct {
 	// LastHeartbeat is zero when the agent never sent one.
 	LastHeartbeat  time.Time
 	HeartbeatStale bool
-	// DeadMan is the last DEAD_MAN row of the past DeadManAfter, or nil.
+	// DeadMan is the last DEAD_MAN row of the past guardmodel.DeadManAfter, or nil.
 	DeadMan *DeadMan
 	// PII is the classification summary; nil before guard version 15.
 	PII *PIIHealth
@@ -251,7 +246,7 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 	}
 	if last != nil {
 		h.LastHeartbeat = *last
-		h.HeartbeatStale = now.Sub(*last) > DeadManAfter
+		h.HeartbeatStale = now.Sub(*last) > guardmodel.DeadManAfter
 	}
 	dm, found, err := lastDeadMan(ctx, q, now)
 	if err != nil {
@@ -317,14 +312,14 @@ func verify(ctx context.Context, q guard.Querier, opts HealthOptions) (guard.Cha
 	return guard.VerifyChainFrom(ctx, q, pin)
 }
 
-// lastDeadMan is the latest DEAD_MAN row of the past DeadManAfter, and
+// lastDeadMan is the latest DEAD_MAN row of the past guardmodel.DeadManAfter, and
 // false when there is none.
 func lastDeadMan(ctx context.Context, q guard.Querier, now time.Time) (DeadMan, bool, error) {
 	sql, args, err := psql.Select("at", "coalesce(detail->>'lastHeartbeat', '')",
 		"coalesce((detail->>'silentHours')::bigint, 0)").
 		From("basalt_meta.agent_ledger").
 		Where("kind = ?", string(guard.EventDeadMan)).
-		Where("at > ?", now.Add(-DeadManAfter)).
+		Where("at > ?", now.Add(-guardmodel.DeadManAfter)).
 		OrderBy("seq DESC").Limit(1).ToSql()
 	if err != nil {
 		return DeadMan{}, false, err

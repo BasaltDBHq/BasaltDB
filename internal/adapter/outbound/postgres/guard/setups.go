@@ -198,3 +198,38 @@ func RoleStatementTimeout(ctx context.Context, q Querier, role string) (RoleTime
 		Scan(&v.AllDatabases, &v.ThisDatabase)
 	return v, err
 }
+
+// HasPasskeyFor reports whether an active passkey of this database belongs
+// to origin.
+func HasPasskeyFor(ctx context.Context, q Querier, origin string) (bool, error) {
+	var ok bool
+	// Plain SQL: a presence check on the admin connection.
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys WHERE origin = $1 AND revoked_at IS NULL)`, origin).Scan(&ok)
+	return ok, err
+}
+
+// CurrentDatabase is current_database() on q.
+func CurrentDatabase(ctx context.Context, q Querier) (string, error) {
+	var database string
+	if err := q.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
+		return "", err
+	}
+	return database, nil
+}
+
+// MetaOwner is the name of the role that owns basalt_meta, "" when the
+// schema does not exist.
+func MetaOwner(ctx context.Context, q Querier) (string, error) {
+	var owner string
+	if err := q.QueryRow(ctx, `SELECT coalesce((SELECT pg_catalog.pg_get_userbyid(n.nspowner)::text
+		FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'), '')`).Scan(&owner); err != nil {
+		return "", err
+	}
+	return owner, nil
+}
+
+// Run executes one statement on q.
+func Run(ctx context.Context, q Querier, sql string) error {
+	_, err := q.Exec(ctx, sql)
+	return err
+}

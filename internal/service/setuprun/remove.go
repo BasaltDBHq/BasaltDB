@@ -81,8 +81,8 @@ func (p RemovePlan) Lines() []string {
 // (guard.DefaultPrefix outside tests); a guard installed with another
 // prefix is refused PREFIX_MISMATCH.
 func PlanRemove(ctx context.Context, b Backend, q Querier, prefix string) (RemovePlan, error) {
-	var database string
-	if err := q.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
+	database, err := b.CurrentDatabase(ctx, q)
+	if err != nil {
 		return RemovePlan{}, err
 	}
 	installed, err := b.InstalledPrefix(ctx, q)
@@ -120,10 +120,9 @@ func PlanRemove(ctx context.Context, b Backend, q Querier, prefix string) (Remov
 // that is not exactly <prefix>_guard with a valid prefix is refused
 // PREFIX_MISMATCH: that schema is not BasaltDB's, and its owner's name must
 // never pick the roles a removal drops.
-func InstalledRemovalPrefix(ctx context.Context, q Querier, def string) (string, error) {
-	var owner string
-	if err := q.QueryRow(ctx, `SELECT coalesce((SELECT pg_catalog.pg_get_userbyid(n.nspowner)::text
-		FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'), '')`).Scan(&owner); err != nil {
+func InstalledRemovalPrefix(ctx context.Context, b Backend, q Querier, def string) (string, error) {
+	owner, err := b.MetaOwner(ctx, q)
+	if err != nil {
 		return "", err
 	}
 	if owner == "" {
@@ -148,12 +147,12 @@ func CheckDatabaseName(confirmName string) error {
 
 // CheckTypedName refuses, in tx, a confirmName that is not
 // current_database(): the first thing a removal's transaction reads.
-func CheckTypedName(ctx context.Context, tx pgx.Tx, confirmName string) error {
+func CheckTypedName(ctx context.Context, b Backend, tx pgx.Tx, confirmName string) error {
 	if err := CheckDatabaseName(confirmName); err != nil {
 		return err
 	}
-	var database string
-	if err := tx.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
+	database, err := b.CurrentDatabase(ctx, tx)
+	if err != nil {
 		return err
 	}
 	if confirmName != database {
@@ -168,14 +167,14 @@ func CheckTypedName(ctx context.Context, tx pgx.Tx, confirmName string) error {
 // on, which stays. A failed drop refuses SETUP_FAILED; the caller rolls
 // tx back.
 func RunRemove(ctx context.Context, b Backend, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
-	if err := CheckTypedName(ctx, tx, confirmName); err != nil {
+	if err := CheckTypedName(ctx, b, tx, confirmName); err != nil {
 		return RemovePlan{}, false, err
 	}
 	if p, err = PlanRemove(ctx, b, tx, prefix); err != nil {
 		return RemovePlan{}, false, err
 	}
 	for _, sql := range p.Drops {
-		if _, err := tx.Exec(ctx, sql); err != nil {
+		if err := b.Run(ctx, tx, sql); err != nil {
 			return RemovePlan{}, false, &RefusalError{
 				Code:    CodeSetupFailed,
 				Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed.", Err: err,

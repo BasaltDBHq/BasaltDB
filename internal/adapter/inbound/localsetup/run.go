@@ -329,7 +329,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			return err
 		}
 		script, keep := p.script, p.keep
-		needed, err := passkeyNeeded(ctx, tx, s.opts.Origin)
+		needed, err := passkeyNeeded(ctx, s.be, tx, s.opts.Origin)
 		if err != nil {
 			return setupFailed("read the passkeys", err)
 		}

@@ -348,7 +348,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	for _, e := range tables.Excluded {
 		out.Excluded = append(out.Excluded, ExcludedTable(e))
 	}
-	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, conn, false); err != nil {
+	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, store, conn, false); err != nil {
 		return Checked{}, asError(err)
 	}
 	if !req.ConnectPage { // the laptop command shows no labels and no passkeys

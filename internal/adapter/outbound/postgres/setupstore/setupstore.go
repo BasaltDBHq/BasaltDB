@@ -118,3 +118,23 @@ func (Store) DemoPlanDrop(ctx context.Context, q guard.Querier) ([]string, error
 func (Store) DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (bool, error) {
 	return demo.ApplyDrop(ctx, tx, drops)
 }
+
+func (Store) HasPasskeyFor(ctx context.Context, q guard.Querier, origin string) (bool, error) {
+	return guard.HasPasskeyFor(ctx, q, origin)
+}
+
+func (Store) CurrentDatabase(ctx context.Context, q guard.Querier) (string, error) {
+	return guard.CurrentDatabase(ctx, q)
+}
+
+func (Store) MetaOwner(ctx context.Context, q guard.Querier) (string, error) {
+	return guard.MetaOwner(ctx, q)
+}
+
+func (Store) Run(ctx context.Context, q guard.Querier, sql string) error {
+	return guard.Run(ctx, q, sql)
+}
+
+func (Store) ApplyScript(ctx context.Context, tx pgx.Tx, s guardmodel.Script) error {
+	return guard.ApplyScript(ctx, tx, s)
+}

@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
@@ -56,10 +55,4 @@ func TestATickTheGuardRefusesDoesNothing(t *testing.T) {
 	require.ErrorIs(t, err, refuse)
 	require.Contains(t, err.Error(), "skipped")
 	require.Zero(t, pins.saved, "no chain head is pinned from a schema the engine does not serve")
-}
-
-// The engine and basalt log agree on how long a silence is.
-func TestDeadManAfterMatchesTheLedger(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, ledger.DeadManAfter, upkeep.DeadManAfter)
 }

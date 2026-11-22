@@ -1183,13 +1183,8 @@ func TestPluginApprovalVectors(t *testing.T) {
 	require.Positive(t, mismatches, "a settings mismatch")
 	require.Positive(t, wrongKinds, "a binding of another kind")
 
-	// The response travels as basalt-plugin.1.<base64url(json)>: carry it
-	// there and back, then check it.
-	const codePrefix = "basalt-plugin.1."
-	code := codePrefix + base64.RawURLEncoding.EncodeToString(doc.Response)
-	body, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(code, codePrefix))
-	require.NoError(t, err)
-	require.JSONEq(t, string(doc.Response), string(body))
+	// The page posts the response as JSON: check it against its schema.
+	body := []byte(doc.Response)
 	responseSchema := compile("approval/response.schema.json")
 	require.NoError(t, validate(responseSchema, body))
 	var incomplete map[string]any

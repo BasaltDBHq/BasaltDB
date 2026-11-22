@@ -97,7 +97,7 @@ type PluginApproval struct {
 }
 
 // PluginApprovalResponse is the person's passkey assertion over a plugin
-// approval's binding, as a basalt-plugin.1. code carries it.
+// approval's binding, as the page's signed response carries it.
 type PluginApprovalResponse struct {
 	ApprovalID uuid.UUID
 	Assertion  passkey.Assertion

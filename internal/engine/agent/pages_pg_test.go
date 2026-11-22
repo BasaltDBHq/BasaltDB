@@ -289,19 +289,10 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	require.NoError(t, err)
 	id := prep.RevertID.String()
 
-	// The CLI asks for a link with proof of the binding text.
+	// The revert's short link, as request_revert issues it.
 	var perr pageError
-	issue := func(proof string) (int, string) {
-		var out struct{ URL string }
-		status := p.post("/api/v1/reverts/"+id+"/links", "", "", []byte(`{"proof":"`+proof+`"}`), &out)
-		return status, out.URL
-	}
-	status, _ := issue(links.IssueProof(prep.BindingText + " "))
-	require.Equal(t, http.StatusNotFound, status, "a wrong proof is an unknown id")
-	status, link := issue(links.IssueProof(prep.BindingText))
-	require.Equal(t, http.StatusOK, status)
-	require.True(t, strings.HasPrefix(link, pageOrigin+"/reverts/"+id+"#s="), link)
-	secret := links.SecretOf(link)
+	secret, err := env.svc.Links.Issue(prep.RevertID, time.Now().Add(time.Hour))
+	require.NoError(t, err)
 
 	var req revert.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &req))

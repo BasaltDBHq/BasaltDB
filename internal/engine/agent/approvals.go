@@ -130,6 +130,9 @@ type heldNotice struct {
 	pick     handOver
 	longURL  string
 	shortURL string // "" when no short link was issued
+	// shortHeld is set when the person holds a short link to the item that
+	// still works (shortLinked): a restating result points back to it.
+	shortHeld bool
 	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES, NO_PASSKEY
 	// or REQUEST_TOO_LARGE (WAIT_ENDED is set by the wait that ran out).
 	reason string
@@ -182,7 +185,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	var text string
 	var msgLinks []mcp.Link
 	switch {
-	case short == "" && s.PagesOrigin != "":
+	case short == "" && s.shortLinked(id):
 		// A wait or a list that issues no new link: the link already handed
 		// over still works, so the message adds no URL.
 		pick = handOver{URL: long, Kind: linkLong}
@@ -202,9 +205,10 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: pick.URL, RequestFile: pick.File, PersonMessage: text, Links: msgLinks,
 		},
-		pick:     pick,
-		longURL:  long,
-		shortURL: short,
+		pick:      pick,
+		longURL:   long,
+		shortURL:  short,
+		shortHeld: s.shortLinked(id),
 	}, nil
 }
 
@@ -260,8 +264,7 @@ func (s *Service) localLink(page func(string, uuid.UUID) string, id uuid.UUID, e
 func approvalRequiredError(n heldNotice) error {
 	return approvalError(n, fmt.Sprintf("held for the person's approval: %d rows. Show the person approval.personMessage verbatim, "+
 		"then, without ending your turn, call write once with the same arguments plus approvalId: it waits up to %d seconds "+
-		"for their passkey and returns APPLIED as soon as they approve. %s If they give you an approval code, pass it as approval. "+
-		"It expires at %s.",
+		"for their passkey and returns APPLIED as soon as they approve. %s It expires at %s.",
 		n.Rows, int(DefaultApprovalWait.Seconds()), afterWaitRunsOut, n.ExpiresAt))
 }
 
@@ -345,6 +348,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 		n.PersonMessage = s.tooLargeMessage("The held write", req.Cost, expires, false)
 		return n, nil
 	}
+	n.shortHeld = s.shortLinked(id)
 	if noPasskey {
 		n.reason = reasonNoPasskey
 	}
@@ -391,8 +395,8 @@ func differentWrite(a ledger.Approval, format string, args ...any) error {
 }
 
 // applyApproved runs a held write under its approval: the same statement,
-// parameters and run as held, after relaying the person's signed approval
-// when the agent was given it. The guard checks it all again at commit.
+// parameters and run as held, once the person signed on the page (waiting
+// for it when asked). The guard checks it all again at commit.
 func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &ArgumentError{Message: "approvalId needs the runId the write was held in"}
@@ -410,9 +414,6 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	if err := sameAsHeld(a, p); err != nil {
 		return WriteOutcome{}, err
-	}
-	if err := s.relay(ctx, a, p.Approval); err != nil {
-		return WriteOutcome{}, s.withApprovalLink(ctx, a, err)
 	}
 	if a, err = s.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
@@ -507,23 +508,6 @@ func sameParams(held json.RawMessage, params []any) bool {
 	return ok && sameJSON(a, b)
 }
 
-// relay submits the person's response code for a, when given and not yet
-// signed. The code is untrusted; Postgres verifies the signature.
-func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) error {
-	if code == "" || a.Status == ledger.ApprovalApproved {
-		return nil
-	}
-	resp, err := approval.ParseResponse(code)
-	if err != nil {
-		return approvalInvalid(reasonBadSignature, "the approval code is damaged: %v", err)
-	}
-	if resp.ApprovalID != a.ID {
-		return approvalInvalid(reasonBadSignature, "the approval code is for approval %s, not %s", resp.ApprovalID, a.ID)
-	}
-	_, err = s.Store.SubmitApproval(ctx, a.ID, resp.Assertion())
-	return err
-}
-
 // PendingItem is one open held write with what the agent hands the person.
 type PendingItem struct {
 	ledger.Approval
@@ -583,7 +567,7 @@ func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.
 }
 
 func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p WriteParams) (ledger.Approval, error) {
-	if a.Status != ledger.ApprovalPending || p.Approval != "" || p.Wait == 0 {
+	if a.Status != ledger.ApprovalPending || p.Wait == 0 {
 		return a, nil
 	}
 	a, err := s.awaitSigned(ctx, a, p.Wait)

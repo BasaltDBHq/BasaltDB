@@ -1,15 +1,14 @@
 // The approval page: read the held action (from the long link's fragment,
 // or from the engine for a short link /approvals/<id>), check the rows against
 // the binding, show them, and sign the binding with the person's passkey.
-// From a long link the page sends nothing anywhere and shows a code to
-// paste; from a short link it posts the signature to the engine that served
-// it (same origin), which relays it to Postgres.
+// From a short link it posts the signature to the engine that served it
+// (its own pages, or through Basalt Vault), which relays it to Postgres. A
+// long link has no engine to send a signature to: the page only shows it.
 import { changeGroups, countText } from "./changes.js";
 import {
   KIND_APPROVE,
   approvalResponseJSON,
   checkApprovalRequest,
-  encodeApprovalResponse,
   paramsText,
   parseApprovalRequest,
   relyingParty,
@@ -17,7 +16,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, NO_CARRIER, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -153,29 +152,21 @@ async function loadRequest(hash) {
   return { req, relay: { path: paths.relay, secret, session } };
 }
 
-// finish relays the signed response when the page came from a short link,
-// and otherwise (or when the relay fails) shows the code to paste.
+// finish relays the signed response to the engine that served the short
+// link. Nothing is ever shown to paste: when the relay fails, the person
+// opens the link again or asks the agent for a new one.
 async function finish(response, relay, binding) {
-  if (relay !== null) {
-    try {
-      const result = await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
-      showDone("Approved. The agent will continue.");
-      await showReceipt(result, relay.session, { kind: "APPROVAL", itemId: response.approvalId, rowsHash: binding.rowsHash });
-      // The approval is finished: nothing else goes to the engine.
-      endSession(relay.session, ENGINE_BUTTONS);
-      setPill("state", "Approved", "ok");
-      return;
-    } catch (err) {
-      if (!pastesCode(relay.session)) {
-        showRelayFailed(relayFailure(err, "approval"));
-        setPill("state", "Not approved", "bad");
-        return;
-      }
-      showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt approve.`);
-    }
+  try {
+    const result = await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
+    showDone("Approved. The agent will continue.");
+    await showReceipt(result, relay.session, { kind: "APPROVAL", itemId: response.approvalId, rowsHash: binding.rowsHash });
+    // The approval is finished: nothing else goes to the engine.
+    endSession(relay.session, ENGINE_BUTTONS);
+    setPill("state", "Approved", "ok");
+  } catch (err) {
+    showRelayFailed(relayFailure(err, "approval"));
+    setPill("state", "Not approved", "bad");
   }
-  showCode(encodeApprovalResponse(response));
-  setPill("state", "Signed", "ok");
 }
 
 async function approve(rp, req, summary, relay) {
@@ -284,6 +275,11 @@ async function main() {
   if (req.binding.expiresAt.getTime() <= Date.now()) {
     $("approve").disabled = true;
     $("status").textContent = "This approval expired. The write stays blocked; the agent has to ask again.";
+    return;
+  }
+  if (relay === null) {
+    $("approve").disabled = true;
+    $("status").textContent = NO_CARRIER;
     return;
   }
   showCascadeConfirmation(summary);

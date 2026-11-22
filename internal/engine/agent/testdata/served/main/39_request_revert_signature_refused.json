@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "INVALID_ARGUMENT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "invalid arguments: json: unknown field \"signature\"",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Fix the arguments as the message says; the tool's input schema lists them.",
+        "tool": "request_revert"
+      }
+    ]
+  },
+  "isError": true,
+  "tool": "request_revert"
+}

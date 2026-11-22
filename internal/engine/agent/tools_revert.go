@@ -186,14 +186,13 @@ type requestRevertArgs struct {
 	RevertID         string `json:"revertId" validate:"omitempty,uuid"`
 	WaitForSignature *int   `json:"waitForSignature" validate:"omitempty,min=0,max=110"`
 	ReissueLink      *bool  `json:"reissueLink"`
-	Signature        string `json:"signature" validate:"omitempty,max=8192"`
 }
 
 // requestScope returns the request form's one scope, checking the
 // argument combinations the schema cannot express.
 func (a requestRevertArgs) requestScope() (action.Scope, error) {
-	if a.WaitForSignature != nil || a.ReissueLink != nil || a.Signature != "" {
-		return action.Scope{}, &ArgumentError{Message: "invalid arguments: waitForSignature, reissueLink and signature go only with " +
+	if a.WaitForSignature != nil || a.ReissueLink != nil {
+		return action.Scope{}, &ArgumentError{Message: "invalid arguments: waitForSignature and reissueLink go only with " +
 			"revertId; a new request returns the link at once, for you to show the person before anyone can sign"}
 	}
 	out := a.named()
@@ -209,34 +208,21 @@ func (a requestRevertArgs) requestScope() (action.Scope, error) {
 }
 
 // awaitParams is the wait form's arguments as the service takes them. A
-// signature or a new link returns at once, so neither takes
-// waitForSignature; a signature takes no reissueLink.
+// new link returns at once, so it takes no waitForSignature.
 func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
 	if len(a.named()) > 0 || a.hasFilters() || a.Intent != "" {
 		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
 			"tables or intent; the revert already has them"}
 	}
 	reissue := a.ReissueLink != nil && *a.ReissueLink
-	if a.WaitForSignature != nil && (a.Signature != "" || reissue) {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: waitForSignature does not go with signature or " +
-			"reissueLink: both return at once (show a new link before waiting for it)"}
-	}
-	if a.Signature != "" && reissue {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: signature does not go with reissueLink"}
+	if a.WaitForSignature != nil && reissue {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: waitForSignature does not go with " +
+			"reissueLink: a new link returns at once (show it before waiting for it)"}
 	}
 	out := AwaitRevertParams{RevertID: uuid.MustParse(a.RevertID), Wait: DefaultRevertWait, Reissue: reissue}
 	if a.WaitForSignature != nil {
 		out.Wait = time.Duration(*a.WaitForSignature) * time.Second
 	}
-	if a.Signature == "" {
-		return out, nil
-	}
-	code, err := revert.ParseResponse(a.Signature)
-	if err != nil {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: signature is not a basalt-revert.1. code the " +
-			"revert page shows (" + err.Error() + "); ask the person to copy the whole code. An approval code goes to write's approval"}
-	}
-	out.Signature = &code
 	return out, nil
 }
 

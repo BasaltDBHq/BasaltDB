@@ -86,10 +86,10 @@ Call `status` at the start of every session. Call it again when the person says 
 ## 6. Work
 
 - Start a run with `run_start` and an intent. Read with `query`. Change data with `write` and an intent.
-- A write of 11 to 50 rows, or any `DELETE`, is held. Show the person `approval.personMessage` unchanged. The link goes to `portal.basaltvault.app`. Then end your turn. Until the relay is live, the page shows the person a code that starts with `basalt-approval.1.`.
-- When the person pastes the code, repeat the write with `approvalId` and the code as `approval`. If the person says they approved and you have no code, call `list_pending` with `reissueLink: true` for a new link.
+- A write of 11 to 50 rows, or any `DELETE`, is held. Show the person `approval.personMessage` unchanged. The link goes to `portal.basaltvault.app`. Then, in the same turn, repeat the write once with `approvalId`: it waits for the person's passkey and applies the write. The page sends the signature itself; there is no code to pass on.
+- If that wait runs out, end your turn. When the person says they approved, repeat the write with `approvalId`. If they lost the link, call `list_pending` with `reissueLink: true` for a new one.
 - Never split a write to avoid a hold. Never retry a refusal in a loop.
-- To undo your own work: find the run with `list_runs`, check it with `preview_revert` and `query`, tell the person what you suggest, then call `request_revert`. Show its `personMessage`. Until the relay is live, the person signs and pastes a code that starts with `basalt-revert.1.`. Call `request_revert` again with `revertId` and the code as `signature`.
+- To undo your own work: find the run with `list_runs`, check it with `preview_revert` and `query`, tell the person what you suggest, then call `request_revert`. Show its `personMessage`. Then call `request_revert` once with `revertId`: it waits for the person to sign on the page.
 
 ## 7. Upgrade
 

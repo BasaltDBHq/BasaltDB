@@ -373,8 +373,11 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 		b.OpenLink(n.ApprovalURL, "Open the link, review the rows and approve with your passkey.")
 		b.RepeatCall(toolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(DefaultApprovalWait.Seconds())))
 	case reasonHeldNoPages:
-		b.OpenLink(n.ApprovalURL, "Open the link, review the rows and approve with your passkey.")
-		b.RepeatCall(toolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(DefaultApprovalWait.Seconds())))
+		// No page can sign this link (no local pages, no live Vault
+		// connection): a wait cannot succeed.
+		b.OpenLink(n.ApprovalURL, "Open the link to review the rows. It cannot be signed yet.")
+		b.EndTurn("Do not wait: this link cannot be signed. End your turn, showing approval.personMessage.")
+		b.CallTool(toolListPending, map[string]any{argReissueLink: true}, "Once status shows the Vault connected, call this for a link the person can sign, and show it.")
 	case reasonNoPasskey:
 		b.AgentRunCommand(s.Commands.Init(), "Nobody can approve yet: run this once and show the person the link it prints, where they register a passkey.")
 		if s.Commands.AgentOperated() {
@@ -385,7 +388,7 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 		b.OpenLink(n.ApprovalURL, "Then open the link and approve the held write.")
 		b.EndTurn("End your turn: the person acts next.")
 	case reasonWaitEnded:
-		s.openHeldLink(b, n, "Open the link and approve with your passkey.")
+		s.openHeldLink(b, n, "Open the link to review the rows. It cannot be signed yet: ask the agent for a new link later.")
 		b.TellAgent("Tell the agent when you have approved.")
 		b.EndTurn("Do not wait again: end your turn, showing personMessage.")
 		b.RepeatCall(toolWrite, map[string]any{argApprovalID: n.ApprovalID, argWaitApproval: 0}, 0,
@@ -691,8 +694,8 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 		s.openApprovalAgain(b, n, "Open the link and approve with your passkey: the write is not approved yet.")
 		lead = "The held write was not approved yet, so nothing was applied."
 	case reasonBadSignature:
-		s.openApprovalAgain(b, n, "Approve again on the page; the code did not verify.")
-		lead = "The approval code did not verify, so nothing was applied."
+		s.openApprovalAgain(b, n, "Approve again on the page; the signature did not verify.")
+		lead = "The approval signature did not verify, so nothing was applied."
 	case reasonPasskeyRevoked:
 		b.AgentRunCommand(s.Commands.Init(), passkeyInitText)
 		s.openApprovalAgain(b, n, "Then approve the held write with that passkey.")
@@ -718,7 +721,7 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 // blocks). Otherwise it is the link the hold chose: the long link within the
 // budget, or the hash link, whose request file the agent already sent.
 func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
-	if s.PagesOrigin != "" || isPageAddress(n.ApprovalURL) {
+	if n.shortHeld || isPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink("Open the short link the agent gave you earlier. " + text)
 		return
 	}
@@ -730,7 +733,7 @@ func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
 // the pages are served, else the hold's link (a hash link names the request
 // file the agent already sent).
 func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []mcp.Link) {
-	if s.PagesOrigin != "" {
+	if n.shortHeld {
 		return pointBackMessage(lead)
 	}
 	return approvalMessage(lead, handOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true})

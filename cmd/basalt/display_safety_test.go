@@ -2,12 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -38,52 +35,6 @@ func TestVisibleTextEscapesWhatHidesOrReordersText(t *testing.T) {
 	} {
 		require.Equal(t, want, visibleText(in), "%q", in)
 	}
-}
-
-func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
-	t.Parallel()
-	const local = "http://localhost:18787"
-	id := uuid.MustParse("0190a3f2-7c1e-7000-8000-000000000001")
-	other := uuid.MustParse("0190a3f2-7c1e-7000-8000-000000000002")
-	long := local + "/approvals/" + id.String() + "#2.abc"
-	page := local + "/approvals/" + id.String() + "#s="
-	for name, answer := range map[string]string{
-		"foreign origin":   "https://evil.example/approvals/" + id.String() + "#s=" + fakeSecret,
-		"lookalike origin": local + ".evil.example/approvals/" + id.String() + "#s=" + fakeSecret,
-		"wrong kind":       local + "/reverts/" + id.String() + "#s=" + fakeSecret,
-		"wrong id":         local + "/approvals/" + other.String() + "#s=" + fakeSecret,
-		"no secret":        local + "/approvals/" + id.String(),
-		"long link":        local + "/approvals/" + id.String() + "#2.abc",
-		"short secret":     page + "c2VjcmV0",
-		"secret with more": page + fakeSecret + "&next=https://evil.example",
-		"secret with crlf": page + fakeSecret[:11] + "\r\n" + fakeSecret[11:],
-		"trailing newline": page + fakeSecret + "\n",
-		"padded secret":    page + fakeSecret + "==",
-		"non-zero tail":    page + fakeSecret[:21] + "h",
-	} {
-		h := newFakeHost(t)
-		h.issueURL = answer
-		var stderr bytes.Buffer
-		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
-		c.host = h
-		got := linkPages{local: local}.short(c, "approvals", id, "binding", long)
-		require.Equal(t, long, got, name)
-		require.Contains(t, stderr.String(), "the engine gave no short link", name)
-		require.NotContains(t, stderr.String(), answer, name)
-	}
-
-	h := newFakeHost(t)
-	var stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
-	c.host = h
-	require.Equal(t, page+fakeSecret, linkPages{local: local}.short(c, "approvals", id, "binding", long), "the item's own short link")
-	require.Empty(t, stderr.String())
-
-	h.issueErr = errors.New("engine answered 500: \x1b]8;;https://evil.example\x1b\\click\u202e\r\nbasalt: approved")
-	got := linkPages{local: local}.short(c, "approvals", id, "binding", long)
-	require.Equal(t, long, got)
-	require.Equal(t, "basalt: the engine gave no short link (engine answered 500: ?]8;;https://evil.example?\\click???basalt: approved); using the long link\n",
-		stderr.String(), "the engine's message is shown with its control characters replaced")
 }
 
 // ESC, OSC, C1 and bidi characters in a table or column name, or a reason,

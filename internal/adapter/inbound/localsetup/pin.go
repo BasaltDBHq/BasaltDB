@@ -140,10 +140,10 @@ func (s *Service) readPin(ctx context.Context, req Request) (*pin, error) {
 // refuses, unless it is this pin.
 func (p *pin) write(ctx context.Context, tx pgx.Tx, configPath string) error {
 	if err := guard.RecordTrustPin(ctx, tx, p.host, p.port, p.sha256); err != nil {
-		return setupFailed()
+		return setupFailed("record the trust pin", err)
 	}
 	if _, err := trustdir.PinNew(configPath, p.host, p.top, p.caOnly); err != nil {
-		return setupFailed()
+		return setupFailed("write the trust pin", err)
 	}
 	return nil
 }

@@ -460,7 +460,8 @@ func TestFeedDeliversInOrder(t *testing.T) {
 	require.Len(t, calls, 3)
 	require.Len(t, calls[1].events, protocol.MaxFeedEvents)
 	require.Len(t, calls[2].events, 30)
-	c, _ := e.cursor(p.key, "product_a")
+	// The cursor is written after the plugin answers, so wait for it.
+	c := e.waitCursor(p.key, "product_a", want[len(want)-1])
 	require.Equal(t, feedCursor{InstallID: install, Seq: want[len(want)-1]}, c)
 	settle()
 	require.Len(t, p.received(), 3, "nothing again")
@@ -693,7 +694,7 @@ func TestNewInstallStartsAtHead(t *testing.T) {
 	b := e.applied("product_a")
 	waitSeqs(t, p, "product_a", a, b)
 	waitSeqs(t, q, "product_a", b)
-	cp, _ := e.cursor(p.key, "product_a")
+	cp := e.waitCursor(p.key, "product_a", b)
 	require.Equal(t, feedCursor{InstallID: e.installID(), Seq: b}, cp)
 	require.Less(t, enabled, head)
 }
@@ -999,7 +1000,7 @@ func TestFeedBacksOffWhenPluginDown(t *testing.T) {
 	e.applied("product_a")
 	settle()
 	require.Len(t, p.received(), before)
-	c, _ = e.cursor(p.key, "product_a")
+	c = e.waitCursor(p.key, "product_a", b)
 	require.Equal(t, b, c.Seq)
 	require.Contains(t, e.logs.String(), "plugin feed paused")
 }

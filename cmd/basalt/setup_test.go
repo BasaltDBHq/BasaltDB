@@ -52,6 +52,11 @@ type fakeHost struct {
 	dialogs   []string
 	noDialog  error
 	dialogErr error
+	// setupCodes are what SetupState answers, one per call (the last one
+	// repeats); setupErrs, while not empty, an error per call before them.
+	setupCodes []string
+	setupErrs  []error
+	setupCalls int
 }
 
 const fakeBin = "/opt/basalt/bin/basalt"
@@ -78,6 +83,23 @@ func (h *fakeHost) LookPath(string) (string, error) {
 func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 
 func (h *fakeHost) DialogAvailable(string) error { return h.noDialog }
+
+func (h *fakeHost) SetupState(context.Context, string) (string, error) {
+	h.setupCalls++
+	if len(h.setupErrs) > 0 {
+		err := h.setupErrs[0]
+		h.setupErrs = h.setupErrs[1:]
+		return "", err
+	}
+	if len(h.setupCodes) == 0 {
+		return "INVALID_ARGUMENT", nil
+	}
+	code := h.setupCodes[0]
+	if len(h.setupCodes) > 1 {
+		h.setupCodes = h.setupCodes[1:]
+	}
+	return code, nil
+}
 
 func (h *fakeHost) AdminDialog(_ context.Context, _, script string, _ io.Writer) error {
 	h.dialogs = append(h.dialogs, script)
@@ -210,7 +232,7 @@ func initRun(t *testing.T, d *guardtest.DB, h *fakeHost, goos string, interactiv
 		})
 	c.goos, c.host, c.interactive = goos, h, interactive
 	args := append([]string{"--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--skip-passkey"}, extra...)
-	code := runInit(c, takePathFlags(c, runInit, args))
+	code := runInitAdmin(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -495,7 +517,7 @@ func TestInitRefusesUnprotectedBinaryBeforeAnything(t *testing.T) {
 		}
 		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, getenv)
 		c.goos, c.host = "linux", h
-		code := runInit(c, takePathFlags(c, runInit, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey"}, extra...)))
+		code := runInitAdmin(c, takePathFlags(c, runInit, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey"}, extra...)))
 
 		require.Equal(t, exitError, code, extra)
 		require.Contains(t, stderr.String(), "owned by uid 501, not root", extra)
@@ -520,7 +542,7 @@ func TestInitNoServiceDoesNotCheckTheBinary(t *testing.T) {
 			return ""
 		})
 	c.goos, c.host = "linux", h
-	runInit(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"}))
+	runInitAdmin(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"}))
 	require.Empty(t, h.sys.checked)
 }
 

@@ -28,6 +28,12 @@ const (
 	// names no SYS_UID_MAX.
 	linuxSysUIDMax = 999
 
+	// linuxPluginBase and darwinPluginBase are the plugin base the script
+	// makes (PluginBase), and pluginRunDirName the folder of the entries'
+	// sockets in it.
+	linuxPluginBase  = "/opt/basalt"
+	darwinPluginBase = "/Library/Basalt"
+
 	// unitEnd ends the here-document that carries the unit.
 	unitEnd = "END_OF_ENGINE_UNIT"
 )
@@ -238,6 +244,14 @@ make_dir() {
 	mkdir -m "$2" "$1"
 	chown -h "$3:$4" "$1"
 }
+# make_root_dir DIR MODE: make DIR root's when it is missing; one that
+# exists must be root's and pass the walk.
+make_root_dir() {
+	check_dir "$1" ""
+	[ -d "$1" ] && return 0
+	mkdir -m "$2" "$1"
+	chown -h 0:0 "$1"
+}
 # put_file PATH: write stdin to PATH, mode 0644, in a directory only root
 # can change, replacing the file whole.
 put_file() {
@@ -294,8 +308,11 @@ fi
 check_dir %[2]s "$engine_uid"
 trusted %[3]s ""
 no_link %[6]s
+check_dir %[7]s ""
+check_dir %[8]s ""
 `, u, scriptWord(filepath.Dir(s.ConfigPath)), scriptWord(filepath.Dir(SystemdUnitPath)), linuxSysUIDMax,
-		shellCheck(u, "getent passwd "+u+" | cut -d: -f7"), scriptWord(SystemdUnitPath))
+		shellCheck(u, "getent passwd "+u+" | cut -d: -f7"), scriptWord(SystemdUnitPath),
+		scriptWord(linuxPluginBase), scriptWord(linuxPluginBase+"/"+pluginRunDirName))
 }
 
 // darwinPreflight checks an existing engine account (uid 300 to 499, no
@@ -334,7 +351,10 @@ func linuxScript(s Spec) string {
 fi
 engine_uid=$(id -u %[1]s)
 make_dir %[2]s %04[3]o %[1]s %[1]s
-`, u, scriptWord(filepath.Dir(s.ConfigPath)), configDirMode)
+make_root_dir %[4]s %04[5]o
+make_root_dir %[6]s %04[5]o
+`, u, scriptWord(filepath.Dir(s.ConfigPath)), configDirMode,
+		scriptWord(linuxPluginBase), openDirMode, scriptWord(linuxPluginBase+"/"+pluginRunDirName))
 }
 
 // darwinScript creates the engine's hidden system account with the lowest
@@ -371,12 +391,17 @@ no_link "$log"
 [ -f "$log" ] || fail "$log is not a file"
 chown -h %[1]s:%[1]s "$log"
 chmod %04[13]o "$log"
+# The plugin base, root's: best effort on macOS, as the service install
+# does; plugins cannot be installed until it can be made.
+( make_root_dir %[14]s %04[5]o && make_root_dir %[15]s %04[5]o && make_root_dir %[16]s %04[5]o ) ||
+	echo "basalt: plugins cannot be installed until every folder above %[14]s is owned by root and writable by root only" >&2
 `, u, darwinIDMin, darwinIDMax,
 		scriptWord(configDir), openDirMode,
 		scriptWord(config.DefaultSocketDir(goosDarwin)), runtimeDirMode,
 		scriptWord(config.DefaultStateDir(goosDarwin)), darwinStateDirMode,
 		scriptWord(darwinLogDir), openDirMode,
-		scriptWord(darwinLogFile), engineLogMode)
+		scriptWord(darwinLogFile), engineLogMode,
+		scriptWord(darwinPluginBase), scriptWord(darwinPluginBase+"/"+pluginRunDirName), scriptWord(darwinPluginLogDir))
 }
 
 // scriptWord is a constant path as one shell word: single-quoted when it

@@ -47,7 +47,7 @@ func commands() []command {
 		{"engine", "Run the engine service in the foreground (or revoke a recorded engine)", runEngine},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
-		{"init", "Install the guard in Postgres and add an agent to the engine config", withIO(runInit)},
+		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
 		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},

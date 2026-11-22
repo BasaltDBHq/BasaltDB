@@ -41,18 +41,6 @@ type stubAgent struct {
 	receipt agent.Receipt
 }
 
-func (a *stubAgent) IssueApprovalLink(_ context.Context, id uuid.UUID, proof string) (string, error) {
-	if id != a.known || proof != "good" {
-		return "", agent.ErrNotThisAgent
-	}
-	secret, err := a.secrets.Issue(id, time.Now().Add(time.Hour))
-	return links.WithSecret(links.Approval(a.origin, id), secret), err
-}
-
-func (a *stubAgent) IssueRevertLink(context.Context, uuid.UUID, string) (string, error) {
-	return "", agent.ErrNotThisAgent
-}
-
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
 func (a *stubAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }

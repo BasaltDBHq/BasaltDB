@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -303,14 +302,11 @@ func TestCommandLineReissueSendsNoNotice(t *testing.T) {
 		requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 		rec.take()
 
-		// basalt revert / basalt approve --show ask the pages for a link
-		// with proof of the binding text.
+		// The CLI's link route is gone: nothing issues a link but the
+		// agent's own tools.
 		id := str(t, req["revertId"])
-		_, binding := longLinkBindingOfRevert(t, env, id)
-		var out struct{ URL string }
-		require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/links", "", "", []byte(`{"proof":"`+links.IssueProof(binding)+`"}`), &out))
-		require.True(t, strings.HasPrefix(out.URL, pageOrigin+"/reverts/"+id+"#s="), out.URL)
-		require.Empty(t, rec.all(), "that link is in the person's hands already")
+		require.Equal(t, http.StatusNotFound, p.post("/api/v1/reverts/"+id+"/links", pageOrigin, "", []byte(`{"proof":"x"}`), nil))
+		require.Empty(t, rec.all())
 
 		pending, isError := env.h.call(t, "list_pending", map[string]any{})
 		require.False(t, isError, "%v", pending)
@@ -328,16 +324,6 @@ func TestCommandLineReissueSendsNoNotice(t *testing.T) {
 		require.Len(t, items(t, pending), 1)
 		require.Empty(t, rec.all(), "no new link was issued: the first one still works")
 	})
-}
-
-// longLinkBindingOfRevert is revert id's binding text, read as the agent
-// reads it.
-func longLinkBindingOfRevert(t *testing.T, env agentEnv, id string) (string, string) {
-	t.Helper()
-	r, err := env.svc.Store.FindRevert(t.Context(), uuid.MustParse(id))
-	require.NoError(t, err)
-	binding := r.BindingText
-	return id, binding
 }
 
 func TestNoticeHeadline(t *testing.T) {

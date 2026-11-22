@@ -293,12 +293,9 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	require.Equal(t, helperOnly.Agents, nb.Select.Agents)
 	require.NotNil(t, narrow.Catalog, "a narrow under the token gets the catalog")
 
-	// No link for the agent to a widened revert: the CLI's issue route
-	// refuses it, whatever proof it shows.
-	for _, proof := range []string{links.IssueProof(""), links.IssueProof(narrow.Request.Binding)} {
-		require.Equal(t, http.StatusNotFound, e.p.post("/api/v1/reverts/"+id.String()+"/links", "", "",
-			[]byte(`{"proof":"`+proof+`"}`), &perr))
-	}
+	// No route issues a link outside the agent's tools.
+	require.Equal(t, http.StatusNotFound, e.p.post("/api/v1/reverts/"+id.String()+"/links", pageOrigin, newSecret,
+		[]byte(`{"proof":"x"}`), nil))
 
 	e.calls.requireNoSecret(t, agentSecret, newSecret)
 }

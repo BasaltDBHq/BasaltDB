@@ -209,7 +209,7 @@ var ErrPrepareTimeout = errors.New("guard: a prepare timeout must be at least 1 
 // db, with statement_timeout set to timeout for that transaction only
 // (set_config(..., true)), whatever the role's default is. Past it
 // Postgres cancels the prepare (SQLSTATE 57014) and nothing is stored.
-// basalt revert and the engine's request_revert both prepare through it.
+// The engine's request_revert prepares through it.
 func PrepareRevertWithin(ctx context.Context, db TxBeginner, s RevertScope, intent string, timeout time.Duration) (PreparedRevert, error) {
 	if timeout < time.Millisecond {
 		return PreparedRevert{}, ErrPrepareTimeout

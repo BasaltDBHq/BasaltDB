@@ -76,6 +76,9 @@ const (
 	SetupServiceCheckRemoveProcedure = "/basalt.connect.v1.SetupService/CheckRemove"
 	// SetupServiceRunRemoveProcedure is the fully-qualified name of the SetupService's RunRemove RPC.
 	SetupServiceRunRemoveProcedure = "/basalt.connect.v1.SetupService/RunRemove"
+	// SetupServiceRevokePasskeyProcedure is the fully-qualified name of the SetupService's
+	// RevokePasskey RPC.
+	SetupServiceRevokePasskeyProcedure = "/basalt.connect.v1.SetupService/RevokePasskey"
 )
 
 // SetupServiceClient is a client for the basalt.connect.v1.SetupService service.
@@ -108,6 +111,9 @@ type SetupServiceClient interface {
 	// The Remove BasaltDB tab: removes BasaltDB from the database in one
 	// transaction, once confirm_name is the database's name.
 	RunRemove(context.Context, *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error)
+	// The Update check: revokes one passkey with the admin connection, for a
+	// code with a target, in one transaction. The last one may go.
+	RevokePasskey(context.Context, *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error)
 }
 
 // NewSetupServiceClient constructs a client for the basalt.connect.v1.SetupService service. By
@@ -175,6 +181,12 @@ func NewSetupServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(setupServiceMethods.ByName("RunRemove")),
 			connect.WithClientOptions(opts...),
 		),
+		revokePasskey: connect.NewClient[v1.RevokePasskeyRequest, v1.RevokePasskeyResponse](
+			httpClient,
+			baseURL+SetupServiceRevokePasskeyProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("RevokePasskey")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -189,6 +201,7 @@ type setupServiceClient struct {
 	offerAddress   *connect.Client[v1.OfferAddressRequest, v1.OfferAddressResponse]
 	checkRemove    *connect.Client[v1.CheckRemoveRequest, v1.CheckRemoveResponse]
 	runRemove      *connect.Client[v1.RunRemoveRequest, v1.RunRemoveResponse]
+	revokePasskey  *connect.Client[v1.RevokePasskeyRequest, v1.RevokePasskeyResponse]
 }
 
 // DescribeSetup calls basalt.connect.v1.SetupService.DescribeSetup.
@@ -236,6 +249,11 @@ func (c *setupServiceClient) RunRemove(ctx context.Context, req *connect.Request
 	return c.runRemove.CallUnary(ctx, req)
 }
 
+// RevokePasskey calls basalt.connect.v1.SetupService.RevokePasskey.
+func (c *setupServiceClient) RevokePasskey(ctx context.Context, req *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error) {
+	return c.revokePasskey.CallUnary(ctx, req)
+}
+
 // SetupServiceHandler is an implementation of the basalt.connect.v1.SetupService service.
 type SetupServiceHandler interface {
 	// What the code asks for, in words, and a passkey challenge. No database
@@ -266,6 +284,9 @@ type SetupServiceHandler interface {
 	// The Remove BasaltDB tab: removes BasaltDB from the database in one
 	// transaction, once confirm_name is the database's name.
 	RunRemove(context.Context, *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error)
+	// The Update check: revokes one passkey with the admin connection, for a
+	// code with a target, in one transaction. The last one may go.
+	RevokePasskey(context.Context, *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error)
 }
 
 // NewSetupServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -329,6 +350,12 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(setupServiceMethods.ByName("RunRemove")),
 		connect.WithHandlerOptions(opts...),
 	)
+	setupServiceRevokePasskeyHandler := connect.NewUnaryHandler(
+		SetupServiceRevokePasskeyProcedure,
+		svc.RevokePasskey,
+		connect.WithSchema(setupServiceMethods.ByName("RevokePasskey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/basalt.connect.v1.SetupService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SetupServiceDescribeSetupProcedure:
@@ -349,6 +376,8 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 			setupServiceCheckRemoveHandler.ServeHTTP(w, r)
 		case SetupServiceRunRemoveProcedure:
 			setupServiceRunRemoveHandler.ServeHTTP(w, r)
+		case SetupServiceRevokePasskeyProcedure:
+			setupServiceRevokePasskeyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -392,4 +421,8 @@ func (UnimplementedSetupServiceHandler) CheckRemove(context.Context, *connect.Re
 
 func (UnimplementedSetupServiceHandler) RunRemove(context.Context, *connect.Request[v1.RunRemoveRequest]) (*connect.Response[v1.RunRemoveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.RunRemove is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) RevokePasskey(context.Context, *connect.Request[v1.RevokePasskeyRequest]) (*connect.Response[v1.RevokePasskeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.RevokePasskey is not implemented"))
 }

@@ -14,6 +14,7 @@ import { deflateRawSync } from "node:zlib";
 import { b64urlDecode, b64urlEncode, sha256, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
 import { HOOK_LABELS, HOOK_SEES, PLUGIN_SESSION_TEXT, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
+import { NO_CARRIER } from "./page.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
@@ -173,8 +174,20 @@ for (const v of vectors.filter((x) => x.expect.settingsMatch === true)) {
     }
   });
 
-  test(`${v.name}: the approve button ${v.expect.tick ? "waits for the tick" : "works without a tick"}`, async () => {
+  test(`${v.name}: a long link shows the approval but cannot be signed`, async () => {
     const page = await open(goLinks.get(v.name).url);
+    assert.equal(page.$("main").hidden, false, "the approval is shown for review");
+    assert.equal(page.$("approve").disabled, true, "no engine to send a signature to");
+    assert.equal(page.$("status").textContent, NO_CARRIER);
+    await page.$("approve").listeners.click();
+    assert.equal(page.prompts.length, 0, "no passkey prompt");
+  });
+
+  test(`${v.name}: the approve button ${v.expect.tick ? "waits for the tick" : "works without a tick"}`, async () => {
+    const id = JSON.parse(v.binding).approvalId;
+    const e = engine({ approvalId: id, binding: v.binding, settings: v.settings, credentialIds: goLinks.get(v.name).credentialIds },
+      { status: 200, body: JSON.stringify({ approvalId: id, status: "APPROVED", approvedAt: "2026-11-19T12:00:01Z" }) });
+    const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch: e.fetch });
     const approve = page.$("approve");
     if (v.expect.tick) {
       assert.equal(approve.disabled, true, "level 3: off until the tick is set");
@@ -197,13 +210,11 @@ for (const v of vectors.filter((x) => x.expect.settingsMatch === true)) {
     assert.equal(b64urlEncode(prompt.challenge), v.challenge, "the passkey signs sha256 of the binding text");
     assert.equal(prompt.userVerification, "required");
     assert.deepEqual(prompt.allowCredentials.map((c) => b64urlEncode(c.id)), goLinks.get(v.name).credentialIds);
-    // A long link has no engine: the code for the agent.
-    const code = page.$("code").value;
-    assert.ok(code.startsWith("basalt-plugin.1."), code);
-    const body = JSON.parse(new TextDecoder().decode(b64urlDecode(code.slice("basalt-plugin.1.".length))));
+    // The page posts the signature to the engine; nothing to paste.
+    const body = JSON.parse(e.seen[1].init.body);
     assert.deepEqual(Object.keys(body), ["approvalId", "credentialId", "authenticatorData", "clientDataJson", "signature"]);
-    assert.equal(body.approvalId, JSON.parse(v.binding).approvalId);
-    assert.equal(page.$("result").hidden, false);
+    assert.equal(body.approvalId, id);
+    assert.ok(!page.$("code"), "the page has no code to copy");
   });
 }
 
@@ -365,10 +376,10 @@ test("a short link reads the request from the engine and relays the signature", 
   assert.equal(post.init.headers["content-type"], "application/json");
   assert.equal(JSON.parse(post.init.body).approvalId, id);
   assert.equal(page.$("done-text").textContent, SENTENCES.approved);
-  assert.equal(page.$("result").hidden, true, "no code to give: the engine took it");
+  assert.ok(!page.$("code"), "no code to give: the engine took it");
 });
 
-test("a relay the engine refuses shows its error and the code to give by hand", async () => {
+test("a relay the engine refuses shows its error, and nothing to give by hand", async () => {
   const v = vector("level-1-known-local");
   const id = JSON.parse(v.binding).approvalId;
   const e = engine({ approvalId: id, binding: v.binding, settings: v.settings },
@@ -376,7 +387,8 @@ test("a relay the engine refuses shows its error and the code to give by hand", 
   const page = await open(`${ORIGIN}/plugins/${id}#s=q3Jv8sLk2mT0xYp1aBcD9w`, { fetch: e.fetch });
   await page.$("approve").listeners.click();
   assert.match(page.$("done-text").textContent, /a newer approval replaced this one/);
-  assert.ok(page.$("code").value.startsWith("basalt-plugin.1."));
+  assert.match(page.$("done-text").textContent, /Open the link again/);
+  assert.ok(!page.$("code"));
 });
 
 test("the engine's request is checked as a link's: settings that do not match are refused", async () => {

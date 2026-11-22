@@ -26,7 +26,7 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 	t.Setenv("PGPASSWORD", "envsecretvalue99")
 
 	var errw bytes.Buffer
-	code := guarded([]string{"approve", "--agent", "bot"}, stdio{err: &errw}, func() int {
+	code := guarded([]string{"init", "--agent", "bot"}, stdio{err: &errw}, func() int {
 		panic("connect " + leakedConn + " envsecretvalue99 " + panicSecret)
 	})
 	require.Equal(t, exitError, code)
@@ -46,13 +46,14 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 		require.NotContains(t, line, bad)
 	}
 	require.NotContains(t, text, home)
-	require.Equal(t, "approve", reports[0].Command)
+	require.Equal(t, "init", reports[0].Command)
 	require.Contains(t, reports[0].Stack, "TestAPanicInACommandIsSavedAndScrubbed")
 }
 
 func TestCommandNameIsOnlyAKnownCommand(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "approve", commandName([]string{"approve", "--agent", "x"}))
+	require.Equal(t, "init", commandName([]string{"init", "--agent", "x"}))
+	require.Empty(t, commandName([]string{"approve", "--agent", "x"}), "approve is removed")
 	require.Empty(t, commandName([]string{"log", "--agent", "x"}), "a removed command is no command")
 	require.Empty(t, commandName([]string{"post" + "gres://u" + ":p@h/db"}))
 	require.Empty(t, commandName(nil))

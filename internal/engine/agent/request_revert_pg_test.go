@@ -110,12 +110,12 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, "Revert of change "+changeID+": 2 rows to restore, 0 left as they are")
 	require.Contains(t, msg, "Why: Wrong leads. ")
-	require.True(t, strings.HasSuffix(msg, "\nSign it with your passkey here; the page then shows a code for the agent:\n\n"+link), msg)
+	require.True(t, strings.HasSuffix(msg, "\nReview only: this link cannot be signed. Ask the agent for a new link later.\n\n"+link), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 
-	// The person's code, applied by basalt revert --apply on the agent
-	// credential, reverts the change.
+	// The person's signature, relayed with the agent credential, reverts
+	// the change.
 	frag := link[strings.Index(link, "#")+1:]
 	req, b, err := revert.ParseRequest(frag)
 	require.NoError(t, err)

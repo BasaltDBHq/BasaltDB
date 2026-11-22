@@ -78,7 +78,7 @@ func (s *Service) pageSignatureFailure(te *mcp.ToolError) bool {
 	}
 	switch te.Reason {
 	case reasonBadSignature:
-		te.PersonMessage = fmt.Sprintf("The %s code did not verify, so nothing was applied. %s", what, again)
+		te.PersonMessage = fmt.Sprintf("The %s signature did not verify, so nothing was applied. %s", what, again)
 		return true
 	case reasonPasskeyRevoked:
 		// The page has no agent to run basalt init: the person asks it for

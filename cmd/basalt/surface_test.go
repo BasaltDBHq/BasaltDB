@@ -183,7 +183,7 @@ var envNames = regexp.MustCompile(`"(BASALT(?:DB)?_[A-Z0-9_]+)"`)
 
 func actualEnvironment(t *testing.T, actual map[string]surfaceEntry) {
 	t.Helper()
-	for _, root := range []string{"../../cmd", "../../internal", "../../pkg", "../../api"} {
+	for _, root := range []string{"..", "../../internal", "../../pkg", "../../api"} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err

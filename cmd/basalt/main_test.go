@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 func runArgs(args ...string) (int, string, string) {

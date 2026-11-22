@@ -3,7 +3,7 @@
 // where its socket goes, what each way a session ends shows the person,
 // and the session the pages use (one request in flight, headers, reopening,
 // close). The whole session against an engine through the Go fake Vault is
-// internal/engine's TestPortalChannelClientAgainstFakeVault.
+// internal/app's TestPortalChannelClientAgainstFakeVault.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 

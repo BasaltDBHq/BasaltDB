@@ -1,6 +1,6 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). The revert
 // page's scope: the widen proof's challenge against the fixtures Go writes
-// and the guard checks (internal/revert/testdata/fixtures.json), the scope
+// and the guard checks (internal/core/revert/testdata/fixtures.json), the scope
 // route calls, and what the page may send where.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -23,7 +23,7 @@ import {
 import { sameOriginSession } from "./transport.js";
 
 const fixtures = JSON.parse(
-  readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/revert/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 const ID = fixtures.request.revertId;
 const NONCE = "AAECAwQFBgcICQoLDA0ODw";

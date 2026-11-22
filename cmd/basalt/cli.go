@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 )
 
 // Environment variables the CLI reads.

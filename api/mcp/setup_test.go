@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
 
 // Setup code shape (CONTRACT.md, Setup from your laptop).

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
 
 // Close-code range of the Vault channel (CONTRACT.md, Vault channel, Close

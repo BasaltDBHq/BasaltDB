@@ -7,9 +7,9 @@ shard 1
 cmd/basalt
 
 shard 2
-internal/engine/agent
-internal/engine
+internal/service/agent
+internal/app
 
 shard 3
-internal/pii
-internal/pii/classify
+internal/core/pii
+internal/service/classify

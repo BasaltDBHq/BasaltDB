@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/crash"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
 )
 
 // leakedConn is built from parts so no secret scanner reads it as a

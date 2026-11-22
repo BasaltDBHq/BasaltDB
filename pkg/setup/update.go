@@ -8,10 +8,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
 // The Update check on the connect page (CONTRACT.md, Connect, Update on the

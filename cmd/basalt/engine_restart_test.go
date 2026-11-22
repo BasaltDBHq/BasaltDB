@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
+	engine "github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 func TestTheEngineRunsTheNewBinaryAfterItStopsForARestart(t *testing.T) {

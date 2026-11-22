@@ -24,7 +24,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
 
 // ecmaUnicodeEscape is an ECMA-262 \uXXXX escape in a schema pattern.

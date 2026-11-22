@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // After the guard and the passkey, basalt init sets up the engine one of

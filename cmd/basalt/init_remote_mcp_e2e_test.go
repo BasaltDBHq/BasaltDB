@@ -17,9 +17,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/server"
+	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // mcpStartDeadline is well under the shim's 15s autostart wait, so a

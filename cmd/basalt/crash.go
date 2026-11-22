@@ -9,9 +9,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/crash"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 // Crash reports (CONTRACT.md, Crash reports): a panic in a command is

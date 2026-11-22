@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
+	engine "github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -169,8 +169,8 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 		return nil
 	}))
 	require.Positive(t, jsonFiles)
-	for _, dir := range []string{"engine", "mcp", "shim"} {
-		requireGoStringsAgentLed(t, filepath.Join(root, "internal", dir))
+	for _, dir := range []string{"internal/app", "internal/service/agent", "internal/config", "internal/service/handoff", "internal/service/keptplugins", "internal/service/person", "internal/service/piidict", "internal/service/portalcheck", "internal/service/upkeep", "internal/adapter/inbound/pages", "internal/adapter/outbound/osservice", "internal/lib/peercred", "internal/adapter/inbound/mcp", "internal/adapter/inbound/shim"} {
+		requireGoStringsAgentLed(t, filepath.Join(root, filepath.FromSlash(dir)))
 	}
 }
 

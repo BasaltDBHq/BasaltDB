@@ -30,7 +30,7 @@ import {
 } from "./scope.js";
 
 const fixtures = JSON.parse(
-  readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/revert/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 const BINDING = fixtures.request.binding;
 const ID = fixtures.request.revertId;

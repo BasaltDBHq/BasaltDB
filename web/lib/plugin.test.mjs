@@ -2,7 +2,7 @@
 // approval page (CONTRACT.md, The plugin approval page) runs on a fake DOM
 // built from web/plugin/index.html, on the links Go writes for the shared
 // vectors (api/plugin/approval/vectors.json, through
-// internal/approval/testdata/plugin-links.json). What it shows must come
+// internal/core/approval/testdata/plugin-links.json). What it shows must come
 // only from the binding and the checked settings, at the level the binding
 // warrants, and the approve button must work only when the contract lets
 // it.
@@ -18,7 +18,7 @@ import { NO_CARRIER } from "./page.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
-const goLinks = new Map(JSON.parse(read("../../internal/approval/testdata/plugin-links.json")).map((l) => [l.name, l]));
+const goLinks = new Map(JSON.parse(read("../../internal/core/approval/testdata/plugin-links.json")).map((l) => [l.name, l]));
 // The contract is CONTRACT.md, an index, and the section files it lists.
 const contractIndex = read("../../CONTRACT.md");
 const contract = [

@@ -24,7 +24,7 @@ builds:
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X github.com/basaltdbhq/basaltdb/internal/buildinfo.Version={{.Env.BASALT_VERSION}}
+      - -s -w -X github.com/basaltdbhq/basaltdb/internal/lib/buildinfo.Version={{.Env.BASALT_VERSION}}
 
 archives:
   - formats: [tar.gz]

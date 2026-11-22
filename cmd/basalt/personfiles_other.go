@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/basaltdbhq/basaltdb/internal/engine/config"
+import "github.com/basaltdbhq/basaltdb/internal/config"
 
 // loadConfigAsRoot: there is no root on this platform; Load as any user.
 func loadConfigAsRoot(path string) (config.Config, int, error) {

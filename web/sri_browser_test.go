@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/websec"
+	websec "github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 

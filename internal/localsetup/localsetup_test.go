@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +120,9 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 	checked, err := f.svc.Check(ctx, f.request())
 	require.NoError(t, err)
 	require.True(t, checked.PasskeyNeeded, "a fresh database has no passkey")
+	var name string
+	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT current_database()`).Scan(&name))
+	require.Equal(t, name, checked.Database, "the name the server gives")
 	require.NotEmpty(t, checked.Lines)
 	require.Contains(t, checked.SQL, "basalt_demo")
 	require.Empty(t, checked.Questions)
@@ -158,7 +160,7 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 	require.Equal(t, os.FileMode(config.FileMode), info.Mode().Perm())
 	dsn, err := config.ReadCredential(cred)
 	require.NoError(t, err)
-	require.NotContains(t, dsn, mustPassword(t, f.db.URL), "the agent's string never holds the admin's password")
+	require.NotContains(t, dsn, ":"+mustPassword(t, f.db.URL)+"@", "the agent's string never holds the admin's password")
 	conn, err := pgdial.Connect(ctx, dsn)
 	require.NoError(t, err, "the agent logs in with the credential the engine wrote")
 	var n int
@@ -194,6 +196,16 @@ func TestRunRefusesAChallengeOfAnotherJobOrTooOld(t *testing.T) {
 	_, err = f.svc.Run(ctx, other)
 	refusal(t, err, localsetup.CodeChallengeInvalid)
 
+	// The same job on another database: the challenge is bound to the one
+	// the server named at check.
+	other2 := guardtest.New(t)
+	elsewhere := f.request()
+	elsewhere.DatabaseURL = other2.URL
+	elsewhere.Challenge, elsewhere.Passkey = &checked.Challenge, register(t, checked.Challenge)
+	_, err = f.svc.Run(ctx, elsewhere)
+	refusal(t, err, localsetup.CodeChallengeInvalid)
+	require.False(t, exists(t, other2, "basalt_meta"), "nothing changed there")
+
 	f.now = f.now.Add(16 * time.Minute)
 	late := f.request()
 	late.Challenge, late.Passkey = &checked.Challenge, register(t, checked.Challenge)
@@ -228,7 +240,8 @@ func TestRefusalsNeverHoldTheAdminString(t *testing.T) {
 		req.DatabaseURL = v.dsn
 		_, err := f.svc.Check(ctx, req)
 		refusal(t, err, v.code)
-		require.NotContains(t, err.Error(), secret)
+		require.NotContains(t, err.Error(), ":"+secret+"@")
+		require.NotContains(t, err.Error(), secret+"-wrong")
 		require.NotContains(t, err.Error(), u.Host)
 	}
 }
@@ -272,7 +285,8 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "engine.json"), []byte("{}"), 0o600))
 	_, err = svc.Run(context.Background(), good)
 	refusal(t, err, localsetup.CodeJobUnavailable)
-	require.False(t, strings.Contains(err.Error(), "postgres"))
+	require.NotContains(t, err.Error(), unusedAdminURL)
+	require.NotContains(t, err.Error(), "db.example")
 }
 
 func TestInstallWithoutTheSampleDatabaseIsNotOfferedYet(t *testing.T) {

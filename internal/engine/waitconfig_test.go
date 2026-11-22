@@ -107,7 +107,9 @@ func TestWaitForConfigServesOnlyTheSetupPageThenReturns(t *testing.T) {
 	require.Equal(t, "NOT_FOUND", body["code"])
 
 	code, _ = do(t, http.MethodGet, base+"/healthz", "evil.example", "")
-	require.NotEqual(t, http.StatusOK, code, "a foreign Host is refused")
+	require.Equal(t, http.StatusBadRequest, code, "a foreign Host is refused")
+	code, _ = do(t, http.MethodPost, base+"/api/v1/setup/check", "evil.example", page)
+	require.Equal(t, http.StatusBadRequest, code, "a foreign Host is refused on the setup routes too, before the body")
 	for _, foreign := range []string{"https://evil.example", base, ""} {
 		code, _ = do(t, http.MethodPost, base+"/api/v1/setup/check", "", foreign)
 		require.Equal(t, http.StatusForbidden, code, "only the page origin, exactly: %q", foreign)

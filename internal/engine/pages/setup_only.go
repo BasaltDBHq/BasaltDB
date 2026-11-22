@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 	"github.com/basaltdbhq/basaltdb/web"
@@ -160,23 +161,44 @@ func (s *Server) configuredSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 // refuseDatabaseURL refuses, on every route but the setup page's two, a
-// body that holds a databaseUrl field: only those take the admin
-// connection string. The body is read up to the pages' limit and handed on
-// unchanged; a larger one is left for the route to refuse.
-func refuseDatabaseURL(next http.Handler) http.Handler {
+// body that holds a databaseUrl field, in any case: only those take the
+// admin connection string. A request from a foreign Origin goes on to its
+// route, which refuses it before reading anything. A body within the
+// pages' limit is parsed; a larger one, read up to scanLimit, is refused
+// when it names the field anywhere. Either is handed on unchanged, and the
+// route refuses what is too large.
+func refuseDatabaseURL(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path == SetupCheckPath || r.URL.Path == SetupRunPath || r.Body == nil {
+		o := r.Header.Get("Origin")
+		if r.Method != http.MethodPost || r.URL.Path == SetupCheckPath || r.URL.Path == SetupRunPath || r.Body == nil ||
+			(o != "" && o != origin) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		head, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
-		if err == nil && len(head) <= maxBody && holdsDatabaseURL(head) {
+		head, err := io.ReadAll(io.LimitReader(r.Body, scanLimit))
+		if err == nil && namesDatabaseURL(head) {
 			writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route never takes the admin connection string.")
 			return
 		}
 		r.Body = readCloser{Reader: io.MultiReader(bytes.NewReader(head), r.Body), Closer: r.Body}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// scanLimit bounds how much of an oversized body the scan reads.
+const scanLimit = 1 << 20
+
+// databaseURLKey is the field only the setup routes take, compared without
+// case.
+const databaseURLKey = "databaseurl"
+
+// namesDatabaseURL: a body within the limit has the field at any depth; a
+// larger one names it anywhere in what was read.
+func namesDatabaseURL(head []byte) bool {
+	if len(head) > maxBody {
+		return bytes.Contains(bytes.ToLower(head), []byte(databaseURLKey))
+	}
+	return holdsDatabaseURL(head)
 }
 
 type readCloser struct {
@@ -191,14 +213,14 @@ func holdsDatabaseURL(body []byte) bool {
 	if json.Unmarshal(body, &v) != nil {
 		return false
 	}
-	return hasKey(v, "databaseUrl")
+	return hasKey(v, databaseURLKey)
 }
 
 func hasKey(v any, key string) bool {
 	switch t := v.(type) {
 	case map[string]any:
 		for k, child := range t {
-			if k == key || hasKey(child, key) {
+			if strings.EqualFold(k, key) || hasKey(child, key) {
 				return true
 			}
 		}

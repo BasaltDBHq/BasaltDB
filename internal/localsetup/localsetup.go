@@ -158,6 +158,9 @@ type job struct {
 	req  Request
 	role string
 	uid  uint32
+	// host is the admin string's host and port, lowercase: the challenge
+	// is bound to it.
+	host string
 }
 
 // validate checks everything that needs no database, in order.
@@ -179,31 +182,32 @@ func (s *Service) validate(req Request) (job, error) {
 	if !req.Demo {
 		return job{}, refuse(CodeNoTables, "Picking tables on this page is not available yet; set up the sample database with basalt init --demo.")
 	}
-	if err := checkAdminURL(req.DatabaseURL, role); err != nil {
+	host, err := checkAdminURL(req.DatabaseURL, role)
+	if err != nil {
 		return job{}, err
 	}
-	return job{req: req, role: role, uid: uid}, nil
+	return job{req: req, role: role, uid: uid, host: host}, nil
 }
 
 // checkAdminURL accepts a postgres:// or postgresql:// URL with a user and
 // a password that an agent's connection string can be built from. The
 // refusal never names any part of it.
-func checkAdminURL(raw, role string) error {
+func checkAdminURL(raw, role string) (string, error) {
 	bad := refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 	if !strings.HasPrefix(raw, "postgres://") && !strings.HasPrefix(raw, "postgresql://") {
-		return bad
+		return "", bad
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.User == nil || u.User.Username() == "" || u.Host == "" {
-		return bad
+		return "", bad
 	}
 	if pw, ok := u.User.Password(); !ok || pw == "" {
-		return bad
+		return "", bad
 	}
 	if _, err := guard.AgentConnString(raw, role, ""); err != nil {
-		return bad
+		return "", bad
 	}
-	return nil
+	return strings.ToLower(u.Host), nil
 }
 
 // connect opens the admin connection; a failure is a fixed refusal.
@@ -274,12 +278,15 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, err
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
-	database := conn.Config().Database
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return CheckAnswer{}, setupFailed()
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	database, err := currentDatabase(ctx, tx)
+	if err != nil {
+		return CheckAnswer{}, timeLimit(ctx, err)
+	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
 	seeded, script, err := s.plan(ctx, tx, j, guard.NewPassword())
 	if err != nil {
@@ -289,7 +296,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, setupFailed())
 	}
-	ch, err := s.challenge(req, database)
+	ch, err := s.challenge(req, bound{database: database, host: j.host})
 	if err != nil {
 		return CheckAnswer{}, setupFailed()
 	}
@@ -297,6 +304,16 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		Database: database, Lines: summary(j, database, seeded, needed), SQL: seeded.Shown() + script.SQL(),
 		Questions: []Question{}, Notes: notes(seeded, script), PasskeyNeeded: needed, Challenge: ch,
 	}, nil
+}
+
+// currentDatabase is the name of the database the connection reached, as
+// the server says it: never a name read from the admin string.
+func currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
+	var name string
+	if err := tx.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&name); err != nil {
+		return "", setupFailed()
+	}
+	return name, nil
 }
 
 // passkeyNeeded: the database has no active passkey for origin (none at

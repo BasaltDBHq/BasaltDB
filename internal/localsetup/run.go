@@ -102,11 +102,17 @@ func newKey() ([]byte, error) {
 	return key, err
 }
 
-// challenge makes a fresh challenge for req's job.
-func (s *Service) challenge(req Request, database string) (Challenge, error) {
+// bound is what a challenge is bound to besides the job: the database the
+// server named and the admin string's host.
+type bound struct {
+	database, host string
+}
+
+// challenge makes a fresh challenge for req's job on b.
+func (s *Service) challenge(req Request, b bound) (Challenge, error) {
 	c := Challenge{
 		Challenge: make([]byte, challengeLen), UserID: make([]byte, userIDLen),
-		UserName: "BasaltDB · " + req.Agent, DisplayName: "BasaltDB · " + database,
+		UserName: "BasaltDB · " + req.Agent, DisplayName: "BasaltDB · " + b.database,
 		ExpiresAt: s.opts.Now().Add(challengeExpiry).UTC().Truncate(time.Second),
 	}
 	if len(c.DisplayName) > maxLabel {
@@ -118,13 +124,13 @@ func (s *Service) challenge(req Request, database string) (Challenge, error) {
 	if _, err := rand.Read(c.UserID); err != nil {
 		return Challenge{}, err
 	}
-	c.MAC = s.mac(req, c)
+	c.MAC = s.mac(req, b, c)
 	return c, nil
 }
 
 // mac is the keyed hash over the challenge's fields and the job's, each
 // length-prefixed so no two inputs share an encoding.
-func (s *Service) mac(req Request, c Challenge) []byte {
+func (s *Service) mac(req Request, b bound, c Challenge) []byte {
 	h := hmac.New(sha256.New, s.key)
 	h.Write([]byte(macDomain))
 	demoFlag := "0"
@@ -133,7 +139,7 @@ func (s *Service) mac(req Request, c Challenge) []byte {
 	}
 	for _, part := range [][]byte{
 		c.Challenge, c.UserID, []byte(c.UserName), []byte(c.DisplayName), []byte(c.ExpiresAt.UTC().Format(time.RFC3339)),
-		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag),
+		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host),
 	} {
 		var n [8]byte
 		binary.BigEndian.PutUint64(n[:], uint64(len(part)))
@@ -143,11 +149,12 @@ func (s *Service) mac(req Request, c Challenge) []byte {
 	return h.Sum(nil)
 }
 
-// verifyPasskey checks the challenge and the registration, before anything
-// connects. Only called with a passkey in the request.
+// verifyPasskey checks the challenge's expiry and the registration, before
+// anything connects; checkBinding checks its MAC once the server named the
+// database. Only called with a passkey in the request.
 func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 	c := req.Challenge
-	if c == nil || !hmac.Equal(c.MAC, s.mac(req, *c)) {
+	if c == nil {
 		return nil, refuse(CodeChallengeInvalid, "This passkey was made for another setup page. Reload the page and start again.")
 	}
 	if !s.opts.Now().Before(c.ExpiresAt) {
@@ -165,6 +172,14 @@ func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 		return nil, refuse(CodeInvalidArgument, "The passkey's label is too long.")
 	}
 	return &cred, nil
+}
+
+// checkBinding refuses a challenge made for another job, database or host.
+func (s *Service) checkBinding(req Request, b bound) error {
+	if !hmac.Equal(req.Challenge.MAC, s.mac(req, b, *req.Challenge)) {
+		return refuse(CodeChallengeInvalid, "This passkey was made for another setup page or database. Reload the page and start again.")
+	}
+	return nil
 }
 
 // Run runs the install once: the guard, the sample data, the agent and the
@@ -203,6 +218,15 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	files := s.files(req.Agent)
 	var warnings, lines []string
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		database, err := currentDatabase(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if cred != nil {
+			if err := s.checkBinding(req, bound{database: database, host: j.host}); err != nil {
+				return err
+			}
+		}
 		_, script, err := s.plan(ctx, tx, j, password)
 		if err != nil {
 			return err

@@ -163,7 +163,10 @@ func TestConfiguredPagesTakeNoAdminString(t *testing.T) {
 		"/api/v1/reverts/" + uuid.NewString() + "/apply",
 		"/api/v1/plugins/" + uuid.NewString() + "/approve",
 	} {
-		for _, body := range []string{`{"databaseUrl":"x"}`, `{"a":[{"b":{"databaseUrl":"x"}}]}`} {
+		for _, body := range []string{
+			`{"databaseUrl":"x"}`, `{"a":[{"b":{"databaseUrl":"x"}}]}`, `{"DatabaseURL":"x"}`, `{"databaseurl":"x"}`,
+			`{"pad":"` + strings.Repeat("x", 17<<10) + `","databaseUrl":"x"}`,
+		} {
 			w := setupCall{path: path, origin: setupOrigin, body: body}.do(h)
 			require.Equal(t, http.StatusBadRequest, w.Code, path)
 			raw, err := io.ReadAll(w.Body)
@@ -172,6 +175,8 @@ func TestConfiguredPagesTakeNoAdminString(t *testing.T) {
 		}
 		w := setupCall{path: path, origin: setupOrigin, body: `{"approvalId":"x"}`}.do(h)
 		require.NotEqual(t, http.StatusBadRequest, w.Code, "a body without one reaches the route: %s", path)
+		w = setupCall{path: path, origin: "https://evil.example", body: `{"databaseUrl":"x"}`}.do(h)
+		require.NotEqual(t, http.StatusBadRequest, w.Code, "a foreign Origin's body is not read here; the route and the listener refuse it: %s", path)
 	}
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/setup/", nil))

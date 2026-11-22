@@ -859,36 +859,3 @@ func hasLog(sys System, n PluginNames) bool {
 	}
 	return sys.Exists(n.Log) || sys.Exists(n.Log+rotatedSuffix) || sys.Exists(n.LogRule)
 }
-
-// pluginUninstallSteps remove every entry's unit, directory and user, then
-// the run directory and the base when they are empty, and on macOS the
-// plugins' log directory when it is empty: installed copies and the trust
-// store stay, as the engine's config does.
-func pluginUninstallSteps(sys System, goos string, entries []PluginEntry) ([]Step, error) {
-	base, err := PluginBase(goos)
-	if err != nil {
-		return nil, err
-	}
-	var steps []Step
-	for _, p := range entries {
-		more, err := PluginRemoveSteps(sys, goos, p.Name, p.Instance)
-		if err != nil {
-			return nil, err
-		}
-		steps = append(steps, more...)
-	}
-	if goos == goosDarwin && sys.Exists(darwinPluginLogDir) {
-		steps = append(steps, Step{
-			Kind: StepRemove, Path: darwinPluginLogDir,
-			Note: "left in place: it still holds the log of a plugin that is not in engine.json",
-		})
-	}
-	if !sys.Exists(base) {
-		return steps, nil
-	}
-	note := "left in place: it still holds installed plugins or trusted keys (remove the plugin entries from engine.json first)"
-	return append(steps,
-		Step{Kind: StepRemove, Path: filepath.Join(base, pluginRunDirName), Note: note},
-		Step{Kind: StepRemove, Path: base, Note: note},
-	), nil
-}

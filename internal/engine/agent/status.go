@@ -1154,18 +1154,18 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 	out := &EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
 	if e.RevokedAt != nil {
 		out.State, out.RevokedAt = engineRevoked, e.RevokedAt.UTC().Format(time.RFC3339)
-		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the engine hands over no relay short link for it and has ended the ones it handed over",
+		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the engine does not act on it, so the links it handed over keep working until they expire",
 			engineRevokedSteps)
 	}
 	return out
 }
 
 // engineRevokedSteps: the agent asks whether the person revoked this engine
-// on purpose. Until a new key is recorded the agent hands over long links.
+// on purpose.
 func engineRevokedSteps(b *Steps) string {
 	b.AskPerson("Tell the person this engine's key is revoked in their database. Ask whether they revoked it on purpose, and show the message.")
 	b.EndTurn("End your turn: the person answers next.")
-	return "This engine's key is revoked in your database. Status shows it; this engine no longer hands over portal short links for it, and the ones it handed over stop working. " +
+	return "This engine's key is revoked in your database. BasaltDB does not act on it: the links this engine handed over keep working until they expire. To cut this engine off, remove BasaltDB from the database. " +
 		"Did you revoke it on purpose? If you replaced the engine, the agent sets it up again and gives you a new link."
 }
 

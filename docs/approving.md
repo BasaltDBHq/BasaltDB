@@ -92,7 +92,7 @@ The short link only works on the machine where the engine runs. An optional host
 
 ## Revoking an engine
 
-If the server is lost or compromised, `basalt engine revoke` revokes the engine your database records, from your own computer. `status` then reports `ENGINE_REVOKED`, and a revoked engine is never recorded again. The agent's `status` tool shows the record as `engineRecord` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`). A compromised server can ignore the flag, but it still cannot sign anything you did not.
+If the server is lost or compromised, remove BasaltDB from the database: ask for the removal page and pick Remove. That drops every `basalt_*` role, so the engine can no longer log in. There is no separate revoke command. A compromised server still cannot sign anything you did not.
 
 ## Authenticators
 

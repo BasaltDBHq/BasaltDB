@@ -50,7 +50,6 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 
 var guardCommands = map[string]func(*cliIO, []string) int{
 	"init": runInit, "approve": runApprove, "revert": runRevert, "passkey": runPasskey,
-	"engine": runEngineRecords,
 }
 
 // agentFixture is the agent setUpAgent leaves set up.

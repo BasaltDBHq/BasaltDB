@@ -2,7 +2,6 @@ package service_test
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"maps"
 	"os"
@@ -579,38 +578,6 @@ func TestPluginRemoveDeletesWhatInstallMade(t *testing.T) {
 		require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 		require.Contains(t, sys.removed, left)
 	}
-}
-
-func TestUninstallRemovesPluginsAndAnEmptyBase(t *testing.T) {
-	t.Parallel()
-	sys := newFake()
-	sys.users["basalt-plugin-acme-ner-default"] = true
-	sys.exists["/opt/basalt"] = true
-	spec := linuxSpec()
-	spec.Plugins = []service.PluginEntry{entry("linux", "default")}
-	steps, err := service.UninstallPlan(sys, spec)
-	require.NoError(t, err)
-	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
-	require.Contains(t, sys.ran, "userdel basalt-plugin-acme-ner-default")
-	require.Contains(t, sys.ran, "rm -rf /opt/basalt/run/basalt-plugin-acme-ner-default")
-	require.Equal(t, []string{
-		service.SystemdUnitPath,
-		"/etc/systemd/system/basalt-plugin-acme-ner-default.service",
-		"/opt/basalt/run",
-		"/opt/basalt",
-	}, sys.removed)
-
-	// A base that still holds installed copies or keys stays, and the
-	// uninstall still succeeds.
-	sys = newFake()
-	sys.exists["/opt/basalt"] = true
-	sys.removeErr = errors.New("directory not empty")
-	steps, err = service.UninstallPlan(sys, linuxSpec())
-	require.NoError(t, err)
-	out.Reset()
-	require.NoError(t, service.Settle(service.Apply(context.Background(), sys, steps, false, &out), sys, "linux"))
-	require.Contains(t, out.String(), "skipped rm -f /opt/basalt: left in place")
 }
 
 func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {

@@ -256,10 +256,6 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	restart.Upgrade = upgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
-		// What each agent's database says of this engine's key, which the
-		// relay acts on (CONTRACT.md, Engine revocation).
-		env.revocation = newRevocation(ev.keys.EngineID(), log.With("component", "vault"))
-		relay.watch(ctx, env.revocation, endRevoked(ev.client)) //nolint:contextcheck // runs when a link is dropped, after the call that set it up; like Unregister it waits for nothing
 	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
@@ -324,12 +320,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		})
 	}
 	if ev.client != nil {
-		// The engine leaves the Vault once every agent's database revoked
-		// its key.
-		vaultCtx, leave := context.WithCancel(ctx)
-		defer leave()
-		env.revocation.onLeave(leave)
-		wg.Go(func() { _ = ev.client.Run(vaultCtx) })
+		wg.Go(func() { _ = ev.client.Run(ctx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
@@ -623,9 +614,6 @@ type agentEnv struct {
 	// each agent registers its portal short links there.
 	relay      *vault.Client
 	relayLinks *relayLinks
-	// revocation is what each agent's database says of this engine's key;
-	// nil when the engine does not dial out to the Vault.
-	revocation *revocation
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
 	// asRoot: the engine runs as root; it then
@@ -726,17 +714,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.relay != nil {
 		relay = env.relay
 	}
-	if env.revocation != nil {
-		rev, name := env.revocation, a.Name
-		relay = revocableRelay{next: env.relay, revoked: func() bool { return rev.isRevoked(name) }}
-		rev.add(a.Name, readRecord, secrets)
-	}
 	if env.relayLinks != nil {
 		env.relayLinks.add(a.Name, secrets, env.dropLink)
 	}
-	// The engine reads its record at start: a revoked key hands no relay
-	// short link from the first call.
-	env.revocation.check(ctx, a.Name)
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
@@ -791,7 +771,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	return agentRuntime{
 		svc: svc,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
-			WithOperatedBy(env.cfg.OperatedBy).WithGate(env.revocation.gate(a.Name, svc.AdmitTick)).
+			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
 		scan: piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
 		db:   pool,

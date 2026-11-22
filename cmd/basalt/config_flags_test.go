@@ -23,7 +23,6 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 		{"init", "--remote"},
 		{"mcp"},
 		{"service", "install"},
-		{"service", "uninstall"},
 		{"approve"},
 		{"passkey", "list"},
 		{"passkey", "check"},

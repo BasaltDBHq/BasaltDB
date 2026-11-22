@@ -86,9 +86,6 @@ func TestPluginUnitEntries(t *testing.T) {
 		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url"},
 	}, h)
 
-	names := serviceUnitNames(cfg)
-	require.Equal(t, []service.PluginEntry{{Name: "acme-ner", Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}, names)
-
 	// Copies that are not installed are left out of install, with a line.
 	var warn strings.Builder
 	require.Empty(t, serviceUnitEntries(cfg, "linux", "/etc/basalt/engine.json", &warn))

@@ -14,8 +14,8 @@ import (
 // Host is what the agent takes from the adapters it may not import: the
 // error values it tells apart, and the functions that read the host (the
 // service manager, the crash directory, the Vault session). The app fills
-// it once at start, before any tool is served, with UseHost. A field the
-// app leaves nil is a build defect: the first use panics and says which.
+// it once at start, before any tool is served, with UseHost. A function
+// the app leaves nil is a build defect: its first use panics.
 type Host struct {
 	// StartCommand and RestartArgs are the service manager's start command
 	// and restart command line for goos.
@@ -76,11 +76,13 @@ var host atomic.Pointer[Host]
 func UseHost(h Host) { host.Store(&h) }
 
 func theHost() *Host {
-	h := host.Load()
-	if h == nil {
-		panic("agent: the host is not wired (UseHost)")
+	if h := host.Load(); h != nil {
+		return h
 	}
-	return h
+	// Not wired (a test of a package that only reads agent's errors): the
+	// error values are unset and match nothing; a function a caller needs
+	// is nil.
+	return &Host{}
 }
 
 // sentinel reports whether err is target, false for a target the host did

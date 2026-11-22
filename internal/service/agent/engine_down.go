@@ -125,20 +125,22 @@ func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.T
 	return te, nil
 }
 
-// Abandoned is the answer to a request the engine took and never answered
-// (it closed the connection: it stopped, or it refused the peer): a
-// tools/call gets UNAVAILABLE ENGINE_UNREACHABLE with its steps, and any
-// other request an error with only the message. It never runs the call
-// again. The error is nil only when the answer is the tool error; a nil
-// ToolError means the caller answers with the plain message.
-func (d EngineDown) Abandoned(tool string) (*toolresult.ToolError, string) {
-	const message = "the basalt engine closed the connection before answering, so the call may or may not have run; call status, and read before you write again"
-	// The call may have run: the agent checks status, never repeats it.
-	te, err := d.unreachableError(tool, "", message)
+// AbandonedMessage is the text of the answer to a request the engine took
+// and never answered (it closed the connection: it stopped, or it refused
+// the peer).
+const AbandonedMessage = "the basalt engine closed the connection before answering, so the call may or may not have run; call status, and read before you write again"
+
+// Abandoned is the tool error that answers a tools/call the engine took and
+// never answered: UNAVAILABLE ENGINE_UNREACHABLE with its steps. The call
+// may have run, so the agent checks status and never repeats it. It is nil
+// when the error cannot be built; the caller then answers with
+// AbandonedMessage alone.
+func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
+	te, err := d.unreachableError(tool, "", AbandonedMessage)
 	if err == nil {
-		return te, message
+		return te
 	}
-	return nil, message
+	return nil
 }
 
 // commands are d's commands for the operatedBy of the config the shim

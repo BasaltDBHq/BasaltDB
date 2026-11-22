@@ -1083,3 +1083,26 @@ func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T
 	_, err = config.ReadCredential(cred)
 	require.NoError(t, err)
 }
+
+func TestRealInstallDeletesTheCredentialWhenTheCommitKnownlyFails(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	f.db.Init(t, guard.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
+	// A deferred constraint that fails when the transaction commits.
+	f.db.Exec(t, `CREATE FUNCTION public.refuse_at_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused at commit'; END $$;
+CREATE CONSTRAINT TRIGGER refuse_at_commit AFTER INSERT ON basalt_meta.passkeys DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.refuse_at_commit()`)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, req)
+	var r *localsetup.RefusalError
+	require.True(t, errors.As(err, &r))
+	require.Equal(t, localsetup.CodeSetupFailed, r.Code)
+	require.NotContains(t, r.Message, "did not confirm", "the server answered: the failure is known")
+	_, statErr := os.Stat(filepath.Join(filepath.Dir(f.config), "agents", "bot.url"))
+	require.ErrorIs(t, statErr, os.ErrNotExist, "the credential of a role that was rolled back is removed")
+}

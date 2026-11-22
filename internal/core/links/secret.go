@@ -9,10 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -59,8 +56,8 @@ func SecretOf(link string) string {
 type Secrets struct {
 	now  func() time.Time
 	rand io.Reader
-	// path is the file the hashes persist in ("" keeps them in memory).
-	path string
+	// persist is where the hashes persist (nil keeps them in memory).
+	persist Persister
 	mu   sync.Mutex
 	live map[uuid.UUID]secretEntry
 	// resets are the hashes of revert links an agent's reset revoked, kept
@@ -103,38 +100,34 @@ func NewSecrets(now func() time.Time, rand io.Reader) *Secrets {
 	return &Secrets{now: now, rand: rand, live: map[uuid.UUID]secretEntry{}, resets: map[uuid.UUID][]secretEntry{}}
 }
 
-// fileMode keeps the hashes to the engine's OS user.
-const fileMode = 0o600
+// Persister keeps a store's encoded hashes (statefile/secretfile: the file
+// <stateDir>/<agent>.links.json; CONTRACT.md, Link secrets).
+type Persister interface {
+	// Save replaces what is kept with raw.
+	Save(raw []byte) error
+}
 
-// OpenSecrets returns the store persisted at path (CONTRACT.md, Link
-// secrets: <stateDir>/<agent>.links.json), loading its unexpired hashes, so
-// short links survive an engine restart. A file that cannot be read is
-// reported with an empty store that replaces it on the next issue.
-func OpenSecrets(path string, now func() time.Time, rand io.Reader) (*Secrets, error) {
-	s := NewSecrets(now, rand)
-	s.path = path
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s, nil
-	}
-	if err != nil {
-		return s, fmt.Errorf("link secrets %s: %w", path, err)
-	}
+// RestoreSecrets returns the store encoded in raw, loading its unexpired
+// hashes, so short links survive an engine restart; it persists to p. Raw
+// that cannot be read gives an error and an empty store that replaces it on
+// the next issue.
+func RestoreSecrets(raw []byte, p Persister, now func() time.Time, rand io.Reader) (*Secrets, error) {
+	s := NewSecretsWith(p, now, rand)
 	var file secretsFile
 	if err := json.Unmarshal(raw, &file); err != nil {
-		return s, fmt.Errorf("link secrets %s: %w", path, err)
+		return s, err
 	}
 	for _, e := range file.Links {
 		entry, err := e.entry()
 		if err != nil {
-			return NewSecretsAt(path, now, rand), fmt.Errorf("link secrets %s: %w", path, err)
+			return NewSecretsWith(p, now, rand), err
 		}
 		s.live[e.ID] = entry
 	}
 	for _, e := range file.Resets {
 		entry, err := e.entry()
 		if err != nil || entry.keys != nil {
-			return NewSecretsAt(path, now, rand), fmt.Errorf("link secrets %s: a bad reset link", path)
+			return NewSecretsWith(p, now, rand), errors.New("a bad reset link")
 		}
 		s.resets[e.ID] = append(s.resets[e.ID], entry)
 	}
@@ -144,10 +137,10 @@ func OpenSecrets(path string, now func() time.Time, rand io.Reader) (*Secrets, e
 	return s, nil
 }
 
-// NewSecretsAt is an empty store persisted at path.
-func NewSecretsAt(path string, now func() time.Time, rand io.Reader) *Secrets {
+// NewSecretsWith is an empty store that persists to p.
+func NewSecretsWith(p Persister, now func() time.Time, rand io.Reader) *Secrets {
 	s := NewSecrets(now, rand)
-	s.path = path
+	s.persist = p
 	return s
 }
 
@@ -193,10 +186,10 @@ func (e secretFileEntry) entry() (secretEntry, error) {
 	return out, nil
 }
 
-// save writes the store atomically (write, then rename); the caller holds
-// mu. A store without a path keeps its hashes in memory.
+// save hands the encoded store to its Persister; the caller holds mu. A
+// store without one keeps its hashes in memory.
 func (s *Secrets) save() error {
-	if s.path == "" {
+	if s.persist == nil {
 		return nil
 	}
 	file := secretsFile{Links: make([]secretFileEntry, 0, len(s.live))}
@@ -217,23 +210,7 @@ func (s *Secrets) save() error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".*.tmp")
-	if err != nil {
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	defer os.Remove(tmp.Name()) // gone after the rename; best effort otherwise
-	if err := tmp.Chmod(fileMode); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("link secrets: %w", err)
-	}
-	return os.Rename(tmp.Name(), s.path)
+	return s.persist.Save(raw)
 }
 
 // OnDrop sets what is told the token of every relay link that stops being

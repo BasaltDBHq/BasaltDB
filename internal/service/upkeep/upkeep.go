@@ -48,7 +48,7 @@ type Store interface {
 	Prune(ctx context.Context) (action.PruneResult, error)
 }
 
-// Pins keeps the last verified chain head per agent (chainpin.File in the
+// Pins keeps the last verified chain head per agent (pinfile.File in the
 // engine's state directory).
 type Pins interface {
 	Load(name string) (chainpin.Pin, bool, error)

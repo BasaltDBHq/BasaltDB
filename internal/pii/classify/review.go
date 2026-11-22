@@ -1,12 +1,10 @@
 package classify
 
 import (
-	"encoding/hex"
-
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
-// Why a column is shown in the review (CONTRACT.md, basalt classify,
+// Why a column is shown in the review (CONTRACT.md, PII classification,
 // status): the first that applies.
 const (
 	StatusNew               = "NEW"
@@ -132,98 +130,6 @@ func Rows(tables []ReviewTable, decided map[string]Decision) []guard.PIIColumn {
 			}
 			out = append(out, row)
 		}
-	}
-	return out
-}
-
-// ReviewJSON is the --json review (api/mcp/pii/classify-review.schema.json).
-type ReviewJSON struct {
-	Fingerprint         string            `json:"fingerprint"`
-	PreviousFingerprint string            `json:"previousFingerprint,omitempty"`
-	Review              string            `json:"review"`
-	DryRun              bool              `json:"dryRun"`
-	Written             bool              `json:"written"`
-	Tables              []ReviewTableJSON `json:"tables"`
-}
-
-// ReviewTableJSON is one table of ReviewJSON.
-type ReviewTableJSON struct {
-	Table   string             `json:"table"`
-	Columns []ReviewColumnJSON `json:"columns"`
-}
-
-// ReviewColumnJSON is one column of ReviewJSON. Class, EntityType and
-// PhoneRegion are what is stored once the run is over.
-type ReviewColumnJSON struct {
-	Column              string     `json:"column"`
-	DataType            string     `json:"dataType"`
-	Status              string     `json:"status"`
-	Class               string     `json:"class"`
-	EntityType          string     `json:"entityType,omitempty"`
-	SuggestedClass      string     `json:"suggestedClass"`
-	SuggestedEntityType string     `json:"suggestedEntityType,omitempty"`
-	Reason              string     `json:"reason"`
-	NeedsReview         bool       `json:"needsReview"`
-	PhoneRegion         string     `json:"phoneRegion,omitempty"`
-	Check               *CheckJSON `json:"check,omitempty"`
-}
-
-// CheckJSON is a column's --check result.
-type CheckJSON struct {
-	Sampled           int `json:"sampled"`
-	RoundTripFailures int `json:"roundTripFailures"`
-	CommonWordRule    int `json:"commonWordRule"`
-}
-
-// ReviewMeta is what ReviewJSON carries beside the tables.
-type ReviewMeta struct {
-	Fingerprint, Previous []byte
-	Review                string
-	DryRun, Written       bool
-}
-
-// JSONFromReview maps the review to its JSON form. rows are the rows the
-// run wrote (nil when it wrote none), checks the --check results.
-func JSONFromReview(tables []ReviewTable, meta ReviewMeta, rows []guard.PIIColumn, checks map[string]CheckResult) ReviewJSON {
-	written := map[string]guard.PIIColumn{}
-	for _, r := range rows {
-		written[r.Schema+"."+r.Table+"."+r.Column] = r
-	}
-	out := ReviewJSON{
-		Fingerprint: hex.EncodeToString(meta.Fingerprint), Review: meta.Review,
-		DryRun: meta.DryRun, Written: meta.Written, Tables: []ReviewTableJSON{},
-	}
-	if meta.Previous != nil {
-		out.PreviousFingerprint = hex.EncodeToString(meta.Previous)
-	}
-	for _, t := range tables {
-		tj := ReviewTableJSON{Table: t.Table}
-		for _, c := range t.Columns {
-			s := c.Suggestion
-			cj := ReviewColumnJSON{
-				Column: c.Column.Name, DataType: c.Column.DataType, Status: c.Status,
-				Class: guard.ClassUnclassified, SuggestedClass: s.Class, SuggestedEntityType: s.EntityType,
-				Reason: s.Reason, NeedsReview: s.NeedsReview,
-			}
-			now := c.Stored
-			if row, ok := written[c.Column.FullName()]; ok {
-				now = &row
-			}
-			if now != nil {
-				cj.Class, cj.EntityType, cj.PhoneRegion = now.Class, now.EntityType, now.PhoneRegion
-			}
-			if cj.PhoneRegion == "" && s.EntityType == guard.EntityPhone {
-				cj.PhoneRegion = s.PhoneRegion
-			}
-			if cj.EntityType != guard.EntityPhone && s.EntityType != guard.EntityPhone {
-				cj.PhoneRegion = ""
-			}
-			if ck, ok := checks[c.Column.FullName()]; ok {
-				cj.Check = &CheckJSON{Sampled: ck.Sampled, RoundTripFailures: ck.RoundTripFailures, CommonWordRule: ck.CommonWordRule}
-			}
-			tj.Columns = append(tj.Columns, cj)
-		}
-		out.Tables = append(out.Tables, tj)
 	}
 	return out
 }

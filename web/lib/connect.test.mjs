@@ -394,6 +394,18 @@ test("check codes: the page's own passkey with the same code, and nothing else",
   const mine = { credentialId: CRED_ID, checkCode: BASE_POINT_CODE };
   assert.equal(compareCheckCodes(mine, [{ credentialId: CRED_ID, label: "", checkCode: BASE_POINT_CODE }]), "");
   assert.match(compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: "0000 0000 0000 0000 0000" }]), /different check code/);
+  const wrong = compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: "0000 0000 0000 0000 0000" }]);
+  assert.match(wrong, /the engine lists each passkey of the database with its check code/, "a wrong code points to the engine's passkey list");
+  assert.ok(wrong.includes(BASE_POINT_CODE), "it names the code this page computed");
+  assert.doesNotMatch(wrong, /basalt passkey/);
+  for (const msg of [
+    compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }, { credentialId: "other", checkCode: "x" }]),
+    compareCheckCodes(mine, []),
+    compareCheckCodes(null, [{ credentialId: "other" }]),
+  ]) {
+    assert.match(msg, /ask it for BasaltDB's status: the engine lists each passkey of the database with its check code/, msg);
+    assert.doesNotMatch(msg, /basalt passkey/, msg);
+  }
   assert.match(compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }, { credentialId: "other", checkCode: "x" }]), /did not create/);
   assert.match(compareCheckCodes(mine, []), /does not report the passkey/);
   assert.equal(compareCheckCodes(null, []), "");

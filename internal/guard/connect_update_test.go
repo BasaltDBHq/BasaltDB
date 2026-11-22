@@ -130,3 +130,20 @@ func TestLabelsOnAnAgentCodeAfterInstall(t *testing.T) {
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'TRUST_PIN_RECORDED'`),
 		"RunSetup records the certificate it logged in against")
 }
+
+// Check on a database with no guard yet lists no passkey and refuses
+// nothing for it: an INSTALL code with a target on the connect page.
+func TestCheckPasskeysWithoutAGuard(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.leads (id int PRIMARY KEY)`)
+	code := updateCode(t, d, func(p *setupcode.Payload) {
+		verifier, err := setupcode.NewVerifier("not-a-real-password")
+		require.NoError(t, err)
+		p.Kind, p.Guard.From, p.Agent.Verifier = setupcode.KindInstall, 0, verifier
+	})
+	checked, err := setup.Check(context.Background(), d.Admin, setup.Request{Code: code, Now: time.Now(), ConnectPage: true})
+	require.NoError(t, err)
+	require.Empty(t, checked.Passkeys)
+	require.True(t, checked.PasskeyNeeded)
+}

@@ -32,7 +32,17 @@ type ActivePasskey struct {
 // PortalRPID is the relying party of the portal's passkeys.
 const PortalRPID = passkey.RPID
 
+// activePasskeys are the database's active passkeys; none in a database
+// with no guard yet.
 func activePasskeys(ctx context.Context, q guard.Querier) ([]ActivePasskey, error) {
+	var installed bool
+	// Plain SQL: a catalog presence check.
+	if err := q.QueryRow(ctx, "SELECT pg_catalog.to_regclass('basalt_meta.passkeys') IS NOT NULL").Scan(&installed); err != nil {
+		return nil, err
+	}
+	if !installed {
+		return nil, nil
+	}
 	keys, err := guard.ActivePasskeys(ctx, q)
 	if err != nil {
 		return nil, err

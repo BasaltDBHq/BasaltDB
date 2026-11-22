@@ -325,6 +325,7 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .checks { list-style: none; margin: 0; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .check::before { content: ""; width: 14px; height: 14px; flex: none; }
+.check.gone::before { content: "✕"; color: var(--diff-del-fg); font-weight: 700; text-align: center; line-height: 14px; }
 .check.ok::before { content: "✓"; color: var(--diff-add-fg); font-weight: 700; text-align: center; line-height: 14px; }
 .check.wait::before { border: 2px solid var(--ui-focus); border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

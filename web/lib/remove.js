@@ -210,7 +210,7 @@ export function startRemove(env) {
   const review = (check) => {
     $("r-db-name").textContent = check.database;
     const list = $("r-items");
-    fill(list, removalItems(check).map((i) => el("li", `check ${i.kind === "stays" ? "ok" : "bad"}`, i.text)));
+    fill(list, removalItems(check).map((i) => el("li", `check ${i.kind === "stays" ? "ok" : "gone"}`, i.text)));
     $("r-nothing").hidden = !check.nothingToRemove;
     $("r-sql").textContent = check.sql;
     fill($("r-lines"), check.lines.map((l) => el("li", "", l)));

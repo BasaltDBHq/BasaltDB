@@ -142,6 +142,7 @@ test("on the portal no code path fetches or opens a socket to localhost", async 
 function fakeChannel(engineId, answer) {
   const ch = {
     engineId,
+    engineKey: `key-of-${engineId}`,
     ended: null,
     nextId: 0,
     requests: [],
@@ -200,7 +201,7 @@ test("a request carries the contract's headers only, from the portal's origin", 
 
 test("the session names the engine by the key it verified, with its fingerprint", async () => {
   const { session } = await sessionWith(() => fakeChannel(ENGINE, () => ok()));
-  assert.deepEqual(session.engine, { engineId: ENGINE, fingerprint: "R68W FYxA cGgI jMEN" });
+  assert.deepEqual(session.engine, { engineId: ENGINE, engineKey: `key-of-${ENGINE}`, fingerprint: "R68W FYxA cGgI jMEN" });
   assert.equal(session.engine.fingerprint, fingerprint(ENGINE));
 });
 

@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -155,16 +155,22 @@ async function loadRequest(hash) {
 
 // finish relays the signed response when the page came from a short link,
 // and otherwise (or when the relay fails) shows the code to paste.
-async function finish(response, relay) {
+async function finish(response, relay, binding) {
   if (relay !== null) {
     try {
-      await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
+      const result = await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
+      await showReceipt(result, relay.session, { kind: "APPROVAL", itemId: response.approvalId, rowsHash: binding.rowsHash });
       // The approval is finished: nothing else goes to the engine.
       endSession(relay.session, ENGINE_BUTTONS);
       setPill("state", "Approved", "ok");
       return;
     } catch (err) {
+      if (!pastesCode(relay.session)) {
+        showRelayFailed(relayFailure(err, "approval"));
+        setPill("state", "Not approved", "bad");
+        return;
+      }
       showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt approve.`);
     }
   }
@@ -195,6 +201,7 @@ async function approve(rp, req, summary, relay) {
         signature: new Uint8Array(r.signature),
       },
       relay,
+      req.binding,
     );
   } catch (err) {
     gate(req, summary);

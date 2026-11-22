@@ -1,6 +1,6 @@
 // Package setuprun runs a setup code as the database's admin: the checks,
 // the questions, the one transaction and record_setup (CONTRACT.md, Setup
-// from your laptop). the connect service, through the public package
+// from your laptop). The connect service, through the public package
 // pkg/setup, uses it, so the setup has one implementation; pkg/setup is
 // its API for other modules, without this module's internal types.
 //

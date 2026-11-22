@@ -54,6 +54,11 @@ type agentJob struct {
 // connect service compares a setup code's target (setuprun.SameDatabase),
 // before anything connects with it.
 func (s *Service) validateAgentJob(req Request) (agentJob, error) {
+	// A REMOVE deleted engine.json with the engine's last agent: the
+	// engine serves no agent any more, and basalt init removes its service.
+	if _, err := os.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
+		return agentJob{}, refuse(CodeEngineRemoved, "BasaltDB is removed from this engine: it serves no agent any more. Your computer asks for your password next, to remove the engine service.")
+	}
 	if req.Job == JobChange {
 		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
 	}

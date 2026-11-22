@@ -53,8 +53,8 @@ var (
 	ErrNoDialog = errors.New("no administrator dialog is available here")
 	// ErrDialogCancelled: the person closed the dialog.
 	ErrDialogCancelled = errors.New("the administrator dialog was cancelled")
-	// ErrDialogScript: the person answered, and the install script stopped.
-	ErrDialogScript = errors.New("the engine service install stopped")
+	// ErrDialogScript: the person answered, and the script stopped.
+	ErrDialogScript = errors.New("the administrator dialog's script stopped")
 )
 
 // safeBinary is what a binary path in the install script may hold: no

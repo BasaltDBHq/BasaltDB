@@ -127,8 +127,9 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		h := newFakeHost(t)
 		h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
 		h.setupCodes = []string{localsetup.CodeJobUnavailable}
-		r, read := localInit(t, h, args...)
+		r, read := localInitWithin(t, 2*time.Second, h, args...)
 		require.Equal(t, exitOK, r.code, "%v: %s", args, r.stderr)
+		require.Contains(t, r.stderr, "stopped waiting; the engine service stays", "no Remove on the page: init stops waiting and removes nothing")
 		require.Empty(t, h.dialogs, "no password: the service is there")
 		lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
 		require.Len(t, lines, 1, "stdout is the link only: the agent is registered already")
@@ -185,4 +186,73 @@ func TestInitSaysWhenTheEngineNeverAnswers(t *testing.T) {
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "did not answer on http://localhost:8787")
 	require.Empty(t, r.stdout)
+}
+
+// After the page's Remove deleted engine.json, the init that opened the
+// CHANGE link removes the engine service through the administrator dialog,
+// with the fixed removal script.
+func TestInitRemovesTheServiceAfterThePageRemovedBasaltDB(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+	h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeEngineRemoved}
+	r, read := localInit(t, h)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Len(t, h.opened, 1, "init opened the CHANGE link first")
+	script, err := service.RemoveScript("linux")
+	require.NoError(t, err)
+	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
+	require.Empty(t, h.sudo)
+	require.Contains(t, r.stderr, "the engine service is removed")
+	require.NotContains(t, read, envAdminURL)
+}
+
+// An engine already removed (a dialog closed earlier) goes straight to the
+// dialog: no link.
+func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+	h.setupCodes = []string{localsetup.CodeEngineRemoved}
+	r, _ := localInit(t, h)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Empty(t, h.opened)
+	require.Empty(t, r.stdout)
+	require.Len(t, h.dialogs, 1)
+}
+
+func TestInitRemovalStops(t *testing.T) {
+	t.Parallel()
+	for _, v := range []struct {
+		name string
+		edit func(*fakeHost)
+		want string
+	}{
+		{"dialog closed", func(h *fakeHost) { h.dialogErr = service.ErrDialogCancelled }, "the administrator dialog was closed, so the engine service stays. Run basalt init again"},
+		{"no dialog", func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (an SSH session)", service.ErrNoDialog) }, "cannot be shown here"},
+		{"script stopped", func(h *fakeHost) { h.dialogErr = fmt.Errorf("%w: engine.json still exists", service.ErrDialogScript) }, "the engine service was not removed"},
+	} {
+		h := newFakeHost(t)
+		h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+		h.setupCodes = []string{localsetup.CodeEngineRemoved}
+		v.edit(h)
+		r, _ := localInit(t, h)
+		require.Equal(t, exitError, r.code, v.name)
+		require.Contains(t, r.stderr, v.want, v.name)
+	}
+}
+
+// When the browser does not open, the agent shows the link once init ends,
+// so init does not wait for the page.
+func TestInitDoesNotWaitWhenTheBrowserDidNotOpen(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+	h.setupCodes = []string{localsetup.CodeJobUnavailable}
+	h.openErr = errors.New("no display")
+	r, _ := localInitWithin(t, 5*time.Second, h)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "run basalt init again: it removes the engine service")
+	require.Empty(t, h.dialogs)
+	require.Equal(t, 1, h.setupCalls, "init asked the engine once and did not wait")
 }

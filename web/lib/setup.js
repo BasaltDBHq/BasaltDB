@@ -54,7 +54,7 @@ export const JOB_TEXT = {
     title: "Remove BasaltDB",
     intro: (agent) => `This page removes BasaltDB from the database of your agent ${agent}: the guard, the ledger of every action and the agents' roles. Nothing can undo it.`,
     run: "Remove BasaltDB",
-    done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}.`,
+    done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}. When it served no other agent, your computer asks for your password next, in its own dialog, to remove the engine service.`,
   },
 };
 

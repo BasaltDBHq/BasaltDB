@@ -193,10 +193,16 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	_, err = os.Stat(cred)
 	require.ErrorIs(t, err, os.ErrNotExist, "the agent's credential is deleted")
 
-	// The engine that ran with that config never installs: it loads a
-	// config only at its start.
-	_, err = svc.Check(ctx, f.request())
-	refusal(t, err, localsetup.CodeJobUnavailable)
+	// The engine that ran with that config never installs (it loads a
+	// config only at its start): it answers every request, the empty one
+	// basalt init sends included, that BasaltDB is removed from it, so init
+	// removes the engine service.
+	for _, req := range []localsetup.Request{f.request(), {}, f.agentJob(localsetup.JobUpdate), f.agentJob(localsetup.JobRemove)} {
+		_, err = svc.Check(ctx, req)
+		refusal(t, err, localsetup.CodeEngineRemoved)
+		_, err = svc.Run(ctx, req)
+		refusal(t, err, localsetup.CodeEngineRemoved)
+	}
 }
 
 func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {

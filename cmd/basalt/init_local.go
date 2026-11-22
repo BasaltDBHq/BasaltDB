@@ -20,6 +20,11 @@ import (
 const (
 	setupWait     = 30 * time.Second
 	setupWaitStep = 250 * time.Millisecond
+	// removalWait is how long init, having opened the CHANGE link, waits
+	// for the page's Remove before it stops waiting; removalWaitStep how
+	// often it asks the engine.
+	removalWait     = 15 * time.Minute
+	removalWaitStep = 500 * time.Millisecond
 )
 
 // runInitLocal is basalt init on a person-operated engine (CONTRACT.md,
@@ -51,8 +56,11 @@ func runInitLocal(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	if state == engineSetUp {
+	switch state {
+	case engineSetUp:
 		return changeLink(c, job)
+	case engineRemoved:
+		return removeEngineService(c)
 	}
 	link, err := localsetup.Link(engine.SetupOrigin, job)
 	if err != nil {
@@ -79,9 +87,56 @@ func changeLink(c *cliIO, job localsetup.Job) int {
 	}
 	fmt.Fprintln(c.stdout, link)
 	if err := c.host.OpenURL(c.ctx, link); err != nil {
-		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
+		// The agent shows the link once init ends, so init does not wait.
+		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand. After a Remove on that page, run basalt init again: it removes the engine service.")
+		return exitOK
 	}
 	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+	fmt.Fprintf(c.stderr, "basalt: waiting up to %s for the page: after a Remove, this removes the engine service through the administrator dialog.\n", removalWait)
+	if !waitForRemoval(c) {
+		fmt.Fprintln(c.stderr, "basalt: stopped waiting; the engine service stays. If BasaltDB is removed on the page later, run basalt init again: it removes the engine service.")
+		return exitOK
+	}
+	return removeEngineService(c)
+}
+
+// waitForRemoval asks the engine until it answers ENGINE_REMOVED (the
+// page's Remove deleted engine.json), and reports whether it did before
+// removalWait or the end of c's context.
+func waitForRemoval(c *cliIO) bool {
+	ctx, cancel := context.WithTimeout(c.ctx, removalWait)
+	defer cancel()
+	for {
+		if code, err := c.host.SetupState(ctx, engine.SetupOrigin); err == nil && code == localsetup.CodeEngineRemoved {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(removalWaitStep):
+		}
+	}
+}
+
+// removeEngineService removes the engine service after the setup page
+// removed BasaltDB, through the administrator dialog with its fixed
+// script (service.RemoveScript), which refuses while engine.json exists.
+func removeEngineService(c *cliIO) int {
+	if err := c.host.DialogAvailable(c.goos); err != nil {
+		return c.fail(fmt.Errorf("BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine", err))
+	}
+	script, err := service.RemoveScript(c.goos)
+	if err != nil {
+		return c.fail(err)
+	}
+	fmt.Fprintln(c.stderr, "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.")
+	if err := c.host.AdminDialog(c.ctx, c.goos, script, c.stderr); err != nil {
+		if errors.Is(err, service.ErrDialogCancelled) {
+			return c.fail(errors.New("the administrator dialog was closed, so the engine service stays. Run basalt init again to remove it"))
+		}
+		return c.fail(fmt.Errorf("the engine service was not removed: %w", err))
+	}
+	fmt.Fprintln(c.stderr, "basalt: the engine service is removed.")
 	return exitOK
 }
 
@@ -147,6 +202,7 @@ type engineState int
 const (
 	engineWaiting engineState = iota // no config yet: the setup page installs
 	engineSetUp                      // it has a config
+	engineRemoved                    // the page removed its last agent
 )
 
 // waitForSetupPage waits until the engine answers its setup routes, and
@@ -159,6 +215,8 @@ func waitForSetupPage(c *cliIO) (engineState, error) {
 		switch {
 		case err == nil && code == localsetup.CodeJobUnavailable:
 			return engineSetUp, nil
+		case err == nil && code == localsetup.CodeEngineRemoved:
+			return engineRemoved, nil
 		case err == nil:
 			return engineWaiting, nil
 		}

@@ -12,9 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The MCP initialize instructions tell an agent on a computer the person cannot reach to run `basalt init --remote`.
 - `basalt --help` and the error for an agent missing from the config tell an agent to run `basalt init` on the person's own computer and `basalt init --remote` on one the person cannot reach, and to show the person the link it prints, instead of a setup code.
 
+### Added
+
+- `pkg/setup` `CheckRemove` and `RunRemove`: remove BasaltDB from a database with only an admin connection, for the connect page's Remove BasaltDB tab. They list the bots that lose their access by name, show the SQL, and run it in one transaction once the typed name equals the database's name.
+
 ### Removed
 
 - `docs/setup-from-laptop.md` and `docs/crash-reports.md`, with the commands and flags they described.
+- `basalt service uninstall`, with its flags. Removing BasaltDB on the setup page now also removes the engine service: the `basalt init` that opened the page waits for the Remove, then asks for your password once in the system's administrator dialog, which stops the engine and plugin services and removes their units, the system directories (config, state, sockets, logs, the plugin base) and the engine's and plugins' OS users. The service stays while the engine still serves an agent of another database.
 - `basalt engine revoke` and its `--yes` flag, and the engine's handling of a revoked key on the relay. To cut an engine off, remove BasaltDB from the database on the setup page: that drops every `basalt_*` role, so the engine can no longer log in. A key revoked by hand in SQL still shows as `REVOKED` in `status`, and the engine no longer ends its relay links for it.
 - `basalt upgrade` and `basalt uninstall`, with their flags. The guard update and the removal of BasaltDB run on the engine's local setup page: the page shows the SQL, you type the admin connection string there, and it runs in one transaction. A removal also drops the agents of that database from the engine's config and deletes their credentials.
 - `basalt log`, `basalt status`, `basalt access`, `basalt crash` (`list`, `show`, `report`) and `basalt portal verify`, with their flags and the `portal-verify-result` JSON schema. The agent's `status` tool reports what `basalt status` did, names the newest crash report with its GitHub link, and lists what the agent can read and write. `basalt revert` stays until the relay carries every revert. The portal check runs in the release workflow (`make portal-verify` runs it by hand). A panic in a command now prints where its report was saved.

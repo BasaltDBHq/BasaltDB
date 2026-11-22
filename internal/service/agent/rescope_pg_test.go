@@ -591,5 +591,5 @@ func TestScopeRouteTimeLimit(t *testing.T) {
 	require.Equal(t, "TIME_LIMIT", perr.Reason)
 	require.Equal(t, "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. "+
 		"Choose fewer agents, runs or tables, or try again.", perr.PersonMessage)
-	require.Equal(t, 100*time.Second, agent.RescopeTimeout)
+	require.Equal(t, 100*time.Second, guardmodel.MCPPrepareTimeout)
 }

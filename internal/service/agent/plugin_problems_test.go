@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // fakePlugins reports problems per agent, as the engine's reporter does:
@@ -43,7 +44,7 @@ func samplePluginProblem(code string) fakePlugins {
 }
 
 // requireRequestPlugin checks st calls request_plugin for acme-ner/client_x.
-func requireRequestPlugin(t *testing.T, st NextStep, remove bool) {
+func requireRequestPlugin(t *testing.T, st toolresult.NextStep, remove bool) {
 	t.Helper()
 	require.Equal(t, "AGENT", st.Actor)
 	require.Equal(t, "CALL_TOOL", st.Action)

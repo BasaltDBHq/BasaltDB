@@ -136,7 +136,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 	case CodeStaleRead:
 		s.staleReadSteps(b, te, f)
 	case CodeStatementRefused:
-		if te.Reason == ReasonHoldTooLarge {
+		if te.Reason == action.ReasonHoldTooLarge {
 			person = s.holdTooLargeSteps(b, te)
 			break
 		}

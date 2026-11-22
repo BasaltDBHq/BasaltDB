@@ -15,9 +15,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-func kinds(steps []NextStep) []mcpcontract.StepKind { return catalogKinds(steps) }
+func kinds(steps []toolresult.NextStep) []mcpcontract.StepKind { return catalogKinds(steps) }
 
-func requireConnectPending(t *testing.T, kind, code, reason string, pm string, ls []toolresult.Link, steps []NextStep) {
+func requireConnectPending(t *testing.T, kind, code, reason string, pm string, ls []toolresult.Link, steps []toolresult.NextStep) {
 	t.Helper()
 	url := links.Portal + "/connect#" + testSetupCode
 	c := catalogOf(t)

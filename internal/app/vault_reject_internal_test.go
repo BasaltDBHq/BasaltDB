@@ -56,7 +56,7 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 	pg := newPGAgent(t, bot.URL, 2)
 	dbStore := pg.store
 	prepare := func() uuid.UUID {
-		prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
+		prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", guardmodel.MCPPrepareTimeout)
 		require.NoError(t, err)
 		return prep.RevertID
 	}

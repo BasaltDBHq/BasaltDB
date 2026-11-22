@@ -20,11 +20,6 @@ import (
 // preview_lines has no cap and whose hold_action refuses any line over
 // 64 KiB as invalid input (BS008), gets the same answer.
 
-// ReasonHoldTooLarge is STATEMENT_REFUSED for a held write whose preview
-// lines are over what a hold keeps: the guard's BS007 with detail
-// HOLD_TOO_LARGE, or the engine's own check.
-const ReasonHoldTooLarge = action.ReasonHoldTooLarge
-
 // olderGuardNote marks the HOLD_TOO_LARGE message of a guard before
 // version 37: upgrading the guard is what lets the write be held.
 const olderGuardNote = "this database's guard holds a line of at most 64 KiB"
@@ -40,12 +35,12 @@ func holdTooLarge(lines []string, holdErr error) *toolresult.ToolError {
 		longest = max(longest, len(l))
 	}
 	if total > guardmodel.MaxHeldLinesBytes {
-		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: ReasonHoldTooLarge, Message: fmt.Sprintf(
+		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: action.ReasonHoldTooLarge, Message: fmt.Sprintf(
 			"the write's preview lines are %s; a held write holds at most %s of them, so it cannot be held for approval",
 			largevalue.SizeText(int64(total)), largevalue.SizeText(guardmodel.MaxHeldLinesBytes))}
 	}
 	if code, ok := ledgerCode(holdErr); ok && longest > guardmodel.MaxHeldLineBytesBefore37 && code == guardmodel.CodeLedgerInputInvalid {
-		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: ReasonHoldTooLarge, Message: fmt.Sprintf(
+		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: action.ReasonHoldTooLarge, Message: fmt.Sprintf(
 			"a preview line of the write is %s, and %s (basalt_meta before version 37): upgrading the guard lets it hold the write",
 			largevalue.SizeText(int64(longest)), olderGuardNote)}
 	}

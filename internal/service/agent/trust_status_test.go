@@ -135,7 +135,7 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	p := findProblem(t, r, problemCertificateNotVerified)
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, host)
-	require.Equal(t, NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	require.Contains(t, p.PersonMessage, "trust it there")
 	require.NotContains(t, p.PersonMessage, "sslrootcert", "the setup page refuses sslrootcert, so no message suggests it")

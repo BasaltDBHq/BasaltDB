@@ -96,10 +96,6 @@ func cursorHash(cursor string) (string, error) {
 	return hash, nil
 }
 
-// RevertPlanParams are revert_plan's validated arguments: a batched plan
-// and one page of its lines (only pending ones with Outcome PENDING).
-type RevertPlanParams = action.RevertLineParams
-
 // RevertPlanLine is one line of a batched plan with its signed line
 // parsed. Plan is nil on a widened plan's line that names a change the
 // agent did not make: the agent's view leaves its text out (RS-5).
@@ -127,7 +123,7 @@ type RevertPlan struct {
 // RevertPlan returns a large revert plan this agent prepared, its progress
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
-func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPlan, error) {
+func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
 	r, err := s.Store.FindRevert(ctx, p.RevertID)
 	if sentinel(err, theHost().ErrRevertNotFound) {
 		return RevertPlan{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}

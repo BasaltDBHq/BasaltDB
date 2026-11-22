@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -94,7 +95,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 		_, err = store.WriteApproved(ctx, action.Intent(done), id, action.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")})
 		require.NoError(t, err)
 	})
-	e.revert, err = store.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", agent.RescopeTimeout)
+	e.revert, err = store.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", guardmodel.MCPPrepareTimeout)
 	require.NoError(t, err)
 
 	// The held write the page reveals.

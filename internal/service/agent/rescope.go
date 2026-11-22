@@ -27,10 +27,6 @@ import (
 // that secret and sends Postgres only the key and the proof; the secret
 // itself never reaches Postgres. Postgres decides every check.
 
-// RescopeTimeout caps one rescope or reset (N12-R9): past it Postgres
-// cancels it and nothing changes.
-const RescopeTimeout = guardmodel.MCPPrepareTimeout
-
 // ScopeRequest is the body of POST …/scope (revert-scope-request.schema.json).
 // Proof and NewSecret come together: a widen.
 type ScopeRequest struct {
@@ -209,7 +205,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if !widen && held {
 		req.Token = st.token
 	}
-	out, err := s.Store.RescopeRevert(ctx, req, RescopeTimeout)
+	out, err := s.Store.RescopeRevert(ctx, req, guardmodel.MCPPrepareTimeout)
 	if err != nil {
 		return ScopeResponse{}, s.rescopeError(ctx, r, err)
 	}
@@ -400,7 +396,7 @@ func (s *Service) resetToProposal(ctx context.Context, r action.Revert) (action.
 		return action.Revert{}, err
 	}
 	defer release()
-	out, err := s.Store.ResetRevert(ctx, r.ID, RescopeTimeout)
+	out, err := s.Store.ResetRevert(ctx, r.ID, guardmodel.MCPPrepareTimeout)
 	if err != nil {
 		return action.Revert{}, err
 	}

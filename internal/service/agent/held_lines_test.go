@@ -10,6 +10,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
@@ -30,13 +31,13 @@ func TestHoldTooLarge(t *testing.T) {
 	over := holdTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes/2), strings.Repeat("y", guardmodel.MaxHeldLinesBytes/2+1)}, nil)
 	require.NotNil(t, over)
 	require.Equal(t, CodeStatementRefused, over.Code)
-	require.Equal(t, ReasonHoldTooLarge, over.Reason)
+	require.Equal(t, action.ReasonHoldTooLarge, over.Reason)
 	require.Contains(t, over.Message, "at most 64.0 MiB")
 	require.NotContains(t, over.Message, olderGuardNote)
 
 	older := holdTooLarge(wide, bs008)
 	require.NotNil(t, older)
-	require.Equal(t, ReasonHoldTooLarge, older.Reason)
+	require.Equal(t, action.ReasonHoldTooLarge, older.Reason)
 	require.Contains(t, older.Message, olderGuardNote)
 }
 

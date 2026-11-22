@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -72,7 +73,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 
 	pg := newPGAgent(t, bot.URL, 2)
 	dbStore := pg.store
-	prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
+	prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", guardmodel.MCPPrepareTimeout)
 	require.NoError(t, err)
 	id := prep.RevertID
 

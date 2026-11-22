@@ -22,54 +22,6 @@ import (
 // a committed credential.
 var leakedAdmin = "postgres://postgres" + ":" + "hunter2-admin" + "@" + "db.example.com:5432/app"
 
-// TestAgentContextRefusesTheAdminCredential: under an agent, every command
-// that takes the admin connection string refuses before reading it, from
-// the environment or stdin, and never echoes it.
-func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"setup code", []string{"init", "--setup-code", "basalt-setup.1.x.y", "--yes"}, "Give the person this command instead of running it"},
-	}
-	for _, marker := range agentMarkers {
-		for _, tc := range cases {
-			t.Run(marker+"/"+tc.name, func(t *testing.T) {
-				t.Parallel()
-				r := cliOn(t, newFakeHost(t), map[string]string{marker: "1"}, leakedAdmin+"\n", tc.args...)
-				require.Equal(t, exitError, r.code, r.stderr)
-				require.Contains(t, r.stderr, "it is running under an agent ("+marker+" is set)")
-				require.Contains(t, r.stderr, "An agent never asks for, accepts or types the admin connection string or password.")
-				require.Contains(t, r.stderr, tc.want)
-				require.NotContains(t, r.stderr, "Admin connection string (used once", "no prompt under an agent")
-				require.NotContains(t, r.stderr, "change that database password", "nothing leaked through the environment")
-				require.NotContains(t, r.stdout+r.stderr, "hunter2")
-			})
-		}
-	}
-}
-
-// TestAgentContextAdminEnvSaysRotate: an admin connection string in the
-// agent's environment is not used, and the person is told to change it.
-func TestAgentContextAdminEnvSaysRotate(t *testing.T) {
-	t.Parallel()
-	for _, args := range [][]string{
-		{"init", "--setup-code", "basalt-setup.1.x.y"},
-	} {
-		t.Run(args[0]+" "+args[1], func(t *testing.T) {
-			t.Parallel()
-			r := cliOn(t, newFakeHost(t), map[string]string{"CLAUDECODE": "1", envAdminURL: leakedAdmin}, "", args...)
-			require.Equal(t, exitError, r.code, r.stderr)
-			require.NotContains(t, r.stdout+r.stderr, "hunter2")
-			if args[0] == "init" {
-				require.Contains(t, r.stderr, adminEnvLeaked)
-			}
-		})
-	}
-}
-
 // TestAgentContextNeedsAMarker: without a marker, a person's command reads
 // the admin credential as before (here from the environment, then fails to
 // connect to a database that is not there).
@@ -176,9 +128,9 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", engine.Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp":         agentsHelp,
-		"hintAgentSetupCode": hintAgentSetupCode, "hintAgentPerson": hintAgentPerson,
-		"adminEnvLeaked": adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
+		"agentsHelp":      agentsHelp,
+		"hintAgentPerson": hintAgentPerson,
+		"adminEnvLeaked":  adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)
 	}

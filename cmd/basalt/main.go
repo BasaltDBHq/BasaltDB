@@ -48,8 +48,6 @@ func commands() []command {
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install the engine service (install)", runService},
 		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit)},
-		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
-		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},
 	}

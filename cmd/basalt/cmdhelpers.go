@@ -72,12 +72,3 @@ func perUserConfigFallback(h host, system string) string {
 	}
 	return user
 }
-
-// withMark is a printed value followed by the summary of its size and
-// sha256 when it is over 1 MiB (largevalue.Summary), "" for any other.
-func withMark(text, mark string) string {
-	if mark == "" {
-		return text
-	}
-	return text + " " + mark
-}

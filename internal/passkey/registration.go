@@ -196,6 +196,16 @@ func DecodeCode(prefix, code string, v any) error {
 	if err != nil {
 		return rejected("code is not base64url")
 	}
+	return DecodeStrict(raw, v)
+}
+
+// DecodeStrict decodes one JSON value into v as a code's payload is
+// decoded: at most maxCodeLen bytes, no unknown field, base64url bytes.
+// The pages post signed responses as such JSON.
+func DecodeStrict(raw []byte, v any) error {
+	if len(raw) > maxCodeLen {
+		return rejected("payload longer than %d bytes", maxCodeLen)
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

@@ -63,6 +63,14 @@ func (s *Service) relayLink(ctx context.Context, page func(string, uuid.UUID) st
 	return ""
 }
 
+// shortLinked reports whether the person holds a short link to item id that
+// still works: the engine serves its own pages, or the item has a live
+// portal short link the relay carries. A result that issues no new link then
+// points back to that link, never to the long one.
+func (s *Service) shortLinked(id uuid.UUID) bool {
+	return s.PagesOrigin != "" || (s.Links != nil && s.Links.HasRelay(id))
+}
+
 // noRelay is LinkRelay with the Vault off: never connected.
 type noRelay struct{}
 

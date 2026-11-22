@@ -28,8 +28,6 @@ import (
 const (
 	// RequestPrefix starts the revert link's fragment, as for approvals.
 	RequestPrefix = approval.RequestPrefix
-	// ResponsePrefix starts the code the revert page outputs.
-	ResponsePrefix = "basalt-revert.1."
 )
 
 // KindRevert is the binding kind of a revert authorisation.
@@ -434,16 +432,11 @@ func (r Response) Assertion() passkey.Assertion {
 	}
 }
 
-// Code returns the text the person copies: basalt-revert.1.<base64url(json)>.
-func (r Response) Code() (string, error) {
-	return passkey.EncodeCode(ResponsePrefix, r)
-}
-
-// ParseResponse decodes a pasted response code. Surrounding whitespace is
-// ignored.
-func ParseResponse(code string) (Response, error) {
+// DecodeResponse decodes the signed response the revert page posts (its
+// JSON), strictly: an unknown field or a missing one is refused.
+func DecodeResponse(raw []byte) (Response, error) {
 	var r Response
-	if err := passkey.DecodeCode(ResponsePrefix, strings.TrimSpace(code), &r); err != nil {
+	if err := passkey.DecodeStrict(raw, &r); err != nil {
 		return Response{}, invalid("%v", err)
 	}
 	if len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {

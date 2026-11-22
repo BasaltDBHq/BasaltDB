@@ -221,7 +221,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.NotNil(t, over.File)
 	require.Equal(t, links.RevertFile(uuid.MustParse(caseRevertID)), over.File.FileName)
 	require.Equal(t, links.RequestHash(over.File.Text), over.URL[strings.Index(over.URL, "#h=")+3:])
-	require.Contains(t, over.Message, "Sign it with your passkey: open this link, then open the request file the agent sends you")
+	require.Contains(t, over.Message, "Review only, this link cannot be signed: open this link, then open the request file the agent sends you")
 	require.Contains(t, over.Message, "\n\n"+over.URL)
 	require.NotContains(t, over.Message, "#2.")
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
@@ -238,7 +238,7 @@ func TestRevertNoticeNamesOnlyTheFileWithoutBlocks(t *testing.T) {
 	require.NotNil(t, n.File)
 	require.Greater(t, len(n.File.Text), links.RequestPieceChars*links.RequestMaxBlocks, "the fixture must need more than ten blocks")
 	require.Nil(t, n.File.Blocks)
-	require.Contains(t, n.Message, "open the request file the agent sends you. The page")
+	require.Contains(t, n.Message, "open the request file the agent sends you:")
 	require.NotContains(t, n.Message, "text blocks")
 	requirePersonMessage(t, n.Message, n.Links)
 }

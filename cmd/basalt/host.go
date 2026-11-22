@@ -64,9 +64,6 @@ type host interface {
 	OpenURL(ctx context.Context, link string) error
 	// PagesUp reports whether the engine serves its local pages at origin.
 	PagesUp(ctx context.Context, origin string) bool
-	// IssueLink asks the engine's pages for a short link (POST .../links)
-	// with proof of the item's binding text, and returns its url.
-	IssueLink(ctx context.Context, endpoint, proof string) (string, error)
 }
 
 // osHost is the real machine.
@@ -159,6 +156,9 @@ func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
 	return out.Code, nil
 }
 
+// maxLinkAnswer bounds the engine's answer to a pages API request.
+const maxLinkAnswer = 16 << 10
+
 func (osHost) Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error {
 	cmd := exec.CommandContext(ctx, "sudo", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(stdin), out, errw
@@ -193,39 +193,6 @@ func (osHost) PagesUp(ctx context.Context, origin string) bool {
 	_ = resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
 }
-
-func (osHost) IssueLink(ctx context.Context, endpoint, proof string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
-	defer cancel()
-	body, err := json.Marshal(map[string]string{"proof": proof})
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var out struct {
-		URL     string `json:"url"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxLinkAnswer)).Decode(&out); err != nil {
-		return "", fmt.Errorf("engine answered %d", resp.StatusCode)
-	}
-	if resp.StatusCode != http.StatusOK || out.URL == "" {
-		return "", fmt.Errorf("engine answered %d: %s", resp.StatusCode, out.Message)
-	}
-	return out.URL, nil
-}
-
-// maxLinkAnswer bounds the engine's answer to a link request.
-const maxLinkAnswer = 16 << 10
 
 func (osHost) System(out, errw io.Writer) service.System {
 	return service.OSSystem{Stdout: out, Stderr: errw}

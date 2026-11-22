@@ -64,8 +64,8 @@ type Approvals interface {
 
 // Reverts previews reverts, reads the large plans the agent prepared and
 // applies batches of them. Signing a revert is not an agent's to do: it
-// needs the person's passkey (basalt revert). ApplyRevert only relays an
-// assertion the person's page made, for the local pages (CONTRACT.md,
+// needs the person's passkey. ApplyRevert only relays an assertion the
+// person's page made, through the local pages or the Vault (CONTRACT.md,
 // Local pages); no MCP tool reaches it, and the store verifies the
 // signature.
 type Reverts interface {

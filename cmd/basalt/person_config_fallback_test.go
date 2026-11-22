@@ -9,41 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 )
-
-// A bot that is not root has no --config to give: init --remote left its
-// config in the user's own config directory, and log, approve and revert find
-// it there, as status does.
-func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
-	t.Parallel()
-	if _, err := os.Stat(config.DefaultPath(runtime.GOOS)); err == nil {
-		t.Skip("a system engine config is installed on this machine")
-	}
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	cfg := filepath.Join(h.configDir, perUserDirName, "engine.json")
-	initAgent(t, d, cfg)
-
-	id := uuid.NewString()
-	// Each of these answers from the agent's own ledger, which only the
-	// per-user config leads to: the held write or the revert is not there.
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"approve", "--agent", "bot", "--show", id}, "is not a held write of this agent"},
-	} {
-		got := cliOn(t, h, nil, "", tc.args...)
-		require.Equal(t, exitError, got.code, "%v: %s", tc.args, got.stderr)
-		require.Contains(t, got.stderr, tc.want, "%v did not reach the per-user engine", tc.args)
-		require.NotContains(t, got.stderr, config.DefaultPath(runtime.GOOS), "%v read the system path", tc.args)
-	}
-}
 
 // The engine finds the same per-user config when it is started without
 // --config by a user who is not root.

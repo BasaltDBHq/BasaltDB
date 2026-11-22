@@ -353,10 +353,8 @@ type WriteParams struct {
 	Params []any
 	Intent string
 	RunID  uuid.UUID // uuid.Nil starts a one-write run with the intent
-	// ApprovalID applies a held write; Approval is the person's signed
-	// code, relayed when given.
+	// ApprovalID applies a held write the person approved on the page.
 	ApprovalID uuid.UUID
-	Approval   string
 	// Wait is how long to wait for the person to sign a held write before
 	// answering APPROVAL_REQUIRED (CONTRACT.md, Waiting write); 0 answers
 	// at once.

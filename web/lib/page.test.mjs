@@ -24,7 +24,7 @@ async function failure(parse, fragment) {
   assert.fail(`fragment of ${fragment.length} characters decoded`);
 }
 
-test("an approval link cut short anywhere says so and names basalt approve --open", async () => {
+test("an approval link cut short anywhere says so and says to ask the agent for a new link", async () => {
   // Every cut a terminal wrap or a chat could make, including right after '#'.
   const cuts = [0, 1, 2, 3, 10, Math.floor(approvalFragment.length / 2), approvalFragment.length - 1];
   for (const n of cuts) {
@@ -32,17 +32,19 @@ test("an approval link cut short anywhere says so and names basalt approve --ope
     assert.ok(err instanceof TruncatedLinkError, `cut at ${n}: ${err.name}: ${err.message}`);
     const msg = linkFailure(err, "approval", APPROVE_REOPEN);
     assert.match(msg, /^This approval link looks cut short \(/);
-    assert.match(msg, /basalt approve --agent <name> --open <approvalId>/);
+    assert.match(msg, /Ask the agent for a new link to this approval\.$/);
+    assert.doesNotMatch(msg, /basalt|paste|code/);
     assert.doesNotMatch(msg, /cannot be used/);
   }
 });
 
-test("a revert link cut short says so and names basalt revert --open", async () => {
+test("a revert link cut short says so and says to ask the agent for a new link", async () => {
   const err = await failure(parseRevertRequest, "#" + revertFragment.slice(0, revertFragment.length - 7));
   assert.ok(err instanceof TruncatedLinkError, `${err.name}: ${err.message}`);
   const msg = linkFailure(err, "revert", REVERT_REOPEN);
   assert.match(msg, /^This revert link looks cut short \(/);
-  assert.match(msg, /basalt revert command again with --open/);
+  assert.match(msg, /Ask the agent for a new link to this revert\.$/);
+  assert.doesNotMatch(msg, /basalt|paste|code/);
 });
 
 test("a link that decodes but is wrong is not called cut short", async () => {

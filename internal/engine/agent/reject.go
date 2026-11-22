@@ -49,7 +49,7 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 		return RejectResponse{}, err
 	}
 	defer release()
-	r, err := s.openRevert(ctx, id, nil)
+	r, err := s.openRevert(ctx, id)
 	if err != nil {
 		return RejectResponse{}, err
 	}

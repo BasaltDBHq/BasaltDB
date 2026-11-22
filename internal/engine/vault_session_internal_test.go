@@ -105,14 +105,6 @@ func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.Applie
 	return action.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
 }
 
-func (a *heldAgent) IssueApprovalLink(context.Context, uuid.UUID, string) (string, error) {
-	return "", agent.ErrNotThisAgent
-}
-
-func (a *heldAgent) IssueRevertLink(context.Context, uuid.UUID, string) (string, error) {
-	return "", agent.ErrNotThisAgent
-}
-
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
 func (a *heldAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }

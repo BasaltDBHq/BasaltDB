@@ -1,7 +1,6 @@
 // Package setup runs a Basalt setup code against a person's database, as
-// basalt init --setup-code does on their own computer (CONTRACT.md, Setup
-// from your laptop), for a program other than the basalt CLI. The CLI runs
-// on it too, so both run the same checks, questions and SQL.
+// the removed laptop command did on their own computer (CONTRACT.md, The
+// setup checks), for a program other than the basalt CLI.
 //
 // Three steps match a page that runs a setup:
 //
@@ -397,7 +396,7 @@ type RunInput struct {
 	// with nothing to do runs nothing, so it stores no passkey either
 	// (Result.NothingToDo set, Result.Passkey nil).
 	Passkey *Passkey
-	// AskPasskey is the laptop's passkey step (basalt init --setup-code,
+	// AskPasskey is the passkey step (The setup checks,
 	// step 7): Run calls it at most once, after the setup committed, and
 	// only when the database has no active portal passkey or AddPasskey is
 	// set. When it fails, the setup has run and Run returns
@@ -606,7 +605,7 @@ func (e *Error) Error() string { return e.Message }
 func (e *Error) Unwrap() error { return e.err }
 
 // Codes this package returns besides the setup code's refusals
-// (CONTRACT.md, The setup code and basalt init --setup-code).
+// (CONTRACT.md, The setup code).
 const (
 	// CodeEngineRevoked is a code whose engine the database revoked.
 	CodeEngineRevoked = setuprun.CodeEngineRevoked

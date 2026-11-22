@@ -34,8 +34,7 @@ export const STALE_MS = 4 * 60 * 1000;
 // Frames, Requests): any other header is answered 400, so none is sent.
 const SENT_HEADERS = [SECRET_HEADER, "content-type"];
 
-const LONG_LINK =
-  "Ask the agent for the long link (list_pending gives it), or run basalt approve or basalt revert with --open on your own computer.";
+const LONG_LINK = "Ask the agent for a new link.";
 
 // What the page shows for each way a session ends (CONTRACT.md, Close
 // codes, "The page shows"). A code from the Vault decides only this text.
@@ -45,11 +44,11 @@ const TRY_LATER = new Set(["RATE_LIMITED", "SESSION_LIMIT", "TIMEOUT"]);
 
 export const VAULT_UNREACHABLE = `This page cannot reach the BasaltDB Vault (relay.basaltvault.app), which carries it to your engine. ${LONG_LINK}`;
 export const ENGINE_NOT_CONNECTED =
-  `Your engine is not connected to the BasaltDB Vault right now. Ask the agent to check its status, or to give you the long link. ${LONG_LINK}`;
+  `Your engine is not connected to the BasaltDB Vault right now. Ask the agent to check its status, then for a new link.`;
 export const BUSY = "Your engine or the BasaltDB Vault is busy. Wait a minute and open the link again. " + LONG_LINK;
 export const ENGINE_CHANGED =
   "The engine answered this link with a different key than the one this page showed you, so the page stopped. Open the link again and " +
-  "compare the fingerprint with basalt status before you sign.";
+  "compare the fingerprint with the one the agent showed you in the chat before you sign.";
 
 function broken(code) {
   return `The secure session to your engine failed (${code}), and this page used nothing from it. Open the link again. If it keeps failing: ${LONG_LINK}`;

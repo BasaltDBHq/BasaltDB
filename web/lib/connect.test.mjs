@@ -11,7 +11,6 @@ import { b64urlDecode, b64urlEncode } from "./codec.js";
 import {
   CONNECT_SERVICE,
   Flow,
-  LAPTOP_COMMAND,
   LATE_MS,
   Labels,
   MAX_LABELS,
@@ -335,12 +334,11 @@ test("the setup code is read from a fragment or a whole pasted message", () => {
   }
 });
 
-test("a refusal is read from its detail's debug form, with the other way for the kind of code", () => {
+test("a refusal is read from its detail's debug form, with what to do next", () => {
   const r = refusalFrom(400, refusalBody("failed_precondition", "LOGIN_FAILED", "The database refused the login."));
   assert.equal(r.reason, "LOGIN_FAILED");
   assert.equal(r.message, "The database refused the login.");
-  assert.equal(refusalText(r), `The database refused the login.\nOr run the setup on your own computer instead, with no hosted service: ${LAPTOP_COMMAND}`);
-  assert.equal(refusalText(r, true), "The database refused the login.\nOr ask your bot for a new setup code made with --database-url.");
+  assert.equal(refusalText(r), "The database refused the login.\nTry again later, or ask your bot for a new link.");
   const limited = refusalFrom(429, refusalBody("resource_exhausted", "RATE_LIMITED", "Too many requests.", 60));
   assert.equal(refusalText(limited), "Too many requests.\nTry again in 60 seconds.");
   const busy = refusalFrom(429, refusalBody("resource_exhausted", "BUSY", "Busy.", 5));
@@ -396,6 +394,10 @@ test("check codes: the page's own passkey with the same code, and nothing else",
   const mine = { credentialId: CRED_ID, checkCode: BASE_POINT_CODE };
   assert.equal(compareCheckCodes(mine, [{ credentialId: CRED_ID, label: "", checkCode: BASE_POINT_CODE }]), "");
   assert.match(compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: "0000 0000 0000 0000 0000" }]), /different check code/);
+  const wrong = compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: "0000 0000 0000 0000 0000" }]);
+  assert.match(wrong, /the engine lists each passkey of the database with its check code/, "a wrong code points to the engine's passkey list");
+  assert.ok(wrong.includes(BASE_POINT_CODE), "it names the code this page computed");
+  assert.doesNotMatch(wrong, /basalt passkey/);
   assert.match(compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }, { credentialId: "other", checkCode: "x" }]), /did not create/);
   assert.match(compareCheckCodes(mine, []), /does not report the passkey/);
   assert.equal(compareCheckCodes(null, []), "");
@@ -741,7 +743,7 @@ test("no preview ticket (the service's caps): couldn't check at once, and Retry 
   assert.equal(flow.holdsConnectionString, true);
 });
 
-test("a refused string: the message with the connect-only way, the string dropped and the box hidden again", async () => {
+test("a refused string: the message with what to do next, the string dropped and the box hidden again", async () => {
   const nodes = fakeDocument();
   let checks = 0;
   const { fetchFn } = service({
@@ -754,7 +756,7 @@ test("a refused string: the message with the connect-only way, the string droppe
   await nodes.reveal.click();
   await paste(nodes);
   assert.equal(shown(nodes), "s-paste");
-  assert.equal(nodes["paste-error"].textContent, "The database refused the login.\nOr ask your bot for a new setup code made with --database-url.");
+  assert.equal(nodes["paste-error"].textContent, "The database refused the login.\nTry again later, or ask your bot for a new link.");
   assert.equal(nodes["database-url"].type, "password", "hidden again after a refusal");
   assert.equal(flow.holdsConnectionString, false);
   assert.doesNotMatch(everything(nodes), /Marker-7f3a9c/);

@@ -35,12 +35,7 @@ type fakeHost struct {
 	opened    []string
 	openErr   error
 	pagesUp   bool
-	issued    []issuedLink
-	issueErr  error
-	// issueURL, when set, is the link IssueLink answers with instead of
-	// the item's page.
-	issueURL string
-	sys      *fakeSys
+	sys       *fakeSys
 	// probeErr is what Probe returns; engineLog what EngineLog reads.
 	probeErr  error
 	engineLog string
@@ -130,22 +125,6 @@ func (h *fakeHost) OpenURL(_ context.Context, link string) error {
 }
 
 func (h *fakeHost) PagesUp(context.Context, string) bool { return h.pagesUp }
-
-// IssueLink stands in for the engine's pages: it records the request and
-// issues a fixed secret.
-func (h *fakeHost) IssueLink(_ context.Context, endpoint, proof string) (string, error) {
-	h.issued = append(h.issued, issuedLink{endpoint: endpoint, proof: proof})
-	if h.issueURL != "" {
-		return h.issueURL, h.issueErr
-	}
-	page := strings.Replace(strings.TrimSuffix(endpoint, "/links"), "/api/v1/", "/", 1)
-	return page + "#s=" + fakeSecret, h.issueErr
-}
-
-// fakeSecret is the secret fakeHost issues.
-const fakeSecret = "c2VjcmV0LXNlY3JldC0xMg"
-
-type issuedLink struct{ endpoint, proof string }
 
 func (h *fakeHost) System(io.Writer, io.Writer) service.System { return h.sys }
 

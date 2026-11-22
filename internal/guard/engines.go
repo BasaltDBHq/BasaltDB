@@ -88,7 +88,7 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, erro
 }
 
 // RecordEngineStatement is record_engine as a statement of the install
-// transaction basalt init --setup-code runs (before record_setup), for a
+// transaction a setup runs (before record_setup), for a
 // guard migrated up to guardVersion.
 func RecordEngineStatement(publicKey []byte, guardVersion int) Statement {
 	key := hex.EncodeToString(publicKey)

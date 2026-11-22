@@ -91,15 +91,18 @@ func TestHostileVaultFramesToTheEngine(t *testing.T) {
 		// body is cut (0: one frame each).
 		requests, chunk int
 		// ran is how many requests the engine runs: only the page's own,
-		// never an altered copy.
-		ran int
+		// never an altered copy. atMost: the page's own request may also
+		// not run, when the altered copy right behind it ends the session
+		// before the engine's worker takes the request.
+		ran    int
+		atMost bool
 	}{
 		"a tampered frame": {requests: 1, ran: 0, edit: frameTo(vaulttest.ToEngine, 1, func(_ *hostile, m vaulttest.Message) []vaulttest.Delivery {
 			d := vaulttest.Forward(m)
 			d.Data[len(d.Data)/2] ^= 0x01
 			return []vaulttest.Delivery{d}
 		})},
-		"a duplicated frame": {requests: 1, ran: 1, edit: frameTo(vaulttest.ToEngine, 1, func(_ *hostile, m vaulttest.Message) []vaulttest.Delivery {
+		"a duplicated frame": {requests: 1, ran: 1, atMost: true, edit: frameTo(vaulttest.ToEngine, 1, func(_ *hostile, m vaulttest.Message) []vaulttest.Delivery {
 			return []vaulttest.Delivery{vaulttest.Forward(m), vaulttest.Forward(m)}
 		})},
 		"a replayed frame": {requests: 2, ran: 1, edit: frameTo(vaulttest.ToEngine, 2, func(h *hostile, m vaulttest.Message) []vaulttest.Delivery {
@@ -153,7 +156,11 @@ func TestHostileVaultFramesToTheEngine(t *testing.T) {
 				got = websocket.CloseStatus(err)
 			}
 			require.Equal(t, code(channel.ErrFrameInvalid), got)
-			require.Equal(t, c.ran, e.ran(), "requests the engine ran")
+			if c.atMost {
+				require.LessOrEqual(t, e.ran(), c.ran, "requests the engine ran")
+			} else {
+				require.Equal(t, c.ran, e.ran(), "requests the engine ran")
+			}
 		})
 	}
 }

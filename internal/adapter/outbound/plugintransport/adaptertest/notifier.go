@@ -11,14 +11,14 @@ import (
 
 	"go.uber.org/goleak"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // NewNotifier connects to a peer that is a notifier: it answers feed.observe
 // with the seq of the batch's last event and approval.deliver with {}. It
 // registers its own cleanup with t.
-type NewNotifier func(t *testing.T) pluginhost.Transport
+type NewNotifier func(t *testing.T) pluginmodel.Transport
 
 // RunNotifier holds a transport to the notifier hooks' rules, whatever the
 // wire: both hooks are carried, concurrent calls get their own answers, an
@@ -66,7 +66,7 @@ const (
 	everyFourth = 4
 )
 
-func observe(ctx context.Context, tr pluginhost.Transport, events json.RawMessage) (int64, error) {
+func observe(ctx context.Context, tr pluginmodel.Transport, events json.RawMessage) (int64, error) {
 	var res pluginproto.FeedObserveResponse
 	err := tr.Call(ctx, pluginproto.MethodFeedObserve, pluginproto.FeedObserveRequest{Agent: notifierAgent, Events: events}, &res)
 	return res.LastSeq, err

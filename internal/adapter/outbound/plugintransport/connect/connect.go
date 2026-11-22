@@ -38,8 +38,8 @@ import (
 
 	connectrpc "connectrpc.com/connect"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 const (
@@ -77,11 +77,11 @@ type options struct {
 // "Authorization: Bearer <token>" on every call; the plugin never sees the
 // path. A refusal names the endpoint's host or the credential file, and
 // wraps one of the Err values of this package (or ctx's error).
-func Dial(ctx context.Context, ep pluginhost.RemoteEndpoint, egress []string, credentialFile string) (pluginhost.Transport, error) {
+func Dial(ctx context.Context, ep pluginmodel.RemoteEndpoint, egress []string, credentialFile string) (pluginmodel.Transport, error) {
 	return dial(ctx, ep, egress, credentialFile, options{})
 }
 
-func dial(ctx context.Context, ep pluginhost.RemoteEndpoint, egress []string, credentialFile string, opts options) (pluginhost.Transport, error) {
+func dial(ctx context.Context, ep pluginmodel.RemoteEndpoint, egress []string, credentialFile string, opts options) (pluginmodel.Transport, error) {
 	tgt, err := checkEndpoint(ep, egress)
 	if err != nil {
 		return nil, err
@@ -272,7 +272,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	if !ok {
 		// No mapping for the method: nothing is sent. The plugin is not at
 		// fault, so the call fails as a bad exchange, not as UNAVAILABLE.
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	body, err := encodeParams(cl.method, params)
 	if err != nil {
@@ -282,7 +282,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	defer cancel()
 	id, ok := c.enter(cancel)
 	if !ok {
-		return pluginhost.Fail(pluginhost.ClassUnavailable)
+		return pluginmodel.Fail(pluginmodel.ClassUnavailable)
 	}
 	defer c.leave(id)
 
@@ -336,14 +336,14 @@ func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 		return ctxErr
 	}
 	if c.isClosed() {
-		return pluginhost.Fail(pluginhost.ClassUnavailable) // closed while in flight
+		return pluginmodel.Fail(pluginmodel.ClassUnavailable) // closed while in flight
 	}
 	if dropped {
 		// The connection went away while the call was open and nothing came
 		// back, so no status of the plugin's own can be in the error. Which
 		// connect code the loss maps to (a reset, a closed stream) depends on
 		// how the peer died.
-		return pluginhost.Fail(pluginhost.ClassExited)
+		return pluginmodel.Fail(pluginmodel.ClassExited)
 	}
 	code := connectrpc.CodeOf(err)
 	if connectrpc.IsWireError(err) {
@@ -353,14 +353,14 @@ func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 			}
 		}
 		// The plugin answered with an error status; its message is never read.
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	if code == connectrpc.CodeUnavailable {
 		// No connection, or an HTTP 503 (or similar) in front of the plugin.
-		return pluginhost.Fail(pluginhost.ClassUnavailable)
+		return pluginmodel.Fail(pluginmodel.ClassUnavailable)
 	}
 	// Over the size cap, not gRPC, an HTTP error or a redirect.
-	return pluginhost.Fail(pluginhost.ClassBadResponse)
+	return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 }
 
 // ownDeadline reports ctx's error when a DEADLINE_EXCEEDED from the plugin

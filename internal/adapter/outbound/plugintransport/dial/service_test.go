@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // listenUnix serves sock and counts the connections it accepts.
@@ -39,15 +39,15 @@ func listenUnix(t *testing.T, sock string) *atomic.Int32 {
 	return &n
 }
 
-func serviceEntry(transport string) pluginhost.Verified {
-	return pluginhost.Verified{Dir: "/", Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: transport, Command: "bin/p"}}}}
+func serviceEntry(transport string) pluginmodel.Verified {
+	return pluginmodel.Verified{Dir: "/", Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: transport, Command: "bin/p"}}}}
 }
 
 // In service mode the engine connects to the unit's socket, starts no
 // process, and talks only to the entry's OS user.
 func TestServiceConnectsOnlyToTheEntrysUser(t *testing.T) {
 	t.Parallel()
-	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
 	me := uint32(os.Getuid())
 	for _, transport := range []string{TransportStdio, TransportUnix, TransportConnect} {
 		dir := shortBase(t)
@@ -82,7 +82,7 @@ func TestServiceConnectsOnlyToTheEntrysUser(t *testing.T) {
 // connection, whoever serves its target.
 func TestServiceRefusesALinkOrNoSocket(t *testing.T) {
 	t.Parallel()
-	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
 	me := uint32(os.Getuid())
 	dir := shortBase(t)
 	gid := dirGID(t, dir)
@@ -99,7 +99,7 @@ func TestServiceRefusesALinkOrNoSocket(t *testing.T) {
 	_, err := Service(context.Background(), k, serviceEntry(TransportUnix), filepath.Join(dir, "missing.sock"), me, gid, nil)
 	require.ErrorIs(t, err, ErrNoSocket, "nothing listens: the plugin never made its socket")
 
-	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: TransportConnect, URL: "https://x.example"}}}}
+	remote := pluginmodel.Verified{Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: TransportConnect, URL: "https://x.example"}}}}
 	_, err = Service(context.Background(), k, remote, link, me, gid, nil)
 	require.Error(t, err)
 }
@@ -109,7 +109,7 @@ func TestServiceRefusesALinkOrNoSocket(t *testing.T) {
 // is reached.
 func TestServiceChecksTheSocketDirectoryEachTime(t *testing.T) {
 	t.Parallel()
-	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
 	me := uint32(os.Getuid())
 	dir := shortBase(t)
 	gid := dirGID(t, dir)
@@ -152,7 +152,7 @@ func dirGID(t *testing.T, dir string) uint32 {
 // refused there too.
 func TestServiceChecksEveryConnectionOfEveryTransport(t *testing.T) {
 	t.Parallel()
-	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
 	me := uint32(os.Getuid())
 	for _, transport := range []string{TransportStdio, TransportUnix, TransportConnect} {
 		dir := shortBase(t)

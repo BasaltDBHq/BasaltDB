@@ -1,4 +1,4 @@
-package pluginhost
+package pluginmodel
 
 import (
 	"errors"
@@ -21,8 +21,8 @@ const (
 	ModeSameUser Mode = "SAME_USER"
 )
 
-// rootUID is the uid of root.
-const rootUID = 0
+// RootUID is the uid of root.
+const RootUID = 0
 
 // maxSymlinkHops bounds how many root-owned symlinks above a root are
 // followed, as the kernel bounds a path lookup.
@@ -35,19 +35,19 @@ const groupOtherWrite = 0o022
 // its group or others can write.
 const WhyGroupWritable = "can be written by group or others"
 
-// errUnknownMode is a mode other than SERVICE and SAME_USER.
-var errUnknownMode = errors.New("plugin: unknown engine mode")
+// ErrUnknownMode is a mode other than SERVICE and SAME_USER.
+var ErrUnknownMode = errors.New("plugin: unknown engine mode")
 
-// owner is the uid the path rule requires: root in service mode, the
+// Owner is the uid the path rule requires: root in service mode, the
 // engine's own user in same-user mode.
-func (m Mode) owner() (uint32, error) {
+func (m Mode) Owner() (uint32, error) {
 	switch m {
 	case ModeService:
-		return rootUID, nil
+		return RootUID, nil
 	case ModeSameUser, "":
-		return currentUID()
+		return CurrentUID()
 	default:
-		return 0, errUnknownMode
+		return 0, ErrUnknownMode
 	}
 }
 
@@ -82,7 +82,7 @@ func base(mode Mode, goos, configDir string) (string, error) {
 	case ModeSameUser, "":
 		return configDir, nil
 	default:
-		return "", errUnknownMode
+		return "", ErrUnknownMode
 	}
 }
 
@@ -109,21 +109,21 @@ func TrustDir(mode Mode, goos, configDir string) (string, error) {
 	return filepath.Join(b, TrustDirName), nil
 }
 
-// pathRefusal is a path-rule failure. It names the path and the rule.
-func pathRefusal(path, why string) *VerifyError {
+// PathRefusal is a path-rule failure. It names the path and the rule.
+func PathRefusal(path, why string) *VerifyError {
 	return &VerifyError{Reason: RefusedNotTrusted, File: path, Why: why}
 }
 
-// ruleRefusal is a refusal for who can write path, a symlink or its owner,
+// RuleRefusal is a refusal for who can write path, a symlink or its owner,
 // with what was found there (VerifyError.Path).
-func ruleRefusal(path, why string, kind PathFaultKind, fi fs.FileInfo, owners ...uint32) *VerifyError {
-	r := pathRefusal(path, why)
+func RuleRefusal(path, why string, kind PathFaultKind, fi fs.FileInfo, owners ...uint32) *VerifyError {
+	r := PathRefusal(path, why)
 	uid, _ := fileOwner(fi)
 	r.Path = &PathFault{Kind: kind, UID: uid, GID: fileGroup(fi), Mode: fi.Mode(), Owners: owners}
 	return r
 }
 
-// abovePolicy is how checkAbove judges the directories above a root.
+// abovePolicy is how CheckAbove judges the directories above a root.
 type abovePolicy struct {
 	// stickyRoot lets a directory that group or others can write pass when
 	// root owns it and its sticky bit is set, as /tmp. Only the base of
@@ -131,20 +131,20 @@ type abovePolicy struct {
 	stickyRoot bool
 }
 
-// checkAbove applies the path rule to every directory above base, "/"
+// CheckAbove applies the path rule to every directory above base, "/"
 // included (CONTRACT.md, Plugins, the path rule): each is owned by root or
 // by owner and writable by no one else. A symlink there is followed only
 // when root owns it; its target's components are checked the same way.
 // ".." in a link target steps back over the components already resolved,
 // as the kernel does. base itself and what is below it are checked by
-// checkStrict.
-func checkAbove(base string, owner uint32) error {
+// CheckStrict.
+func CheckAbove(base string, owner uint32) error {
 	return checkAboveWith(base, owner, abovePolicy{})
 }
 
 func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 	if !filepath.IsAbs(base) {
-		return pathRefusal(base, "is not an absolute path")
+		return PathRefusal(base, "is not an absolute path")
 	}
 	base = filepath.Clean(base)
 	if err := checkAboveDir("/", owner, pol); err != nil {
@@ -166,7 +166,7 @@ func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 		p := filepath.Join(resolved, c)
 		fi, err := os.Lstat(p)
 		if err != nil {
-			return pathRefusal(p, "cannot be read")
+			return PathRefusal(p, "cannot be read")
 		}
 		if fi.Mode()&fs.ModeSymlink == 0 {
 			if err := checkAboveInfo(p, fi, owner, pol); err != nil {
@@ -177,17 +177,17 @@ func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 		}
 		uid, err := fileOwner(fi)
 		if err != nil {
-			return pathRefusal(p, "has an owner that cannot be read")
+			return PathRefusal(p, "has an owner that cannot be read")
 		}
-		if uid != rootUID {
-			return ruleRefusal(p, "is a symlink not owned by root", PathSymlink, fi, rootUID)
+		if uid != RootUID {
+			return RuleRefusal(p, "is a symlink not owned by root", PathSymlink, fi, RootUID)
 		}
 		if hops++; hops > maxSymlinkHops {
-			return pathRefusal(p, "has too many symlinks")
+			return PathRefusal(p, "has too many symlinks")
 		}
 		link, err := os.Readlink(p)
 		if err != nil {
-			return pathRefusal(p, "is a symlink that cannot be read")
+			return PathRefusal(p, "is a symlink that cannot be read")
 		}
 		if filepath.IsAbs(link) {
 			resolved = "/"
@@ -210,11 +210,11 @@ const WhyNotStickyRoot = WhyGroupWritable + ", and is not a directory root owns 
 // symlink on the way is followed only when root owns it. The error is a
 // *VerifyError naming the path and the rule.
 func CheckSocketBase(dir string) error {
-	owner, err := currentUID()
+	owner, err := CurrentUID()
 	if err != nil {
-		return pathRefusal(dir, "has an owner that cannot be read")
+		return PathRefusal(dir, "has an owner that cannot be read")
 	}
-	// checkAbove checks the directories above its argument: name one inside
+	// CheckAbove checks the directories above its argument: name one inside
 	// dir so dir itself is checked too.
 	return checkAboveWith(filepath.Join(dir, "."+PluginsDirName), owner, abovePolicy{stickyRoot: true})
 }
@@ -222,9 +222,9 @@ func CheckSocketBase(dir string) error {
 // CheckSocketBaseInfo is CheckSocketBase's rule for dir alone, judged from
 // fi: the base's status read from a descriptor opened on it.
 func CheckSocketBaseInfo(dir string, fi fs.FileInfo) error {
-	owner, err := currentUID()
+	owner, err := CurrentUID()
 	if err != nil {
-		return pathRefusal(dir, "has an owner that cannot be read")
+		return PathRefusal(dir, "has an owner that cannot be read")
 	}
 	return checkAboveInfo(dir, fi, owner, abovePolicy{stickyRoot: true})
 }
@@ -236,7 +236,7 @@ func splitComponents(p string) []string {
 func checkAboveDir(p string, owner uint32, pol abovePolicy) error {
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return pathRefusal(p, "cannot be read")
+		return PathRefusal(p, "cannot be read")
 	}
 	return checkAboveInfo(p, fi, owner, pol)
 }
@@ -247,68 +247,68 @@ func checkAboveDir(p string, owner uint32, pol abovePolicy) error {
 // with the sticky bit.
 func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) error {
 	if !fi.IsDir() {
-		return pathRefusal(p, "is not a directory")
+		return PathRefusal(p, "is not a directory")
 	}
 	uid, err := fileOwner(fi)
 	if err != nil {
-		return pathRefusal(p, "has an owner that cannot be read")
+		return PathRefusal(p, "has an owner that cannot be read")
 	}
-	if uid != rootUID && uid != owner {
-		return ruleRefusal(p, "is owned by a user other than root and the required owner", PathOwner, fi, rootUID, owner)
+	if uid != RootUID && uid != owner {
+		return RuleRefusal(p, "is owned by a user other than root and the required owner", PathOwner, fi, RootUID, owner)
 	}
 	if fi.Mode().Perm()&groupOtherWrite == 0 {
 		return nil
 	}
 	if !pol.stickyRoot {
-		return ruleRefusal(p, WhyGroupWritable, PathWritable, fi, rootUID, owner)
+		return RuleRefusal(p, WhyGroupWritable, PathWritable, fi, RootUID, owner)
 	}
-	if uid == rootUID && fi.Mode()&fs.ModeSticky != 0 {
+	if uid == RootUID && fi.Mode()&fs.ModeSticky != 0 {
 		return nil
 	}
-	return ruleRefusal(p, WhyNotStickyRoot, PathWritable, fi, rootUID, owner)
+	return RuleRefusal(p, WhyNotStickyRoot, PathWritable, fi, RootUID, owner)
 }
 
-// checkStrict applies the path rule to p at or below a root: it is not a
+// CheckStrict applies the path rule to p at or below a root: it is not a
 // symlink, it is owned by owner, and no one else can write it.
-func checkStrict(p string, owner uint32) (fs.FileInfo, error) {
+func CheckStrict(p string, owner uint32) (fs.FileInfo, error) {
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return nil, pathRefusal(p, "cannot be read")
+		return nil, PathRefusal(p, "cannot be read")
 	}
-	return fi, checkStrictInfo(p, fi, owner)
+	return fi, CheckStrictInfo(p, fi, owner)
 }
 
-func checkStrictInfo(p string, fi fs.FileInfo, owner uint32) error {
+func CheckStrictInfo(p string, fi fs.FileInfo, owner uint32) error {
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		return ruleRefusal(p, "is a symlink", PathSymlink, fi)
+		return RuleRefusal(p, "is a symlink", PathSymlink, fi)
 	}
 	uid, err := fileOwner(fi)
 	if err != nil {
-		return pathRefusal(p, "has an owner that cannot be read")
+		return PathRefusal(p, "has an owner that cannot be read")
 	}
 	if uid != owner {
-		return ruleRefusal(p, "is not owned by the required owner", PathOwner, fi, owner)
+		return RuleRefusal(p, "is not owned by the required owner", PathOwner, fi, owner)
 	}
 	if fi.Mode().Perm()&groupOtherWrite != 0 {
-		return ruleRefusal(p, WhyGroupWritable, PathWritable, fi, owner)
+		return RuleRefusal(p, WhyGroupWritable, PathWritable, fi, owner)
 	}
 	return nil
 }
 
-// checkUnder applies the path rule from "/" to each of dirs, where dirs[0]
+// CheckUnder applies the path rule from "/" to each of dirs, where dirs[0]
 // is the root and each later one lies inside the one before: above the root
 // owned by root or owner, from the root down owned by owner.
-func checkUnder(owner uint32, dirs ...string) error {
-	if err := checkAbove(dirs[0], owner); err != nil {
+func CheckUnder(owner uint32, dirs ...string) error {
+	if err := CheckAbove(dirs[0], owner); err != nil {
 		return err
 	}
 	for _, d := range dirs {
-		fi, err := checkStrict(d, owner)
+		fi, err := CheckStrict(d, owner)
 		if err != nil {
 			return err
 		}
 		if !fi.IsDir() {
-			return pathRefusal(d, "is not a directory")
+			return PathRefusal(d, "is not a directory")
 		}
 	}
 	return nil

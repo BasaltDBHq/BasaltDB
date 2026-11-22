@@ -1,6 +1,6 @@
 //go:build unix
 
-package pluginhost
+package pluginmodel
 
 import (
 	"errors"
@@ -28,8 +28,8 @@ func fileGroup(fi fs.FileInfo) uint32 {
 	return 0
 }
 
-// currentUID is this process's effective uid: the engine's own user.
-func currentUID() (uint32, error) {
+// CurrentUID is this process's effective uid: the engine's own user.
+func CurrentUID() (uint32, error) {
 	uid := os.Geteuid()
 	if uid < 0 {
 		return 0, errNoOwner
@@ -37,6 +37,6 @@ func currentUID() (uint32, error) {
 	return uint32(uid), nil
 }
 
-// noFollowFlags open a file read-only without following a final symlink and
+// NoFollowFlags open a file read-only without following a final symlink and
 // without blocking on a FIFO or a device; the caller checks it is regular.
-const noFollowFlags = os.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK
+const NoFollowFlags = os.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK

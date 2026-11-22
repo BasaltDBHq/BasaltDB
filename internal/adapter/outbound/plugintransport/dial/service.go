@@ -11,8 +11,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/peercred"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // ErrWrongPeer: the socket is not served by the entry's OS user, so the
@@ -36,7 +36,7 @@ var ErrSocketDir = errors.New("the plugin socket directory is not the plugin use
 // must run as uid; sock itself must be a socket, not a link to one. Nothing
 // at sock is ErrNoSocket. A jsonrpc-stdio entry is reached over its socket
 // too: in service mode every local plugin listens on one.
-func Service(ctx context.Context, k pluginhost.EntryKey, v pluginhost.Verified, sock string, uid, gid uint32, recheck func() error) (pluginhost.Transport, error) {
+func Service(ctx context.Context, k pluginmodel.EntryKey, v pluginmodel.Verified, sock string, uid, gid uint32, recheck func() error) (pluginmodel.Transport, error) {
 	l := v.Manifest.Endpoint.Local
 	if l == nil {
 		return nil, fmt.Errorf("plugin %s: a remote entry has no service unit", k)

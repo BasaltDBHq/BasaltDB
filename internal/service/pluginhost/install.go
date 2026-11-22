@@ -48,7 +48,7 @@ type Staged struct {
 // has none.
 func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (*Staged, error) {
 	o := optionsOf(opts)
-	owner, err := mode.owner()
+	owner, err := mode.Owner()
 	if err != nil {
 		return nil, err
 	}

@@ -20,8 +20,8 @@ import (
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // shortDir returns a fresh directory with a short path: a Unix socket path
@@ -94,7 +94,7 @@ func startLocalPeer(t *testing.T, mode string) string {
 }
 
 func TestLocalAdapter(t *testing.T) {
-	adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginhost.Transport {
+	adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginmodel.Transport {
 		t.Helper()
 		sock := startLocalPeer(t, modeOf(b))
 		tr, err := dialLocal(context.Background(), sock, options{methods: testMethods()})
@@ -141,7 +141,7 @@ func newLocalServer(t *testing.T, h http.Handler) *localServer {
 	return s
 }
 
-func dialLocalServer(t *testing.T, s *localServer) pluginhost.Transport {
+func dialLocalServer(t *testing.T, s *localServer) pluginmodel.Transport {
 	t.Helper()
 	tr, err := dialLocal(context.Background(), s.sock, options{methods: testMethods()})
 	if err != nil {
@@ -245,7 +245,7 @@ func TestLocalNeverDialsTCP(t *testing.T) {
 	}))
 	tr := dialLocalServer(t, s)
 	err = tr.Call(context.Background(), pluginproto.MethodHealth, nil, nil)
-	if got := classOf(err); got != pluginhost.ClassBadResponse {
+	if got := classOf(err); got != pluginmodel.ClassBadResponse {
 		t.Fatalf("redirect: class %q, err %v", got, err)
 	}
 

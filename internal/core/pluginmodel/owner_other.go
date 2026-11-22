@@ -1,6 +1,6 @@
 //go:build !unix
 
-package pluginhost
+package pluginmodel
 
 import (
 	"errors"
@@ -16,6 +16,6 @@ func fileOwner(fs.FileInfo) (uint32, error) { return 0, errNoOwner }
 
 func fileGroup(fs.FileInfo) uint32 { return 0 }
 
-func currentUID() (uint32, error) { return 0, errNoOwner }
+func CurrentUID() (uint32, error) { return 0, errNoOwner }
 
-const noFollowFlags = os.O_RDONLY
+const NoFollowFlags = os.O_RDONLY

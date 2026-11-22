@@ -5,24 +5,6 @@ import (
 	"encoding/json"
 )
 
-// SignerState is who vouches for a copy (CONTRACT.md, Plugins, Plugin
-// approval, Signer states).
-type SignerState string
-
-// The signer states.
-const (
-	// SignerKnown: the manifest's .sig names a publisher key built into the
-	// engine, passes its schema and verifies. Verified.SignerKeyID is that
-	// key's id.
-	SignerKnown SignerState = "KNOWN"
-	// SignerUnknown: everything else. With RequireApproval that is no .sig,
-	// a .sig that fails its schema, or one naming a key the engine does not
-	// have built in, and Verified.SignerKeyID is empty: such a key id cannot
-	// be checked and could be made up. Without it, the copy was signed by a
-	// key from the person's trust store, whose id SignerKeyID holds.
-	SignerUnknown SignerState = "UNKNOWN"
-)
-
 // Option changes how Stage, Install and Verify check a copy.
 type Option func(*options)
 

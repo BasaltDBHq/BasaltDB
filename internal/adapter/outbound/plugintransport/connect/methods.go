@@ -9,8 +9,8 @@ import (
 
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // method maps one protocol method (the JSON-RPC name the host calls) to its
@@ -97,25 +97,25 @@ func encodeParams(m method, params any) ([]byte, error) {
 	if params != nil {
 		js, err := pluginproto.Marshal(params)
 		if err != nil {
-			return nil, pluginhost.Fail(pluginhost.ClassBadResponse)
+			return nil, pluginmodel.Fail(pluginmodel.ClassBadResponse)
 		}
 		if len(js) > pluginproto.MaxMessageBytes {
-			return nil, pluginhost.Fail(pluginhost.ClassOverLimit)
+			return nil, pluginmodel.Fail(pluginmodel.ClassOverLimit)
 		}
 		fill := jsonToProto.Unmarshal
 		if m.fromJSON != nil {
 			fill = m.fromJSON
 		}
 		if err := fill(js, msg); err != nil {
-			return nil, pluginhost.Fail(pluginhost.ClassBadResponse)
+			return nil, pluginmodel.Fail(pluginmodel.ClassBadResponse)
 		}
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return nil, pluginhost.Fail(pluginhost.ClassBadResponse)
+		return nil, pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	if len(body) > pluginproto.MaxMessageBytes {
-		return nil, pluginhost.Fail(pluginhost.ClassOverLimit)
+		return nil, pluginmodel.Fail(pluginmodel.ClassOverLimit)
 	}
 	return body, nil
 }
@@ -125,7 +125,7 @@ func encodeParams(m method, params any) ([]byte, error) {
 func decodeResult(m method, body []byte, result any) error {
 	msg := m.newResponse()
 	if err := proto.Unmarshal(body, msg); err != nil {
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	if result == nil {
 		return nil
@@ -136,10 +136,10 @@ func decodeResult(m method, body []byte, result any) error {
 	}
 	js, err := render(msg)
 	if err != nil {
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	if err := json.Unmarshal(js, result); err != nil {
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	return nil
 }

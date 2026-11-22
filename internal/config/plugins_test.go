@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 const pluginSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -74,7 +74,7 @@ func TestPluginsUnknownAgent(t *testing.T) {
 	var unknown *config.UnknownAgentError
 	require.ErrorAs(t, err, &unknown)
 	require.Equal(t, "client_x", unknown.Agent)
-	require.Equal(t, pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, unknown.Entry)
+	require.Equal(t, pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, unknown.Entry)
 
 	_, err = loadPlugins(t, "["+entry(`, "agents": ["product_a", "product_a"]`)+"]")
 	require.ErrorContains(t, err, "listed twice")
@@ -150,20 +150,20 @@ func TestPluginEntryRules(t *testing.T) {
 	}
 	c, err := loadPlugins(t, "["+entry(`, "agents": ["product_a"]`)+", "+entry(`, "instance": "client_x", "agents": ["product_b"]`)+"]")
 	require.NoError(t, err, "two instances of one plugin are two entries")
-	require.Equal(t, pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, c.Plugins[0].Key())
-	require.Equal(t, pluginhost.EntryKey{Name: "acme-ner", Instance: "client_x"}, c.Plugins[1].Key())
-	require.Equal(t, 1, c.PluginIndex(pluginhost.EntryKey{Name: "acme-ner", Instance: "client_x"}))
+	require.Equal(t, pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, c.Plugins[0].Key())
+	require.Equal(t, pluginmodel.EntryKey{Name: "acme-ner", Instance: "client_x"}, c.Plugins[1].Key())
+	require.Equal(t, 1, c.PluginIndex(pluginmodel.EntryKey{Name: "acme-ner", Instance: "client_x"}))
 }
 
 func TestPluginEntry(t *testing.T) {
 	t.Parallel()
-	local := pluginhost.Manifest{Name: "acme-ner", Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/x"}}}
-	remote := pluginhost.Manifest{Name: "acme-ner", Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: "connectrpc", URL: "https://ner.example"}}}
+	local := pluginmodel.Manifest{Name: "acme-ner", Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/x"}}}
+	remote := pluginmodel.Manifest{Name: "acme-ner", Endpoint: pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: "connectrpc", URL: "https://ner.example"}}}
 	p := config.Plugin{Name: "acme-ner", Agents: []string{"product_a"}}
 
 	e, err := p.Entry(local)
 	require.NoError(t, err)
-	require.Equal(t, pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, e.Key)
+	require.Equal(t, pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, e.Key)
 	require.Equal(t, 300*time.Millisecond, e.Timeout)
 	require.JSONEq(t, `{}`, string(e.Config))
 	require.Equal(t, []string{"product_a"}, e.Agents)

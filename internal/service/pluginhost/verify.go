@@ -14,89 +14,9 @@ import (
 	"sort"
 )
 
-// Refusal is why a plugin was refused: the reason of the PLUGIN_REFUSED
-// error at basalt plugin add. At engine start every refusal shows in status
-// as PLUGIN_NOT_TRUSTED.
-type Refusal string
-
-// The refusals verification gives.
-const (
-	// RefusedBadManifest: the manifest breaks a rule of CONTRACT.md, Plugins,
-	// Manifest.
-	RefusedBadManifest Refusal = "BAD_MANIFEST"
-	// RefusedNotTrusted: the signature, a file's hash, the copy's contents or
-	// a path's owner or permissions failed.
-	RefusedNotTrusted Refusal = "NOT_TRUSTED"
-)
-
-// VerifyError is a refused plugin. It names the file or directory and the
-// rule that failed, never a file's contents, a value from the manifest or
-// key material.
-type VerifyError struct {
-	Reason Refusal
-	// File is the path the check failed on: the manifest, its signature, an
-	// installed file, a directory, or a key in the trust store.
-	File string
-	// Why is the rule that failed, in fixed words.
-	Why string
-	// Path is set when the path rule refused File for who can write it, a
-	// symlink or its owner: something on the machine to fix, which no
-	// trusted key changes. It is nil for every other refusal.
-	Path *PathFault
-}
-
-// PathFaultKind is which part of the path rule a path failed.
-type PathFaultKind string
-
-// The path rule's parts a refusal names.
-const (
-	// PathWritable: someone besides the owner can write the path.
-	PathWritable PathFaultKind = "WRITABLE"
-	// PathSymlink: the path is a symlink the rule does not follow.
-	PathSymlink PathFaultKind = "SYMLINK"
-	// PathOwner: the path is owned by a user the rule does not allow there.
-	PathOwner PathFaultKind = "OWNER"
-)
-
-// PathFault is what the path rule found at a refused path, read from the
-// path itself (not followed if it is a symlink).
-type PathFault struct {
-	Kind PathFaultKind
-	// UID and GID own the path; Mode is its mode.
-	UID, GID uint32
-	Mode     fs.FileMode
-	// Owners are the users allowed to own it there: root and the required
-	// owner above a root, the required owner from a root down, root for a
-	// symlink above a root.
-	Owners []uint32
-}
-
-// Error implements error.
-func (e *VerifyError) Error() string {
-	return "plugin " + e.File + ": " + e.Why + " (" + string(e.Reason) + ")"
-}
-
 // whyFilesNameManifest: a listed file would overwrite the manifest or its
 // signature in the copy.
 const whyFilesNameManifest = "files names the manifest or its signature"
-
-// Verified is a plugin copy that passed every check.
-type Verified struct {
-	// Manifest is the copy's manifest.
-	Manifest Manifest
-	// ManifestSHA256 is the SHA-256 of the manifest's exact bytes, lowercase
-	// hex: the entry's manifestSha256 and the copy's directory name.
-	ManifestSHA256 string
-	// Signer is who vouches for the copy: KNOWN when a built-in publisher
-	// key signed the manifest, UNKNOWN otherwise.
-	Signer SignerState
-	// SignerKeyID is the id of the key that signed the manifest: a trusted
-	// key's without RequireApproval, and with it only a KNOWN signer's,
-	// empty otherwise.
-	SignerKeyID string
-	// Dir is the copy's directory.
-	Dir string
-}
 
 // Patterns of an entry key and an installed copy's directory name
 // (api/plugin/config.schema.json).
@@ -104,9 +24,6 @@ var (
 	instancePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 	sha256Pattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
-
-// DefaultInstance is an entry's instance when engine.json names none.
-const DefaultInstance = "default"
 
 // Verify checks the installed copy of entry key at
 // <root>/<name>/<instance>/<manifestSHA256>/, as the engine does at every
@@ -127,7 +44,7 @@ const DefaultInstance = "default"
 // A failure is a *VerifyError; the entry must then not be started, and
 // status shows PLUGIN_NOT_TRUSTED for its agents.
 func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
-	owner, err := mode.owner()
+	owner, err := mode.Owner()
 	if err != nil {
 		return Verified{}, err
 	}

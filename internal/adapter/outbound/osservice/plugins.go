@@ -17,7 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Plugin units (CONTRACT.md, Plugins, Isolation and trust): in service mode
@@ -116,7 +116,7 @@ type PluginNames struct {
 // /opt/basalt on Linux, /Library/Basalt on macOS. It holds the
 // installed copies, the trust store and the plugins' socket directories.
 func PluginBase(goos string) (string, error) {
-	root, err := pluginhost.Root(pluginhost.ModeService, goos, "")
+	root, err := pluginmodel.Root(pluginmodel.ModeService, goos, "")
 	if err != nil {
 		return "", err
 	}
@@ -450,7 +450,7 @@ func addressFamilies(egress []string) string {
 // UserClash is the first other entry in others whose OS user is the same
 // as entry (name, instance)'s on Linux or macOS, or nil. Two entries never
 // share a user: basalt plugin add refuses one that would.
-func UserClash(name, instance string, others []pluginhost.EntryKey) *pluginhost.EntryKey {
+func UserClash(name, instance string, others []pluginmodel.EntryKey) *pluginmodel.EntryKey {
 	for _, o := range others {
 		if o.Name == name && o.Instance == instance {
 			continue
@@ -565,7 +565,7 @@ func HostFor(cfg config.Config, goos, configPath, engineUser string) PluginHost 
 
 // EntryFor is config entry p, its installed copy verified as v, as its
 // unit runs it; false for a remote entry, which has no unit.
-func EntryFor(p config.Plugin, v pluginhost.Verified) (PluginEntry, bool) {
+func EntryFor(p config.Plugin, v pluginmodel.Verified) (PluginEntry, bool) {
 	l := v.Manifest.Endpoint.Local
 	if l == nil {
 		return PluginEntry{}, false

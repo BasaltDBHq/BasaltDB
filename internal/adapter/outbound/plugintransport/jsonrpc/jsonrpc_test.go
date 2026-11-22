@@ -20,8 +20,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 func TestMain(m *testing.M) {
@@ -42,7 +42,7 @@ func peerSpec(t *testing.T, args []string, stderr io.Writer) child.Spec {
 	return child.Spec{Path: os.Args[0], Args: args, Dir: t.TempDir(), Stderr: stderr}
 }
 
-func spawn(t *testing.T, mode string, opts ...string) pluginhost.Transport {
+func spawn(t *testing.T, mode string, opts ...string) pluginmodel.Transport {
 	t.Helper()
 	tr, err := jsonrpc.Spawn(context.Background(), peerSpec(t, peerArgs(mode, opts...), nil))
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func startSocketPeer(t *testing.T, mode string, opts ...string) string {
 	return sock
 }
 
-func dialPeer(t *testing.T, sock string) pluginhost.Transport {
+func dialPeer(t *testing.T, sock string) pluginmodel.Transport {
 	t.Helper()
 	deadline := time.Now().Add(dialWait)
 	for {
@@ -84,19 +84,19 @@ func dialPeer(t *testing.T, sock string) pluginhost.Transport {
 	}
 }
 
-func socket(t *testing.T, mode string, opts ...string) pluginhost.Transport {
+func socket(t *testing.T, mode string, opts ...string) pluginmodel.Transport {
 	t.Helper()
 	return dialPeer(t, startSocketPeer(t, mode, opts...))
 }
 
 func TestAdapter(t *testing.T) {
 	t.Run("stdio", func(t *testing.T) {
-		adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginhost.Transport {
+		adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginmodel.Transport {
 			return spawn(t, modeOf(b))
 		})
 	})
 	t.Run("unix", func(t *testing.T) {
-		adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginhost.Transport {
+		adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginmodel.Transport {
 			return socket(t, modeOf(b))
 		})
 	})
@@ -104,7 +104,7 @@ func TestAdapter(t *testing.T) {
 
 type kinds struct {
 	name string
-	make func(t *testing.T, mode string, opts ...string) pluginhost.Transport
+	make func(t *testing.T, mode string, opts ...string) pluginmodel.Transport
 }
 
 var both = []kinds{
@@ -112,8 +112,8 @@ var both = []kinds{
 	{"unix", socket},
 }
 
-func classOf(err error) pluginhost.FailureClass {
-	var c pluginhost.Classed
+func classOf(err error) pluginmodel.FailureClass {
+	var c pluginmodel.Classed
 	if errors.As(err, &c) {
 		return c.FailureClass()
 	}
@@ -137,7 +137,7 @@ func TestMessageCap(t *testing.T) {
 			// One byte more is refused.
 			tr = k.make(t, "size", "n="+itoa(pluginproto.MaxMessageBytes+1))
 			err := tr.Call(context.Background(), "x", obj{}, &out)
-			require.Equal(t, pluginhost.ClassBadResponse, classOf(err), "%v", err)
+			require.Equal(t, pluginmodel.ClassBadResponse, classOf(err), "%v", err)
 		})
 	}
 }
@@ -149,7 +149,7 @@ func TestEndlessLineIsCapped(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), dialWait)
 			defer cancel()
 			err := tr.Call(ctx, "x", obj{}, nil)
-			require.Equal(t, pluginhost.ClassBadResponse, classOf(err), "%v", err)
+			require.Equal(t, pluginmodel.ClassBadResponse, classOf(err), "%v", err)
 		})
 	}
 }
@@ -160,7 +160,7 @@ func TestRequestOverTheCapIsNotSent(t *testing.T) {
 			tr := k.make(t, "echo")
 			big := obj{S: strings.Repeat("a", pluginproto.MaxMessageBytes)}
 			err := tr.Call(context.Background(), "x", big, nil)
-			require.Equal(t, pluginhost.ClassOverLimit, classOf(err), "%v", err)
+			require.Equal(t, pluginmodel.ClassOverLimit, classOf(err), "%v", err)
 			// The connection is unharmed.
 			var out obj
 			require.NoError(t, tr.Call(context.Background(), "x", obj{N: 1}, &out))
@@ -174,7 +174,7 @@ func TestPluginErrorsCarryNoText(t *testing.T) {
 			t.Run(k.name+"/"+mode, func(t *testing.T) {
 				tr := k.make(t, mode)
 				err := tr.Call(context.Background(), "x", obj{}, nil)
-				require.Equal(t, pluginhost.ClassBadResponse, classOf(err))
+				require.Equal(t, pluginmodel.ClassBadResponse, classOf(err))
 				require.NotContains(t, err.Error(), adaptertest.GarbageMarker)
 			})
 		}
@@ -203,7 +203,7 @@ func TestResultOfTheWrongShape(t *testing.T) {
 			tr := k.make(t, "wrongtype")
 			var out obj
 			err := tr.Call(context.Background(), "x", obj{}, &out)
-			require.Equal(t, pluginhost.ClassBadResponse, classOf(err))
+			require.Equal(t, pluginmodel.ClassBadResponse, classOf(err))
 		})
 	}
 }
@@ -213,11 +213,11 @@ func TestResponseForAnIdNeverIssued(t *testing.T) {
 		t.Run(k.name, func(t *testing.T) {
 			tr := k.make(t, "strangeid")
 			err := tr.Call(context.Background(), "x", obj{}, nil)
-			require.Equal(t, pluginhost.ClassBadResponse, classOf(err))
+			require.Equal(t, pluginmodel.ClassBadResponse, classOf(err))
 			// Once dead, a transport stays failed.
 			err = tr.Call(context.Background(), "x", obj{}, nil)
 			require.Error(t, err)
-			require.Equal(t, pluginhost.ClassUnavailable, classOf(err))
+			require.Equal(t, pluginmodel.ClassUnavailable, classOf(err))
 		})
 	}
 }
@@ -226,8 +226,8 @@ func TestChildExitStaysExited(t *testing.T) {
 	for _, k := range both {
 		t.Run(k.name, func(t *testing.T) {
 			tr := k.make(t, "exit")
-			require.Equal(t, pluginhost.ClassExited, classOf(tr.Call(context.Background(), "x", obj{}, nil)))
-			require.Equal(t, pluginhost.ClassExited, classOf(tr.Call(context.Background(), "x", obj{}, nil)))
+			require.Equal(t, pluginmodel.ClassExited, classOf(tr.Call(context.Background(), "x", obj{}, nil)))
+			require.Equal(t, pluginmodel.ClassExited, classOf(tr.Call(context.Background(), "x", obj{}, nil)))
 		})
 	}
 }
@@ -306,7 +306,7 @@ func TestInstancesShareNothing(t *testing.T) {
 	type pid struct {
 		Pid int `json:"pid"`
 	}
-	get := func(tr pluginhost.Transport) int {
+	get := func(tr pluginmodel.Transport) int {
 		var p pid
 		require.NoError(t, tr.Call(context.Background(), "x", obj{}, &p))
 		return p.Pid

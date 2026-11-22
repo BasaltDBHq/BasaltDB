@@ -16,7 +16,7 @@ import (
 // unless the path rule holds from "/" down to it. A missing directory is
 // not an error.
 func Sweep(root string, key EntryKey, keep string, mode Mode) error {
-	owner, err := mode.owner()
+	owner, err := mode.Owner()
 	if err != nil {
 		return err
 	}

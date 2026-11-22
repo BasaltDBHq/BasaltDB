@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,11 +119,6 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 	require.Contains(t, out.String(), agentsHelp)
 	requireAgentLed(t, "basalt --help", out.String())
 }
-
-// initCommand finds each basalt init command in a text, up to the end of its
-// line or the quote, backtick or sentence that holds it. A shell line
-// continuation (backslash, newline) joins the next line.
-var initCommand = regexp.MustCompile("(?:basalt\\s+)?\\binit(?:\\s+-[^\\n`\"';]*?)?(?:\\n|`|\"|'|;|\\.\\s|\\.$|$)")
 
 // manualInits are the names in text of the ways to hand the admin connection
 // string to basalt outside a setup page: the --setup-code and --database-url

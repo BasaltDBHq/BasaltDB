@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -62,7 +63,7 @@ type pluginWatch struct {
 	eff config.Config
 	// checks is each configured entry's verification, kept while its entry
 	// is unchanged so a pass does not hash its files again.
-	checks map[pluginhost.EntryKey]cachedCheck
+	checks map[pluginmodel.EntryKey]cachedCheck
 	// next is when the agents are checked again; zero: only when
 	// engine.json changes.
 	next time.Time
@@ -71,7 +72,7 @@ type pluginWatch struct {
 	backoff map[string]agentBackoff
 	// running is what the supervisor runs: each entry and the configured
 	// entry it was started from.
-	running map[pluginhost.EntryKey]runningEntry
+	running map[pluginmodel.EntryKey]runningEntry
 	// trust is the trust store as read at start: an entry that does not
 	// require approval rests on it, and changes to it take effect at the
 	// next start.
@@ -102,7 +103,7 @@ type agentBackoff struct {
 }
 
 type runningEntry struct {
-	e pluginhost.Entry
+	e pluginmodel.Entry
 	p config.Plugin
 	// approvals is, for an entry that requires approval, the approval each
 	// agent is served on.
@@ -114,8 +115,8 @@ type runningEntry struct {
 func newPluginWatch(ep *Plugins, cfg config.Config, path string, ledgers map[string]AgentLedger) *pluginWatch {
 	w := &pluginWatch{
 		ep: ep, start: cfg, path: path, ledgers: ledgers, log: ep.log, now: time.Now,
-		eff: cfg, checks: map[pluginhost.EntryKey]cachedCheck{}, backoff: map[string]agentBackoff{},
-		running: map[pluginhost.EntryKey]runningEntry{}, trust: trustedKeys(cfg, path, ep.log),
+		eff: cfg, checks: map[pluginmodel.EntryKey]cachedCheck{}, backoff: map[string]agentBackoff{},
+		running: map[pluginmodel.EntryKey]runningEntry{}, trust: trustedKeys(cfg, path, ep.log),
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
@@ -221,7 +222,7 @@ func (w *pluginWatch) applyKept(ctx context.Context, kept []byte, changed bool) 
 // those change while it runs. A same-user engine that keeps entries (an
 // agent-operated one) applies its config entries while it runs too.
 func (w *pluginWatch) serviceKept() bool {
-	return w.ep.kept != nil && w.ep.mode == pluginhost.ModeService
+	return w.ep.kept != nil && w.ep.mode == pluginmodel.ModeService
 }
 
 // stepKept is step on a service engine: only its engine-kept entries change
@@ -282,9 +283,9 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	// Read once: ep.mu is held where it is asked below.
 	frozen := w.frozenNow()
 	configured := configuredPlugins(w.eff)
-	approval := make(map[pluginhost.EntryKey]bool, len(configured))
-	checks := make(map[pluginhost.EntryKey]entryCheck, len(configured))
-	fresh := map[pluginhost.EntryKey]bool{}
+	approval := make(map[pluginmodel.EntryKey]bool, len(configured))
+	checks := make(map[pluginmodel.EntryKey]entryCheck, len(configured))
+	fresh := map[pluginmodel.EntryKey]bool{}
 	for _, p := range configured {
 		k := p.Key()
 		required := ep.requires(w.start, p)
@@ -316,7 +317,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 
 	// Narrow first, from the config alone: what it no longer serves stops
 	// before any database is asked.
-	narrowed := map[pluginhost.EntryKey]runningEntry{}
+	narrowed := map[pluginmodel.EntryKey]runningEntry{}
 	for k, r := range w.running {
 		if frozen(k) {
 			narrowed[k] = r
@@ -371,7 +372,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		}
 		due = append(due, a.Name)
 	}
-	copyOf := func(k pluginhost.EntryKey) (pluginhost.Verified, bool) {
+	copyOf := func(k pluginmodel.EntryKey) (pluginmodel.Verified, bool) {
 		c, ok := checks[k]
 		return c.v, ok && c.ok()
 	}
@@ -391,8 +392,8 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		delete(w.backoff, name)
 	}
 
-	desired := map[pluginhost.EntryKey]runningEntry{}
-	kept := map[pluginhost.EntryKey][]string{}
+	desired := map[pluginmodel.EntryKey]runningEntry{}
+	kept := map[pluginmodel.EntryKey][]string{}
 	waiting := false
 	ep.mu.Lock()
 	for _, p := range configured {
@@ -467,24 +468,24 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 // run as the start decided until the engine stops (CONTRACT.md, Plugin
 // changes while the engine runs: in service mode the engine reads plugins at
 // start only), and the watch neither checks it nor changes it.
-func (w *pluginWatch) frozenNow() func(pluginhost.EntryKey) bool {
+func (w *pluginWatch) frozenNow() func(pluginmodel.EntryKey) bool {
 	if !w.serviceKept() {
-		return func(pluginhost.EntryKey) bool { return false }
+		return func(pluginmodel.EntryKey) bool { return false }
 	}
 	// The start config's entries, as wanted holds them: an engine-kept
 	// entry just removed or clashed is not one, so it narrows at once.
-	start := make(map[pluginhost.EntryKey]bool, len(w.start.Plugins))
+	start := make(map[pluginmodel.EntryKey]bool, len(w.start.Plugins))
 	for _, p := range w.start.Plugins {
 		start[p.Key()] = true
 	}
-	return func(k pluginhost.EntryKey) bool { return start[k] }
+	return func(k pluginmodel.EntryKey) bool { return start[k] }
 }
 
 // wanted is what each agent should have on record for the entries the
 // watch decides. On a service engine those are its engine-kept entries
 // only: its config entries are held as they are, so a pass never writes,
 // ends or withholds anything of theirs.
-func (w *pluginWatch) wanted(copyOf func(pluginhost.EntryKey) (pluginhost.Verified, bool)) pluginWant {
+func (w *pluginWatch) wanted(copyOf func(pluginmodel.EntryKey) (pluginmodel.Verified, bool)) pluginWant {
 	ep := w.ep
 	if !w.serviceKept() {
 		return wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, ep.o.Ports.Network, w.trust, ep.isKept)
@@ -492,7 +493,7 @@ func (w *pluginWatch) wanted(copyOf func(pluginhost.EntryKey) (pluginhost.Verifi
 	eff := w.eff
 	eff.Plugins = slices.DeleteFunc(slices.Clone(w.eff.Plugins), func(p config.Plugin) bool { return !ep.isKept(p.Key()) })
 	want := wantedFrom(eff, copyOf, ep.mode, ep.o.goos, ep.o.Ports.Network, w.trust, ep.isKept)
-	want.frozen = map[pluginhost.EntryKey]bool{}
+	want.frozen = map[pluginmodel.EntryKey]bool{}
 	for _, p := range w.start.Plugins {
 		k := p.Key()
 		want.frozen[k] = true
@@ -544,8 +545,8 @@ const whyStartOnly = "it does not require approval, so it starts at the engine's
 // that is not desired, or desired otherwise (other agents or another
 // config), all at once, then starts the new ones. A replaced entry is
 // stopped before it starts again, so for a moment it serves no agent.
-func (w *pluginWatch) apply(desired map[pluginhost.EntryKey]runningEntry) {
-	var stop []pluginhost.EntryKey
+func (w *pluginWatch) apply(desired map[pluginmodel.EntryKey]runningEntry) {
+	var stop []pluginmodel.EntryKey
 	for k, r := range w.running {
 		if d, ok := desired[k]; !ok || !sameRun(r, d) {
 			stop = append(stop, k)
@@ -586,7 +587,7 @@ func (w *pluginWatch) apply(desired map[pluginhost.EntryKey]runningEntry) {
 
 // publish records what runs as ep's entries.
 func (w *pluginWatch) publish() {
-	entries := make([]pluginhost.Entry, 0, len(w.running))
+	entries := make([]pluginmodel.Entry, 0, len(w.running))
 	for _, k := range slices.SortedFunc(maps.Keys(w.running), compareEntryKeys) {
 		entries = append(entries, w.running[k].e)
 	}
@@ -603,11 +604,11 @@ func (c entryCheck) ok() bool { return c.notTrusted == nil && c.refused == "" }
 // runs, what runs then stays as it is. Any answer decides: a guard that
 // refuses, is missing or too old, or an agent not admitted withholds, as at
 // start.
-func (p agentPass) undecided(k pluginhost.EntryKey) bool {
+func (p agentPass) undecided(k pluginmodel.EntryKey) bool {
 	return slices.ContainsFunc(p.withheld, func(u unrecordedEntry) bool { return u.key == k && u.transient })
 }
 
-func configuredPlugin(configured []config.Plugin, k pluginhost.EntryKey) (config.Plugin, bool) {
+func configuredPlugin(configured []config.Plugin, k pluginmodel.EntryKey) (config.Plugin, bool) {
 	i := slices.IndexFunc(configured, func(p config.Plugin) bool { return p.Key() == k })
 	if i < 0 {
 		return config.Plugin{}, false
@@ -667,7 +668,7 @@ func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath stri
 	var feed sync.WaitGroup
 	feed.Go(func() { f.run(ctx) })
 	feed.Go(func() { ep.delivery.run(ctx, ledgers) })
-	if ep.mode == pluginhost.ModeSameUser || ep.kept != nil {
+	if ep.mode == pluginmodel.ModeSameUser || ep.kept != nil {
 		w := newPluginWatch(ep, cfg, configPath, ledgers)
 		w.writeServing()
 		w.run(ctx, ep.o.clock)
@@ -680,7 +681,7 @@ func (ep *Plugins) Serve(ctx context.Context, cfg config.Config, configPath stri
 
 // servedEntries are the entries the engine runs now, each with the agents
 // it is served to.
-func (ep *Plugins) servedEntries() []pluginhost.Entry {
+func (ep *Plugins) servedEntries() []pluginmodel.Entry {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	return slices.Clone(ep.entries)
@@ -753,7 +754,7 @@ func (w *pluginWatch) writeServing() {
 	w.ep.mu.Unlock()
 	// A service engine's state directory is its own: PLUGIN_LIST says what
 	// it serves instead of the file.
-	if w.ep.o.stateDir == "" || w.ep.mode != pluginhost.ModeSameUser {
+	if w.ep.o.stateDir == "" || w.ep.mode != pluginmodel.ModeSameUser {
 		return
 	}
 	raw, err := json.Marshal(st)

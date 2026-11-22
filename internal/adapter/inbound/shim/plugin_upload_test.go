@@ -12,6 +12,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 func readySession(operatedBy, pagesOrigin string) *session {
@@ -121,13 +122,13 @@ func TestReadPluginSourceRules(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	_, err := ReadPluginSource(dir)
-	te, ok := err.(*mcp.ToolError) //nolint:errorlint // returned unwrapped
+	te, ok := err.(*toolresult.ToolError) //nolint:errorlint // returned unwrapped
 	require.True(t, ok)
 	require.Equal(t, "INVALID_ARGUMENT", te.Code, "no manifest")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "basalt-plugin.json"), []byte(`{"name": 1}`), 0o600))
 	_, err = ReadPluginSource(dir)
-	te, ok = err.(*mcp.ToolError) //nolint:errorlint // returned unwrapped
+	te, ok = err.(*toolresult.ToolError) //nolint:errorlint // returned unwrapped
 	require.True(t, ok)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
 	require.Equal(t, "BAD_MANIFEST", te.Reason)
@@ -138,7 +139,7 @@ func TestReadPluginSourceRules(t *testing.T) {
 	require.Error(t, err)
 
 	_, err = ReadPluginSource("relative")
-	te, ok = err.(*mcp.ToolError) //nolint:errorlint // returned unwrapped
+	te, ok = err.(*toolresult.ToolError) //nolint:errorlint // returned unwrapped
 	require.True(t, ok)
 	require.Equal(t, "INVALID_ARGUMENT", te.Code)
 }

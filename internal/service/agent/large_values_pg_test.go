@@ -15,7 +15,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -102,7 +103,7 @@ func callFits(t *testing.T, h harness, tool string, args map[string]any) map[str
 	require.False(t, isError, "%s: %v", tool, body)
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
-	require.Less(t, len(raw), resultsize.MaxBytes, "%s: the answer fits the budget", tool)
+	require.Less(t, len(raw), budget.MaxBytes, "%s: the answer fits the budget", tool)
 	return body
 }
 
@@ -302,7 +303,7 @@ func TestRevertPlanPagesPastALargeLineAndRestoresIt(t *testing.T) {
 	prep, err := guard.PrepareRevert(ctx, e.a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
 	require.NoError(t, err)
 	require.True(t, prep.Batched)
-	as, err := e.person.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
 	require.NoError(t, err)

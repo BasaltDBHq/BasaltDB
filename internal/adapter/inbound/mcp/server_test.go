@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 func serve(t *testing.T, s *mcp.Server, lines ...string) []mcp.Response {
@@ -54,7 +55,7 @@ func TestServeInitializeListAndCall(t *testing.T) {
 				return nil, err
 			}
 			if a.Say == "" {
-				return nil, &mcp.ToolError{Code: "INVALID_ARGUMENT", Message: "say is required"}
+				return nil, &toolresult.ToolError{Code: "INVALID_ARGUMENT", Message: "say is required"}
 			}
 			return map[string]string{"said": a.Say}, nil
 		},
@@ -108,6 +109,6 @@ func TestNewServerRefusesDuplicateTools(t *testing.T) {
 
 func TestDocsURLAnchorsTheCode(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "https://docs.basaltvault.app/reference/errors/#approval-required", mcp.DocsURL("APPROVAL_REQUIRED"))
-	require.Equal(t, "https://docs.basaltvault.app/reference/errors/#internal", mcp.DocsURL("INTERNAL"))
+	require.Equal(t, "https://docs.basaltvault.app/reference/errors/#approval-required", toolresult.DocsURL("APPROVAL_REQUIRED"))
+	require.Equal(t, "https://docs.basaltvault.app/reference/errors/#internal", toolresult.DocsURL("INTERNAL"))
 }

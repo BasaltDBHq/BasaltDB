@@ -10,11 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // slowPrepare is a revert store whose prepare runs into its time limit,
@@ -47,7 +47,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	})
 	require.Equal(t, guardmodel.MCPPrepareTimeout, limit)
 	require.Equal(t, 100*time.Second, limit, "under Claude Code's 2-minute auto-background")
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.True(t, errors.As(err, &te), "%v", err)
 	require.Equal(t, CodeQueryTimeout, te.Code)
 	require.Equal(t, ReasonTimeLimit, te.Reason)

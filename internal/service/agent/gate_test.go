@@ -7,11 +7,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // gatedService is a service on an outdated guard whose approval and revert
@@ -28,7 +28,7 @@ func gatedService(t *testing.T) *Service {
 
 func requireGuardOutdated(t *testing.T, err error, path string) {
 	t.Helper()
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te, path)
 	require.Equal(t, CodeUnavailable, te.Code, path)
 	require.Equal(t, reasonGuardOutdated, te.Reason, path)

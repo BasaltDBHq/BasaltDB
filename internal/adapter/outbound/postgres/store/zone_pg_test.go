@@ -133,7 +133,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 
 			// Signed, and applied from the writer's zone: Postgres
 			// rebuilds the lines at apply and finds the same rowsHash.
-			as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+			as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 			require.NoError(t, err)
 			applied, err := ledger.NewPerson(zonedConn(t, a.URL, zones[0]), time.Now).ApplyRevert(ctx, prep.RevertID, as)
 			require.NoError(t, err)
@@ -279,7 +279,7 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 	prep, err := engine.PrepareRevert(ctx, action.Scope(scope), "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
-	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := ledger.NewPerson(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
 	require.NoError(t, err)
@@ -364,7 +364,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	prep, err := engine.PrepareRevert(ctx, action.Scope(scope), "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
-	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := ledger.NewPerson(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
 	require.NoError(t, err)
@@ -391,7 +391,7 @@ func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
 	prep, err := guard.PrepareRevert(ctx, hand, scope, "Undo by hand")
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
-	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, hand, prep.RevertID, as)
 	require.NoError(t, err)

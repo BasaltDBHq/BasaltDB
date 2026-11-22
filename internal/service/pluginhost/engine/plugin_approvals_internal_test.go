@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -88,7 +89,7 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
 	}
-	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(!signed))
+	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(!signed))
 	require.NoError(t, err)
 	// The longest timeout: the plugin is this test binary, built with -race.
 	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
@@ -153,7 +154,7 @@ func (l pluginLedgers) approve(t *testing.T, pk *passkeytest.Authenticator, p co
 
 // servedTo are the agents the host serves entry k to, none when it is not
 // started.
-func servedTo(ep *Plugins, k pluginhost.EntryKey) []string {
+func servedTo(ep *Plugins, k pluginmodel.EntryKey) []string {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	for _, e := range ep.entries {
@@ -167,7 +168,7 @@ func servedTo(ep *Plugins, k pluginhost.EntryKey) []string {
 // requireNotWithheld: entry k is served to agentName, and status reports
 // no approval or record problem for it (the plugin itself is not running
 // in these tests, so it is not READY).
-func requireNotWithheld(t *testing.T, ep *Plugins, k pluginhost.EntryKey, agentName string) {
+func requireNotWithheld(t *testing.T, ep *Plugins, k pluginmodel.EntryKey, agentName string) {
 	t.Helper()
 	require.Contains(t, servedTo(ep, k), agentName)
 	require.Empty(t, ep.unrecordedFor(k, agentName), agentName)
@@ -707,7 +708,7 @@ func TestCommandsApprovalIsServed(t *testing.T) {
 			f.cfg.Plugins = append(f.cfg.Plugins, p)
 			l := newPluginLedgers(t, f)
 
-			v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
+			v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
 			require.NoError(t, err)
 			d := PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]})
 			l.sign(t, l.person(t), "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
@@ -735,7 +736,7 @@ func (f *pluginFixture) installRemote() config.Plugin {
 }
 `
 	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
-	v, err := pluginhost.Install(src, f.root, "default", f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
+	v, err := pluginhost.Install(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
 }

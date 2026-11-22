@@ -41,6 +41,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -240,12 +241,12 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	}
 	uploader := shim.NewPluginUploader(serveAgentSocket(t, f.base, p, "bot", svc.PluginUploadsServed))
 	_, err = uploader(ctx, dir)
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
 	require.Equal(t, agent.ReasonPluginNoPortalLink, te.Reason)
 	require.Contains(t, te.PersonMessage, "the Vault is off")
-	require.Equal(t, []string{mcp.ActionAskPerson, mcp.ActionCallTool}, []string{te.NextSteps[0].Action, te.NextSteps[1].Action})
+	require.Equal(t, []string{toolresult.ActionAskPerson, toolresult.ActionCallTool}, []string{te.NextSteps[0].Action, te.NextSteps[1].Action})
 
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)

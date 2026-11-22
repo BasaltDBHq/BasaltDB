@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 const defaultProtocolVersion = "2025-03-26"
@@ -140,9 +141,9 @@ type Response struct {
 // RPCError is a JSON-RPC 2.0 error object. Data, on a server error of a
 // method beside MCP's own, is the *ToolError it answers with.
 type RPCError struct {
-	Code    int        `json:"code"`
-	Message string     `json:"message"`
-	Data    *ToolError `json:"data,omitempty"`
+	Code    int                   `json:"code"`
+	Message string                `json:"message"`
+	Data    *toolresult.ToolError `json:"data,omitempty"`
 }
 
 // Serve reads one JSON-RPC message per line from in and writes one response
@@ -256,7 +257,7 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 	if err == nil {
 		return out, nil
 	}
-	var te *ToolError
+	var te *toolresult.ToolError
 	if errors.As(err, &te) {
 		return nil, &RPCError{Code: ErrCodeServer, Message: te.Message, Data: te}
 	}
@@ -320,7 +321,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage, sess *ses
 		s.addNotice(res, sess)
 		return res, nil
 	}
-	var te *ToolError
+	var te *toolresult.ToolError
 	if errors.As(err, &te) {
 		return errorResult(te), nil
 	}
@@ -343,10 +344,10 @@ func (s *Server) call(ctx context.Context, tool Tool, args json.RawMessage) (out
 }
 
 // panicError is the INTERNAL error a tool that panicked answers with.
-func panicError(reportID string) *ToolError {
-	te := &ToolError{
+func panicError(reportID string) *toolresult.ToolError {
+	te := &toolresult.ToolError{
 		Code: "INTERNAL", Message: "internal engine error",
-		NextSteps: []NextStep{{Actor: ActorAgent, Action: ActionStop, Text: "Stop. Do not retry this call: the engine failed inside it."}},
+		NextSteps: []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop. Do not retry this call: the engine failed inside it."}},
 	}
 	if reportID == "" {
 		return te
@@ -375,10 +376,10 @@ func (s *Server) addNotice(res map[string]any, sess *session) {
 
 // errorResult is the tools/call result of te, with docsUrl set from its code
 // (on a copy: te may be shared).
-func errorResult(te *ToolError) map[string]any {
+func errorResult(te *toolresult.ToolError) map[string]any {
 	out := *te
 	if out.DocsURL == "" && out.Code != "" {
-		out.DocsURL = DocsURL(out.Code)
+		out.DocsURL = toolresult.DocsURL(out.Code)
 	}
 	return toolResult(&out, true)
 }
@@ -438,7 +439,7 @@ func PeerRefusal(line []byte) string {
 
 // WriteToolError writes the tools/call answer for request id that carries
 // te, with isError set.
-func WriteToolError(w io.Writer, id any, te *ToolError) error {
+func WriteToolError(w io.Writer, id any, te *toolresult.ToolError) error {
 	return writeResponse(w, id, errorResult(te), nil)
 }
 

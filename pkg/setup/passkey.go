@@ -57,7 +57,7 @@ func PasskeyRequestFor(c PasskeyChallenge, label string) (PasskeyRequest, error)
 	if label == "" || len(label) > setuprun.MaxPasskeyLabel || !utf8.ValidString(label) {
 		return PasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", setuprun.MaxPasskeyLabel)
 	}
-	req, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+	req, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return PasskeyRequest{}, err
 	}

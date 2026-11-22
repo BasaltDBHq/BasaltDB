@@ -13,11 +13,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -90,7 +90,7 @@ func TestApprovalNoticeHandsOverTheShortLinkFirst(t *testing.T) {
 	require.Contains(t, n.shortURL, "#s=")
 	require.Contains(t, n.PersonMessage, "\n\n"+n.shortURL+"\n\n")
 	require.NotContains(t, n.PersonMessage, "#2.", "the long link stays out of the message")
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.shortURL}}, n.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.shortURL}}, n.Links)
 	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "long", "no warning with a short link")
 }
@@ -103,7 +103,7 @@ func TestApprovalNoticeHandsOverALongLinkWithinTheBudget(t *testing.T) {
 	require.LessOrEqual(t, len(n.longURL), links.DefaultBudget)
 	require.Equal(t, n.longURL, n.ApprovalURL)
 	require.Contains(t, n.PersonMessage, "\n\n"+n.longURL+"\n\n")
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.longURL}}, n.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.longURL}}, n.Links)
 	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "may arrive", "no warning within the budget")
 }
@@ -125,7 +125,7 @@ func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
 	require.Contains(t, n.PersonMessage, "open the request file the agent sends you (or paste its text blocks)")
 	require.Contains(t, n.PersonMessage, "\n\n"+n.ApprovalURL+"\n\n")
 	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.ApprovalURL}}, n.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.ApprovalURL}}, n.Links)
 }
 
 func TestApprovalNoticeWithinTheBudgetCarriesNoRequestFile(t *testing.T) {
@@ -201,7 +201,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	short, err := noticeService(localPages, 1).revertNotice(ctx, big)
 	require.NoError(t, err)
 	require.Contains(t, short.URL, "#s=", "a short link is never measured")
-	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: short.URL}}, short.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: short.URL}}, short.Links)
 	require.Contains(t, short.Message, "\n\n"+short.URL)
 	require.Nil(t, short.File)
 	requirePersonMessage(t, short.Message, short.Links)
@@ -211,7 +211,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Contains(t, within.URL, "#2.")
 	require.LessOrEqual(t, len(within.URL), links.DefaultBudget)
 	require.Nil(t, within.File)
-	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: within.URL}}, within.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: within.URL}}, within.Links)
 	requirePersonMessage(t, within.Message, within.Links)
 
 	over, err := noticeService("", links.DefaultBudget).revertNotice(ctx, big)
@@ -224,7 +224,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Contains(t, over.Message, "Review only, this link cannot be signed: open this link, then open the request file the agent sends you")
 	require.Contains(t, over.Message, "\n\n"+over.URL)
 	require.NotContains(t, over.Message, "#2.")
-	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
 	requirePersonMessage(t, over.Message, over.Links)
 }
 
@@ -271,12 +271,12 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	messages := map[string]string{}
 	for _, tool := range []string{toolPreviewRevert, toolRequestRevert} {
 		err := s.prepareTimeout(tool, scope, "57014")
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		require.ErrorAs(t, err, &te)
 		messages["timeout "+tool] = te.PersonMessage
 	}
 	err = s.nothingToRevertError(context.Background(), toolPreviewRevert, scope, reasonReadsOnly, "changed no rows")
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	messages["nothing to revert, task"] = te.PersonMessage
 	for _, st := range te.NextSteps {
@@ -300,17 +300,17 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 // requireSendRequestFirst checks a result over the budget: requestFile beside
 // the hash link, and SEND_REQUEST first, then the catalog's steps, every
 // step obeying the step rules.
-func requireSendRequestFirst(t *testing.T, steps []mcp.NextStep, file *links.RequestFile, where string) {
+func requireSendRequestFirst(t *testing.T, steps []toolresult.NextStep, file *links.RequestFile, where string) {
 	t.Helper()
 	require.NotNil(t, file, where)
 	require.NotEmpty(t, steps, where)
-	require.Equal(t, mcp.ActorAgent, steps[0].Actor, where)
-	require.Equal(t, mcp.ActionSendRequest, steps[0].Action, where)
+	require.Equal(t, toolresult.ActorAgent, steps[0].Actor, where)
+	require.Equal(t, toolresult.ActionSendRequest, steps[0].Action, where)
 	require.Equal(t, sendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
 		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}
-	require.NotEqual(t, mcp.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
+	require.NotEqual(t, toolresult.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
 }
 
 // TestHashLinkResultsSendTheRequestFirst: on an engine that serves no pages,
@@ -356,7 +356,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	p := &PendingRevert{Revert: r}
 	require.NoError(t, s.pendingRevert(ctx, p, false))
 	require.Nil(t, p.RequestFile)
-	require.Equal(t, mcp.ActionOpenLink, p.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.Empty(t, p.NextSteps[0].URL)
 	require.Contains(t, p.RevertURL, "#2.", "the field keeps the long link")
 
@@ -366,7 +366,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	_, _, steps, err := s.itemGuidance(item)
 	require.NoError(t, err)
 	require.Len(t, steps, 1)
-	require.Equal(t, mcp.ActionOpenLink, steps[0].Action)
+	require.Equal(t, toolresult.ActionOpenLink, steps[0].Action)
 	require.Empty(t, steps[0].URL)
 }
 
@@ -393,11 +393,11 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, links.DefaultBudget)
 		n := approvalNoticeOf(t, s, 60, keepLink)
-		te := s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reasonNotSigned, Message: "m"}, n)
+		te := s.approvalLinkError(&toolresult.ToolError{Code: CodeApprovalInvalid, Reason: reasonNotSigned, Message: "m"}, n)
 		requirePersonMessage(t, te.PersonMessage, te.Links)
 		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
 		open := te.NextSteps[0]
-		require.Equal(t, mcp.ActionOpenLink, open.Action)
+		require.Equal(t, toolresult.ActionOpenLink, open.Action)
 		if origin != "" {
 			require.Empty(t, open.URL, "the short link the person has")
 			require.Empty(t, te.Links)
@@ -432,12 +432,12 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 			require.Equal(t, CodeRevertInvalid, te.Code, name)
 			requirePersonMessage(t, te.PersonMessage, te.Links)
 			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
-			var open *mcp.NextStep
+			var open *toolresult.NextStep
 			for i := range te.NextSteps {
 				step := te.NextSteps[i]
-				require.NotEqual(t, mcp.ActionSendRequest, step.Action, "%s %q: the file was sent with the request", name, origin)
+				require.NotEqual(t, toolresult.ActionSendRequest, step.Action, "%s %q: the file was sent with the request", name, origin)
 				require.LessOrEqual(t, len(step.URL), links.DefaultBudget, "%s %q: no step carries a link over the budget", name, origin)
-				if step.Action == mcp.ActionOpenLink {
+				if step.Action == toolresult.ActionOpenLink {
 					open = &step
 				}
 			}
@@ -464,7 +464,7 @@ func TestWidenedRevertInvalidNamesNoLink(t *testing.T) {
 	r.Widened = true
 	for _, origin := range []string{localPages, ""} {
 		te := ToolError(noticeService(origin, links.DefaultBudget).badSignature(ctx, r, "m"))
-		require.Equal(t, mcp.ActionOpenLink, te.NextSteps[0].Action)
+		require.Equal(t, toolresult.ActionOpenLink, te.NextSteps[0].Action)
 		require.Empty(t, te.NextSteps[0].URL, origin)
 		require.NotContains(t, te.NextSteps[0].Text, "short link the agent gave you", origin)
 	}

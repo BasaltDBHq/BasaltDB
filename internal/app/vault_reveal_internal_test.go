@@ -260,7 +260,7 @@ func TestRevealRoutes(t *testing.T) {
 
 	// The person signs the revert; a reveal after it gets the revert's
 	// normal answer, since the signature took the row first.
-	sig, err := e.person.Sign(revert.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
+	sig, err := e.person.Sign(approval.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, _, err = e.svc.RelayRevert(ctx, revert.Response{
 		RevertID: e.revert.RevertID, CredentialID: sig.CredentialID,

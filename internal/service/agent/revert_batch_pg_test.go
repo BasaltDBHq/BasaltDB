@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -65,7 +66,7 @@ func newBatchEnv(t *testing.T, pagesOrigin ...string) batchEnv {
 // relaying the code.
 func (e batchEnv) sign(t *testing.T) {
 	t.Helper()
-	as, err := e.person.Sign(revert.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(context.Background(), e.a.Conn, e.prep.RevertID, as)
 	require.NoError(t, err)

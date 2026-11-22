@@ -8,16 +8,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // requirePersonMessage is the engine's check of CONTRACT.md, Links in
 // personMessage, for every personMessage the engine builds.
-func requirePersonMessage(t *testing.T, message string, links []mcp.Link) {
+func requirePersonMessage(t *testing.T, message string, links []toolresult.Link) {
 	t.Helper()
 	mcptest.Require(t, message, links)
 	require.Empty(t, removedCommand.FindString(message), "a personMessage names no removed command (CONTRACT.md, Next steps): %q", message)
@@ -67,7 +67,7 @@ func TestMessageBuilder(t *testing.T) {
 		Build()
 
 	require.Equal(t, "Held for you.\nApprove here:\n\n"+first+"\n\nApprove with your passkey.\nExpires soon.\n\n"+second, msg)
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: first}, {Label: "Review and sign the revert", URL: second}}, links)
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: first}, {Label: "Review and sign the revert", URL: second}}, links)
 	requirePersonMessage(t, msg, links)
 
 	plain, none := newMessage().Text("No link.").Build()

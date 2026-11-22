@@ -24,24 +24,16 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
 )
-
-// ErrSizeLimit is a read canceled because the call's reads came to more than
-// MaxResultBytes (resultsize; CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT).
-var ErrSizeLimit = resultsize.ErrSizeLimit
-
-// MaxResultBytes bounds what one call's reads cost the engine, summed over
-// their rows (resultsize.RowCost): the 16 MiB the shim accepts in one line.
-// The engine stops reading there.
-const MaxResultBytes = resultsize.MaxBytes
 
 // maxMessageBytes bounds one message from Postgres on an agent connection
 // (pgx MaxProtocolMessageBodyLen): a row of MaxResultBytes of values plus
 // its framing (a length per column). pgx refuses a longer message before it
 // reads its body, so a row too large for a result is never buffered.
-const maxMessageBytes = MaxResultBytes + messageSlack
+const maxMessageBytes = budget.MaxBytes + messageSlack
 
 // messageSlack covers a row message's framing: 2 bytes for the column
 // count and 4 per column, for at most Postgres's 1664 result columns.
@@ -199,7 +191,7 @@ func rowVersions(extras [][][]byte, oids []uint32) []action.RowVersion {
 func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, extra int) ([]action.Column, []map[string]any, [][][]byte, error) {
 	// The call's budget, or one of its own: the rows are charged as they are
 	// read, whatever transaction they come from.
-	ctx = resultsize.Ensure(ctx)
+	ctx = budget.Ensure(ctx)
 	queryCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := append([]any{pgx.QueryResultFormats{pgx.TextFormatCode}}, params...)

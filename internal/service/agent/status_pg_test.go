@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -108,7 +109,7 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 	require.False(t, isError, "%v", body)
 	warnings := body["warnings"].([]any)
 	require.Len(t, warnings, 1)
-	require.Equal(t, mcp.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
+	require.Equal(t, toolresult.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
 	runID := body["runId"]
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT id FROM leads", "runId": runID})
 	require.False(t, isError, "%v", body)

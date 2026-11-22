@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -39,7 +40,7 @@ func TestRejectRevertBeforeWiden(t *testing.T) {
 	e := newWidenEnv(t)
 	ctx := context.Background()
 	id := e.prep.RevertID
-	sig, err := e.p.Sign(revert.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 
 	out, err := guard.RejectRevert(ctx, e.bot.Conn, id, "not this one, I fixed it by hand", nil)

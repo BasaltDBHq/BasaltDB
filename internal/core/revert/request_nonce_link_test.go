@@ -28,7 +28,7 @@ func TestParseRequestRefusesNonces(t *testing.T) {
 		frag, err := linkcodec.Encode(linkcodec.Format1, req)
 		require.NoError(t, err)
 		_, _, err = revert.ParseRequest(frag)
-		require.ErrorIs(t, err, revert.ErrInvalid, name)
+		require.ErrorIs(t, err, approval.ErrInvalid, name)
 	}
 }
 
@@ -42,6 +42,6 @@ func TestParseRequestRefusesEmptyColumns(t *testing.T) {
 		})
 		require.NoError(t, err)
 		_, _, err = revert.ParseRequest(frag)
-		require.ErrorIs(t, err, revert.ErrInvalid, "%v", columns)
+		require.ErrorIs(t, err, approval.ErrInvalid, "%v", columns)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -98,7 +99,7 @@ func TestAnAgentHoldingTheLinkCannotWiden(t *testing.T) {
 	ownSecret.NewSecret = newLinkSecret(t)
 	var foreign agent.ScopeRequest
 	require.NoError(t, json.Unmarshal(e.widenBody(t, e.person, other, e.nonce(t, other, agentSecretOf(t, e, other)), e.every(), personSecret), &foreign))
-	approvalLike, err := e.person.Sign(revert.Challenge("{}"), passkeytest.FlagsUPUV, nil)
+	approvalLike, err := e.person.Sign(approval.Challenge("{}"), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 
 	cases := map[string][]byte{

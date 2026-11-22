@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -117,7 +118,7 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 	// rejected with a note.
 	prep, err := guard.PrepareRevert(ctx, c, guardmodel.RevertScope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
 	require.NoError(t, err)
-	sig, err := pk.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := pk.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, c, prep.RevertID, sig)
 	require.NoError(t, err)
@@ -231,14 +232,14 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 func TestSenderNeverBlocks(t *testing.T) {
 	t.Parallel()
 	h := pluginhost.NewHost()
-	p := &feedPlugin{key: pluginhost.EntryKey{Name: "acme-feed", Instance: "default"}, m: feedManifest("acme-feed"), mode: hangMode, schema: feedSchema(t)}
-	require.NoError(t, h.Register(context.Background(), pluginhost.Entry{Key: p.key, Manifest: p.m, Agents: []string{"product_a"}, Timeout: time.Minute}, p))
+	p := &feedPlugin{key: pluginmodel.EntryKey{Name: "acme-feed", Instance: "default"}, m: feedManifest("acme-feed"), mode: hangMode, schema: feedSchema(t)}
+	require.NoError(t, h.Register(context.Background(), pluginmodel.Entry{Key: p.key, Manifest: p.m, Agents: []string{"product_a"}, Timeout: time.Minute}, p))
 	s := newPluginSender(h, p.key, time.Now)
 	var stopped, expired atomic.Int32
 	call := func(notAfter time.Time) pluginCall {
 		return pluginCall{
 			notAfter: notAfter,
-			run: func(ctx context.Context, h *pluginhost.Host, k pluginhost.EntryKey) error {
+			run: func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error {
 				_, err := h.ObserveFeedOn(ctx, k, 0, "product_a", json.RawMessage(`[{"data":{"seq":1}}]`))
 				return err
 			},
@@ -292,7 +293,7 @@ func TestFeedStopsWithoutLeaks(t *testing.T) {
 	hang.setMode(hangMode)
 	snapshot := goleak.IgnoreCurrent()
 	e.start()
-	for _, k := range []pluginhost.EntryKey{ok.key, hang.key} {
+	for _, k := range []pluginmodel.EntryKey{ok.key, hang.key} {
 		e.started(k, "product_a")
 		e.started(k, "client_x")
 	}
@@ -324,7 +325,7 @@ func TestBatchNeverReachesALaterRegistration(t *testing.T) {
 	e.applied("product_a")
 
 	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, newPluginSenders(e.host, time.Now), pluginhost.RealClock(), e.log)
-	f.senders.sync([]pluginhost.EntryKey{p.key})
+	f.senders.sync([]pluginmodel.EntryKey{p.key})
 	t.Cleanup(f.senders.stop)
 	r := &feedReader{f: f, pair: feedPair{key: p.key, agent: "product_a"}, ledger: e.pools["product_a"], log: e.log}
 	ctx := context.Background()

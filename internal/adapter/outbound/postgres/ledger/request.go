@@ -6,7 +6,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 )
 
@@ -57,7 +57,7 @@ const headsOf = `ARRAY(SELECT (h.x::jsonb - 'key' - 'old' - 'set' - 'now' - 'cha
 // (requestJoin), in full otherwise. The columns are lines, lines_left_out
 // and lines_cost.
 func withRequest(ctx context.Context, b sq.SelectBuilder) sq.SelectBuilder {
-	if resultsize.From(ctx) == nil {
+	if budget.From(ctx) == nil {
 		return b.Columns("coalesce(lines, '{}') AS lines", "false AS lines_left_out", "0::bigint AS lines_cost")
 	}
 	return b.Columns(

@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // This file tests finishing a setup from the laptop on the engine
@@ -292,7 +293,7 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	require.NotNil(t, found, "%+v", r.Problems)
 	require.Contains(t, found.PersonMessage, lock)
 	require.Equal(t, "sudo chown "+engineUserName()+" "+lock, found.NextSteps[0].Command)
-	require.Equal(t, mcp.ActorPerson, found.NextSteps[0].Actor)
+	require.Equal(t, toolresult.ActorPerson, found.NextSteps[0].Actor)
 	require.NotNil(t, svc.pendingSetup(), "still pending: the next call tries again")
 
 	fin.mu.Lock()

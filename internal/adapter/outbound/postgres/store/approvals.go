@@ -10,9 +10,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -35,7 +35,7 @@ func (s *Store) previewRaw(ctx context.Context, in action.Intent, sql string, pa
 		// DELETE of a row with a large value is held, not refused
 		// (CONTRACT.md, Large values, rule 6).
 		var err error
-		lines, err = guard.PreviewLines(resultsize.Unbudgeted(ctx), tx, assigned)
+		lines, err = guard.PreviewLines(budget.Without(ctx), tx, assigned)
 		if err != nil {
 			return err
 		}

@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // A request made from the steps keeps the filters the person was shown:
@@ -35,7 +35,7 @@ func TestRevertStepsKeepTheFilters(t *testing.T) {
 	r.BindingText = strings.Replace(r.BindingText, `"tables": null`, `"tables": ["public.lead_owner"]`, 1)
 	want := map[string]any{"runId": caseRunID, "tables": []string{"public.lead_owner"}}
 	require.Equal(t, want, expiredSteps(r)[1].Arguments)
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.True(t, errors.As(serviceFor(t, "linux", "").rowsChanged(r, "rows changed since"), &te))
 	require.Equal(t, want, te.NextSteps[0].Arguments)
 	require.Contains(t, te.PersonMessage, "run "+caseRunID+", only table public·lead_owner, so nothing was reverted")

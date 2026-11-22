@@ -11,10 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -70,7 +70,7 @@ func (e *rescopeEnv) requireRejectedWait(t *testing.T, id uuid.UUID, out agent.R
 	require.Len(t, steps, 1)
 	step, ok := steps[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, string(mcp.ActionStop), step["action"])
+	require.Equal(t, string(toolresult.ActionStop), step["action"])
 }
 
 // Before a widen the page rejects under the agent's link (LINK_OR_AGENT):

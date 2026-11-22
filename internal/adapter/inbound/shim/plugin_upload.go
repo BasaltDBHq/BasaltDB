@@ -7,6 +7,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // toolRequestPlugin is the one tool whose call the shim touches: it reads
@@ -47,7 +48,7 @@ func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []
 	_ = json.Unmarshal(params["arguments"], &args)
 	if args.Source != "" && r.upload != nil && sess.uploadsPlugins() {
 		up, err := r.upload(ctx, args.Source)
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		switch {
 		case err == nil:
 			raw, merr := json.Marshal(up)
@@ -90,8 +91,8 @@ func stringOf(raw json.RawMessage) string {
 	return v
 }
 
-func asToolError(err error, te **mcp.ToolError) bool {
-	t, ok := err.(*mcp.ToolError) //nolint:errorlint // the uploader returns it unwrapped
+func asToolError(err error, te **toolresult.ToolError) bool {
+	t, ok := err.(*toolresult.ToolError) //nolint:errorlint // the uploader returns it unwrapped
 	if ok {
 		*te = t
 	}

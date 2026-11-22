@@ -42,7 +42,6 @@ const (
 
 // Fixed values the engine chooses itself for a first install.
 const (
-	defaultPrefix    = guardmodel.DefaultPrefix
 	statementTimeout = 30 * time.Second
 	// callLimit bounds one check or run; the transaction rolls back.
 	callLimit = 60 * time.Second
@@ -217,7 +216,7 @@ func New(o Options) (*Service, error) {
 	if o.Backend == nil {
 		return nil, errors.New("localsetup: backend required")
 	}
-	rp, err := setuprun.LocalRelying(o.Origin)
+	rp, err := passkey.Local(o.Origin)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +230,7 @@ func New(o Options) (*Service, error) {
 		o.Users = osUsers{}
 	}
 	if o.Prefix == "" {
-		o.Prefix = defaultPrefix
+		o.Prefix = guardmodel.DefaultPrefix
 	}
 	if o.DialPinned == nil {
 		o.DialPinned = pinnedDial(o.Backend)
@@ -399,8 +398,8 @@ func (s *Service) open(ctx context.Context, req Request) (*pgx.Conn, *pin, error
 
 // planned is what plan found and built.
 type planned struct {
-	seeded setuprun.DemoPlan
-	script setuprun.Script
+	seeded guardmodel.DemoPlan
+	script guardmodel.Script
 	keep   bool
 	// rekey: the role exists, an agent of this guard's group, with no
 	// password this engine holds (an earlier setup this engine forgot):
@@ -464,7 +463,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		}
 	}
 	spec := guardmodel.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep && !p.rekey, StatementTimeout: statementTimeout}
-	opts := setuprun.InitOptions{Names: names}
+	opts := guardmodel.InitOptions{Names: names}
 	if j.req.Demo {
 		if p.seeded, err = s.be.SeedDemo(ctx, tx); err != nil {
 			return planned{}, setupFailed("seed the sample data", err)
@@ -696,7 +695,7 @@ func passkeyNeeded(ctx context.Context, b setuprun.Backend, tx pgx.Tx, origin st
 }
 
 // summary is the fixed account of the install the person reads.
-func (s *Service) summary(j job, database string, seeded setuprun.DemoPlan, passkeyNeeded, keep bool) []string {
+func (s *Service) summary(j job, database string, seeded guardmodel.DemoPlan, passkeyNeeded, keep bool) []string {
 	lines := []string{fmt.Sprintf("This sets up Basalt in the database %s.", database)}
 	if keep {
 		lines = append(lines, fmt.Sprintf("The agent %s (role %s) is already in the database, and this engine holds its password: this finishes its setup, which stopped before the engine wrote its config. Its password stays.", j.req.Agent, j.role))
@@ -714,7 +713,7 @@ func (s *Service) summary(j job, database string, seeded setuprun.DemoPlan, pass
 }
 
 // notes are the lines that depend on what the database holds.
-func (s *Service) notes(seeded setuprun.DemoPlan, script setuprun.Script) []string {
+func (s *Service) notes(seeded guardmodel.DemoPlan, script guardmodel.Script) []string {
 	out := []string{}
 	if seeded.Exists() {
 		out = append(out, "sample schema "+s.be.DemoSchema()+" already exists; its rows are left as they are")

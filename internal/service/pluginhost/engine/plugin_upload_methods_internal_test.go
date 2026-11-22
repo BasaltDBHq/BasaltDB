@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -71,13 +71,13 @@ func TestUploadRefusedBeforeAnythingIsWritten(t *testing.T) {
 	}{
 		{"not the person's OS user", "other", agent.ReasonPluginAgentNotAllowed, func() error { return nil }},
 		{"refused by the tool", "bot", agent.ReasonPluginAgentOperated, func() error {
-			return &mcp.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
+			return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
 		}},
 	} {
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, tc.reason), 0o700))
 		sock := serveAgentSocket(t, filepath.Join(dir, tc.reason), p, tc.caller, tc.served)
 		_, err := shim.NewPluginUploader(sock)(context.Background(), uploadSource(t))
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		require.True(t, errors.As(err, &te), "%s: %v", tc.name, err)
 		require.Equal(t, "PLUGIN_REFUSED", te.Code, tc.name)
 		require.Equal(t, tc.reason, te.Reason, tc.name)

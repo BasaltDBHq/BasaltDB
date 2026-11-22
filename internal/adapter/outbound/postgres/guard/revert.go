@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -119,7 +119,7 @@ func PrepareRevert(ctx context.Context, q Querier, s guardmodel.RevertScope, int
 	}
 	var p guardmodel.PreparedRevert
 	// Plain SQL: a set-returning function in FROM over a built descriptor.
-	withLines := resultsize.From(ctx) == nil
+	withLines := budget.From(ctx) == nil
 	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, CASE WHEN $6 THEN r.lines END,
 			coalesce(cardinality(r.lines), 0)
 		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent, withLines)...).

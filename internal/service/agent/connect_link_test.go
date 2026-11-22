@@ -9,15 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 func kinds(steps []NextStep) []mcpcontract.StepKind { return catalogKinds(steps) }
 
-func requireConnectPending(t *testing.T, kind, code, reason string, pm string, ls []mcp.Link, steps []NextStep) {
+func requireConnectPending(t *testing.T, kind, code, reason string, pm string, ls []toolresult.Link, steps []NextStep) {
 	t.Helper()
 	url := links.Portal + "/connect#" + testSetupCode
 	c := catalogOf(t)
@@ -27,7 +27,7 @@ func requireConnectPending(t *testing.T, kind, code, reason string, pm string, l
 	require.Equal(t, url, steps[0].URL)
 	require.Equal(t, "OPEN_LINK", steps[0].Action)
 	require.Equal(t, "TELL_AGENT", steps[1].Action, "no laptop command after the link")
-	require.Equal(t, []mcp.Link{{Label: LabelConnect, URL: url}}, ls)
+	require.Equal(t, []toolresult.Link{{Label: LabelConnect, URL: url}}, ls)
 	require.Contains(t, pm, "\n\n"+url+"\n\n", "the link on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
 	require.Contains(t, pm, testFingerprint)

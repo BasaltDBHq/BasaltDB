@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 type fakePortal struct {
@@ -51,7 +51,7 @@ func TestAMismatchingPortalIsAWarningToSignNothingThere(t *testing.T) {
 	require.True(t, r.Ready, "a warning does not stop the tools")
 	require.Contains(t, p.Message, "2 DIFFERS, 1 MISSING")
 	require.Len(t, p.NextSteps, 1)
-	require.Equal(t, mcp.ActionAskPerson, p.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionAskPerson, p.NextSteps[0].Action)
 	require.Empty(t, p.NextSteps[0].Command)
 	require.Contains(t, p.PersonMessage, "Do not sign anything on it")
 }

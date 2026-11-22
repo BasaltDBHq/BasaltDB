@@ -14,15 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -39,7 +40,7 @@ func (p localPages) signRevertPage(id, secret string, person *passkeytest.Authen
 	require.Equal(p.t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &req))
 	b, err := req.Check()
 	require.NoError(p.t, err)
-	as, err := person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(p.t, err)
 	body, err := json.Marshal(revert.NewResponse(b.RevertID, as))
 	require.NoError(p.t, err)
@@ -94,7 +95,7 @@ func longLinkBinding(t *testing.T, link string) (uuid.UUID, string) {
 
 func signBinding(t *testing.T, signer *passkeytest.Authenticator, binding string) passkey.Assertion {
 	t.Helper()
-	as, err := signer.Sign(revert.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return as
 }
@@ -144,7 +145,7 @@ func requireSteps(t *testing.T, body map[string]any, want []mcpcontract.StepKind
 		require.NotEmpty(t, text)
 		require.LessOrEqual(t, len(text), maxStepText, text)
 		steps = append(steps, step)
-		if len(steps) == 1 && step["action"] == mcp.ActionSendRequest {
+		if len(steps) == 1 && step["action"] == toolresult.ActionSendRequest {
 			// Not in the catalog's sequences: first exactly when the result
 			// carries requestFile (CONTRACT.md, Next steps).
 			require.Contains(t, body, "requestFile", "%v", body)

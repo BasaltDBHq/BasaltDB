@@ -289,7 +289,7 @@ func TestRevealRacesTheRevertSignature(t *testing.T) {
 	}
 	made := func(prep action.PreparedRevert) signed {
 		as, key := e.proof(t, approval.KindRevert, prep.RevertID, "reverts", "revert_id")
-		sig, err := e.person.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+		sig, err := e.person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		return signed{proof: as, key: key, sig: sig}
 	}

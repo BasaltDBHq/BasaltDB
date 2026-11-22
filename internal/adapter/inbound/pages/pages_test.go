@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 
 	// The app sets the agent's host at start; the stubs' agent.ToolError
@@ -28,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -48,7 +48,7 @@ type stubAgent struct {
 
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
-func (a *stubAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }
+func (a *stubAgent) PageFailure(err error) *toolresult.ToolError { return agent.ToolError(err) }
 
 func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
 	if id != a.known {
@@ -274,7 +274,7 @@ func TestPagesRelayChecks(t *testing.T) {
 	a.relayed = a.relayed[:1]
 
 	// Errors keep the contract's code and map to a status.
-	a.err = &mcp.ToolError{Code: agent.CodeApprovalExpired, Message: "this approval expired"}
+	a.err = &toolresult.ToolError{Code: agent.CodeApprovalExpired, Message: "this approval expired"}
 	status, out = s.do(t, http.MethodGet, "/api/v1/approvals/"+id.String(), host, "", "", "", secret)
 	require.Equal(t, http.StatusGone, status)
 	require.JSONEq(t, `{"code":"APPROVAL_EXPIRED","message":"this approval expired"}`, out)
@@ -291,18 +291,18 @@ func TestPagesUnknownLinkCarriesThePersonsMessageAndSteps(t *testing.T) {
 	status, out := s.do(t, http.MethodGet, "/api/v1/approvals/"+uuid.Must(uuid.NewV7()).String(), host, "", "", "")
 	require.Equal(t, http.StatusNotFound, status)
 	var body struct {
-		Code          string         `json:"code"`
-		Reason        string         `json:"reason"`
-		PersonMessage string         `json:"personMessage"`
-		NextSteps     []mcp.NextStep `json:"nextSteps"`
+		Code          string                `json:"code"`
+		Reason        string                `json:"reason"`
+		PersonMessage string                `json:"personMessage"`
+		NextSteps     []toolresult.NextStep `json:"nextSteps"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &body))
 	require.Equal(t, "NOT_FOUND", body.Code)
 	require.Equal(t, "LINK", body.Reason)
 	require.Contains(t, body.PersonMessage, "Ask the agent for the link again")
 	require.Len(t, body.NextSteps, 1)
-	require.Equal(t, mcp.ActorPerson, body.NextSteps[0].Actor)
-	require.Equal(t, mcp.ActionTellAgent, body.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActorPerson, body.NextSteps[0].Actor)
+	require.Equal(t, toolresult.ActionTellAgent, body.NextSteps[0].Action)
 }
 
 // TestRedirectsMatchRoutes: the portal's web/_redirects rewrites exactly the

@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
@@ -118,16 +119,16 @@ func uploadMethods(p *Requests, caller string, served func() error) map[string]m
 	if p == nil {
 		return nil
 	}
-	fail := func(err error) *mcp.ToolError {
-		var te *mcp.ToolError
+	fail := func(err error) *toolresult.ToolError {
+		var te *toolresult.ToolError
 		var r *agent.PluginRefusedError
 		switch {
 		case errors.As(err, &te):
 			return te
 		case errors.As(err, &r):
-			return &mcp.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
+			return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
 		}
-		return &mcp.ToolError{Code: agent.CodeInternal, Message: err.Error()}
+		return &toolresult.ToolError{Code: agent.CodeInternal, Message: err.Error()}
 	}
 	return map[string]mcp.MethodFunc{
 		mcp.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {

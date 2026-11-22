@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -257,7 +258,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 			link+"\n\nExpires "),
 		"without local pages and within the budget the message carries the long link: %v", ap["personMessage"])
 	mcptest.Require(t, str(t, ap["personMessage"]), mcptest.LinksOf(t, ap))
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
 	require.Equal(t, "open", leadStatus(t, d, 21), "a held write changes nothing")
 	require.Len(t, sent.sent, 1)
 	require.Equal(t, link, sent.sent[0].ApprovalURL)

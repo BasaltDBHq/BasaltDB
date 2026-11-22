@@ -5,19 +5,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 const testUpdateLink = "http://localhost:8787/setup/#1.eyJqb2IiOiJVUERBVEUifQ"
 
-func actions(t *testing.T, b *Steps) []mcp.NextStep {
+func actions(t *testing.T, b *Steps) []toolresult.NextStep {
 	t.Helper()
 	steps, err := b.Build()
 	require.NoError(t, err)
 	return steps
 }
 
-func hasStep(steps []mcp.NextStep, actor, action, value string) bool {
+func hasStep(steps []toolresult.NextStep, actor, action, value string) bool {
 	for _, s := range steps {
 		if s.Actor == actor && s.Action == action && (value == "" || s.URL == value || s.Command == value) {
 			return true
@@ -35,14 +35,14 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	b := NewSteps()
 	person := fixSteps(b, with, reasonGuardOutdated)
 	steps := actions(t, b)
-	require.True(t, hasStep(steps, mcp.ActorPerson, mcp.ActionOpenLink, testUpdateLink), "%+v", steps)
-	require.False(t, hasStep(steps, mcp.ActorAgent, mcp.ActionRunCommand, ""), "no basalt init when the link is there")
+	require.True(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, testUpdateLink), "%+v", steps)
+	require.False(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, ""), "no basalt init when the link is there")
 	require.Contains(t, person, "Open the link the agent gives you")
 
 	b = NewSteps()
 	upgradeSteps(b, with)
 	steps = actions(t, b)
-	require.True(t, hasStep(steps, mcp.ActorPerson, mcp.ActionOpenLink, testUpdateLink), "%+v", steps)
+	require.True(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, testUpdateLink), "%+v", steps)
 
 	// Without the link, and for any other fix, the agent runs basalt init.
 	for _, tc := range []struct {
@@ -52,12 +52,12 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 		b = NewSteps()
 		fixSteps(b, tc.cmds, tc.reason)
 		steps = actions(t, b)
-		require.True(t, hasStep(steps, mcp.ActorAgent, mcp.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", tc.reason, steps)
-		require.False(t, hasStep(steps, mcp.ActorPerson, mcp.ActionOpenLink, ""), tc.reason)
+		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", tc.reason, steps)
+		require.False(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, ""), tc.reason)
 	}
 	b = NewSteps()
 	upgradeSteps(b, cmds)
-	require.True(t, hasStep(actions(t, b), mcp.ActorAgent, mcp.ActionRunCommand, "basalt init --agent bot"))
+	require.True(t, hasStep(actions(t, b), toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"))
 }
 
 // On an engine the setup page removed, every fix finishes the removal: the
@@ -77,9 +77,9 @@ func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
 		b = NewSteps()
 		person = fixSteps(b, removed, reason)
 		steps := actions(t, b)
-		require.True(t, hasStep(steps, mcp.ActorAgent, mcp.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", reason, steps)
-		require.True(t, hasStep(steps, mcp.ActorAgent, mcp.ActionStop, ""), reason)
-		require.False(t, hasStep(steps, mcp.ActorPerson, mcp.ActionOpenLink, ""), "no update link on a removed engine")
+		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", reason, steps)
+		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionStop, ""), reason)
+		require.False(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, ""), "no update link on a removed engine")
 		require.Contains(t, person, "Last step: the agent runs basalt init once")
 		gone = false
 	}

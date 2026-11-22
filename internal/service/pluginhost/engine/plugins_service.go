@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
@@ -112,7 +113,7 @@ var errNoEngineUser = errors.New("plugin: the engine's OS user cannot be looked 
 // or lost its isolation is never connected to; on Linux no drop-in or unit
 // file systemd reads first may change it; its OS user must exist, be
 // neither root nor the engine's user and not be in the engine's group.
-func (ep *Plugins) serviceRefusal(p config.Plugin, v pluginhost.Verified) string {
+func (ep *Plugins) serviceRefusal(p config.Plugin, v pluginmodel.Verified) string {
 	t, why := ep.unitTarget(p, v)
 	if why == "" {
 		ep.targets[p.Key()] = t
@@ -126,7 +127,7 @@ func (ep *Plugins) serviceRefusal(p config.Plugin, v pluginhost.Verified) string
 // changed while the engine runs is caught when the plugin is next reached:
 // a changed unit takes effect only when its process starts again, which
 // drops the engine's connection.
-func (ep *Plugins) unitTarget(p config.Plugin, v pluginhost.Verified) (serviceTarget, string) {
+func (ep *Plugins) unitTarget(p config.Plugin, v pluginmodel.Verified) (serviceTarget, string) {
 	if v.Manifest.Endpoint.Local == nil {
 		// A remote entry has no unit.
 		return serviceTarget{}, ""
@@ -184,7 +185,7 @@ func dialFailure(dialer Dialer, err error) string {
 // recheckUnit runs unitTarget again before a connection to local entry k,
 // verified as v, that start reached as t. When the unit or its OS user
 // changed since, the entry is refused (status shows why) and not reached.
-func (ep *Plugins) recheckUnit(k pluginhost.EntryKey, v pluginhost.Verified, t serviceTarget) error {
+func (ep *Plugins) recheckUnit(k pluginmodel.EntryKey, v pluginmodel.Verified, t serviceTarget) error {
 	now, why := ep.unitTarget(ep.configuredEntry(k), v)
 	if why == "" && (now.uid != t.uid || now.gid != t.gid) {
 		why = whyUnitUserMoved
@@ -214,7 +215,7 @@ func (ep *Plugins) dialer() Dialer { return ep.o.Dialer }
 // hold: its own OS user (whose group reaches their sockets) and the paths
 // they hide, from cfg at configPath.
 func (ep *Plugins) initServiceUnits(cfg config.Config, configPath string) {
-	ep.targets = map[pluginhost.EntryKey]serviceTarget{}
+	ep.targets = map[pluginmodel.EntryKey]serviceTarget{}
 	for _, p := range cfg.Plugins {
 		ep.allKeys = append(ep.allKeys, p.Key())
 	}

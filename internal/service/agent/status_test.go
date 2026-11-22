@@ -34,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // This file is the contract test of the status tool (CONTRACT.md, MCP tools,
@@ -362,7 +363,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	requirePersonMessage(t, p.PersonMessage, nil)
 	for i, st := range p.NextSteps {
 		where := fmt.Sprintf("%s step %d", code, i+1)
-		if code == ProblemPluginAwaitingApproval && st.Action == mcp.ActionOpenLink {
+		if code == ProblemPluginAwaitingApproval && st.Action == toolresult.ActionOpenLink {
 			// No url: the link the agent handed over when the approval was
 			// opened, which the engine never had (CONTRACT.md, Next steps
 			// per code).
@@ -636,7 +637,7 @@ func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
 	require.False(t, isError, "%v", body)
 	warnings := body["warnings"].([]any)
 	require.Len(t, warnings, 1)
-	require.Equal(t, mcp.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
+	require.Equal(t, toolresult.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
 }
 
 // errNoRole is the error a pending INSTALL code's agent gets: its role does
@@ -1041,7 +1042,7 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	require.Contains(t, noKey.Message, "no passkey is registered on "+links.Portal)
 	require.NotEmpty(t, noKey.NextSteps)
 	for _, st := range noKey.NextSteps {
-		require.NotEqual(t, mcp.ActorPerson+" "+mcp.ActionRunCommand, st.Actor+" "+st.Action, "the person never runs a command")
+		require.NotEqual(t, toolresult.ActorPerson+" "+toolresult.ActionRunCommand, st.Actor+" "+st.Action, "the person never runs a command")
 	}
 
 	both := report(t, links.Portal, local, links.Portal)
@@ -1062,9 +1063,9 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	onlyPortal := pagesStatus(t, "", local, update, links.Portal)
 	require.False(t, onlyPortal.Ready)
 	steps := findProblem(t, onlyPortal, problemNoPasskey).NextSteps
-	require.Equal(t, mcp.ActionOpenLink, steps[0].Action)
+	require.Equal(t, toolresult.ActionOpenLink, steps[0].Action)
 	require.Equal(t, update, steps[0].URL)
-	require.Equal(t, mcp.ActionEndTurn, steps[1].Action)
+	require.Equal(t, toolresult.ActionEndTurn, steps[1].Action)
 }
 
 // pagesStatus is the status of an agent whose links open at base, with
@@ -1109,7 +1110,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 		}
 	}
 	_, err = query.Call(context.Background(), json.RawMessage(`{}`))
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	require.Contains(t, te.Message, why)
 

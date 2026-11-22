@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -228,7 +229,7 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 	if name == "" {
 		name = app.DemoAgent
 	}
-	if !localsetup.ValidAgentName(name) {
+	if !guardmodel.ValidAgentName(name) {
 		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", errUsage, name)
 	}
 	return localsetup.Job{Job: localsetup.JobInstall, Agent: name, Demo: *demoFlag}, nil

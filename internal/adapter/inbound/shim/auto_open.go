@@ -11,6 +11,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // openTimeout bounds one run of the browser opener: xdg-open may hang
@@ -143,9 +144,9 @@ func resultLinks(line []byte) []string {
 
 // linkedBody is the part of a result body that may carry links lists.
 type linkedBody struct {
-	Links    []mcp.Link `json:"links"`
+	Links    []toolresult.Link `json:"links"`
 	Approval *struct {
-		Links []mcp.Link `json:"links"`
+		Links []toolresult.Link `json:"links"`
 	} `json:"approval"`
 }
 
@@ -157,7 +158,7 @@ func (b linkedBody) urls(out []string) []string {
 	return out
 }
 
-func linkURLs(out []string, ls []mcp.Link) []string {
+func linkURLs(out []string, ls []toolresult.Link) []string {
 	for _, l := range ls {
 		out = append(out, l.URL)
 	}

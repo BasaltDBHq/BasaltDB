@@ -14,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
@@ -29,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -117,7 +117,7 @@ func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*agent.Service, m
 func pluginAdmit(svc *agent.Service) func(context.Context) error {
 	return func(ctx context.Context) error {
 		err := svc.Admit(ctx)
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		var se *agent.SetupError
 		if errors.As(err, &te) || errors.As(err, &se) {
 			return fmt.Errorf("%w: %w", ErrNotAdmitted, err)

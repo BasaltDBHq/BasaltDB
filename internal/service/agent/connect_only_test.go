@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
@@ -112,8 +113,8 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 }
 
 func confirmResultCases() map[string]resultCase {
-	build := func(yes bool) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
-		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+	build := func(yes bool) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			t.Helper()
 			r, err := confirmResult(handoff.Answer{Confirmed: yes, Database: caseDatabase}, s.Commands)
 			require.NoError(t, err)
@@ -146,7 +147,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	require.False(t, r.Ready)
 	p := findProblem(t, r, problemSetupNotRun)
 	require.Equal(t, connectOnlyWaiting, p.Message)
-	require.Equal(t, mcp.ActionOpenLink, p.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.True(t, strings.HasPrefix(p.NextSteps[0].URL, "https://portal.basaltvault.app/connect#basalt-setup.1."))
 	require.NotContains(t, p.PersonMessage, "basalt init --setup-code", "no laptop command for a connect-only code")
 	requireStatusSchema(t, statusToolContract(t), r)
@@ -159,7 +160,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 		require.True(t, isError, tool.Name)
 		require.Equal(t, CodeUnavailable, body["code"], tool.Name)
 		require.Equal(t, reasonSetupPending, body["reason"], tool.Name)
-		require.Equal(t, []mcpcontract.StepKind{{Actor: mcp.ActorAgent, Action: mcp.ActionCallTool}}, steps(t, body), tool.Name)
+		require.Equal(t, []mcpcontract.StepKind{{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool}}, steps(t, body), tool.Name)
 	}
 	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{
 		argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes,
@@ -182,7 +183,7 @@ func TestConnectOnlyWaitingAfterExpiryOmitsTheCode(t *testing.T) {
 	require.Empty(t, r.Setup.Fingerprint)
 	p := findProblem(t, r, problemSetupNotRun)
 	require.Equal(t, connectOnlyExpiredHold, p.Message)
-	require.NotEqual(t, mcp.ActionOpenLink, p.NextSteps[0].Action)
+	require.NotEqual(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.NotContains(t, p.PersonMessage, connectOnlyFixture)
 	require.NotContains(t, p.PersonMessage, caseFingerprint)
 	require.NotContains(t, p.Message, connectOnlyFixture)

@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
 // The fixes of the Update check (CONTRACT.md, The Update check): LABELS,
@@ -280,16 +279,16 @@ func notActive() *RefusalError {
 
 // removedPasskey is the active passkey the request names, with the
 // passkeys of this page's origin that stay.
-func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (setuprun.RegisteredPasskey, int, error) {
+func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (guardmodel.RegisteredPasskey, int, error) {
 	id, err := base64.RawURLEncoding.DecodeString(j.req.CredentialID)
 	if err != nil || len(id) == 0 || len(id) > maxCredentialIDBytes {
-		return setuprun.RegisteredPasskey{}, 0, notActive()
+		return guardmodel.RegisteredPasskey{}, 0, notActive()
 	}
 	keys, err := s.be.ActivePasskeys(ctx, tx)
 	if err != nil {
-		return setuprun.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
+		return guardmodel.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
 	}
-	var found *setuprun.RegisteredPasskey
+	var found *guardmodel.RegisteredPasskey
 	others := 0
 	for i, k := range keys {
 		switch {
@@ -300,7 +299,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (se
 		}
 	}
 	if found == nil {
-		return setuprun.RegisteredPasskey{}, 0, notActive()
+		return guardmodel.RegisteredPasskey{}, 0, notActive()
 	}
 	return *found, others, nil
 }

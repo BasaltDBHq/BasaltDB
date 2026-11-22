@@ -17,10 +17,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -83,7 +83,7 @@ func TestStatusTrust(t *testing.T) {
 	require.Equal(t, "WARNING", w.Severity)
 	require.Contains(t, w.Message, trustprofile.Fingerprint(soon))
 	require.Contains(t, w.Message, soon.NotAfter.Format(time.DateOnly))
-	require.Equal(t, mcp.ActionAskPerson, w.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionAskPerson, w.NextSteps[0].Action)
 	require.Equal(t, "basalt init --agent bot", w.NextSteps[1].Command)
 	require.Contains(t, w.NextSteps[1].Text, "Only once", "the page adds nothing before the database presents the new certificate")
 	require.NotContains(t, w.PersonMessage, "add the provider's new root")
@@ -135,7 +135,7 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	p := findProblem(t, r, problemCertificateNotVerified)
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, host)
-	require.Equal(t, NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
+	require.Equal(t, NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	require.Contains(t, p.PersonMessage, "trust it there")
 	require.NotContains(t, p.PersonMessage, "sslrootcert", "the setup page refuses sslrootcert, so no message suggests it")

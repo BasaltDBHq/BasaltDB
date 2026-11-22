@@ -32,6 +32,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -411,7 +412,7 @@ func TestResetGivesTheRotatedLinkLinkReset(t *testing.T) {
 	require.Equal(t, "The agent reset this revert to its own work. Ask it for the new link, and widen again if you "+
 		"still want to include other agents.", perr.PersonMessage)
 	require.Len(t, perr.NextSteps, 1)
-	require.Equal(t, mcp.ActorPerson, perr.NextSteps[0].Actor)
+	require.Equal(t, toolresult.ActorPerson, perr.NextSteps[0].Actor)
 	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, personSecret,
 		scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "LINK_RESET", perr.Reason)

@@ -80,7 +80,7 @@ type UnitHost interface {
 	// Plan is the unit local entry p needs, verified as v; local is false
 	// for a remote entry. It fails when the unit cannot be rendered or
 	// another of allKeys would share the entry's OS user.
-	Plan(p config.Plugin, v pluginhost.Verified, allKeys []pluginhost.EntryKey) (plan pluginmodel.UnitPlan, local bool, err error)
+	Plan(p config.Plugin, v pluginmodel.Verified, allKeys []pluginmodel.EntryKey) (plan pluginmodel.UnitPlan, local bool, err error)
 	// UserInGroup says that the plugin's OS user is in the engine's group
 	// and how to take it out.
 	UserInGroup(pluginUser string) string
@@ -89,9 +89,9 @@ type UnitHost interface {
 // Dialer reaches an entry's plugin: the transports are outbound adapters.
 type Dialer interface {
 	// Entry starts or connects to the entry (same-user mode, remote).
-	Entry(ctx context.Context, k pluginhost.EntryKey, v pluginhost.Verified, socketBase, credentialFile string, stderr io.Writer) (pluginhost.Transport, error)
+	Entry(ctx context.Context, k pluginmodel.EntryKey, v pluginmodel.Verified, socketBase, credentialFile string, stderr io.Writer) (pluginmodel.Transport, error)
 	// Service connects to the entry's unit on its socket (service mode).
-	Service(ctx context.Context, k pluginhost.EntryKey, v pluginhost.Verified, socket string, uid, gid uint32, recheck func() error) (pluginhost.Transport, error)
+	Service(ctx context.Context, k pluginmodel.EntryKey, v pluginmodel.Verified, socket string, uid, gid uint32, recheck func() error) (pluginmodel.Transport, error)
 	// NoSocket and SocketDir say why Service failed: nothing listens on the
 	// socket, or its directory is not the unit's.
 	NoSocket(err error) bool

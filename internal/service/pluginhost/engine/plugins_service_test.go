@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -35,9 +36,9 @@ func svcConfig() config.Config {
 	}
 }
 
-func svcVerified() pluginhost.Verified {
-	return pluginhost.Verified{Dir: svcCopy, Manifest: pluginhost.Manifest{
-		Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: dial.TransportUnix, Command: "bin/acme-ner"}},
+func svcVerified() pluginmodel.Verified {
+	return pluginmodel.Verified{Dir: svcCopy, Manifest: pluginmodel.Manifest{
+		Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: dial.TransportUnix, Command: "bin/acme-ner"}},
 	}}
 }
 
@@ -85,7 +86,7 @@ func (f *fakeUnits) source() *UnitSource {
 
 // installed is a fake machine where the entry's unit is the one install
 // writes, run by uid.
-func installed(t *testing.T, cfg config.Config, v pluginhost.Verified, uid int) *fakeUnits {
+func installed(t *testing.T, cfg config.Config, v pluginmodel.Verified, uid int) *fakeUnits {
 	t.Helper()
 	h := osservice.HostFor(cfg, "linux", "/etc/basalt/engine.json", "basalt")
 	e, ok := osservice.EntryFor(cfg.Plugins[0], v)
@@ -99,9 +100,9 @@ func installed(t *testing.T, cfg config.Config, v pluginhost.Verified, uid int) 
 
 func serviceEngine(cfg config.Config, f *fakeUnits, euid int) *Plugins {
 	ep := &Plugins{
-		host: pluginhost.NewHost(), log: slog.New(slog.DiscardHandler), mode: pluginhost.ModeService,
+		host: pluginhost.NewHost(), log: slog.New(slog.DiscardHandler), mode: pluginmodel.ModeService,
 		o:     Options{Ports: testPorts, Dialer: dial.Dialer{}, goos: "linux", euid: euid, units: f.source()},
-		first: map[pluginhost.EntryKey]pluginhost.Verified{}, notTrusted: map[pluginhost.EntryKey]error{}, refused: map[pluginhost.EntryKey]string{},
+		first: map[pluginmodel.EntryKey]pluginmodel.Verified{}, notTrusted: map[pluginmodel.EntryKey]error{}, refused: map[pluginmodel.EntryKey]string{},
 		configured: cfg.Plugins,
 	}
 	ep.initServiceUnits(cfg, "/etc/basalt/engine.json")
@@ -158,7 +159,7 @@ func TestServiceEngineReachesOnlyAMatchingUnit(t *testing.T) {
 	require.Equal(t, whyLocalAsRoot, ep.localRefusal(p, v))
 
 	// A remote entry has no unit and is not refused here.
-	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://x.example"}}}}
+	remote := pluginmodel.Verified{Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://x.example"}}}}
 	ep = serviceEngine(cfg, &fakeUnits{}, 995)
 	require.Empty(t, ep.localRefusal(p, remote))
 	require.Empty(t, ep.targets)
@@ -177,7 +178,7 @@ func TestServiceEngineRefusesWhenAnAgentIsInItsGroup(t *testing.T) {
 	e, err := p.Entry(v.Manifest)
 	require.NoError(t, err)
 	require.Empty(t, ep.localRefusal(p, v))
-	ep.entries, ep.first[p.Key()] = []pluginhost.Entry{e}, v
+	ep.entries, ep.first[p.Key()] = []pluginmodel.Entry{e}, v
 	ep.checkServiceAgents(cfg)
 	require.Empty(t, ep.entries, "no local plugin starts")
 	require.Empty(t, ep.targets)

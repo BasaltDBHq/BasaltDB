@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -111,7 +112,7 @@ func TestPrepareBatchedPlan(t *testing.T) {
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
 	require.Len(t, all, bulkRows)
-	require.Equal(t, b.RowsHash, revert.RowsHash(all))
+	require.Equal(t, b.RowsHash, approval.RowsHash(all))
 	sample, err := revert.Sample(all)
 	require.NoError(t, err)
 	require.Equal(t, sample, prep.Lines)

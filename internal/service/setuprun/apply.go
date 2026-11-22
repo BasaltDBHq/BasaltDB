@@ -8,13 +8,15 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // ApplyInitTx runs the script in the caller's transaction and refuses to
 // commit while any agent-writable table or cascade target is left
 // unguarded. The after statements run last, once that check passed (a
 // setup code's record_setup).
-func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script Script, after ...Statement) error {
+func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script guardmodel.Script, after ...guardmodel.Statement) error {
 	if err := b.ApplyScript(ctx, tx, script); err != nil {
 		return err
 	}

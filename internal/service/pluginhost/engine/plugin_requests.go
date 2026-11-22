@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Requests serve the agents' request_plugin calls with the
@@ -76,7 +76,7 @@ func (p *Requests) OpenPlugin(ctx context.Context, caller string, o agent.Plugin
 	if err != nil {
 		return agent.PluginOpened{}, err
 	}
-	key := pluginhost.EntryKey{Name: o.Name, Instance: o.Instance}
+	key := pluginmodel.EntryKey{Name: o.Name, Instance: o.Instance}
 	agents := o.Agents
 	if agents == nil {
 		agents = k.agentsOf(key, caller)
@@ -207,7 +207,7 @@ func servedOn(l person.PluginListed, id uuid.UUID, agents []string) bool {
 
 // agentsOf is the default agents of a request: the entry's agents when the
 // engine keeps it, else the caller alone, never every agent.
-func (s *KeptPlugins) agentsOf(k pluginhost.EntryKey, caller string) []string {
+func (s *KeptPlugins) agentsOf(k pluginmodel.EntryKey, caller string) []string {
 	entries, err := s.store.Entries(s.cfg)
 	if err == nil {
 		if i := keptIndex(entries, k); i >= 0 && len(entries[i].Agents) > 0 {

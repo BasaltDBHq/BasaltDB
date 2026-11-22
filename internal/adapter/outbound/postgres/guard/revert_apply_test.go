@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -24,7 +25,7 @@ func prepareSigned(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticato
 	t.Helper()
 	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guardmodel.RevertScope{Kind: kind, ID: id}, "Undo a bad run")
 	require.NoError(t, err)
-	as, err := p.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return prep, as
 }
@@ -213,13 +214,13 @@ func TestApplyRefusals(t *testing.T) {
 		forger, err := passkeytest.New(passkey.Production)
 		require.NoError(t, err)
 		forger.ID = p.ID
-		forged, err := forger.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+		forged, err := forger.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, forged)
 		requireRevertInvalid(t, err, "bad passkey signature")
 	})
 	t.Run("a signature over another binding", func(t *testing.T) {
-		other, err := p.Sign(revert.Challenge(prep.BindingText+" "), passkeytest.FlagsUPUV, nil)
+		other, err := p.Sign(approval.Challenge(prep.BindingText+" "), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, other)
 		requireRevertInvalid(t, err, "client data does not match")

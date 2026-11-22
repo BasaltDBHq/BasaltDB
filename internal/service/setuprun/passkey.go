@@ -58,19 +58,3 @@ func PasskeyFailed(p setupcode.Payload, err error) error {
 	return &RefusalError{Code: CodePasskeyMissing, Err: err, Message: fmt.Sprintf("the setup ran but no passkey was registered: %s. Ask %s for a new code; running it registers the passkey",
 		err.Error(), AgentWord(p))}
 }
-
-// LocalRelying is the relying party of the setup page served at origin on
-// this computer.
-func LocalRelying(origin string) (passkey.Relying, error) { return passkey.Local(origin) }
-
-// RegistrationRequestFor rebuilds the registration request the setup page
-// was handed, from the fields it sent back.
-func RegistrationRequestFor(challenge, userID []byte, userName, displayName string) (passkey.RegistrationRequest, error) {
-	return passkey.RegistrationRequestFor(challenge, userID, userName, displayName)
-}
-
-// VerifyRegistration checks the browser's registration response against req
-// and returns the credential to record.
-func VerifyRegistration(req passkey.RegistrationRequest, resp passkey.RegistrationResponse, rp passkey.Relying) (passkey.Credential, error) {
-	return passkey.VerifyRegistration(req, resp, rp)
-}

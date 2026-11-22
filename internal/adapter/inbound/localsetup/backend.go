@@ -38,7 +38,7 @@ type Backend interface {
 
 	// The guard's install.
 	AgentStatus(ctx context.Context, q setuprun.Querier, migs []guardmodel.Migration) (guardmodel.Status, error)
-	RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (setuprun.Script, error)
+	RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (guardmodel.Script, error)
 	// UnusableInstall reports whether err is CheckUsable's refusal of an
 	// older or partial install.
 	NewPassword() string
@@ -57,7 +57,7 @@ type Backend interface {
 	WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error)
 
 	// Passkeys.
-	ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.RegisteredPasskey, error)
+	ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]guardmodel.RegisteredPasskey, error)
 	RegisterPasskey(ctx context.Context, q setuprun.Querier, cred passkey.Credential, label string) error
 	RevokePasskey(ctx context.Context, q setuprun.Querier, credentialID []byte, force bool) (int, error)
 	// ListPasskeys lists the active passkeys the connection's role may read.
@@ -65,6 +65,6 @@ type Backend interface {
 
 	// The sample schema.
 	DemoTables() []string
-	SeedDemo(ctx context.Context, tx pgx.Tx) (setuprun.DemoPlan, error)
+	SeedDemo(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, error)
 	DemoCounts(ctx context.Context, q setuprun.Querier) (leads, notes int, err error)
 }

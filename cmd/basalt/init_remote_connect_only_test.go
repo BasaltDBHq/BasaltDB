@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -101,7 +101,7 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.Contains(t, pm, "connection string")
 	require.NotContains(t, pm, "--setup-code")
 	require.NoError(t, agent.CheckPersonMessage(pm), pm)
-	mcptest.Require(t, pm, []mcp.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}})
+	mcptest.Require(t, pm, []toolresult.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}})
 
 	// Text: the link and the fingerprint, no laptop command.
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")

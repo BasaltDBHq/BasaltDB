@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 )
 
@@ -194,7 +194,7 @@ func callDescribe(t *testing.T, s *Service, args map[string]any) (string, bool) 
 	require.NoError(t, err)
 	out, err := describe.Call(context.Background(), raw)
 	if err != nil {
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		require.ErrorAs(t, err, &te)
 		body, mErr := json.Marshal(te)
 		require.NoError(t, mErr)

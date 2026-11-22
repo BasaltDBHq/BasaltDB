@@ -181,7 +181,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/adapter/inbound/in/i.go":              "package in\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
 		"internal/adapter/outbound/other/o.go":          "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
 		"internal/adapter/outbound/postgres/store/s.go": "package store\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "WithRowVersions") + use("", "Other"),
-		"web/w.go":                   "package web\n\n" + imp(m+"internal/core/sqlguard", m+"internal/service/svc"),
+		"web/w.go":                   "package web\n\n" + imp(m+"internal/service/svc") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
 		"internal/service/svc2/s.go": "package svc2\n\n" + imp(m+"web"),
 		"internal/app/a.go":          "package app\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"cmd/tool/c.go":              "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
@@ -207,7 +207,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/adapter/inbound/in":     {"i.go calls sqlguard.Check"},
 		"internal/adapter/inbound/in2":    {"imports internal/adapter/outbound/vault/vaulttest"},
 		"internal/adapter/outbound/other": {"o.go calls sqlguard.Check"},
-		"web":                             {"imports internal/service/svc"},
+		"web":                             {"imports internal/service/svc", "w.go calls sqlguard.Check"},
 		"cmd/tool":                        {"c.go calls sqlguard.Check"},
 		"pkg/facade":                      {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
 		"pkg/lib2":                        {"imports api/x"},
@@ -241,7 +241,8 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		"internal/core/badrow/a.go":  "package badrow\n",
 		"internal/core/extra/a.go":   "package extra\n",
 		"internal/core/chan/a.go":    "package channel\n",
-		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand` | - |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
+		"internal/core/dec/a.go":     "package dec\n\nfunc Real() {}\n",
+		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand` | - |\n| `dec` | x | decision | 1 | - | `Real`, `Missing` |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
 	})
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
 	if err != nil {
@@ -259,6 +260,7 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		`register row badrow: admitted-by "4"`,
 		`register row extra: extra import "crypto/rand" is not allowed`,
 		`register row chan: extra import "os" is not allowed`,
+		`register row dec: codec function "Missing" is not an exported function`,
 		`register row chan: codec function "Nope" is not an exported function`,
 		`register row badrow: codec functions are listed only for a decision package`,
 	} {

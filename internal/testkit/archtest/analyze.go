@@ -312,7 +312,7 @@ func analyze(root string, reg *register) (violations, error) {
 				target := strings.TrimPrefix(ip, modulePath+"/")
 				checkLayer(v, rel, layer, target)
 			}
-			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg {
+			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg || layer == lWeb {
 				checkDecisionCalls(v, rel, f, decisions)
 			}
 		}

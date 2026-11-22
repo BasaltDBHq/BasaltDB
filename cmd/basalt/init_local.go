@@ -79,7 +79,9 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 	agent := fs.String("agent", "", "the agent's name (default: "+demo.Agent+" with --demo)")
 	demoFlag := fs.Bool("demo", false, "set up the sample database")
 	fs.Usage = func() {
-		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--demo]\n\nInstalls the engine service when needed, then prints and opens the setup link. Finish the setup on that page.")
+		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--demo]\n\n"+
+			"Installs the engine service when needed, then prints and opens the setup link. Finish the setup on that page:\n"+
+			"the admin connection string is typed there, never here. On a bot's machine, run basalt init --remote instead.\n\n"+manyAgentsHelp)
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

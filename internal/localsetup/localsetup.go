@@ -277,6 +277,11 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 	if err != nil {
 		return false
 	}
+	// Only a string that makes the driver read no file: the folder is the
+	// engine's own, but a credential is never trusted to be well-formed.
+	if pgdial.CheckForeignDSN(dsn) != nil {
+		return false
+	}
 	conn, err := s.opts.Dial(ctx, dsn)
 	if err != nil {
 		return false

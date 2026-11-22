@@ -106,6 +106,10 @@ message SetupSummary {
   // The schemas of agent.allTables (public only); empty when the code
   // names its tables in write and read.
   repeated string all_tables_schemas = 16;
+  // The code's trustPin: the SHA-256 of the certificate the bot's engine
+  // has pinned for the target's host, 64 lowercase hex digits; empty when
+  // it has none. A hint for the trust step, never trust by itself.
+  string trust_pin = 17;
 }
 
 // The database the setup code is for.

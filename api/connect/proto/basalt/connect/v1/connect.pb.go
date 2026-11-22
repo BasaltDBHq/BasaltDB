@@ -168,8 +168,12 @@ type SetupSummary struct {
 	// The schemas of agent.allTables (public only); empty when the code
 	// names its tables in write and read.
 	AllTablesSchemas []string `protobuf:"bytes,16,rep,name=all_tables_schemas,json=allTablesSchemas,proto3" json:"all_tables_schemas,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The code's trustPin: the SHA-256 of the certificate the bot's engine
+	// has pinned for the target's host, 64 lowercase hex digits; empty when
+	// it has none. A hint for the trust step, never trust by itself.
+	TrustPin      string `protobuf:"bytes,17,opt,name=trust_pin,json=trustPin,proto3" json:"trust_pin,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetupSummary) Reset() {
@@ -312,6 +316,13 @@ func (x *SetupSummary) GetAllTablesSchemas() []string {
 		return x.AllTablesSchemas
 	}
 	return nil
+}
+
+func (x *SetupSummary) GetTrustPin() string {
+	if x != nil {
+		return x.TrustPin
+	}
+	return ""
 }
 
 // The database the setup code is for.
@@ -2699,7 +2710,7 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x04code\x18\x01 \x01(\tR\x04code\"\x95\x01\n" +
 	"\x15DescribeSetupResponse\x129\n" +
 	"\asummary\x18\x01 \x01(\v2\x1f.basalt.connect.v1.SetupSummaryR\asummary\x12A\n" +
-	"\tchallenge\x18\x02 \x01(\v2#.basalt.connect.v1.PasskeyChallengeR\tchallenge\"\xfc\x03\n" +
+	"\tchallenge\x18\x02 \x01(\v2#.basalt.connect.v1.PasskeyChallengeR\tchallenge\"\x99\x04\n" +
 	"\fSetupSummary\x12\x19\n" +
 	"\bsetup_id\x18\x01 \x01(\tR\asetupId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -2719,7 +2730,8 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\vfingerprint\x18\r \x01(\tR\vfingerprint\x12-\n" +
 	"\x12engine_fingerprint\x18\x0e \x01(\tR\x11engineFingerprint\x12\x14\n" +
 	"\x05lines\x18\x0f \x03(\tR\x05lines\x12,\n" +
-	"\x12all_tables_schemas\x18\x10 \x03(\tR\x10allTablesSchemas\"o\n" +
+	"\x12all_tables_schemas\x18\x10 \x03(\tR\x10allTablesSchemas\x12\x1b\n" +
+	"\ttrust_pin\x18\x11 \x01(\tR\btrustPin\"o\n" +
 	"\x06Target\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12\x1a\n" +

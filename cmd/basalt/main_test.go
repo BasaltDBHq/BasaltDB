@@ -30,6 +30,10 @@ func TestRun(t *testing.T) {
 		{args: []string{"--version"}, code: exitOK, stdout: "basalt " + buildinfo.Version + "\n"},
 		{args: nil, code: exitUsage, stderrPart: "Usage: basalt"},
 		{args: []string{"serve"}, code: exitUsage, stderrPart: `unknown command "serve"`},
+		// Removed: the setup page's Update check does their jobs.
+		{args: []string{"passkey", "list"}, code: exitUsage, stderrPart: `unknown command "passkey"`},
+		{args: []string{"trust", "pin", "--host", "h"}, code: exitUsage, stderrPart: `unknown command "trust"`},
+		{args: []string{"classify"}, code: exitUsage, stderrPart: `unknown command "classify"`},
 		{args: []string{"mcp"}, code: exitUsage, stderrPart: "-agent"},
 		{args: []string{"mcp", "--agent", "Bad/Name"}, code: exitUsage},
 		// No engine: the shim answers itself; an empty session ends cleanly.

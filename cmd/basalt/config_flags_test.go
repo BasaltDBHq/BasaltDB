@@ -26,14 +26,6 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 		{"init", "--remote"},
 		{"mcp"},
 		{"service", "install"},
-		{"passkey", "list"},
-		{"passkey", "check"},
-		{"classify"},
-		{"trust", "list"},
-		{"trust", "add"},
-		{"trust", "pin"},
-		{"trust", "remove"},
-		{"trust", "disable"},
 	}
 	for _, base := range cmds {
 		for _, flag := range []string{"--config", "--credential-file", "--socket-dir", "--socket"} {

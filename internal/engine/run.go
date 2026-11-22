@@ -813,8 +813,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		PluginApprovals: store,
 		Classes:         storeClasses{BoundMap: classes.On(pool)},
 	})
+	repin := newRepin(env, a, pool.Config().ConnConfig, log)
 	return agentRuntime{
 		svc: svc,
+		run: repin,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),

@@ -18,20 +18,20 @@ func TestHoldPhasesRank(t *testing.T) {
 	mine := setup.Target{Host: "db.example.com", Port: 5432, Database: "app"}
 	other := setup.Target{Host: "other.example.com", Port: 5432, Database: "app"}
 
-	ticket, err := s.previewFor(d, other)
+	ticket, err := s.previewFor(d, other, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, ticket)
 	require.False(t, s.otherTarget(d, mine), "a PREVIEW hold never refuses anything")
-	ticket, err = s.previewFor(d, mine)
+	ticket, err = s.previewFor(d, mine, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, ticket, "a preview replaces a preview")
 	held, _ := s.Held(d.SetupID)
 	require.Equal(t, mine, held)
 
-	_, err = s.holdFor(d, mine)
+	_, err = s.holdFor(d, mine, "")
 	require.NoError(t, err)
 	require.Equal(t, PhaseSetUp, s.HeldPhase(d.SetupID))
-	ticket, err = s.previewFor(d, other)
+	ticket, err = s.previewFor(d, other, "")
 	require.NoError(t, err)
 	require.Empty(t, ticket, "no preview while a SET_UP hold exists")
 	held, _ = s.Held(d.SetupID)

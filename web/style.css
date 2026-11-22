@@ -470,3 +470,22 @@ pre.sql { white-space: pre-wrap; word-break: break-word; font-size: 0.85em; }
 .check-row .words span { font-size: 13px; color: var(--ui-text-2); overflow-wrap: anywhere; }
 .check-row button { min-height: 0; padding: 0; margin-left: auto; background: transparent; color: var(--ui-primary); border: 0; font-weight: 600; font-size: 13px; white-space: nowrap; }
 .check-row button.remove { padding: 4px 10px; color: var(--diff-del-fg); border: 1px solid var(--diff-del-fg); border-radius: var(--radius-ui-sm); background: var(--ui-panel); }
+/* The connect page's Update check: one bordered row per finding, a mark,
+   the finding and its action; the passkey list in the same rows. */
+.connect-page .doc-top { margin: 0; }
+.connect-page .fix-rows { display: flex; flex-direction: column; gap: 8px; }
+.connect-page .fix-row { display: flex; align-items: flex-start; gap: 10px; background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 10px 12px; }
+.connect-page .fix-mark { width: 16px; flex: none; font-weight: 700; }
+.connect-page .fix-row.warn .fix-mark { color: var(--diff-hold-fg); }
+.connect-page .fix-row.good .fix-mark { color: var(--diff-add-fg); }
+.connect-page .fix-body { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.connect-page .fix-body strong { font-size: 14px; }
+.connect-page .fix-body .muted { font-size: 13px; }
+.connect-page .fix-act { margin-left: auto; white-space: nowrap; text-decoration: none; font-weight: 600; }
+.connect-page .pk-row { align-items: center; }
+.connect-page .pk-remove { margin-left: auto; flex: none; min-height: 32px; padding: 0 10px; background: var(--ui-panel); color: var(--diff-del-fg); border: 1px solid var(--diff-del-fg); font-weight: 600; }
+.connect-page .revoke-lines { list-style: none; margin: 0; font-size: 14px; }
+.connect-page .small-fp { font-size: 15px; }
+.connect-page .cert-box p { margin: 0; }
+.connect-page .cert-new { font-weight: 600; overflow-wrap: anywhere; }
+.connect-page .cert-was { color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }

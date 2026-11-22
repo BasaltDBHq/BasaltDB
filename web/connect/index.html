@@ -12,6 +12,7 @@
   <link rel="modulepreload" href="../lib/channel.js" integrity="sha384-HIi/NThakfHR3Ddf/e6EZtHZuYpBejq1vUT/wuj/S6ZZIqqwY2TRS7haLNcFjD59">
   <link rel="modulepreload" href="../lib/codec.js" integrity="sha384-UX6eutCsjzfx9tq6BEWC+noLCmXqmmWFjytVp6Oadrl866Nypno7fmHhdJaPXx/n">
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
+  <link rel="modulepreload" href="../lib/connectupdate.js" integrity="sha384-d0oEH2bBuBVJ3cyVc9G2n+FW0EgtH+7fL0LfvWbasECUIN6ro63k0kFWQ6RzyEcj">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
   <link rel="modulepreload" href="../lib/page.js" integrity="sha384-E/H4T4P2W+oxfTMlNHl3QIE2Ai4hDnUpqkAylUF5IdAc1D5/MVj6jQM76WPfTKzO">
@@ -24,7 +25,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/connect.js" integrity="sha384-ForZvxhmkmOdGRgKFv869gEdpP1c3/17wvKtHjt31vklPSU3J2HhYlVXdvT0NJ3R"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-eF1MZDCXCmDt4NS/CO/hmAE7RcU3WUJSsVK63gbscNx/rrU8FO8Bmske99DaYsdq"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
@@ -94,7 +95,7 @@
       <p id="passkey-lead" class="muted"></p>
       <button id="passkey-go" type="button"></button>
       <p id="passkey-existing" class="muted">Already have one for this database? <button id="passkey-use" type="button" class="link">Use it</button></p>
-      <button id="passkey-skip" type="button" class="secondary" hidden>My passkey is not on this device: go on</button>
+      <button id="passkey-skip" type="button" class="secondary" hidden>I don't have it</button>
       <p id="passkey-status" class="muted" role="status"></p>
       <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
     </section>
@@ -121,6 +122,30 @@
       <button id="trust-cancel" type="button" class="secondary">Cancel</button>
     </section>
 
+    <section id="s-pinned" class="screen" hidden>
+      <h1 id="pinned-title"></h1>
+      <div class="box center">
+        <p class="muted">SHA-256</p>
+        <p><output id="pinned-fp" class="fp small-fp" aria-label="Certificate fingerprint"></output></p>
+      </div>
+      <p id="pinned-error" class="strip bad" role="alert" hidden></p>
+      <button id="pinned-go" type="button">Continue</button>
+      <button id="pinned-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="s-newcert" class="screen" hidden>
+      <h1>Your database has a new certificate</h1>
+      <p class="muted">Check that this matches what your provider shows, then trust it.</p>
+      <div class="box cert-box">
+        <p class="cert-new"><strong>New:</strong> <span id="newcert-now" class="mono"></span></p>
+        <p id="newcert-detail" class="muted small"></p>
+        <p class="cert-was"><span>Was:</span> <span id="newcert-was" class="mono"></span></p>
+      </div>
+      <p id="newcert-error" class="strip bad" role="alert" hidden></p>
+      <button id="newcert-go" type="button">Trust the new certificate</button>
+      <button id="newcert-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
     <section id="s-checking" class="screen" hidden>
       <h1 id="checking-title">Checking your database…</h1>
       <ul class="box checks">
@@ -141,6 +166,45 @@
       <p class="strip bad">Its server can't connect to this address.</p>
       <p id="unreach-text" class="muted"></p>
       <button id="paste-again" type="button">Paste another string</button>
+    </section>
+
+    <section id="s-doctor" class="screen" hidden>
+      <p id="doc-top" class="muted small doc-top"></p>
+      <div>
+        <h1 id="doc-title"></h1>
+        <p id="doc-sub" class="muted"></p>
+      </div>
+      <div id="doc-rows" class="fix-rows"></div>
+      <p id="doc-pending" class="strip ok" hidden>Your new passkey is registered when you approve.</p>
+      <ul id="doc-notes" class="muted small" hidden></ul>
+      <button id="doc-go" type="button"></button>
+    </section>
+
+    <section id="s-passkeys" class="screen" hidden>
+      <div>
+        <h1>Passkeys</h1>
+        <p class="muted">These devices can approve your agents' writes and undos. Remove one you lost.</p>
+      </div>
+      <p id="pk-done" class="strip ok" role="status" hidden></p>
+      <p id="pk-error" class="strip bad" role="alert" hidden></p>
+      <div id="pk-list" class="fix-rows"></div>
+      <button id="pk-add" type="button" class="secondary">Add a passkey on this device</button>
+      <p class="muted small">Removing asks for the database's admin connection string, so it works even if the lost device was your only passkey. If you remove the last one, the page asks you to add one before agents can be approved again.</p>
+    </section>
+
+    <section id="s-revoke" class="screen" hidden>
+      <h1>Remove this passkey?</h1>
+      <ul id="revoke-lines" class="box revoke-lines"></ul>
+      <p id="revoke-error" class="strip bad" role="alert" hidden></p>
+      <button id="revoke-go" type="button" class="danger">Remove passkey</button>
+      <button id="revoke-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="s-addpk" class="screen" hidden>
+      <h1>Add a passkey on this device</h1>
+      <p id="addpk-lead" class="muted"></p>
+      <p id="addpk-status" class="muted" role="status"></p>
+      <button id="addpk-go" type="button">Create passkey</button>
     </section>
 
     <section id="s-tables" class="screen" hidden>

@@ -324,6 +324,11 @@ type remoteInit struct {
 	// connectOnly: no credential file, so this run makes a connect-only
 	// code (CONTRACT.md, Connect-only setup codes).
 	connectOnly bool
+	// certChanged: the agent's login failed on the certificate of its
+	// pinned host, which presents another chain top (TRUST_ROOT_CHANGED):
+	// this run makes an AGENT code with no change, marked
+	// certificateChanged, never a new password.
+	certChanged bool
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -576,11 +581,10 @@ func (r *remoteInit) connection() error {
 			r.password = c.password()
 		}
 	}
-	// Before any login sends a startup message: offer to pin a chain no
-	// authority here verifies.
-	if err := r.pin(); err != nil {
-		return err
-	}
+	// Before any login sends a startup message: say that a chain no
+	// authority here verifies is trusted on the connect page. Nothing is
+	// pinned here.
+	r.noteUnknownAuthority()
 	return r.login(pending, cred)
 }
 
@@ -628,6 +632,9 @@ func (r *remoteInit) login(pending, cred *credential) error {
 			}
 			r.password = pending.password()
 			return r.inspect(conn)
+		case r.rootChanged(pending.dsn, err):
+			r.certChanged = true
+			return nil
 		case !errors.Is(err, errLoginRefused):
 			return err
 		}
@@ -639,6 +646,11 @@ func (r *remoteInit) login(pending, cred *credential) error {
 	switch {
 	case errors.Is(err, errLoginRefused):
 		return nil // the role cannot log in
+	case r.rootChanged(cred.dsn, err):
+		// Not a refused credential: the pinned host presents another
+		// certificate. The connect page asks the person.
+		r.certChanged = true
+		return nil
 	case err != nil:
 		return err
 	}
@@ -804,7 +816,7 @@ func (r *remoteInit) learnTables(q guard.Querier) error {
 // reusable is the pending setup init prints again: unexpired, not yet run,
 // for the same tables.
 func (r *remoteInit) reusable(saved []string) *config.Setup {
-	if r.entry == nil || r.entry.Setup == nil || r.recorded || r.password == "" {
+	if r.entry == nil || r.entry.Setup == nil || r.recorded || r.password == "" || r.entry.Setup.CertificateChanged != r.certChanged {
 		return nil
 	}
 	if r.entry.Setup.ConnectOnly() || connectOnlyCode(r.entry.Setup.Code) {
@@ -846,6 +858,9 @@ type plan struct {
 // build's; else an AGENT code with no change.
 func (r *remoteInit) decide(saved []string) (plan, error) {
 	latest := guard.LatestVersion()
+	if r.certChanged {
+		return r.certificatePlan()
+	}
 	pendingInstall := r.entry != nil && r.entry.Setup != nil && r.entry.Setup.Kind == string(setupcode.KindInstall)
 	if !r.loggedIn {
 		switch {
@@ -905,6 +920,13 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 	if !r.connectOnly {
 		target := r.target
 		out.Target, out.Engine = &target, r.engineKey()
+		if p.kind != setupcode.KindInstall {
+			// The engine's pin for the host, a hint for the connect page.
+			out.TrustPin = r.pinnedSHA()
+		}
+	}
+	if r.certChanged && out.Engine == nil {
+		return setupcode.Payload{}, errNoEngineForTrust
 	}
 	if p.kind == setupcode.KindUpgrade {
 		return out, nil
@@ -969,6 +991,7 @@ func (r *remoteInit) run() (RemoteInitResult, error) {
 		return RemoteInitResult{}, err
 	}
 	s := newSetup(payload, code)
+	s.CertificateChanged = r.certChanged
 	if err := r.writeConfig(saved, &s); err != nil {
 		return RemoteInitResult{}, err
 	}
@@ -1231,21 +1254,6 @@ func (r *remoteInit) writeCredential(p plan) error {
 		path += pendingSuffix
 	}
 	return r.files.write(path, []byte(dsn+"\n"))
-}
-
-// pin offers to pin the database's chain (initPin) and writes the pin to
-// the engine's trust.d on yes.
-func (r *remoteInit) pin() error {
-	if r.base == nil {
-		return nil
-	}
-	// The agent runs init --remote: it never pins a certificate, and says
-	// the person's basalt trust pin command instead.
-	choice, ok, err := r.c.initPin(r.base.String(), "", r.f.configPath, true)
-	if err != nil || !ok {
-		return err
-	}
-	return r.c.writePin(choice, r.f.configPath)
 }
 
 // writeConfig upserts the agent and prints the vault value it wrote.

@@ -394,6 +394,18 @@ test("check codes: the page's own passkey with the same code, and nothing else",
   const mine = { credentialId: CRED_ID, checkCode: BASE_POINT_CODE };
   assert.equal(compareCheckCodes(mine, [{ credentialId: CRED_ID, label: "", checkCode: BASE_POINT_CODE }]), "");
   assert.match(compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: "0000 0000 0000 0000 0000" }]), /different check code/);
+  const wrong = compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: "0000 0000 0000 0000 0000" }]);
+  assert.match(wrong, /the engine lists each passkey of the database with its check code/, "a wrong code points to the engine's passkey list");
+  assert.ok(wrong.includes(BASE_POINT_CODE), "it names the code this page computed");
+  assert.doesNotMatch(wrong, /basalt passkey/);
+  for (const msg of [
+    compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }, { credentialId: "other", checkCode: "x" }]),
+    compareCheckCodes(mine, []),
+    compareCheckCodes(null, [{ credentialId: "other" }]),
+  ]) {
+    assert.match(msg, /ask it for BasaltDB's status: the engine lists each passkey of the database with its check code/, msg);
+    assert.doesNotMatch(msg, /basalt passkey/, msg);
+  }
   assert.match(compareCheckCodes(mine, [{ credentialId: CRED_ID, checkCode: BASE_POINT_CODE }, { credentialId: "other", checkCode: "x" }]), /did not create/);
   assert.match(compareCheckCodes(mine, []), /does not report the passkey/);
   assert.equal(compareCheckCodes(null, []), "");
@@ -815,7 +827,9 @@ test("a later code signs with the existing passkey; approve makes one first when
   assert.equal(creds.log[0].op, "get");
   assert.equal(creds.log[0].opts.publicKey.rpId, "basaltvault.app");
   await paste(nodes);
-  await nodes["tables-next"].click();
+  assert.equal(shown(nodes), "s-doctor");
+  await nodes["doc-go"].click();
+  assert.equal(shown(nodes), "s-approve");
   await nodes.approve.click();
   assert.equal(creds.log[1].op, "create", "the database has no passkey: one is made at approval");
   assert.equal(calls.at(-1).method, "RunSetup");
@@ -874,8 +888,8 @@ test("an upgrade without a passkey on this device goes on after a warning; nothi
   assert.equal(shown(nodes), "s-paste");
   assert.match(nodes["paste-error"].textContent, /may not be the real site/);
   await paste(nodes);
-  assert.equal(nodes["tables-box"].hidden, true);
-  await nodes["tables-next"].click();
+  assert.equal(shown(nodes), "s-doctor", "a code with a target gets the Update check");
+  await nodes["doc-go"].click();
   assert.equal(nodes["ap-limits"].hidden, true);
   await nodes.approve.click();
   assert.equal(calls.at(-1).body.passkey, undefined);
@@ -1081,7 +1095,7 @@ test("Back to the code check and the passkey step rewinds the flow, so the perso
   assert.equal(shown(nodes), "s-paste");
   await nodes.back.click();
   assert.equal(shown(nodes), "s-passkey");
-  assert.equal(nodes["passkey-skip"].hidden, true);
+  assert.equal(nodes["passkey-skip"].hidden, false, "I don't have it is offered up front");
   await nodes.back.click();
   assert.equal(shown(nodes), "s-bot");
   await nodes["same-code"].click();
@@ -1091,7 +1105,7 @@ test("Back to the code check and the passkey step rewinds the flow, so the perso
   nodes["passkey-skip"].click();
   assert.equal(shown(nodes), "s-paste");
   await paste(nodes);
-  assert.equal(shown(nodes), "s-tables");
+  assert.equal(shown(nodes), "s-doctor");
   assert.equal(flow.step, "questions");
 });
 
@@ -1445,4 +1459,236 @@ test("RemoveFlow refuses a name that is not the database's without a call", asyn
   assert.equal(removeConfirmed("shop", "shop"), true);
   assert.equal(removeConfirmed("", ""), false);
   assert.deepEqual(removalItems(removeCheck({ bots: [] })).map((i) => i.kind), ["gone", "gone", "gone", "stays"]);
+});
+
+// ---- The Update check (CONTRACT.md, Update on the connect page) ----
+
+const PORTAL_KEY = { credentialId: "cG9ydGFs", label: "iPhone", rpId: "basaltvault.app", createdAt: "2026-11-03T09:00:00Z", lastUsedAt: "2026-11-20T09:00:00Z" };
+const LOCAL_KEY = { credentialId: "bG9jYWw", label: "MacBook Pro", rpId: "localhost", createdAt: "2026-11-03T09:00:00Z" };
+const UPDATE_COLUMNS = [
+  { table: "public.leads", column: "email" },
+  { table: "public.leads", column: "phone", class: "UNCLASSIFIED" },
+  { table: "public.leads", column: "id", class: "PUBLIC" },
+  { table: "public.notes", column: "body", class: "FREE_TEXT" },
+];
+
+// updateService answers an AGENT code with a target: CheckSetup with the
+// columns and the passkeys given, RevokePasskey with remaining.
+function updateService({ passkeys = [PORTAL_KEY, LOCAL_KEY], columns = UPDATE_COLUMNS, remaining = 1, revoke, summaryOf = () => summary("AGENT"), check } = {}) {
+  return service({
+    DescribeSetup: () => ({ body: { summary: summaryOf(), challenge: challenge() } }),
+    CheckSetup: check ?? (() => ({ body: { passkeyNeeded: !passkeys.some((p) => p.rpId === "basaltvault.app"), columns, passkeys, notes: ["Statement timeout now in force: 5000 ms."] } })),
+    RevokePasskey: revoke ?? (() => ({ body: { remaining, lines: ["The passkey iPhone is removed."] } })),
+    RunSetup: () => ({ body: {} }),
+  });
+}
+
+async function toCheck(nodes, e) {
+  const { flow, ready } = start(e);
+  await ready;
+  await nodes["same-code"].click();
+  assert.equal(nodes["passkey-skip"].hidden, false);
+  assert.match(HTML, /<button id="passkey-skip"[^>]*>I don't have it<\/button>/);
+  nodes["passkey-skip"].click();
+  assert.equal(shown(nodes), "s-paste");
+  await paste(nodes);
+  assert.equal(shown(nodes), "s-doctor");
+  return flow;
+}
+
+const rowsOf = (nodes) => nodes["doc-rows"].children.map((r) => r.textContent);
+
+test("an AGENT code shows the check after the paste; Fix these labels only the unlabeled columns, then approves", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn, methods } = updateService();
+  const creds = credentials();
+  await toCheck(nodes, env(fetchFn, creds));
+  assert.equal(creds.log.length, 0, "I don't have it skips the passkey prompt");
+  assert.equal(nodes["doc-title"].textContent, "1 thing needs you");
+  assert.equal(nodes["doc-sub"].textContent, "Everything else is working.");
+  assert.equal(nodes["doc-top"].textContent, "BasaltDB / Setup · app");
+  assert.deepEqual(rowsOf(nodes), ["!2 new columns have no labelleads.email, leads.phoneLabel", "✓Passkeys1 device can approveManage"]);
+  assert.equal(nodes["doc-go"].textContent, "Fix these");
+  await nodes["doc-go"].click();
+  assert.equal(shown(nodes), "s-labels");
+  const shownCols = [...nodes["label-tables"].walk()].filter((n) => n.tagName === "SPAN" && n.className === "mono").map((n) => n.textContent);
+  assert.deepEqual(shownCols, ["leads"], "one table: the one with unlabeled columns");
+  nodes["rest-mark"].checked = true;
+  nodes["rest-leave"].checked = false;
+  await nodes["labels-next"].click();
+  assert.equal(shown(nodes), "s-approve");
+  await nodes.back.click();
+  assert.equal(shown(nodes), "s-labels");
+  await nodes.back.click();
+  assert.equal(shown(nodes), "s-doctor");
+  await nodes["doc-go"].click();
+  nodes["rest-mark"].checked = true;
+  nodes["rest-leave"].checked = false;
+  await nodes["labels-next"].click();
+  await nodes.approve.click();
+  assert.equal(shown(nodes), "s-done");
+  const run = calls.at(-1);
+  assert.equal(run.method, "RunSetup");
+  assert.deepEqual(run.body.columnClasses.map((c) => `${c.column}:${c.class}:${c.was.class}`), ["email:PUBLIC:UNCLASSIFIED", "phone:PUBLIC:UNCLASSIFIED"]);
+  assert.equal(run.body.passkey, undefined, "the database has a portal passkey and none was added");
+  assert.equal(nodes["chat-text"].textContent, 'Tell familite-bot "done" so it checks now.');
+  assert.ok(!methods().includes("HandoffStatus"), "a code with a target has no hand-off to watch");
+});
+
+test("all good: every row ticked, Continue goes straight to the approval", async () => {
+  const nodes = fakeDocument();
+  const { fetchFn } = updateService({ columns: [{ table: "public.leads", column: "id", class: "PUBLIC" }] });
+  await toCheck(nodes, env(fetchFn));
+  assert.equal(nodes["doc-title"].textContent, "All good");
+  assert.equal(nodes["doc-sub"].textContent, "BasaltDB is running and your agents can connect.");
+  assert.deepEqual(rowsOf(nodes), ["✓Every column has a label", "✓Database certificate checked", "✓Passkeys1 device can approveManage"]);
+  assert.equal(nodes["doc-go"].textContent, "Continue");
+  await nodes["doc-go"].click();
+  assert.equal(shown(nodes), "s-approve");
+});
+
+test("an UPGRADE code labels every readable column it lists, and no portal passkey is a row", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = updateService({
+    passkeys: [LOCAL_KEY],
+    summaryOf: () => ({ ...summary("UPGRADE"), write: [], read: [] }),
+    columns: [{ table: "public.orders", column: "note" }, { table: "crm.people", column: "dob" }],
+  });
+  const creds = credentials();
+  await toCheck(nodes, env(fetchFn, creds));
+  assert.equal(nodes["doc-title"].textContent, "2 things need you");
+  assert.deepEqual(rowsOf(nodes), ["!2 new columns have no labelorders.note, crm.people.dobLabel", "!No passkey can approveYour agents' larger writes wait until you add one.Add"]);
+  await nodes["doc-go"].click();
+  assert.equal(shown(nodes), "s-labels");
+  await nodes["labels-next"].click();
+  await nodes.approve.click();
+  assert.equal(creds.log.at(-1).op, "create", "no portal passkey: the approval makes one");
+  const run = calls.at(-1);
+  assert.equal(run.body.columnClasses, undefined, "nothing labelled, nothing sent");
+  assert.equal(run.body.passkey.credentialId, CRED_ID);
+});
+
+test("the passkey list: Manage, Remove with RevokePasskey, the browser told, the last one asks for a new one", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = updateService({ remaining: 0 });
+  const signals = [];
+  const e = { ...env(fetchFn), PublicKeyCredential: { signalUnknownCredential: async (a) => signals.push(a) } };
+  const flow = await toCheck(nodes, e);
+  e.clock.t = Date.parse("2026-11-22T12:00:00Z");
+  const manage = find(nodes["doc-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Manage");
+  manage.click();
+  assert.equal(shown(nodes), "s-passkeys");
+  assert.deepEqual(nodes["pk-list"].children.map((r) => r.textContent), [
+    "iPhoneAdded 3 Nov · used 2 days agoRemove",
+    "MacBook ProAdded 3 Nov on localhost · used neverRemove",
+  ]);
+  find(nodes["pk-list"].children[0], (n) => n.textContent === "Remove").click();
+  assert.equal(shown(nodes), "s-revoke");
+  assert.deepEqual(nodes["revoke-lines"].children.map((l) => l.textContent), [
+    "This removes the passkey iPhone, added 3 Nov. It can no longer approve writes or sign undos.",
+    "It is the last passkey for this site: until you add one, your agents' held writes and undos wait.",
+  ]);
+  await nodes["revoke-go"].click();
+  const rv = calls.at(-1);
+  assert.equal(rv.method, "RevokePasskey");
+  assert.deepEqual(rv.body, { code: CODE, databaseUrl: MARKER, credentialId: PORTAL_KEY.credentialId });
+  assert.deepEqual(signals, [{ rpId: "basaltvault.app", credentialId: PORTAL_KEY.credentialId }]);
+  assert.equal(shown(nodes), "s-addpk");
+  assert.equal(nodes["addpk-lead"].textContent, "Add a passkey so your agents can be approved again.");
+  assert.equal(flow.holdsConnectionString, true, "the string stays for the fixes that follow");
+  await nodes["addpk-go"].click();
+  assert.equal(shown(nodes), "s-doctor");
+  assert.equal(nodes["doc-pending"].hidden, false);
+  await nodes["doc-go"].click();
+  await nodes["labels-next"].click();
+  await nodes.approve.click();
+  assert.equal(calls.at(-1).method, "RunSetup");
+  assert.equal(calls.at(-1).body.passkey.credentialId, CRED_ID, "the new passkey is registered by the approval");
+});
+
+test("RevokePasskey: a passkey no longer active keeps the string; another refusal drops it", async () => {
+  const nodes = fakeDocument();
+  let reason = "ANSWERS_INVALID";
+  const { fetchFn } = updateService({
+    revoke: () => ({ status: 400, body: refusalBody(reason === "ANSWERS_INVALID" ? "invalid_argument" : "failed_precondition", reason, reason === "ANSWERS_INVALID" ? "This passkey is not active any more. Nothing changed." : "The database refused the login.") }),
+  });
+  const flow = await toCheck(nodes, env(fetchFn));
+  find(nodes["doc-rows"], (n) => n.textContent === "Manage").click();
+  find(nodes["pk-list"].children[1], (n) => n.textContent === "Remove").click();
+  assert.equal(nodes["revoke-lines"].children.length, 1, "a localhost passkey is not the last for this site");
+  await nodes["revoke-go"].click();
+  assert.equal(shown(nodes), "s-revoke");
+  assert.equal(nodes["revoke-error"].textContent, "This passkey is not active any more. Nothing changed.");
+  assert.equal(flow.holdsConnectionString, true);
+  reason = "LOGIN_FAILED";
+  await nodes["revoke-go"].click();
+  assert.equal(shown(nodes), "s-paste");
+  assert.match(nodes["paste-error"].textContent, /refused the login/);
+  assert.equal(flow.holdsConnectionString, false);
+});
+
+// The bot's pin (CONTRACT.md, Trusting a certificate authority on the page).
+function pinService(trustPin) {
+  let checks = 0;
+  return updateService({
+    summaryOf: () => ({ ...summary("AGENT"), trustPin }),
+    check: (req) => {
+      checks++;
+      if (req.trustRoot !== ROOT.sha256) return { status: 412, body: refusalBody("failed_precondition", "CERTIFICATE_NOT_VERIFIED", NOT_VERIFIED, 0, ROOT) };
+      return { body: { columns: [], passkeys: [PORTAL_KEY] } };
+    },
+  });
+}
+
+test("the bot's pin matches: one click, the same trustRoot sent", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = pinService(ROOT.sha256);
+  const { ready } = start(env(fetchFn));
+  await ready;
+  await nodes["same-code"].click();
+  nodes["passkey-skip"].click();
+  await paste(nodes);
+  assert.equal(shown(nodes), "s-pinned");
+  assert.equal(nodes["pinned-title"].textContent, "This matches the certificate familite-bot trusts.");
+  assert.equal(nodes["pinned-fp"].textContent, fingerprintText(ROOT.sha256));
+  await nodes["pinned-go"].click();
+  assert.equal(shown(nodes), "s-doctor");
+  assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
+  await nodes["doc-go"].click();
+  await nodes.approve.click();
+  assert.equal(calls.at(-1).method, "RunSetup");
+  assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
+});
+
+test("the bot's pin differs: the new certificate with the pinned one as Was; Cancel drops the string", async () => {
+  const nodes = fakeDocument();
+  const was = "cd".repeat(32);
+  const { calls, fetchFn } = pinService(was);
+  const { flow, ready } = start(env(fetchFn));
+  await ready;
+  await nodes["same-code"].click();
+  nodes["passkey-skip"].click();
+  await paste(nodes);
+  assert.equal(shown(nodes), "s-newcert");
+  assert.equal(nodes["newcert-now"].textContent, fingerprintText(ROOT.sha256));
+  assert.equal(nodes["newcert-was"].textContent, fingerprintText(was));
+  assert.match(nodes["newcert-detail"].textContent, /Google Cloud SQL Server CA.*valid until 2035-01-31/);
+  await nodes["newcert-cancel"].click();
+  assert.equal(shown(nodes), "s-paste");
+  assert.equal(flow.holdsConnectionString, false);
+  await paste(nodes);
+  await nodes["newcert-go"].click();
+  assert.equal(shown(nodes), "s-doctor");
+  assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
+});
+
+test("a code without a readable pin asks the plain question", async () => {
+  const nodes = fakeDocument();
+  const { fetchFn } = pinService("not-a-pin");
+  const { ready } = start(env(fetchFn));
+  await ready;
+  await nodes["same-code"].click();
+  nodes["passkey-skip"].click();
+  await paste(nodes);
+  assert.equal(shown(nodes), "s-trust");
 });

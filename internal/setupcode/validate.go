@@ -42,6 +42,7 @@ var (
 	systemTablePattern = regexp.MustCompile(`^(pg_[a-z0-9_]*|information_schema|basalt_meta)\.`)
 	agentNamePattern   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,54}$`)
 	expiresAtPattern   = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`)
+	trustPinPattern    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // Validate checks p against setup-code.schema.json and the rules the
@@ -50,7 +51,7 @@ var (
 // later than the setupId's time plus 10 minutes). Failing one is INVALID.
 // None of these depend on the clock.
 func (p Payload) Validate() error {
-	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry, p.validateEngine, p.validateConnectOnly}
+	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry, p.validateEngine, p.validateConnectOnly, p.validateTrustPin}
 	for _, c := range checks {
 		if err := c(); err != nil {
 			return err
@@ -201,6 +202,23 @@ func (p Payload) validateConnectOnly() error {
 		return invalid("an upgrade needs target")
 	case p.Kind == KindAgent && p.Agent.Verifier == "":
 		return invalid("an agent change without target needs agent.verifier")
+	}
+	return nil
+}
+
+// validateTrustPin checks trustPin: 64 lowercase hex digits, in a code with
+// target of kind AGENT or UPGRADE only (setup-code.schema.json gives the
+// INSTALL kind no trustPin).
+func (p Payload) validateTrustPin() error {
+	switch {
+	case p.TrustPin == "":
+		return nil
+	case p.ConnectOnly():
+		return invalid("trustPin is only in a code with target")
+	case p.Kind == KindInstall:
+		return invalid("an install carries no trustPin")
+	case !trustPinPattern.MatchString(p.TrustPin):
+		return invalid("trustPin is not a SHA-256 in lowercase hex")
 	}
 	return nil
 }

@@ -15,7 +15,7 @@ import (
 )
 
 // loadConfigAsRoot reads the engine config for a root person CLI (sudo
-// basalt log, approve, revert, status, upgrade, access and classify, which
+// basalt log, approve, revert, status, upgrade and access, which
 // open the agent's ledger through openLedger, the config reads behind
 // log's dictionary line, access's commands and the pages links, and init
 // --remote: every person-CLI root path reads the config here, which

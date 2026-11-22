@@ -94,7 +94,7 @@ func ConnConfigTrusting(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, err
 // only roots (the system's authorities do not count), whatever roots the
 // string or the environment names (sslrootcert, PGSSLROOTCERT). dsn must be
 // sslmode=verify-full, as the setup page builds it; the pin is then checked
-// as basalt trust pin makes it (the host name too, or the chain alone for a
+// as the setup page makes it (the host name too, or the chain alone for a
 // profile with verify: ca).
 func ConnConfigPinned(dsn string, p *trustprofile.Profile) (*pgx.ConnConfig, error) {
 	cfg, err := pgx.ParseConfig(dsn)
@@ -193,8 +193,8 @@ func WithCertificateHint(dsn string, err error) error {
 			"name its CA with sslrootcert=<CA file> in the connection string", err, a.Host)
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
-	return fmt.Errorf("%w; the certificate of %s does not verify: add its CA with basalt trust add --name NAME --match '=%s' --ca <CA file>, "+
-		"or name it with sslrootcert=<CA file> in the connection string", err, a.Host, a.Host)
+	return fmt.Errorf("%w; the certificate of %s does not verify: trust its certificate authority on the page basalt init opens "+
+		"(basalt init --remote on an agent-operated engine), or name it with sslrootcert=<CA file> in the connection string", err, a.Host)
 }
 
 // apply sets DefaultMode unless dsn names a mode itself (pgx has already

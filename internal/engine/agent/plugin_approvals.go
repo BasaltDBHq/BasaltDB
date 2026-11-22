@@ -11,14 +11,13 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
 // What the plugin approval routes of the local pages ask of an agent
 // (CONTRACT.md, Local pages): the request of a plugin approval this
-// agent's role opened, the relay of the person's signature, and a short
-// link for basalt plugin add and enable. The relay decides nothing:
+// agent's role opened and the relay of the person's signature; the short
+// link comes with request_plugin's result. The relay decides nothing:
 // submit_plugin_approval verifies the passkey signature in Postgres.
 
 // PluginApprovalStore is the guard's plugin approvals on the agent's own
@@ -37,7 +36,7 @@ type PluginApprovalStore interface {
 // agent's role opened: its binding and settings texts as Postgres built
 // them, and the database's passkeys.
 func (s *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error) {
-	r, err := s.openPluginApproval(ctx, id, nil)
+	r, err := s.openPluginApproval(ctx, id)
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
@@ -52,7 +51,7 @@ func (s *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 // this agent's role opened to submit_plugin_approval, and returns when
 // Postgres recorded it.
 func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
-	if _, err := s.openPluginApproval(ctx, r.ApprovalID, nil); err != nil {
+	if _, err := s.openPluginApproval(ctx, r.ApprovalID); err != nil {
 		return time.Time{}, err
 	}
 	at, err := s.PluginApprovals.SubmitPluginApproval(ctx, guard.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
@@ -62,26 +61,13 @@ func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginAppr
 	return at, nil
 }
 
-// IssuePluginLink issues a new short link to this engine's pages for a
-// plugin approval this agent's role opened, revoking its earlier one, to a
-// caller that shows proof of the binding text (links.IssueProof). Only the
-// local pages: no command hands over a portal short link for a plugin
-// approval (CONTRACT.md, Plugin approval commands).
-func (s *Service) IssuePluginLink(ctx context.Context, id uuid.UUID, proof string) (string, error) {
-	r, err := s.openPluginApproval(ctx, id, &proof)
-	if err != nil {
-		return "", err
-	}
-	return s.issuedLink(links.PluginApproval, r.ApprovalID, r.ExpiresAt)
-}
-
 // openPluginApproval is a plugin approval this agent's role opened that can
 // still be signed. Every other case is ErrNotThisAgent, before anything
 // about the approval is told: no plugin approval store, a guard older than
 // schema version 5 (which cannot hold one), an approval the role cannot
 // see or only sees as a named agent (no binding text, so the opener is
 // asked instead), and a proof that does not match the binding text.
-func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID, proof *string) (guard.PluginApprovalRecord, error) {
+func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, error) {
 	if s.PluginApprovals == nil {
 		return guard.PluginApprovalRecord{}, ErrNotThisAgent
 	}
@@ -100,9 +86,6 @@ func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID, proof *s
 		return guard.PluginApprovalRecord{}, err
 	}
 	if !ok || r.BindingText == "" {
-		return guard.PluginApprovalRecord{}, ErrNotThisAgent
-	}
-	if proof != nil && !links.ProofMatches(r.BindingText, *proof) {
 		return guard.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	switch {

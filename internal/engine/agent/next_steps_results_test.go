@@ -315,6 +315,7 @@ func resultCases() map[string]resultCase {
 		},
 	}
 	maps.Copy(cases, confirmResultCases())
+	maps.Copy(cases, pluginResultCases())
 	return cases
 }
 

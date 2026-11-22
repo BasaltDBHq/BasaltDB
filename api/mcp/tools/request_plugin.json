@@ -1,0 +1,96 @@
+{
+  "name": "request_plugin",
+  "status": "IMPLEMENTED",
+  "milestone": "M4.1",
+  "description": "Ask the person to approve a plugin install or change, or remove a plugin. You never approve a plugin: the person approves it with their passkey on the plugin approval page, and the database verifies the signature. Only on an engine a person operates that runs as a service (and, to open an approval, serves its local pages); anywhere else the result is PLUGIN_REFUSED. Name exactly one of source, name or approvalId. With source (the absolute path of the plugin's folder on this computer, holding basalt-plugin.json): basalt mcp reads the folder and hands its files to the engine, which checks them and opens the approval; the result carries approvalUrl and personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links). The plugin serves only the agents in agents (default: you alone), all on your own database, and the page shows the person that list. With name and no remove: a new approval for the plugin already installed (after an expired approval, or to turn it on again). With name and remove: true: the plugin is removed at once and stops for every agent it served; removing only narrows, so it needs no approval, but do it only when the person asks. Show personMessage, then, without ending your turn, call request_plugin once more with only approvalId: that call waits up to waitForApproval seconds (default 90) and returns RUNNING as soon as the engine runs the plugin on the approval. If that wait runs out (PENDING), do not wait again: end your turn with the link and its expiry, and call request_plugin with approvalId when the person says they approved. The plugin's health is in status.plugins.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "source": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 4096,
+        "pattern": "^/",
+        "description": "Install a plugin, or change one installed with the same name and instance, from this folder: an absolute path on this computer holding basalt-plugin.json and the files it lists. basalt mcp reads it (no symlinks, at most 256 MiB) and hands the files to the engine; the engine never opens the path itself. Not with name or approvalId."
+      },
+      "name": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{1,39}$",
+        "description": "A plugin the engine keeps (as status.plugins lists it): without remove, open a new approval for its installed copy; with remove: true, remove it. Not with source or approvalId."
+      },
+      "instance": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$",
+        "description": "With source or name: which entry of the plugin. Default \"default\"."
+      },
+      "agents": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 256,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 63 },
+        "description": "With source, or name without remove: the agents the plugin serves from now on, its full list. You must be one of them, and every one must use your database. Default: the plugin's current agents when it is installed, else you alone."
+      },
+      "remove": {
+        "type": "boolean",
+        "description": "Only with name: true removes the plugin and its installed copy, and ends its approval for every agent. It returns at once with state REMOVED. Default false."
+      },
+      "approvalId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "A plugin approval this call opened: wait for the person to approve it and the engine to run the plugin, and return its state. Takes nothing but waitForApproval."
+      },
+      "waitForApproval": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 110,
+        "description": "Only with approvalId: seconds to wait before returning PENDING or APPROVED. Default 90; 0 returns the state at once."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["state", "name", "instance", "personMessage", "nextSteps"],
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": ["PENDING", "APPROVED", "RUNNING", "NARROWED", "REMOVED", "ENDED"],
+        "description": "PENDING: the approval waits for the person (a new request, or a wait that ran out). APPROVED: the person approved it and the engine does not run the plugin on it yet (status.plugins says why when it does not start). RUNNING: the engine runs the plugin on this approval for every agent it names. NARROWED: the change only removed agents from a plugin that was on, so nothing needs approval and the engine applied it. REMOVED: the plugin was removed. ENDED: the approval expired, was replaced by a newer one, or the plugin was turned off or removed since; nothing runs on it."
+      },
+      "name": { "type": "string", "description": "The plugin's name." },
+      "instance": { "type": "string", "description": "The plugin's instance." },
+      "version": { "type": "string", "description": "With source or name: the version of the installed copy." },
+      "agents": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "The agents the approval names (PENDING, APPROVED, RUNNING, ENDED), or the agents the plugin now serves (NARROWED)."
+      },
+      "approvalId": { "type": "string", "format": "uuid", "description": "The approval: pass it back to wait." },
+      "expiresAt": { "type": "string", "format": "date-time", "description": "While PENDING: when the approval expires unsigned, 24 hours after it was opened." },
+      "approvalUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "When the approval was just opened: the plugin approval page, the short link http://localhost:<port>/plugins/<approvalId>#s=<secret> on the engine's local pages. Absent on the wait form: the link already given keeps working."
+      },
+      "personMessage": {
+        "type": "string",
+        "description": "The message to show the person verbatim, keeping its line breaks: when the approval was just opened, who asks for which plugin, the page's warning line, the link on a line of its own and the expiry; otherwise the outcome."
+      },
+      "links": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
+        "items": { "$ref": "../links/link.schema.json" }
+      },
+      "nextSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "../errors/next-step.schema.json" },
+        "description": "What to do next, first step first (CONTRACT.md, Next steps): when the approval was just opened, the link for the person and the one wait; on PENDING after a wait, end your turn; on RUNNING, NARROWED and REMOVED, tell the person; on APPROVED, call status; on ENDED, ask the person."
+      }
+    }
+  },
+  "errors": ["INVALID_ARGUMENT", "NOT_FOUND", "PLUGIN_REFUSED", "UNAVAILABLE", "INTERNAL"]
+}

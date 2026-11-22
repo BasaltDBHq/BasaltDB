@@ -121,10 +121,6 @@ func TestCredentialOpensRefuseAFIFOWithoutBlocking(t *testing.T) {
 // (Linux): the install refuses to read the engine's files below one, as it
 // should, and tests stand in for the engine user in their own directories.
 func TestMain(m *testing.M) {
-	// The test binary doubles as the test plugin of basalt plugin check.
-	if len(os.Args) > 1 && os.Args[1] == testPluginFlag {
-		testPluginMain(os.Args[2:])
-	}
 	// With this set, the test binary is the basalt binary: a supervisor
 	// test runs it as basalt engine --supervise, which runs it again as
 	// basalt engine.

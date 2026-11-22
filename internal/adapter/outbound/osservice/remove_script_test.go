@@ -32,7 +32,7 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 			"rm -f /etc/systemd/system/basalt-engine.service",
 			"systemctl daemon-reload",
 			"remove_dir /etc/basalt", "remove_dir /var/lib/basalt", "remove_dir /run/basalt", "remove_dir /opt/basalt",
-			"grep '^basalt-plugin-'", "userdel \"$p\"", "userdel basalt",
+			"grep '^basalt-plugin-'", `delete_account "$p"`, "delete_account basalt", `[ -z "$kept" ] ||`, `[ -z "$orphaned" ] ||`,
 		}},
 		{"darwin", []string{
 			"[ ! -e '/Library/Application Support/Basalt/engine.json' ]",
@@ -47,8 +47,7 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 			"rm -f /etc/newsyslog.d/basalt-plugin-*.conf",
 			"remove_dir '/Library/Application Support/Basalt'", "remove_dir /Library/Logs/Basalt", "remove_dir /Library/Basalt",
 			"for old in /Library/Logs/Basalt.old-*; do",
-			"grep '^_basalt-plugin-'", `dscl . -delete "/Users/$p"`, `dscl . -delete "/Groups/$p"`,
-			"dscl . -delete /Users/_basalt", "dscl . -delete /Groups/_basalt",
+			"grep '^_basalt-plugin-'", `delete_account "$p"`, "delete_account _basalt", `[ -z "$kept" ] ||`, `[ -z "$orphaned" ] ||`, "Full Disk Access",
 		}},
 	} {
 		t.Run(v.goos, func(t *testing.T) {

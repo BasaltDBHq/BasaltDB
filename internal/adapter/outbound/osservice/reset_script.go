@@ -19,7 +19,7 @@ import (
 func ResetScript(goos string) (string, error) {
 	var b strings.Builder
 	b.WriteString(scriptHelpers(goos))
-	b.WriteString(removeHelpers)
+	b.WriteString(removeHelpers(goos))
 	b.WriteString(ScriptHelpersEnd)
 	switch goos {
 	case goosLinux:

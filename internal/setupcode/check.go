@@ -65,6 +65,10 @@ func CheckNotConnectOnly(p Payload) error {
 	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+" sent.")
 }
 
+// HasVerifier reports whether p sets the agent's password: an INSTALL
+// code, or an AGENT code that rotates it.
+func (p Payload) HasVerifier() bool { return p.Agent != nil && p.Agent.Verifier != "" }
+
 func futureMessage(agent string) string {
 	return "This setup code claims a time in the future. Check this computer's clock, or ask " + agent + " for a new code."
 }
@@ -121,9 +125,11 @@ func CheckDatabase(p Payload, db Database) error {
 	switch {
 	case p.Kind == KindInstall && exists:
 		return refuseWith(RefusalRoleExists, role+" already exists. This code would replace its password: ask "+agent+" for a new code.")
-	case p.Kind == KindAgent && !exists && !p.ConnectOnly():
-		// A connect-only recovery code whose role does not exist runs as
-		// an INSTALL instead (CONTRACT.md, Connect-only setup codes).
+	case p.Kind == KindAgent && !exists && !p.HasVerifier():
+		// An AGENT code with a verifier whose role does not exist runs as
+		// an INSTALL instead (CONTRACT.md, The setup code, Kinds): a
+		// connect-only recovery code, or a new password for a role
+		// someone dropped.
 		return refuseWith(RefusalRoleMissing, role+" does not exist. Ask "+agent+" for a new code.")
 	}
 	return nil

@@ -778,6 +778,38 @@ func TestInitRemoteSetupNotFoundGetsANewPassword(t *testing.T) {
 	requireVerifierOf(t, r.payload.Agent.Verifier, pw)
 }
 
+// After a connect-only INSTALL where the person ticked some tables, the
+// saved request names those tables: later AGENT codes never ask for every
+// table in public.
+func TestInitRemoteSavesTheTablesThePersonGranted(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	cfg := tempConfig(t)
+	seedCredential(t, withDB(t), cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", botPassword), "--"+flagAllTables+"=true", "--prefix="+d.Names.Prefix)
+	pending, err := config.Load(cfg)
+	require.NoError(t, err)
+	verifier, err := setupcode.VerifierWithSalt(botPassword, make([]byte, 16))
+	require.NoError(t, err)
+	// What the connect page runs with the ticks: the setup the engine
+	// waits for, granting only public.leads.
+	runCode(t, d, setupcode.Payload{
+		SetupID: pending.Agents[0].Setup.SetupID, Kind: setupcode.KindInstall, ExpiresAt: pending.Agents[0].Setup.ExpiresAt,
+		Guard: setupcode.Guard{To: guard.LatestVersion()}, Agent: &setupcode.Agent{Name: "bot", Write: []string{"public.leads"}, Verifier: verifier},
+	})
+
+	r := remoteDBRun(t, cfg, "--agent", "bot")
+	require.Equal(t, "AGENT", r.res.Kind)
+	require.Nil(t, r.payload.Agent.AllTables)
+	require.Equal(t, []string{"public.leads"}, r.payload.Agent.Write)
+	require.Empty(t, r.payload.Agent.Read)
+	args := r.cfg.Agents[0].InitArgs
+	require.Contains(t, args, "--write=public.leads")
+	require.NotContains(t, args, "--"+flagAllTables+"=true")
+
+	again := remoteDBRun(t, cfg, "--agent", "bot")
+	require.True(t, again.res.Reused, "the saved request is the same as the grants")
+}
+
 func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)

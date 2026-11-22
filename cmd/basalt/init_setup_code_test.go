@@ -314,6 +314,28 @@ func TestInitSetupCodeRefusesAnAgentRoleThatIsNotPlain(t *testing.T) {
 	require.Empty(t, setups)
 }
 
+// Someone dropped the agent's role: the database refuses the bot's
+// credential, the next basalt init --remote makes an AGENT code with a new
+// password, and that code runs as an INSTALL, creating the role, instead
+// of a ROLE_MISSING dead end.
+func TestInitSetupCodeRecreatesADroppedRole(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	cfg := tempConfig(t)
+	install := installed(t, d, dbURL, cfg, "--write=public.leads")
+	role := d.Names.Prefix + "_agent_bot"
+	d.Exec(t, "DROP OWNED BY "+role+"; DROP ROLE "+role)
+	clearSetup(t, cfg)
+
+	rotate := remoteDBRun(t, cfg, "--agent", "bot")
+	require.Equal(t, "AGENT", rotate.res.Kind)
+	require.NotEmpty(t, rotate.payload.Agent.Verifier)
+	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", rotate.res.Code, "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "This creates the agent bot (role "+role+").")
+	require.True(t, agentLogsIn(t, install.credFile+pendingSuffix, rotate.res.SetupID), "the new password logs in")
+}
+
 func TestInitSetupCodeRollsBackEverything(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)

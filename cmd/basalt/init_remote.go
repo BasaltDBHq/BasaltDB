@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -327,8 +328,8 @@ type remoteInit struct {
 	// existed is false): the vault this run writes depends on it.
 	prev    config.Config
 	existed bool
-	// connectOnly: no --database-url and no credential file, so this run
-	// makes a connect-only code (CONTRACT.md, Connect-only setup codes).
+	// connectOnly: no credential file, so this run makes a connect-only
+	// code (CONTRACT.md, Connect-only setup codes).
 	connectOnly bool
 }
 
@@ -711,6 +712,9 @@ func (r *remoteInit) inspect(conn agentConn) error {
 		return err
 	}
 	r.installed = v
+	if err := r.learnTables(conn); err != nil {
+		return err
+	}
 	if r.entry == nil || r.entry.Setup == nil {
 		return nil
 	}
@@ -720,6 +724,67 @@ func (r *remoteInit) inspect(conn agentConn) error {
 	}
 	r.recorded, err = guard.SetupRecorded(r.c.ctx, conn, id)
 	return err
+}
+
+// plainTable is a schema.table name the saved flags can hold.
+var plainTable = regexp.MustCompile(`^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$`)
+
+// grantedTablesSQL lists the tables granted to the session's role itself
+// (not through PUBLIC or another role), outside Basalt's own schemas:
+// whether any grant writes.
+const grantedTablesSQL = `SELECT n.nspname || '.' || c.relname, bool_or(a.privilege_type IN ('INSERT', 'UPDATE', 'DELETE'))
+FROM pg_catalog.pg_class c
+JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
+WHERE a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = session_user)
+  AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'basalt\_meta%'
+GROUP BY 1 ORDER BY 1`
+
+// learnTables replaces a request for every table in public with the tables
+// the agent's role was granted, once it logs in: the person ticked those on
+// the connect page, so a later AGENT code asks for them and never for all
+// of public. The saved flags get them on this run. A role with no grant,
+// or with a table the flags cannot name, keeps the request as it is.
+func (r *remoteInit) learnTables(q guard.Querier) error {
+	if !r.f.allTables {
+		return nil
+	}
+	rows, err := q.Query(r.c.ctx, grantedTablesSQL)
+	if err != nil {
+		return fmt.Errorf("read the agent's tables: %w", err)
+	}
+	var write, read []string
+	plain := true
+	for rows.Next() {
+		var name string
+		var writes bool
+		if err := rows.Scan(&name, &writes); err != nil {
+			rows.Close()
+			return err
+		}
+		plain = plain && plainTable.MatchString(name)
+		if writes {
+			write = append(write, name)
+		} else {
+			read = append(read, name)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !plain || len(write)+len(read) == 0 {
+		return nil
+	}
+	r.f.allTables = false
+	r.f.write, r.f.read = strings.Join(write, ","), strings.Join(read, ",")
+	r.f.spec.Write, r.f.spec.Read = write, read
+	if r.entry != nil {
+		// The grants are what the saved request already gave: no change.
+		r.entry.InitArgs = r.f.savedArgs(r.osUser)
+	}
+	return nil
 }
 
 // reusable is the pending setup init prints again: unexpired, not yet run,

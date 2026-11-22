@@ -289,3 +289,21 @@ func TestPluginApprovalSettings(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `{}`, string(raw), "no default is filled in")
 }
+
+func TestRemoveAgentsTakesThemOffThePluginEntries(t *testing.T) {
+	t.Parallel()
+	path := write(t, "engine.json", pluginConfig(`[`+entry(`, "agents": ["product_a", "product_b"]`)+`]`), 0o600)
+	removed, err := config.RemoveAgents(path, []string{"product_a"})
+	require.NoError(t, err)
+	require.False(t, removed)
+	c, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, c.Agents, 1)
+	require.Equal(t, []string{"product_b"}, c.Plugins[0].Agents)
+
+	removed, err = config.RemoveAgents(path, []string{"product_b"})
+	require.NoError(t, err)
+	require.True(t, removed, "no agent is left, so the config goes")
+	_, err = os.Stat(path)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}

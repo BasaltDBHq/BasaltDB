@@ -135,6 +135,9 @@ type Server struct {
 	files  fs.FS
 	mu     sync.RWMutex
 	agents []Agent
+	// setup runs the setup page's UPDATE and REMOVE (SetSetup); nil
+	// refuses every setup request JOB_UNAVAILABLE without reading it.
+	setup SetupJobs
 }
 
 // New returns the pages for origin, the approval page's origin, which a
@@ -153,6 +156,11 @@ func (s *Server) Add(a Agent) {
 	defer s.mu.Unlock()
 	s.agents = append(s.agents, a)
 }
+
+// SetSetup serves the setup page's jobs for this engine's agents
+// (CONTRACT.md, The local setup page): the only routes that read the admin
+// connection string. Call it before Handler.
+func (s *Server) SetSetup(jobs SetupJobs) { s.setup = jobs }
 
 // Handler routes the pages, their files and the relay.
 func (s *Server) Handler() http.Handler {
@@ -185,8 +193,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
 	mux.HandleFunc("GET "+SetupPagePath+"{$}", serveSetupPage)
-	mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
-	mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
+	if s.setup != nil {
+		st := setupRoutes{origin: s.origin, jobs: s.setup, log: s.log.With("component", "setup")}
+		mux.HandleFunc("POST "+SetupCheckPath, st.check)
+		mux.HandleFunc("POST "+SetupRunPath, st.run)
+	} else {
+		mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
+	}
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
 	return refuseDatabaseURL(s.origin, mux)

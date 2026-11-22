@@ -192,6 +192,9 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	defer s.busy.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
+	if s.opts.Configured {
+		return s.runAgentJob(ctx, req)
+	}
 	j, err := s.validate(req)
 	if err != nil {
 		return RunAnswer{}, err

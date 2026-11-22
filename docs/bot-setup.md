@@ -29,7 +29,7 @@ basalt init --remote --agent NAME
 
 - `--agent NAME` is the only flag. Without it, init sets up the one agent the config has, or `demo_bot` on a new engine.
 - On a new engine, init makes it agent-operated with the Vault on: the person sets up on `portal.basaltvault.app/connect`.
-- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `upgrade`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
+- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
 
 The command prints a connect link, a setup fingerprint, a message for the person, and the `basalt mcp` command to register in your agent app. It does not install or start the engine. The command is `basalt mcp --agent NAME`: `basalt mcp` finds the config, and the socket directory in it, by itself.
 

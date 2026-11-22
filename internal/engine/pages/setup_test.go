@@ -182,3 +182,30 @@ func TestConfiguredPagesTakeNoAdminString(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/setup/", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestConfiguredPagesRunTheSetupJobsTheyAreGiven(t *testing.T) {
+	t.Parallel()
+	var logs bytes.Buffer
+	jobs := &fakeJobs{}
+	srv := pages.New(setupOrigin, slog.New(slog.NewTextHandler(&logs, nil)))
+	srv.SetSetup(jobs)
+	h := srv.Handler()
+	body := `{"job":"UPDATE","agent":"demo_bot","osUser":"alice","demo":false,"databaseUrl":"` + adminString + `"}`
+
+	for _, path := range []string{pages.SetupCheckPath, pages.SetupRunPath} {
+		w := setupCall{path: path, origin: setupOrigin, body: body}.do(h)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.NotContains(t, w.Body.String(), adminSecret)
+		w = setupCall{path: path, origin: "http://localhost:9999", body: body}.do(h)
+		require.Equal(t, http.StatusForbidden, w.Code, "a foreign Origin is refused before the body is read")
+	}
+	require.Len(t, jobs.got, 2)
+	require.Equal(t, "UPDATE", jobs.got[0].Job)
+	require.Equal(t, adminString, jobs.got[1].DatabaseURL)
+	require.NotContains(t, logs.String(), adminSecret)
+	require.Contains(t, logs.String(), "job=UPDATE")
+
+	// Every other route still refuses the admin string.
+	w := setupCall{path: "/api/v1/approvals/" + uuid.NewString() + "/approve", origin: setupOrigin, body: body}.do(h)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}

@@ -81,7 +81,7 @@ basalt revert --agent demo_bot --run RUN_ID
 
 `revert` prints a link to a page that shows the rows. Nothing is restored until you sign there with your passkey.
 
-To remove everything, run `basalt uninstall` and then `basalt service uninstall`. Uninstall drops the `basalt_meta` schema, the guard's triggers and policies, the `basalt_*` roles, and the demo schema when `init --demo` created it. Service uninstall stops and removes the engine service.
+To remove everything, ask the agent to remove BasaltDB. It gives you a link to the setup page, which shows the `DROP` statements and runs them once you type the admin connection string there: the `basalt_meta` schema, the guard's triggers and policies, the `basalt_*` roles, and the demo schema when `init --demo` created it. Then `basalt service uninstall` stops and removes the engine service.
 
 ## How it works
 
@@ -134,7 +134,7 @@ What works today:
 - Refusal of a write based on a row that changed after the agent read it
 - Holds for larger writes and every `DELETE`, signed with a passkey and checked inside Postgres
 - Revert by change, by run and by task, with a preview and conflict checks
-- `basalt status`, `basalt upgrade`, `basalt access`, `basalt classify` and `basalt uninstall`, and the MCP `describe` tool
+- `basalt status`, `basalt access` and `basalt classify`, the guard update and the removal on the setup page, and the MCP `describe` tool
 
 Not there yet:
 

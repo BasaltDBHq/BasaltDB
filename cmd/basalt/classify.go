@@ -438,3 +438,7 @@ func printChecks(w io.Writer, tables []classify.ReviewTable, checks map[string]c
 		}
 	}
 }
+
+func newerGuardError(installed, build int) error {
+	return fmt.Errorf("the guard (version %d) is newer than this basalt (version %d); install the newer basalt instead. Nothing changed", installed, build)
+}

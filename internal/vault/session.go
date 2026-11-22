@@ -330,7 +330,7 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 			after.run()
 			if err != nil {
 				cn.c.opts.Log.Debug("vault session: answer", "err", err)
-				cn.endAsync(ss.id, channel.ErrProtocol)
+				cn.endAsync(ss.id, answerCloseCode(err))
 				return
 			}
 		}
@@ -511,12 +511,27 @@ func (cn *conn) idleCheck(id sid, e *established) {
 }
 
 // end ends session id with code: it stops what the session runs and tells
-// the Vault. A session already ended is told again, harmlessly.
+// the Vault. A session another path already ended (its worker, a timer, a
+// revoked link) is left alone: that path told the Vault, with its own code,
+// and a second SESSION_CLOSE would only name a session the Vault dropped.
 func (cn *conn) end(ctx context.Context, id sid, code channel.CloseError) error {
-	if ss := cn.sessions.take(id); ss != nil {
-		ss.stop()
+	ss := cn.sessions.take(id)
+	if ss == nil {
+		return nil // already ended, and the Vault told, by whoever took it
 	}
+	ss.stop()
 	return cn.closeSession(ctx, id, code)
+}
+
+// answerCloseCode is the code a session ends with when its answer could not
+// be sent: the code the error carries (FRAME_INVALID when the read loop
+// refused a frame first, which fails the session's channel), else PROTOCOL.
+func answerCloseCode(err error) channel.CloseError {
+	var ce channel.CloseError
+	if errors.As(err, &ce) {
+		return ce
+	}
+	return channel.ErrProtocol
 }
 
 // endAsync is end from outside the read loop (a worker, a timer, a revoked

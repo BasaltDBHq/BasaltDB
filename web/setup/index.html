@@ -20,7 +20,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-LfbPao+FAP+o+gjpkqSVgQQdyDIphCDIqbSHyDMHKwJ9rvGwhTkhDZBbHwanV0q5"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-Kh2pPJXCXtsPBtNlqMtDy2FMUX4rI9VFl8H0wtwlBZMbXrpUSIgpQgr7C1n+6mEz"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -38,8 +38,8 @@
   </section>
 
   <main id="main" hidden>
-    <h1>Set up BasaltDB for your agent</h1>
-    <p>Your agent <strong id="job-agent"></strong> asked to connect to a database. This page sets it up on this computer. <span id="job-demo" hidden>It uses the sample database.</span></p>
+    <h1 id="title">Set up BasaltDB for your agent</h1>
+    <p><span id="intro"></span> <span id="job-demo" hidden>It uses the sample database.</span></p>
 
     <section class="panel">
       <h2>The agent's OS user</h2>
@@ -62,6 +62,7 @@
         <summary>The SQL it runs</summary>
         <pre id="sql"></pre>
       </details>
+      <label id="remove-confirm" hidden><input id="confirm-remove" type="checkbox"> I want to remove BasaltDB from this database. Its ledger is deleted for good.</label>
       <div class="buttons"><button id="run" type="button">Set up</button></div>
       <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
     </section>
@@ -71,7 +72,7 @@
 
   <section id="done" class="panel" role="status" hidden>
     <h1>Done</h1>
-    <p>The agent <strong id="done-agent"></strong> is set up. Tell it to go on; it connects with:</p>
+    <p id="done-text"></p>
     <pre id="mcp-command"></pre>
     <ul id="done-lines" hidden></ul>
     <ul id="warnings" hidden></ul>

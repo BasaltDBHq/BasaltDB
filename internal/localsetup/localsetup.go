@@ -27,8 +27,14 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
-// JobInstall is the one job this engine runs today.
-const JobInstall = "INSTALL"
+// The jobs of the setup page (CONTRACT.md, The local setup page, Jobs):
+// INSTALL on an engine with no config, UPDATE and REMOVE on an engine that
+// has one (agentjobs.go).
+const (
+	JobInstall = "INSTALL"
+	JobUpdate  = "UPDATE"
+	JobRemove  = "REMOVE"
+)
 
 // Fixed values the engine chooses itself for a first install.
 const (
@@ -78,7 +84,9 @@ type CheckAnswer struct {
 	Questions     []Question `json:"questions"`
 	Notes         []string   `json:"notes"`
 	PasskeyNeeded bool       `json:"passkeyNeeded"`
-	Challenge     Challenge  `json:"challenge"`
+	// Challenge is the passkey challenge of an INSTALL; an UPDATE and a
+	// REMOVE register no passkey and have none.
+	Challenge *Challenge `json:"challenge,omitempty"`
 }
 
 // RegisteredPasskey is one passkey the run registered.
@@ -116,6 +124,12 @@ type Options struct {
 	// Prefix is the roles' prefix: guard.DefaultPrefix outside tests,
 	// whose databases share one server's roles.
 	Prefix string
+	// Configured is the setup of an engine that runs with its config: it
+	// runs UPDATE and REMOVE for the agents in it and never an INSTALL
+	// (the engine loads engine.json only at its start).
+	Configured bool
+	// Euid is this process's effective user id (os.Geteuid outside tests).
+	Euid func() int
 }
 
 // Service runs the setup jobs. One runs at a time.
@@ -147,6 +161,9 @@ func New(o Options) (*Service, error) {
 	if o.Prefix == "" {
 		o.Prefix = defaultPrefix
 	}
+	if o.Euid == nil {
+		o.Euid = os.Geteuid
+	}
 	key, err := newKey()
 	if err != nil {
 		return nil, err
@@ -168,6 +185,9 @@ type job struct {
 func (s *Service) validate(req Request) (job, error) {
 	if _, err := os.Lstat(s.opts.ConfigPath); !errors.Is(err, os.ErrNotExist) {
 		return job{}, refuse(CodeJobUnavailable, "This engine is already set up. An install never changes an engine that has a config; ask the agent for the setup link of the change you want.")
+	}
+	if req.Job == JobUpdate || req.Job == JobRemove {
+		return job{}, refuse(CodeJobUnavailable, "This engine has no config yet, so it has no agent to update or remove. Ask the agent for a new link.")
 	}
 	if req.Job != JobInstall {
 		return job{}, refuse(CodeInvalidArgument, "This setup link names a job this engine does not run.")
@@ -333,6 +353,9 @@ func setupFailed() *RefusalError {
 func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
+	if s.opts.Configured {
+		return s.checkAgentJob(ctx, req)
+	}
 	j, err := s.validate(req)
 	if err != nil {
 		return CheckAnswer{}, err
@@ -366,7 +389,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	}
 	return CheckAnswer{
 		Database: database, Lines: summary(j, database, seeded, needed, keep), SQL: seeded.Shown() + script.SQL(),
-		Questions: []Question{}, Notes: notes(seeded, script), PasskeyNeeded: needed, Challenge: ch,
+		Questions: []Question{}, Notes: notes(seeded, script), PasskeyNeeded: needed, Challenge: &ch,
 	}, nil
 }
 

@@ -51,7 +51,7 @@ func newRemoteAgent(t *testing.T, dsn, kind string) remoteAgent {
 	}
 	setup := r.setup
 	require.NoError(t, config.UpsertAgent(r.cfgPath, config.Settings{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: mcpcontract.OperatedByAgent, PagesURL: links.Portal},
-		config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(r.credFile), InitArgs: []string{"--agent=bot", "--write=public.leads"}, Setup: &setup}))
+		config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(r.credFile), Setup: &setup}))
 	return r
 }
 

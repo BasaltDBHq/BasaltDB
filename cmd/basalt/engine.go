@@ -361,9 +361,8 @@ func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, 
 	return cmds, nil
 }
 
-// refuseSecretInitArgs refuses saved init arguments that look like a
-// connection string or carry a password, so none is written to engine.json.
-// The engine replays none of them.
+// refuseSecretInitArgs refuses --init-arg values that look like a
+// connection string or carry a password. None is saved or replayed.
 func refuseSecretInitArgs(args []string) error {
 	for _, a := range args {
 		lower := strings.ToLower(a)
@@ -433,7 +432,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 		a.operatedBy = o.enum()
 		return nil
 	})
-	fs.Func(flagInitArg, "install --agent: a flag basalt init saves for the agent (repeatable)", func(v string) error {
+	fs.Func(flagInitArg, "install --agent: ignored, kept for older install scripts; refused when it holds a secret (repeatable)", func(v string) error {
 		a.initArgs = append(a.initArgs, v)
 		return nil
 	})

@@ -23,29 +23,23 @@ import (
 // a committed credential.
 var leakedAdmin = "postgres://postgres" + ":" + "hunter2-admin" + "@" + "db.example.com:5432/app"
 
-// TestAgentContextNeedsAMarker: without a marker, a person's command reads
-// the admin credential as before (here from the environment, then fails to
-// connect to a database that is not there).
-func TestAgentContextNeedsAMarker(t *testing.T) {
+// TestAgentMarkerNeedsAValue: a blank marker is not a marker.
+func TestAgentMarkerNeedsAValue(t *testing.T) {
 	t.Parallel()
 	c := &cliIO{getenv: func(k string) string {
-		if k == envAdminURL {
-			return leakedAdmin
-		}
-		return ""
-	}}
-	require.Empty(t, c.agentMarker())
-	got, err := c.adminURL()
-	require.NoError(t, err)
-	require.Equal(t, leakedAdmin, got)
-
-	c.getenv = func(k string) string {
 		if k == "CLAUDECODE" {
 			return "  "
 		}
 		return ""
-	}
+	}}
 	require.Empty(t, c.agentMarker(), "a blank value is not a marker")
+	c.getenv = func(k string) string {
+		if k == "CLAUDECODE" {
+			return "1"
+		}
+		return ""
+	}
+	require.Equal(t, "CLAUDECODE", c.agentMarker())
 }
 
 // TestInitRemoteWarnsAboutAnAdminEnv: init --remote never uses
@@ -144,9 +138,8 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", engine.Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp":      agentsHelp,
-		"hintAgentPerson": hintAgentPerson,
-		"adminEnvLeaked":  adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
+		"agentsHelp":        agentsHelp,
+		"remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)
 	}

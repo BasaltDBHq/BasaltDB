@@ -313,3 +313,36 @@ func TestInitWaitsAsLongAsAnApprovalWait(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, 90*time.Second, removalWait)
 }
+
+// Plain basalt init never reads BASALT_ADMIN_DATABASE_URL, with or without
+// an agent marker and with or without a terminal: the admin connection
+// string is typed on the setup page only.
+func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		marker      bool
+		interactive bool
+	}{{"a person at a terminal", false, true}, {"no terminal", false, false}, {"an agent marker", true, true}} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		var stdout, stderr bytes.Buffer
+		var read []string
+		getenv := func(k string) string {
+			read = append(read, k)
+			switch {
+			case k == envAdminURL:
+				return "postgres://admin" + ":" + "pw@db.example/app"
+			case k == "CLAUDECODE" && tc.marker:
+				return "1"
+			}
+			return ""
+		}
+		c := newIO(ctx, stdio{in: strings.NewReader(leakedAdmin + "\n"), out: &stdout, err: &stderr}, getenv)
+		c.goos, c.host, c.interactive = "linux", newFakeHost(t), tc.interactive
+		code := runInit(c, []string{"--demo"})
+		cancel()
+		require.Equal(t, exitOK, code, "%s: %s", tc.name, stderr.String())
+		require.NotContains(t, read, envAdminURL, tc.name)
+		require.NotContains(t, stdout.String()+stderr.String(), "pw@db.example", tc.name)
+	}
+}

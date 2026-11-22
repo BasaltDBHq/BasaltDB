@@ -69,6 +69,15 @@ func CheckNotConnectOnly(p Payload) error {
 // code, or an AGENT code that rotates it.
 func (p Payload) HasVerifier() bool { return p.Agent != nil && p.Agent.Verifier != "" }
 
+// KeepsGrants reports whether p is an AGENT code that names no tables: the
+// role keeps the grants it holds, and the setup grants and revokes none
+// (CONTRACT.md, The setup code, Kinds). The database's grants are the only
+// record of the agent's tables.
+func (p Payload) KeepsGrants() bool {
+	a := p.Agent
+	return p.Kind == KindAgent && a != nil && a.AllTables == nil && len(a.Write)+len(a.Read) == 0
+}
+
 func futureMessage(agent string) string {
 	return "This setup code claims a time in the future. Check this computer's clock, or ask " + agent + " for a new code."
 }

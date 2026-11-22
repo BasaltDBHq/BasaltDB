@@ -59,7 +59,7 @@ func TestKeptCredentialSpec(t *testing.T) {
 	require.Len(t, got.Files, 2)
 	require.Equal(t, cred, got.Files[1].Path)
 	require.Equal(t, "postgres://r:p@h/d\n", string(got.Files[1].Content))
-	require.Contains(t, string(got.Files[0].Content), `"initArgs"`)
+	require.NotContains(t, string(got.Files[0].Content), `"initArgs"`, "--init-arg is never saved")
 }
 
 // An agent that waits for its database's address (a connect-only setup

@@ -235,8 +235,8 @@ func checkSetupRules(p map[string]any) error {
 		return nil // the schema keeps write and read out
 	}
 	write, read := agent["write"].([]any), agent["read"].([]any)
-	if len(write)+len(read) == 0 {
-		return fmt.Errorf("no tables")
+	if len(write)+len(read) == 0 && p["kind"] == "INSTALL" {
+		return fmt.Errorf("no tables") // an AGENT code with none keeps the role's grants
 	}
 	for _, w := range write {
 		if slices.Contains(read, w) {

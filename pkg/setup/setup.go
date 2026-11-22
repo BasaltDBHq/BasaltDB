@@ -111,12 +111,18 @@ type Description struct {
 	GuardFrom int
 	GuardTo   int
 	// Write and Read are the agent's tables (schema.table), empty with
-	// AllTablesSchemas.
+	// AllTablesSchemas. Both empty without AllTablesSchemas is an AGENT
+	// code that keeps the role's current grants (KeepsGrants).
 	Write []string
 	Read  []string
 	// AllTablesSchemas are, for an agent.allTables code, the schemas whose
 	// tables the agent gets (Check lists them); nil otherwise.
 	AllTablesSchemas []string
+	// KeepsGrants is an AGENT code that names no tables: the role keeps
+	// the grants it holds, and the setup grants and revokes none. When the
+	// role does not exist, Check lists schema public and the person ticks
+	// the tables (Checked.Ticked).
+	KeepsGrants bool
 	// StatementTimeoutMs is the agent role's statement timeout, 0 for an
 	// UPGRADE code.
 	StatementTimeoutMs int64
@@ -171,6 +177,7 @@ func describe(s *setuprun.Setup) Description {
 		if a.AllTables != nil {
 			d.AllTablesSchemas = slices.Clone(a.AllTables.Schemas)
 		}
+		d.KeepsGrants = p.KeepsGrants()
 	}
 	if p.Engine != nil {
 		d.EngineKey = p.Engine.PublicKey
@@ -215,6 +222,10 @@ type Checked struct {
 	// RunsAsInstall is an AGENT code with a verifier whose role does
 	// not exist: Run creates the role as an INSTALL code does.
 	RunsAsInstall bool
+	// Ticked is whether the page shows Tables with ticks and Run needs
+	// Request.Included: an INSTALL code with agent.allTables, and an AGENT
+	// code that runs as an INSTALL with agent.allTables or no tables.
+	Ticked bool
 	// Columns are every ordinary column of the tables the agent will get
 	// (Tables, else the code's write and read tables), by table in name
 	// order and then column order, with its class in the database now
@@ -315,7 +326,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if err != nil {
 		return Checked{}, asError(err)
 	}
-	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall()}
+	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall(), Ticked: s.Ticked()}
 	if out.Connected, err = ConnectedAs(ctx, conn); err != nil {
 		return Checked{}, asError(err)
 	}
@@ -362,13 +373,9 @@ func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guar
 	return guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
 }
 
-// agentTables are the tables the agent gets, in name order.
-func agentTables(s *setuprun.Setup) []string {
-	spec := s.Spec()
-	out := append(slices.Clone(spec.Write), spec.Read...)
-	slices.Sort(out)
-	return slices.Compact(out)
-}
+// agentTables are the tables the agent gets, in name order: for an AGENT
+// code that keeps the role's grants, the ones it holds.
+func agentTables(s *setuprun.Setup) []string { return s.AgentTables() }
 
 // newSetup is setuprun.New for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {

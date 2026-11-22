@@ -234,8 +234,8 @@ func TestAllTablesNoTables(t *testing.T) {
 }
 
 // A connect-only recovery code (AGENT with a verifier) creates the role as
-// an INSTALL does when it does not exist, and rotates its password with
-// the laptop's warning when it does.
+// an INSTALL does when it does not exist, with the person's ticks, and
+// rotates its password with the laptop's warning when it does.
 func TestConnectOnlyRecoveryCode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -250,9 +250,13 @@ func TestConnectOnlyRecoveryCode(t *testing.T) {
 	checked, err := setup.Check(ctx, d.Admin, connectPage(first))
 	require.NoError(t, err)
 	require.True(t, checked.RunsAsInstall)
+	require.True(t, checked.Ticked, "it runs as an INSTALL: the person ticks the tables")
 	require.Contains(t, checked.Summary[0], "This creates the agent bot")
 	_, err = setup.Run(ctx, d.Admin, connectPage(first), setup.RunInput{Passkey: verified(t, give)})
+	require.Equal(t, setup.CodeNoTables, codeOf(t, err), "no ticks: never every table in public")
+	_, err = setup.Run(ctx, d.Admin, ticked(first, "public.leads"), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
+	require.False(t, hasPrivilege(t, d, "public.payroll", "SELECT"), "only the ticked table")
 	var exists bool
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, d.Names.Prefix+"_agent_bot").Scan(&exists))
 	require.True(t, exists)
@@ -261,6 +265,7 @@ func TestConnectOnlyRecoveryCode(t *testing.T) {
 	checked, err = setup.Check(ctx, d.Admin, connectPage(second))
 	require.NoError(t, err)
 	require.False(t, checked.RunsAsInstall)
+	require.False(t, checked.Ticked)
 	require.Contains(t, checked.Summary[0], "This replaces the password of the existing agent bot")
 	require.Contains(t, checked.Summary[0], "Run it only if bot itself gave you this code.")
 	res, err := setup.Run(ctx, d.Admin, connectPage(second), setup.RunInput{})

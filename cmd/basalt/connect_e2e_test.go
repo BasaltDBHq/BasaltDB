@@ -146,7 +146,7 @@ func newConnectFixture(t *testing.T) connectFixture {
 	t.Helper()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	install := codeFor(t, d, dbURL, cfg, "--write=public.leads")
+	install := codeFor(t, d, dbURL, cfg)
 	srv, base := connecttest.Start(t)
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
@@ -171,7 +171,9 @@ func (f connectFixture) describe(code string) *connectv1.DescribeSetupResponse {
 }
 
 func (f connectFixture) runBody(code string, c *connectv1.PasskeyChallenge, pk map[string]any) map[string]any {
-	body := map[string]any{"code": code, "databaseUrl": f.d.URL}
+	// The fixture's INSTALL code asks for every table in public: the
+	// person leaves public.leads ticked.
+	body := map[string]any{"code": code, "databaseUrl": f.d.URL, "includedTables": []string{"public.leads"}}
 	if c != nil {
 		body["challenge"] = challengeJSON(c)
 	}
@@ -205,7 +207,7 @@ func TestConnectPageRunsASetupEndToEnd(t *testing.T) {
 	require.Equal(t, "bot", sum.GetAgent())
 	require.Equal(t, res.Fingerprint, sum.GetFingerprint(), "the page shows the fingerprint the bot shows")
 	require.Equal(t, f.install.payload.Prefix, sum.GetPrefix())
-	require.Equal(t, []string{"public.leads"}, sum.GetWrite())
+	require.Equal(t, []string{"public"}, sum.GetAllTablesSchemas(), "the person ticks the tables")
 	require.NotEmpty(t, sum.GetLines())
 	ch := desc.GetChallenge()
 	require.NotEmpty(t, ch.GetMac())
@@ -325,10 +327,13 @@ func TestConnectPageRefusesHostileSetupsClosed(t *testing.T) {
 		f := newConnectFixture(t)
 		desc := f.describe(f.install.res.Code)
 
-		// Someone re-encodes the code with one more table for the agent to
-		// change: a code that decodes and checks, with another fingerprint.
+		// Someone re-encodes the code with a named table for the agent to
+		// change in place of the ticks: a code that decodes and checks,
+		// with another fingerprint.
 		p := f.install.payload
-		p.Agent.Write = append(append([]string{}, p.Agent.Write...), "public.payroll")
+		a := *p.Agent
+		a.AllTables, a.Write = nil, []string{"public.payroll"}
+		p.Agent = &a
 		swapped, err := setupcode.Encode(p)
 		require.NoError(t, err)
 		require.NotEqual(t, f.install.res.Fingerprint, f.describe(swapped).GetSummary().GetFingerprint(), "the page shows a different fingerprint")

@@ -21,25 +21,29 @@ import (
 
 // codeFor is basalt init --remote's code for the bot in database d, which
 // the person confirmed on the connect page and which does not record the
-// setup yet: an INSTALL code with the credential's password. tables are
-// the agent's saved table flags (--write=...).
-func codeFor(t *testing.T, d *guardtest.DB, dbURL, cfg string, tables ...string) remoteRun {
+// setup yet: an INSTALL code with the credential's password, for every
+// table in public, which the person ticks.
+func codeFor(t *testing.T, d *guardtest.DB, dbURL, cfg string) remoteRun {
 	t.Helper()
 	pw, err := setupcode.NewPassword()
 	require.NoError(t, err)
-	seedCredential(t, withDB(t), cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", pw), append([]string{"--prefix=" + d.Names.Prefix}, tables...)...)
+	seedCredential(t, withDB(t), cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", pw))
 	return remoteDBRun(t, cfg, "--agent", "bot")
 }
 
 // runViaConnect runs code against database d through the connect page, as the
-// person does: the passkey is made when the database has none.
-func runViaConnect(t *testing.T, d *guardtest.DB, code string) {
+// person does: the passkey is made when the database has none, and ticked
+// are the tables left ticked (a code with ticks needs at least one).
+func runViaConnect(t *testing.T, d *guardtest.DB, code string, ticked ...string) {
 	t.Helper()
 	_, base := connecttest.Start(t)
 	p := page{t, base}
 	var desc connectv1.DescribeSetupResponse
 	p.ok("DescribeSetup", map[string]any{"code": code}, &desc)
 	body := map[string]any{"code": code, "databaseUrl": d.URL}
+	if len(ticked) > 0 {
+		body["includedTables"] = ticked
+	}
 	var chk connectv1.CheckSetupResponse
 	p.ok("CheckSetup", map[string]any{"code": code, "databaseUrl": d.URL}, &chk)
 	if chk.GetPasskeyNeeded() {
@@ -53,13 +57,12 @@ func runViaConnect(t *testing.T, d *guardtest.DB, code string) {
 }
 
 // installed runs an INSTALL code made by basalt init --remote through the
-// connect page and returns the bot's run. tables are the agent's saved
-// table flags (--write=...).
-func installed(t *testing.T, d *guardtest.DB, dbURL, cfg string, tables ...string) remoteRun {
+// connect page, with ticked left ticked, and returns the bot's run.
+func installed(t *testing.T, d *guardtest.DB, dbURL, cfg string, ticked ...string) remoteRun {
 	t.Helper()
-	install := codeFor(t, d, dbURL, cfg, tables...)
+	install := codeFor(t, d, dbURL, cfg)
 	require.Equal(t, "INSTALL", install.res.Kind)
-	runViaConnect(t, d, install.res.Code)
+	runViaConnect(t, d, install.res.Code, ticked...)
 	return install
 }
 

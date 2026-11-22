@@ -41,6 +41,9 @@ type SummaryState struct {
 	// RunsAsInstall is a connect-only recovery AGENT code whose role does
 	// not exist: the connect service runs it as an INSTALL.
 	RunsAsInstall bool
+	// NoGrants is an AGENT code that names no tables whose role exists and
+	// holds no table: the person ticks its tables, as for a dropped role.
+	NoGrants bool
 	// Tables are, with agent.allTables, the tables the agent may change,
 	// read from the database; nil when not read (the summary then names the
 	// schema). ReadOnly are those it may only read: no primary key.
@@ -76,6 +79,10 @@ func Summary(p Payload, s SummaryState) []string {
 	case p.Kind == KindAgent && p.Agent.Verifier != "":
 		out = append(out, fmt.Sprintf("This replaces the password of the existing agent %s (role %s): only whoever made this code can then log in as %s. "+
 			"Run it only if %s itself gave you this code.", name, role, role, name))
+	case p.KeepsGrants() && s.NoGrants:
+		out = append(out, fmt.Sprintf("The existing agent %s (role %s) has no tables in this database: tick the tables to give it; its password stays.", name, role))
+	case p.KeepsGrants():
+		out = append(out, fmt.Sprintf("This changes nothing for the existing agent %s (role %s): its password and its tables stay.", name, role))
 	case p.Kind == KindAgent:
 		out = append(out, fmt.Sprintf("This changes the tables of the existing agent %s (role %s); its password stays.", name, role))
 	default:
@@ -94,8 +101,16 @@ func Summary(p Payload, s SummaryState) []string {
 	if p.Agent == nil {
 		return out
 	}
-	if p.Agent.AllTables != nil {
+	switch {
+	case p.Agent.AllTables != nil:
 		return append(out, allTablesLines(p.Agent, s)...)
+	case p.KeepsGrants() && (s.RunsAsInstall || s.NoGrants):
+		// The role is gone: the person ticks its tables in schema public.
+		a := *p.Agent
+		a.AllTables = &AllTables{Schemas: []string{publicSchema}}
+		return append(out, allTablesLines(&a, s)...)
+	case p.KeepsGrants():
+		return append(out, fmt.Sprintf("%s keeps the tables it can use now: this setup grants and revokes none.", p.Agent.Name))
 	}
 	out = append(out, grantsSentence(p.Agent))
 	for _, t := range append(append([]string{}, p.Agent.Write...), p.Agent.Read...) {

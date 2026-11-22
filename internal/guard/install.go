@@ -69,7 +69,11 @@ type AgentSpec struct {
 	// the agents group (a setup code never pulls another role in), and its
 	// table privileges are replaced by Read and Write, so tables no longer
 	// listed lose theirs (CONTRACT.md, The setup code, kinds).
-	Change           bool
+	Change bool
+	// KeepGrants, with Change, keeps the role's table privileges: an AGENT
+	// setup code that names no tables. The role must still be an agent of
+	// the group; nothing is revoked and Read and Write are empty.
+	KeepGrants       bool
 	Read             []string
 	Write            []string
 	StatementTimeout time.Duration
@@ -264,11 +268,28 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 		return nil, err
 	}
 	out := []Statement{adopt}
-	if spec.Change {
+	switch {
+	case spec.Change && spec.KeepGrants:
+		out = append(out, Statement{SQL: n.render(fmt.Sprintf(agentMemberSQL, role))})
+	case spec.Change:
 		out = append(out, Statement{SQL: n.render(fmt.Sprintf(agentChangeSQL, role))})
 	}
 	return append(append(out, st), grants...), nil
 }
+
+// agentMemberSQL runs after agentAdoptSQL for an AGENT setup code that
+// keeps the role's grants: the role must be an agent of this install, and
+// keeps every privilege it holds.
+const agentMemberSQL = `
+DO $$
+DECLARE
+    v_role oid := (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = '%[1]s');
+BEGIN
+    IF v_role IS NULL OR NOT pg_catalog.pg_has_role(v_role, '{{agents}}', 'USAGE') THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s is not an agent role of {{agents}}: an AGENT setup code changes only an existing agent';
+    END IF;
+END $$;`
 
 // agentChangeSQL runs after agentAdoptSQL for an AGENT setup code: the role
 // must be an agent of this install, and loses every privilege it holds on

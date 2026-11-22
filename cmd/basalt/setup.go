@@ -84,7 +84,8 @@ type agentInstall struct {
 	vault, vaultDefault string
 	// report, when set, is told the vault the install wrote.
 	report func(config.VaultWritten)
-	// initArgs are saved to the agent's config entry.
+	// initArgs are what --init-arg gave: checked for a secret, never saved
+	// (engine.json keeps no init flags).
 	initArgs []string
 	// keepCredential leaves the credential file as it is (the role kept its
 	// password); dsn is empty.
@@ -122,7 +123,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,
 			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy, KeepConnectOnlySetup: a.waiting,
 		},
-		config.Agent{Name: a.name, OSUser: a.osUser, Store: config.PostgresStore(cred), InitArgs: a.initArgs})
+		config.Agent{Name: a.name, OSUser: a.osUser, Store: config.PostgresStore(cred)})
 	if err != nil {
 		return spec, err
 	}

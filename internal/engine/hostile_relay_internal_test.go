@@ -78,8 +78,7 @@ func readApproval(t *testing.T, ctx context.Context, p *pagetest.Page, item held
 	return req
 }
 
-// loopbackApproval reads a held write's request on the engine's own pages,
-// for a test whose Vault breaks every session.
+// leadScore is lead id's score, read as the admin.
 func (e *relayEnv) leadScore(t *testing.T, id int) int {
 	t.Helper()
 	var n int
@@ -87,6 +86,8 @@ func (e *relayEnv) leadScore(t *testing.T, id int) int {
 	return n
 }
 
+// loopbackApproval reads a held write's request on the engine's own pages,
+// for a test whose Vault breaks every session.
 func (e *relayEnv) loopbackApproval(t *testing.T, item heldItem) approval.Request {
 	t.Helper()
 	site := pages.New(links.Portal, quietLog())

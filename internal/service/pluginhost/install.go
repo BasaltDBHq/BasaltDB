@@ -9,6 +9,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // Modes of installed files. A file the source ships executable, and the
@@ -48,7 +50,7 @@ type Staged struct {
 // has none.
 func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (*Staged, error) {
 	o := optionsOf(opts)
-	owner, err := mode.owner()
+	owner, err := pluginpath.Owner(mode)
 	if err != nil {
 		return nil, err
 	}

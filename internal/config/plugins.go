@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Bounds of a plugin entry (CONTRACT.md, Plugins, Config).
@@ -131,12 +131,12 @@ type PluginAuth struct {
 
 // Key is the entry's (name, instance), with an empty instance read as
 // plugin.DefaultInstance.
-func (p Plugin) Key() pluginhost.EntryKey {
+func (p Plugin) Key() pluginmodel.EntryKey {
 	inst := p.Instance
 	if inst == "" {
-		inst = pluginhost.DefaultInstance
+		inst = pluginmodel.DefaultInstance
 	}
-	return pluginhost.EntryKey{Name: p.Name, Instance: inst}
+	return pluginmodel.EntryKey{Name: p.Name, Instance: inst}
 }
 
 // ErrAuthNotRemote: auth.credentialFile is set on an entry whose plugin is
@@ -148,15 +148,15 @@ var ErrAuthNotRemote = errors.New("auth.credentialFile is for remote plugins onl
 // default when timeoutMs is unset, and config as "{}" when none. It refuses
 // auth on a plugin that is not remote, the one entry rule that needs the
 // manifest.
-func (p Plugin) Entry(m pluginhost.Manifest) (pluginhost.Entry, error) {
+func (p Plugin) Entry(m pluginmodel.Manifest) (pluginmodel.Entry, error) {
 	if p.Auth != nil && !m.Endpoint.IsRemote() {
-		return pluginhost.Entry{}, fmt.Errorf("plugin %s: %w", p.Key(), ErrAuthNotRemote)
+		return pluginmodel.Entry{}, fmt.Errorf("plugin %s: %w", p.Key(), ErrAuthNotRemote)
 	}
 	cfg := p.Config
 	if len(cfg) == 0 {
 		cfg = json.RawMessage(`{}`)
 	}
-	return pluginhost.Entry{
+	return pluginmodel.Entry{
 		Key:      p.Key(),
 		Manifest: m,
 		Agents:   slices.Clone(p.Agents),
@@ -172,9 +172,9 @@ func (p Plugin) Timeout(remote bool) time.Duration {
 	case p.TimeoutMs != 0:
 		return time.Duration(p.TimeoutMs) * time.Millisecond
 	case remote:
-		return pluginhost.DefaultRemoteTimeout
+		return pluginmodel.DefaultRemoteTimeout
 	}
-	return pluginhost.DefaultLocalTimeout
+	return pluginmodel.DefaultLocalTimeout
 }
 
 // CredentialFile is auth.credentialFile, or "" when the entry has none.
@@ -188,7 +188,7 @@ func (p Plugin) CredentialFile() string {
 // UnknownAgentError is a plugin entry, or a basalt plugin command, naming an
 // agent the engine does not have (PLUGIN_REFUSED UNKNOWN_AGENT).
 type UnknownAgentError struct {
-	Entry pluginhost.EntryKey
+	Entry pluginmodel.EntryKey
 	Agent string
 }
 
@@ -202,7 +202,7 @@ func (c Config) HasAgent(name string) bool {
 }
 
 // PluginIndex is the index of the entry with key k in c.Plugins, or -1.
-func (c Config) PluginIndex(k pluginhost.EntryKey) int {
+func (c Config) PluginIndex(k pluginmodel.EntryKey) int {
 	return slices.IndexFunc(c.Plugins, func(p Plugin) bool { return p.Key() == k })
 }
 
@@ -210,7 +210,7 @@ func (c Config) PluginIndex(k pluginhost.EntryKey) int {
 // (CONTRACT.md, Plugins, Config). The rules that need the manifest are in
 // Entry.
 func (c Config) checkPlugins() error {
-	seen := map[pluginhost.EntryKey]bool{}
+	seen := map[pluginmodel.EntryKey]bool{}
 	for i, p := range c.Plugins {
 		if err := c.checkPlugin(p); err != nil {
 			return err
@@ -280,7 +280,7 @@ func (c Config) CheckKeptPlugins(entries []Plugin) error {
 	// approval key: every engine-kept entry requires approval.
 	same := c
 	same.Mode = ModeSameUser
-	seen := map[pluginhost.EntryKey]bool{}
+	seen := map[pluginmodel.EntryKey]bool{}
 	for i, p := range entries {
 		if err := same.checkPlugin(p); err != nil {
 			return fmt.Errorf("entry %d: %w", i, err)
@@ -302,7 +302,7 @@ func (c Config) CheckKeptPlugins(entries []Plugin) error {
 }
 
 // checkPluginAgents requires agents, each one of c's agents, none twice.
-func (c Config) checkPluginAgents(k pluginhost.EntryKey, agents []string) error {
+func (c Config) checkPluginAgents(k pluginmodel.EntryKey, agents []string) error {
 	if agents == nil {
 		return fmt.Errorf("plugin %s: agents is required (an empty list serves none)", k)
 	}

@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 const (
@@ -71,7 +71,7 @@ type conn struct {
 	nextID    uint64
 	pending   map[uint64]chan reply
 	dead      bool
-	deadClass pluginhost.FailureClass
+	deadClass pluginmodel.FailureClass
 }
 
 // newConn starts the reader and the writer. stop must be safe to call more
@@ -111,10 +111,10 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 
 	line, err := pluginproto.Marshal(request{JSONRPC: version, ID: id, Method: method, Params: body})
 	if err != nil {
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	if len(line) > pluginproto.MaxMessageBytes {
-		return pluginhost.Fail(pluginhost.ClassOverLimit)
+		return pluginmodel.Fail(pluginmodel.ClassOverLimit)
 	}
 
 	select {
@@ -139,7 +139,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 // Close stops the connection and everything it started, and waits for its
 // goroutines. It is safe to call more than once.
 func (c *conn) Close() error {
-	c.fail(pluginhost.ClassUnavailable)
+	c.fail(pluginmodel.ClassUnavailable)
 	c.stop()
 	c.wg.Wait()
 	return nil
@@ -154,7 +154,7 @@ func marshalParams(params any) (json.RawMessage, error) {
 		return nil, err
 	}
 	if len(b) > pluginproto.MaxMessageBytes {
-		return nil, pluginhost.Fail(pluginhost.ClassOverLimit)
+		return nil, pluginmodel.Fail(pluginmodel.ClassOverLimit)
 	}
 	return b, nil
 }
@@ -164,7 +164,7 @@ func decodeResult(raw json.RawMessage, result any) error {
 		return nil
 	}
 	if err := json.Unmarshal(raw, result); err != nil {
-		return pluginhost.Fail(pluginhost.ClassBadResponse)
+		return pluginmodel.Fail(pluginmodel.ClassBadResponse)
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (c *conn) register() (uint64, chan reply, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.dead {
-		return 0, nil, pluginhost.Fail(c.laterClass())
+		return 0, nil, pluginmodel.Fail(c.laterClass())
 	}
 	c.nextID++
 	ch := make(chan reply, 1)
@@ -189,16 +189,16 @@ func (c *conn) forget(id uint64) {
 
 // laterClass is the class a call gets once the connection is dead: a plugin
 // that went away stays EXITED; any other end is UNAVAILABLE. Callers hold mu.
-func (c *conn) laterClass() pluginhost.FailureClass {
-	if c.deadClass == pluginhost.ClassExited {
-		return pluginhost.ClassExited
+func (c *conn) laterClass() pluginmodel.FailureClass {
+	if c.deadClass == pluginmodel.ClassExited {
+		return pluginmodel.ClassExited
 	}
-	return pluginhost.ClassUnavailable
+	return pluginmodel.ClassUnavailable
 }
 
 // fail marks the connection dead once. Calls waiting now get class; later
 // calls get laterClass. It does not stop the process or the socket.
-func (c *conn) fail(class pluginhost.FailureClass) {
+func (c *conn) fail(class pluginmodel.FailureClass) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.dead {
@@ -207,14 +207,14 @@ func (c *conn) fail(class pluginhost.FailureClass) {
 	c.dead = true
 	c.deadClass = class
 	for id, ch := range c.pending {
-		ch <- reply{err: pluginhost.Fail(class)} // buffered, one slot, never sent twice
+		ch <- reply{err: pluginmodel.Fail(class)} // buffered, one slot, never sent twice
 		delete(c.pending, id)
 	}
 	close(c.done)
 }
 
 // abort ends the connection after a failure the reader or writer saw.
-func (c *conn) abort(class pluginhost.FailureClass) {
+func (c *conn) abort(class pluginmodel.FailureClass) {
 	c.fail(class)
 	c.stop()
 }
@@ -228,7 +228,7 @@ func (c *conn) writeLoop() {
 				continue // the caller gave up before the write; send nothing
 			}
 			if _, err := c.w.Write(f.line); err != nil {
-				c.abort(pluginhost.ClassExited)
+				c.abort(pluginmodel.ClassExited)
 				return
 			}
 		case <-c.done:
@@ -242,11 +242,11 @@ func (c *conn) readLoop(br *bufio.Reader) {
 	for {
 		line, err := readLine(br, pluginproto.MaxMessageBytes)
 		if errors.Is(err, errTooLong) {
-			c.abort(pluginhost.ClassBadResponse)
+			c.abort(pluginmodel.ClassBadResponse)
 			return
 		}
 		if err != nil {
-			c.abort(pluginhost.ClassExited)
+			c.abort(pluginmodel.ClassExited)
 			return
 		}
 		line = bytes.TrimSuffix(line, []byte{'\r'})
@@ -254,7 +254,7 @@ func (c *conn) readLoop(br *bufio.Reader) {
 			continue
 		}
 		if !c.dispatch(line) {
-			c.abort(pluginhost.ClassBadResponse)
+			c.abort(pluginmodel.ClassBadResponse)
 			return
 		}
 	}
@@ -296,7 +296,7 @@ func classify(m response) reply {
 	hasResult := len(m.Result) > 0
 	hasError := len(m.Error) > 0 && !bytes.Equal(m.Error, []byte("null"))
 	if hasError || !hasResult {
-		return reply{err: pluginhost.Fail(pluginhost.ClassBadResponse)}
+		return reply{err: pluginmodel.Fail(pluginmodel.ClassBadResponse)}
 	}
 	return reply{result: m.Result}
 }

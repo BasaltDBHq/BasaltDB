@@ -10,10 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the plugin unit golden files under testdata/")
@@ -36,7 +38,7 @@ func darwinHost() osservice.PluginHost {
 }
 
 func entry(goos, instance string, egress ...string) osservice.PluginEntry {
-	root, err := pluginhost.Root(pluginhost.ModeService, goos, "")
+	root, err := pluginpath.Root(pluginmodel.ModeService, goos, "")
 	if err != nil {
 		panic(err)
 	}
@@ -605,7 +607,7 @@ func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {
 func TestUserClash(t *testing.T) {
 	t.Parallel()
 	long := "acme-ner-presidio"
-	others := []pluginhost.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
+	others := []pluginmodel.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
 	require.Nil(t, osservice.UserClash(long, "default", others), "an entry does not clash with itself")
 	require.Nil(t, osservice.UserClash("other", "default", others))
 }

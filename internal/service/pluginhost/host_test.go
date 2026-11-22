@@ -68,7 +68,7 @@ func manifest(name string) Manifest {
 }
 
 func entry(name, instance string, agents ...string) Entry {
-	return Entry{Key: EntryKey{name, instance}, Manifest: manifest(name), Agents: agents, Timeout: 100 * time.Millisecond}
+	return Entry{Key: EntryKey{Name: name, Instance: instance}, Manifest: manifest(name), Agents: agents, Timeout: 100 * time.Millisecond}
 }
 
 func goodInit(m Manifest) *pluginproto.InitializeResponse {
@@ -336,7 +336,7 @@ func TestUnavailableEntryRefusesCalls(t *testing.T) {
 	if len(f.methods()) != n {
 		t.Fatal("call reached an unavailable plugin")
 	}
-	assertClass(t, h.Call(context.Background(), EntryKey{"nope", "default"}, []string{"a"}, "detect", nil, nil), ClassUnavailable)
+	assertClass(t, h.Call(context.Background(), EntryKey{Name: "nope", Instance: "default"}, []string{"a"}, "detect", nil, nil), ClassUnavailable)
 }
 
 func TestInstancesShareNothing(t *testing.T) {

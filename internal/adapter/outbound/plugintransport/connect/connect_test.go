@@ -31,8 +31,8 @@ import (
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 func TestMain(m *testing.M) {
@@ -45,12 +45,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func remote(url string) pluginhost.RemoteEndpoint {
-	return pluginhost.RemoteEndpoint{Transport: "connectrpc", URL: url}
+func remote(url string) pluginmodel.RemoteEndpoint {
+	return pluginmodel.RemoteEndpoint{Transport: "connectrpc", URL: url}
 }
 
 func TestAdapter(t *testing.T) {
-	adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginhost.Transport {
+	adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginmodel.Transport {
 		t.Helper()
 		url, addr, roots := startPeer(t, modeOf(b))
 		tr, err := dial(context.Background(), remote(url), []string{addr}, "", options{roots: roots, methods: testMethods()})
@@ -109,7 +109,7 @@ func newServer(t *testing.T, h http.Handler, cert *tls.Certificate) *server {
 	return s
 }
 
-func dialServer(t *testing.T, s *server, credentialFile string) pluginhost.Transport {
+func dialServer(t *testing.T, s *server, credentialFile string) pluginmodel.Transport {
 	t.Helper()
 	tr, err := dial(context.Background(), remote(s.URL), []string{s.addr()}, credentialFile, options{roots: s.roots(), methods: testMethods()})
 	if err != nil {
@@ -119,8 +119,8 @@ func dialServer(t *testing.T, s *server, credentialFile string) pluginhost.Trans
 	return tr
 }
 
-func classOf(err error) pluginhost.FailureClass {
-	var c pluginhost.Classed
+func classOf(err error) pluginmodel.FailureClass {
+	var c pluginmodel.Classed
 	if errors.As(err, &c) {
 		return c.FailureClass()
 	}
@@ -171,7 +171,7 @@ func TestRemoteRefusesBadURLs(t *testing.T) {
 			t.Fatalf("the error carries part of the URL: %v", err)
 		}
 	}
-	_, err := Dial(context.Background(), pluginhost.RemoteEndpoint{Transport: "jsonrpc-unix", URL: "https://127.0.0.1:8443"}, []string{"127.0.0.1:8443"}, "")
+	_, err := Dial(context.Background(), pluginmodel.RemoteEndpoint{Transport: "jsonrpc-unix", URL: "https://127.0.0.1:8443"}, []string{"127.0.0.1:8443"}, "")
 	if !errors.Is(err, ErrEndpointURL) {
 		t.Fatalf("another transport: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestRedirectIsNotFollowed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = tr.Close() })
 	err = tr.Call(context.Background(), echoMethod, echoPayload{N: 1}, nil)
-	if classOf(err) != pluginhost.ClassBadResponse {
+	if classOf(err) != pluginmodel.ClassBadResponse {
 		t.Fatalf("err = %v, want BAD_RESPONSE", err)
 	}
 	if n := target.hits.Load(); n != 0 {
@@ -544,7 +544,7 @@ func TestPluginErrorCarriesNoText(t *testing.T) {
 	}), nil)
 	tr := dialServer(t, s, "")
 	err := tr.Call(context.Background(), echoMethod, echoPayload{N: 1}, nil)
-	if classOf(err) != pluginhost.ClassBadResponse || strings.Contains(err.Error(), adaptertest.GarbageMarker) {
+	if classOf(err) != pluginmodel.ClassBadResponse || strings.Contains(err.Error(), adaptertest.GarbageMarker) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -553,7 +553,7 @@ func TestRequestOverTheCapIsNotSent(t *testing.T) {
 	s := newServer(t, peerHandler("echo"), nil)
 	tr := dialServer(t, s, "")
 	err := tr.Call(context.Background(), echoMethod, echoPayload{S: strings.Repeat("x", pluginproto.MaxMessageBytes)}, nil)
-	if classOf(err) != pluginhost.ClassOverLimit {
+	if classOf(err) != pluginmodel.ClassOverLimit {
 		t.Fatalf("err = %v, want OVER_LIMIT", err)
 	}
 	if n := s.hits.Load(); n != 0 {
@@ -564,12 +564,12 @@ func TestRequestOverTheCapIsNotSent(t *testing.T) {
 func TestUnknownMethodIsNotSent(t *testing.T) {
 	s := newServer(t, peerHandler("echo"), nil)
 	tr := dialServer(t, s, "")
-	if err := tr.Call(context.Background(), "wire.verdict", map[string]any{}, nil); classOf(err) != pluginhost.ClassBadResponse {
+	if err := tr.Call(context.Background(), "wire.verdict", map[string]any{}, nil); classOf(err) != pluginmodel.ClassBadResponse {
 		t.Fatalf("an unmapped method: %v, want BAD_RESPONSE", err)
 	}
 	// Params that do not fit the message (a string for an int32) are not sent.
 	bad := map[string]any{"limits": map[string]any{"timeoutMs": "soon"}}
-	if err := tr.Call(context.Background(), pluginproto.MethodInitialize, bad, nil); classOf(err) != pluginhost.ClassBadResponse {
+	if err := tr.Call(context.Background(), pluginproto.MethodInitialize, bad, nil); classOf(err) != pluginmodel.ClassBadResponse {
 		t.Fatalf("params of the wrong shape: %v, want BAD_RESPONSE", err)
 	}
 	if n := s.hits.Load(); n != 0 {
@@ -631,7 +631,7 @@ func TestReplyOverTheCapIsRefused(t *testing.T) {
 	// A length prefix over the cap, with no body behind it.
 	big := newServer(t, rawFrame(0, pluginproto.MaxMessageBytes+1, nil), nil)
 	err := dialServer(t, big, "").Call(context.Background(), pluginproto.MethodHealth, nil, nil)
-	if classOf(err) != pluginhost.ClassBadResponse {
+	if classOf(err) != pluginmodel.ClassBadResponse {
 		t.Fatalf("over-cap prefix: %v", err)
 	}
 
@@ -643,7 +643,7 @@ func TestReplyOverTheCapIsRefused(t *testing.T) {
 	_ = zw.Close()
 	bomb := newServer(t, rawFrame(1, uint32(zb.Len()), zb.Bytes()), nil)
 	err = dialServer(t, bomb, "").Call(context.Background(), pluginproto.MethodHealth, nil, nil)
-	if classOf(err) != pluginhost.ClassBadResponse {
+	if classOf(err) != pluginmodel.ClassBadResponse {
 		t.Fatalf("gzip reply: %v", err)
 	}
 	headers, _ := bomb.seen()
@@ -661,7 +661,7 @@ func TestEarlyDeadlineFromPluginIsNotWaitedOn(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	err := tr.Call(ctx, pluginproto.MethodHealth, nil, nil)
-	if classOf(err) != pluginhost.ClassBadResponse {
+	if classOf(err) != pluginmodel.ClassBadResponse {
 		t.Fatalf("err = %v, want BAD_RESPONSE", err)
 	}
 	if took := time.Since(start); took > time.Second {
@@ -679,9 +679,9 @@ func TestEarlyDeadlineFromPluginIsNotWaitedOn(t *testing.T) {
 // TestHTTPStatusClasses pins what an HTTP error in front of the plugin
 // gives: a refused token (401) and a gateway with no plugin behind it (503).
 func TestHTTPStatusClasses(t *testing.T) {
-	for status, want := range map[int]pluginhost.FailureClass{
-		http.StatusUnauthorized:       pluginhost.ClassBadResponse,
-		http.StatusServiceUnavailable: pluginhost.ClassUnavailable,
+	for status, want := range map[int]pluginmodel.FailureClass{
+		http.StatusUnauthorized:       pluginmodel.ClassBadResponse,
+		http.StatusServiceUnavailable: pluginmodel.ClassUnavailable,
 	} {
 		s := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(status)

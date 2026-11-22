@@ -83,7 +83,7 @@ Paste it on the setup page only. If you paste it to your agent by mistake, chang
 
 ### Databases signed by their own CA
 
-Supabase and Amazon RDS hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project. For those, the setup page shows the certificate and asks whether to trust it for that host only. Check the SHA-256 it shows against your provider's console before you say yes.
+Supabase and Amazon RDS hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project. For those, the setup page shows the certificate and asks whether to trust it for that host only. Check the SHA-256 it shows against your provider's console before you say yes. A pin on your provider's own CA accepts any certificate that CA signs, so where the provider shares one CA across customers, someone who is both another customer and on the network path to your database could pose as it. Your password still stays off the wire, because Postgres signs in with SCRAM.
 
 ### Connections
 

@@ -411,7 +411,7 @@ func requireConnectGuidance(t *testing.T, res RemoteInitResult) {
 
 // An agent-operated engine with the Vault on hands the connect link; an
 // engine whose config another init made person-operated, or turned the
-// Vault off, does not. There is no network call: the link only holds the
+// Vault off, hands where to paste the code instead. There is no network call: the link only holds the
 // code.
 func TestInitRemoteHandsTheConnectLinkOnlyWithTheVaultOn(t *testing.T) {
 	t.Parallel()
@@ -436,11 +436,10 @@ func TestInitRemoteHandsTheConnectLinkOnlyWithTheVaultOn(t *testing.T) {
 				requireConnectGuidance(t, r.res)
 				return
 			}
-			require.Empty(t, r.res.ConnectURL)
-			require.NotContains(t, r.res.PersonMessage, "connect")
-			require.NotContains(t, r.stdout, "portal.basaltvault.app")
-			require.Contains(t, r.res.PersonMessage, "\n"+releasePage+"\n", "the URL stands on a line of its own")
-			require.LessOrEqual(t, utf8.RuneCountInString(strings.Replace(r.res.PersonMessage, releasePage, "", 1)), agent.MaxPersonMessageLength)
+			require.Empty(t, r.res.ConnectURL, "no link, no laptop command: the code is pasted at the connect page")
+			require.NotContains(t, r.res.PersonMessage, "--setup-code")
+			require.Contains(t, r.res.PersonMessage, "portal.basaltvault.app/connect")
+			require.LessOrEqual(t, utf8.RuneCountInString(r.res.PersonMessage), agent.MaxPersonMessageLength)
 		})
 	}
 }

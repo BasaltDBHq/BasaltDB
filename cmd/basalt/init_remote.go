@@ -541,11 +541,6 @@ func (c *credential) password() string {
 // a connect-only code, whose engine collects the address. It logs in as the
 // agent with the credentials for that database, .pending first.
 func (r *remoteInit) connection() error {
-	// Every code is run on the connect page, which needs an agent-operated
-	// engine with the Vault on.
-	if err := r.connectOnlyAllowed(); err != nil {
-		return err
-	}
 	cred, err := readCredentialIfAny(r.files, r.credFile)
 	if err != nil {
 		return err

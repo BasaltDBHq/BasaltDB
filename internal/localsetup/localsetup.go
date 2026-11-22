@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/pii/classify"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
@@ -149,6 +150,9 @@ type Options struct {
 	// runs UPDATE and REMOVE for the agents in it and never an INSTALL
 	// (the engine loads engine.json only at its start).
 	Configured bool
+	// SampleColumn reads a column's sample for the check's suggestions
+	// (the classifier's sampler outside tests).
+	SampleColumn func(ctx context.Context, conn *pgx.Conn, col classify.Column) (classify.Sample, error)
 	// Euid is this process's effective user id (os.Geteuid outside tests).
 	Euid func() int
 }
@@ -481,7 +485,9 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		// The tables are read; the transaction ends before the columns are
 		// read and sampled on the connection.
 		_ = tx.Rollback(context.WithoutCancel(ctx))
-		out.Columns, out.ColumnsMore = s.columns(ctx, conn, j)
+		if out.Columns, out.ColumnsMore, err = s.columns(ctx, conn, j); err != nil {
+			return CheckAnswer{}, timeLimit(ctx, setupFailed())
+		}
 		return out, nil
 	}
 	return CheckAnswer{

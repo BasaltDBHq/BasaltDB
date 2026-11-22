@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -28,6 +29,8 @@ const (
 	maxColumnClasses = 500
 	// maxColumns bounds the columns a check lists and samples.
 	maxColumns = 500
+	// maxIdentifierBytes is Postgres's NAMEDATALEN - 1.
+	maxIdentifierBytes = 63
 	// sampleChars cuts each sampled value before it is scored.
 	sampleChars = 256
 	// sampleBudget is how long one check samples in all.
@@ -107,12 +110,19 @@ func checkClasses(req Request, picks []TablePick) error {
 			return bad("a column of a table the agent does not get")
 		case seen[key]:
 			return bad("a column given twice")
-		case c.Column == "" || !guard.ValidLabel(c.label()) || !guard.ValidWas(c.Was.guard()):
+		case !plainColumn(c.Column) || !guard.ValidLabel(c.label()) || !guard.ValidWas(c.Was.guard()):
 			return bad("a class, entity type or phone region the page does not set")
 		}
 		seen[key] = true
 	}
 	return nil
+}
+
+// plainColumn is a column name the engine passes on: not empty, at most 63
+// bytes (a Postgres identifier), and no control character, which the
+// challenge's separators could be confused with.
+func plainColumn(name string) bool {
+	return name != "" && len(name) <= maxIdentifierBytes && !strings.ContainsFunc(name, func(r rune) bool { return unicode.IsControl(r) })
 }
 
 // classesKey is the labels as the challenge binds them: a hash of the
@@ -183,16 +193,17 @@ const columnsSQL = `SELECT n.nspname::text || '.' || c.relname::text, a.attname:
 
 // columns lists the columns of the picked tables, at most 500, with the
 // class each has now and, for a column whose sample could be read in time,
-// the classifier's suggestion. It never fails the check: a problem leaves
-// the columns without suggestions, or the list empty.
-func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnInfo, bool) {
+// the classifier's suggestion. A failed listing fails the check (the person
+// must see the columns a label or restPublic covers); a failed sample or key
+// read only leaves a column without a suggestion.
+func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnInfo, bool, error) {
 	tables := make([]string, len(j.picks))
 	for i, p := range j.picks {
 		tables[i] = p.Table
 	}
 	rows, err := conn.Query(ctx, columnsSQL, tables, maxColumns+1)
 	if err != nil {
-		return nil, false
+		return nil, false, err
 	}
 	var cols []sampled
 	for rows.Next() {
@@ -201,24 +212,25 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 		var attnum int32
 		if err := rows.Scan(&c.info.Table, &c.info.Column, &c.info.DataType, &oid, &attnum); err != nil {
 			rows.Close()
-			return nil, false
+			return nil, false, err
 		}
 		c.ref = classify.KeyRef{TableOID: uint32(oid), Attnum: int16(attnum)}
 		cols = append(cols, c)
 	}
-	if rows.Err() != nil {
-		return nil, false
+	if err := rows.Err(); err != nil {
+		return nil, false, err
 	}
 	more := len(cols) > maxColumns
 	if more {
 		cols = cols[:maxColumns]
 	}
 	labels, err := guard.ReadLabels(ctx, conn, guard.Names{Prefix: s.opts.Prefix}, tables)
+	if err != nil {
+		return nil, false, err
+	}
 	stored := map[[2]string]guard.Label{}
-	if err == nil {
-		for _, l := range labels {
-			stored[[2]string{l.Table, l.Column}] = l.Label
-		}
+	for _, l := range labels {
+		stored[[2]string{l.Table, l.Column}] = l.Label
 	}
 	out := make([]ColumnInfo, len(cols))
 	for i, c := range cols {
@@ -230,7 +242,7 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 		out[i].Class, out[i].EntityType, out[i].PhoneRegion = l.Class, l.EntityType, l.PhoneRegion
 	}
 	s.suggest(ctx, conn, cols, out)
-	return out, more
+	return out, more, nil
 }
 
 // sampled is a listed column with its catalog reference.
@@ -256,6 +268,12 @@ func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, o
 	sctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
 	sampler := classify.Sampler{Conn: conn, Timeout: sampleStatementTimeout, MaxChars: sampleChars}
+	read := sampler.Sample
+	if s.opts.SampleColumn != nil {
+		read = func(ctx context.Context, col classify.Column) (classify.Sample, error) {
+			return s.opts.SampleColumn(ctx, conn, col)
+		}
+	}
 	failed := map[string]bool{}
 	cc := make([]classify.Column, len(cols))
 	for i, c := range cols {
@@ -276,7 +294,7 @@ func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, o
 		if sctx.Err() != nil {
 			return unsampled(col), nil //nolint:nilerr // the driver's message can quote a value; the column gets no suggestion
 		}
-		smp, err := sampler.Sample(sctx, col)
+		smp, err := read(sctx, col)
 		readable := err == nil && smp.Unavailable == ""
 		if !readable {
 			return unsampled(col), nil

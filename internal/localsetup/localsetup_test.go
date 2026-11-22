@@ -16,11 +16,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/pii/classify"
 )
 
 const origin = "http://localhost:8787"
@@ -739,4 +741,46 @@ INSERT INTO public.people SELECT g, 'person' || g || '@example.com', 'n' || g FR
 	})
 	require.NoError(t, err)
 	require.Equal(t, [][3]string{{"email", "IDENTIFIER", "EMAIL"}, {"id", "PUBLIC", ""}, {"nickname", "PUBLIC", ""}}, got)
+}
+
+func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, nickname text)`)
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
+		Now: func() time.Time { return f.now },
+		SampleColumn: func(_ context.Context, _ *pgx.Conn, col classify.Column) (classify.Sample, error) {
+			if col.Name == "email" {
+				return classify.Sample{}, errors.New("the connection failed")
+			}
+			return classify.Sample{Unavailable: classify.UnavailableTimeout}, nil
+		},
+	})
+	require.NoError(t, err)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessWrite}}
+	checked, err := svc.Check(ctx, req)
+	require.NoError(t, err, "a sample that fails or times out is not an error of the check")
+	require.Len(t, checked.Columns, 3)
+	for _, c := range checked.Columns {
+		require.Empty(t, c.SuggestedClass, c.Column)
+		require.Empty(t, c.Reason, c.Column)
+		require.Equal(t, "UNCLASSIFIED", c.Class)
+	}
+}
+
+func TestRealInstallFailsTheCheckWhenTheColumnsCannotBeRead(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text)`)
+	f.db.Init(t, guard.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
+	f.db.Exec(t, `REVOKE ALL ON basalt_meta.pii_columns FROM `+f.db.Names.Guard())
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessRead}}
+	req.RestPublic = true
+	_, err := f.svc.Check(ctx, req)
+	refusal(t, err, localsetup.CodeSetupFailed)
 }

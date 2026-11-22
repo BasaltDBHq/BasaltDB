@@ -99,11 +99,11 @@ func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (localsetu
 		writeError(w, http.StatusUnsupportedMediaType, localsetup.CodeInvalidArgument, "The body must be application/json.")
 		return localsetup.Request{}, false
 	}
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, setupMaxBody))
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "The body is over 16 KiB.")
+		writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "The body is over 256 KiB.")
 		return localsetup.Request{}, false
 	case err != nil:
 		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body cannot be read.")
@@ -184,6 +184,10 @@ func refuseDatabaseURL(origin string, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// setupMaxBody bounds the body of the two setup routes: an install of a real
+// database sends up to 500 column labels. Every other route keeps maxBody.
+const setupMaxBody = 256 << 10
 
 // scanLimit bounds how much of an oversized body the scan reads.
 const scanLimit = 1 << 20

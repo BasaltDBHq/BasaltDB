@@ -87,7 +87,7 @@ func (s *Service) validateAgentJob(req Request) (agentJob, error) {
 	if req.Demo {
 		return agentJob{}, refuse(CodeInvalidArgument, "An update or a removal never sets up the sample database. Ask the agent for a new link.")
 	}
-	if len(req.Answers) > 0 || req.Challenge != nil || req.Passkey != nil {
+	if len(req.Answers) > 0 || req.Challenge != nil || req.Passkey != nil || req.hasRealFields() {
 		return agentJob{}, refuse(CodeAnswersInvalid, "An update or a removal asks no question and registers no passkey.")
 	}
 	if _, err := checkAdminURL(req.DatabaseURL, role); err != nil {

@@ -92,13 +92,19 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 		{"not JSON", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, contentType: "text/plain", body: setupBody("")}, http.StatusUnsupportedMediaType},
 		{"an unknown field", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"extra":1`)}, http.StatusBadRequest},
 		{"two bodies", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("") + "{}"}, http.StatusBadRequest},
-		{"too large", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 17<<10) + `"}]`)}, http.StatusRequestEntityTooLarge},
+		{"too large", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 257<<10) + `"}]`)}, http.StatusRequestEntityTooLarge},
 	} {
 		w := v.call.do(h)
 		require.Equal(t, v.code, w.Code, v.name)
 		require.NotContains(t, w.Body.String(), adminSecret, v.name)
 	}
 	require.Len(t, jobs.got, 2, "no refused request reached the setup")
+
+	// The setup routes take up to 256 KiB (500 column labels); the page's
+	// other routes keep 16 KiB.
+	big := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 100<<10) + `"}]`)}.do(h)
+	require.Equal(t, http.StatusOK, big.Code, big.Body.String())
+	require.Len(t, jobs.got, 3)
 
 	jobs.refusal = &localsetup.RefusalError{Code: localsetup.CodeLoginFailed, Message: "The database refused the login."}
 	w := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)

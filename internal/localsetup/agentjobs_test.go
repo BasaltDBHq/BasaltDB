@@ -88,13 +88,19 @@ func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
 		edit func(*localsetup.Request)
 		code string
 	}{
-		"an install":       {func(r *localsetup.Request) { r.Job = localsetup.JobInstall }, localsetup.CodeJobUnavailable},
-		"a change link":    {func(r *localsetup.Request) { r.Job = localsetup.JobChange }, localsetup.CodeInvalidArgument},
-		"no job":           {func(r *localsetup.Request) { r.Job = "" }, localsetup.CodeJobUnavailable},
-		"another agent":    {func(r *localsetup.Request) { r.Agent = "other_bot" }, localsetup.CodeInvalidArgument},
-		"another OS user":  {func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},
-		"the demo flag":    {func(r *localsetup.Request) { r.Demo = true }, localsetup.CodeInvalidArgument},
-		"a passkey":        {func(r *localsetup.Request) { r.Passkey = &localsetup.Passkey{} }, localsetup.CodeAnswersInvalid},
+		"an install":      {func(r *localsetup.Request) { r.Job = localsetup.JobInstall }, localsetup.CodeJobUnavailable},
+		"a change link":   {func(r *localsetup.Request) { r.Job = localsetup.JobChange }, localsetup.CodeInvalidArgument},
+		"no job":          {func(r *localsetup.Request) { r.Job = "" }, localsetup.CodeJobUnavailable},
+		"another agent":   {func(r *localsetup.Request) { r.Agent = "other_bot" }, localsetup.CodeInvalidArgument},
+		"another OS user": {func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},
+		"the demo flag":   {func(r *localsetup.Request) { r.Demo = true }, localsetup.CodeInvalidArgument},
+		"a passkey":       {func(r *localsetup.Request) { r.Passkey = &localsetup.Passkey{} }, localsetup.CodeAnswersInvalid},
+		"schemas":         {func(r *localsetup.Request) { r.Schemas = []string{"public"} }, localsetup.CodeAnswersInvalid},
+		"tables":          {func(r *localsetup.Request) { r.Tables = []localsetup.TablePick{{Table: "public.a", Access: "READ"}} }, localsetup.CodeAnswersInvalid},
+		"column labels": {func(r *localsetup.Request) {
+			r.ColumnClasses = []localsetup.ColumnClass{{Table: "public.a", Column: "b"}}
+		}, localsetup.CodeAnswersInvalid},
+		"restPublic":       {func(r *localsetup.Request) { r.RestPublic = true }, localsetup.CodeAnswersInvalid},
 		"no admin string":  {func(r *localsetup.Request) { r.DatabaseURL = "" }, localsetup.CodeConnectionStringRefused},
 		"another database": {func(r *localsetup.Request) { r.DatabaseURL = unusedAdminURL }, localsetup.CodeTargetMismatch},
 	} {

@@ -215,7 +215,7 @@ A container usually has no service manager: PID 1 is your process or a small ini
 
 Ask your agent to remove BasaltDB. On the page that opens, pick **Remove BasaltDB**, paste the admin connection string, read the SQL and type the database's name to confirm. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey.
 
-Then your computer asks for your password once, in its own administrator dialog. That stops and removes the engine service, and everything it put on the computer:
+When the page says **Last step**, ask your agent to finish removing BasaltDB. It runs `basalt init` once more, and your computer asks for your password once, in its own administrator dialog. That stops and removes the engine service, and everything it put on the computer:
 
 | Removed | Linux | macOS |
 |---|---|---|
@@ -227,6 +227,28 @@ Then your computer asks for your password once, in its own administrator dialog.
 | Plugins: their service units, installed copies, trusted keys, sockets, logs and log rules | `/etc/systemd/system/basalt-plugin-*.service`, `/opt/basalt` | `/Library/LaunchDaemons/dev.basaltdb.plugin-*.plist`, `/etc/newsyslog.d/basalt-plugin-*.conf`, `/Library/Basalt` |
 | OS users and groups | `basalt` and every `basalt-plugin-*` | `_basalt` and every `_basalt-plugin-*` |
 
-The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. An OS user that can log in is never deleted; the dialog names it instead. If you close the dialog, ask your agent to remove BasaltDB again: it shows the dialog again, with no page, as long as the engine has not restarted since. After a restart (a reboot), the engine waits for a new install instead.
+The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. An OS user that can log in is never deleted; the dialog names it instead. If you close the dialog, ask your agent again: the dialog comes back, with no page.
+
+**Limit: a restart in between.** If the computer restarted after the page's Remove and before the dialog ran, the engine has no config and waits for a new install, so the agent can no longer finish the removal. Remove the service by hand then. On Linux:
+
+```sh
+sudo systemctl disable --now basalt-engine.service
+sudo rm -f /etc/systemd/system/basalt-engine.service /etc/systemd/system/basalt-plugin-*.service
+sudo systemctl daemon-reload
+sudo rm -rf /etc/basalt /var/lib/basalt /opt/basalt
+sudo userdel basalt
+```
+
+On macOS:
+
+```sh
+sudo launchctl bootout system/dev.basaltdb.engine
+sudo rm -f /Library/LaunchDaemons/dev.basaltdb.engine.plist /Library/LaunchDaemons/dev.basaltdb.plugin-*.plist /etc/newsyslog.d/basalt-plugin-*.conf
+sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-* /Library/Basalt
+sudo dscl . -delete /Users/_basalt
+sudo dscl . -delete /Groups/_basalt
+```
+
+Plugin OS users (`basalt-plugin-*`, `_basalt-plugin-*`) are deleted the same way, with `userdel` or `dscl`.
 
 For a bot on a server you cannot log in to, see [`bot-setup.md`](bot-setup.md).

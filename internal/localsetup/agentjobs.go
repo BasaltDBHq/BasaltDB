@@ -345,12 +345,14 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		answer.MCPCommand = "basalt mcp --agent " + req.Agent
 		return answer, nil
 	}
-	if err := s.forget(p.removed); err != nil {
+	gone, err := s.forget(p.removed)
+	if err != nil {
 		r := refuse(CodeSetupFailed, "Basalt is removed from the database, but this engine could not remove the agent from its config. Open this link again to finish.")
 		r.Status = http.StatusInternalServerError
 		return RunAnswer{}, r
 	}
 	answer.Lines = []string{fmt.Sprintf("Basalt removed from the database %s", database), "removed from this engine: " + strings.Join(p.removed, ", ")}
+	answer.EngineRemoved = gone
 	if demoKept {
 		answer.Warnings = append(answer.Warnings, "the sample schema "+demo.Schema+" stays: another object depends on it")
 	}
@@ -369,10 +371,10 @@ func removeRefusal(err error) error {
 // forget removes agents from engine.json, then deletes their credential
 // files. The config goes first: a run that stops between the two leaves
 // only a credential no config names.
-func (s *Service) forget(agents []string) error {
+func (s *Service) forget(agents []string) (removedFile bool, err error) {
 	cfg, err := config.Load(s.opts.ConfigPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var creds []string
 	for _, a := range cfg.Agents {
@@ -380,12 +382,13 @@ func (s *Service) forget(agents []string) error {
 			creds = append(creds, a.Store.CredentialFile)
 		}
 	}
-	if _, err := config.RemoveAgents(s.opts.ConfigPath, agents); err != nil {
-		return err
+	removedFile, err = config.RemoveAgents(s.opts.ConfigPath, agents)
+	if err != nil {
+		return false, err
 	}
 	for _, c := range creds {
 		_ = os.Remove(c)
 		_ = os.Remove(c + ".pending")
 	}
-	return nil
+	return removedFile, nil
 }

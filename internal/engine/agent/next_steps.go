@@ -598,6 +598,16 @@ func fixSteps(b *Steps, cmds Commands, reason string) string {
 	if cmds.AgentOperated() {
 		return remoteSetupSteps(b, cmds, problem)
 	}
+	if cmds.engineRemoved() {
+		// The setup page removed BasaltDB and the engine's last agent: its
+		// role is gone, so every call fails. basalt init finishes the
+		// removal (CONTRACT.md, The local setup page, Removing the engine
+		// service).
+		b.AgentRunCommand(cmds.Init(), removedInitText)
+		b.TellAgent("Tell the agent when it is done.")
+		b.Stop("Do not retry: BasaltDB is removed from this database.")
+		return removedPersonText
+	}
 	if reason == reasonGuardOutdated && cmds.updateLink != "" {
 		b.OpenLink(cmds.updateLink, "Show the person this link: its page updates the guard once they type the admin connection string there.")
 		b.TellAgent("Tell the agent when it is done.")
@@ -609,6 +619,13 @@ func fixSteps(b *Steps, cmds Commands, reason string) string {
 	b.Stop("Do not retry until the person says it is fixed.")
 	return problem + " " + initPersonText
 }
+
+// removedInitText and removedPersonText are the fix steps' texts on an
+// engine the setup page removed.
+const (
+	removedInitText   = "BasaltDB is removed from this database. Run this once to finish: it removes the engine service, and the person types their password once in the computer's own dialog."
+	removedPersonText = "BasaltDB is removed from this database. Last step: the agent runs basalt init once, and your computer asks for your password once to remove the engine service."
+)
 
 // initStepText is the text of the agent's basalt init step: it prints the
 // one link the person opens (CONTRACT.md, basalt init).

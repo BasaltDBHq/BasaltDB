@@ -181,6 +181,7 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	done, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot")
+	require.True(t, done.EngineRemoved, "the engine's last agent went, so init removes the service next")
 	require.Empty(t, done.MCPCommand)
 	require.False(t, exists(t, f.db, "basalt_meta"))
 	require.False(t, exists(t, f.db, "basalt_demo"))
@@ -222,8 +223,9 @@ func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
 		return nil
 	}}))
 
-	_, err = svc.Run(ctx, f.removeRun(t))
+	kept, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
+	require.False(t, kept.EngineRemoved, "another agent is left: the service stays")
 	cfg, err = config.Load(f.config)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1)

@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, Install, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, SetupError, setupRequest, startReal, suggestionOf, trustView } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, doneText, Install, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, SetupError, setupRequest, startReal, suggestionOf, trustView } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -703,4 +703,11 @@ test("Continue with the default choice keeps the picked labels and marks nothing
 
 test("the restPublic note counts every unlabeled column when more than 500 labels would go", () => {
   assert.deepEqual(restNote({ count: 501, forced: true, personal: ["orders.email"] }), ["All 501 unlabeled columns will be marked not personal, including these that look personal:", "orders.email"]);
+});
+
+test("a removal that removed the engine's last agent ends with the last step", () => {
+  const job = { job: "REMOVE", agent: "demo_bot" };
+  assert.ok(doneText(job, { agent: "demo_bot", engineRemoved: true }).endsWith(REMOVE_LAST_STEP));
+  assert.ok(!doneText(job, { agent: "demo_bot", engineRemoved: false }).includes("Last step"));
+  assert.ok(!doneText({ job: "UPDATE", agent: "demo_bot" }, { engineRemoved: true }).includes("Last step"));
 });

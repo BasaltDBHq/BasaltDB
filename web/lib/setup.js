@@ -54,7 +54,7 @@ export const JOB_TEXT = {
     title: "Remove BasaltDB",
     intro: (agent) => `This page removes BasaltDB from the database of your agent ${agent}: the guard, the ledger of every action and the agents' roles. Nothing can undo it.`,
     run: "Remove BasaltDB",
-    done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}. When it served no other agent, your computer asks for your password next, in its own dialog, to remove the engine service.`,
+    done: (agent) => `BasaltDB is removed from the database, and this computer's engine no longer serves ${agent}.`,
   },
 };
 
@@ -1087,11 +1087,21 @@ function list2(id, lines) {
   ul.hidden = lines.length === 0;
 }
 
+// REMOVE_LAST_STEP is the removal's last step when it removed the engine's
+// last agent: the agent's basalt init removes the engine service.
+export const REMOVE_LAST_STEP = "Last step: ask your agent to finish removing BasaltDB. Your computer asks for your password once.";
+
+// doneText is the done screen's sentence for job and the run's answer.
+export function doneText(job, done) {
+  const text = JOB_TEXT[job.job].done(done.agent || job.agent);
+  return job.job === "REMOVE" && done.engineRemoved ? `${text} ${REMOVE_LAST_STEP}` : text;
+}
+
 function showDone(job, done) {
   $("main").hidden = true;
   $("flow").hidden = true;
   $("done").hidden = false;
-  $("done-text").textContent = JOB_TEXT[job.job].done(done.agent || job.agent);
+  $("done-text").textContent = doneText(job, done);
   $("mcp-command").textContent = done.mcpCommand || "";
   $("mcp-command").hidden = job.job !== "INSTALL" || !done.mcpCommand;
   list("done-lines", done.lines || []);

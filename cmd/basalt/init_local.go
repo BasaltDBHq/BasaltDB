@@ -20,11 +20,6 @@ import (
 const (
 	setupWait     = 30 * time.Second
 	setupWaitStep = 250 * time.Millisecond
-	// removalWait is how long init, having opened the CHANGE link, waits
-	// for the page's Remove before it stops waiting; removalWaitStep how
-	// often it asks the engine.
-	removalWait     = 15 * time.Minute
-	removalWaitStep = 500 * time.Millisecond
 )
 
 // runInitLocal is basalt init on a person-operated engine (CONTRACT.md,
@@ -88,35 +83,10 @@ func changeLink(c *cliIO, job localsetup.Job) int {
 	}
 	fmt.Fprintln(c.stdout, link)
 	if err := c.host.OpenURL(c.ctx, link); err != nil {
-		// The agent shows the link once init ends, so init does not wait.
-		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand. After a Remove on that page, run basalt init again: it removes the engine service.")
-		return exitOK
+		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
 	}
-	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
-	fmt.Fprintf(c.stderr, "basalt: waiting up to %s for the page: after a Remove, this removes the engine service through the administrator dialog.\n", removalWait)
-	if !waitForRemoval(c) {
-		fmt.Fprintln(c.stderr, "basalt: stopped waiting; the engine service stays. If BasaltDB is removed on the page later, run basalt init again: it removes the engine service.")
-		return exitOK
-	}
-	return removeEngineService(c)
-}
-
-// waitForRemoval asks the engine until it answers ENGINE_REMOVED (the
-// page's Remove deleted engine.json), and reports whether it did before
-// removalWait or the end of c's context.
-func waitForRemoval(c *cliIO) bool {
-	ctx, cancel := context.WithTimeout(c.ctx, removalWait)
-	defer cancel()
-	for {
-		if code, err := c.host.SetupState(ctx, engine.SetupOrigin); err == nil && code == localsetup.CodeEngineRemoved {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(removalWaitStep):
-		}
-	}
+	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here. After a Remove, run basalt init once more: it removes the engine service.")
+	return exitOK
 }
 
 // removeEngineService removes the engine service after the setup page

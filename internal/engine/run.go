@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -643,8 +644,19 @@ func (env agentEnv) commands(a config.Agent) (agent.Commands, error) {
 		if link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser}); err == nil {
 			cmds = cmds.UpdateLink(link)
 		}
+		// The setup page's REMOVE deletes engine.json with the last agent.
+		cmds = cmds.Removed(configGone(env.configPath))
 	}
 	return cmds, nil
+}
+
+// configGone reports whether the config at path is gone: the setup page's
+// REMOVE deleted it with the engine's last agent.
+func configGone(path string) func() bool {
+	return func() bool {
+		_, err := os.Lstat(path)
+		return errors.Is(err, fs.ErrNotExist)
+	}
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {

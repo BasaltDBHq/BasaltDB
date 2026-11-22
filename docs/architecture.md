@@ -32,64 +32,7 @@ A revert follows the same path with one difference: an agent can only prepare it
 
 ## Package map
 
-Start with `cmd/basalt/main.go` to see how commands are dispatched, then follow one command into `internal/`.
-
-### `cmd/basalt`
-
-The whole CLI: one file or a few per command (`init.go`, `approve.go`, `revert.go`, `engine.go`, `status.go`, ...). Handlers parse flags, validate, make one service call and print. Business logic stays out of them.
-
-### `internal/`: the engine and what it serves
-
-| Package | What it does |
-|---|---|
-| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local setup, approval and revert pages), `person` (plugin approvals behind `request_plugin`), `config`, `service`, `peercred`, `upkeep`, `piidict`. |
-| `mcp` | A minimal MCP server over JSON-RPC 2.0. Used by the engine and its tests. |
-| `shim` | The `basalt mcp` relay. |
-| `sqlguard` | Parses one agent statement with libpg_query and classifies or refuses it. |
-| `action` | Plain structs for runs, reads, writes and refusals, with no database in them. |
-| `store/postgres` | Maps `action` types to Postgres and the guard. The adapter between the agent service and the database. |
-| `guard` | Installs and calls `basalt_meta`. SQL is in `guard/schema`. |
-| `ledger` | Reads the ledger the way an agent may, through the agent views. Backs `run_history` and `list_runs`. |
-| `pgdial`, `pgcatalog` | Opening every Postgres connection (works through poolers), and reading the catalog. |
-
-### `internal/`: approvals, reverts and pages
-
-| Package | What it does |
-|---|---|
-| `approval`, `revert` | The bytes of approval and revert codes, binding text and request links. |
-| `passkey` | WebAuthn P-256 verification, mirroring the check in Postgres. |
-| `links`, `linkcodec`, `server`, `websec` | Building page links, encoding long requests, listener policy, and Host/Origin/header hardening. |
-| `largevalue`, `resultsize` | Keeping large values and large results within what a call or a link can carry. |
-
-### `internal/`: Vault, privacy and support
-
-| Package | What it does |
-|---|---|
-| `vault`, `channel` | The engine's one optional outbound connection to the Vault, and its encrypted session. |
-| `portalverify` | Checks that the hosted portal serves the same pages as the binary embeds (run by the release workflow, `make portal-verify`). |
-| `pii`, `logredact` | PII detection primitives, and keeping link secrets out of logs. |
-| `setupcode`, `setuprun`, `localsetup` | The connect-only setup code a bot's `basalt init --remote` makes, running a setup, and the local setup page's jobs. |
-| `chainpin` | Remembers the last ledger chain head a reader verified, to catch rewritten history. |
-| `crash`, `updatecheck`, `buildinfo` | Local crash reports, the new-release notice, and the version. |
-
-### `pkg/`
-
-Small libraries with no BasaltDB policy in them.
-
-| Package | What it does |
-|---|---|
-| `pagination` | The `limit`, `cursor` and `sort` parameters every list shares, and keyset cursors. |
-| `uniqueid` | UUIDv7 ids. |
-| `wiretime` | Rewrites `timestamptz` values into the wire format (RFC 3339, UTC, `Z`). |
-
-### Other top-level directories
-
-| Directory | What is in it |
-|---|---|
-| `api/mcp` | JSON Schemas for tools, approvals, links and errors, and the contract tests that hold them to CONTRACT.md. |
-| `web` | The static approval, revert and passkey pages. |
-| `docs` | Guides for people who use BasaltDB. |
-| `scripts` | Release and packaging scripts. |
+The code layout, the import rules, the core register and the file lists for reverts and approvals are in [ARCHITECTURE.md](../ARCHITECTURE.md). Start with `cmd/basalt/main.go` to see how commands are dispatched, then follow one command into `internal/`.
 
 ## Where to start
 

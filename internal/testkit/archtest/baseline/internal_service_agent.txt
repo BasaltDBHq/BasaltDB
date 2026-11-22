@@ -1,0 +1,10 @@
+imports internal/adapter/inbound/mcp
+imports internal/adapter/outbound/crash
+imports internal/adapter/outbound/laststop
+imports internal/adapter/outbound/osservice
+imports internal/adapter/outbound/postgres/guard
+imports internal/adapter/outbound/postgres/ledger
+imports internal/adapter/outbound/postgres/pgcatalog
+imports internal/adapter/outbound/postgres/resultsize
+imports internal/adapter/outbound/updatecheck
+imports internal/adapter/outbound/vault

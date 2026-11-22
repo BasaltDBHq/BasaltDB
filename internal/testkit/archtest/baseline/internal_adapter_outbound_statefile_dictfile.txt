@@ -1,0 +1,3 @@
+dictfile.go calls pii.CheckDictionarySize
+dictfile.go calls pii.OpenDictionary
+keyfile.go calls pii.NewKeys

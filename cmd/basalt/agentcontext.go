@@ -39,8 +39,7 @@ func (c *cliIO) agentMarker() string {
 
 // What an agent does instead of a command that needs the admin credential.
 const (
-	hintAgentSetupCode = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads."
-	hintAgentPerson    = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads. " +
+	hintAgentPerson = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads. " +
 		"To set up or change an agent, run basalt init (basalt init --remote on a computer the person cannot reach) and show the person the link it prints."
 )
 
@@ -67,21 +66,6 @@ func (c *cliIO) agentContextError(command, hint string) error {
 // agent runs: basalt does not use it, and the password it holds is exposed.
 const adminEnvLeaked = envAdminURL + " is set where an agent can read it; basalt did not use it. " +
 	"Remove it from this environment and ask the person to change that database password now."
-
-// helpAsked is true when args ask for help, which basalt prints whoever
-// runs it.
-func helpAsked(args []string) bool {
-	for _, a := range args {
-		if a == "--" {
-			return false
-		}
-		switch a {
-		case "-h", "-help", "--h", "--help":
-			return true
-		}
-	}
-	return false
-}
 
 // remoteAdminEnvSet is basalt init --remote's warning when
 // BASALT_ADMIN_DATABASE_URL is set: it never uses it, and an agent on this

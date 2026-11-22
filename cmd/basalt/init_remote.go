@@ -1318,7 +1318,7 @@ func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) Rem
 		res.ConnectURL = url
 		res.PersonMessage, _ = agent.ConnectMessage("Finish setting up Basalt for "+r.f.agent+".", url, s.Fingerprint)
 	}
-	res.pasteAtPortal = r.connectBudget > 0 && url == ""
+	res.pasteAtPortal = url == ""
 	return res
 }
 
@@ -1353,11 +1353,10 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) Rem
 // agent.MaxPersonMessageLength for the longest agent name: it names the
 // agent once.
 func setupPersonMessage(name, fingerprint string) string {
-	return fmt.Sprintf("Finish setting up Basalt for %s on your own computer, not the agent's machine. "+
-		"Install basalt from the official release page:\n%s\n"+
-		"then run the basalt init --setup-code command the agent gave you. Check that it shows the setup fingerprint %s, "+
-		"then tell the agent it is done. Never paste your database password into this chat.",
-		name, releasePage, fingerprint)
+	return fmt.Sprintf("Finish setting up Basalt for %s: open %s, paste the setup code the agent shows you, "+
+		"check that it shows the setup fingerprint %s, and follow the page. "+
+		"The page asks for your database's connection string: paste it there only, never into this chat.",
+		name, strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"), fingerprint)
 }
 
 // printRemoteResult prints the result: the connect link or the code in a

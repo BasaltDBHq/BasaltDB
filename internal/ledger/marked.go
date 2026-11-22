@@ -16,9 +16,8 @@ import (
 
 // Agent reads with large values left out (CONTRACT.md, Large values): the
 // engine's run_history, list_pending and revert_plan read through these, so
-// a large value never crosses the wire on an agent's call. basalt log and
-// basalt revert read the same rows in full, through ListChanges,
-// RowChanges and ListRevertLines.
+// a large value never crosses the wire on an agent's call. ListChanges,
+// RowChanges and ListRevertLines read the same rows in full.
 
 // Positions of a change record's images in its item, before its rows': a
 // row's key, before and after are at seq*imagesPerRow + 0, 1 and 2.

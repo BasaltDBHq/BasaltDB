@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -181,47 +180,6 @@ func TestPastedKeepsTypedAheadInput(t *testing.T) {
 	got, err := inTime(t, func() (string, error) { return c.pasted(context.Background()) })
 	require.NoError(t, err)
 	require.Equal(t, "abcd", got, "bytes the line reader buffered start the paste")
-}
-
-func TestApprovePromptTakesALongCode(t *testing.T) {
-	t.Parallel()
-	term := newTerminal(t)
-	var stderr bytes.Buffer
-	c := ptyIO(term, io.Discard, &stderr)
-	code := longCode()
-	go term.typeIn(code + "\n")
-	got, err := inTime(t, func() (string, error) { return approveCode(c, nil, "") })
-	require.NoError(t, err)
-	require.Equal(t, code, got)
-	require.Contains(t, stderr.String(), "Paste the code the approval page showed: ")
-}
-
-// TestApproveOpenTakesALongCode: while basalt approve --open waits for the
-// local page, a pasted code over the terminal's line limit is still read.
-func TestApproveOpenTakesALongCode(t *testing.T) {
-	t.Parallel()
-	d, person, cred, _ := revertSetup(t)
-	held := holdDelete(t, cred)
-	id := held.ApprovalID.String()
-	as, err := person.Sign(approval.Challenge(bindingOf(t, cred, held.ApprovalID)), passkeytest.FlagsUPUV, nil)
-	require.NoError(t, err)
-	code, err := approval.NewResponse(held.ApprovalID, as).Code()
-	require.NoError(t, err)
-
-	term := newTerminal(t)
-	stderr := &lockedBuffer{}
-	c := ptyIO(term, io.Discard, stderr)
-	h := newFakeHost(t)
-	h.pagesUp = true
-	c.host = h
-	go term.typeIn(strings.Repeat(" ", overLineLimit) + code + "\n")
-	exit, _ := inTime(t, func() (int, error) {
-		return runGuard(c, append([]string{"approve"}, []string{"--agent", "bot", "--config", localConfig(t, cred), "--open", id}...)), nil
-	})
-	require.Equal(t, exitOK, exit, stderr.String())
-	require.Contains(t, stderr.String(), "waiting for your signature on the approval page")
-	require.Contains(t, stderr.String(), "approval "+id+" signed")
-	require.Equal(t, 1, count(t, d, `SELECT count(approval_id)::int FROM basalt_meta.approvals WHERE approved_at IS NOT NULL`))
 }
 
 func TestPastedWithoutATerminalReadsALine(t *testing.T) {

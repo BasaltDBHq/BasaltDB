@@ -163,7 +163,7 @@ type SetupSummary struct {
 	// The engine's fingerprint, when the code carries an engine key.
 	EngineFingerprint string `protobuf:"bytes,14,opt,name=engine_fingerprint,json=engineFingerprint,proto3" json:"engine_fingerprint,omitempty"`
 	// The summary lines that do not depend on the database, in the words
-	// basalt init --setup-code shows.
+	// the removed laptop command showed.
 	Lines []string `protobuf:"bytes,15,rep,name=lines,proto3" json:"lines,omitempty"`
 	// The schemas of agent.allTables (public only); empty when the code
 	// names its tables in write and read.
@@ -560,7 +560,7 @@ type CheckSetupResponse struct {
 	// True when RunSetup needs a passkey registration.
 	PasskeyNeeded bool `protobuf:"varint,2,opt,name=passkey_needed,json=passkeyNeeded,proto3" json:"passkey_needed,omitempty"`
 	// Lines that depend on the database's state, in the words
-	// basalt init --setup-code shows.
+	// the removed laptop command showed.
 	Notes []string `protobuf:"bytes,3,rep,name=notes,proto3" json:"notes,omitempty"`
 	// True for an UPGRADE code with nothing to do: RunSetup then changes and
 	// records nothing.
@@ -1085,7 +1085,7 @@ type Question struct {
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// schema.table.
 	Table string `protobuf:"bytes,2,opt,name=table,proto3" json:"table,omitempty"`
-	// The question, in the words basalt init --setup-code asks it.
+	// The question, in the words the removed laptop command asked it.
 	Text string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	// The answers allowed: ALL_ROWS or NONE.
 	Choices       []string `protobuf:"bytes,4,rep,name=choices,proto3" json:"choices,omitempty"`

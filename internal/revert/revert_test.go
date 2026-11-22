@@ -113,7 +113,8 @@ type fixtures struct {
 		AuthenticatorData string `json:"authenticatorData"`
 		ClientDataJSON    string `json:"clientDataJson"`
 		Signature         string `json:"signature"`
-		Code              string `json:"code"`
+		// JSON is the body the page posts to the engine.
+		JSON string `json:"json"`
 	} `json:"response"`
 	// Batched is a large plan's link: the binding and the sample.
 	Batched struct {
@@ -228,14 +229,14 @@ func buildFixtures(t *testing.T) fixtures {
 		ClientDataJSON:    []byte(`{"type":"webauthn.get","challenge":"` + f.Request.Challenge + `","origin":"https://basaltvault.app","crossOrigin":false}`),
 		Signature:         seq(70, 0x30),
 	}
-	code, err := resp.Code()
+	body, err := json.Marshal(resp)
 	require.NoError(t, err)
 	f.Response.RevertID = revertID.String()
 	f.Response.CredentialID = resp.CredentialID.String()
 	f.Response.AuthenticatorData = resp.AuthenticatorData.String()
 	f.Response.ClientDataJSON = resp.ClientDataJSON.String()
 	f.Response.Signature = resp.Signature.String()
-	f.Response.Code = code
+	f.Response.JSON = string(body)
 
 	all, sample := planSample(t)
 	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample}
@@ -713,7 +714,7 @@ func TestRequestOverMaxLinesRejected(t *testing.T) {
 }
 
 // TestVerifyWithSoftwareKey signs a revert's challenge with a software
-// passkey, carries it through the response code, and verifies it like
+// passkey, carries it through the JSON the page posts, and verifies it like
 // apply_revert will.
 func TestVerifyWithSoftwareKey(t *testing.T) {
 	t.Parallel()
@@ -723,10 +724,9 @@ func TestVerifyWithSoftwareKey(t *testing.T) {
 
 	as, err := person.Sign(revert.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	code, err := revert.NewResponse(revertID, as).Code()
+	body, err := json.Marshal(revert.NewResponse(revertID, as))
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(code, "basalt-revert.1."))
-	resp, err := revert.ParseResponse("\n" + code + " ")
+	resp, err := revert.DecodeResponse(body)
 	require.NoError(t, err)
 
 	count, err := revert.Verify(binding, person.Credential(), resp)
@@ -746,11 +746,11 @@ func TestVerifyWithSoftwareKey(t *testing.T) {
 		_, err := revert.Verify(binding, person.Credential(), moved)
 		require.ErrorContains(t, err, "binding for")
 	})
-	t.Run("an approval code is not a revert code", func(t *testing.T) {
+	t.Run("an approval response is not a revert response", func(t *testing.T) {
 		t.Parallel()
-		approvalCode, err := approval.NewResponse(revertID, as).Code()
+		approvalBody, err := json.Marshal(approval.NewResponse(revertID, as))
 		require.NoError(t, err)
-		_, err = revert.ParseResponse(approvalCode)
+		_, err = revert.DecodeResponse(approvalBody)
 		require.ErrorIs(t, err, revert.ErrInvalid)
 	})
 	t.Run("a signature over an approval binding", func(t *testing.T) {
@@ -773,15 +773,15 @@ func TestVerifyWithSoftwareKey(t *testing.T) {
 	})
 }
 
-func TestParseResponseRefuses(t *testing.T) {
+func TestDecodeResponseRefuses(t *testing.T) {
 	t.Parallel()
-	for _, code := range []string{
+	for _, body := range []string{
 		"",
-		"basalt-approval.1.e30",
-		revert.ResponsePrefix + passkey.Bytes(`{"revertId":"`+revertID.String()+`"}`).String(),
-		revert.ResponsePrefix + passkey.Bytes(`{"revertId":"nope","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`).String(),
+		`{"revertId":"` + revertID.String() + `"}`,
+		`{"revertId":"nope","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`,
+		`{"revertId":"` + revertID.String() + `","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ","extra":1}`,
 	} {
-		_, err := revert.ParseResponse(code)
-		require.ErrorIs(t, err, revert.ErrInvalid, code)
+		_, err := revert.DecodeResponse([]byte(body))
+		require.ErrorIs(t, err, revert.ErrInvalid, body)
 	}
 }

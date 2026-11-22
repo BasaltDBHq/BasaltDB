@@ -2,8 +2,6 @@ package links_test
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,13 +46,6 @@ func TestLinkHelpers(t *testing.T) {
 	require.Equal(t, "abc", links.SecretOf(link))
 	require.Empty(t, links.SecretOf("http://localhost:8787/approvals/x#1.data"), "a long link has none")
 	require.Empty(t, links.SecretOf("http://localhost:8787/approvals/x"))
-
-	binding := `{"kind": "APPROVE"}`
-	proof := links.IssueProof(binding)
-	require.True(t, links.ProofMatches(binding, proof))
-	require.False(t, links.ProofMatches(binding+" ", proof))
-	challenge := sha256.Sum256([]byte(binding))
-	require.False(t, links.ProofMatches(binding, hex.EncodeToString(challenge[:])), "the passkey challenge is not a proof")
 }
 
 func TestSecretsPersist(t *testing.T) {

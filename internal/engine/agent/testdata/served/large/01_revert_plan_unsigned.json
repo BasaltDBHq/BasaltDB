@@ -108,7 +108,7 @@
       }
     ],
     "pending": 1010,
-    "personMessage": "Revert of run <id-3>: 1010 rows to restore, 0 left as they are (changed after the agent). Why: Undo the bulk update. Expires <time>.\nIt covers 1010 rows: you sign once, and the agent restores it in batches within 24 hours.\nSign it with your passkey: open this link, then open the request file the agent sends you (or paste its text blocks). The page then shows a code for the agent:\n\nhttp://localhost:8787/reverts/<id-2>#<fragment>",
+    "personMessage": "Revert of run <id-3>: 1010 rows to restore, 0 left as they are (changed after the agent). Why: Undo the bulk update. Expires <time>.\nIt covers 1010 rows: you sign once, and the agent restores it in batches within 24 hours.\nReview only, this link cannot be signed: open this link, then open the request file the agent sends you (or paste its text blocks):\n\nhttp://localhost:8787/reverts/<id-2>#<fragment>",
     "requestFile": {
       "blocks": [
         "<request block>",

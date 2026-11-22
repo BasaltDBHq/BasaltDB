@@ -209,6 +209,15 @@ func resultCases() map[string]resultCase {
 				return out.PersonMessage, out.Links, out.NextSteps
 			},
 		},
+		resultKey("request_revert", "REQUESTED_NO_PAGES"): {
+			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				s.PagesOrigin = "" // no local pages and no Vault: a long link, review only
+				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
+				require.NoError(t, err)
+				return out.PersonMessage, out.Links, out.NextSteps
+			},
+		},
 		resultKey("request_revert", "WAIT_ENDED"): {
 			tool: "request_revert", args: revertArgs, openWithoutURL: true,
 			build: state(ledger.RevertPending),

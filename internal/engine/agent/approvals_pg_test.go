@@ -201,7 +201,7 @@ func approvalOf(t *testing.T, body map[string]any) map[string]any {
 
 // signLink does what the person does on the approval page: decode the
 // link, check it, and sign the binding with the passkey.
-func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) string {
+func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) approval.Response {
 	t.Helper()
 	frag := link[strings.Index(link, "#")+1:]
 	req, b, err := approval.ParseRequest(frag)
@@ -209,14 +209,25 @@ func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) stri
 	require.NotEmpty(t, req.CredentialIDs, "the link names the database's passkeys, for allowCredentials")
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	code, err := approval.NewResponse(b.ApprovalID, as).Code()
-	require.NoError(t, err)
-	return code
+	return approval.NewResponse(b.ApprovalID, as)
+}
+
+// reviewOnlyText is what a message that hands over a long link says: with
+// no page that can carry a signature, the person can only review.
+const reviewOnlyText = "Review only: this link cannot be signed. Ask the agent for a new link later."
+
+// relayApproval is what the approval page does after the passkey signed:
+// it posts the signature, which the engine relays to Postgres
+// (RelayApproval), on its own pages or through the Vault. Nothing is pasted.
+func relayApproval(svc *agent.Service, resp approval.Response) error {
+	_, err := svc.RelayApproval(context.Background(), resp)
+	return err
 }
 
 func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	t.Parallel()
-	d, h, person, sent := approvalHarness(t)
+	e := agentHarness(t)
+	d, h, person, sent := e.d, e.h, e.person, e.sent
 	run, isError := h.call(t, "run_start", map[string]any{"intent": "Close the stale leads"})
 	require.False(t, isError, "%v", run)
 	runID := str(t, run["runId"])
@@ -238,7 +249,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Contains(t, str(t, body["message"]), "do not wait again")
 	require.Equal(t, "Update 15 rows in public.leads", ap["headline"])
 	require.True(t, strings.HasPrefix(str(t, ap["personMessage"]),
-		"Held for your approval: Update 15 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\n"+
+		"Held for your approval: Update 15 rows in public·leads.\n"+reviewOnlyText+"\n\n"+
 			link+"\n\nExpires "),
 		"without local pages and within the budget the message carries the long link: %v", ap["personMessage"])
 	mcptest.Require(t, str(t, ap["personMessage"]), mcptest.LinksOf(t, ap))
@@ -293,16 +304,19 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	forger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	forger.ID = person.ID
-	body, isError = h.call(t, "write", withApproval(map[string]any{"approval": signLink(t, link, forger)}))
-	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "BS005")
-	require.Contains(t, body["message"], "bad passkey signature")
+	err = relayApproval(e.svc, signLink(t, link, forger))
+	require.Error(t, err)
+	require.Equal(t, "APPROVAL_INVALID", agent.ToolError(err).Code, "%v", err)
+	body, isError = h.call(t, "write", withApproval(map[string]any{"waitForApproval": 0}))
+	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
+	require.Contains(t, body["message"], "not approved yet", "a forged signature approves nothing")
 
 	body, isError = h.call(t, "write", withApproval(map[string]any{"params": []any{"closed", 21, 36}}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
 	require.Contains(t, body["message"], "exactly those of the held write")
 
-	code := signLink(t, link, person)
-	body, isError = h.call(t, "write", withApproval(map[string]any{"approval": code}))
+	require.NoError(t, relayApproval(e.svc, signLink(t, link, person)))
+	body, isError = h.call(t, "write", withApproval(nil))
 	require.False(t, isError, "%v", body)
 	require.Equal(t, "APPLIED", body["status"])
 	require.Equal(t, json.Number("15"), body["rows"])
@@ -328,7 +342,9 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Equal(t, 1, applied)
 }
 
-func TestHeldDeleteRelayedThroughBasaltApprove(t *testing.T) {
+// Only an agent role relays a signature: the engine relays it with the
+// agent's credential, never the admin's.
+func TestHeldDeleteRelayedWithTheAgentsCredential(t *testing.T) {
 	t.Parallel()
 	d, h, person, _ := approvalHarness(t)
 	run, _ := h.call(t, "run_start", map[string]any{"intent": "Remove spam"})
@@ -338,11 +354,8 @@ func TestHeldDeleteRelayedThroughBasaltApprove(t *testing.T) {
 	body, isError := h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	// The person relays the code with basalt approve (the agent credential).
-	code := signLink(t, str(t, ap["approvalUrl"]), person)
-	resp, err := approval.ParseResponse(code)
-	require.NoError(t, err)
-	_, err = guard.SubmitApproval(context.Background(), d.Admin, resp.ApprovalID, resp.Assertion())
+	resp := signLink(t, str(t, ap["approvalUrl"]), person)
+	_, err := guard.SubmitApproval(context.Background(), d.Admin, resp.ApprovalID, resp.Assertion())
 	require.Error(t, err, "only agent roles relay")
 	agentConn := d.NewAgent(t, "relay", leads, leads).Conn
 	_, err = guard.SubmitApproval(context.Background(), agentConn, resp.ApprovalID, resp.Assertion())

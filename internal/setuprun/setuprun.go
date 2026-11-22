@@ -1,7 +1,7 @@
 // Package setuprun runs a setup code as the database's admin: the checks,
 // the questions, the one transaction and record_setup (CONTRACT.md, Setup
-// from your laptop). basalt init --setup-code and the public package
-// pkg/setup share it, so the setup has one implementation; pkg/setup is
+// from your laptop). The connect service, through the public package
+// pkg/setup, uses it, so the setup has one implementation; pkg/setup is
 // its API for other modules, without this module's internal types.
 //
 // It takes a connection its caller opened and reads no environment
@@ -581,15 +581,10 @@ func blindIndex(tables []guard.BlindTable, table string) int {
 	return -1
 }
 
-// ApplySetup runs script in one transaction. Its last statement is
+// ApplySetupWith runs script in one transaction. Its last statement is
 // record_setup, run after every other one and after the coverage check, so
 // the setup is recorded only with everything it sets up; any failure rolls
-// all of it back.
-func ApplySetup(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
-	return ApplySetupWith(ctx, conn, script, nil, nil)
-}
-
-// ApplySetupWith is ApplySetup with inTx, when set, run in the same
+// all of it back. inTx, when set, runs in the same
 // transaction after the migrations and the coverage check and before
 // record_setup (a passkey registered with the setup). An error from it
 // rolls everything back. first, when set, runs in the transaction before

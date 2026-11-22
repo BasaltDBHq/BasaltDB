@@ -125,7 +125,7 @@
   "pastes": [
     {
       "name": "a terminal-wrapped and indented long link ends at the empty line",
-      "input": "  Held for your approval: Update 27 rows in public.leads.\n  Approve it with your passkey here:\n\n  https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbCdEf\n  GhIj-_kl\n  mn\n\n  Or run: basalt approve --agent demo_bot --open 0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b\n  Expires 2026-11-12 07:02 UTC.\n",
+      "input": "  Held for your approval: Update 27 rows in public.leads.\n  Approve it with your passkey here:\n\n  https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbCdEf\n  GhIj-_kl\n  mn\n\n  Tell the agent when you have approved.\n  Expires 2026-11-12 07:02 UTC.\n",
       "want": "2.AbCdEfGhIj-_klmn"
     },
     {

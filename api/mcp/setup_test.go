@@ -72,8 +72,8 @@ type validSetupFixture struct {
 	Payload     map[string]any `json:"payload"`
 }
 
-// laptopFixture is what basalt init --setup-code decides for a code against
-// a database state at a time (CONTRACT.md, basalt init --setup-code).
+// laptopFixture is what the setup checks decide for a code against a
+// database state at a time (CONTRACT.md, The setup checks).
 type laptopFixture struct {
 	Name     string `json:"name"`
 	Code     string `json:"code"`
@@ -310,7 +310,7 @@ func setupFingerprint(t *testing.T, p map[string]any) string {
 	return strings.Join(groups, " ")
 }
 
-// TestSetupLaptopFixtures runs the checks of basalt init --setup-code, in
+// TestSetupLaptopFixtures runs the setup checks, in
 // CONTRACT.md's order, over the laptop fixtures: the refusal, or the summary
 // lines the person must see (the agent and role named, a password
 // replacement said out loud, the fingerprint, prefix and timeout).

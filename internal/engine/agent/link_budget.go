@@ -79,13 +79,23 @@ const (
 // it as text blocks too.
 func requestBeside(withBlocks, sent bool) string {
 	if sent {
-		return "open this link, then open the request file the agent sent you earlier (or paste its text blocks). The page then shows a code for the agent:"
+		return "open this link, then open the request file the agent sent you earlier (or paste its text blocks):"
 	}
 	if withBlocks {
-		return "open this link, then open the request file the agent sends you (or paste its text blocks). The page then shows a code for the agent:"
+		return "open this link, then open the request file the agent sends you (or paste its text blocks):"
 	}
-	return "open this link, then open the request file the agent sends you. The page then shows a code for the agent:"
+	return "open this link, then open the request file the agent sends you:"
 }
+
+// reviewOnly is how a message that hands over a long or hash link says the
+// page cannot be signed: only a short link (the engine's own pages, or the
+// portal through Basalt Vault) carries a signature back to the engine. An
+// engine whose Vault connection is down hands one over too; once it is back,
+// a new link from the agent (reissueLink) is a short link.
+const (
+	reviewOnly       = "Review only: this link cannot be signed. Ask the agent for a new link later."
+	reviewOnlyBeside = "Review only, this link cannot be signed: "
+)
 
 // Limits that keep what the agent supplies, and what the database names,
 // from pushing a message over its 500 characters.
@@ -287,9 +297,9 @@ func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []
 	msg := newMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
-		msg.Text("Approve it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent))
+		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent))
 	case linkLong:
-		msg.Text("Approve it with your passkey here; the page then shows a code for the agent:")
+		msg.Text(reviewOnly)
 	default:
 		msg.Text("Approve it with your passkey here:")
 	}
@@ -311,9 +321,9 @@ func revertMessage(summary string, pick handOver, extra ...string) (string, []mc
 	switch pick.Kind {
 	case linkShort, linkPage, linkNone:
 	case linkHash:
-		sign = "Sign it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent)
+		sign = reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent)
 	case linkLong:
-		sign = "Sign it with your passkey here; the page then shows a code for the agent:"
+		sign = reviewOnly
 	}
 	return msg.Text(sign).Link(labelRevert, pick.URL).Build()
 }

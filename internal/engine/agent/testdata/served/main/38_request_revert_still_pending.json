@@ -7,7 +7,7 @@
       {
         "action": "OPEN_LINK",
         "actor": "PERSON",
-        "text": "Open the link and sign with your passkey; then give the agent the code the page shows.",
+        "text": "Open the link to review it. It cannot be signed: ask the agent for a new link later.",
         "url": "http://localhost:8787/reverts/<id-27>#<fragment>"
       },
       {
@@ -41,7 +41,7 @@
         "tool": "request_revert"
       }
     ],
-    "personMessage": "The revert of run <id-1> waits for your passkey at the link the agent gave you, until <time>. Tell the agent when you have signed, or give it the code the page shows.",
+    "personMessage": "The revert of run <id-1> waits until <time>, but its link cannot be signed. Ask the agent for a new link later.",
     "revertId": "<id-27>",
     "rows": 12,
     "scope": "RUN",

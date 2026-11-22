@@ -66,35 +66,6 @@ func truncateUTF8(s string, n int) string {
 	return s[:max(cut, 0)] + ellipsis
 }
 
-// showRegistrationLink prints the passkey registration link, and with
-// open also opens it in the browser (basalt init --setup-code at a
-// terminal).
-func showRegistrationLink(c *cliIO, link string, open bool) error {
-	fmt.Fprintln(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:")
-	ref := linkRef{setting: "--passkey-origin", item: "the passkey registration", again: "basalt init"}
-	if err := printLink(c, c.stderr, link, ref); err != nil {
-		return err
-	}
-	if !open {
-		return nil
-	}
-	if err := c.host.OpenURL(c.ctx, link); err != nil {
-		fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open the link above yourself\n", err)
-	}
-	return nil
-}
-
-// pastedRegistrationCode reads the registration code the page shows,
-// pasted by the person.
-func pastedRegistrationCode(c *cliIO) (string, error) {
-	fmt.Fprint(c.stderr, "Paste the code the page shows: ")
-	code, err := c.pasted(c.ctx)
-	if err != nil {
-		return "", fmt.Errorf("no passkey code: %w", err)
-	}
-	return code, nil
-}
-
 // serveLocalPages serves the embedded pages on a local http://localhost
 // origin while a command waits for a code from them, so the link works
 // without a separate page server (the engine serves them later,

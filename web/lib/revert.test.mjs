@@ -14,7 +14,7 @@ import {
   b64urlDecode,
   b64urlEncode,
   checkRevertRequest,
-  encodeRevertResponse,
+  revertResponseJSON,
   parseApprovalRequest,
   parseRevertBinding,
   parseRevertLine,
@@ -241,15 +241,14 @@ test("revert lines", () => {
 
 test("revert response matches Go byte for byte", () => {
   const f = fixtures.response;
-  const code = encodeRevertResponse({
+  const body = revertResponseJSON({
     revertId: f.revertId,
     credentialId: b64urlDecode(f.credentialId),
     authenticatorData: b64urlDecode(f.authenticatorData),
     clientDataJson: b64urlDecode(f.clientDataJson),
     signature: b64urlDecode(f.signature),
   });
-  assert.equal(code, f.code);
-  assert.ok(code.startsWith("basalt-revert.1."));
+  assert.equal(body, f.json, "the page posts the JSON the engine decodes");
 });
 
 // A minimal DOM: enough for el() and the row table.

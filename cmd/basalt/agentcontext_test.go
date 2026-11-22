@@ -32,7 +32,7 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"setup code", []string{"init", "--setup-code", "basalt-setup.1.x.y", "--yes"}, "Give the person this command instead of running it"},
+		{"passkey remove", []string{"passkey", "remove", "abcd"}, "Give the person this command instead of running it"},
 	}
 	for _, marker := range agentMarkers {
 		for _, tc := range cases {
@@ -56,16 +56,14 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 func TestAgentContextAdminEnvSaysRotate(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"init", "--setup-code", "basalt-setup.1.x.y"},
+		{"passkey", "remove", "abcd"},
 	} {
 		t.Run(args[0]+" "+args[1], func(t *testing.T) {
 			t.Parallel()
 			r := cliOn(t, newFakeHost(t), map[string]string{"CLAUDECODE": "1", envAdminURL: leakedAdmin}, "", args...)
 			require.Equal(t, exitError, r.code, r.stderr)
 			require.NotContains(t, r.stdout+r.stderr, "hunter2")
-			if args[0] == "init" {
-				require.Contains(t, r.stderr, adminEnvLeaked)
-			}
+			require.Contains(t, r.stderr, adminEnvLeaked)
 		})
 	}
 }
@@ -176,9 +174,9 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", engine.Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp":         agentsHelp,
-		"hintAgentSetupCode": hintAgentSetupCode, "hintAgentPerson": hintAgentPerson,
-		"adminEnvLeaked": adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
+		"agentsHelp":      agentsHelp,
+		"hintAgentPerson": hintAgentPerson,
+		"adminEnvLeaked":  adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)
 	}

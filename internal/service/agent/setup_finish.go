@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -104,7 +105,7 @@ func (s *Service) setupFinished(id string) {
 // any kind in the database, so a rotated credential is picked up and
 // engine.json cleared even when nobody calls status, then admits as Admit.
 func (s *Service) AdmitTick(ctx context.Context) error {
-	if d := s.statusDeps(); d.setup != nil && d.setup.Kind != guard.SetupInstall {
+	if d := s.statusDeps(); d.setup != nil && d.setup.Kind != guardmodel.SetupInstall {
 		d.pendingRecorded(ctx)
 	}
 	return s.Admit(ctx)

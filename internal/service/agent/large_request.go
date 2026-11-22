@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
@@ -109,7 +111,7 @@ func (s *Service) pageAddress(page func(string, uuid.UUID) string, id uuid.UUID)
 }
 
 // revertRequestOf is r's request as the agent's read returned it.
-func revertRequestOf(r ledger.Revert) sizedRequest {
+func revertRequestOf(r action.Revert) sizedRequest {
 	return sizedRequest{Binding: r.BindingText, Lines: r.Lines, LeftOut: r.LinesLeftOut, Cost: max(r.LinesCost, textsCost(r.Lines))}
 }
 
@@ -167,7 +169,7 @@ const endTurnSetup = "End your turn: the person changes the setup first."
 // approvalTooLargeSteps are the steps of a held write too large for a link:
 // the person changes the setup, then the agent asks for new links for the
 // run's pending holds.
-func approvalTooLargeSteps(runID uuid.UUID) ([]mcp.NextStep, error) {
+func approvalTooLargeSteps(runID uuid.UUID) ([]toolresult.NextStep, error) {
 	return NewSteps().AskPerson(tooLargeAsk(false)).EndTurn(endTurnSetup).
 		CallTool(toolListPending, map[string]any{"kind": KindApproval, "status": "PENDING", argRunID: runID.String(), argReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives the held write a new link.").
@@ -178,7 +180,7 @@ func approvalTooLargeSteps(runID uuid.UUID) ([]mcp.NextStep, error) {
 // request_revert's error a STOP first (stop), then the person changes the
 // setup or asks for a narrower revert, and the agent asks for a new link
 // for this revert only.
-func revertTooLargeSteps(id uuid.UUID, stop bool) ([]mcp.NextStep, error) {
+func revertTooLargeSteps(id uuid.UUID, stop bool) ([]toolresult.NextStep, error) {
 	b := NewSteps()
 	if stop {
 		b.Stop("Do not retry now: no link this engine has can carry this revert.")
@@ -197,7 +199,7 @@ func (s *Service) revertTooLargeError(id uuid.UUID, cost int64, expires time.Tim
 	if err != nil {
 		return err
 	}
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeQueryTimeout, Reason: reasonRequestTooLarge,
 		Message: fmt.Sprintf("revert %s is prepared, but its rows are too large for any link this engine has: "+
 			"a page decodes at most 1 MiB from a link. It stays pending until it expires (list_pending lists it); "+

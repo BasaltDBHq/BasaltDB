@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -89,7 +90,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
-		return uuid.Nil, time.Time{}, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
+		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
 		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
@@ -124,7 +125,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 // (CONTRACT.md, Handing a held action to the person), with the long link
 // for notifications.
 type heldNotice struct {
-	mcp.ApprovalNotice
+	toolresult.ApprovalNotice
 	// pick is the link handed over, as chooseLink chose it (the long link
 	// when a wait or a list only restates it while the engine serves the pages).
 	pick     handOver
@@ -138,7 +139,7 @@ type heldNotice struct {
 	reason string
 	// steps are the next steps of a REQUEST_TOO_LARGE notice, built where
 	// the run is known; nil otherwise.
-	steps []mcp.NextStep
+	steps []toolresult.NextStep
 }
 
 // Whether building a notice issues a new short link, revoking the item's
@@ -183,7 +184,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	reason := reasonHeld
 	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
 	var text string
-	var msgLinks []mcp.Link
+	var msgLinks []toolresult.Link
 	switch {
 	case short == "" && s.shortLinked(id):
 		// A wait or a list that issues no new link: the link already handed
@@ -201,7 +202,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	}
 	return heldNotice{
 		reason: reason,
-		ApprovalNotice: mcp.ApprovalNotice{
+		ApprovalNotice: toolresult.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: pick.URL, RequestFile: pick.File, PersonMessage: text, Links: msgLinks,
 		},
@@ -214,13 +215,13 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 
 // waitMessage is the personMessage of a wait or a list that issues no new
 // link: the link already handed over still works.
-func waitMessage(lead string, expires time.Time) (string, []mcp.Link) {
+func waitMessage(lead string, expires time.Time) (string, []toolresult.Link) {
 	return pointBackMessage(lead, expiryLine(expires))
 }
 
 // pointBackMessage is lead, then a pointer to the approval link the person
 // was given, then tail.
-func pointBackMessage(lead string, tail ...string) (string, []mcp.Link) {
+func pointBackMessage(lead string, tail ...string) (string, []toolresult.Link) {
 	msg := newMessage().Text(lead).Text("Approve with the link you were given.")
 	for _, line := range tail {
 		msg.Text(line)
@@ -290,7 +291,7 @@ func approvalError(n heldNotice, message string) error {
 		// No link can carry it: the hold has no link at all (CONTRACT.md,
 		// Large values, rule 4), and the wait that ran out says the same.
 		notice.ApprovalURL = ""
-		return &mcp.ToolError{
+		return &toolresult.ToolError{
 			Code: CodeApprovalRequired, Reason: reasonRequestTooLarge, Approval: &notice,
 			Message: fmt.Sprintf("held for the person's approval: %d rows, but they are too large for any link this engine has "+
 				"(a page decodes at most 1 MiB from a link). It stays held until it expires at %s; do not wait for it. "+
@@ -298,14 +299,14 @@ func approvalError(n heldNotice, message string) error {
 			PersonMessage: notice.PersonMessage, NextSteps: n.steps,
 		}
 	}
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
 		PersonMessage: notice.PersonMessage, Links: notice.Links,
 	}
 }
 
 // requestOf is a's request as the agent's read returned it.
-func requestOf(a ledger.Approval) sizedRequest {
+func requestOf(a action.Approval) sizedRequest {
 	return sizedRequest{Binding: a.BindingText, Lines: a.Lines, LeftOut: a.LinesLeftOut, Cost: max(a.LinesCost, textsCost(a.Lines))}
 }
 
@@ -320,7 +321,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
 	n := heldNotice{
 		reason: reasonHeld,
-		ApprovalNotice: mcp.ApprovalNotice{
+		ApprovalNotice: toolresult.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: s.pageAddress(links.Approval, id),
 		},
@@ -377,13 +378,13 @@ func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
 	return ids, nil
 }
 
-func approvalInvalid(reason, format string, args ...any) *mcp.ToolError {
-	return &mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
+func approvalInvalid(reason, format string, args ...any) *toolresult.ToolError {
+	return &toolresult.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
 }
 
 // differentWrite is the refusal of a write that is not the held one: its
 // step repeats the held write exactly, with its approval id.
-func differentWrite(a ledger.Approval, format string, args ...any) error {
+func differentWrite(a action.Approval, format string, args ...any) error {
 	te := approvalInvalid(reasonDifferentWrite, format, args...)
 	call := map[string]any{"sql": a.Statement, "intent": a.Intent, argRunID: a.RunID.String(), argApprovalID: a.ID.String()}
 	var params []any
@@ -408,7 +409,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		return WriteOutcome{}, err
 	}
 	a, err := s.Store.FindApproval(ctx, p.ApprovalID)
-	if errors.Is(err, ledger.ErrApprovalNotFound) {
+	if sentinel(err, theHost().ErrApprovalNotFound) {
 		return WriteOutcome{}, approvalInvalid(reasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
@@ -427,7 +428,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		return WriteOutcome{}, err
 	}
 	var receipt *Receipt
-	if a.Status == ledger.ApprovalApproved {
+	if a.Status == approvalApproved {
 		r, err := s.approvalReceiptOf(a)
 		if err != nil {
 			return WriteOutcome{}, err
@@ -454,7 +455,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 // withApprovalLink gives an approval error that sends the person back to the
 // approval page (not signed yet, a bad signature, a passkey the database
 // does not accept) the page's link in its steps; any other error passes.
-func (s *Service) withApprovalLink(ctx context.Context, a ledger.Approval, err error) error {
+func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
 	te := ToolError(err)
 	if te.Code != CodeApprovalInvalid || len(te.NextSteps) > 0 {
 		return err
@@ -472,12 +473,12 @@ func (s *Service) withApprovalLink(ctx context.Context, a ledger.Approval, err e
 }
 
 // sameAsHeld checks the call repeats the held write.
-func sameAsHeld(a ledger.Approval, p WriteParams) error {
+func sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
-	case a.Status == ledger.ApprovalApplied:
+	case a.Status == approvalApplied:
 		return approvalInvalid(reasonAlreadyUsed, "approval %s was already used", a.ID)
-	case a.Status == ledger.ApprovalExpired:
-		return &mcp.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, timeText(a.ExpiresAt))}
+	case a.Status == approvalExpired:
+		return &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, timeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
 		return differentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
 	case a.Statement != p.SQL || !sameParams(a.Params, p.Params):
@@ -512,21 +513,21 @@ func sameParams(held json.RawMessage, params []any) bool {
 
 // PendingItem is one open held write with what the agent hands the person.
 type PendingItem struct {
-	ledger.Approval
-	Notice mcp.ApprovalNotice
+	action.Approval
+	Notice toolresult.ApprovalNotice
 	// Restated is set when list_pending names the item's link without issuing
 	// one while the engine serves the pages: the person has the short link.
 	Restated bool
 	// tooLargeSteps are the steps of an item whose request no link this
 	// engine has can carry (REQUEST_TOO_LARGE); nil otherwise.
-	tooLargeSteps []mcp.NextStep
+	tooLargeSteps []toolresult.NextStep
 	// issued is set when this list_pending issued the item a new link the
 	// person can still use.
 	issued bool
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
-	Links         []mcp.Link
-	NextSteps     []mcp.NextStep
+	Links         []toolresult.Link
+	NextSteps     []toolresult.NextStep
 }
 
 // approvalPoll is how often a waiting write checks for the signature.
@@ -554,11 +555,11 @@ func (s *Service) awaitWhile(ctx context.Context, wait time.Duration, pending fu
 	return nil
 }
 
-func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.Duration) (ledger.Approval, error) {
-	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == ledger.ApprovalPending }, func(ctx context.Context) error {
+func (s *Service) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
+	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
-		next, err := s.Store.FindApproval(resultsize.With(ctx), a.ID)
+		next, err := s.Store.FindApproval(budget.With(ctx), a.ID)
 		if err != nil {
 			return err
 		}
@@ -568,15 +569,15 @@ func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.
 	return a, err
 }
 
-func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p WriteParams) (ledger.Approval, error) {
-	if a.Status != ledger.ApprovalPending || p.Wait == 0 {
+func (s *Service) waitForSignature(ctx context.Context, a action.Approval, p WriteParams) (action.Approval, error) {
+	if a.Status != approvalPending || p.Wait == 0 {
 		return a, nil
 	}
 	a, err := s.awaitSigned(ctx, a, p.Wait)
 	if err != nil {
 		return a, err
 	}
-	if a.Status == ledger.ApprovalPending {
+	if a.Status == approvalPending {
 		n, err := s.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 		if err != nil {
 			return a, err

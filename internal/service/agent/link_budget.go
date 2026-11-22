@@ -6,7 +6,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
@@ -109,7 +110,7 @@ const (
 // its own with an empty line before and after it.
 type messageBuilder struct {
 	blocks []messageBlock
-	links  []mcp.Link
+	links  []toolresult.Link
 }
 
 type messageBlock struct {
@@ -133,12 +134,12 @@ func (m *messageBuilder) Text(line string) *messageBuilder {
 // Link adds url as a paragraph of its own and its label to links.
 func (m *messageBuilder) Link(label, url string) *messageBuilder {
 	m.blocks = append(m.blocks, messageBlock{text: url, isURL: true})
-	m.links = append(m.links, mcp.Link{Label: label, URL: url})
+	m.links = append(m.links, toolresult.Link{Label: label, URL: url})
 	return m
 }
 
 // Build returns the message and its links, nil when it holds no URL.
-func (m *messageBuilder) Build() (string, []mcp.Link) {
+func (m *messageBuilder) Build() (string, []toolresult.Link) {
 	parts := make([]string, 0, len(m.blocks))
 	for _, b := range m.blocks {
 		parts = append(parts, b.text)
@@ -260,7 +261,7 @@ func shown(s string, n int) string { return clip(plainText(s), n) }
 
 // approvalMessage is the personMessage of a held write at the link handed
 // over: lead says what happened, tail lines follow the link.
-func approvalMessage(lead string, pick handOver, tail ...string) (string, []mcp.Link) {
+func approvalMessage(lead string, pick handOver, tail ...string) (string, []toolresult.Link) {
 	return buildApprovalMessage(lead, pick, tail)
 }
 
@@ -293,7 +294,7 @@ func fitToSteps(message string, steps []NextStep) string {
 	return fitMessage(message, commands...)
 }
 
-func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []mcp.Link) {
+func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []toolresult.Link) {
 	msg := newMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
@@ -312,7 +313,7 @@ func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []
 
 // revertMessage is the personMessage of a prepared revert at the link handed
 // over: what it restores, why, and when it expires, then the link.
-func revertMessage(summary string, pick handOver, extra ...string) (string, []mcp.Link) {
+func revertMessage(summary string, pick handOver, extra ...string) (string, []toolresult.Link) {
 	msg := newMessage().Text(summary)
 	for _, line := range extra {
 		msg.Text(line)

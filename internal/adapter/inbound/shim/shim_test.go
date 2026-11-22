@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
@@ -85,7 +87,7 @@ func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-c
 	cmds, err := agent.NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
-	fallback := down.Server(mcp.Info{Name: "basalt", Version: "test"})
+	fallback := app.NewEngineDownServer(down)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)

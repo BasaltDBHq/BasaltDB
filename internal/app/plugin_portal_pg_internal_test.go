@@ -62,7 +62,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		d.OperatedBy, d.SameUser = mcpcontract.OperatedByAgent, true
 		d.PluginRequests, d.PluginApprovals = p, pg.store
 	})
-	server := mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)
+	server := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)
 	files, executables := source("1.0.0")
 	install := func() (map[string]any, bool) {
 		t.Helper()

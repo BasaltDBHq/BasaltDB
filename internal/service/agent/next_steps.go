@@ -9,10 +9,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
@@ -83,7 +86,7 @@ func (f failure) arg(name string) string {
 // prescribes. Every tool error passes through it, so none reaches the agent
 // bare. A body that already carries its steps (built where the engine
 // knows the link or the ledger row) keeps them.
-func (s *Service) Failure(tool string, args map[string]any, err error) *mcp.ToolError {
+func (s *Service) Failure(tool string, args map[string]any, err error) *toolresult.ToolError {
 	te := rowTooLargeFor(tool, messageTooLarge(tool, err, ToolError(err)))
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		if te.ErrorID == "" {
@@ -99,7 +102,7 @@ func (s *Service) Failure(tool string, args map[string]any, err error) *mcp.Tool
 // entry for its code, reason and tool. A missing entry or a body that
 // disagrees with it is a defect: it is logged here, and the catalog test
 // fails on it.
-func (s *Service) addGuidance(te *mcp.ToolError, f failure) {
+func (s *Service) addGuidance(te *toolresult.ToolError, f failure) {
 	entry, ok := catalog().ErrorEntry(te.Code, te.Reason, f.tool)
 	if !ok {
 		s.Log.Error("no catalog entry for the error", "code", te.Code, "reason", te.Reason, "tool", f.tool)
@@ -125,7 +128,7 @@ func (s *Service) addGuidance(te *mcp.ToolError, f failure) {
 }
 
 // errorGuidance builds the steps and the person message for te, by code.
-func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, string, error) {
+func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresult.NextStep, string, error) {
 	b, person := NewSteps(), ""
 	switch te.Code {
 	case CodeIntentRequired:
@@ -182,7 +185,7 @@ var staleDetail = regexp.MustCompile(`^STALE_READ: (.+?) (\{.*\}) read at xmin \
 // the step is the query that reads that row. Decided here, provisionally:
 // the engine parses the detail, whose format a test against a real guard
 // pins, instead of a guard migration to a JSON detail.
-func (s *Service) staleReadSteps(b *Steps, te *mcp.ToolError, f failure) {
+func (s *Service) staleReadSteps(b *Steps, te *toolresult.ToolError, f failure) {
 	args, err := staleReadQuery(te.Message, f.arg(argRunID))
 	if err != nil {
 		// A detail the engine cannot read: the catalog's query step cannot be
@@ -242,7 +245,7 @@ var refusedText = map[string]string{
 
 // refusedSteps: most refusals are fixed by rewriting the statement; DDL and
 // the guard's own refusals are not the agent's to get around.
-func refusedSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func refusedSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	switch te.Reason {
 	case string(action.ReasonDDL):
 		b.Stop("Do not retry and do not look for another way to change the schema.")
@@ -300,7 +303,7 @@ func describeTimeoutText(f failure) string {
 	return "The catalog was slow: call describe once more, or search with a query for the tables you need."
 }
 
-func queryTimeoutSteps(b *Steps, te *mcp.ToolError, f failure) {
+func queryTimeoutSteps(b *Steps, te *toolresult.ToolError, f failure) {
 	if f.tool == toolDescribe {
 		b.ReviseCall(f.tool, nil, describeTimeoutText(f))
 		return
@@ -327,13 +330,13 @@ var rowTooLargeTools = map[string]bool{toolQuery: true, toolWrite: true}
 // rowTooLargeFor keeps ROW_TOO_LARGE for the tools whose statement it
 // refuses (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE); any other tool's
 // read too large for the budget is SIZE_LIMIT.
-func rowTooLargeFor(tool string, te *mcp.ToolError) *mcp.ToolError {
+func rowTooLargeFor(tool string, te *toolresult.ToolError) *toolresult.ToolError {
 	if te.Code == CodeQueryTimeout && te.Reason == ReasonRowTooLarge && !rowTooLargeTools[tool] {
 		te = sizeLimitError()
 	}
 	if te.Code == CodeQueryTimeout && te.Reason == ReasonSizeLimit && pagedTools[tool] {
 		// A paged tool's message names its step, not the columns of a query.
-		te.Message = resultsize.ErrSizeLimit.Error() + "; call it again with a smaller limit, down to 1"
+		te.Message = budget.ErrSizeLimit.Error() + "; call it again with a smaller limit, down to 1"
 	}
 	return te
 }
@@ -360,7 +363,7 @@ func approvalExpiredSteps(b *Steps) {
 	b.ReviseCall(toolWrite, nil, "On yes, send the write again without approvalId, so it is held anew.")
 }
 
-func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
+func (s *Service) approvalRequiredSteps(b *Steps, te *toolresult.ToolError) string {
 	n := te.Approval
 	if n == nil {
 		b.fail(fmt.Errorf("APPROVAL_REQUIRED carries no approval"))
@@ -401,7 +404,7 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 // refused the approval. The three that need the approval page (NOT_SIGNED,
 // BAD_SIGNATURE, PASSKEY_REVOKED) are built with its link by
 // approvalLinkError.
-func approvalInvalidSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func approvalInvalidSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	switch te.Reason {
 	case reasonAlreadyUsed:
 		b.CallTool(toolRunHistory, runArgs(f), "Read the run's history: the write was already applied.")
@@ -427,7 +430,7 @@ func runArgs(f failure) map[string]any {
 	return map[string]any{}
 }
 
-func revertInvalidSteps(b *Steps, te *mcp.ToolError, f failure) {
+func revertInvalidSteps(b *Steps, te *toolresult.ToolError, f failure) {
 	id := f.arg(argRevertID)
 	switch te.Reason {
 	case reasonLineInvalid:
@@ -451,7 +454,7 @@ var deniedTable = regexp.MustCompile(`permission denied for (?:table|relation) (
 // to add the access, in a later turn, runs basalt init, whose link opens the
 // page where the person grants it (RI-16). The message names the table
 // Postgres named, never a command.
-func (s *Service) permissionDeniedSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func (s *Service) permissionDeniedSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	b.Stop("The agent role may not do this: do not retry or look for another route.")
 	access := "write"
 	if f.tool == toolQuery {
@@ -468,7 +471,7 @@ func (s *Service) permissionDeniedSteps(b *Steps, te *mcp.ToolError, f failure) 
 	return fmt.Sprintf("The agent was denied %s. If it should have it, tell the agent: it gives you a link where you grant it.", what)
 }
 
-func notFoundSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func notFoundSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	switch te.Reason {
 	case reasonRun:
 		b.CallTool(toolListRuns, map[string]any{}, "List your runs, or start a new one with run_start.")
@@ -494,7 +497,7 @@ func notFoundSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	return ""
 }
 
-func sqlErrorSteps(b *Steps, te *mcp.ToolError, f failure) {
+func sqlErrorSteps(b *Steps, te *toolresult.ToolError, f failure) {
 	if te.Reason == reasonNoRowsNow {
 		b.ReviseCall(f.tool, nil, "The write now changes no rows: read the rows again with query and decide before writing.")
 		return
@@ -502,7 +505,7 @@ func sqlErrorSteps(b *Steps, te *mcp.ToolError, f failure) {
 	b.ReviseCall(f.tool, nil, "Fix the statement as the database's message says, then call again.")
 }
 
-func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func invalidArgumentSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	switch te.Reason {
 	case ReasonStaleCursor:
 		b.RepeatCall(f.tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
@@ -530,7 +533,7 @@ func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) string {
 
 // unavailableSteps: a database the engine cannot reach is retried once; the
 // machine problems are the person's to fix, with the command for it.
-func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func (s *Service) unavailableSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	switch te.Reason {
 	case reasonDatabaseUnreachable:
 		b.RepeatCall(f.tool, nil, 0, "Try the same call once more, in case the database was only briefly busy.")
@@ -575,7 +578,7 @@ func tooManyConnectionsMessage(cmds Commands) string {
 	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
-		cmds.agent, guard.AgentConnectionLimit)
+		cmds.agent, guardmodel.AgentConnectionLimit)
 }
 
 // fixes are what the person is told for the machine problems of the guard
@@ -681,7 +684,7 @@ func personFix(b *Steps, command, problem string) string {
 // needs the person back at its page: not signed yet, a signature the
 // database refused, or a passkey it does not accept. The link in its message
 // follows the link budget like the hold's; no new short link is issued here.
-func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolError {
+func (s *Service) approvalLinkError(te *toolresult.ToolError, n heldNotice) *toolresult.ToolError {
 	if n.reason == reasonRequestTooLarge {
 		// No link can carry it: the same message and steps as the hold's.
 		te.PersonMessage, te.NextSteps = n.PersonMessage, n.steps
@@ -732,7 +735,7 @@ func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
 // the person back to the page: a pointer to the short link they have while
 // the pages are served, else the hold's link (a hash link names the request
 // file the agent already sent).
-func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []mcp.Link) {
+func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []toolresult.Link) {
 	if n.shortHeld {
 		return pointBackMessage(lead)
 	}
@@ -765,7 +768,7 @@ var setupCode = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // setupSteps: a pending setup is run by the person on their own computer;
 // an expired one is renewed on the engine's machine (an OPERATOR step).
-func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
+func (s *Service) setupSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 	if te.Reason == reasonSetupExpired {
 		return setupExpiredSteps(b, s.Commands)
 	}
@@ -800,7 +803,7 @@ func setupExpiredSteps(b *Steps, cmds Commands) string {
 // hosted service (CONTRACT.md, Next steps with the connect link). Without
 // one there is no page to hand over: the agent runs basalt init, which
 // prints the link. The links are those of the message.
-func setupPendingSteps(b *Steps, cmds Commands, code, fingerprint string, blocking bool, budget int) (string, []mcp.Link) {
+func setupPendingSteps(b *Steps, cmds Commands, code, fingerprint string, blocking bool, budget int) (string, []toolresult.Link) {
 	if !setupCode.MatchString(code) || fingerprint == "" {
 		b.fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil

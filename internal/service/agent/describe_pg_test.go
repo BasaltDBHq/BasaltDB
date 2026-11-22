@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -19,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -72,7 +73,7 @@ func describeDB(t *testing.T) describeHarness { return describeDBWithUpdate(t, n
 
 // describeDBWithUpdate is describeDB for an engine whose update check
 // answers with update.
-func describeDBWithUpdate(t *testing.T, update func() *updatecheck.Notice) describeHarness {
+func describeDBWithUpdate(t *testing.T, update func() *agent.UpdateNotice) describeHarness {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, describeSQL)
@@ -85,11 +86,11 @@ func describeDBWithUpdate(t *testing.T, update func() *updatecheck.Notice) descr
 	classifyDescribe(t, d)
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Catalog = store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com")
+		d.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 		d.Update = update
 	})).Svc
-	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d, role: a.Role}
+	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, db: d, role: a.Role}
 }
 
 // classifyDescribe classes every readable column PUBLIC and card_token
@@ -325,10 +326,10 @@ func TestDescribeSearchScale(t *testing.T) {
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Catalog = store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com")
+		d.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
-	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
+	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
 	measure := func(name string, args map[string]any) {
@@ -372,10 +373,10 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	}
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Catalog = store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com")
+		d.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
-	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
+	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
 	start := time.Now()
@@ -398,8 +399,8 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 // carries the engine's newer-release notice (CONTRACT.md, Update notice).
 func TestDescribeOverviewCarriesTheUpdate(t *testing.T) {
 	t.Parallel()
-	h := describeDBWithUpdate(t, func() *updatecheck.Notice {
-		return &updatecheck.Notice{Current: "0.0.1", Latest: "0.0.2", Security: true, URL: "https://example.test/r"}
+	h := describeDBWithUpdate(t, func() *agent.UpdateNotice {
+		return &agent.UpdateNotice{Current: "0.0.1", Latest: "0.0.2", Security: true, URL: "https://example.test/r"}
 	})
 	overview, isError := h.describe(t, map[string]any{})
 	require.False(t, isError, "%v", overview)

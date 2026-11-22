@@ -147,7 +147,7 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStor
 			}
 			d.Notifier, d.PagesOrigin, d.Links, d.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc
-	e.h = harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(e.svc)...)}
+	e.h = harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(e.svc), agent.WithMeta)...)}
 	e.p = newLocalPages(t, agentEnv{svc: e.svc})
 }
 

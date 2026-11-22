@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
@@ -66,7 +68,7 @@ func connectOnlyWaitingMessage(code string) string {
 	return connectOnlyWaiting
 }
 
-func connectOnlySteps(b *Steps, code, fingerprint string, budget int) (string, []mcp.Link) {
+func connectOnlySteps(b *Steps, code, fingerprint string, budget int) (string, []toolresult.Link) {
 	if code == "" {
 		b.EndTurn("End your turn: a setup already started on the connect page may still finish.")
 		b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
@@ -212,11 +214,11 @@ func (e *DatabaseNotConfirmedError) Error() string {
 
 // ConfirmResult is confirm_database's result.
 type ConfirmResult struct {
-	State         string          `json:"state"`
-	Database      handoff.Address `json:"database"`
-	PersonMessage string          `json:"personMessage,omitempty"`
-	Links         []mcp.Link      `json:"links,omitempty"`
-	NextSteps     []NextStep      `json:"nextSteps"`
+	State         string            `json:"state"`
+	Database      handoff.Address   `json:"database"`
+	PersonMessage string            `json:"personMessage,omitempty"`
+	Links         []toolresult.Link `json:"links,omitempty"`
+	NextSteps     []NextStep        `json:"nextSteps"`
 }
 
 // confirmedSteps: the engine restarts the agent on its credential; status
@@ -266,12 +268,12 @@ func (c ConnectOnly) guide() *Service {
 
 // Tools are every IMPLEMENTED tool of the contracts: status and
 // confirm_database answer, every other tool is refused.
-func (c ConnectOnly) Tools() []mcp.Tool {
+func (c ConnectOnly) Tools() []Tool {
 	if c.Handoff == nil || c.Log == nil || c.Now == nil {
 		panic("agent: a connect-only agent needs its hand-off, a logger and a clock")
 	}
 	contracts := mcpcontract.MustLoad()
-	out := make([]mcp.Tool, 0, len(contracts))
+	out := make([]Tool, 0, len(contracts))
 	for _, ct := range contracts {
 		if ct.Status != mcpcontract.StatusImplemented {
 			continue
@@ -285,7 +287,7 @@ func (c ConnectOnly) Tools() []mcp.Tool {
 		default:
 			call = c.refused(ct.Name)
 		}
-		out = append(out, mcp.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: refuseAdminCredential(ct.Name, call)})
+		out = append(out, Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: refuseAdminCredential(ct.Name, call)})
 	}
 	return out
 }
@@ -365,7 +367,7 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 	r := StatusReport{
 		Agent: c.Name, OperatedBy: operatedBy(c.OperatedBy), Enforcement: enforcement(c.OperatedBy, c.SameUser),
 		Engine: EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: startedByEnum(c.StartedBy)},
-		Guard:  GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()},
+		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()},
 		Pages:  PagesStatus{Served: c.PagesOrigin != "", URL: base},
 	}
 	if c.Vault != nil {
@@ -461,7 +463,7 @@ func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
 	r := StatusReport{
 		Agent: l.Name, OperatedBy: operatedBy(l.OperatedBy), Enforcement: enforcement(l.OperatedBy, true),
 		Engine: EngineStatus{Reachable: l.EngineRunning, Build: buildinfo.Version},
-		Guard:  GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()},
+		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()},
 		Pages:  PagesStatus{Served: l.PagesOrigin != "", URL: base},
 	}
 	ps := problems{cmds: cmds, connectBudget: l.ConnectBudget}

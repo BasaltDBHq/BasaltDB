@@ -4,7 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -26,24 +27,24 @@ type listPendingArgs struct {
 
 // pendingDTO is one item of list_pending's output.
 type pendingDTO struct {
-	Kind            string             `json:"kind"`
-	ApprovalID      string             `json:"approvalId"`
-	RunID           string             `json:"runId"`
-	TaskID          string             `json:"taskId,omitempty"`
-	Intent          string             `json:"intent"`
-	Statement       string             `json:"statement,omitempty"`
-	Params          json.RawMessage    `json:"params,omitempty"`
-	AssignedColumns []string           `json:"assignedColumns"`
-	Rows            int                `json:"rows"`
-	Status          string             `json:"status"`
-	CreatedAt       string             `json:"createdAt"`
-	ExpiresAt       string             `json:"expiresAt"`
-	ApprovalURL     string             `json:"approvalUrl"`
-	RequestFile     *links.RequestFile `json:"requestFile,omitempty"`
-	Headline        string             `json:"headline"`
-	PersonMessage   string             `json:"personMessage"`
-	NextSteps       []mcp.NextStep     `json:"nextSteps,omitempty"`
-	Links           []mcp.Link         `json:"links,omitempty"`
+	Kind            string                `json:"kind"`
+	ApprovalID      string                `json:"approvalId"`
+	RunID           string                `json:"runId"`
+	TaskID          string                `json:"taskId,omitempty"`
+	Intent          string                `json:"intent"`
+	Statement       string                `json:"statement,omitempty"`
+	Params          json.RawMessage       `json:"params,omitempty"`
+	AssignedColumns []string              `json:"assignedColumns"`
+	Rows            int                   `json:"rows"`
+	Status          string                `json:"status"`
+	CreatedAt       string                `json:"createdAt"`
+	ExpiresAt       string                `json:"expiresAt"`
+	ApprovalURL     string                `json:"approvalUrl"`
+	RequestFile     *links.RequestFile    `json:"requestFile,omitempty"`
+	Headline        string                `json:"headline"`
+	PersonMessage   string                `json:"personMessage"`
+	NextSteps       []toolresult.NextStep `json:"nextSteps,omitempty"`
+	Links           []toolresult.Link     `json:"links,omitempty"`
 	// LargeValues names the statement or params left out (CONTRACT.md,
 	// Large values).
 	LargeValues []largevalue.Entry `json:"largeValues,omitempty"`
@@ -67,26 +68,26 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 // pendingRevertDTO is a list_pending revert item (list_pending.json,
 // kind REVERT). A widened revert has no scope and no link (RS-5).
 type pendingRevertDTO struct {
-	Kind          string             `json:"kind"`
-	RevertID      string             `json:"revertId"`
-	Status        string             `json:"status"`
-	Scope         string             `json:"scope,omitempty"`
-	ScopeID       string             `json:"scopeId,omitempty"`
-	Intent        string             `json:"intent"`
-	Rows          int                `json:"rows"`
-	Skipped       int                `json:"skipped"`
-	Batched       bool               `json:"batched"`
-	Widened       bool               `json:"widened"`
-	CreatedAt     string             `json:"createdAt"`
-	ExpiresAt     string             `json:"expiresAt"`
-	ApplyBy       string             `json:"applyBy,omitempty"`
-	Progress      *revertProgressDTO `json:"progress,omitempty"`
-	Headline      string             `json:"headline"`
-	RevertURL     string             `json:"revertUrl,omitempty"`
-	RequestFile   *links.RequestFile `json:"requestFile,omitempty"`
-	PersonMessage string             `json:"personMessage"`
-	Links         []mcp.Link         `json:"links,omitempty"`
-	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
+	Kind          string                `json:"kind"`
+	RevertID      string                `json:"revertId"`
+	Status        string                `json:"status"`
+	Scope         string                `json:"scope,omitempty"`
+	ScopeID       string                `json:"scopeId,omitempty"`
+	Intent        string                `json:"intent"`
+	Rows          int                   `json:"rows"`
+	Skipped       int                   `json:"skipped"`
+	Batched       bool                  `json:"batched"`
+	Widened       bool                  `json:"widened"`
+	CreatedAt     string                `json:"createdAt"`
+	ExpiresAt     string                `json:"expiresAt"`
+	ApplyBy       string                `json:"applyBy,omitempty"`
+	Progress      *revertProgressDTO    `json:"progress,omitempty"`
+	Headline      string                `json:"headline"`
+	RevertURL     string                `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile    `json:"requestFile,omitempty"`
+	PersonMessage string                `json:"personMessage"`
+	Links         []toolresult.Link     `json:"links,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 }
 
 func pendingRevertFromDomain(p PendingRevert) pendingRevertDTO {

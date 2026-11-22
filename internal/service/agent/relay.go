@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
@@ -46,7 +45,7 @@ func (s *Service) relayLink(ctx context.Context, page func(string, uuid.UUID) st
 	msg := "the Vault did not register the short link; handing over the long link"
 	var rerr error
 	switch {
-	case vault.IsConflict(err):
+	case theHost().VaultConflict(err):
 		// VC-42: another engine holds this token. The link is revoked, and
 		// the item's next link has a new secret whose token nobody else
 		// knows. No UNREGISTER: the token is not this engine's.
@@ -77,5 +76,5 @@ type noRelay struct{}
 func (noRelay) Connected() bool { return false }
 
 func (noRelay) Register(context.Context, channel.LinkToken, time.Time) error {
-	return vault.ErrNotConnected
+	return theHost().ErrVaultNotConnected
 }

@@ -5,9 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
 )
 
 // What status shows of what basalt crash, basalt access and basalt plugin
@@ -64,16 +61,16 @@ type PluginLister interface {
 type PluginEntry struct{ Name, Instance string }
 
 // AccessReader lists the agent role's table privileges (session_user's).
-type AccessReader func(ctx context.Context) (pgcatalog.Access, error)
+type AccessReader func(ctx context.Context) (CatalogAccess, error)
 
 // crashStatus is the newest report in the crash directory, or nil.
 func (s statusDeps) crashStatus() *CrashStatus {
-	reports := crash.List(s.crashDirs...)
+	reports := theHost().CrashReports(s.crashDirs...)
 	if len(reports) == 0 {
 		return nil
 	}
 	rep := reports[0]
-	link, _, _ := rep.IssueURLWithin(s.linkBudget)
+	link := rep.IssueURL(s.linkBudget)
 	path := ""
 	for _, d := range s.crashDirs {
 		if p := filepath.Join(d, rep.ID+".json"); fileExists(p) {

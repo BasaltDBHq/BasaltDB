@@ -14,7 +14,6 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
 )
 
 func extraStatus(t *testing.T, edit func(*Deps)) (StatusReport, string) {
@@ -72,8 +71,8 @@ func TestStatusLeavesCrashOutWhenNoneIsSaved(t *testing.T) {
 func TestStatusShowsTheTablesTheAgentCanReadAndWrite(t *testing.T) {
 	t.Parallel()
 	r, _ := extraStatus(t, func(d *Deps) {
-		d.Access = func(context.Context) (pgcatalog.Access, error) {
-			return pgcatalog.Access{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}, NotGranted: []string{"public.secret"}}, nil
+		d.Access = func(context.Context) (CatalogAccess, error) {
+			return CatalogAccess{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}, NotGranted: []string{"public.secret"}}, nil
 		}
 	})
 	require.Equal(t, &AccessStatus{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}}, r.Access)
@@ -86,7 +85,7 @@ func TestStatusAccessListsAreEmptyNotNullAndBounded(t *testing.T) {
 		many[i] = "public.t"
 	}
 	r, raw := extraStatus(t, func(d *Deps) {
-		d.Access = func(context.Context) (pgcatalog.Access, error) { return pgcatalog.Access{Read: many}, nil }
+		d.Access = func(context.Context) (CatalogAccess, error) { return CatalogAccess{Read: many}, nil }
 	})
 	require.Len(t, r.Access.Read, maxAccessTables)
 	require.Equal(t, []string{}, r.Access.Write)
@@ -97,7 +96,7 @@ func TestStatusAccessListsAreEmptyNotNullAndBounded(t *testing.T) {
 func TestStatusLeavesAccessOutWhenItCannotBeRead(t *testing.T) {
 	t.Parallel()
 	r, _ := extraStatus(t, func(d *Deps) {
-		d.Access = func(context.Context) (pgcatalog.Access, error) { return pgcatalog.Access{}, errors.New("down") }
+		d.Access = func(context.Context) (CatalogAccess, error) { return CatalogAccess{}, errors.New("down") }
 	})
 	require.Nil(t, r.Access)
 	require.True(t, r.Ready, "an unreadable list is not a problem")

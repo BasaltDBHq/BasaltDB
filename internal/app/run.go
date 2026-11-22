@@ -28,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
@@ -481,7 +480,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), agent.Tools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed)),
+			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed)),
 		})
 	}
 	return out, nil
@@ -754,7 +753,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	guardCtx, stopGuardLog := context.WithTimeout(ctx, guardLogTimeout)
 	go func() {
 		defer stopGuardLog()
-		logGuard(guardCtx, probe, log)
+		logGuard(guardCtx, agentProbe{probe}, log)
 	}()
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
@@ -763,9 +762,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	observer := piidict.NewObserver(classes, env.dict)
 	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
-	readRecord := func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
+	readRecord := func(ctx context.Context, id string) (*agent.EngineRecord, error) {
 		r, err := guard.EngineRecord(ctx, pool, id)
-		return r, postgres.MapError(err)
+		return agentEngineRecord(r), postgres.MapError(err)
 	}
 	var relay agent.LinkRelay
 	if env.relay != nil {
@@ -805,20 +804,20 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		SameUser:       !env.cfg.Service(),
 		StartedBy:      env.startedBy,
 		Setup:          a.Setup,
-		Probe:          probe,
+		Probe:          agentProbe{probe},
 		Vault:          env.vault,
 		Portal:         env.portal,
 		Plugins:        env.plugins,
 		CrashDirs:      crashDirs(env.stateDir),
-		Access:         func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
-		Update:         env.updateNotice(),
+		Access:         func(ctx context.Context) (agent.CatalogAccess, error) { return agentAccess(ctx, pool) },
+		Update:         agentUpdate(env.updateNotice()),
 		EngineRecord:   readRecord,
 		Trust:          TrustOf(pool),
 		Database:       agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
 		Receipts:       env.receipts,
 		Finisher:       finisher,
 		PII:            observer.On(pool),
-		Catalog:        postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
+		Catalog:        agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)},
 		Columns:        postgres.NewColumnOrder(budgeted),
 		// The plugin approval routes read and relay on the agent's own
 		// credential, as the approval routes do.

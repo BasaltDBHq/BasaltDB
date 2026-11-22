@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
@@ -128,17 +129,17 @@ type requestPluginArgs struct {
 
 // requestPluginResult is its output.
 type requestPluginResult struct {
-	State         string         `json:"state"`
-	Name          string         `json:"name"`
-	Instance      string         `json:"instance"`
-	Version       string         `json:"version,omitempty"`
-	Agents        []string       `json:"agents,omitempty"`
-	ApprovalID    string         `json:"approvalId,omitempty"`
-	ExpiresAt     string         `json:"expiresAt,omitempty"`
-	ApprovalURL   string         `json:"approvalUrl,omitempty"`
-	PersonMessage string         `json:"personMessage"`
-	Links         []mcp.Link     `json:"links,omitempty"`
-	NextSteps     []mcp.NextStep `json:"nextSteps"`
+	State         string                `json:"state"`
+	Name          string                `json:"name"`
+	Instance      string                `json:"instance"`
+	Version       string                `json:"version,omitempty"`
+	Agents        []string              `json:"agents,omitempty"`
+	ApprovalID    string                `json:"approvalId,omitempty"`
+	ExpiresAt     string                `json:"expiresAt,omitempty"`
+	ApprovalURL   string                `json:"approvalUrl,omitempty"`
+	PersonMessage string                `json:"personMessage"`
+	Links         []toolresult.Link     `json:"links,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps"`
 }
 
 const pluginDefaultInstanceName = "default"
@@ -151,7 +152,7 @@ func (h handlers) requestPlugin(ctx context.Context, raw json.RawMessage) (any, 
 	if err := args.check(); err != nil {
 		return nil, err
 	}
-	return h.svc.RequestPlugin(ctx, args, mcp.Meta(ctx))
+	return h.svc.RequestPlugin(ctx, args, metaOf(ctx))
 }
 
 // check holds the call to exactly one form.
@@ -278,16 +279,16 @@ func (s *Service) noPortalLink() string {
 	if !s.portalPluginLinks() || s.Relay.Connected() {
 		return ""
 	}
-	state := string(vault.StateOff)
+	state := vaultStateOff
 	if s.Vault != nil {
 		state = s.Vault.VaultStatus().State
 	}
 	switch state {
-	case string(vault.StateOff):
+	case vaultStateOff:
 		return "the Vault is off on this engine (vault in engine.json)"
-	case string(vault.StateKeyError):
+	case vaultStateKeyError:
 		return "the engine's Vault key file is refused (status shows vault KEY_ERROR)"
-	case string(vault.StateConnected):
+	case vaultStateConnected:
 		// Connected to the Vault, yet the relay hands over no link: the
 		// database revoked this engine's key, or the socket just dropped.
 		return "this engine cannot hand over a portal link now (status shows vault and engineRecord: a database that revoked the engine's key refuses its links)"
@@ -321,18 +322,18 @@ func noPortalLinkError(message, person string) error {
 }
 
 // uploadOf is basalt mcp's upload of the source, from the call's _meta.
-func uploadOf(meta json.RawMessage) (mcp.PluginUpload, error) {
+func uploadOf(meta json.RawMessage) (PluginUpload, error) {
 	missing := &ArgumentError{Message: "basalt mcp handed over no plugin files for source (or the engine dropped them when it restarted); call request_plugin again with source"}
 	var m map[string]json.RawMessage
-	if len(meta) == 0 || json.Unmarshal(meta, &m) != nil || m[mcp.MetaPluginUpload] == nil {
-		return mcp.PluginUpload{}, missing
+	if len(meta) == 0 || json.Unmarshal(meta, &m) != nil || m[MetaPluginUpload] == nil {
+		return PluginUpload{}, missing
 	}
-	var up mcp.PluginUpload
-	if json.Unmarshal(m[mcp.MetaPluginUpload], &up) != nil || up.Name == "" {
-		return mcp.PluginUpload{}, missing
+	var up PluginUpload
+	if json.Unmarshal(m[MetaPluginUpload], &up) != nil || up.Name == "" {
+		return PluginUpload{}, missing
 	}
 	if _, err := uuid.Parse(up.UploadID); err != nil {
-		return mcp.PluginUpload{}, missing
+		return PluginUpload{}, missing
 	}
 	return up, nil
 }
@@ -376,7 +377,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 	return requestPluginResult{
 		State: PluginStatePending, Name: o.Name, Instance: o.Instance, Version: o.Version, Agents: o.Agents,
 		ApprovalID: o.ApprovalID.String(), ExpiresAt: timeText(o.ExpiresAt), ApprovalURL: link,
-		PersonMessage: strings.Join(lines, "\n"), Links: []mcp.Link{{Label: "Approve the plugin " + o.Name, URL: link}},
+		PersonMessage: strings.Join(lines, "\n"), Links: []toolresult.Link{{Label: "Approve the plugin " + o.Name, URL: link}},
 		NextSteps: built,
 	}, nil
 }
@@ -483,7 +484,7 @@ func (s *Service) pluginError(err error) error {
 	var r *PluginRefusedError
 	switch {
 	case errors.Is(err, ErrPluginNotFound):
-		return &mcp.ToolError{Code: CodeNotFound, Message: err.Error()}
+		return &toolresult.ToolError{Code: CodeNotFound, Message: err.Error()}
 	case errors.As(err, &r):
 		return pluginRefused(r.Reason, r.Message, "Basalt did not add or change the plugin: "+r.Message)
 	}
@@ -513,7 +514,7 @@ func pluginRefused(reason, message, person string) error {
 	if err != nil {
 		return err
 	}
-	return &mcp.ToolError{Code: codePluginRefused, Reason: reason, Message: message, PersonMessage: person, NextSteps: built}
+	return &toolresult.ToolError{Code: codePluginRefused, Reason: reason, Message: message, PersonMessage: person, NextSteps: built}
 }
 
 // The page's three levels, from calm to the strong warning (CONTRACT.md,
@@ -536,7 +537,7 @@ const (
 // pluginLevel is the page's level of a binding, from signer, endpoint and
 // isolation, as the page derives it.
 func pluginLevel(b approval.PluginBinding) int {
-	if b.Signer == guard.PluginSignerKnown {
+	if b.Signer == guardmodel.PluginSignerKnown {
 		return pluginLevelPublished
 	}
 	var endpoint struct {
@@ -549,7 +550,7 @@ func pluginLevel(b approval.PluginBinding) int {
 	if len(b.Isolation) > 0 {
 		_ = json.Unmarshal(b.Isolation, &isolation)
 	}
-	if endpoint.Kind == guard.PluginEndpointRemote || isolation.Files == guard.PluginFilesOSUser {
+	if endpoint.Kind == guardmodel.PluginEndpointRemote || isolation.Files == guardmodel.PluginFilesOSUser {
 		return pluginLevelFenced
 	}
 	return pluginLevelUnfenced

@@ -214,7 +214,7 @@ func TestToolSchemaReferencesResolve(t *testing.T) {
 		if len(cols) < 3 || !strings.HasPrefix(cols[0], "| [`") {
 			continue
 		}
-		if m := indexFile.FindStringSubmatch(cols[0]); m != nil && byFile[m[1]] != nil {
+		if m := indexFile.FindStringSubmatch(cols[0]); len(m) > 1 && byFile[m[1]] != nil {
 			byFile[m[1]][clean(strings.TrimSuffix(cols[1], " (continued)"))] = true
 		}
 	}

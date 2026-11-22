@@ -1,20 +1,25 @@
 package shim
 
 import (
+	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"maps"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
+	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
@@ -23,40 +28,151 @@ import (
 // cap (CONTRACT.md, Plugin approval in service mode, The upload).
 const maxSourceBytes = 256 << 20
 
-// ErrNoPersonSocket: the engine has no person socket this process can
-// reach (it runs as the person's own user, or it is not running), so no
-// plugin is uploaded.
-var ErrNoPersonSocket = errors.New("the engine has no person socket")
+// ErrNoUploads: the engine takes no plugin uploads (it keeps no plugins of
+// its own, or it is older), so the call goes to it without one and the
+// engine says why it cannot take a plugin.
+var ErrNoUploads = errors.New("the engine takes no plugin uploads")
 
-// NewPluginUploader uploads plugin folders to the engine's person socket at
-// socketPath, as this process's OS user (the agent's).
+// PluginFile is one file of a plugin to upload: its path in the copy and
+// its bytes.
+type PluginFile struct {
+	Path string
+	Data []byte
+}
+
+// uploadWait bounds one upload: the engine answers each part at once.
+const uploadWait = 2 * time.Minute
+
+// NewPluginUploader uploads plugin folders to the engine over a second
+// connection to the agent's own socket at socketPath, as this process's OS
+// user (the agent's), which the socket admits and the upload belongs to.
 func NewPluginUploader(socketPath string) PluginUploader {
-	client := person.Client{Path: socketPath}
 	return func(ctx context.Context, source string) (mcp.PluginUpload, error) {
 		src, err := ReadPluginSource(source)
 		if err != nil {
 			return mcp.PluginUpload{}, err
 		}
-		id, err := client.PluginUpload(ctx, src.Files)
+		ctx, cancel := context.WithTimeout(ctx, uploadWait)
+		defer cancel()
+		id, err := upload(ctx, socketPath, src.Files)
 		if err != nil {
-			return mcp.PluginUpload{}, uploadError(err)
+			return mcp.PluginUpload{}, err
 		}
-		return mcp.PluginUpload{UploadID: id.String(), Name: src.Manifest.Name, Executables: src.Executables}, nil
+		return mcp.PluginUpload{UploadID: id, Name: src.Manifest.Name, Executables: src.Executables}, nil
 	}
 }
 
-// uploadError is the answer to an upload the person socket refused.
-func uploadError(err error) error {
-	var pe *person.Error
-	switch {
-	case errors.Is(err, person.ErrNotRunning):
-		return ErrNoPersonSocket
-	case errors.Is(err, person.ErrUIDNotAllowed):
-		return refusal("AGENT_NOT_ALLOWED", fmt.Sprintf(
-			"the engine does not let OS user %d use its person socket, so this agent cannot hand it a plugin. Nothing was written", os.Getuid()))
-	case errors.As(err, &pe) && pe.Code == person.CodePluginRefused:
-		return refusal(pe.Reason, pe.Message)
+// uploadConn is the second connection: one request, one answer.
+type uploadConn struct {
+	conn net.Conn
+	in   *bufio.Reader
+	id   int
+}
+
+// upload begins an upload and sends files in parts of at most the engine's
+// maxPartBytes, in order, and returns the upload's id.
+func upload(ctx context.Context, socketPath string, files []PluginFile) (string, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", socketPath)
+	if err != nil {
+		return "", ErrNoUploads
 	}
+	defer conn.Close()
+	if dl, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(dl)
+	}
+	c := &uploadConn{conn: conn, in: bufio.NewReaderSize(conn, scannerInitSize)}
+	if _, err := conn.Write(append(mcp.HelloLine(buildinfo.Version), '\n')); err != nil {
+		return "", uploadFailed(err)
+	}
+	if _, err := c.answer(); err != nil {
+		return "", err
+	}
+	var begun struct {
+		UploadID     string `json:"uploadId"`
+		MaxPartBytes int    `json:"maxPartBytes"`
+	}
+	if err := c.call(mcp.MethodPluginUploadBegin, struct{}{}, &begun); err != nil {
+		return "", err
+	}
+	part := begun.MaxPartBytes
+	if part <= 0 {
+		return "", uploadFailed(fmt.Errorf("the engine offers parts of %d bytes", part))
+	}
+	send := func(path string, off int, chunk []byte) error {
+		return c.call(mcp.MethodPluginUploadPart, map[string]any{
+			"uploadId": begun.UploadID, "path": path, "offset": off, "data": base64.RawURLEncoding.EncodeToString(chunk),
+		}, nil)
+	}
+	for _, f := range files {
+		if len(f.Data) == 0 {
+			// An empty file is one empty part at offset 0.
+			if err := send(f.Path, 0, nil); err != nil {
+				return "", err
+			}
+			continue
+		}
+		for off := 0; off < len(f.Data); off += part {
+			if err := send(f.Path, off, f.Data[off:min(off+part, len(f.Data))]); err != nil {
+				return "", err
+			}
+		}
+	}
+	return begun.UploadID, nil
+}
+
+// call sends one request and decodes its answer's result into out.
+func (c *uploadConn) call(method string, params, out any) error {
+	c.id++
+	raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": c.id, "method": method, "params": params})
+	if err != nil {
+		return uploadFailed(err)
+	}
+	if _, err := c.conn.Write(append(raw, '\n')); err != nil {
+		return uploadFailed(err)
+	}
+	result, err := c.answer()
+	if err != nil || out == nil {
+		return err
+	}
+	if err := json.Unmarshal(result, out); err != nil {
+		return uploadFailed(err)
+	}
+	return nil
+}
+
+// answer reads the next answer: its result, the engine's ToolError, or
+// ErrNoUploads when the engine does not serve the method.
+func (c *uploadConn) answer() (json.RawMessage, error) {
+	line, err := c.in.ReadBytes('\n')
+	if err != nil {
+		return nil, uploadFailed(err)
+	}
+	var resp struct {
+		Result json.RawMessage `json:"result"`
+		Error  *mcp.RPCError   `json:"error"`
+	}
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return nil, uploadFailed(err)
+	}
+	switch {
+	case resp.Error == nil:
+		return resp.Result, nil
+	case mcp.IsMethodNotFound(resp.Error):
+		return nil, ErrNoUploads
+	case resp.Error.Data != nil && resp.Error.Data.Code == codePluginRefused:
+		return nil, refusal(resp.Error.Data.Reason, resp.Error.Data.Message)
+	case resp.Error.Data != nil && resp.Error.Data.Code == "INVALID_ARGUMENT":
+		return nil, badFolder("%s", resp.Error.Data.Message)
+	}
+	return nil, uploadFailed(errors.New(resp.Error.Message))
+}
+
+// codePluginRefused is the engine's refusal of a plugin change.
+const codePluginRefused = "PLUGIN_REFUSED"
+
+// uploadFailed is the answer to an upload that broke off.
+func uploadFailed(err error) *mcp.ToolError {
 	return &mcp.ToolError{
 		Code: "INTERNAL", Message: "the plugin's files could not be handed to the engine: " + err.Error(),
 		PersonMessage: "Basalt could not hand the plugin's files to its engine, so nothing was changed.",
@@ -68,7 +184,7 @@ func uploadError(err error) error {
 // steps for these reasons: stop, and ask the person.
 func refusal(reason, message string) *mcp.ToolError {
 	return &mcp.ToolError{
-		Code: "PLUGIN_REFUSED", Reason: reason, Message: message,
+		Code: codePluginRefused, Reason: reason, Message: message,
 		PersonMessage: "Basalt did not add or change the plugin: " + message,
 		NextSteps: []mcp.NextStep{
 			{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the engine refused this plugin change; do not work around it."},
@@ -88,7 +204,7 @@ func badFolder(format string, args ...any) *mcp.ToolError {
 
 // PluginSource is a plugin folder as read for an upload.
 type PluginSource struct {
-	Files []person.PluginFile
+	Files []PluginFile
 	// Executables are the listed files with an execute bit.
 	Executables []string
 	Manifest    plugin.Manifest
@@ -147,18 +263,18 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 	m, err := plugin.ParseManifest(manifest)
 	if err != nil {
 		return PluginSource{}, &mcp.ToolError{
-			Code: "PLUGIN_REFUSED", Reason: "BAD_MANIFEST", Message: "the plugin is refused: " + err.Error() + ". Nothing was written",
+			Code: codePluginRefused, Reason: "BAD_MANIFEST", Message: "the plugin is refused: " + err.Error() + ". Nothing was written",
 			PersonMessage: "The plugin was refused because its manifest breaks a rule (" + err.Error() + "). Its publisher must fix the manifest.",
 			NextSteps:     []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
 		}
 	}
-	files := []person.PluginFile{{Path: plugin.ManifestFile, Data: manifest}}
+	files := []PluginFile{{Path: plugin.ManifestFile, Data: manifest}}
 	if _, err := root.Lstat(plugin.SignatureFile); err == nil {
 		sig, _, err := read(plugin.SignatureFile, plugin.MaxSignatureFileBytes)
 		if err != nil {
 			return PluginSource{}, err
 		}
-		files = append(files, person.PluginFile{Path: plugin.SignatureFile, Data: sig})
+		files = append(files, PluginFile{Path: plugin.SignatureFile, Data: sig})
 	}
 	var execs []string
 	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {
@@ -166,7 +282,7 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 		if err != nil {
 			return PluginSource{}, err
 		}
-		files = append(files, person.PluginFile{Path: rel, Data: b})
+		files = append(files, PluginFile{Path: rel, Data: b})
 		if exec {
 			execs = append(execs, rel)
 		}

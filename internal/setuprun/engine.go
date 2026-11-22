@@ -72,7 +72,7 @@ func (p *Prepared) EngineLines() []string {
 	}
 	agent := AgentWord(p.P)
 	line := fmt.Sprintf("This records engine %s for %s.", channel.FingerprintOf(p.Engine.ID), agent)
-	out := []string{line, fmt.Sprintf("Check that %s's basalt status shows the same engine fingerprint.", agent)}
+	out := []string{line, fmt.Sprintf("Check that %s's status tool shows the same engine fingerprint (vault.fingerprint).", agent)}
 	if v := p.Engine.LastRevoked; v != nil {
 		out = append(out, fmt.Sprintf("This database revoked engine %s on %s. Recording a new engine trusts the agent's server again: "+
 			"do it only if you rebuilt or replaced that server.", channel.FingerprintOf(v.ID), UTCMinute(*v.RevokedAt)))

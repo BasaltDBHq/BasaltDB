@@ -9,9 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
@@ -101,11 +99,11 @@ func exitCode(c *cliIO, err error) int {
 	return exitOK
 }
 
-// readAgentGuard asks the engine over the person socket in service mode,
-// else reads the config and logs in with the agent's credential.
+// readAgentGuard reads the config and logs in with the agent's credential;
+// a person (not root) on a service engine is told to use sudo.
 func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	if c.serviceMode(f.agent, "", f.configPath) {
-		return personAgentGuard(c, f.agent)
+		return agentGuard{}, errServiceFiles()
 	}
 	cfg, a, err := configAgentOf(c, f.agent, f.configPath)
 	if err != nil {
@@ -129,40 +127,13 @@ func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	}
 	conn, err := connect(c.ctx, dsn)
 	if err != nil {
-		return agentGuard{}, fmt.Errorf("the agent's credential does not log in, so the guard cannot be checked (%w); basalt status %s says what to do",
-			err, statusFlags(f))
+		return agentGuard{}, fmt.Errorf("the agent's credential does not log in, so the guard cannot be checked (%w); the agent's status tool says what to do", err)
 	}
 	defer conn.Close(c.ctx)
 	if seen.guard, err = guard.AgentStatus(c.ctx, conn, guard.Migrations()); err != nil {
 		return agentGuard{}, err
 	}
 	return seen, nil
-}
-
-// personAgentGuard is readAgentGuard through the engine: its status tool
-// and the database the agent's credential names (TARGET).
-func personAgentGuard(c *cliIO, agentName string) (agentGuard, error) {
-	client := person.Client{Path: c.engine.personSocket}
-	target, err := client.Target(c.ctx, agentName)
-	if err != nil {
-		return agentGuard{}, personError(c, agentName, err)
-	}
-	report, _, err := personStatus(c, agentName)
-	if err != nil {
-		return agentGuard{}, err
-	}
-	return agentGuard{target: setupcode.Target(target), guard: thisBuildsVerdict(report.Guard), operatedBy: report.OperatedBy}, nil
-}
-
-// thisBuildsVerdict judges the installed version the engine read against
-// this basalt's migrations, not the engine's: a person who installed a
-// newer basalt while the old engine runs still gets the new migrations.
-// What the engine could not read (UNKNOWN, MISSING) stays as it said.
-func thisBuildsVerdict(g agent.GuardStatus) guard.Status {
-	if g.Installed == nil || g.State == guard.GuardUnknown || g.State == guard.GuardMissing {
-		return guard.Status{State: g.State, Build: guard.LatestVersion()}
-	}
-	return guard.StatusAt(*g.Installed, guard.Migrations())
 }
 
 // configAgentOf loads the config and finds agent in it.
@@ -177,10 +148,6 @@ func configAgentOf(c *cliIO, agentName, configPath string) (engineConfig, config
 		}
 	}
 	return engineConfig{}, config.Agent{}, errAgentNotInConfig(agentName, configPath)
-}
-
-func statusFlags(f upgradeFlags) string {
-	return "--agent " + f.agent
 }
 
 // checkUpgradable refuses, before the admin connection string is asked
@@ -201,11 +168,11 @@ func checkUpgradable(c *cliIO, agentName string, seen agentGuard) (done bool, er
 		return true, nil
 	case guard.GuardMissing:
 		return false, fmt.Errorf("the guard is not installed in %s's database, and basalt upgrade only adds migrations to an installed one; "+
-			"install it with basalt init (basalt status --agent %s shows the command)", agentName, agentName)
+			"install it with basalt init (the agent's status tool shows the command)", agentName)
 	case guard.GuardNewer:
 		return false, newerGuardError(st.Installed, st.Build)
 	case guard.GuardUnknown:
-		return false, fmt.Errorf("the engine cannot read the guard with %s's credential; basalt status --agent %s says why", agentName, agentName)
+		return false, fmt.Errorf("the engine cannot read the guard with %s's credential; the agent's status tool says why", agentName)
 	}
 	return false, nil
 }
@@ -257,7 +224,7 @@ func upgradeGuard(c *cliIO, conn *pgx.Conn, f upgradeFlags) error {
 	names := guard.Names{Prefix: prefix}
 	switch {
 	case installed == 0 || prefix == "":
-		return fmt.Errorf("this database has no guard; install it with basalt init (basalt status --agent %s shows the command)", f.agent)
+		return fmt.Errorf("this database has no guard; install it with basalt init (the agent's status tool shows the command)")
 	case installed > latest:
 		return newerGuardError(installed, latest)
 	case installed == latest:

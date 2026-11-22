@@ -8,22 +8,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
 // engineAccess is how the CLI tells service mode from same-user mode (owner
-// decision SM-3): the installed service unit, which the person can read,
-// and the engine's person socket.
+// decision SM-3): the installed service unit, which the person can read.
 type engineAccess struct {
 	// unitInstalled reports whether the engine service's unit is
 	// installed.
 	unitInstalled func() bool
-	// personSocket is the engine's person socket.
-	personSocket string
 }
 
 // osEngineAccess looks for the systemd unit or the launchd plist on goos.
@@ -37,33 +32,27 @@ func osEngineAccess(goos string) engineAccess {
 			_, err := os.Stat(unit)
 			return err == nil
 		},
-		personSocket: config.PersonSocketPath(config.DefaultSocketDir(goos)),
 	}
 }
 
 // goosDarwin is macOS's GOOS.
 const goosDarwin = "darwin"
 
-// agentLedger is the agent's ledger for basalt log, approve and revert:
-// a direct connection with the agent's credential (same-user mode), or
-// the engine's person socket (service mode).
+// agentLedger is the agent's ledger for basalt approve and passkey: a
+// direct connection with the agent's credential.
 type agentLedger struct {
 	person.Ledger
 	// pinKey names the database and role for the log's ledger pin.
-	pinKey string
-	// pages is the engine's answer to PAGES in service mode, nil in
-	// same-user mode (the config says).
-	pages             *person.PagesDTO
+	pinKey            string
 	agent, configPath string
 	// role is the credential's database role in same-user mode.
 	role  string
 	close func()
 }
 
-// openLedger opens the agent's ledger. With the engine service installed,
-// --agent, the system config and no credential given, it goes through
-// the person socket and never reads the engine's files; else it reads the
-// credential as before (agentURL).
+// openLedger opens the agent's ledger with the agent's credential
+// (agentURL). A person (not root) on a service engine cannot read it and is
+// told to use sudo.
 func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, error) {
 	credFile = cmp.Or(credFile, c.paths.credFile)
 	if c.needsAgent(agent, credFile) {
@@ -73,7 +62,7 @@ func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, err
 		}
 	}
 	if c.serviceMode(agent, credFile, configPath) {
-		return openPersonLedger(c, agent)
+		return nil, errServiceFiles()
 	}
 	dsn, err := agentURL(c, agent, credFile, configPath)
 	if err != nil {
@@ -94,80 +83,33 @@ func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, err
 	}, nil
 }
 
-// ownAgent is the agent's name: the one given, else the one in the role of
-// the credential (<prefix>_agent_<name>), "" when it cannot be told.
-func (l *agentLedger) ownAgent() string {
-	if l.agent != "" {
-		return l.agent
-	}
-	i := strings.Index(l.role, "_agent_")
-	if i < 0 {
-		return ""
-	}
-	return l.role[i+len("_agent_"):]
-}
-
-// serviceMode reports whether this command goes through the person socket.
+// serviceMode reports whether this command would read a service engine's
+// files as a person (not root), which it cannot.
 func (c *cliIO) serviceMode(agent, credFile, configPath string) bool {
-	return agent != "" && credFile == "" && c.getenv(envAgentURL) == "" &&
+	return c.host.Euid() != 0 && agent != "" && credFile == "" && c.getenv(envAgentURL) == "" &&
 		configPath == c.systemConfig() && c.engine.unitInstalled()
 }
 
-// openPersonLedger asks the engine for its pages, which also tells whether
-// it runs and admits this OS user, before any other call.
-func openPersonLedger(c *cliIO, agent string) (*agentLedger, error) {
-	client := person.Client{Path: c.engine.personSocket}
-	pages, err := client.Pages(c.ctx)
-	if err != nil {
-		return nil, personError(c, agent, err)
-	}
-	return &agentLedger{
-		Ledger: client.Agent(agent),
-		pinKey: "person\x00" + c.engine.personSocket + "\x00" + agent,
-		pages:  &pages,
-		agent:  agent,
-		close:  func() {},
-	}, nil
-}
-
-// personError says what to do when the person socket does not answer:
-// never the OS error (permission denied), never a fallback to the files.
-func personError(c *cliIO, agent string, err error) error {
-	uid := os.Getuid()
-	switch {
-	case errors.Is(err, person.ErrNotRunning):
-		return fmt.Errorf("the engine is not running; start it with %s, then run this command again", service.StartCommand(c.goos))
-	case errors.Is(err, person.ErrUIDNotAllowed):
-		return fmt.Errorf("the engine does not let OS user %d use its person socket; a person adds it in a terminal of their own (an agent never runs this: it asks for the admin password): sudo basalt init --agent %s --person-uid %d",
-			uid, agent, uid)
-	}
-	return err
+// errServiceFiles is the answer of a command that would read a service
+// engine's files without root: they are the engine's own, and the person
+// socket that once answered for them is gone (CONTRACT.md, CLI, Removed).
+func errServiceFiles() error {
+	return errors.New("this engine runs as a service, so its config and credentials are the engine's own: run this command with sudo")
 }
 
 // pagesBase is the pages base URL links use: --pages-url, else the
-// engine's (service mode) or the config's pagesUrl, else the local pages.
+// config's pagesUrl, else the local pages.
 func (l *agentLedger) pagesBase(c *cliIO, flag string) string {
-	switch {
-	case flag != "":
+	if flag != "" {
 		return flag
-	case l.pages == nil:
-		return configuredBase(c, "", l.agent, l.configPath)
-	case l.pages.PagesURL == "":
-		return links.DefaultLocal
 	}
-	return l.pages.PagesURL
+	return configuredBase(c, "", l.agent, l.configPath)
 }
 
 // localPages is the origin of the pages the engine serves when it answers
 // there, else "" (see localPages).
 func (l *agentLedger) localPages(c *cliIO, flag string) string {
-	switch {
-	case l.pages == nil:
-		return localPages(c, flag, l.agent, l.configPath)
-	case flag != "" || l.pages.LocalOrigin == "" || !c.host.PagesUp(c.ctx, l.pages.LocalOrigin):
-		return ""
-	}
-	return l.pages.LocalOrigin
+	return localPages(c, flag, l.agent, l.configPath)
 }
 
 // credentials are the active passkeys' credentials, to fill credentialIds
@@ -182,4 +124,17 @@ func (l *agentLedger) credentials(ctx context.Context) ([]passkey.Credential, er
 		out = append(out, k.Credential)
 	}
 	return out, nil
+}
+
+// ownAgent is the agent's name: the one given, else the one in the role of
+// the credential (<prefix>_agent_<name>), "" when it cannot be told.
+func (l *agentLedger) ownAgent() string {
+	if l.agent != "" {
+		return l.agent
+	}
+	i := strings.Index(l.role, "_agent_")
+	if i < 0 {
+		return ""
+	}
+	return l.role[i+len("_agent_"):]
 }

@@ -79,8 +79,6 @@ type keptPlugins struct {
 	health func(k plugin.EntryKey, kept bool) string
 }
 
-var _ person.PluginMethods = (*keptPlugins)(nil)
-
 // storeError maps a store refusal to the person socket.
 func storeError(err error) error {
 	var ke *keptplugins.Error
@@ -775,7 +773,7 @@ func (s *keptPlugins) Approve(ctx context.Context, p person.PluginApproveParams)
 	}
 	ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 	defer cancel()
-	at, err := guard.SubmitPluginApproval(ctx, s.agents[opener].db, guard.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.PasskeyAssertion()})
+	at, err := guard.SubmitPluginApproval(ctx, s.agents[opener].db, guard.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.Assertion})
 	if err != nil {
 		return person.PluginApproveResult{}, err
 	}

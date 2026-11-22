@@ -295,7 +295,7 @@ export function verify(root, files, page) {
 // The portal's root pages, index.html and 404.html, load no script, so they
 // have no sri block. Cloudflare Pages serves 404.html at any unknown path,
 // whatever its depth, so they name the stylesheet by its absolute path. The
-// engine embeds them for basalt portal verify but never serves them.
+// engine embeds them for the portal check (make portal-verify) but never serves them.
 // STATIC_CSP_LINE allows no script at all; STATIC_STYLE_LINE is the only
 // link they may hold.
 const STATIC_CSP_LINE = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">`;

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,20 +11,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
@@ -59,7 +53,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit, "log": runLog, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "access": runAccess, "upgrade": runUpgrade,
+	"init": runInit, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "upgrade": runUpgrade,
 	"engine": runEngineRecords,
 }
 
@@ -76,15 +70,6 @@ func initAgent(t *testing.T, d *guardtest.DB, configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "agents", "bot.url")
 }
 
-// registerTestPasskey registers a passkey as the admin, so basalt log
-// does not warn that none is active.
-func registerTestPasskey(t *testing.T, d *guardtest.DB) {
-	t.Helper()
-	p, err := passkeytest.New(passkey.Production)
-	require.NoError(t, err)
-	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, p.Credential(), "test"))
-}
-
 func tempConfig(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "basalt", "engine.json")
@@ -97,10 +82,6 @@ func TestInitUsageErrors(t *testing.T) {
 		{"init", "--agent", "Bad-Name"},
 		{"init", "--agent", "bot", "extra"},
 		{"init", "--nope"},
-		{"log"},
-		{"log", "--run", "run_7f3k", "--agent", "bot"},
-		{"log", "--sort", "", "--agent", "bot"},
-		{"log", "--sort", "newest", "--agent", "bot"},
 		{"uninstall", "--prefix", "BAD"},
 	} {
 		r := cli(t, nil, "", args...)
@@ -240,10 +221,6 @@ func TestInitWarnsWhenRLSHidesRows(t *testing.T) {
 	var n int
 	require.NoError(t, conn.QueryRow(ctx, `SELECT count(id) FROM public.leads`).Scan(&n))
 	require.Zero(t, n, "init does not widen the agent's view")
-	lr := cli(t, nil, "", "log", "--credential-file", path)
-	require.Equal(t, exitOK, lr.code, lr.stderr)
-	require.Contains(t, lr.stderr, "warning: row-level security is on for public.leads and no policy lets this agent see rows")
-
 	d.Exec(t, `CREATE POLICY bot ON public.leads FOR SELECT TO `+role+` USING (true)`)
 	require.NotContains(t, initOut(t, d, cfgPath), "row-level security")
 }
@@ -491,263 +468,6 @@ func initOut(t *testing.T, d *guardtest.DB, configPath string) string {
 		"--config", configPath, "--os-user", "tester", "--yes", "--agent-rls", "none", "--skip-passkey")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	return r.stderr
-}
-
-func TestLogShowsRunChanges(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	cfgPath := tempConfig(t)
-	path := initAgent(t, d, cfgPath)
-	registerTestPasskey(t, d)
-	b, err := os.ReadFile(path)
-	require.NoError(t, err)
-	ctx := context.Background()
-	conn, err := pgdial.Connect(ctx, strings.TrimSpace(string(b)))
-	require.NoError(t, err)
-	defer conn.Close(ctx)
-
-	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Merge duplicate case reports"}
-	require.NoError(t, guard.StartRun(ctx, conn, in))
-	require.NoError(t, guardtest.Guarded(ctx, conn, in, `UPDATE public.leads SET status = 'merged' WHERE id = 4`))
-	require.NoError(t, guardtest.Guarded(ctx, conn, in, `UPDATE public.leads SET id = 9101 WHERE id = 101`))
-
-	r := cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath, "--run", in.RunID.String())
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, `"Merge duplicate case reports"`)
-	require.Contains(t, r.stdout, `UPDATE public.leads (blind write) {"id":4} status open -> merged`+"\n", "compact: key and changed columns")
-	require.Contains(t, r.stdout, `id 101 -> 9101`)
-	require.Contains(t, r.stdout, `UPDATE public.lead_owner (cascaded) values hidden`)
-	require.NotContains(t, r.stdout, "before=")
-	require.NotContains(t, r.stdout, "owner 1")
-	require.Empty(t, withoutPII(r.stderr))
-
-	r = cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath, "--run", in.RunID.String(), "--full")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, `UPDATE public.leads (blind write) {"id":4} before=`)
-
-	r = cli(t, map[string]string{envAgentURL: strings.TrimSpace(string(b))}, "", "log", "--json", "--limit", "1", "--sort", "id")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	var recs []ledger.Record
-	require.NoError(t, json.Unmarshal([]byte(r.stdout), &recs))
-	require.Len(t, recs, 1)
-	require.Equal(t, "APPLIED", recs[0].Status)
-	require.Equal(t, "AGENT", recs[0].Actor.Kind)
-	require.Equal(t, in.RunID.String(), recs[0].Actor.RunID)
-	require.Equal(t, "merged", recs[0].RowChanges[0].After["status"])
-	require.Contains(t, r.stderr, "next cursor: ")
-}
-
-func TestLogWarns(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	path := initAgent(t, d, tempConfig(t))
-	b, err := os.ReadFile(path)
-	require.NoError(t, err)
-	ctx := context.Background()
-	conn, err := pgdial.Connect(ctx, strings.TrimSpace(string(b)))
-	require.NoError(t, err)
-	defer conn.Close(ctx)
-	require.NoError(t, guard.Heartbeat(ctx, conn, nil))
-
-	d.Exec(t, `UPDATE basalt_meta.ledger SET detail = '{}' WHERE seq = 1`)
-	d.Exec(t, `CREATE TABLE public.lead_files (id bigint PRIMARY KEY, lead_id bigint REFERENCES public.leads ON DELETE CASCADE)`)
-
-	var stdout, stderr bytes.Buffer
-	cache := t.TempDir()
-	c := newIO(ctx, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(k string) string { return map[string]string{envCacheDir: cache}[k] })
-	c.now = func() time.Time { return time.Now().Add(8 * 24 * time.Hour) }
-	require.Equal(t, exitOK, runLog(c, []string{"--credential-file", path}), stderr.String())
-	require.Contains(t, stderr.String(), "warning: ledger chain broken at seq 1")
-	require.Contains(t, stderr.String(), "warning: table lead_files is not guarded")
-	require.Contains(t, stderr.String(), "warning: no engine heartbeat since")
-}
-
-func TestLogVerifiesFromItsPin(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	path := initAgent(t, d, tempConfig(t))
-	registerTestPasskey(t, d)
-	b, err := os.ReadFile(path)
-	require.NoError(t, err)
-	dsn := strings.TrimSpace(string(b))
-	ctx := context.Background()
-	conn, err := pgdial.Connect(ctx, dsn)
-	require.NoError(t, err)
-	defer conn.Close(ctx)
-	require.NoError(t, guard.Heartbeat(ctx, conn, nil))
-	require.NoError(t, guard.Heartbeat(ctx, conn, nil))
-
-	cache := t.TempDir()
-	env := map[string]string{envAgentURL: dsn, envCacheDir: cache}
-	r := cli(t, env, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Empty(t, withoutPII(r.stderr))
-	pins, err := os.ReadDir(filepath.Join(cache, "ledger-pins"))
-	require.NoError(t, err)
-	require.Len(t, pins, 1, "the verified head is pinned")
-
-	// History rewritten consistently: the full check alone passes, the
-	// pinned head does not.
-	d.Exec(t, `DO $$
-	DECLARE prev bytea := '\x0000000000000000000000000000000000000000000000000000000000000000'; l basalt_meta.ledger;
-	BEGIN
-		UPDATE basalt_meta.ledger SET detail = '{"forged": true}' WHERE seq = 1;
-		FOR l IN SELECT * FROM basalt_meta.ledger ORDER BY seq LOOP
-			UPDATE basalt_meta.ledger SET prev_hash = prev, hash = sha256(prev || basalt_meta._canonical(l))
-			 WHERE seq = l.seq RETURNING hash INTO prev;
-		END LOOP;
-		UPDATE basalt_meta.chain_head SET hash = prev WHERE id;
-	END $$`)
-	r = cli(t, map[string]string{envAgentURL: dsn}, "", "log")
-	require.Empty(t, withoutPII(r.stderr), "a fresh cache has no pin to compare")
-	for _, args := range [][]string{{"log"}, {"log", "--full-check"}} {
-		r = cli(t, env, "", args...)
-		require.Equal(t, exitOK, r.code, r.stderr)
-		require.Contains(t, r.stderr, "warning: ledger chain broken at seq ", args)
-	}
-}
-
-// logPin is the one pin basalt log keeps in cache.
-func logPin(t *testing.T, cache string) (chainpin.File, string) {
-	t.Helper()
-	dir := filepath.Join(cache, "ledger-pins")
-	files, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Len(t, files, 1)
-	return chainpin.File{Dir: dir}, strings.TrimSuffix(files[0].Name(), ".head.json")
-}
-
-// A reinstall over basalt log's pin is reported in the new ledger and shown
-// on every run as the reinstall notice, never as a broken chain; the pin
-// keeps a copy of the report.
-func TestLogShowsAReinstall(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-	registerTestPasskey(t, d)
-	ctx := context.Background()
-	require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
-	cache := t.TempDir()
-	r := cli(t, map[string]string{envAgentURL: a.URL, envCacheDir: cache}, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	pins, name := logPin(t, cache)
-	old, _, err := pins.Load(name)
-	require.NoError(t, err)
-
-	require.NoError(t, a.Conn.Close(ctx))
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
-	b := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-	registerTestPasskey(t, d)
-	env := map[string]string{envAgentURL: b.URL, envCacheDir: cache}
-	notice := fmt.Sprintf("Previous ledger ended at entry %d (hash %s), as reported with the credential of %s. "+
-		"If nobody on your team reinstalled Basalt, treat this as tampering.\n", old.Head.Seq, hex.EncodeToString(old.Head.Hash), b.Role)
-	for range 2 {
-		r = cli(t, env, "", "log")
-		require.Equal(t, exitOK, r.code, r.stderr)
-		require.NotContains(t, r.stderr, "chain broken")
-		require.Contains(t, r.stderr, "This database's ledger was reinstalled on ")
-		require.Contains(t, r.stderr, notice)
-	}
-	now, _, err := pins.Load(name)
-	require.NoError(t, err)
-	require.NotEqual(t, old.Install, now.Install)
-	require.Len(t, now.SetAside, 1)
-	require.Equal(t, old.Head.Seq, now.SetAside[0].PinnedSeq)
-}
-
-// The same ledger under another install id (the installs row deleted and
-// written again by basalt init) moves basalt log's pin with a warning on
-// stderr, and records nothing.
-func TestLogMovesItsPinToANewInstallOfTheSameLedger(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-	registerTestPasskey(t, d)
-	cache := t.TempDir()
-	env := map[string]string{envAgentURL: a.URL, envCacheDir: cache}
-	r := cli(t, env, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	pins, name := logPin(t, cache)
-	p, _, err := pins.Load(name)
-	require.NoError(t, err)
-	current := p.Install
-	p.Install = uuid.New()
-	require.NoError(t, pins.Save(name, p))
-
-	r = cli(t, env, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, fmt.Sprintf("warning: the guard was installed again over the same ledger (guard install %s is now %s)",
-		p.Install, current))
-	require.NotContains(t, r.stderr, "reinstalled")
-	require.NotContains(t, r.stderr, "chain broken")
-	now, _, err := pins.Load(name)
-	require.NoError(t, err)
-	require.Equal(t, current, now.Install)
-}
-
-// The quickstart path: the Postgres container removed and started again
-// from the same image, and basalt init run again with the same database
-// and role. basalt_meta has the same schema oid as before. basalt log
-// reports its old pin as a reinstall and shows the notice, never a broken
-// chain, on every run and with --full-check; a rewrite of the new ledger
-// is still caught.
-func TestLogAfterTheDatabaseIsRecreated(t *testing.T) {
-	t.Parallel()
-	d := guardtest.NewRecreatable(t).WithDemo(t)
-	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-	registerTestPasskey(t, d)
-	ctx := context.Background()
-	require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
-	cache := t.TempDir()
-	r := cli(t, map[string]string{envAgentURL: a.URL, envCacheDir: cache}, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	pins, name := logPin(t, cache)
-	old, _, err := pins.Load(name)
-	require.NoError(t, err)
-	require.Positive(t, old.Head.Seq)
-
-	d.Recreate(t)
-	d.WithDemo(t)
-	b := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-	registerTestPasskey(t, d)
-	env := map[string]string{envAgentURL: b.URL, envCacheDir: cache}
-	for _, args := range [][]string{{"log"}, {"log"}, {"log", "--full-check"}} {
-		r = cli(t, env, "", args...)
-		require.Equal(t, exitOK, r.code, r.stderr)
-		require.NotContains(t, r.stderr, "chain broken", args)
-		require.Contains(t, r.stderr, "This database's ledger was reinstalled on ", args)
-	}
-	_, again := logPin(t, cache)
-	require.Equal(t, name, again, "the same database and role: the same pin")
-	now, _, err := pins.Load(name)
-	require.NoError(t, err)
-	require.NotEqual(t, old.Install, now.Install)
-	require.Len(t, now.SetAside, 1)
-
-	d.Exec(t, `UPDATE basalt_meta.ledger SET hash = sha256(hash) WHERE seq = $1`, now.Head.Seq)
-	r = cli(t, env, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, fmt.Sprintf("warning: ledger chain broken at seq %d", now.Head.Seq))
-}
-
-func TestLogShowsTheDeadManRow(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	path := initAgent(t, d, tempConfig(t))
-	b, err := os.ReadFile(path)
-	require.NoError(t, err)
-	dsn := strings.TrimSpace(string(b))
-	ctx := context.Background()
-	conn, err := pgdial.Connect(ctx, dsn)
-	require.NoError(t, err)
-	defer conn.Close(ctx)
-	require.NoError(t, guard.RecordEvent(ctx, conn, guard.EventDeadMan,
-		map[string]any{"lastHeartbeat": "2026-11-01T00:00:00Z", "silentHours": 200}))
-	require.NoError(t, guard.Heartbeat(ctx, conn, nil))
-
-	r := cli(t, map[string]string{envAgentURL: dsn}, "", "log")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "warning: the engine was silent for 200 hours (last heartbeat 2026-11-01T00:00:00Z)")
 }
 
 func TestUninstallRemovesEverything(t *testing.T) {

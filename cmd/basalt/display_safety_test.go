@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -12,9 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/pii/classify"
-	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 func TestVisibleTextEscapesWhatHidesOrReordersText(t *testing.T) {
@@ -41,21 +38,6 @@ func TestVisibleTextEscapesWhatHidesOrReordersText(t *testing.T) {
 	} {
 		require.Equal(t, want, visibleText(in), "%q", in)
 	}
-}
-
-func TestRevertLinesShowHiddenCharactersAsEscapes(t *testing.T) {
-	t.Parallel()
-	conflict := "CHANGED_AFTER"
-	restore := revert.Line{
-		Op: "UPDATE", Table: "public.le\u200bads", Key: json.RawMessage("{\"id\": \"0001\u202e\"}"),
-		Now: json.RawMessage(`{"code": "1000"}`), Set: json.RawMessage("{\"code\": \"0001\u202e\u009b\"}"),
-		Action: revert.ActionRestore,
-	}
-	got := revertLineText(restore)
-	require.Equal(t, `restore    public.le<U+200B>ads {"id": "0001<U+202E>"}: code: "1000" -> "0001<U+202E><U+009B>"`, got)
-	skip := restore
-	skip.Action, skip.Conflict = revert.ActionSkip, &conflict
-	require.Equal(t, `skip       public.le<U+200B>ads {"id": "0001<U+202E>"}: CHANGED_AFTER`, revertLineText(skip))
 }
 
 func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
@@ -102,25 +84,6 @@ func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
 	require.Equal(t, long, got)
 	require.Equal(t, "basalt: the engine gave no short link (engine answered 500: ?]8;;https://evil.example?\\click???basalt: approved); using the long link\n",
 		stderr.String(), "the engine's message is shown with its control characters replaced")
-}
-
-// basalt log's text output shows a row's timestamptz values as RFC 3339 UTC.
-func TestLogTextShowsTimestampsAsUTC(t *testing.T) {
-	t.Parallel()
-	line := rowLine(ledger.RowChange{
-		Table: "public.leads", Op: "UPDATE",
-		Key:    map[string]any{"id": 1.0},
-		Before: map[string]any{"updated_at": "2026-11-12T14:08:04.513958+02:00"},
-		After:  map[string]any{"updated_at": "2026-11-12T14:11:27+02:00"},
-	}, false)
-	require.Contains(t, line, "2026-11-12T12:11:27Z")
-	require.NotContains(t, line, "+02:00")
-	full := rowLine(ledger.RowChange{
-		Table: "public.leads", Op: "UPDATE", Key: map[string]any{"id": 1.0},
-		Before: map[string]any{"updated_at": "2026-11-12T14:08:04+02:00"}, After: map[string]any{"updated_at": "2026-11-12T14:11:27+02:00"},
-	}, true)
-	require.NotContains(t, full, "+02:00")
-	require.Contains(t, full, "2026-11-12T12:08:04Z")
 }
 
 // ESC, OSC, C1 and bidi characters in a table or column name, or a reason,

@@ -79,7 +79,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(dir, f.Path), f.Data, mode))
 	}
-	up, err := shim.NewPluginUploader(f.client.Path)(ctx, dir)
+	up, err := shim.NewPluginUploader(serveAgentSocket(t, f.base, p, "bot", func() error { return nil }))(ctx, dir)
 	require.NoError(t, err)
 	require.Equal(t, "acme-ner", up.Name)
 	require.Equal(t, exec, up.Executables)

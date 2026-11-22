@@ -269,9 +269,9 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 	}
 	// Links to the engine's own local pages open in the browser on a
 	// person-operated engine; the engine says which in its hello answer.
-	// A plugin the agent asks for (request_plugin) is uploaded over the
-	// person socket in the same socket directory.
-	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(config.PersonSocketPath(socketDir))}
+	// A plugin the agent asks for (request_plugin) is uploaded over a
+	// second connection to the agent's own socket.
+	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path)}
 	if exe, err := shimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = engineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
@@ -438,7 +438,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 		a.initArgs = append(a.initArgs, v)
 		return nil
 	})
-	fs.Func(flagPersonUID, "install --agent: an OS user id the engine's person socket admits (repeatable; default: SUDO_UID)", func(v string) error {
+	fs.Func(flagPersonUID, "install --agent: an OS user id of the person (repeatable; default: SUDO_UID)", func(v string) error {
 		uid, err := parseUID(v)
 		if err != nil {
 			return err

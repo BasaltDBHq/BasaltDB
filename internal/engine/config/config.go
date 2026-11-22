@@ -110,11 +110,11 @@ type Config struct {
 	// origins). Every personMessage then carries DevLocalPagesWarning.
 	DevLocalPages bool `json:"devLocalPages,omitempty"`
 	// Mode is ModeService when basalt init installed the background
-	// service, else ModeSameUser (also when empty). Only ModeService opens
-	// the person socket.
+	// service, else ModeSameUser (also when empty).
 	Mode Mode `json:"mode,omitempty" validate:"omitempty,oneof=SERVICE SAME_USER"`
-	// PersonUIDs are the OS users the person socket admits (owner decision
-	// SM-2): the person(s) recorded at basalt init. Empty admits nobody.
+	// PersonUIDs are the person(s) recorded at basalt init (owner decision
+	// SM-2): an agent changes plugins (request_plugin) only while it runs
+	// as one of them. Empty admits nobody.
 	PersonUIDs []uint32 `json:"personUids,omitempty" validate:"unique"`
 	// Vault is ON when the engine dials out to the Vault for portal link
 	// sessions (CONTRACT.md, Vault channel); OFF, or empty, when it does
@@ -179,7 +179,7 @@ type Mode string
 // Modes.
 const (
 	// ModeService: the engine runs as its own OS user under systemd or
-	// launchd, and the person reaches it over the person socket.
+	// launchd; the person's commands that read its files run with sudo.
 	ModeService Mode = "SERVICE"
 	// ModeSameUser: the person runs the engine as themselves and the CLI
 	// reads the config and the credential directly.
@@ -191,14 +191,9 @@ func (c Config) Service() bool {
 	return c.Mode == ModeService
 }
 
-// PersonSocketName is the person socket's name in the socket directory,
-// <SocketDir>/person.sock; no agent may take it.
+// PersonSocketName is a reserved socket name, <SocketDir>/person.sock (the
+// person socket's, now removed); no agent may take it.
 const PersonSocketName = "person"
-
-// PersonSocketPath is the person socket in socket directory dir.
-func PersonSocketPath(dir string) string {
-	return SocketPath(dir, PersonSocketName)
-}
 
 // AgentOperated reports whether the agent runs this engine's machine steps.
 func (c Config) AgentOperated() bool { return c.OperatedBy == mcpcontract.OperatedByAgent }
@@ -342,7 +337,7 @@ func newValidator() *validator.Validate {
 // the guard applies to role names (lowercase letters, digits and '_',
 // starting with a letter, basalt_agent_<name> within 63 bytes), so a name
 // the engine accepts is one basalt init can create a role for. "person" is
-// the person socket's and is refused.
+// reserved and refused.
 func ValidAgentName(name string) bool {
 	return name != PersonSocketName && guard.ValidAgentName(name)
 }

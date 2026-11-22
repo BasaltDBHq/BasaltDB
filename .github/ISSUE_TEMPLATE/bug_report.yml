@@ -7,7 +7,7 @@ body:
       value: |
         Never paste a credential, a connection string with a password, or real data. Use a throwaway database and redact anything private.
         For a security problem, do not open an issue. Follow SECURITY.md instead.
-        If basalt crashed, run `basalt crash report <id>` instead: it fills in a scrubbed report for you.
+        If basalt crashed, ask your agent for the crash report link its status shows instead: it opens an issue with a scrubbed report for you.
         Not sure it is a bug? Ask in [Discussions](https://github.com/BasaltDBHq/BasaltDB/discussions/categories/q-a) first.
   - type: textarea
     id: what-happened

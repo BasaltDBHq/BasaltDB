@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -130,9 +132,9 @@ var dictDirs sync.Map
 func newDict(t *testing.T, opts pii.DictionaryOptions) (*pii.FuseDictionary, *pii.Keys) {
 	t.Helper()
 	dir := t.TempDir()
-	keys, err := pii.LoadKeys(dir+"/"+pii.KeyFileName, rand.Reader)
+	keys, err := dictfile.LoadKeys(dir+"/"+pii.KeyFileName, rand.Reader)
 	require.NoError(t, err)
-	dict, err := pii.OpenDictionary(dir, keys, opts)
+	dict, err := dictfile.Open(dir, keys, opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
 	dictDirs.Store(dict, dir)
@@ -425,7 +427,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	require.Contains(t, out.String(), "pii: dictionary scan")
 	require.NotContains(t, out.String(), "corp.ee", "the log carries counts, never values")
 
-	st, ok := pii.ReadStatus(dict2Dir(t, dict))
+	st, ok := dictfile.ReadStatus(dict2Dir(t, dict))
 	require.True(t, ok)
 	require.EqualValues(t, 16, st.LastScanRows)
 

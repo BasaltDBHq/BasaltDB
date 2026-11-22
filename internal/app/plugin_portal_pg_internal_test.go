@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -49,7 +51,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	p.kept.Store(f.s)
 
 	stateDir := t.TempDir()
-	keys, err := channel.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
+	keys, err := keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
 	require.NoError(t, err)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}

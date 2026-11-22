@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -1283,7 +1285,7 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
 		return nil, err
 	}
-	keys, err := channel.LoadOrCreateKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
+	keys, err := app.LoadOrCreateEngineKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
 	if err != nil {
 		return nil, keyRefused(err)
 	}

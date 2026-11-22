@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/pinfile"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -152,7 +154,7 @@ func TestPinnedHeadSurvivesARestart(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 
 	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
 	require.NoError(t, first.Tick(ctx))
@@ -182,7 +184,7 @@ func TestStartRunsTheFullCheck(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
 	require.NoError(t, first.Tick(ctx))
 	require.NoError(t, first.Tick(ctx)) // pins the first heartbeat
@@ -295,7 +297,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 
 	u := newUpkeep(a.Conn, time.Now).WithPins(pins)
 	for range 3 {
@@ -352,7 +354,7 @@ func TestReinstallWhileRunningIsRecorded(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 	sw := &switchDB{q: a.Conn}
 	u := upkeep.New("bot", "test", store.NewUpkeep(sw), slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
 	// Twice: the second pins the first heartbeat, past the genesis.
@@ -386,7 +388,7 @@ func (s *switchDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Ro
 // otherInstall replaces the saved pin's install with another id: the same
 // chain under another install, as when the installs row was deleted and
 // basalt init wrote a new one. Returns the pin and the current install.
-func otherInstall(t *testing.T, pins chainpin.File) (chainpin.Pin, uuid.UUID) {
+func otherInstall(t *testing.T, pins pinfile.File) (chainpin.Pin, uuid.UUID) {
 	t.Helper()
 	p, ok, err := pins.Load("bot")
 	require.NoError(t, err)
@@ -403,7 +405,7 @@ func TestSameLedgerUnderANewInstallMovesThePin(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
 	require.NoError(t, first.Tick(ctx))
 	require.NoError(t, first.Tick(ctx))
@@ -437,7 +439,7 @@ func TestPinAtOrBeforeAMovedAnchorIsRecorded(t *testing.T) {
 			d := guardtest.New(t).WithDemo(t)
 			a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 			ctx := context.Background()
-			pins := chainpin.File{Dir: t.TempDir()}
+			pins := pinfile.File{Dir: t.TempDir()}
 			require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
 			// The pin is the head, past the genesis; "before" adds a row
 			// after it, so retention's anchor lands past the pin.
@@ -465,7 +467,7 @@ func TestPinAtOrBeforeAMovedAnchorIsRecorded(t *testing.T) {
 // keptPinFixture pins a real head of another install and moves the anchor past
 // it, so verify_chain_from would accept it: a restored, rewritten ledger
 // whose anchor moved. Returns the pin.
-func keptPinFixture(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pins chainpin.File) chainpin.Pin {
+func keptPinFixture(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pins pinfile.File) chainpin.Pin {
 	t.Helper()
 	ctx := context.Background()
 	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
@@ -504,7 +506,7 @@ func TestUnreportedPinIsKeptAndReportedBroken(t *testing.T) {
 			d := guardtest.New(t).WithDemo(t)
 			a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 			ctx := context.Background()
-			pins := chainpin.File{Dir: t.TempDir()}
+			pins := pinfile.File{Dir: t.TempDir()}
 			pin := keptPinFixture(t, d, a, pins)
 			noReport(t, d, kind)
 
@@ -542,7 +544,7 @@ func TestCheckHealthKeepsAnUnreportedPin(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 	kept := keptPinFixture(t, d, a, pins)
 	noReport(t, d, "revoke")
 
@@ -618,7 +620,7 @@ func TestRecreatedDatabaseIsARecordedReinstall(t *testing.T) {
 	d := guardtest.NewRecreatable(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 	u := newUpkeep(a.Conn, time.Now).WithPins(pins)
 	for range 3 {
 		require.NoError(t, u.Tick(ctx))
@@ -681,7 +683,7 @@ func TestPinWithoutAnInstallIsSettled(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
-	pins := chainpin.File{Dir: t.TempDir()}
+	pins := pinfile.File{Dir: t.TempDir()}
 	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
 	require.NoError(t, first.Tick(ctx))
 	require.NoError(t, first.Tick(ctx))

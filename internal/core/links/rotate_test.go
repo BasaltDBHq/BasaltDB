@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -72,7 +74,7 @@ func TestResetKeepsTheRevokedLink(t *testing.T) {
 	now := time.Now()
 	clock := func() time.Time { return now }
 	path := filepath.Join(t.TempDir(), "bot.links.json")
-	s, err := links.OpenSecrets(path, clock, rand.Reader)
+	s, err := secretfile.Open(path, clock, rand.Reader)
 	require.NoError(t, err)
 	id := uuid.Must(uuid.NewV7())
 	secret, err := s.Issue(id, now.Add(time.Hour))
@@ -84,7 +86,7 @@ func TestResetKeepsTheRevokedLink(t *testing.T) {
 	require.False(t, s.WasReset(uuid.Must(uuid.NewV7()), secret))
 	require.False(t, s.WasReset(id, ""))
 
-	again, err := links.OpenSecrets(path, clock, rand.Reader)
+	again, err := secretfile.Open(path, clock, rand.Reader)
 	require.NoError(t, err)
 	require.True(t, again.WasReset(id, secret), "the reset survives a restart")
 

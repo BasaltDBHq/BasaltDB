@@ -69,7 +69,7 @@ func (s *Service) checkFix(ctx context.Context, j agentJob) (CheckAnswer, error)
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := s.fixDatabase(ctx, tx, j)
@@ -151,7 +151,7 @@ func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 func (s *Service) checkLabels(ctx context.Context, conn *pgx.Conn, tx pgx.Tx, j agentJob, database string) (CheckAnswer, error) {
 	cols, err := guard.AgentUnlabeled(ctx, tx, j.names, j.role)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("read the unlabeled columns", err)
 	}
 	// The listing is read; the transaction ends before the columns are
 	// sampled on the connection.
@@ -191,7 +191,7 @@ func (s *Service) runLabels(ctx context.Context, tx pgx.Tx, j agentJob, database
 	case errors.Is(err, guard.ErrClassesChanged):
 		return refuse(CodeClassesChanged, "A column's label changed since the page showed it (someone classified it, or the column is gone), so nothing changed. Read the labels again.")
 	case err != nil:
-		return setupFailed()
+		return setupFailed("write the labels", err)
 	}
 	answer.Lines = []string{fmt.Sprintf("%d columns labeled in the database %s", n, database)}
 	return nil
@@ -231,7 +231,7 @@ func (s *Service) checkPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, da
 	}
 	ch, err := s.challenge(j.req, bound{database: database, host: j.host})
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("make the passkey challenge", err)
 	}
 	out := fixAnswer(database, []string{
 		fmt.Sprintf("This adds a passkey on this device for the database %s. It can approve your agents' held writes and sign undos.", database),
@@ -245,7 +245,7 @@ func (s *Service) checkPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, da
 func (s *Service) passkeyRoom(ctx context.Context, tx pgx.Tx) error {
 	keys, err := guard.ActivePasskeys(ctx, tx)
 	if err != nil {
-		return setupFailed()
+		return setupFailed("read the passkeys", err)
 	}
 	if len(keys) >= maxActivePasskeys {
 		return refuse(CodeAnswersInvalid, "The database holds 100 passkeys, as many as the list shows. Remove one you no longer use first; nothing changed.")
@@ -262,7 +262,7 @@ func (s *Service) runPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, data
 		return err
 	}
 	if err := guard.RegisterPasskey(ctx, tx, cred, j.req.Passkey.Label); err != nil {
-		return setupFailed()
+		return setupFailed("register the passkey", err)
 	}
 	code, _ := cred.CheckCode()
 	answer.Lines = []string{fmt.Sprintf("passkey added in the database %s", database)}
@@ -286,7 +286,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (gu
 	}
 	keys, err := guard.ActivePasskeys(ctx, tx)
 	if err != nil {
-		return guard.RegisteredPasskey{}, 0, setupFailed()
+		return guard.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
 	}
 	var found *guard.RegisteredPasskey
 	others := 0
@@ -328,7 +328,7 @@ func (s *Service) runPasskeyRemove(ctx context.Context, tx pgx.Tx, j agentJob, a
 		if errors.As(err, &pg) && pg.Code == sqlstateLedgerInputInvalid {
 			return notActive()
 		}
-		return setupFailed()
+		return setupFailed("revoke the passkey", err)
 	}
 	answer.Lines = []string{fmt.Sprintf("passkey %s removed", passkeyLabel(k.Label))}
 	answer.Remaining = &others

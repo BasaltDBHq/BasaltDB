@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
@@ -27,7 +29,7 @@ func dictOptions() pii.DictionaryOptions {
 
 func openDict(t *testing.T, stateDir string, k *pii.Keys, o pii.DictionaryOptions) *pii.FuseDictionary {
 	t.Helper()
-	d, err := pii.OpenDictionary(stateDir, k, o)
+	d, err := dictfile.Open(stateDir, k, o)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	return d
@@ -485,7 +487,7 @@ func BenchmarkDictionaryLookup200k(b *testing.B) {
 	)
 	k, err := pii.NewKeys(testMaster)
 	require.NoError(b, err)
-	d, err := pii.OpenDictionary(b.TempDir(), k, dictOptions())
+	d, err := dictfile.Open(b.TempDir(), k, dictOptions())
 	require.NoError(b, err)
 	defer d.Close()
 	build, err := d.StartBuild()

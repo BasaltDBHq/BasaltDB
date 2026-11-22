@@ -60,7 +60,7 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 func (s *Service) repairPlan(j agentJob, password string) (guard.Script, []string, error) {
 	script, err := guard.RepairScript(j.names, j.req.Agent, password, statementTimeout.Milliseconds())
 	if err != nil {
-		return guard.Script{}, nil, setupFailed()
+		return guard.Script{}, nil, setupFailed("plan the repair", err)
 	}
 	lines := []string{fmt.Sprintf("This sets a new password for %s. Only this computer's BasaltDB knows it.", j.role)}
 	if j.missing {
@@ -80,7 +80,7 @@ func (s *Service) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, err
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := s.fixDatabase(ctx, tx, j)

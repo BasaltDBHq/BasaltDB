@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime/debug"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
@@ -29,13 +31,13 @@ func openPII(stateDir string, p config.PII, log *slog.Logger) (*pii.FuseDictiona
 	if err := os.MkdirAll(stateDir, stateDirMode); err != nil {
 		return nil, fmt.Errorf("pii: state directory %s: %w", stateDir, err)
 	}
-	keys, err := pii.LoadKeys(filepath.Join(stateDir, pii.KeyFileName), rand.Reader)
+	keys, err := dictfile.LoadKeys(filepath.Join(stateDir, pii.KeyFileName), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
 	opts := pii.DefaultDictionaryOptions()
 	opts.MaxMemoryBytes = p.MaxMemoryBytes()
-	dict, err := pii.OpenDictionary(stateDir, keys, opts)
+	dict, err := dictfile.Open(stateDir, keys, opts)
 	if err != nil {
 		return nil, err
 	}

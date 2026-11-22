@@ -52,7 +52,10 @@ const (
 	CodeChallengeInvalid        = "CHALLENGE_INVALID"
 	CodePasskeyInvalid          = "PASSKEY_INVALID"
 	CodeSetupFailed             = "SETUP_FAILED"
-	CodeTimeLimit               = "TIME_LIMIT"
+	// CodeGuardUnusable: the database has a basalt_meta this build cannot
+	// install over or update (an older install, or a partial one).
+	CodeGuardUnusable = "GUARD_UNUSABLE"
+	CodeTimeLimit     = "TIME_LIMIT"
 )
 
 // Refusal is a refused setup call: a code and its fixed message. Status,
@@ -67,6 +70,17 @@ type RefusalError struct {
 	// Pinned is the SHA-256 pinned now, on a TRUST check's refusal of a
 	// changed certificate.
 	Pinned string
+	// Cause is why a SETUP_FAILED happened, for the engine's log only.
+	Cause *Cause
+}
+
+// Cause is a SETUP_FAILED's cause: the step that failed, the Postgres
+// SQLSTATE when the database refused it, and the error's message. It holds
+// no connection string and no password (redact).
+type Cause struct {
+	Step     string
+	SQLState string
+	Message  string
 }
 
 // TrustRoot is the chain top a database presents, as the page shows it for
@@ -82,14 +96,14 @@ func (r *RefusalError) Error() string { return r.Message }
 
 func refuse(code, message string) *RefusalError { return &RefusalError{Code: code, Message: message} }
 
-// AsRefusal is err as a refusal; anything else is SETUP_FAILED, without
-// its text.
+// AsRefusal is err as a refusal; anything else is SETUP_FAILED, its text
+// only in the redacted Cause.
 func AsRefusal(err error) *RefusalError {
 	var r *RefusalError
 	if errors.As(err, &r) {
 		return r
 	}
-	return setupFailed()
+	return setupFailed("setup", err)
 }
 
 // Challenge is the passkey challenge check hands the page: the connect
@@ -199,7 +213,38 @@ func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 	if len(req.Passkey.Label) > maxLabel {
 		return nil, refuse(CodeInvalidArgument, "The passkey's label is too long.")
 	}
+	if strings.TrimSpace(req.Passkey.Label) == "" {
+		// The page asks for no label; register_passkey requires one.
+		req.Passkey.Label = defaultPasskeyLabel(os.Hostname)
+	}
 	return &cred, nil
+}
+
+// fallbackPasskeyLabel names a passkey when the computer's name cannot be
+// read or holds nothing printable.
+const fallbackPasskeyLabel = "Passkey from the setup page"
+
+// defaultPasskeyLabel names a passkey the page sent unnamed after this
+// computer: "Passkey on <hostname>", the name without its .local suffix
+// and kept to letters, digits, '.', '-' and '_', within maxLabel bytes.
+func defaultPasskeyLabel(hostname func() (string, error)) string {
+	name, err := hostname()
+	if err != nil {
+		return fallbackPasskeyLabel
+	}
+	name = strings.TrimSuffix(name, ".local")
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x80 && (r == '.' || r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			b.WriteRune(r)
+		}
+	}
+	const prefix = "Passkey on "
+	host := b.String()
+	if host == "" {
+		return fallbackPasskeyLabel
+	}
+	return prefix + host[:min(len(host), maxLabel-len(prefix))]
 }
 
 // checkBinding refuses a challenge made for another job, database or host.
@@ -214,6 +259,11 @@ func (s *Service) checkBinding(req Request, b bound) error {
 // passkey in one transaction, then the agent's credential and engine.json,
 // written as this engine's own user. One run at a time.
 func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
+	a, err := s.run(ctx, req)
+	return a, scrub(err, req.DatabaseURL)
+}
+
+func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 	if !s.busy.TryLock() {
 		return RunAnswer{}, refuse(CodeBusy, "Another setup is running. Wait for it to finish.")
 	}
@@ -282,13 +332,13 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		script, keep := p.script, p.keep
 		needed, err := passkeyNeeded(ctx, tx, s.opts.Origin)
 		if err != nil {
-			return setupFailed()
+			return setupFailed("read the passkeys", err)
 		}
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
 		if err := setuprun.ApplyInitTx(ctx, tx, script); err != nil {
-			return setupFailed()
+			return setupFailed("install script", err)
 		}
 		if !req.Demo {
 			n, err := writeLabels(ctx, tx, guard.Names{Prefix: s.opts.Prefix}, j.picks, req, s.opts.Now())
@@ -299,14 +349,14 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		}
 		if cred != nil {
 			if err := guard.RegisterPasskey(ctx, tx, *cred, req.Passkey.Label); err != nil {
-				return setupFailed()
+				return setupFailed("register the passkey", err)
 			}
 		}
 		warnings = script.Warnings
 		if req.Demo {
 			leads, notes, err := demo.Counts(ctx, tx)
 			if err != nil {
-				return setupFailed()
+				return setupFailed("count the sample data", err)
 			}
 			lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
 		} else {

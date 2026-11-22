@@ -1,6 +1,6 @@
 //go:build unix
 
-package channel
+package keyfile
 
 import (
 	"os"
@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
 
 func TestLoadKeysRefusesAFIFOWithoutBlocking(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), KeyFileName)
+	path := filepath.Join(t.TempDir(), channel.KeyFileName)
 	require.NoError(t, syscall.Mkfifo(path, 0o600))
 	done := make(chan error, 1)
 	go func() {
@@ -23,7 +25,7 @@ func TestLoadKeysRefusesAFIFOWithoutBlocking(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		require.ErrorIs(t, err, ErrKeyFile)
+		require.ErrorIs(t, err, channel.ErrKeyFile)
 		require.ErrorContains(t, err, "regular file")
 	case <-time.After(5 * time.Second):
 		t.Fatal("LoadOrCreateKeys blocked on a FIFO")
@@ -40,7 +42,7 @@ func (s statInfo) Sys() any { return s.st }
 
 func TestCheckOwnerRefusesAnotherUser(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), KeyFileName)
+	path := filepath.Join(t.TempDir(), channel.KeyFileName)
 	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
 	fi, err := os.Stat(path)
 	require.NoError(t, err)

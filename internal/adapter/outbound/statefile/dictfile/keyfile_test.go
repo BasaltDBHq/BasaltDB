@@ -1,4 +1,4 @@
-package pii_test
+package dictfile_test
 
 import (
 	"bytes"
@@ -9,10 +9,22 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
+
+// testMaster is a fixed k_master for the tests.
+var testMaster = []byte("test-master-key-0123456789abcdef")
+
+func newKeys(t testing.TB, master []byte) *pii.Keys {
+	t.Helper()
+	k, err := pii.NewKeys(master)
+	require.NoError(t, err)
+	return k
+}
 
 func tokenID(t *testing.T, k *pii.Keys) string {
 	t.Helper()
@@ -23,7 +35,7 @@ func tokenID(t *testing.T, k *pii.Keys) string {
 
 func TestLoadKeysCreatesA0600KeyOnFirstStartAndReusesIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), pii.KeyFileName)
-	k1, err := pii.LoadKeys(path, rand.Reader)
+	k1, err := dictfile.LoadKeys(path, rand.Reader)
 	require.NoError(t, err)
 
 	fi, err := os.Stat(path)
@@ -36,7 +48,7 @@ func TestLoadKeysCreatesA0600KeyOnFirstStartAndReusesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "no temp file left behind")
 
-	k2, err := pii.LoadKeys(path, rand.Reader)
+	k2, err := dictfile.LoadKeys(path, rand.Reader)
 	require.NoError(t, err)
 	require.Equal(t, tokenID(t, k1), tokenID(t, k2), "the same key file gives the same tokens")
 }
@@ -44,7 +56,7 @@ func TestLoadKeysCreatesA0600KeyOnFirstStartAndReusesIt(t *testing.T) {
 func TestLoadKeysUsesTheFileBytesAsTheMaster(t *testing.T) {
 	path := filepath.Join(t.TempDir(), pii.KeyFileName)
 	require.NoError(t, os.WriteFile(path, testMaster, 0o600))
-	k, err := pii.LoadKeys(path, rand.Reader)
+	k, err := dictfile.LoadKeys(path, rand.Reader)
 	require.NoError(t, err)
 	require.Equal(t, tokenID(t, newKeys(t, testMaster)), tokenID(t, k))
 }
@@ -57,7 +69,7 @@ func TestLoadKeysRefusesAWideMode(t *testing.T) {
 		path := filepath.Join(t.TempDir(), pii.KeyFileName)
 		require.NoError(t, os.WriteFile(path, testMaster, 0o600))
 		require.NoError(t, os.Chmod(path, mode))
-		_, err := pii.LoadKeys(path, rand.Reader)
+		_, err := dictfile.LoadKeys(path, rand.Reader)
 		require.ErrorContains(t, err, "0600", mode)
 		require.NotContains(t, err.Error(), string(testMaster))
 	}
@@ -67,7 +79,7 @@ func TestLoadKeysRefusesAWrongSize(t *testing.T) {
 	for _, n := range []int{0, 16, 33} {
 		path := filepath.Join(t.TempDir(), pii.KeyFileName)
 		require.NoError(t, os.WriteFile(path, bytes.Repeat([]byte{1}, n), 0o600))
-		_, err := pii.LoadKeys(path, rand.Reader)
+		_, err := dictfile.LoadKeys(path, rand.Reader)
 		require.Error(t, err, n)
 	}
 }
@@ -80,12 +92,12 @@ func TestLoadKeysRefusesASymlinkOrADirectory(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skip("no symlinks here")
 	}
-	_, err := pii.LoadKeys(link, rand.Reader)
+	_, err := dictfile.LoadKeys(link, rand.Reader)
 	require.ErrorContains(t, err, "regular file")
 
 	sub := filepath.Join(t.TempDir(), pii.KeyFileName)
 	require.NoError(t, os.Mkdir(sub, 0o700))
-	_, err = pii.LoadKeys(sub, rand.Reader)
+	_, err = dictfile.LoadKeys(sub, rand.Reader)
 	require.ErrorContains(t, err, "regular file")
 }
 
@@ -95,7 +107,7 @@ func (failingReader) Read([]byte) (int, error) { return 0, errors.New("no entrop
 
 func TestLoadKeysLeavesNoFileWhenRandomnessFails(t *testing.T) {
 	dir := t.TempDir()
-	_, err := pii.LoadKeys(filepath.Join(dir, pii.KeyFileName), failingReader{})
+	_, err := dictfile.LoadKeys(filepath.Join(dir, pii.KeyFileName), failingReader{})
 	require.Error(t, err)
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)

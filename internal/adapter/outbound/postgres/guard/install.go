@@ -120,6 +120,12 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 	if err := n.Validate(); err != nil {
 		return Script{}, err
 	}
+	// An install over a basalt_meta this build cannot use would fail midway
+	// (for one from before the versions started again, on 42P01 relation
+	// "basalt_meta.installs" does not exist): refuse it before any SQL.
+	if err := CheckUsable(ctx, q); err != nil {
+		return Script{}, err
+	}
 	// Before anything else, so a missing table fails init with one message.
 	if err := checkTablesExist(ctx, q, opts.Agent); err != nil {
 		return Script{}, err
@@ -773,4 +779,55 @@ func versionAfter(installed, upTo int) int {
 		v = min(v, upTo)
 	}
 	return max(v, installed)
+}
+
+// RemoveOldInstallDoc is the page that says how to remove an older
+// BasaltDB install from a database.
+const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
+
+// ErrUnusableInstall: the database has a basalt_meta this build can neither
+// install over nor update: an older install (from before the guard's
+// versions started again at 1, which this build cannot read), or a
+// partial one. Nothing is changed for it; the person removes it first.
+var ErrUnusableInstall = errors.New("basalt_meta is an older or partial BasaltDB install this build cannot use")
+
+// CheckUsable returns ErrUnusableInstall, wrapped with what is missing,
+// for a basalt_meta this build cannot install over: objects but no
+// recorded version, no installs table, or an installs table without the id
+// column from version 2 on. No basalt_meta, or an empty one, is usable.
+// It reads the catalog and schema_version and changes nothing.
+func CheckUsable(ctx context.Context, q Querier) error {
+	var schema, objects, versioned, installs, installID bool
+	// Plain SQL: catalog lookups, by name, needing no privilege on the schema.
+	err := q.QueryRow(ctx, `
+		WITH n AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'basalt_meta'),
+		rel AS (SELECT c.oid, c.relname FROM pg_catalog.pg_class c JOIN n ON c.relnamespace = n.oid)
+		SELECT EXISTS (SELECT 1 FROM n),
+		       EXISTS (SELECT 1 FROM rel WHERE relname <> 'schema_version')
+		         OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc p JOIN n ON p.pronamespace = n.oid),
+		       EXISTS (SELECT 1 FROM rel WHERE relname = 'schema_version'),
+		       EXISTS (SELECT 1 FROM rel WHERE relname = 'installs'),
+		       EXISTS (SELECT 1 FROM rel JOIN pg_catalog.pg_attribute a ON a.attrelid = rel.oid
+		               WHERE rel.relname = 'installs' AND a.attname = 'id' AND NOT a.attisdropped)`).
+		Scan(&schema, &objects, &versioned, &installs, &installID)
+	if err != nil || !schema {
+		return err
+	}
+	version := 0
+	if versioned {
+		if version, err = InstalledVersion(ctx, q); err != nil {
+			return err
+		}
+	}
+	switch {
+	case version == 0 && objects:
+		return fmt.Errorf("%w: it holds objects but no recorded version", ErrUnusableInstall)
+	case version == 0:
+		return nil // an empty basalt_meta: the install fills it
+	case !installs:
+		return fmt.Errorf("%w: version %d has no basalt_meta.installs", ErrUnusableInstall, version)
+	case version >= versionInstallIDs && !installID:
+		return fmt.Errorf("%w: version %d has an installs table of an older shape", ErrUnusableInstall, version)
+	}
+	return nil
 }

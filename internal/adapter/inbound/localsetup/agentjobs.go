@@ -327,7 +327,7 @@ func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, datab
 func (s *Service) installedPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
 	prefix, err := guard.InstalledPrefix(ctx, tx)
 	if err != nil {
-		return "", setupFailed()
+		return "", setupFailed("read the guard prefix", err)
 	}
 	if prefix != "" && prefix != s.opts.Prefix {
 		return "", refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+prefix+", not "+s.opts.Prefix+".")
@@ -345,7 +345,7 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 	}
 	installed, err := guard.InstalledVersion(ctx, tx)
 	if err != nil {
-		return 0, setupFailed()
+		return 0, setupFailed("read the guard version", err)
 	}
 	if prefix == "" || installed == 0 {
 		return 0, refuse(CodeGuardMissing, fmt.Sprintf("The database %s has no Basalt guard %s. Nothing changed.", database, what))
@@ -358,7 +358,7 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 func agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database string) error {
 	exists, err := guard.AgentRoleExists(ctx, tx, j.names, j.req.Agent)
 	if err != nil {
-		return setupFailed()
+		return setupFailed("read the agent role", err)
 	}
 	if !exists {
 		return refuse(CodeRoleMissing, fmt.Sprintf("The database %s has no role %s, so it is not the agent's database. Nothing changed.", database, j.role))
@@ -373,6 +373,9 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	if err != nil {
 		return agentPlan{}, err
 	}
+	if err := usable(ctx, tx); err != nil {
+		return agentPlan{}, err
+	}
 	latest := guard.LatestVersion()
 	switch {
 	case installed > latest:
@@ -385,7 +388,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	}
 	script, err := guard.PlanInit(ctx, tx, guard.InitOptions{Names: j.names})
 	if err != nil {
-		return agentPlan{}, setupFailed()
+		return agentPlan{}, setupFailed("plan the update", err)
 	}
 	return agentPlan{
 		lines: []string{
@@ -444,7 +447,7 @@ func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, 
 	defer conn.Close(context.WithoutCancel(ctx))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		return CheckAnswer{}, setupFailed()
+		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	database, err := currentDatabase(ctx, tx)
@@ -506,7 +509,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 			return err
 		}
 		if err := setuprun.ApplyInitTx(ctx, tx, p.script); err != nil {
-			return setupFailed()
+			return setupFailed("update script", err)
 		}
 		return nil
 	})
@@ -538,9 +541,13 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 func removeRefusal(err error) error {
 	var r *setuprun.RefusalError
 	if errors.As(err, &r) {
-		return refuse(r.Code, r.Message)
+		out := refuse(r.Code, r.Message)
+		if r.Code == CodeSetupFailed {
+			out.Cause = causeOf("remove", r.Err)
+		}
+		return out
 	}
-	return setupFailed()
+	return setupFailed("remove", err)
 }
 
 // forget removes agents from engine.json, then deletes their credential

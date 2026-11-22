@@ -1,6 +1,7 @@
 package localsetup
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -291,7 +292,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (gu
 	others := 0
 	for i, k := range keys {
 		switch {
-		case string(k.ID) == string(id):
+		case bytes.Equal(k.ID, id):
 			found = &keys[i]
 		case k.Origin == s.opts.Origin:
 			others++

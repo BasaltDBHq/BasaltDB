@@ -132,8 +132,11 @@ func (s *Service) Doctor(ctx context.Context, req DoctorRequest) (DoctorAnswer, 
 		Passkeys: DoctorPasskeys{State: StateUnknown, Items: []DoctorPasskey{}},
 	}
 	conn, err := s.agentLogin(ctx, a, &out)
-	if err != nil || conn == nil {
-		return out, err
+	switch {
+	case errors.Is(err, errNoLogin):
+		return out, nil
+	case err != nil:
+		return DoctorAnswer{}, err
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 	if err := s.readDoctor(ctx, conn, a, &out); err != nil {
@@ -142,8 +145,11 @@ func (s *Service) Doctor(ctx context.Context, req DoctorRequest) (DoctorAnswer, 
 	return out, nil
 }
 
+// errNoLogin: agentLogin set on the answer why the agent cannot log in.
+var errNoLogin = errors.New("the agent cannot log in")
+
 // agentLogin logs in with the agent's credential, or sets why it could
-// not on out and returns no connection. A certificate that does not verify
+// not on out and returns errNoLogin. A certificate that does not verify
 // is never answered with a login: the chain is read with the handshake
 // alone, and a pinned host presenting another chain top is CHANGED.
 func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAnswer) (*pgx.Conn, error) {
@@ -151,7 +157,7 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 	dsn, err := config.ReadCredential(a.Store.CredentialFile)
 	if err != nil || pgdial.CheckForeignDSN(dsn) != nil {
 		out.Login = rejected
-		return nil, nil
+		return nil, errNoLogin
 	}
 	conn, err := s.opts.Dial(ctx, dsn)
 	if err == nil {
@@ -163,7 +169,7 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 		return nil, refuse(CodeTimeLimit, "The check ran out of time.")
 	case pgdial.CertificateNotVerified(err):
 		if s.certificateChanged(ctx, a, out) {
-			return nil, nil
+			return nil, errNoLogin
 		}
 		out.Login = &DoctorLogin{Code: CodeCertificateNotVerified, Message: "The database's TLS certificate does not verify, so the agent cannot connect."}
 	case errors.As(err, &pg) && len(pg.Code) >= 2 && pg.Code[:2] == "28":
@@ -171,7 +177,7 @@ func (s *Service) agentLogin(ctx context.Context, a config.Agent, out *DoctorAns
 	default:
 		out.Login = &DoctorLogin{Code: action.ReasonDatabaseUnreachable, Message: "The database cannot be reached with the agent's credential."}
 	}
-	return nil, nil
+	return nil, errNoLogin
 }
 
 // certificateChanged sets CHANGED when the agent's host is pinned and

@@ -2,93 +2,32 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/demo"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 // The sample database of basalt init --demo (CONTRACT.md, CLI).
 const (
-	demoSchemaName = "basalt_demo"
+	demoSchemaName = demo.Schema
 	// demoComment marks a schema init --demo made, so uninstall drops only that.
-	demoComment = "BasaltDB demo data"
+	demoComment = demo.Comment
 	// demoAgent is the demo's agent unless --agent names another.
-	demoAgent  = "demo_bot"
-	demoTables = "basalt_demo.leads,basalt_demo.lead_notes"
+	demoAgent = demo.Agent
 )
 
-//go:embed demo_schema.sql
-var demoSchemaSQL string
-
-//go:embed demo_leads.sql
-var demoLeadsSQL string
-
-//go:embed demo_notes.sql
-var demoNotesSQL string
-
-// demoPlan is what seeding the sample schema will run.
-type demoPlan struct {
-	// sql is what runs, in order; empty when the demo already exists.
-	sql []string
-}
-
-// shown is the SQL the person reads before confirming.
-func (p demoPlan) shown() string {
-	out := ""
-	for _, s := range p.sql {
-		out += s + "\n"
-	}
-	return out
-}
-
-// planDemo reads what exists and plans only what is missing: the schema, and
-// each table with its rows. A table that exists is not touched (no row,
-// index or row-level security change).
-func planDemo(ctx context.Context, q guard.Querier) (demoPlan, error) {
-	var schema, leads, notes bool
-	err := q.QueryRow(ctx, `SELECT pg_catalog.to_regnamespace($1) IS NOT NULL,
-		pg_catalog.to_regclass($2) IS NOT NULL, pg_catalog.to_regclass($3) IS NOT NULL`,
-		demoSchemaName, demoSchemaName+".leads", demoSchemaName+".lead_notes").Scan(&schema, &leads, &notes)
-	if err != nil {
-		return demoPlan{}, err
-	}
-	var p demoPlan
-	if leads && notes {
-		return p, nil
-	}
-	if !schema {
-		p.sql = append(p.sql, demoSchemaSQL)
-	}
-	if !leads {
-		p.sql = append(p.sql, demoLeadsSQL)
-	}
-	if !notes {
-		p.sql = append(p.sql, demoNotesSQL)
-	}
-	return p, nil
-}
-
-// apply runs the plan on tx.
-func (p demoPlan) apply(ctx context.Context, tx pgx.Tx) error {
-	for _, s := range p.sql {
-		if _, err := tx.Exec(ctx, s); err != nil {
-			return fmt.Errorf("sample data: %w", err)
-		}
-	}
-	return nil
-}
+// demoTables are the sample tables, as --write takes them.
+var demoTables = strings.Join(demo.Tables, ",")
 
 // demoCounts is the row count of each sample table.
 func demoCounts(ctx context.Context, q guard.Querier) (leads, notes int, err error) {
-	// Plain SQL: counts of fixed demo tables.
-	err = q.QueryRow(ctx, `SELECT (SELECT count(*) FROM basalt_demo.leads)::int,
-		(SELECT count(*) FROM basalt_demo.lead_notes)::int`).Scan(&leads, &notes)
-	return leads, notes, err
+	return demo.Counts(ctx, q)
 }
 
 // dropDemo drops basalt_demo when init --demo made it (it carries the
@@ -139,18 +78,15 @@ func planDemoTx(c *cliIO, conn *pgx.Conn) (q guard.Querier, shown string, rollba
 		return nil, "", nil, err
 	}
 	rollback = func() { _ = tx.Rollback(c.ctx) }
-	plan, err := planDemo(c.ctx, tx)
-	if err == nil {
-		err = plan.apply(c.ctx, tx)
-	}
+	plan, err := demo.Seed(c.ctx, tx)
 	if err != nil {
 		rollback()
 		return nil, "", nil, err
 	}
-	if len(plan.sql) == 0 {
+	if plan.Exists() {
 		fmt.Fprintln(c.stderr, "basalt: sample schema basalt_demo already exists; its rows are left as they are")
 	} else {
-		shown = plan.shown() + "\n"
+		shown = plan.Shown() + "\n"
 	}
 	return tx, shown, rollback, nil
 }
@@ -160,11 +96,7 @@ func planDemoTx(c *cliIO, conn *pgx.Conn) (q guard.Querier, shown string, rollba
 // decided; checkCovered catches drift).
 func applyDemo(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
 	return withGuardDetail(pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		plan, err := planDemo(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if err := plan.apply(ctx, tx); err != nil {
+		if _, err := demo.Seed(ctx, tx); err != nil {
 			return err
 		}
 		return applyInitTx(ctx, tx, script)

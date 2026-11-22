@@ -184,9 +184,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.postRevertReveal)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
+	mux.HandleFunc("GET "+SetupPagePath+"{$}", serveSetupPage)
+	mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
+	mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
-	return mux
+	return refuseDatabaseURL(s.origin, mux)
 }
 
 // libFile serves the pages' scripts, lib/*.js, and nothing else there.

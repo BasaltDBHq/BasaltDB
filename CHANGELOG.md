@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A Vault session that a duplicated or otherwise refused frame ends now always closes with `FRAME_INVALID`. When the engine was answering the page's request at that moment, it could close with `PROTOCOL` instead and send the Vault a second `SESSION_CLOSE`.
 - The warning for a binary in a temporary folder now also fires on macOS, where the default temp folder is a link (`/var/folders/...` to `/private/var/...`) and the binary path was never matched against it.
 
 ### Breaking for alpha installs

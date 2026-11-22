@@ -293,7 +293,7 @@ func catalogCases() map[string]catalogCase {
 		caseKey("REVERT_INVALID", "PLAN_NOT_SIGNED", ""): {
 			"apply_revert_batch",
 			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("the person has not signed this revert yet (basalt revert)"),
+			guardRevert("the person has not signed this revert yet: they sign it on the revert page"),
 		},
 		caseKey("REVERT_INVALID", "PLAN_FINISHED", ""): {
 			"apply_revert_batch",

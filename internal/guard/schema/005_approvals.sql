@@ -441,7 +441,7 @@ BEGIN
     RETURN NEXT;
 END $$;
 
--- Any relay (the engine for the agent, basalt approve): the person's
+-- Any relay (the engine, for the approval page): the person's
 -- passkey assertion over the approval's binding. The relay is untrusted;
 -- only a valid signature counts.
 CREATE OR REPLACE FUNCTION basalt_meta.submit_approval(

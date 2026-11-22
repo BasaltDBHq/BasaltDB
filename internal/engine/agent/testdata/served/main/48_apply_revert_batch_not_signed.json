@@ -2,7 +2,7 @@
   "body": {
     "code": "REVERT_INVALID",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
-    "message": "REVERT_INVALID: revert <id-27> is applied in one call by basalt revert, not in batches",
+    "message": "REVERT_INVALID: revert <id-27> is applied in one call when the person signs it on the revert page, not in batches",
     "nextSteps": [
       {
         "action": "STOP",

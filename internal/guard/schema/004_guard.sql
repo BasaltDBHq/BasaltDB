@@ -28,8 +28,8 @@ END $$;
 -- The SET clauses pin the session settings to_jsonb prints row images by
 -- (TimeZone for timestamptz, IntervalStyle for interval,
 -- extra_float_digits for float4 and float8, lc_monetary for money,
--- bytea_output for bytea), to the values the engine and basalt revert pin
--- in every transaction they open (PinSession). A write that skips the
+-- bytea_output for bytea), to the values the engine pins in every
+-- transaction it opens (PinSession). A write that skips the
 -- engine, the agent's credential used directly as in psql, then stores the
 -- same images, held lines and rowsHash as the engine would, and a revert
 -- from the engine does not skip its rows as CHANGED_AFTER. Postgres

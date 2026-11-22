@@ -6,12 +6,11 @@
 -- version (xmin), or NULLs. p_lock takes a row lock (apply).
 --
 -- Pinned to the session settings guard_row pins, as _revert_write: through
--- the engine and basalt revert the transaction is pinned already
--- (PinSession), but a person calling preview_revert, prepare_revert or
--- apply_revert by hand in another session would otherwise get the row in
--- that session's form and every line skipped CHANGED_AFTER. Restate the
--- SET clauses in any CREATE OR REPLACE; TestGuardPinsTheSessionSettings
--- checks it.
+-- the engine the transaction is pinned already (PinSession), but a person
+-- calling preview_revert, prepare_revert or apply_revert by hand in another
+-- session would otherwise get the row in that session's form and every
+-- line skipped CHANGED_AFTER. Restate the SET clauses in any CREATE OR
+-- REPLACE; TestGuardPinsTheSessionSettings checks it.
 CREATE FUNCTION basalt_meta._revert_fetch(p_table oid, p_key jsonb, p_lock boolean, OUT row_now jsonb, OUT row_xmin text)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
     SET TimeZone = 'UTC'
@@ -275,14 +274,14 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'BS005', MESSAGE = 'REVERT_INVALID', DETAIL = p_detail;
 END $$;
 
--- Any relay (basalt revert, with the agent credential): verify the
--- person's assertion over a prepared revert and run it in the same call,
--- so there is no signed-but-unapplied revert to replay; for a batched plan,
--- record the signature only (_revert_sign). The revert row is locked before
--- any check, so a rescope and a signature cannot interleave. The binding
--- must carry the stored selection as its select, and the lines are
--- recomputed from that selection, never from the binding. applied_at reads
--- the wall clock.
+-- Any relay (the engine for the revert page, with the agent credential):
+-- verify the person's assertion over a prepared revert and run it in the
+-- same call, so there is no signed-but-unapplied revert to replay; for a
+-- batched plan, record the signature only (_revert_sign). The revert row is
+-- locked before any check, so a rescope and a signature cannot
+-- interleave. The binding must carry the stored selection as its select,
+-- and the lines are recomputed from that selection, never from the
+-- binding. applied_at reads the wall clock.
 CREATE OR REPLACE FUNCTION basalt_meta.apply_revert(
     p_revert_id uuid, p_credential_id bytea, p_authenticator_data bytea, p_client_data_json bytea, p_signature bytea
 ) RETURNS jsonb
@@ -602,10 +601,10 @@ BEGIN
         PERFORM basalt_meta._revert_invalid('no such revert');
     END IF;
     IF NOT r.batched THEN
-        PERFORM basalt_meta._revert_invalid(format('revert %s is applied in one call by basalt revert, not in batches', r.revert_id));
+        PERFORM basalt_meta._revert_invalid(format('revert %s is applied in one call when the person signs it on the revert page, not in batches', r.revert_id));
     END IF;
     IF r.signed_at IS NULL THEN
-        PERFORM basalt_meta._revert_invalid('the person has not signed this revert yet (basalt revert)');
+        PERFORM basalt_meta._revert_invalid('the person has not signed this revert yet: they sign it on the revert page');
     END IF;
     IF r.applied_at IS NOT NULL THEN
         PERFORM basalt_meta._revert_invalid('revert already applied: no line is pending');
@@ -989,9 +988,9 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
                 ELSE '{}'::jsonb END)::text
 $$;
 
--- Agent (MCP preview_revert, basalt revert --dry-run): what reverting the
--- agent's own proposal p_select would do, from a trial run that always
--- rolls back. Needs a read-write transaction; it leaves nothing behind.
+-- Agent (MCP preview_revert): what reverting the agent's own proposal
+-- p_select would do, from a trial run that always rolls back. Needs a
+-- read-write transaction; it leaves nothing behind.
 CREATE OR REPLACE FUNCTION basalt_meta.preview_revert(p_select jsonb) RETURNS SETOF text
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE

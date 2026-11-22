@@ -330,7 +330,8 @@ test("labels: the rest as not personal, and as restPublic when the check listed 
   await i.check();
   i.setLabelMode("rest");
   await i.check();
-  assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => [c.column, c.class]), [["email", "PUBLIC"], ["note", "PUBLIC"], ["line", "PUBLIC"]]);
+  assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => [c.column, c.class]), [["note", "PUBLIC"], ["line", "PUBLIC"]], "email, suggested as personal and not accepted, is left out");
+  assert.equal(i.restQuestion(), "Mark 2 columns in 2 tables as not personal? Left out: orders.email, suggested as personal or secret; label them or leave them blank.");
   assert.equal(i.view().labeled, 0, "the rest are not counted as the person's labels");
   assert.equal(i.view().restPublic, true);
 
@@ -343,6 +344,7 @@ test("labels: the rest as not personal, and as restPublic when the check listed 
   await j.check();
   const body = more.bodies.at(-1).body;
   assert.equal(body.restPublic, true, "the columns the page never showed are covered only by restPublic");
+  assert.match(j.restQuestion(), /^Mark every column without a label in the ticked tables as not personal, the ones not listed here too\?$/, "email is labeled, so nothing suggested is named");
   assert.deepEqual(body.columnClasses.map((c) => c.column), ["email"]);
   assert.equal(j.view().restPublic, true);
 });
@@ -639,4 +641,31 @@ test("the approval after Mark the rest says the rest are not personal", async ()
   await nodes["rest-yes"].click();
   assert.equal(screenOf(nodes), "s-approve");
   assert.match(nodes["ap-facts"].textContent, /Personal data: 1 column marked · the rest not personal/);
+});
+
+test("when the rest must go as restPublic, the confirm names the suggested columns it would mark", async () => {
+  const more = fakeEngine({ answer: (path, body) => body.tables ? new Response(JSON.stringify({ database: "app", lines: [], sql: "", questions: [], notes: [], passkeyNeeded: true, challenge, columns, columnsMore: true }), { status: 200 }) : null });
+  const i = new Install(more.fetchFn, real);
+  await i.list(ADMIN);
+  await i.check();
+  assert.deepEqual(i.restPlan().suggested.map((c) => c.column), ["email"]);
+  assert.equal(i.restQuestion(), "Mark every column without a label in the ticked tables as not personal, the ones not listed here too? This includes orders.email, suggested as personal or secret.");
+  // Accepting the suggestion takes it out of the rest.
+  i.acceptSuggestion(i.labels.columns.find((c) => c.column === "email"));
+  assert.doesNotMatch(i.restQuestion(), /This includes/);
+});
+
+test("Mark the rest leaves out a suggested column the person did not accept, on the page too", async () => {
+  const nodes = fakePage();
+  const e = fakeEngine();
+  await toTables(nodes, e);
+  const leads = find(nodes.tables.children[2], (n) => n.tagName === "INPUT");
+  leads.checked = false;
+  leads.fire("change");
+  await nodes["tables-next"].click();
+  nodes["labels-rest"].click();
+  assert.match(nodes["rest-question"].textContent, /Left out: orders\.email, suggested as personal or secret/);
+  await nodes["rest-yes"].click();
+  assert.deepEqual(e.bodies.at(-1).body.columnClasses.map((c) => c.column), ["note", "line"]);
+  assert.equal(e.bodies.at(-1).body.restPublic, undefined);
 });

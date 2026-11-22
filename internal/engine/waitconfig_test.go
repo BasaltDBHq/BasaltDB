@@ -20,7 +20,11 @@ import (
 
 // adminURL is an admin connection string with a password in it; no
 // answer may carry any part of it.
-const adminURL = "postgres://admin" + ":" + "secret@db/x"
+// leakMarker is the admin string's password: a word no page contains, so
+// finding it in an answer means the request was echoed.
+const leakMarker = "zq7leakmarker"
+
+const adminURL = "postgres://admin" + ":" + leakMarker + "@db/x"
 
 // pageOrigin is the setup page's origin for a test listener at addr.
 func pageOrigin(addr string) string {
@@ -72,7 +76,7 @@ func do(t *testing.T, method, url, host, origin string) (int, map[string]string)
 	require.NoError(t, err)
 	var body map[string]string
 	_ = json.Unmarshal(raw, &body)
-	require.NotContains(t, string(raw), "secret", "nothing of a request is answered back")
+	require.NotContains(t, string(raw), leakMarker, "nothing of a request is answered back")
 	return resp.StatusCode, body
 }
 

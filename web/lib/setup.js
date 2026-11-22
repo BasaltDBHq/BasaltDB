@@ -5,7 +5,7 @@
 // storage, never in the URL, and cleared after the run.
 import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./codec.js";
 import { $, el, webauthnError } from "./page.js";
-import { answersFor, ENTITY_WORDS, fingerprintText, hostOf, Labels, restQuestion, tableName, trustRootFrom } from "./picks.js";
+import { answersFor, ENTITY_WORDS, fingerprintText, hostOf, Labels, MAX_LABELS, restQuestion, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
 
@@ -387,12 +387,48 @@ export class Install {
     return this.labels ? this.labels.problem(this.picked()) : "";
   }
 
+  // restPlan is what "Mark the rest as not personal" marks. A column the
+  // classifier suggests is personal or secret, and that the person has not
+  // labeled, is left out: the page never applies what the person did not
+  // accept. When the rest cannot go as entries (columns past the 500
+  // listed, or more than 500 labels), it goes as restPublic, which marks
+  // every column without a label; then the suggested ones are named in the
+  // confirm, so the person accepts that too.
+  restPlan() {
+    const picked = this.picked();
+    const unlabeled = this.labels ? this.labels.unlabeled(picked) : [];
+    const suggested = unlabeled.filter((c) => {
+      const s = suggestionOf(c);
+      return s !== null && (s.label.class === "IDENTIFIER" || s.label.class === "SECRET");
+    });
+    const rest = unlabeled.filter((c) => !suggested.includes(c));
+    const changes = this.labels ? this.labels.changes(picked).length : 0;
+    const restPublic = this.columnsMore || changes + rest.length > MAX_LABELS;
+    return { rest, suggested, restPublic };
+  }
+
+  // restQuestion is the confirm before "Mark the rest as not personal".
+  restQuestion() {
+    const p = this.restPlan();
+    const names = (cols) => cols.map((c) => `${tableName(c.table)}.${c.column}`).join(", ");
+    if (p.restPublic) {
+      const more = this.columnsMore ? ", the ones not listed here too" : "";
+      const flagged = p.suggested.length > 0 ? ` This includes ${names(p.suggested)}, suggested as personal or secret.` : "";
+      return `Mark every column without a label in the ticked tables as not personal${more}?${flagged}`;
+    }
+    const left = p.suggested.length > 0 ? ` Left out: ${names(p.suggested)}, suggested as personal or secret; label them or leave them blank.` : "";
+    return restQuestion(p.rest) + left;
+  }
+
   #labelFields() {
     if (!this.labels) return {};
-    // Columns past the 500 listed are never shown, so "the rest" covers
-    // them only as restPublic, never as entries.
-    if (this.labelMode === "rest" && this.columnsMore) return { ...this.labels.request(this.picked(), "changes"), restPublic: true };
-    return this.labels.request(this.picked(), this.labelMode);
+    if (this.labelMode !== "rest") return this.labels.request(this.picked(), this.labelMode);
+    const out = this.labels.request(this.picked(), "changes");
+    const p = this.restPlan();
+    if (p.restPublic) return { ...out, restPublic: true };
+    const rest = p.rest.map((c) => ({ table: c.table, column: c.column, class: "PUBLIC", was: { class: "UNCLASSIFIED" } }));
+    const all = [...(out.columnClasses ?? []), ...rest];
+    return all.length > 0 ? { columnClasses: all } : {};
   }
 
   #request(extra) {
@@ -928,7 +964,8 @@ export function startReal(link, env) {
     go("s-labels");
   };
   const restCount = () => {
-    $("labels-rest").disabled = install.labels.unlabeled(install.picked()).length === 0 && !install.columnsMore;
+    const p = install.restPlan();
+    $("labels-rest").disabled = p.rest.length === 0 && !p.restPublic;
   };
   const labelsProblem = (text) => {
     setText("labels-error", text);
@@ -945,7 +982,7 @@ export function startReal(link, env) {
   });
   $("labels-rest").addEventListener("click", () => {
     if (labelsProblem(install.labelsProblem())) return;
-    setText("rest-question", install.columnsMore ? "Mark every column without a label in the ticked tables as not personal, the ones not listed here too?" : restQuestion(install.labels.unlabeled(install.picked())));
+    setText("rest-question", install.restQuestion());
     show("rest-confirm");
   });
   $("rest-yes").addEventListener("click", () => {

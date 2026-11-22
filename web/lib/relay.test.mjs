@@ -98,7 +98,8 @@ test("each way a session cannot open says what to do", async () => {
     if (want === "NOT_FOUND") assert.equal(err.reason, "LINK", String(code));
     if (message) assert.equal(err.personMessage, message, String(code));
     if (message === null) assert.match(err.personMessage, /Open the link again/, String(code));
-    if (code === 1006) assert.match(err.personMessage, /long link/);
+    if (code === 1006) assert.match(err.personMessage, /Ask the agent for a new link/);
+    assert.doesNotMatch(err.personMessage, /long link|basalt approve|basalt revert/, String(code));
   }
 });
 

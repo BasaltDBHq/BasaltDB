@@ -14,18 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
-// cliHost is cli with host h, which records the links basalt opens instead
-// of starting a browser.
-func cliHost(t *testing.T, h host, args ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(string) string { return "" })
-	c.host = h
-	code := runGuard(c, args)
-	return result{code, stdout.String(), stderr.String()}
-}
-
 func TestOpenLink(t *testing.T) {
 	t.Parallel()
 	link := "http://localhost:8787/approvals/0190a3f2-7c1e-7000-8000-000000000001#1.abc"

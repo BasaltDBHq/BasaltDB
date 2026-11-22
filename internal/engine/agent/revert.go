@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -294,7 +293,7 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 	s.notifyRevert(ctx, r, n)
 	return RequestedRevert{
 		Revert: r, RevertURL: n.URL, RequestFile: n.File, PersonMessage: n.Message, Links: n.Links,
-		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL), n.File),
+		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL, n.short == ""), n.File),
 		headline:  n.Headline, issued: n.short != "",
 	}, nil
 }
@@ -305,20 +304,18 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 const DefaultRevertWait = DefaultApprovalWait
 
 // AwaitRevertParams is request_revert's wait form: a revert this agent
-// requested, how long to wait for the person's signature, whether to issue
-// a new link, and the person's signed code to deliver (nil for none).
+// requested, how long to wait for the person's signature, and whether to
+// issue a new link.
 type AwaitRevertParams struct {
-	RevertID  uuid.UUID
-	Wait      time.Duration
-	Reissue   bool
-	Signature *revert.Response
+	RevertID uuid.UUID
+	Wait     time.Duration
+	Reissue  bool
 }
 
-// AwaitRevert returns the state of a revert this agent requested. With a
-// signature it delivers the person's code (Postgres verifies it) and
-// returns at once; with Reissue on a PENDING revert it issues a new link
-// and returns at once; otherwise it reads the revert about every s.Poll
-// until it is not PENDING or Wait is over. Only a signature writes.
+// AwaitRevert returns the state of a revert this agent requested. With
+// Reissue on a PENDING revert it issues a new link and returns at once;
+// otherwise it reads the revert about every s.Poll until it is not PENDING
+// or Wait is over. It never signs: the person signs on the revert page.
 func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
 	r, err := s.Store.FindRevert(ctx, p.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
@@ -327,10 +324,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	switch {
-	case p.Signature != nil:
-		return s.deliverRevertSignature(ctx, r, *p.Signature)
-	case p.Reissue && r.Status == ledger.RevertPending:
+	if p.Reissue && r.Status == ledger.RevertPending {
 		r, err = s.prepareReissue(ctx, r)
 		if err != nil {
 			return RequestedRevert{}, err
@@ -357,61 +351,9 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	return s.revertState(ctx, r)
 }
 
-// deliverRevertSignature submits the person's code for r, as basalt revert
-// --apply does: the engine checks it names r and verifies against a
-// registered passkey (for a clear refusal), then apply_revert verifies it in
-// Postgres, which is the boundary. For a widened revert the agent role
-// cannot read the binding, so only Postgres verifies the signature.
-func (s *Service) deliverRevertSignature(ctx context.Context, r ledger.Revert, code revert.Response) (RequestedRevert, error) {
-	if err := s.checkRevertCode(ctx, r, code); err != nil {
-		return RequestedRevert{}, err
-	}
-	if _, err := s.Store.ApplyRevert(ctx, r.ID, code.Assertion()); err != nil {
-		return RequestedRevert{}, s.applyRevertError(ctx, r, err)
-	}
-	r, err := s.Store.FindRevert(ctx, r.ID)
-	if err != nil {
-		return RequestedRevert{}, err
-	}
-	return s.revertState(ctx, r)
-}
-
-func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code revert.Response) error {
-	switch {
-	case code.RevertID != r.ID:
-		return s.badSignature(ctx, r, fmt.Sprintf("the code is for revert %s, not %s; nothing was reverted. The person signs "+
-			"revert %s on its own page", code.RevertID, r.ID, r.ID))
-	case r.Status == ledger.RevertExpired:
-		return s.revertExpired(r)
-	case r.Status != ledger.RevertPending:
-		return alreadySigned(r)
-	}
-	keys, err := s.Store.Passkeys(ctx)
-	if err != nil {
-		return err
-	}
-	for _, k := range keys {
-		if !bytes.Equal(k.ID, code.CredentialID) {
-			continue
-		}
-		if r.Widened {
-			// The agent's view hides a widened revert's binding (RS-5):
-			// apply_revert verifies the signature, and applyRevertError maps
-			// its refusal to the same answers.
-			return nil
-		}
-		if _, err := revert.Verify(r.BindingText, k, code); err != nil {
-			return s.badSignature(ctx, r, fmt.Sprintf("the code does not verify against the person's passkey, nothing was "+
-				"reverted: %v", err))
-		}
-		return nil
-	}
-	return s.passkeyRevoked(ctx, r)
-}
-
-// applyRevertError gives Postgres's refusal of a code the engine let
-// through its own steps: expired meanwhile, rows changed since the preview,
-// or a signature only Postgres could judge.
+// applyRevertError gives Postgres's refusal of a signature the revert page
+// relayed: expired meanwhile, rows changed since the preview, or a
+// signature that does not verify.
 func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
 	code, ok := ledgerCode(err)
 	switch {
@@ -433,7 +375,7 @@ func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err err
 	case strings.Contains(detail, "already"):
 		return alreadySigned(r)
 	}
-	return s.badSignature(ctx, r, "the database refused the code, nothing was reverted: "+detail)
+	return s.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+detail)
 }
 
 // revertState is the answer for r without a new link: what happened, for
@@ -510,14 +452,13 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, s.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
 		return out, nil
 	}
-	if s.PagesOrigin != "" || link.Kind == linkPage {
+	if s.shortLinked(r.ID) || link.Kind == linkPage {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
 		return out, nil
 	}
-	out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
-		"when you have signed, or give it the code the page shows.", what, expires)
+	out.PersonMessage = fmt.Sprintf("%s waits until %s, but its link cannot be signed. Ask the agent for a new link later.", what, expires)
 	out.NextSteps = waitEndedSteps(r.ID, link.URL, waitEndedLongLink)
 	return out, nil
 }

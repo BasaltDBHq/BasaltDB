@@ -13,21 +13,26 @@
       {
         "action": "OPEN_LINK",
         "actor": "PERSON",
-        "text": "Open the link, review the rows and sign with your passkey.",
+        "text": "Open the link to review the rows. It cannot be signed yet.",
         "url": "http://localhost:8787/reverts/<id-27>#<fragment>"
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "Do not wait: this link cannot be signed. End your turn, showing personMessage."
       },
       {
         "action": "CALL_TOOL",
         "actor": "AGENT",
         "arguments": {
-          "revertId": "<id-27>",
-          "waitForSignature": 90
+          "reissueLink": true,
+          "revertId": "<id-27>"
         },
-        "text": "In this turn, call request_revert once with revertId: it waits up to 90 seconds.",
+        "text": "Once status shows the Vault connected, call this for a link the person can sign, and show it.",
         "tool": "request_revert"
       }
     ],
-    "personMessage": "Revert of run <id-1>: 12 rows to restore, 0 left as they are (changed after the agent). Why: Undo the tidy-up. Expires <time>.\nSign it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/reverts/<id-27>#<fragment>",
+    "personMessage": "Revert of run <id-1>: 12 rows to restore, 0 left as they are (changed after the agent). Why: Undo the tidy-up. Expires <time>.\nReview only: this link cannot be signed. Ask the agent for a new link later.\n\nhttp://localhost:8787/reverts/<id-27>#<fragment>",
     "revertId": "<id-27>",
     "revertUrl": "http://localhost:8787/reverts/<id-27>#<fragment>",
     "rows": 12,

@@ -118,9 +118,6 @@ func TestRejectRouteBeforeAWiden(t *testing.T) {
 	e.requireRejectedWait(t, id, out, note)
 
 	// The signature the person made before the reject applies nothing.
-	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "signature": revertCode(t, id, signed)})
-	require.True(t, isError, "%v", body)
-	require.Equal(t, "REVERT_INVALID", body["code"])
 	_, err = guard.ApplyRevert(context.Background(), e.bot.Conn, id, signed)
 	requireGuardCode(t, err, guard.CodeRevertInvalid)
 	var status string

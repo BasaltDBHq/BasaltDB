@@ -54,12 +54,3 @@ func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
 	require.Contains(t, pf.PersonMessage, "The agent gives you a link")
 	require.NotContains(t, pf.PersonMessage, "basalt ", "the person runs no command")
 }
-
-func TestNoLinkIsIssuedOnAnOutdatedGuard(t *testing.T) {
-	t.Parallel()
-	s, ctx, id := gatedService(t), context.Background(), uuid.New()
-	_, err := s.IssueApprovalLink(ctx, id, "proof")
-	requireGuardOutdated(t, err, "approval link issue")
-	_, err = s.IssueRevertLink(ctx, id, "proof")
-	requireGuardOutdated(t, err, "revert link issue")
-}

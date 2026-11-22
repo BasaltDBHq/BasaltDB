@@ -96,14 +96,26 @@ test("a request the engine altered is refused over the relay as on loopback, bef
   }
 });
 
-test("on the relay path no page falls back to a code to paste", async () => {
-  const { pastesCode, relayRetry, RELAY_NO_ANSWER, RELAY_REFUSED } = await import("./page.js");
-  assert.equal(pastesCode({ transport: "RELAY" }), false);
-  assert.equal(pastesCode(sameOriginSession(async () => new Response("{}"))), true);
-  for (const text of [RELAY_REFUSED, RELAY_NO_ANSWER]) assert.doesNotMatch(text, /paste/i);
+test("no approval or revert page falls back to a code to paste", async () => {
+  const { relayRetry, NO_CARRIER, RELAY_NO_ANSWER, RELAY_REFUSED } = await import("./page.js");
+  for (const text of [RELAY_REFUSED, RELAY_NO_ANSWER, NO_CARRIER]) assert.doesNotMatch(text, /paste|basalt approve|basalt revert/i);
   for (const f of ["approve.js", "revert.js"]) {
     const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
-    assert.match(src, /if \(!pastesCode\(relay\.session\)\) \{\n\s+showRelayFailed\(relayFailure\(err, "(approval|revert)"\)\);/, f);
+    // A failed relay, on the engine's own pages or through the Vault, says
+    // so and stops: no code to finish by hand.
+    assert.match(src, /\} catch \(err\) \{\n\s+showRelayFailed\(relayFailure\(err, "(approval|revert)"\)\);/, f);
+    assert.doesNotMatch(src, /showCode|encode(Approval|Revert)Response|basalt approve|basalt revert/, f);
+    // A long link has no engine to send a signature to: no passkey prompt,
+    // the page says why.
+    assert.match(src, /NO_CARRIER/, f);
+  }
+  const approveSrc = readFileSync(new URL("./approve.js", import.meta.url), "utf8");
+  assert.match(approveSrc, /if \(relay === null\) \{\n\s+\$\("approve"\)\.disabled = true;\n\s+\$\("status"\)\.textContent = NO_CARRIER;\n\s+return;/);
+  const revertSrc = readFileSync(new URL("./revert.js", import.meta.url), "utf8");
+  assert.match(revertSrc, /if \(expired \|\| relay === null\) return;\n\s+\$\("sign"\)\.addEventListener/);
+  for (const f of ["approve", "revert"]) {
+    const html = readFileSync(new URL(`../${f}/index.html`, import.meta.url), "utf8");
+    assert.doesNotMatch(html, /id="code"|basalt approve|basalt revert/, f);
   }
 
   // Only an answer from the engine says nothing was signed: a refusal with

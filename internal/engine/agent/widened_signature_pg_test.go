@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -55,11 +56,11 @@ func requireNoLink(t *testing.T, steps []map[string]any) {
 	}
 }
 
-// The person widens bot's task revert on the page, signs it, and gives the
-// code to the agent. The agent role cannot read the widened binding, so
-// the engine leaves the signature to apply_revert, which applies every
-// agent's rows. The wait form shows the agent status and totals only.
-func TestRequestRevertDeliversAWidenedRevertsSignature(t *testing.T) {
+// The person widens bot's task revert on the page and signs it there. The
+// agent role cannot read the widened binding, so the engine leaves the
+// signature to apply_revert, which applies every agent's rows. The wait form
+// shows the agent status and totals only.
+func TestWidenedRevertSignedOnThePage(t *testing.T) {
 	t.Parallel()
 	e := newRescopeEnv(t)
 	id, agentSecret := e.request(t)
@@ -70,8 +71,8 @@ func TestRequestRevertDeliversAWidenedRevertsSignature(t *testing.T) {
 	requireWidenedAnswer(t, body, "PENDING")
 	requireNoLink(t, requireResultSteps(t, body, "WAIT_ENDED"))
 
-	code := revertCode(t, id, signBinding(t, e.person, binding))
-	body, isError = e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "signature": code})
+	require.NoError(t, relayRevert(e.svc, id, signBinding(t, e.person, binding)))
+	body, isError = e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "waitForSignature": 0})
 	require.False(t, isError, "%v", body)
 	requireWidenedAnswer(t, body, "APPLIED")
 	require.Equal(t, "2", fmt.Sprint(body["rows"]))
@@ -79,36 +80,39 @@ func TestRequestRevertDeliversAWidenedRevertsSignature(t *testing.T) {
 	require.NotEqual(t, "helper", leadStatus(t, e.d, 32), "helper's row, which the person added, was restored")
 }
 
-// A bad code for a widened revert is still refused, by Postgres now, with
-// the same codes and reasons as before; nothing is applied, and no answer
-// gives the agent a link to the person's scope.
-func TestRequestRevertRefusesBadCodesForAWidenedRevert(t *testing.T) {
+// A bad signature for a widened revert is refused by Postgres, with the
+// same codes and reasons as before; nothing is applied, and no answer gives
+// the agent a link to the person's scope.
+func TestWidenedRevertRefusesBadSignatures(t *testing.T) {
 	t.Parallel()
 	e := newRescopeEnv(t)
 	id, agentSecret := e.request(t)
 	ownBinding, binding := e.widen(t, id, agentSecret)
-	refused := func(code, reason string) {
+	refused := func(as passkey.Assertion, reason string) {
 		t.Helper()
-		body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "signature": code})
-		requireNoLink(t, requireErrorSteps(t, body, isError, "REVERT_INVALID", reason))
-		require.NotContains(t, str(t, body["personMessage"]), e.task.String(), "the person's scope is not named")
+		te := agent.ToolError(relayRevert(e.svc, id, as))
+		require.Equal(t, "REVERT_INVALID", te.Code, "%v", te)
+		require.Equal(t, reason, te.Reason, "%v", te)
+		for _, s := range te.NextSteps {
+			require.Empty(t, s.URL, "%v", s)
+		}
+		require.NotContains(t, te.PersonMessage, e.task.String(), "the person's scope is not named")
 	}
 
 	tampered := signBinding(t, e.person, binding)
 	tampered.Signature = bytes.Clone(tampered.Signature)
 	tampered.Signature[len(tampered.Signature)-1] ^= 1
-	refused(revertCode(t, id, tampered), "BAD_SIGNATURE")
+	refused(tampered, "BAD_SIGNATURE")
 
 	// A signature over another text: the agent's own proposal, which it
 	// could read before the widen.
-	refused(revertCode(t, id, signBinding(t, e.person, ownBinding)), "BAD_SIGNATURE")
+	refused(signBinding(t, e.person, ownBinding), "BAD_SIGNATURE")
 
 	stranger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
-	refused(revertCode(t, id, signBinding(t, stranger, binding)), "PASSKEY_REVOKED")
-
-	other := uuid.Must(uuid.NewV7())
-	refused(revertCode(t, other, signBinding(t, e.person, binding)), "BAD_SIGNATURE")
+	// A passkey the database does not know: Postgres alone judges a
+	// widened revert's signature, and calls it bad.
+	refused(signBinding(t, stranger, binding), "BAD_SIGNATURE")
 
 	require.Equal(t, "bot", leadStatus(t, e.d, 30), "nothing was reverted")
 	require.Equal(t, "helper", leadStatus(t, e.d, 32), "nothing was reverted")

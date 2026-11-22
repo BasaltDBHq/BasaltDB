@@ -52,7 +52,7 @@ You can ask the agent to undo a run ("revert the run that qualified this week's 
 4. When you agree, it calls `request_revert` with the `runId`, `changeId` or `taskId` and an `intent`, and shows you the `personMessage` with the short link to the revert page.
 5. It then calls `request_revert` with the `revertId` and waits once, about 90 seconds. Sign on the page within that time and it reports `APPLIED`. If you take longer, it ends its turn saying the revert waits for your signature; sign when you are ready and tell it.
 
-If the link was lost, the agent calls `request_revert` with `reissueLink: true` for a fresh short link (the old one stops working). If the page cannot reach the engine (the portal, until the relay is live), it shows a `basalt-revert.1....` code: paste it into the chat and the agent delivers it with `signature`. The database verifies your passkey either way.
+If the link was lost, the agent calls `request_revert` with `reissueLink: true` for a fresh short link (the old one stops working). The page sends your signature to the engine itself, so there is nothing to paste; if it cannot reach the engine, it says so, and you open the link again or ask the agent for a new one. The database verifies your passkey.
 
 A large plan is signed once, like any other. After you sign, the agent applies it in batches with `apply_revert_batch` until every line is done.
 
@@ -70,14 +70,12 @@ The revert page shows what the agent proposed. You can sign it as it is, change 
 
 Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link) shows the scope read only and can only be signed as it is; to decline from it, close the page. A revert you do not sign expires within the hour.
 
-## Commands that stay until the relay is live
+## Large reverts and whole tasks
 
-`basalt approve` and `basalt revert` go once the hosted relay is live, together with the pasted codes. Until then you may need them in two cases:
+There are no commands to approve or revert: you sign on the page, and the page sends your signature to the engine (on a bot's computer, through the hosted relay).
 
-- On a bot's computer, the portal's page shows a code. Paste it to your agent, which passes it on with `write` (`approval`) or `request_revert` (`signature`). You can also run `basalt approve '<code>'` on the machine that holds the agent's credential.
-- For a revert too large for the agent to prepare, or one that covers a whole task, run `basalt revert --agent NAME --task <taskId> --open`. It prepares that agent's own lines (possibly none) and opens the page, where you include the others.
-
-On an engine that runs as a service, a person who is not root runs both with `sudo`, because they read the agent's credential. Add `--config PATH` when the engine runs from a non-default config.
+- **A whole task.** Ask an agent that worked in the task to revert it. It requests its own changes in the task (`taskId`), and you include the other agents' changes on the signing page.
+- **A revert too large to prepare.** The agent has 100 seconds to prepare a revert. When that is not enough, it asks you whether a narrower revert will do: some of its runs, some tables, or one change at a time. Each part is signed on its own.
 
 ## Where the pages come from
 

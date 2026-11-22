@@ -69,9 +69,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
 	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, res.MCPCommand)
 
-	_, reg := portalPasskey(t, dbName(t, d))
-	done := laptopRun(t, d.URL, reg+"\n", time.Time{}, "--setup-code", res.Code, "--yes")
-	require.Equal(t, exitOK, done.code, done.stderr)
+	runViaConnect(t, d, res.Code)
 
 	// osHost with the same UserConfigDir init used, so basalt mcp finds the
 	// per-user config and auto-start sees the real file owner.

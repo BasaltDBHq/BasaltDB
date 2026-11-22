@@ -16,7 +16,7 @@ import {
   newRevealSecret,
   revealChallenge,
   revealKey,
-  encodeApprovalResponse,
+  approvalResponseJSON,
   encodeRegistrationResponse,
   parseApprovalRequest,
   parseBinding,
@@ -88,14 +88,14 @@ test("approval request refuses an inflation bomb", async () => {
 
 test("approval response matches Go byte for byte", () => {
   const f = fixtures.response;
-  const code = encodeApprovalResponse({
+  const body = approvalResponseJSON({
     approvalId: f.approvalId,
     credentialId: b64urlDecode(f.credentialId),
     authenticatorData: b64urlDecode(f.authenticatorData),
     clientDataJson: b64urlDecode(f.clientDataJson),
     signature: b64urlDecode(f.signature),
   });
-  assert.equal(code, f.code);
+  assert.equal(body, f.json, "the page posts the JSON the engine decodes");
 });
 
 test("registration request from Go decodes", () => {

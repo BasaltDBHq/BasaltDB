@@ -1,10 +1,10 @@
 // The revert page: read the revert (from the long link's fragment, or from
 // the engine for a short link /reverts/<id>), check the lines against the
 // binding, show what will be restored and what is left alone, and sign the
-// binding with the person's passkey. From a long link the page sends
-// nothing anywhere and shows a code to paste into `basalt revert`; from a
-// short link it posts the signature to the engine that served it, which
-// relays it to Postgres.
+// binding with the person's passkey. From a short link it posts the
+// signature to the engine that served it (its own pages, or through Basalt
+// Vault), which relays it to Postgres. A long link has no engine to send a
+// signature to: the page only shows it.
 //
 // From a short link the person may also change the scope (CONTRACT.md,
 // Rescope, widen and reject): untick agents, runs or tables, which posts a
@@ -16,7 +16,6 @@ import {
   MAX_REVERT_BATCH,
   REVERT_APPLY_HOURS,
   checkRevertRequest,
-  encodeRevertResponse,
   parseRevertRequest,
   relyingParty,
   revertResponseJSON,
@@ -25,7 +24,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
+import { $, NO_CARRIER, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -145,7 +144,7 @@ function renderSummary(req) {
     `${shown.restoreShown} to restore and ${shown.skipShown} left as they are. ` +
     `Not shown: ${plural(shown.restoreHidden, "row")} to restore and ${plural(shown.skipHidden, "row")} left as they are. ` +
     `After you sign, the agent restores them in batches of up to ${MAX_REVERT_BATCH} rows ` +
-    `within ${REVERT_APPLY_HOURS} hours. Follow it with basalt revert --status ${b.revertId}.`;
+    `within ${REVERT_APPLY_HOURS} hours. The agent tells you when it is done.`;
   $("restore-title").textContent = `What goes back (${shown.restoreShown} of ${b.rows} shown)`;
   $("skip-title").textContent = `Rows left as they are (${shown.skipShown} of ${b.skipped} shown)`;
   $("restore-note").textContent =
@@ -221,29 +220,21 @@ async function loadRequest(hash) {
 // ENGINE_BUTTONS are the controls that send the engine a request.
 const ENGINE_BUTTONS = ["reveal", "scope-line", "widen", "reject"];
 
-// finish relays the signed response when the page came from a short link,
-// and otherwise (or when the relay fails) shows the code to paste.
+// finish relays the signed response to the engine that served the short
+// link. Nothing is ever shown to paste: when the relay fails, the person
+// opens the link again or asks the agent for a new one.
 async function finish(response, relay, binding) {
-  if (relay !== null) {
-    try {
-      const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
-      showDone(revertDone(result));
-      await showReceipt(result, relay.session, { kind: "REVERT", itemId: response.revertId, rowsHash: binding.rowsHash });
-      // The revert is signed: nothing else goes to the engine.
-      endSession(relay.session, ENGINE_BUTTONS);
-      settle(result?.batched ? "Signed" : "Reverted", "ok");
-      return;
-    } catch (err) {
-      if (!pastesCode(relay.session)) {
-        showRelayFailed(relayFailure(err, "revert"));
-        settle("Not signed", "bad");
-        return;
-      }
-      showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
-    }
+  try {
+    const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
+    showDone(revertDone(result));
+    await showReceipt(result, relay.session, { kind: "REVERT", itemId: response.revertId, rowsHash: binding.rowsHash });
+    // The revert is signed: nothing else goes to the engine.
+    endSession(relay.session, ENGINE_BUTTONS);
+    settle(result?.batched ? "Signed" : "Reverted", "ok");
+  } catch (err) {
+    showRelayFailed(relayFailure(err, "revert"));
+    settle("Not signed", "bad");
   }
-  showCode(encodeRevertResponse(response));
-  settle("Signed", "ok");
 }
 
 async function sign(rp, state) {
@@ -360,12 +351,12 @@ function render(state) {
   const nothing = nothingToSign(req.binding);
   // N is the rows the revert writes.
   $("sign").textContent = `Sign with your passkey: ${plural(req.binding.rows, "row")}`;
-  $("sign").disabled = nothing !== null || state.busy || state.expired;
+  $("sign").disabled = nothing !== null || state.busy || state.expired || longLink;
   $("reject").disabled = state.busy || state.expired;
-  $("status").textContent = state.expired ? EXPIRED : (nothing ?? "");
+  $("status").textContent = state.expired ? EXPIRED : longLink ? NO_CARRIER : (nothing ?? "");
 }
 
-const EXPIRED = "This revert link expired. Nothing was reverted; run basalt revert again.";
+const EXPIRED = "This revert link expired. Nothing was reverted; ask the agent to request the revert again.";
 
 // RUN_ID_SHOWN is how much of a run id its chip shows.
 const RUN_ID_SHOWN = 8;
@@ -557,7 +548,7 @@ async function main() {
   $("scope-line").addEventListener("click", () => openScope(true));
   $("scope-done").addEventListener("click", () => openScope(false));
   $("sheet-dim").addEventListener("click", () => openScope(false));
-  if (expired) return;
+  if (expired || relay === null) return;
   $("sign").addEventListener("click", () => sign(rp, state));
 }
 

@@ -27,8 +27,6 @@ const (
 	// RequestPrefix starts the approval link's fragment: format 2, the
 	// compact request. The pages also read format 1 (linkcodec).
 	RequestPrefix = linkcodec.Format2
-	// ResponsePrefix starts the code the approval page outputs.
-	ResponsePrefix = "basalt-approval.1."
 )
 
 // KindApprove is the binding kind of an approval; M3 adds REVERT.
@@ -232,17 +230,11 @@ func (r Response) Assertion() passkey.Assertion {
 	}
 }
 
-// Code returns the text the person copies:
-// basalt-approval.1.<base64url(json)>.
-func (r Response) Code() (string, error) {
-	return passkey.EncodeCode(ResponsePrefix, r)
-}
-
-// ParseResponse decodes a pasted response code. Surrounding whitespace is
-// ignored.
-func ParseResponse(code string) (Response, error) {
+// DecodeResponse decodes the signed response the approval page posts (its
+// JSON), strictly: an unknown field or a missing one is refused.
+func DecodeResponse(raw []byte) (Response, error) {
 	var r Response
-	if err := passkey.DecodeCode(ResponsePrefix, strings.TrimSpace(code), &r); err != nil {
+	if err := passkey.DecodeStrict(raw, &r); err != nil {
 		return Response{}, invalid("%v", err)
 	}
 	if len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {

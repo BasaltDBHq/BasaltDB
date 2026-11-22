@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // agentURL finds the agent's connection string: --credential-file, then
@@ -73,11 +76,25 @@ func perUserConfigFallback(h host, system string) string {
 	return user
 }
 
-// withMark is a printed value followed by the summary of its size and
-// sha256 when it is over 1 MiB (largevalue.Summary), "" for any other.
-func withMark(text, mark string) string {
-	if mark == "" {
-		return text
+// printJSONValue prints v as indented JSON on stdout.
+func printJSONValue(c *cliIO, v any) int {
+	enc := json.NewEncoder(c.stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return c.fail(err)
 	}
-	return text + " " + mark
+	return exitOK
+}
+
+// pgDetail is a Postgres error with its detail, which says what the guard
+// refused and why (it names nothing secret).
+func pgDetail(err error) string {
+	var pe *pgconn.PgError
+	if !errors.As(err, &pe) {
+		return err.Error()
+	}
+	if pe.Detail == "" {
+		return pe.Message
+	}
+	return pe.Message + ": " + pe.Detail
 }

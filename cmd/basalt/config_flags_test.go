@@ -27,8 +27,6 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 		{"approve"},
 		{"passkey", "list"},
 		{"passkey", "check"},
-		{"upgrade"},
-		{"uninstall"},
 		{"classify"},
 		{"trust", "list"},
 		{"trust", "add"},

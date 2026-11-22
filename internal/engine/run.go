@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -159,7 +160,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
 	handed = nil
 	if pagesCfg.Addr != "" {
-		site, err = listenPages(pagesCfg, pagesLn, log)
+		site, err = listenPages(pagesCfg, pagesLn, setupJobs(cfg, configPath, pagesCfg.Origin, log), log)
 		if err != nil {
 			return err
 		}
@@ -492,8 +493,11 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the approval pages. A port it cannot bind stops the
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
-func listenPages(p config.Pages, handed net.Listener, log *slog.Logger) (*pagesSite, error) {
+func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log *slog.Logger) (*pagesSite, error) {
 	srv := pages.New(p.Origin, log.With("component", "pages"))
+	if setup != nil {
+		srv.SetSetup(setup)
+	}
 	if handed != nil {
 		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)
 		return &pagesSite{pages: srv, ln: handed, handler: server.Wrap(p.Addr, handed, srv.Handler()), origin: p.Origin}, nil
@@ -504,6 +508,23 @@ func listenPages(p config.Pages, handed net.Listener, log *slog.Logger) (*pagesS
 	}
 	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
 	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}, nil
+}
+
+// setupJobs is the setup page's UPDATE and REMOVE for a person-operated
+// engine on its own OS user at the local setup origin (CONTRACT.md, The
+// local setup page), or nil: an agent-operated engine never takes the
+// admin connection string, nor does an engine run as root, which reads
+// its agents' files by other rules.
+func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger) pages.SetupJobs {
+	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != SetupOrigin {
+		return nil
+	}
+	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true})
+	if err != nil {
+		log.Warn("the setup page cannot update or remove agents", "err", err)
+		return nil
+	}
+	return jobs
 }
 
 // takeHandedListener is the listener a waiting engine handed on, when the

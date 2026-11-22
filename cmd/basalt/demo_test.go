@@ -86,52 +86,6 @@ func TestInitDemoTwiceKeepsEdits(t *testing.T) {
 	require.Equal(t, "WON", status)
 }
 
-func TestUninstallDropsOnlyTheDemoItMade(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	config := tempConfig(t)
-	require.Equal(t, exitOK, demoInit(t, d, config, "--yes").code)
-	r := cli(t, map[string]string{envAdminURL: d.URL}, "", "uninstall", "--prefix", d.Names.Prefix, "--yes")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "demo schema basalt_demo dropped")
-	var n int
-	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(1)::int FROM pg_namespace WHERE nspname IN ('basalt_demo', 'basalt_meta')`).Scan(&n))
-	require.Zero(t, n)
-}
-
-func TestUninstallKeepsADemoSomethingDependsOn(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	config := tempConfig(t)
-	require.Equal(t, exitOK, demoInit(t, d, config, "--yes").code)
-	d.Exec(t, `CREATE VIEW public.my_leads AS SELECT id FROM basalt_demo.leads`)
-	r := cli(t, map[string]string{envAdminURL: d.URL}, "", "uninstall", "--prefix", d.Names.Prefix, "--yes")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "demo schema basalt_demo kept:")
-	var views, metas int
-	ctx := context.Background()
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_views WHERE viewname = 'my_leads'`).Scan(&views))
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_namespace WHERE nspname = 'basalt_meta'`).Scan(&metas))
-	require.Equal(t, 1, views, "the person's view survives")
-	require.Zero(t, metas, "the rest is still removed")
-	var leads int
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM basalt_demo.leads`).Scan(&leads))
-	require.Equal(t, 30, leads)
-}
-
-func TestUninstallLeavesAHandMadeDemoSchema(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
-	d.Exec(t, `CREATE SCHEMA basalt_demo; CREATE TABLE basalt_demo.leads (id integer PRIMARY KEY)`)
-	initAgent(t, d.WithDemo(t), tempConfig(t))
-	r := cli(t, map[string]string{envAdminURL: d.URL}, "", "uninstall", "--prefix", d.Names.Prefix, "--yes")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.NotContains(t, r.stderr, "basalt_demo")
-	var n int
-	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(1)::int FROM pg_namespace WHERE nspname = 'basalt_demo'`).Scan(&n))
-	require.Equal(t, 1, n)
-}
-
 func TestInitDemoLeavesAnExistingTableAlone(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)

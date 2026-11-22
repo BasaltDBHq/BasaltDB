@@ -56,9 +56,6 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.Equal(t, exitError, chk.code, chk.stderr)
 	require.Contains(t, chk.stderr, "no active passkey; register one")
 	require.NotContains(t, chk.stderr, config.DefaultPath(runtime.GOOS))
-	up := cliOn(t, h, map[string]string{envAdminURL: d.URL}, "", "upgrade", "--agent", "bot", "--dry-run")
-	require.Equal(t, exitOK, up.code, up.stderr)
-	require.Contains(t, up.stderr, "the guard is up to date", "upgrade did not reach the agent's database")
 
 	// The same commands do not fall back when root runs them.
 	root := cliOn(t, systemSocketHost(t), nil, "", "passkey", "list", "--agent", "bot")

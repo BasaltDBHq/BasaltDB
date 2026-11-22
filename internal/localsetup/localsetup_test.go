@@ -136,7 +136,7 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 	require.False(t, exists(t, f.db, "basalt_meta"), "refused: nothing changed")
 
 	req := f.request()
-	req.Challenge, req.Passkey = &checked.Challenge, register(t, checked.Challenge)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	done, err := f.svc.Run(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, "demo_bot", done.Agent)
@@ -192,7 +192,7 @@ func TestRunRefusesAChallengeOfAnotherJobOrTooOld(t *testing.T) {
 
 	other := f.request()
 	other.Agent = "other_bot"
-	other.Challenge, other.Passkey = &checked.Challenge, register(t, checked.Challenge)
+	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, other)
 	refusal(t, err, localsetup.CodeChallengeInvalid)
 
@@ -201,14 +201,14 @@ func TestRunRefusesAChallengeOfAnotherJobOrTooOld(t *testing.T) {
 	other2 := guardtest.New(t)
 	elsewhere := f.request()
 	elsewhere.DatabaseURL = other2.URL
-	elsewhere.Challenge, elsewhere.Passkey = &checked.Challenge, register(t, checked.Challenge)
+	elsewhere.Challenge, elsewhere.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, elsewhere)
 	refusal(t, err, localsetup.CodeChallengeInvalid)
 	require.False(t, exists(t, other2, "basalt_meta"), "nothing changed there")
 
 	f.now = f.now.Add(16 * time.Minute)
 	late := f.request()
-	late.Challenge, late.Passkey = &checked.Challenge, register(t, checked.Challenge)
+	late.Challenge, late.Passkey = checked.Challenge, register(t, *checked.Challenge)
 	_, err = f.svc.Run(ctx, late)
 	refusal(t, err, localsetup.CodeChallengeExpired)
 	require.False(t, exists(t, f.db, "basalt_meta"), "nothing changed")

@@ -53,7 +53,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "upgrade": runUpgrade,
+	"init": runInit, "approve": runApprove, "revert": runRevert, "passkey": runPasskey,
 	"engine": runEngineRecords,
 }
 
@@ -82,7 +82,6 @@ func TestInitUsageErrors(t *testing.T) {
 		{"init", "--agent", "Bad-Name"},
 		{"init", "--agent", "bot", "extra"},
 		{"init", "--nope"},
-		{"uninstall", "--prefix", "BAD"},
 	} {
 		r := cli(t, nil, "", args...)
 		require.Equal(t, exitUsage, r.code, "%v: %s", args, r.stderr)
@@ -302,8 +301,7 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		require.NotContains(t, r.stderr, "hides its rows")
 		require.Contains(t, r.stderr, "row-level security is on for public.note_tags and no policy lets")
 
-		r = cli(t, map[string]string{envAdminURL: d.URL}, "", "uninstall", "--prefix", d.Names.Prefix, "--yes")
-		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NoError(t, guard.Uninstall(context.Background(), d.Admin, d.Names))
 		require.Zero(t, agentPolicyCount(t, d))
 	})
 
@@ -468,20 +466,6 @@ func initOut(t *testing.T, d *guardtest.DB, configPath string) string {
 		"--config", configPath, "--os-user", "tester", "--yes", "--agent-rls", "none", "--skip-passkey")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	return r.stderr
-}
-
-func TestUninstallRemovesEverything(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	initAgent(t, d, tempConfig(t))
-	r := cli(t, map[string]string{envAdminURL: d.URL}, "y\n", "uninstall", "--prefix", d.Names.Prefix)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	var schemas, roles int
-	ctx := context.Background()
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_namespace WHERE nspname = 'basalt_meta'`).Scan(&schemas))
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_roles WHERE rolname LIKE $1`, d.Names.Prefix+`\_%`).Scan(&roles))
-	require.Zero(t, schemas)
-	require.Zero(t, roles)
 }
 
 func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {

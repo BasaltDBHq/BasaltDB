@@ -32,7 +32,7 @@ func TestListenPagesRefusesATakenPort(t *testing.T) {
 	_, port, err := net.SplitHostPort(addr)
 	require.NoError(t, err)
 
-	_, err = listenPages(config.Pages{Addr: addr, Origin: "http://localhost:" + port}, nil, slog.New(slog.DiscardHandler))
+	_, err = listenPages(config.Pages{Addr: addr, Origin: "http://localhost:" + port}, nil, nil, slog.New(slog.DiscardHandler))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "another process holds "+addr)
 	require.Contains(t, err.Error(), "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
@@ -94,7 +94,7 @@ func TestInstructionsTeachRevertScope(t *testing.T) {
 
 func TestListenPagesServesAFreePort(t *testing.T) {
 	t.Parallel()
-	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, nil, slog.New(slog.DiscardHandler))
+	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, nil, nil, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.NoError(t, site.ln.Close())
 }
@@ -140,7 +140,7 @@ func TestListenPagesOnAHandedListenerRefusesAForeignHost(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
-	site, err := listenPages(config.Pages{Addr: addr, Origin: "http://localhost:8787"}, ln, slog.New(slog.DiscardHandler))
+	site, err := listenPages(config.Pages{Addr: addr, Origin: "http://localhost:8787"}, ln, nil, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.Same(t, ln, site.ln, "served on the handed listener, not a new one")
 	t.Cleanup(func() { _ = site.ln.Close() })

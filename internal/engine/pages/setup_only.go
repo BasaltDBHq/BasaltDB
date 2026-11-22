@@ -83,7 +83,7 @@ func (st setupRoutes) run(w http.ResponseWriter, r *http.Request) {
 	}
 	answer, err := st.jobs.Run(r.Context(), req)
 	if err == nil {
-		st.log.Info("setup page: install ran", "agent", answer.Agent)
+		st.log.Info("setup page: job ran", "job", req.Job, "agent", answer.Agent)
 	}
 	st.answer(w, answer, err, "run")
 }

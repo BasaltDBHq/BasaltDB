@@ -95,7 +95,7 @@ func TestFirstInstallThroughTheSetupRoutes(t *testing.T) {
 	require.NoError(t, err)
 	auth, err := passkeytest.New(rp)
 	require.NoError(t, err)
-	c := checked.Challenge
+	c := *checked.Challenge
 	rr, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	require.NoError(t, err)
 	reg, err := auth.Register(rr, nil)

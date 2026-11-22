@@ -7,6 +7,7 @@ package demo
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -107,4 +108,45 @@ func Counts(ctx context.Context, q guard.Querier) (leads, notes int, err error) 
 	err = q.QueryRow(ctx, `SELECT (SELECT count(*) FROM basalt_demo.leads)::int,
 		(SELECT count(*) FROM basalt_demo.lead_notes)::int`).Scan(&leads, &notes)
 	return leads, notes, err
+}
+
+// dropSQL drops the sample schema without CASCADE, so a view, foreign key
+// or table of the person's that depends on it stops the drop instead of
+// going with it.
+var dropSQL = []string{`DROP TABLE basalt_demo.lead_notes`, `DROP TABLE basalt_demo.leads`, `DROP SCHEMA basalt_demo`}
+
+// PlanDrop is the SQL that removes the sample schema when the demo made it
+// (the schema carries Comment), and nothing otherwise. It reads the
+// catalog only.
+func PlanDrop(ctx context.Context, q guard.Querier) ([]string, error) {
+	var made bool
+	// Plain SQL: catalog lookup of a fixed name.
+	err := q.QueryRow(ctx, `SELECT coalesce(pg_catalog.obj_description(n.oid, 'pg_namespace') = $2, false)
+		FROM pg_catalog.pg_namespace n WHERE n.nspname = $1`, Schema, Comment).Scan(&made)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !made) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{}, dropSQL...), nil
+}
+
+// ApplyDrop runs drops (PlanDrop) in a savepoint of tx: when one fails,
+// only they roll back and kept is true, so the sample schema stays and the
+// rest of tx goes on. err is for a failure of the savepoint itself.
+func ApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (kept bool, err error) {
+	if len(drops) == 0 {
+		return false, nil
+	}
+	sub, err := tx.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, sql := range drops {
+		if _, err := sub.Exec(ctx, sql); err != nil {
+			return true, sub.Rollback(ctx)
+		}
+	}
+	return false, sub.Commit(ctx)
 }

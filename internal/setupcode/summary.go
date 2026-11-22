@@ -175,7 +175,7 @@ func listWords(items []string) string {
 }
 
 // UpgradeLine is the fixed sentence for a guard upgrade from version from to
-// version to: an UPGRADE code's summary, and basalt upgrade's.
+// version to: an UPGRADE code's summary.
 func UpgradeLine(from, to int) string {
 	return fmt.Sprintf("This upgrades Basalt's guard from version %d to %d; no agent changes.", from, to)
 }

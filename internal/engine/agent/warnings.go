@@ -81,7 +81,7 @@ func (c *BlindCache) Refresh() {
 }
 
 // UpgradeChecker says whether the guard misses only non-breaking migrations,
-// so everything works and basalt upgrade adds them. The default asks the
+// so everything works and the setup page's update adds them. The default asks the
 // service's Probe.
 type UpgradeChecker interface {
 	UpgradeAvailable(ctx context.Context) (bool, error)

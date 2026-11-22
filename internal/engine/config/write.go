@@ -365,3 +365,33 @@ func addUIDs(have, add []uint32) []uint32 {
 	}
 	return have
 }
+
+// RemoveAgents removes the agents names from the config at path, under the
+// config's lock (lockConfig). When no agent is left, it removes the file
+// whole: a config needs one agent, and an engine with no config waits for
+// a first install. It returns whether it removed the file. A name the
+// config does not have is skipped.
+func RemoveAgents(path string, names []string) (removedFile bool, err error) {
+	f := pathFile(path)
+	unlock, err := f.lock()
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	c, err := load(f.path(), f.open)
+	if err != nil {
+		return false, err
+	}
+	c.Agents = slices.DeleteFunc(c.Agents, func(a Agent) bool { return slices.Contains(names, a.Name) })
+	if len(c.Agents) == 0 {
+		return true, os.Remove(path)
+	}
+	if err := c.check(); err != nil {
+		return false, fmt.Errorf("config %s: %w", path, err)
+	}
+	raw, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return false, f.write(append(raw, '\n'))
+}

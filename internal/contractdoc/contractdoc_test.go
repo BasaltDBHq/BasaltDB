@@ -163,3 +163,14 @@ var codeSpan = regexp.MustCompile("(?s)```.*?```|`[^`\n]*`")
 func stripCode(text string) string {
 	return codeSpan.ReplaceAllString(text, "")
 }
+
+// A long link is review only ([Approvals](contract/approvals.md)): the person
+// guide must not say it can be signed.
+func TestApprovingGuideLongLinksAreReviewOnly(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "approving.md"))
+	require.NoError(t, err)
+	s := string(raw)
+	require.NotContains(t, s, "can only be signed as it is")
+	require.Contains(t, s, "review only")
+	require.Contains(t, s, "reissueLink")
+}

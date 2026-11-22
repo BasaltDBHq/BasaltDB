@@ -201,14 +201,14 @@ func (s statusDeps) addTrustExpiring(ps *problems, a trustprofile.Applied, sorte
 	if len(soon) > 1 {
 		what = fmt.Sprintf("%d roots, the first %s (SHA-256 %s),", len(soon), first.Subject, trustprofile.Fingerprint(first))
 	}
-	fix := "Add the provider's new root on the setup page the agent gives you a link to, or name it with sslrootcert in the agent's connection string."
+	fix := "Once your provider has put the new certificate on the database, run basalt init again: its Update check offers to trust it. Or name the new root with sslrootcert in the agent's connection string."
 	if a.Profile.Origin == trustprofile.BuiltIn {
-		fix = "Update basalt for the provider's new roots, or add them on the setup page the agent gives you a link to."
+		fix = "Update basalt for the provider's new roots. Nothing on the setup page adds a root before the database presents a new certificate."
 	}
 	ps.add(problemTrustRootExpiring, fmt.Sprintf("the trust profile %s verifying %s holds %s that %s", a.Profile.Name, a.Host, what, when),
 		func(b *Steps) string {
-			b.AskPerson("Tell the person the root that verifies their database expires soon, and ask whether to add the new one now.")
-			b.AgentRunCommand(s.cmds.Init(), "On the person's yes, run this and show them the link it prints, where they add it.")
+			b.AskPerson("Tell the person the root that verifies their database expires soon, and ask whether their provider has already put the new certificate on the database.")
+			b.AgentRunCommand(s.cmds.Init(), "Only once they say it has, run this and show them the link it prints: its Update check shows the renewed certificate, and they decide. Before that it finds nothing to add.")
 			return fmt.Sprintf("The certificate authority that verifies your database %s %s (trust profile %s). "+
 				"Once no root of it is valid, the agent cannot connect. %s",
 				a.Host, when, a.Profile.Name, fix)

@@ -81,7 +81,10 @@ func TestStatusTrust(t *testing.T) {
 	require.Contains(t, w.Message, trustprofile.Fingerprint(soon))
 	require.Contains(t, w.Message, soon.NotAfter.Format(time.DateOnly))
 	require.Equal(t, mcp.ActionAskPerson, w.NextSteps[0].Action)
-	require.Equal(t, "basalt init --agent bot", w.NextSteps[1].Command, "the setup page adds the new root")
+	require.Equal(t, "basalt init --agent bot", w.NextSteps[1].Command)
+	require.Contains(t, w.NextSteps[1].Text, "Only once", "the page adds nothing before the database presents the new certificate")
+	require.NotContains(t, w.PersonMessage, "add the provider's new root")
+	require.Contains(t, w.PersonMessage, "Update check")
 	require.True(t, r.Ready)
 
 	fine := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, later)

@@ -19,7 +19,7 @@ const (
 		"An agent never asks for, accepts or passes the admin connection string or password."
 	adminCredentialAsk = "Tell the person that a database connection string with a password was in your call and that basalt did not keep it, " +
 		"and ask them to change that database password now. Do not repeat or use the string."
-	adminCredentialRevise = "Then call again without the connection string. To set up a database, run basalt init on the person's own computer, or basalt init --remote on one the person cannot reach, and show the person the link it prints."
+	adminCredentialRevise = "Then call again without the connection string. To set up, run basalt init (basalt init --remote where the person cannot reach this computer) and show the person the link it prints."
 	adminCredentialPerson = "A database connection string with a password was sent through your agent. Basalt refused the call and kept no copy. Change that database password now."
 )
 

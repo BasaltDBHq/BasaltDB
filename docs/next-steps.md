@@ -28,7 +28,7 @@ The agent calls the `status` tool at the start of a session, after you say you f
 | `GUARD_MISSING` | ERROR | The guard is not installed. Run `basalt init`. |
 | `GUARD_OUTDATED` | ERROR | The guard is missing a breaking migration. The agent runs `basalt init` and gives you the update link. |
 | `GUARD_UPGRADE_AVAILABLE` | WARNING | Only non-breaking migrations are missing. Everything works. |
-| `NO_PASSKEY` | WARNING | No passkey is registered, so held writes cannot be approved yet. |
+| `NO_PASSKEY` | ERROR | No passkey is registered on the pages your agent's links open, so held writes cannot be approved yet. The agent gives you a link to add one. |
 | `SETUP_NOT_RUN` | ERROR | A setup code from `basalt init --remote` was never run. |
 | `SETUP_EXPIRED` | ERROR | A setup code expired before it was run. |
 | `SETUP_CHANGE_PENDING` | WARNING | A setup code that changes the setup is waiting to be run. |

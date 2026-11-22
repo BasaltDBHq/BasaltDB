@@ -142,8 +142,9 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: false}}, fin.finished())
 	require.Nil(t, svc.pendingSetup(), "forgotten in memory too")
 	p := findProblem(t, r, problemNoPasskey)
-	require.Equal(t, mcpcontract.SeverityWarning, p.Severity)
-	require.True(t, r.Ready, "a missing passkey does not hold the tools")
+	require.Equal(t, mcpcontract.SeverityError, p.Severity)
+	require.False(t, r.Ready, "nothing held can be approved yet")
+	// Not ready holds no tool: reads and writes under the hold limit run.
 
 	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "served with no restart: %v", body)

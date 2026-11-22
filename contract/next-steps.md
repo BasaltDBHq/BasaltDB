@@ -187,7 +187,7 @@ Status problems (`status` tool, every one +pm):
 | `GUARD_MISSING` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page installs the guard again), P `TELL_AGENT`, A `STOP` |
 | `GUARD_OUTDATED` | `ERROR` | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard), P `TELL_AGENT`, A `STOP` |
 | `GUARD_UPGRADE_AVAILABLE` | `WARNING` | A `ASK_PERSON` (whether to update the guard now), then on the person's yes P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard) |
-| `NO_PASSKEY` | `WARNING` | A `RUN_COMMAND` (`basalt init`: its page registers a passkey) |
+| `NO_PASSKEY` | `ERROR` | No active passkey on the origin of the agent's pages, so nothing held can be signed; `ready` is false, and every tool still works (held writes wait for a passkey). P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it: its Update check adds a passkey on this device), A `END_TURN`; else A `RUN_COMMAND` (`basalt init`: its page registers a passkey) |
 | `SETUP_NOT_RUN` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending setup), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`) |
 | `SETUP_EXPIRED` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints a new link), A `END_TURN` |
 | `SETUP_CHANGE_PENDING` | `WARNING` | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending change), P `TELL_AGENT` |

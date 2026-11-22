@@ -1023,36 +1023,25 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	t.Parallel()
 	report := func(t *testing.T, base string, origins ...string) StatusReport {
 		t.Helper()
-		d := deps()
-		d.OperatedBy = mcpcontract.OperatedByAgent
-		d.PagesBase = base
-		d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
-		setApprovals(&d, originKeys{origins: origins})
-		d.Now = func() time.Time { return statusNow }
-		cmds, err := NewCommands("bot", "", "linux")
-		require.NoError(t, err)
-		d.Commands = cmds
-		r, err := NewService(d).Status(context.Background())
-		require.NoError(t, err)
-		return r
+		return pagesStatus(t, mcpcontract.OperatedByAgent, base, "", origins...)
 	}
 	const local = "http://localhost:8797"
 
 	onlyLocal := report(t, links.Portal, local)
+	require.False(t, onlyLocal.Ready, "no passkey can sign the agent's links")
 	require.False(t, onlyLocal.Passkeys.Registered)
 	require.Equal(t, 0, *onlyLocal.Passkeys.Active)
 	require.Empty(t, onlyLocal.Passkeys.Keys)
-	var noKey *Problem
-	for i := range onlyLocal.Problems {
-		if onlyLocal.Problems[i].Code == problemNoPasskey {
-			noKey = &onlyLocal.Problems[i]
-		}
-	}
-	require.NotNil(t, noKey, "a localhost passkey does not count for the portal")
+	noKey := findProblem(t, onlyLocal, problemNoPasskey)
+	require.Equal(t, mcpcontract.SeverityError, noKey.Severity)
 	require.Contains(t, noKey.Message, "no passkey is registered on "+links.Portal)
 	require.NotEmpty(t, noKey.NextSteps)
+	for _, st := range noKey.NextSteps {
+		require.NotEqual(t, mcp.ActorPerson+" "+mcp.ActionRunCommand, st.Actor+" "+st.Action, "the person never runs a command")
+	}
 
 	both := report(t, links.Portal, local, links.Portal)
+	require.True(t, both.Ready)
 	require.True(t, both.Passkeys.Registered)
 	require.Equal(t, 1, *both.Passkeys.Active)
 	require.Equal(t, passkey.Bytes{2}, both.Passkeys.Keys[0].CredentialID, "the portal's passkey only")
@@ -1060,10 +1049,37 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 		require.NotEqual(t, problemNoPasskey, p.Code)
 	}
 
-	// On local pages it is the other way round.
+	// On local pages it is the other way round, and the setup page's
+	// Update link is the person's step.
 	localPages := report(t, local, local, links.Portal)
 	require.Equal(t, 1, *localPages.Passkeys.Active)
 	require.Equal(t, passkey.Bytes{1}, localPages.Passkeys.Keys[0].CredentialID)
+	const update = "http://localhost:8797/setup#update"
+	onlyPortal := pagesStatus(t, "", local, update, links.Portal)
+	require.False(t, onlyPortal.Ready)
+	steps := findProblem(t, onlyPortal, problemNoPasskey).NextSteps
+	require.Equal(t, mcp.ActionOpenLink, steps[0].Action)
+	require.Equal(t, update, steps[0].URL)
+	require.Equal(t, mcp.ActionEndTurn, steps[1].Action)
+}
+
+// pagesStatus is the status of an agent whose links open at base, with
+// one passkey per origin and the setup page's Update link update ("" for
+// none).
+func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...string) StatusReport {
+	t.Helper()
+	d := deps()
+	d.OperatedBy = operatedBy
+	d.PagesBase = base
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	setApprovals(&d, originKeys{origins: origins})
+	d.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", "", "linux")
+	require.NoError(t, err)
+	d.Commands = cmds.UpdateLink(update)
+	r, err := NewService(d).Status(context.Background())
+	require.NoError(t, err)
+	return r
 }
 
 // A basalt mcp that tried to start the engine and could not says why in

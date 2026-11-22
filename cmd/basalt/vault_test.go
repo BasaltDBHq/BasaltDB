@@ -69,50 +69,6 @@ func TestChooseVault(t *testing.T) {
 	}
 }
 
-func TestInitRefusesVaultOnWithLocalPagesBeforeAnything(t *testing.T) {
-	t.Parallel()
-	for _, args := range [][]string{
-		{"--vault=on"},
-		{"--vault", "on", "--passkey-origin", "http://localhost:7777"},
-		{"--vault=on", "--passkey-origin", "https://console.basaltvault.app"},
-		{"--vault=maybe"},
-	} {
-		cfg := tempConfig(t)
-		r := cliNoDB(t, append([]string{"init", "--agent", "bot", "--write", "public.leads", "--no-service", "--config", cfg}, args...)...)
-		require.Equal(t, exitUsage, r.code, "%v: %s", args, r.stderr)
-		require.Empty(t, r.stdout, "no SQL: nothing ran")
-		require.NoFileExists(t, cfg)
-	}
-}
-
-func TestEngineSettingsCarryTheVaultChoice(t *testing.T) {
-	t.Parallel()
-	f := initFlags{configPath: "/etc/basalt/engine.json", socketDir: "/run/basalt", vault: vaultChoice{def: VaultModeOff, why: personDefaultWhy}}
-	s := engineSettings(f, "linux")
-	require.Empty(t, s.Vault, "no --vault: nothing forced")
-	require.Equal(t, config.VaultOff, s.VaultDefault)
-	f.vault.given = VaultModeOn
-	s = engineSettings(f, "linux")
-	require.Equal(t, config.VaultOn, s.Vault)
-}
-
-func TestServiceInstallPassesVaultOnlyWhenThePersonGaveIt(t *testing.T) {
-	t.Parallel()
-	f := initFlags{
-		agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman",
-		vault: vaultChoice{def: VaultModeOff, why: personDefaultWhy},
-	}
-	args := serviceInstallArgs(f, "/b")
-	require.Contains(t, args, "--vault-default=off")
-	for _, a := range args {
-		require.False(t, strings.HasPrefix(a, "--vault="), "no --vault without the person's choice: %v", args)
-	}
-	f.vault.given = VaultModeOff
-	args = serviceInstallArgs(f, "/b")
-	require.Contains(t, args, "--vault=off")
-	require.NotContains(t, args, "--vault-default=off")
-}
-
 func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")

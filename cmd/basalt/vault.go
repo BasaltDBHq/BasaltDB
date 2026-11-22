@@ -92,14 +92,6 @@ func (v vaultChoice) line(w config.VaultWritten) string {
 	return fmt.Sprintf("basalt: vault: %s (%s)\n", mode, v.why)
 }
 
-// dryRunLine is line for a dry run, which reads and writes nothing.
-func (v vaultChoice) dryRunLine() string {
-	if v.given != "" {
-		return v.line(config.VaultWritten{Vault: v.given.enum()})
-	}
-	return fmt.Sprintf("basalt: vault: the value engine.json already has, else %s (%s)\n", v.def, v.why)
-}
-
 // modeOf is the --vault spelling of an engine.json vault.
 func modeOf(enum string) VaultMode {
 	switch enum {

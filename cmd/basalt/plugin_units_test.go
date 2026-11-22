@@ -48,25 +48,6 @@ func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
 	require.ErrorContains(t, checkAgentOSUserWith("carol", "basalt", engineGroup, lookupGroups), "cannot be read")
 }
 
-func TestInitRefusesAnOSUserInTheEngineGroup(t *testing.T) {
-	t.Parallel()
-	// The person's own primary group stands in for the engine's group: the
-	// person is in it, so init refuses before anything else happens.
-	cur, err := user.Current()
-	require.NoError(t, err)
-	g, err := user.LookupGroupId(cur.Gid)
-	require.NoError(t, err)
-	if g.Name == cur.Username {
-		t.Skip("the person's primary group has the person's name; --engine-user would be the person")
-	}
-	h := newFakeHost(t)
-	r := cliOn(t, h, map[string]string{envAdminURL: "postgres://unused@127.0.0.1:1/x"}, "",
-		"init", "--agent", "bot", "--write", "public.leads", "--os-user", cur.Username, "--engine-user", g.Name, "--yes")
-	require.NotEqual(t, exitOK, r.code)
-	require.Contains(t, r.stderr, "is in the engine's group "+g.Name)
-	require.Empty(t, h.sudo, "nothing is installed")
-}
-
 func TestPluginUnitEntries(t *testing.T) {
 	t.Parallel()
 	local := plugin.Verified{

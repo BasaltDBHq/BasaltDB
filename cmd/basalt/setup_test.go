@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,8 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // fakeHost records what init would do on the machine; nothing runs.
@@ -218,247 +215,11 @@ func (s *fakeSys) CheckBinary(path string) error {
 	return s.binaryErr
 }
 
-// initRun runs basalt init against d with the fake host, as if at a
-// terminal when interactive.
-func initRun(t *testing.T, d *guardtest.DB, h *fakeHost, goos string, interactive bool, stdin string, extra ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr},
-		func(k string) string {
-			if k == envAdminURL {
-				return d.URL
-			}
-			return ""
-		})
-	c.goos, c.host, c.interactive = goos, h, interactive
-	args := append([]string{"--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--skip-passkey"}, extra...)
-	code := runInitAdmin(c, takePathFlags(c, runInit, args))
-	return result{code, stdout.String(), stderr.String()}
-}
-
 func me(t *testing.T) string {
 	t.Helper()
 	u, err := user.Current()
 	require.NoError(t, err)
 	return u.Username
-}
-
-func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
-	t.Parallel()
-	for _, v := range []struct {
-		goos, config, user, socket string
-	}{
-		{"linux", "/etc/basalt/engine.json", "basalt", "/run/basalt/bot.sock"},
-		{"darwin", "/Library/Application Support/Basalt/engine.json", "_basalt", "/Library/Application Support/Basalt/run/bot.sock"},
-	} {
-		t.Run(v.goos, func(t *testing.T) {
-			t.Parallel()
-			d := guardtest.New(t).WithDemo(t)
-			h := newFakeHost(t)
-			h.claude = "/usr/local/bin/claude"
-			// Answers: run the SQL, install the service (default), add to Claude Code.
-			r := initRun(t, d, h, v.goos, true, "y\n\ny\n")
-			require.Equal(t, exitOK, r.code, r.stderr)
-
-			script, err := service.InstallScript(v.goos, fakeBin)
-			require.NoError(t, err)
-			require.Equal(t, []string{script}, h.dialogs, "the first install goes through the administrator dialog, with the fixed script")
-			require.Len(t, h.sudo, 1, "then one sudo carries the agent's config and credential")
-			require.Equal(t, []string{
-				fakeBin, "service", "install", "--user", v.user,
-				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault-default=off",
-				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
-				"--init-arg", "--os-user=" + me(t), "--person-uid", "501", "--credential-stdin",
-			}, h.sudo[0])
-			require.Contains(t, h.sudoIn[0], d.Names.Prefix+"_agent_bot:", "the agent's credential goes on stdin")
-			require.NotContains(t, strings.Join(h.sudo[0], " "), "postgres://", "never on the command line")
-			require.Equal(t, []string{v.socket}, h.probed)
-			require.Equal(t, [][]string{{"/usr/local/bin/claude", "mcp", "add", "--scope", "local", "basalt-bot", "--", fakeBin, "mcp", "--agent", "bot"}}, h.ran)
-
-			require.Contains(t, r.stderr, "Install the engine as a background service? This creates the OS user "+v.user+
-				" and asks for your password twice: in the system's administrator dialog, then in this terminal. [Y/n]")
-			require.Contains(t, r.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as "+v.user+"; it runs:\n  "+
-				shellJoin([]string{fakeBin, "engine", "--config", v.config, "--supervise"})+"\n")
-			require.Contains(t, r.stderr, "basalt: engine running as "+v.user+"; it answered on "+v.socket)
-			require.Contains(t, r.stderr, "  /opt/basalt/bin/basalt mcp --agent bot\n")
-			require.Contains(t, r.stderr, "Add it to Claude Code now (claude mcp add --scope local basalt-bot -- "+fakeBin+" mcp --agent bot)? [Y/n]")
-			require.Contains(t, r.stderr, "basalt: the server basalt-bot is registered for this project directory only (--scope local); sessions in other projects do not see it\n")
-			require.NotContains(t, r.stderr, "chown")
-			require.NotContains(t, r.stderr, "it runs in the foreground", "no foreground engine")
-			require.NoDirExists(t, filepath.Join(h.configDir, perUserDirName), "nothing in the person's home")
-		})
-	}
-}
-
-func TestInitDeclinedServiceRunsInTheForeground(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	h.claude = "/usr/local/bin/claude"
-	// Answers: run the SQL, no service, no Claude Code.
-	r := initRun(t, d, h, "linux", true, "y\nn\nn\n")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Empty(t, h.sudo)
-	require.Empty(t, h.probed)
-	require.Empty(t, h.ran, "claude mcp add never runs without a yes")
-
-	dir := filepath.Join(h.configDir, perUserDirName)
-	cfg, err := config.Load(filepath.Join(dir, "engine.json"))
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(dir, "run"), cfg.SocketDir)
-	require.Equal(t, filepath.Join(dir, "state"), cfg.StateDir)
-	require.Equal(t, config.VaultOff, cfg.Vault, "person mode: the Vault is off by default")
-	require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
-	info, err := os.Stat(filepath.Join(dir, "agents", "bot.url"))
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(config.FileMode), info.Mode().Perm())
-	require.Contains(t, r.stderr, "next, start the engine; it runs in the foreground as you")
-	require.Contains(t, r.stderr, "basalt engine --config "+shellQuote(filepath.Join(dir, "engine.json")))
-	require.NotContains(t, r.stderr, "sudo")
-}
-
-func TestInitSkipsClaudeWhenItHasTheServer(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	h.claude = "/usr/local/bin/claude"
-	h.claudeHas = []string{"basalt-bot"}
-	// Answers: run the SQL, no service. Claude Code is not asked about.
-	r := initRun(t, d, h, "linux", true, "y\nn\n")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Equal(t, [][]string{{"/usr/local/bin/claude", "mcp", "get", "basalt-bot"}}, h.got)
-	require.Empty(t, h.ran, "claude mcp add does not run for a server Claude Code has")
-	require.Contains(t, r.stderr, "basalt: Claude Code already has basalt-bot\n")
-	require.NotContains(t, r.stderr, "Add it to Claude Code now")
-	require.NotContains(t, r.stderr, "claude mcp add failed")
-}
-
-func TestInitWithoutATerminalNeverAsks(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	h.claude = "/usr/local/bin/claude"
-	// Piped answers without --yes or --no-service: init does not pick the
-	// engine's mode for the person, and stops before anything is written.
-	r := initRun(t, d, h, "linux", false, "y\n")
-	require.Equal(t, exitUsage, r.code, r.stderr)
-	require.Contains(t, r.stderr, "--yes")
-	require.Contains(t, r.stderr, "--no-service")
-	require.Empty(t, r.stdout, "no SQL shown")
-	require.Empty(t, h.sudo)
-	require.Empty(t, h.ran)
-	require.NoDirExists(t, filepath.Join(h.configDir, perUserDirName), "no credential in the person's home")
-	var installed bool
-	require.NoError(t, d.Admin.QueryRow(context.Background(),
-		`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'basalt_meta')`).Scan(&installed))
-	require.False(t, installed, "the database is left as it was")
-	require.NotContains(t, r.stderr, "[Y/n]")
-
-	// --yes installs it without asking; Claude Code still is not touched.
-	d = guardtest.New(t).WithDemo(t)
-	h = newFakeHost(t)
-	h.claude = "/usr/local/bin/claude"
-	r = initRun(t, d, h, "linux", false, "", "--yes")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Len(t, h.sudo, 1)
-	require.Empty(t, h.ran)
-
-	// --no-service wins over --yes.
-	d = guardtest.New(t).WithDemo(t)
-	h = newFakeHost(t)
-	r = initRun(t, d, h, "linux", false, "", "--yes", "--no-service")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Empty(t, h.sudo)
-	require.Contains(t, r.stderr, "basalt engine --config")
-}
-
-func TestInitAsRootInstallsInProcess(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	h.euid = 0
-	r := initRun(t, d, h, "linux", false, "", "--yes", "--person-uid", "4242")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Empty(t, h.sudo, "already root")
-	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"mode": "SERVICE"`)
-	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], "4242")
-	require.Equal(t, "basalt", h.sys.owners["/etc/basalt/agents/bot.url"])
-	require.Contains(t, h.sys.ran, "systemctl enable --now basalt-engine.service")
-	require.Contains(t, h.sys.written["/etc/basalt/agents/bot.url"], d.Names.Prefix+"_agent_bot:")
-	require.Equal(t, os.FileMode(config.FileMode), h.sys.modes["/etc/basalt/agents/bot.url"])
-	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"socketDir": "/run/basalt"`)
-	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"vault": "OFF"`, "a new config: the person-mode default")
-	require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
-	require.NotContains(t, r.stderr, "postgres://", "the credential is never printed")
-}
-
-func TestInitAsRootWithoutAPersonInstallsNoService(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	h.euid = 0
-	// A root login without SUDO_UID names the person, or no service.
-	r := initRun(t, d, h, "linux", false, "", "--yes")
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "give --person-uid N")
-	require.Empty(t, h.sys.ran, "nothing installed without a person")
-}
-
-func TestInitSudoFailureSaysWhatIsInstalled(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	h.sudoErr = errors.New("exit status 1")
-	r := initRun(t, d, h, "linux", false, "", "--yes")
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "the guard is installed but the engine service is not (run basalt init again, or with --no-service)")
-	require.Empty(t, h.probed)
-}
-
-func TestInitDryRunPrintsTheServicePlan(t *testing.T) {
-	t.Parallel()
-	for _, v := range []struct{ goos, want string }{
-		{"linux", "systemctl enable --now basalt-engine.service"},
-		{"darwin", "launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.engine.plist"},
-	} {
-		t.Run(v.goos, func(t *testing.T) {
-			t.Parallel()
-			d := guardtest.New(t).WithDemo(t)
-			h := newFakeHost(t)
-			r := initRun(t, d, h, v.goos, true, "", "--dry-run")
-			require.Equal(t, exitOK, r.code, r.stderr)
-			require.Contains(t, r.stdout, "CREATE SCHEMA IF NOT EXISTS basalt_meta")
-			require.Contains(t, r.stderr, "then init asks to install the engine service, which runs (the credential on stdin):\n  sudo "+fakeBin+" service install")
-			require.Contains(t, r.stderr, v.want)
-			require.Contains(t, r.stderr, "agents/bot.url")
-			require.Empty(t, h.sys.ran, "a dry run runs nothing")
-			require.Empty(t, h.sys.written)
-			require.Empty(t, h.sudo)
-			require.NotContains(t, r.stderr, "[Y/n]", "a dry run asks nothing")
-		})
-	}
-}
-
-func TestInitYesPrintsAShortSQLSummary(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	h := newFakeHost(t)
-	r := initRun(t, d, h, "linux", false, "", "--yes", "--no-service")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.NotContains(t, r.stdout, "CREATE SCHEMA")
-	require.LessOrEqual(t, strings.Count(r.stdout, "\n"), 24, "at most a screenful")
-	require.Contains(t, r.stdout, "basalt: this setup SQL will:")
-	require.Contains(t, r.stdout, "- install or upgrade the guard (basalt_meta)")
-	require.Contains(t, r.stdout, "- create the agent role")
-	require.Contains(t, r.stdout, "- let the agent write public.leads")
-	require.Contains(t, r.stdout, "Pass --show-sql to print the SQL (passwords redacted).")
-
-	d = guardtest.New(t).WithDemo(t)
-	h = newFakeHost(t)
-	r = initRun(t, d, h, "linux", false, "", "--yes", "--no-service", "--show-sql")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, "CREATE SCHEMA IF NOT EXISTS basalt_meta")
-	require.NotContains(t, r.stdout, "Pass --show-sql")
 }
 
 func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
@@ -498,52 +259,6 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	got, err = agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
 	require.NoError(t, err)
 	require.Contains(t, string(got.Files[0].Content), `"vault": "ON"`, "--vault writes the config's vault")
-}
-
-// A binary anyone but root could change is refused before init asks for the
-// admin connection, connects, or runs sudo: the database is left as it was
-// and the agent's replacement never runs as root.
-func TestInitRefusesUnprotectedBinaryBeforeAnything(t *testing.T) {
-	t.Parallel()
-	for _, extra := range [][]string{{"--yes"}, {"--dry-run"}} {
-		h := newFakeHost(t)
-		h.sys.binaryErr = errors.New("/opt/basalt/bin is owned by uid 501, not root")
-		var stdout, stderr bytes.Buffer
-		getenv := func(k string) string {
-			if k == envAdminURL {
-				return "postgres://nobody@127.0.0.1:1/none?connect_timeout=1"
-			}
-			return ""
-		}
-		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, getenv)
-		c.goos, c.host = "linux", h
-		code := runInitAdmin(c, takePathFlags(c, runInit, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey"}, extra...)))
-
-		require.Equal(t, exitError, code, extra)
-		require.Contains(t, stderr.String(), "owned by uid 501, not root", extra)
-		require.Contains(t, stderr.String(), "--no-service", extra)
-		require.NotContains(t, stderr.String(), "connect:", "init never connects")
-		require.Empty(t, stdout.String(), "no SQL is planned")
-		require.Equal(t, []string{fakeBin}, h.sys.checked)
-		require.Empty(t, h.sudo)
-	}
-}
-
-// With --no-service init never hands the binary to sudo, so it is not checked.
-func TestInitNoServiceDoesNotCheckTheBinary(t *testing.T) {
-	t.Parallel()
-	h := newFakeHost(t)
-	h.sys.binaryErr = errors.New("unprotected")
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: io.Discard, err: io.Discard},
-		func(k string) string {
-			if k == envAdminURL {
-				return "postgres://nobody@127.0.0.1:1/none?connect_timeout=1"
-			}
-			return ""
-		})
-	c.goos, c.host = "linux", h
-	runInitAdmin(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"}))
-	require.Empty(t, h.sys.checked)
 }
 
 // fakeMkdir is how the fakes record a mkdir step: the path as it is.

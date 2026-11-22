@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -29,9 +28,6 @@ const maxHandBackBody = 16 << 10
 // handBackReadTimeout bounds reading a post's body.
 const handBackReadTimeout = 10 * time.Second
 
-// handBackSecretLen is the hand-back secret's length in bytes.
-const handBackSecretLen = 16
-
 // maxHandBacks is how many verified registrations init keeps per run
 // while it waits for the person's pairing code. Another program on the
 // machine can read the link and post its own registration first, so init
@@ -48,12 +44,9 @@ const codeRateLimited = "RATE_LIMITED"
 // secret. Init stores only the one whose pairing code the person types
 // (CONTRACT.md, CLI).
 type registrationHandBack struct {
-	req passkey.RegistrationRequest
-	rp  passkey.Relying
-	// secret is the secret the request carries in the link's fragment;
-	// hash is what a post's secret is compared with.
-	secret string
-	hash   [sha256.Size]byte
+	req  passkey.RegistrationRequest
+	rp   passkey.Relying
+	hash [sha256.Size]byte
 	// mu guards received only: a post reads and verifies its body without
 	// it, so a post whose body stalls holds up no other post and no read.
 	mu sync.Mutex
@@ -68,21 +61,6 @@ type registrationHandBack struct {
 type handedBack struct {
 	cred passkey.Credential
 	code string
-}
-
-// newRegistrationHandBack draws the secret from rnd and returns the route
-// for req, with req.HandBack set to the secret.
-func newRegistrationHandBack(rnd io.Reader, req passkey.RegistrationRequest, rp passkey.Relying) (*registrationHandBack, error) {
-	b := make([]byte, handBackSecretLen)
-	if _, err := io.ReadFull(rnd, b); err != nil {
-		return nil, fmt.Errorf("hand-back secret: %w", err)
-	}
-	secret := passkey.Bytes(b).String()
-	req.HandBack = secret
-	return &registrationHandBack{
-		req: req, rp: rp, secret: secret, hash: sha256.Sum256([]byte(secret)),
-		full: make(chan struct{}),
-	}, nil
 }
 
 // ServeHTTP answers POST handBackPath. Checks, in order: the Origin is the
@@ -187,21 +165,6 @@ func writeHandBackError(w http.ResponseWriter, status int, code, message string)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n'))
-}
-
-// match returns the kept registration whose pairing code is code (the
-// canonical 8 characters), and how many match: init takes only exactly one.
-func (h *registrationHandBack) match(code string) (passkey.Credential, int) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var found passkey.Credential
-	n := 0
-	for _, r := range h.received {
-		if subtle.ConstantTimeCompare([]byte(r.code), []byte(code)) == 1 {
-			found, n = r.cred, n+1
-		}
-	}
-	return found, n
 }
 
 // count is how many verified registrations are kept.

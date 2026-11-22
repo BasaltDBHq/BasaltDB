@@ -2,11 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -35,9 +33,6 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"init", []string{"init", "--agent", "bot", "--write", "public.leads", "--yes"}, "basalt init --remote --agent NAME"},
-		{"init with a usage error", []string{"init", "--write", "public.leads"}, "basalt init --remote --agent NAME"},
-		{"init operated by agent", []string{"init", "--agent", "bot", "--write", "public.leads", "--operated-by", "agent", "--yes"}, "basalt init --remote --agent NAME"},
 		{"setup code", []string{"init", "--setup-code", "basalt-setup.1.x.y", "--yes"}, "Give the person this command instead of running it"},
 	}
 	for _, marker := range agentMarkers {
@@ -62,7 +57,6 @@ func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
 func TestAgentContextAdminEnvSaysRotate(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"init", "--agent", "bot", "--write", "public.leads", "--yes"},
 		{"init", "--setup-code", "basalt-setup.1.x.y"},
 	} {
 		t.Run(args[0]+" "+args[1], func(t *testing.T) {
@@ -110,43 +104,6 @@ func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 		"init", "--remote", "--agent", "bot", "--config", filepath.Join(t.TempDir(), "engine.json"))
 	require.Contains(t, r.stderr, remoteAdminEnvSet)
 	require.NotContains(t, r.stdout+r.stderr, "hunter2")
-}
-
-// TestInitHelpForAnAgent: an agent reading basalt init's help sees only the
-// agent-led setup; a person at a terminal sees every mode.
-func TestInitHelpForAnAgent(t *testing.T) {
-	t.Parallel()
-	for name, env := range map[string]map[string]string{"no terminal": nil, "marker": {"CODEX_SANDBOX": "seatbelt"}} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			r := cliOn(t, newFakeHost(t), env, "", "init", "-h")
-			require.Equal(t, exitOK, r.code, r.stderr)
-			require.Equal(t, agentInitUsage, r.stderr)
-			requireAgentLed(t, "init -h", r.stderr)
-		})
-	}
-
-	person := personCLI(t, nil, "init", "-h")
-	require.Equal(t, exitOK, person.code, person.stderr)
-	require.Contains(t, person.stderr, "usage: basalt init --agent NAME")
-	for _, want := range []string{"--remote", "--setup-code", "-operated-by"} {
-		require.Contains(t, person.stderr, want)
-	}
-
-	marked := personCLI(t, map[string]string{"GEMINI_CLI": "1"}, "init", "-h")
-	require.Equal(t, agentInitUsage, marked.stderr, "a marker wins over a terminal")
-}
-
-// personCLI is cliOn for a person at a terminal.
-func personCLI(t *testing.T, env map[string]string, args ...string) result {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(k string) string { return env[k] })
-	c.host = newFakeHost(t)
-	c.interactive = true
-	code := runGuard(c, args)
-	return result{code, stdout.String(), stderr.String()}
 }
 
 func TestAgentNotInConfigNamesTheAgentLedSetup(t *testing.T) {
@@ -222,7 +179,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", engine.Instructions)
 	for name, text := range map[string]string{
-		"agentInitUsage": agentInitUsage, "agentsHelp": agentsHelp, "hintAgentInit": hintAgentInit,
+		"agentsHelp":         agentsHelp,
 		"hintAgentSetupCode": hintAgentSetupCode, "hintAgentPerson": hintAgentPerson,
 		"adminEnvLeaked": adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
@@ -283,62 +240,4 @@ func requireGoStringsAgentLed(t *testing.T, dir string) {
 		return nil
 	}))
 	require.Positive(t, files, dir)
-}
-
-// The tests stand in for a person at a terminal when they run plain init
-// with piped input; TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal
-// checks the refusal the binary gives (strictInit).
-func init() { pipedAdminInitAllowed = true }
-
-// failingReader fails the test when anything reads it.
-type failingReader struct{ t *testing.T }
-
-func (r failingReader) Read([]byte) (int, error) {
-	r.t.Error("stdin was read")
-	return 0, io.EOF
-}
-
-// Plain init refuses the admin path whenever an agent may be running it: an
-// agent marker, or stdin that is not a terminal; and at a terminal it
-// refuses a set BASALT_ADMIN_DATABASE_URL, which it never uses. Neither the
-// variable's value nor stdin is read, and the message tells the person to
-// change that password.
-func TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal(t *testing.T) {
-	t.Parallel()
-	for name, tc := range map[string]struct {
-		marker      bool
-		interactive bool
-		want        string
-	}{
-		"agent marker at a terminal": {marker: true, interactive: true, want: "running under an agent (CLAUDECODE is set)"},
-		"no marker, no terminal":     {interactive: false, want: "stdin is not a terminal"},
-		"marker and no terminal":     {marker: true, want: "running under an agent (CLAUDECODE is set)"},
-		"a person at a terminal":     {interactive: true, want: adminEnvRefused},
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			var stdout, stderr bytes.Buffer
-			var readAdmin bool
-			c := newIO(context.Background(), stdio{in: failingReader{t}, out: &stdout, err: &stderr}, func(k string) string {
-				switch {
-				case k == "CLAUDECODE" && tc.marker:
-					return "1"
-				case k == envAdminURL:
-					readAdmin = true
-					return "postgres://admin:" + "pw@db/app"
-				}
-				return ""
-			})
-			c.host = newFakeHost(t)
-			c.interactive = tc.interactive
-			c.strictInit = true
-			code := runInitAdmin(c, []string{"--agent", "bot", "--write", "public.leads", "--yes"})
-			require.Equal(t, exitError, code, stderr.String())
-			require.Contains(t, stderr.String(), tc.want)
-			require.Contains(t, stderr.String(), "change that database password now", "the person is told to change the leaked password")
-			require.NotContains(t, stderr.String()+stdout.String(), "pw@db", "the value is never echoed")
-			require.True(t, readAdmin, "only checked for presence, to warn")
-			require.Empty(t, stdout.String())
-		})
-	}
 }

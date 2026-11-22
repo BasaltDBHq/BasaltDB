@@ -24,7 +24,7 @@ func recordTestEngine(t *testing.T, d *guardtest.DB) string {
 func TestEngineRevoke(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
-	_ = initAgent(t, d, t.TempDir()+"/engine.json")
+	initAgent(t, d, t.TempDir()+"/engine.json")
 	admin := map[string]string{envAdminURL: d.URL}
 	lost := recordTestEngine(t, d)
 	other := recordTestEngine(t, d)

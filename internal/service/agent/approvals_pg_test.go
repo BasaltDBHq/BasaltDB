@@ -17,8 +17,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -91,7 +91,7 @@ type finds struct {
 	n atomic.Int64
 }
 
-func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	f.n.Add(1)
 	return f.SQLStore.FindApproval(ctx, id)
 }
@@ -102,7 +102,7 @@ type revertFinds struct {
 	n atomic.Int64
 }
 
-func (f *revertFinds) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (f *revertFinds) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	f.n.Add(1)
 	return f.SQLStore.FindRevert(ctx, id)
 }

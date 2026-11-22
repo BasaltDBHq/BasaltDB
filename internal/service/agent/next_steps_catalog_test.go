@@ -121,8 +121,8 @@ func guardRevert(detail string) func(*testing.T, *Service) error {
 	return pgFail("BS005", "REVERT_INVALID", detail)
 }
 
-func caseRevert(signed bool) ledger.Revert {
-	r := ledger.Revert{
+func caseRevert(signed bool) action.Revert {
+	r := action.Revert{
 		ID: uuid.MustParse(caseRevertID), Status: "PENDING", Scope: "RUN", ScopeID: uuid.MustParse(caseRunID),
 		ExpiresAt: time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC),
 	}

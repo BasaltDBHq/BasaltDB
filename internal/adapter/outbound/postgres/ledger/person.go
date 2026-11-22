@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -45,7 +46,7 @@ func (l *Person) CheckHealth(ctx context.Context, opts HealthOptions) (Health, e
 }
 
 // ListChanges is ListChanges.
-func (l *Person) ListChanges(ctx context.Context, p ChangeListParams) (pagination.Page[Change], error) {
+func (l *Person) ListChanges(ctx context.Context, p action.ChangeListParams) (pagination.Page[action.Change], error) {
 	return ListChanges(ctx, l.db, p)
 }
 
@@ -56,7 +57,7 @@ func (l *Person) ListAccess(ctx context.Context) (pgcatalog.Access, error) {
 }
 
 // RowChanges is RowChanges.
-func (l *Person) RowChanges(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]RowChange, error) {
+func (l *Person) RowChanges(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]action.RowChange, error) {
 	return RowChanges(ctx, l.db, ids)
 }
 
@@ -66,7 +67,7 @@ func (l *Person) ListPasskeys(ctx context.Context) ([]Passkey, error) {
 }
 
 // FindApproval is FindApproval.
-func (l *Person) FindApproval(ctx context.Context, id uuid.UUID) (Approval, error) {
+func (l *Person) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	return FindApproval(ctx, l.db, id)
 }
 
@@ -76,7 +77,7 @@ func (l *Person) SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Ass
 }
 
 // FindRevert is FindRevert.
-func (l *Person) FindRevert(ctx context.Context, id uuid.UUID) (Revert, error) {
+func (l *Person) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	return FindRevert(ctx, l.db, id)
 }
 
@@ -132,6 +133,6 @@ func (l *Person) RejectRevert(ctx context.Context, id uuid.UUID, note string) (g
 }
 
 // ListRevertLines is ListRevertLines.
-func (l *Person) ListRevertLines(ctx context.Context, p RevertLineParams) (pagination.Page[RevertLine], error) {
+func (l *Person) ListRevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	return ListRevertLines(ctx, l.db, p)
 }

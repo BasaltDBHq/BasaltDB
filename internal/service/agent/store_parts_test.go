@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -25,8 +24,8 @@ type runStore interface {
 	StartRun(ctx context.Context, in action.Intent) error
 	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
-	History(ctx context.Context, p ledger.ChangeListParams) (History, error)
-	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error)
+	History(ctx context.Context, p action.ChangeListParams) (History, error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
 }
 
 type readRecorder interface {

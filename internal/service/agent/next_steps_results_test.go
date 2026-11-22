@@ -19,6 +19,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -75,33 +76,33 @@ func caseBindingText(t *testing.T, batched bool) string {
 	return string(raw)
 }
 
-func caseRevertWith(t *testing.T, status string) ledger.Revert {
+func caseRevertWith(t *testing.T, status string) action.Revert {
 	t.Helper()
 	r := caseRevert(false)
 	r.Status, r.Rows, r.Skipped, r.BindingText = status, 3, 1, caseBindingText(t, false)
 	return r
 }
 
-func caseBatchedRevert(t *testing.T, status string) ledger.Revert {
+func caseBatchedRevert(t *testing.T, status string) action.Revert {
 	t.Helper()
 	r := caseRevert(true)
 	r.Status, r.Batched, r.Rows, r.Skipped = status, true, 1209, 1
 	r.BindingText = caseBindingText(t, true)
 	apply := r.ExpiresAt.Add(24 * time.Hour)
 	r.ApplyBy = &apply
-	r.Progress = ledger.RevertProgress{Restored: 200, Skipped: 1, Pending: 1009}
+	r.Progress = action.RevertProgress{Restored: 200, Skipped: 1, Pending: 1009}
 	return r
 }
 
 func planItems(outcome string, nos ...int) []RevertPlanLine {
 	out := make([]RevertPlanLine, 0, len(nos))
 	for _, n := range nos {
-		out = append(out, RevertPlanLine{RevertLine: ledger.RevertLine{No: n, Outcome: outcome}})
+		out = append(out, RevertPlanLine{RevertLine: action.RevertLine{No: n, Outcome: outcome}})
 	}
 	return out
 }
 
-func planGuidanceOf(t *testing.T, s *Service, r ledger.Revert, items []RevertPlanLine) (string, []toolresult.Link, []toolresult.NextStep) {
+func planGuidanceOf(t *testing.T, s *Service, r action.Revert, items []RevertPlanLine) (string, []toolresult.Link, []toolresult.NextStep) {
 	t.Helper()
 	plan := RevertPlan{Revert: r}
 	plan.Page.Items = items
@@ -118,7 +119,7 @@ func planGuidanceOf(t *testing.T, s *Service, r ledger.Revert, items []RevertPla
 func pendingItem(status string, expires time.Time) PendingItem {
 	n := caseNotice(caseShortLink)
 	return PendingItem{
-		Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: status, ExpiresAt: expires},
+		Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: status, ExpiresAt: expires},
 		Notice:   n,
 	}
 }
@@ -143,7 +144,7 @@ func resultCases() map[string]resultCase {
 			return person, nil, steps
 		}
 	}
-	tooLargeRevert := func(t *testing.T, s *Service) ledger.Revert {
+	tooLargeRevert := func(t *testing.T, s *Service) action.Revert {
 		s.PagesOrigin = ""
 		r := caseRevertWith(t, ledger.RevertPending)
 		r.Lines, r.LinesLeftOut, r.LinesCost = nil, true, 2<<20
@@ -176,7 +177,7 @@ func resultCases() map[string]resultCase {
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				n := tooLargeNotice(t, s, keepLink)
 				item := PendingItem{
-					Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.Now().Add(time.Hour)},
+					Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.Now().Add(time.Hour)},
 					Notice:   n.ApprovalNotice, tooLargeSteps: n.steps,
 				}
 				person, links, steps, err := s.itemGuidance(item)
@@ -269,7 +270,7 @@ func resultCases() map[string]resultCase {
 		resultKey("revert_plan", "APPLYING"): {
 			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomePending, 202, 203, 204))
+				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomePending, 202, 203, 204))
 			},
 		},
 		resultKey("revert_plan", "APPLIED"): {
@@ -428,11 +429,11 @@ func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	_, _, steps := planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomeRestored, 1, 2))
+	_, _, steps := planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomeRestored, 1, 2))
 	require.Equal(t, toolRevertPlan, steps[0].Tool)
 	require.Equal(t, true, steps[0].Arguments["pending"])
 
-	_, _, steps = planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomePending, 5, 6))
+	_, _, steps = planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomePending, 5, 6))
 	require.Equal(t, toolApplyRevertBatch, steps[0].Tool)
 	require.Equal(t, []int{5, 6}, steps[0].Arguments["lines"])
 }

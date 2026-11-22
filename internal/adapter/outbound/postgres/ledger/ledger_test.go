@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -31,7 +32,7 @@ func writes(t *testing.T, a *guardtest.Agent, in guard.Intent, from, n int) {
 	}
 }
 
-func list(t *testing.T, a *guardtest.Agent, p ledger.ChangeListParams) pagination.Page[ledger.Change] {
+func list(t *testing.T, a *guardtest.Agent, p action.ChangeListParams) pagination.Page[action.Change] {
 	t.Helper()
 	page, err := ledger.ListChanges(context.Background(), a.Conn, p)
 	require.NoError(t, err)
@@ -45,7 +46,7 @@ func TestListChangesPaginates(t *testing.T) {
 	writes(t, a, newRun(t, a, "page"), 1, 25)
 
 	seen := make([]uuid.UUID, 0, 25)
-	p := ledger.ChangeListParams{Params: pagination.Params{Limit: 10}}
+	p := action.ChangeListParams{Params: pagination.Params{Limit: 10}}
 	for _, want := range []int{10, 10, 5} {
 		page := list(t, a, p)
 		require.Len(t, page.Items, want)
@@ -60,7 +61,7 @@ func TestListChangesPaginates(t *testing.T) {
 		require.Greater(t, seen[i-1].String(), seen[i].String(), "newest first")
 	}
 
-	asc := list(t, a, ledger.ChangeListParams{Params: pagination.Params{Limit: 200, Sort: "id"}})
+	asc := list(t, a, action.ChangeListParams{Params: pagination.Params{Limit: 200, Sort: "id"}})
 	require.Len(t, asc.Items, 25)
 	require.Equal(t, seen[24], asc.Items[0].ID)
 	first := asc.Items[0]
@@ -70,7 +71,7 @@ func TestListChangesPaginates(t *testing.T) {
 	require.Equal(t, "UPDATE public.leads SET score = score + 1 WHERE id = 1", first.Statement)
 
 	ctx := context.Background()
-	for _, bad := range []ledger.ChangeListParams{
+	for _, bad := range []action.ChangeListParams{
 		{Params: pagination.Params{Limit: 0}},
 		{Params: pagination.Params{Limit: pagination.MaxLimit + 1}},
 		{Params: pagination.Params{Limit: 10, Sort: "-at"}},
@@ -91,15 +92,15 @@ func TestListChangesFiltersRunAndAgent(t *testing.T) {
 	writes(t, a, two, 3, 3)
 	writes(t, b, newRun(t, b, "theirs"), 10, 4)
 
-	page := list(t, a, ledger.ChangeListParams{Params: pagination.Params{Limit: 50}, RunID: two.RunID})
+	page := list(t, a, action.ChangeListParams{Params: pagination.Params{Limit: 50}, RunID: two.RunID})
 	require.Len(t, page.Items, 3)
 	for _, c := range page.Items {
 		require.Equal(t, two.RunID, c.RunID.UUID)
 		require.Equal(t, "two", c.Intent)
 	}
-	require.Len(t, list(t, a, ledger.ChangeListParams{Params: pagination.Params{Limit: 50}}).Items, 5)
-	require.Len(t, list(t, b, ledger.ChangeListParams{Params: pagination.Params{Limit: 50}}).Items, 4)
-	require.Empty(t, list(t, b, ledger.ChangeListParams{Params: pagination.Params{Limit: 50}, RunID: one.RunID}).Items)
+	require.Len(t, list(t, a, action.ChangeListParams{Params: pagination.Params{Limit: 50}}).Items, 5)
+	require.Len(t, list(t, b, action.ChangeListParams{Params: pagination.Params{Limit: 50}}).Items, 4)
+	require.Empty(t, list(t, b, action.ChangeListParams{Params: pagination.Params{Limit: 50}, RunID: one.RunID}).Items)
 }
 
 func TestLedgerRedactsUnreadableTables(t *testing.T) {
@@ -112,7 +113,7 @@ func TestLedgerRedactsUnreadableTables(t *testing.T) {
 	// lead_owner 1 points at lead 101 with ON UPDATE SET NULL; the agent
 	// cannot read lead_owner.
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET id = 9101 WHERE id = 101`))
-	page := list(t, a, ledger.ChangeListParams{Params: pagination.Params{Limit: 10}, RunID: in.RunID})
+	page := list(t, a, action.ChangeListParams{Params: pagination.Params{Limit: 10}, RunID: in.RunID})
 	require.Len(t, page.Items, 1)
 	require.Equal(t, 2, page.Items[0].Rows)
 	require.Equal(t, 1, page.Items[0].CascadedRows)

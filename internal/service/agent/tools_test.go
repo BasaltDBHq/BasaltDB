@@ -45,11 +45,11 @@ func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) 
 	return action.WriteResult{}, nil
 }
 func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }
-func (nopStore) History(context.Context, ledger.ChangeListParams) (History, error) {
+func (nopStore) History(context.Context, action.ChangeListParams) (History, error) {
 	return History{}, nil
 }
 
-func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	return pagination.Page[action.RunSummary]{}, nil
 }
 
@@ -105,7 +105,7 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
 		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": runHistoryArgs{}, "list_pending": listPendingArgs{},
-		"list_runs":      ledger.RunListParams{},
+		"list_runs":      action.RunListParams{},
 		"request_revert": requestRevertArgs{},
 		"preview_revert": previewRevertArgs{},
 		"describe":       describeArgs{},

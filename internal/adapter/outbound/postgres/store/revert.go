@@ -158,12 +158,12 @@ func (s *Store) revertedByRaw(ctx context.Context, scope action.Scope) (uuid.UUI
 }
 
 // findRevertRaw is FindRevert before MapError.
-func (s *Store) findRevertRaw(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (s *Store) findRevertRaw(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	return ledger.FindRevert(ctx, s.db, id)
 }
 
 // revertLinesRaw is RevertLines before MapError.
-func (s *Store) revertLinesRaw(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
+func (s *Store) revertLinesRaw(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	return ledger.ListRevertLinesMarked(ctx, s.db, p)
 }
 

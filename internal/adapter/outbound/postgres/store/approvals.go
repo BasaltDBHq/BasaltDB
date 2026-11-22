@@ -103,17 +103,17 @@ func (s *Store) submitApprovalRaw(ctx context.Context, id uuid.UUID, a passkey.A
 }
 
 // findApprovalRaw is FindApproval before MapError.
-func (s *Store) findApprovalRaw(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+func (s *Store) findApprovalRaw(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	return ledger.FindApproval(ctx, s.db, id)
 }
 
 // listApprovalsRaw is ListApprovals before MapError.
-func (s *Store) listApprovalsRaw(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error) {
+func (s *Store) listApprovalsRaw(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	return ledger.ListOpenApprovals(ctx, s.db, p)
 }
 
 // listOpenRevertsRaw is ListOpenReverts before MapError.
-func (s *Store) listOpenRevertsRaw(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error) {
+func (s *Store) listOpenRevertsRaw(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error) {
 	return ledger.ListOpenReverts(ctx, s.db, p)
 }
 

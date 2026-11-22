@@ -207,7 +207,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.deliverer = plugins.DeliverLinks
 	}
 	if keepsPlugins {
-		env.requests = &pluginRequests{uids: agentUIDs, admitted: pluginCallers(cfg, uint32(os.Geteuid()))}
+		env.requests = newPluginRequests(agentUIDs, pluginCallers(cfg, uint32(os.Geteuid())))
 	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
@@ -314,7 +314,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	wg.Go(func() {
 		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
 		if plugins != nil {
-			plugins.serve(ctx, cfg, configPath, srv.pluginLedgers)
+			plugins.Serve(ctx, cfg, configPath, pluginLedgers(srv.pluginLedgers))
 		}
 	})
 	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{
@@ -335,9 +335,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	if keepsPlugins {
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
-			env.requests.kept.Store(kept)
+			env.requests.SetKept(kept)
 			// Ends a disable could not write are tried again now.
-			wg.Go(func() { kept.endDisabled(ctx) })
+			wg.Go(func() { kept.EndDisabled(ctx) })
 		}
 	}
 	if site != nil {

@@ -5,8 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // Sweep removes from the entry's own directory, <root>/<name>/<instance>/,
@@ -18,7 +16,7 @@ import (
 // unless the path rule holds from "/" down to it. A missing directory is
 // not an error.
 func Sweep(root string, key EntryKey, keep string, mode Mode) error {
-	owner, err := pluginpath.Owner(mode)
+	owner, err := requiredOwner(mode)
 	if err != nil {
 		return err
 	}

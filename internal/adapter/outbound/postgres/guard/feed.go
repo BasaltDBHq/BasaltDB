@@ -5,24 +5,23 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-// The ledger kinds a feed/1 event is made from (CONTRACT.md, Plugins,
-// Notifier messages, Which ledger rows are events).
+// The ledger kinds a feed/1 event is made from (guardmodel.Kind*).
 const (
-	KindChange          = "CHANGE"
-	KindRefused         = "REFUSED"
-	KindApprovalPending = "APPROVAL_PENDING"
-	KindApproved        = "APPROVED"
-	KindRevertPending   = "REVERT_PENDING"
-	KindRevertSigned    = "REVERT_SIGNED"
-	KindReverted        = "REVERTED"
-	KindRevertRejected  = "REVERT_REJECTED"
+	KindChange          = guardmodel.KindChange
+	KindRefused         = guardmodel.KindRefused
+	KindApprovalPending = guardmodel.KindApprovalPending
+	KindApproved        = guardmodel.KindApproved
+	KindRevertPending   = guardmodel.KindRevertPending
+	KindRevertSigned    = guardmodel.KindRevertSigned
+	KindReverted        = guardmodel.KindReverted
+	KindRevertRejected  = guardmodel.KindRevertRejected
 )
 
 // ledgerKind is the ledger's kind column.
@@ -36,26 +35,8 @@ var FeedKinds = []string{
 	KindRevertPending, KindRevertSigned, KindReverted, KindRevertRejected,
 }
 
-// FeedRow is one row of the calling agent's ledger that is a feed/1 event,
-// with only the fields an event may carry, each as the row holds it (detail
-// fields as text, nil when absent). It never holds an intent, a statement,
-// params, a refusal's reason, a key or a value: they are not read.
-type FeedRow struct {
-	Seq          int64
-	At           time.Time
-	Kind         string
-	ChangeID     uuid.NullUUID
-	Op           *string
-	RunID        *string
-	TaskID       *string
-	Table        *string
-	Rows         *string
-	CascadedRows *string
-	ApprovalID   *string
-	ExpiresAt    *string
-	RevertID     *string
-	Code         *string
-}
+// FeedRow is one row of the calling agent's ledger that is a feed/1 event.
+type FeedRow = guardmodel.FeedRow
 
 // ReadFeedRows reads the calling agent's own ledger (agent_ledger shows only
 // session_user's rows) after seq after: at most limit rows that are feed/1

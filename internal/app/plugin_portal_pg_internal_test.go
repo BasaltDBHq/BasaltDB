@@ -1,19 +1,29 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	osexec "os/exec"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
 
 	"github.com/google/uuid"
@@ -32,7 +42,146 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/service/person"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
+
+// portalPerson is the person's OS user id in these tests: any id but the
+// test's own.
+var portalPerson = func() uint32 {
+	self := uint32(os.Getuid())
+	if self == 2001 {
+		return 2002
+	}
+	return 2001
+}()
+
+// portalFixture is a service engine's kept plugins over one agent's guard.
+type portalFixture struct {
+	t     *testing.T
+	base  string
+	cfg   config.Config
+	s     *engine.KeptPlugins
+	store *pluginhost.Store
+	roles map[string]*guardtest.Agent
+	pk    *passkeytest.Authenticator
+}
+
+func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *portalFixture {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "bk")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	base, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	f := &portalFixture{t: t, base: base, roles: map[string]*guardtest.Agent{}}
+	state, configPath := filepath.Join(base, "state"), filepath.Join(base, "config", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o700))
+	d := guardtest.New(t).WithDemo(t)
+	me, err := user.Current()
+	require.NoError(t, err)
+	f.cfg = config.Config{Mode: config.ModeService, StateDir: state, SocketDir: filepath.Join(base, "run")}
+	a := d.NewAgent(t, name, []string{"public.leads"}, nil)
+	f.roles[name] = a
+	pool, err := pgxpool.New(context.Background(), a.URL)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	cc := pool.Config().ConnConfig
+	agents := map[string]engine.KeptAgent{name: engine.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database, cc.User)}
+	f.cfg.Agents = append(f.cfg.Agents, config.Agent{Name: name, OSUser: me.Username})
+	raw, err := json.Marshal(f.cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, raw, 0o600))
+	if set != nil {
+		set(&f.cfg)
+	}
+	f.store, err = pluginhost.New(state, time.Now)
+	require.NoError(t, err)
+	f.s = engine.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler))
+	f.pk, err = passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, f.pk.Credential(), "app"))
+	return f
+}
+
+func (f *portalFixture) entries() []config.Plugin {
+	f.t.Helper()
+	es, err := f.store.Entries(f.cfg)
+	require.NoError(f.t, err)
+	return es
+}
+
+// upload sends files to the kept plugins in parts, as basalt mcp does over
+// the person's own socket, and returns the upload's id.
+func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uuid.UUID, error) {
+	begun, err := f.s.UploadBegin(ctx, portalPerson)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	part := begun.MaxPartBytes
+	for _, file := range files {
+		if len(file.Data) == 0 {
+			if _, err := f.s.UploadPart(ctx, portalPerson, person.PluginUploadPartParams{UploadID: begun.UploadID, Path: file.Path}); err != nil {
+				return uuid.Nil, err
+			}
+			continue
+		}
+		for off := 0; off < len(file.Data); off += part {
+			chunk := file.Data[off:min(off+part, len(file.Data))]
+			if _, err := f.s.UploadPart(ctx, portalPerson, person.PluginUploadPartParams{
+				UploadID: begun.UploadID, Path: file.Path, Offset: int64(off), Data: base64.RawURLEncoding.EncodeToString(chunk),
+			}); err != nil {
+				return uuid.Nil, err
+			}
+		}
+	}
+	return begun.UploadID, nil
+}
+
+// portalSource is a plugin's source files and its executables.
+func portalSource(version string) ([]shim.PluginFile, []string) {
+	exe := []byte("#!/bin/sh\nexit 0\n" + version)
+	manifest := fmt.Sprintf(`{
+  "manifestVersion": 1, "name": "acme-ner", "version": %q, "publisher": "Acme",
+  "protocol": ["basalt-plugin/1"],
+  "hooks": { "wire.detect": { "contract": "detector/1", "roles": ["VALUE"], "entityTypes": ["PERSON_NAME"] } },
+  "endpoint": { "local": { "transport": "jsonrpc-stdio", "command": "bin/acme-ner" } },
+  "files": { "bin/acme-ner": "sha256:%x", "share/model.txt": "sha256:%x" },
+  "network": { "egress": [] }
+}
+`, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
+	return []shim.PluginFile{
+		{Path: pluginhost.ManifestFile, Data: []byte(manifest)},
+		{Path: "bin/acme-ner", Data: exe},
+		{Path: "share/model.txt", Data: []byte("model")},
+	}, []string{"bin/acme-ner"}
+}
+
+// serveAgentSocket serves caller's upload methods of p on a Unix socket under
+// dir, as the engine serves them on the agent's own socket, and returns its
+// path.
+func serveAgentSocket(t *testing.T, dir string, p *pluginRequests, caller string, served func() error) string {
+	t.Helper()
+	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods(caller, served))
+	sock := filepath.Join(dir, caller+".sock")
+	ln, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_ = srv.Serve(context.Background(), bufio.NewReader(conn), conn)
+			}()
+		}
+	}()
+	return sock
+}
 
 // Plugin approval through the portal (CONTRACT.md): on an agent-operated
 // engine on the bot's computer, request_plugin hands over a portal short
@@ -43,12 +192,10 @@ import (
 func TestPluginApprovalThroughThePortal(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	f := newKeptFixture(t, []string{"bot"})
 	// The bot's computer: the engine runs as the agent's own OS user.
-	f.cfg.Mode, f.cfg.OperatedBy = "", mcpcontract.OperatedByAgent
-	f.s.cfg = f.cfg
-	p := &pluginRequests{uids: map[string]uint32{"bot": keptPerson}, admitted: pluginCallers(f.cfg, keptPerson)}
-	p.kept.Store(f.s)
+	f := newPortalFixture(t, "bot", func(c *config.Config) { c.Mode, c.OperatedBy = "", mcpcontract.OperatedByAgent })
+	p := newPluginRequests(map[string]uint32{"bot": portalPerson}, pluginCallers(f.cfg, portalPerson))
+	p.SetKept(f.s)
 
 	stateDir := t.TempDir()
 	keys, err := keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
@@ -63,10 +210,10 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		d.PluginRequests, d.PluginApprovals = p, pg.store
 	})
 	server := mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)
-	files, executables := source("1.0.0")
+	files, executables := portalSource("1.0.0")
 	install := func() (map[string]any, bool) {
 		t.Helper()
-		id, err := f.client.PluginUpload(ctx, files)
+		id, err := f.upload(ctx, files)
 		require.NoError(t, err)
 		meta := map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": executables}}
 		return callWithMeta(ctx, t, server, "request_plugin", map[string]any{"source": "/home/bot/acme-ner"}, meta)

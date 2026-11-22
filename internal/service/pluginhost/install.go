@@ -9,8 +9,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // Modes of installed files. A file the source ships executable, and the
@@ -50,7 +48,7 @@ type Staged struct {
 // has none.
 func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (*Staged, error) {
 	o := optionsOf(opts)
-	owner, err := pluginpath.Owner(mode)
+	owner, err := requiredOwner(mode)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +166,7 @@ func (s *Staged) copyFile(srcRoot *os.Root, src, rel string, command bool) error
 	if err := noSymlinkBelow(srcRoot, src, rel); err != nil {
 		return err
 	}
-	in, err := srcRoot.OpenFile(filepath.FromSlash(rel), noFollowFlags, 0)
+	in, err := srcRoot.OpenFile(filepath.FromSlash(rel), noFollowFlags(), 0)
 	if err != nil {
 		return pathRefusal(srcPath, "cannot be opened, or is a symlink")
 	}
@@ -236,7 +234,7 @@ func readSource(srcRoot *os.Root, src, name string, limit int64) ([]byte, error)
 	if err := noSymlinkBelow(srcRoot, src, name); err != nil {
 		return nil, err
 	}
-	f, err := srcRoot.OpenFile(name, noFollowFlags, 0)
+	f, err := srcRoot.OpenFile(name, noFollowFlags(), 0)
 	if err != nil {
 		return nil, pathRefusal(p, "cannot be opened, or is a symlink")
 	}

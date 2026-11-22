@@ -63,6 +63,7 @@ type KeptPlugins struct {
 	euid       int
 	goos       string
 	log        *slog.Logger
+	ports      Ports
 
 	mu sync.Mutex
 	// changed is called after an entry is written, with the entries as
@@ -516,16 +517,16 @@ func (s *KeptPlugins) groups(ctx context.Context, agents []string) ([]*keptGroup
 func (s *KeptPlugins) checkDatabase(ctx context.Context, g *keptGroup) error {
 	name := g.agents[0]
 	db := s.agents[name].db
-	st, err := guardPort().AgentStatus(ctx, db)
+	st, err := s.ports.Guard.AgentStatus(ctx, db)
 	if err != nil {
 		return unreachable(name, err)
 	}
-	if !holdsPluginApprovals(st) {
+	if !holdsPluginApprovals(st, s.ports.approvalsVersion()) {
 		return person.Refused(reasonGuardOutdated, fmt.Sprintf(
 			"the guard in the database of agent %s is older than schema version %d, which holds plugin approvals; nothing was written. "+
-				"Update it with the link basalt init prints for agent %s", name, approvalsVersion(), name))
+				"Update it with the link basalt init prints for agent %s", name, s.ports.approvalsVersion(), name))
 	}
-	if g.install, err = guardPort().InstallID(ctx, db); err != nil {
+	if g.install, err = s.ports.Guard.InstallID(ctx, db); err != nil {
 		return unreachable(name, err)
 	}
 	return nil
@@ -542,10 +543,10 @@ func unreachable(agentName string, err error) error {
 }
 
 // holdsPluginApprovals reports whether a guard has plugin approvals.
-func holdsPluginApprovals(st guardmodel.Status) bool {
-	return st.Installed >= approvalsVersion() &&
-		!slices.Contains(st.MissingBreaking, approvalsVersion()) &&
-		!slices.Contains(st.MissingNonBreaking, approvalsVersion())
+func holdsPluginApprovals(st guardmodel.Status, version int) bool {
+	return st.Installed >= version &&
+		!slices.Contains(st.MissingBreaking, version) &&
+		!slices.Contains(st.MissingNonBreaking, version)
 }
 
 // writeOwedEnds writes, in parallel and each within 15 seconds, every
@@ -575,7 +576,7 @@ func (s *KeptPlugins) endAll(ctx context.Context, k pluginhost.EntryKey, agents 
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
-			if err := guardPort().EndPluginApproval(ctx, a.db, k.Name, k.Instance); err != nil {
+			if err := s.ports.Guard.EndPluginApproval(ctx, a.db, k.Name, k.Instance); err != nil {
 				s.log.Warn("PLUGIN_DISABLED of an engine-kept plugin not recorded; it is written before the plugin is turned on again",
 					"agent", name, "plugin", k.String(), "err", err)
 				mu.Lock()
@@ -598,9 +599,9 @@ func (s *KeptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p 
 			item := person.PluginOpenedApproval{Database: person.PluginDatabase{Host: g.host, Name: g.database}, Agents: slices.Clone(g.agents)}
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
-			opened, err := guardPort().OpenPluginApproval(ctx, s.agents[g.agents[0]].db, PluginApprovalDetail(p.Key(), v, g.roles), p.ApprovalSettings())
+			opened, err := s.ports.Guard.OpenPluginApproval(ctx, s.agents[g.agents[0]].db, PluginApprovalDetail(p.Key(), v, g.roles), p.ApprovalSettings())
 			if err != nil {
-				item.Refused = keptOpenRefusal(err)
+				item.Refused = keptOpenRefusal(err, s.ports.approvalsVersion())
 			} else {
 				id, at := opened.ID, opened.ExpiresAt.UTC()
 				item.ApprovalID, item.ExpiresAt, item.BindingText, item.SettingsText = &id, &at, opened.BindingText, opened.SettingsText
@@ -613,7 +614,7 @@ func (s *KeptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p 
 }
 
 // keptOpenRefusal maps a failed open_plugin_approval to its reason.
-func keptOpenRefusal(err error) *person.PluginOpenRefusal {
+func keptOpenRefusal(err error, schemaVersion int) *person.PluginOpenRefusal {
 	var pe *pgconn.PgError
 	r := &person.PluginOpenRefusal{Reason: reasonDatabaseUnreachable, Message: "the database does not answer"}
 	switch {
@@ -622,7 +623,7 @@ func keptOpenRefusal(err error) *person.PluginOpenRefusal {
 	case errors.As(err, &pe) && pe.Code == "BS007" && pe.Detail == guardmodel.DetailUnknownAgent:
 		r.Reason, r.Message = reasonUnknownAgent, "a listed agent is not an agent role of this database"
 	case errors.As(err, &pe) && pe.Code == sqlstateUndefinedFunction:
-		r.Reason, r.Message = reasonGuardOutdated, fmt.Sprintf("the guard is older than schema version %d", approvalsVersion())
+		r.Reason, r.Message = reasonGuardOutdated, fmt.Sprintf("the guard is older than schema version %d", schemaVersion)
 	case errors.As(err, &pe):
 		r.Message = pe.Message
 	}
@@ -739,7 +740,7 @@ func (s *KeptPlugins) Approve(ctx context.Context, p person.PluginApproveParams)
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
 			for _, name := range names {
-				r, ok, err := guardPort().ReadPluginApproval(ctx, s.agents[name].db, p.ApprovalID)
+				r, ok, err := s.ports.Guard.ReadPluginApproval(ctx, s.agents[name].db, p.ApprovalID)
 				switch {
 				case err != nil && transientErr(err):
 					results <- found{unanswered: true}
@@ -772,7 +773,7 @@ func (s *KeptPlugins) Approve(ctx context.Context, p person.PluginApproveParams)
 	}
 	ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 	defer cancel()
-	at, err := guardPort().SubmitPluginApproval(ctx, s.agents[opener].db, guardmodel.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.Assertion})
+	at, err := s.ports.Guard.SubmitPluginApproval(ctx, s.agents[opener].db, guardmodel.PluginApprovalResponse{ApprovalID: p.ApprovalID, Assertion: p.Assertion})
 	if err != nil {
 		return person.PluginApproveResult{}, err
 	}
@@ -847,7 +848,7 @@ func (s *KeptPlugins) listed(p config.Plugin, source string, scope person.Scope,
 		}
 	}
 	if err == nil {
-		d := pluginDetail(k, v, mode, s.goos)
+		d := pluginDetail(k, v, mode, s.goos, s.ports.Network)
 		l.Version, l.Signer = v.Manifest.Version, string(v.Signer)
 		if v.Signer == pluginhost.SignerKnown {
 			l.SignerKeyID = v.SignerKeyID
@@ -910,11 +911,11 @@ func newKeptApprovalReader(ctx context.Context, s *KeptPlugins, scope person.Sco
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
-			v, err := guardPort().AgentVersion(ctx, a.db)
-			if err != nil || v < approvalsVersion() {
+			v, err := s.ports.Guard.AgentVersion(ctx, a.db)
+			if err != nil || v < s.ports.approvalsVersion() {
 				return
 			}
-			recs, err := guardPort().ReadPluginApprovals(ctx, a.db)
+			recs, err := s.ports.Guard.ReadPluginApprovals(ctx, a.db)
 			if err != nil {
 				return
 			}
@@ -982,11 +983,11 @@ func OpenKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *plugin
 // OpenKeptPlugins serves the person socket's plugin methods on store, nil
 // when there is none. A change applies to what ep runs before the method
 // answers, and PLUGIN_LIST says what ep serves.
-func OpenKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Store, ep *Plugins, agents map[string]KeptAgent, log *slog.Logger) *KeptPlugins {
+func OpenKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Store, ep *Plugins, agents map[string]KeptAgent, log *slog.Logger, ports Ports) *KeptPlugins {
 	if store == nil {
 		return nil
 	}
-	k := NewKeptPlugins(store, cfg, configPath, agents, log)
+	k := NewKeptPlugins(store, cfg, configPath, agents, log, ports)
 	k.changed, k.serving, k.health = ep.applyNow, ep.servingOf, ep.healthOf
 	return k
 }
@@ -994,9 +995,9 @@ func OpenKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Sto
 // NewKeptPlugins serves the person socket's plugin methods on store, with no
 // engine behind it: a change applies to nothing and PLUGIN_LIST reports
 // nothing served.
-func NewKeptPlugins(store *pluginhost.Store, cfg config.Config, configPath string, agents map[string]KeptAgent, log *slog.Logger) *KeptPlugins {
+func NewKeptPlugins(store *pluginhost.Store, cfg config.Config, configPath string, agents map[string]KeptAgent, log *slog.Logger, ports Ports) *KeptPlugins {
 	return &KeptPlugins{
-		store: store, cfg: cfg, configPath: configPath, agents: agents, euid: engineEUID(), goos: runtimeGOOS(), log: log,
+		store: store, cfg: cfg, configPath: configPath, agents: agents, euid: engineEUID(), goos: runtimeGOOS(), log: log, ports: ports,
 	}
 }
 

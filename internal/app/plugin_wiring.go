@@ -29,17 +29,21 @@ import (
 // the OS units and the MCP methods of an upload.
 
 func init() {
+	// The path rule is the one port the host's free functions read, so it is
+	// installed once for the process; every other port travels in the
+	// options.
 	pluginhost.UsePathRules(pluginpath.Rules{})
-	engine.Use(engine.Ports{
-		Guard:            pluginledger.Ledger{},
-		Network:          osservice.PluginNetwork,
-		InGroup:          osservice.InGroup,
-		SystemdOverrides: osservice.SystemdOverridesOnMachine,
-		NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) engine.UnitHost {
-			return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
-		},
-		Dialer: dial.Dialer{},
-	})
+}
+
+// pluginPorts are the adapters the plugin feature is built on.
+var pluginPorts = engine.Ports{
+	Guard:            pluginledger.Ledger{},
+	Network:          osservice.PluginNetwork,
+	InGroup:          osservice.InGroup,
+	SystemdOverrides: osservice.SystemdOverridesOnMachine,
+	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) engine.UnitHost {
+		return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
+	},
 }
 
 // pluginRunsDirName is the directory under the engine's state directory
@@ -82,7 +86,7 @@ type pluginOptions struct {
 }
 
 func (o pluginOptions) engine() engine.Options {
-	return engine.NewOptions(o.Stderr, o.euid, o.stateDir, o.kept, dial.Dialer{Runs: o.runs})
+	return engine.NewOptions(o.Stderr, o.euid, o.stateDir, o.kept, dial.Dialer{Runs: o.runs}, pluginPorts)
 }
 
 func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *engine.Plugins {
@@ -106,7 +110,7 @@ type pluginLedger struct {
 func pluginLedgers(m map[string]pluginLedger) map[string]engine.AgentLedger {
 	out := make(map[string]engine.AgentLedger, len(m))
 	for name, l := range m {
-		out[name] = engine.NewAgentLedger(l.db, l.admit)
+		out[name] = engine.NewAgentLedger(l.db, l.admit, pluginPorts)
 	}
 	return out
 }
@@ -144,7 +148,7 @@ func openKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Sto
 	for name, a := range agents {
 		kept[name] = engine.NewKeptAgent(a.db, a.host, a.port, a.database, a.role)
 	}
-	return engine.OpenKeptPlugins(cfg, configPath, store, ep, kept, log)
+	return engine.OpenKeptPlugins(cfg, configPath, store, ep, kept, log, pluginPorts)
 }
 
 // pluginRequests serve the agents' request_plugin calls with the

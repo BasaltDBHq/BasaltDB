@@ -52,7 +52,7 @@ type UnitSource struct {
 	Overrides func(unit string) ([]string, error)
 }
 
-func osUnitSource() *UnitSource {
+func osUnitSource(p Ports) *UnitSource {
 	return &UnitSource{
 		ReadUnit: func(path string) ([]byte, error) {
 			f, err := os.Open(path)
@@ -77,7 +77,7 @@ func osUnitSource() *UnitSource {
 			return u.Username, nil
 		},
 		CheckAgents: pluginhost.CheckAgentUsers,
-		InGroup:     usedPorts().InGroup,
+		InGroup:     p.InGroup,
 		LookupGID: func(group string) (int, error) {
 			g, err := user.LookupGroup(group)
 			if err != nil {
@@ -85,7 +85,7 @@ func osUnitSource() *UnitSource {
 			}
 			return strconv.Atoi(g.Gid)
 		},
-		Overrides: usedPorts().SystemdOverrides,
+		Overrides: p.SystemdOverrides,
 	}
 }
 
@@ -204,20 +204,11 @@ func (ep *Plugins) units() *UnitSource {
 	if ep.o.units != nil {
 		return ep.o.units
 	}
-	return osUnitSource()
+	return osUnitSource(ep.o.Ports)
 }
 
-// dialer is the options' dialer, the installed one's when the options name
-// none.
-func (ep *Plugins) dialer() Dialer {
-	if ep.o.Dialer != nil {
-		return ep.o.Dialer
-	}
-	if d := usedPorts().Dialer; d != nil {
-		return d
-	}
-	panic("plugin host: no dialer installed (engine.Use)")
-}
+// dialer is the options' dialer, which New requires.
+func (ep *Plugins) dialer() Dialer { return ep.o.Dialer }
 
 // initServiceUnits reads, once, what a service engine's plugin units must
 // hold: its own OS user (whose group reaches their sockets) and the paths
@@ -232,7 +223,7 @@ func (ep *Plugins) initServiceUnits(cfg config.Config, configPath string) {
 		ep.unitHostErr = errNoEngineUser
 		return
 	}
-	ep.unitHost = usedPorts().NewUnitHost(cfg, ep.o.goos, configPath, name)
+	ep.unitHost = ep.o.Ports.NewUnitHost(cfg, ep.o.goos, configPath, name)
 }
 
 // checkServiceAgents refuses every local entry when an agent's OS user is

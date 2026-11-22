@@ -110,8 +110,10 @@ func serveAgentSocket(t *testing.T, dir string, p *Requests, caller string, serv
 	return sock
 }
 
-// uploadMethods is the engine's upload methods on an agent's socket: what the
-// app builds from the requests (the app's own test runs the real ones).
+// uploadMethods is the plumbing of the engine's upload methods on an agent's
+// socket, for the tests that send files through the shim. It maps only the
+// refusals they look at; the app's own methods, and every code they answer
+// with, are tested in the app (TestUploadMethodsAnswerWithTheirCodes).
 func uploadMethods(p *Requests, caller string, served func() error) map[string]mcp.MethodFunc {
 	if p == nil {
 		return nil
@@ -119,18 +121,13 @@ func uploadMethods(p *Requests, caller string, served func() error) map[string]m
 	fail := func(err error) *mcp.ToolError {
 		var te *mcp.ToolError
 		var r *agent.PluginRefusedError
-		var ae *agent.ArgumentError
 		switch {
 		case errors.As(err, &te):
 			return te
 		case errors.As(err, &r):
 			return &mcp.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
-		case errors.As(err, &ae):
-			return &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: ae.Message}
-		case errors.Is(err, agent.ErrPluginNotFound):
-			return &mcp.ToolError{Code: agent.CodeNotFound, Message: "the upload is unknown, expired or used"}
 		}
-		return &mcp.ToolError{Code: agent.CodeInternal, Message: "the engine could not take the plugin's files"}
+		return &mcp.ToolError{Code: agent.CodeInternal, Message: err.Error()}
 	}
 	return map[string]mcp.MethodFunc{
 		mcp.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {

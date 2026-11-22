@@ -15,9 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -100,7 +103,7 @@ func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*agent.Service, m
 		dp.Plugins = ep
 		dp.Probe = postgres.Probe{Q: pool, Migrations: guard.Migrations()}
 	})
-	return svc, map[string]AgentLedger{"bot": {db: pool, admit: pluginAdmit(svc)}}
+	return svc, map[string]AgentLedger{"bot": {ports: testPorts, db: pool, admit: pluginAdmit(svc)}}
 }
 
 // pluginAdmit is svc's admission for plugin records, as the app builds it.
@@ -114,4 +117,15 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 		}
 		return err
 	}
+}
+
+// testPorts are the real adapters, as the app builds them.
+var testPorts = Ports{
+	Guard:            pluginledger.Ledger{},
+	Network:          osservice.PluginNetwork,
+	InGroup:          osservice.InGroup,
+	SystemdOverrides: osservice.SystemdOverridesOnMachine,
+	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) UnitHost {
+		return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
+	},
 }

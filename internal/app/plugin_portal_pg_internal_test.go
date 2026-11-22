@@ -98,7 +98,7 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	}
 	f.store, err = pluginhost.New(state, time.Now)
 	require.NoError(t, err)
-	f.s = engine.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler))
+	f.s = engine.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
 	f.pk, err = passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, f.pk.Credential(), "app"))

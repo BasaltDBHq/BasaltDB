@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
+// uploadSource writes a plugin folder basalt mcp can read.
 func uploadSource(t *testing.T) string {
 	t.Helper()
 	files, exec := source("1.0.0")
@@ -33,6 +34,8 @@ func uploadSource(t *testing.T) string {
 	return dir
 }
 
+// uploadRequests is a Requests over a real upload store, bot running
+// as keptPerson (admitted) and other as keptOtherUID (not).
 func uploadRequests(t *testing.T) (*Requests, *pluginhost.Store, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "bu")
@@ -41,10 +44,12 @@ func uploadRequests(t *testing.T) (*Requests, *pluginhost.Store, string) {
 	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := &Requests{uids: map[string]uint32{"bot": keptPerson, "other": keptOtherUID}, admitted: []uint32{keptPerson}}
-	p.kept.Store(&KeptPlugins{store: store})
+	p.kept.Store(&KeptPlugins{ports: testPorts, store: store})
 	return p, store, dir
 }
 
+// The upload goes over a second connection to the agent's own socket, and
+// belongs to the agent's OS user.
 func TestUploadGoesOverTheAgentSocket(t *testing.T) {
 	t.Parallel()
 	p, store, dir := uploadRequests(t)
@@ -55,6 +60,8 @@ func TestUploadGoesOverTheAgentSocket(t *testing.T) {
 	require.Equal(t, 1, store.Open())
 }
 
+// An agent the tool refuses is refused the upload before anything is
+// written: it cannot hold one of the engine's open uploads.
 func TestUploadRefusedBeforeAnythingIsWritten(t *testing.T) {
 	t.Parallel()
 	p, store, dir := uploadRequests(t)
@@ -78,6 +85,8 @@ func TestUploadRefusedBeforeAnythingIsWritten(t *testing.T) {
 	}
 }
 
+// An engine that does not serve the methods answers method not found: the
+// call goes on without an upload, and the engine says why.
 func TestUploadToAnEngineWithoutTheMethods(t *testing.T) {
 	t.Parallel()
 	var p *Requests
@@ -90,3 +99,5 @@ func TestUploadToAnEngineWithoutTheMethods(t *testing.T) {
 	_, err = shim.NewPluginUploader(filepath.Join(dir, "gone.sock"))(context.Background(), uploadSource(t))
 	require.ErrorIs(t, err, shim.ErrNoUploads, "no engine on the socket")
 }
+
+// bigSource is a plugin folder whose model file takes several parts.

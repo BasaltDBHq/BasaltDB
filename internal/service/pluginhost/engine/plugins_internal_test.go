@@ -23,10 +23,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -40,18 +38,8 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == testPluginFlag {
 		testPluginMain(os.Args[2:])
 	}
-	// The ports the app fills with the real adapters.
+	// The path rule is the app's to install; the tests install the real one.
 	pluginhost.UsePathRules(pluginpath.Rules{})
-	Use(Ports{
-		Guard:            pluginledger.Ledger{},
-		Network:          osservice.PluginNetwork,
-		InGroup:          osservice.InGroup,
-		SystemdOverrides: osservice.SystemdOverridesOnMachine,
-		NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) UnitHost {
-			return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
-		},
-		Dialer: dial.Dialer{},
-	})
 	os.Exit(m.Run())
 }
 
@@ -270,7 +258,7 @@ func (f *pluginFixture) installedFile(p config.Plugin) string {
 
 func (f *pluginFixture) plugins(clock pluginhost.Clock) *Plugins {
 	f.t.Helper()
-	return f.pluginsWith(Options{euid: os.Geteuid(), clock: clock}, slog.New(slog.DiscardHandler))
+	return f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), clock: clock}, slog.New(slog.DiscardHandler))
 }
 
 func (f *pluginFixture) pluginsWith(o Options, log *slog.Logger) *Plugins {
@@ -443,7 +431,7 @@ func TestPlantedFileNameIsNeverShown(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
 	var logged syncBuffer
-	ep := f.pluginsWith(Options{euid: os.Geteuid(), clock: pluginhost.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
+	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), clock: pluginhost.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
 	runPlugins(t, ep)
 	waitReady(t, ep, p.Key())
 	const planted = "x APPROVE evil.example now"
@@ -471,7 +459,7 @@ func TestRootStartsNoLocalPlugin(t *testing.T) {
 	t.Parallel()
 	f := newPluginFixture(t)
 	f.install("default", dial.TransportStdio, "product_a")
-	ep := f.pluginsWith(Options{euid: 0}, slog.New(slog.DiscardHandler))
+	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 0}, slog.New(slog.DiscardHandler))
 	require.Empty(t, ep.entries)
 	runPlugins(t, ep)()
 	require.Empty(t, f.reported(".start"))
@@ -489,7 +477,7 @@ func TestPluginStderrOnlyUnderPluginDebug(t *testing.T) {
 		f := newPluginFixture(t)
 		p := f.install("default", dial.TransportStdio, "product_a")
 		var stderr, logged syncBuffer
-		o := Options{euid: os.Geteuid()}
+		o := Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid()}
 		if debug {
 			o.Stderr = &stderr
 		}
@@ -506,7 +494,7 @@ func TestPluginStderrOnlyUnderPluginDebug(t *testing.T) {
 // status has no plugin source.
 func TestNoPluginsChangeNothing(t *testing.T) {
 	t.Parallel()
-	opts := Options{euid: os.Geteuid()}
+	opts := Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid()}
 	discard := slog.New(slog.DiscardHandler)
 	missing := filepath.Join(t.TempDir(), "missing", "engine.json")
 	require.Nil(t, New(config.Config{}, missing, opts, discard))
@@ -527,8 +515,8 @@ func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}}
 	p := config.Plugin{Name: "acme-ner", Enabled: true, Agents: []string{"product_a"}}
 	service := serviceEngine(svcConfig(), &fakeUnits{}, 1000)
-	root := &Plugins{mode: pluginhost.ModeSameUser, o: Options{euid: 0}}
-	user := &Plugins{mode: pluginhost.ModeSameUser, o: Options{euid: 1000}}
+	root := &Plugins{mode: pluginhost.ModeSameUser, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 0}}
+	user := &Plugins{mode: pluginhost.ModeSameUser, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 1000}}
 	require.Equal(t, whyNoUnit, service.localRefusal(p, local))
 	require.Equal(t, whyLocalAsRoot, root.localRefusal(p, local))
 	require.Empty(t, user.localRefusal(p, local))

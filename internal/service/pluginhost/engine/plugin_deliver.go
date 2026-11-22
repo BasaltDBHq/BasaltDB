@@ -238,7 +238,7 @@ func (d *pluginDelivery) run(ctx context.Context, ledgers map[string]AgentLedger
 			if !ok || l.db == nil {
 				return uuid.Nil, guardmodel.ErrNoInstall
 			}
-			return guardPort().InstallID(ctx, l.db)
+			return l.ports.Guard.InstallID(ctx, l.db)
 		}
 	}
 	var wg sync.WaitGroup

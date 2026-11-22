@@ -12,7 +12,7 @@ import (
 )
 
 func requestsKept() *KeptPlugins {
-	return &KeptPlugins{agents: map[string]KeptAgent{
+	return &KeptPlugins{ports: testPorts, agents: map[string]KeptAgent{
 		"bot":   {host: "db", port: 5432, database: "app", role: "basalt_agent_bot"},
 		"other": {host: "db", port: 5432, database: "app", role: "basalt_agent_other"},
 		"far":   {host: "db", port: 5432, database: "billing", role: "basalt_agent_far"},

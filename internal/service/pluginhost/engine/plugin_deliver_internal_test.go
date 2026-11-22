@@ -22,6 +22,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -594,7 +595,7 @@ func TestDroppedNoticeShowsInStatus(t *testing.T) {
 	p := f.install("default", "jsonrpc-stdio", "product_a", "client_x")
 	var offset atomic.Int64
 	now := func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
-	ep := f.pluginsWith(Options{euid: os.Geteuid(), now: now}, slog.New(slog.DiscardHandler))
+	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), now: now}, slog.New(slog.DiscardHandler))
 	require.NotNil(t, ep)
 	dropped := func(name string) []agent.PluginProblem {
 		var out []agent.PluginProblem

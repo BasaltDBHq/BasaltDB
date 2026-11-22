@@ -41,6 +41,8 @@ type Options struct {
 	clock pluginhost.Clock
 	// units finds a service engine's plugin units; the machine's when nil.
 	units *UnitSource
+	// Ports are the adapters the host is built on; every one is required.
+	Ports Ports
 	// stateDir is where a same-user engine writes which entries it serves
 	// (pluginServingFile), and where every engine keeps its feed cursors;
 	// "" writes nothing and feeds no plugin.
@@ -176,6 +178,13 @@ func configuredPlugins(cfg config.Config) []config.Plugin {
 // a same-user engine keeps one so it can start an entry approved while it
 // runs (pluginWatch).
 func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *Plugins {
+	// A missing port is a wiring mistake: refused here, not at the first call.
+	if o.Dialer == nil {
+		panic("plugin host: Options has no Dialer")
+	}
+	if p := o.Ports.check(); p != "" {
+		panic("plugin host: Options has no " + p + " port")
+	}
 	if o.goos == "" {
 		o.goos = runtime.GOOS
 	}

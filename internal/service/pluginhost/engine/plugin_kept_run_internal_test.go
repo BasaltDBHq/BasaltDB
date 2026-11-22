@@ -68,7 +68,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*Options)) *kept
 	report := filepath.Join(f.base, "report")
 	require.NoError(t, os.MkdirAll(report, 0o700))
 	units := &fakeUnits{inGroup: inGroup, gid: 980}
-	o := Options{goos: runtime.GOOS, euid: euid, units: units.source(), kept: f.s.store, SocketBase: f.base}
+	o := Options{Ports: testPorts, Dialer: dial.Dialer{}, goos: runtime.GOOS, euid: euid, units: units.source(), kept: f.s.store, SocketBase: f.base}
 	if set != nil {
 		set(&o)
 	}
@@ -76,7 +76,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*Options)) *kept
 	ep := NewFor(cfg, f.configPath, o, log)
 	ledgers := map[string]AgentLedger{}
 	for name, a := range f.agents {
-		ledgers[name] = AgentLedger{db: a.db}
+		ledgers[name] = AgentLedger{ports: testPorts, db: a.db}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	RecordEvents(ctx, cfg, f.configPath, ep, ledgers, log)
@@ -462,7 +462,7 @@ func TestSudoInstalledPluginStillIsolated(t *testing.T) {
 	require.Empty(t, ep.localRefusal(kept, v), "an engine-kept local entry runs as the engine's child")
 
 	cfg.Plugins = append(cfg.Plugins, kept)
-	want := wantedFrom(cfg, func(pluginhost.EntryKey) (pluginhost.Verified, bool) { return v, true }, pluginhost.ModeService, "linux", trustWant{}, ep.isKept)
+	want := wantedFrom(cfg, func(pluginhost.EntryKey) (pluginhost.Verified, bool) { return v, true }, pluginhost.ModeService, "linux", testPorts.Network, trustWant{}, ep.isKept)
 	require.Equal(t, guard.PluginFilesOSUser, want.served["product_a"][p.Key()].Isolation.Files)
 	require.Equal(t, guard.PluginFilesNone, want.served["product_a"][kept.Key()].Isolation.Files)
 	require.True(t, want.approval[kept.Key()])
@@ -486,18 +486,18 @@ func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
 
 	start := f.cfg
 	start.Plugins = []config.Plugin{held}
-	ep := &Plugins{kept: f.s.store, keptKeys: map[pluginhost.EntryKey]bool{}, mode: pluginhost.ModeService, o: Options{goos: "linux"}}
+	ep := &Plugins{kept: f.s.store, keptKeys: map[pluginhost.EntryKey]bool{}, mode: pluginhost.ModeService, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, goos: "linux"}}
 	w := &pluginWatch{ep: ep, start: start, eff: start}
 	notStarted := func(pluginhost.EntryKey) (pluginhost.Verified, bool) { return pluginhost.Verified{}, false }
 	want := w.wanted(notStarted)
 	require.True(t, want.frozen[sudoKey])
-	pass := writeAgentPluginEvents(context.Background(), "product_a", want, AgentLedger{db: db}, slog.New(slog.DiscardHandler))
+	pass := writeAgentPluginEvents(context.Background(), "product_a", want, AgentLedger{ports: testPorts, db: db}, slog.New(slog.DiscardHandler))
 	require.True(t, pass.reached)
 	require.Empty(t, pass.disables, "a pass never ends a config entry's record")
 
 	// Without the hold the same pass would end it: the check is not vacuous.
 	want.frozen = nil
-	pass = writeAgentPluginEvents(context.Background(), "product_a", want, AgentLedger{db: db}, slog.New(slog.DiscardHandler))
+	pass = writeAgentPluginEvents(context.Background(), "product_a", want, AgentLedger{ports: testPorts, db: db}, slog.New(slog.DiscardHandler))
 	require.NotEmpty(t, pass.disables)
 
 	// A pass keeps a config entry's status and replaces a kept entry's.

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -21,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
@@ -68,7 +70,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
-	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler)))
+	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
 	served := func() error { return nil }
 	mine := uint32(os.Getuid())
 	bot := Agent{
@@ -116,4 +118,50 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	_, err = shim.NewPluginUploader(stranger.SocketPath)(context.Background(), src)
 	require.Error(t, err, "another OS user's connection is refused")
 	require.Zero(t, store.Open(), "nothing was written for it")
+}
+
+// The upload methods answer with a code and a reason the agent can act on:
+// PLUGIN_REFUSED for a refusal of the tool or the engine, INVALID_ARGUMENT
+// for a part that is not one, NOT_FOUND for an upload the engine does not
+// hold.
+func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
+	t.Parallel()
+	dir, err := os.MkdirTemp("", "bu")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
+	require.NoError(t, err)
+	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
+	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
+	ok := func() error { return nil }
+	part := func(raw string) json.RawMessage { return json.RawMessage(raw) }
+	ctx := context.Background()
+
+	call := func(caller, method string, served func() error, raw json.RawMessage) *mcp.ToolError {
+		t.Helper()
+		_, err := p.uploadMethods(caller, served)[method](ctx, raw)
+		var te *mcp.ToolError
+		require.ErrorAs(t, err, &te)
+		return te
+	}
+
+	te := call("bot", mcp.MethodPluginUploadBegin, func() error {
+		return &mcp.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
+	}, nil)
+	require.Equal(t, "PLUGIN_REFUSED", te.Code)
+	require.Equal(t, agent.ReasonPluginAgentOperated, te.Reason, "the tool's own refusal is passed on")
+
+	te = call("other", mcp.MethodPluginUploadBegin, ok, nil)
+	require.Equal(t, "PLUGIN_REFUSED", te.Code)
+	require.Equal(t, agent.ReasonPluginAgentNotAllowed, te.Reason, "an OS user the engine does not let change plugins")
+
+	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"x"}`))
+	require.Equal(t, "INVALID_ARGUMENT", te.Code)
+	require.Equal(t, agent.CodeInvalidArgument, te.Code)
+	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":"","extra":1}`))
+	require.Equal(t, "INVALID_ARGUMENT", te.Code, "an unknown field is refused")
+
+	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":""}`))
+	require.Equal(t, "NOT_FOUND", te.Code)
+	require.Equal(t, agent.CodeNotFound, te.Code)
 }

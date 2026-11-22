@@ -100,7 +100,7 @@ func installed(t *testing.T, cfg config.Config, v pluginhost.Verified, uid int) 
 func serviceEngine(cfg config.Config, f *fakeUnits, euid int) *Plugins {
 	ep := &Plugins{
 		host: pluginhost.NewHost(), log: slog.New(slog.DiscardHandler), mode: pluginhost.ModeService,
-		o:     Options{goos: "linux", euid: euid, units: f.source()},
+		o:     Options{Ports: testPorts, Dialer: dial.Dialer{}, goos: "linux", euid: euid, units: f.source()},
 		first: map[pluginhost.EntryKey]pluginhost.Verified{}, notTrusted: map[pluginhost.EntryKey]error{}, refused: map[pluginhost.EntryKey]string{},
 		configured: cfg.Plugins,
 	}

@@ -55,7 +55,7 @@ func (l pluginLedgers) pools(t *testing.T) map[string]AgentLedger {
 		pool, err := pgxpool.New(context.Background(), url)
 		require.NoError(t, err)
 		t.Cleanup(pool.Close)
-		out[name] = AgentLedger{db: pool}
+		out[name] = AgentLedger{ports: testPorts, db: pool}
 	}
 	return out
 }
@@ -164,7 +164,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	cfg, err := config.Load(f.configPath)
 	require.NoError(t, err)
 	log := slog.New(slog.DiscardHandler)
-	ep := NewFor(cfg, f.configPath, Options{SocketBase: f.sockBase, euid: os.Geteuid()}, log)
+	ep := NewFor(cfg, f.configPath, Options{Ports: testPorts, Dialer: dial.Dialer{}, SocketBase: f.sockBase, euid: os.Geteuid()}, log)
 	ledgers := l.pools(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	RecordEvents(ctx, cfg, f.configPath, ep, ledgers, log)
@@ -208,7 +208,7 @@ func TestDisableStopsWithoutRestart(t *testing.T) {
 	signed := f.install("client_x", dial.TransportStdio, "client_x")
 	l := newPluginLedgers(t, f)
 	l.approve(t, l.person(t), approved, "product_a")
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(approved.Key(), "product_a")
 	lp.requireServing(signed.Key(), "client_x")
 	started, _ := f.startedPIDs()
@@ -247,7 +247,7 @@ func TestRemoveStopsWithoutRestart(t *testing.T) {
 	p := f.installApproval(feedHooks, "product_a", "client_x")
 	l := newPluginLedgers(t, f)
 	l.approve(t, l.person(t), p, "product_a", "client_x")
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(p.Key(), "client_x", "product_a")
 
 	f.cfg.Plugins[0].Agents = []string{"product_a"}
@@ -276,7 +276,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	pk := l.person(t)
 	l.approve(t, pk, p, "product_a")
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(p.Key(), "product_a")
 	old, _ := f.startedPIDs()
 
@@ -319,7 +319,7 @@ func TestMismatchWhileRunningStopsPlugin(t *testing.T) {
 	pk := l.person(t)
 	l.approve(t, pk, p, "product_a")
 	l.approve(t, pk, p, "client_x")
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(p.Key(), "client_x", "product_a")
 
 	// A newer approval for product_a, signed, for another version.
@@ -352,7 +352,7 @@ func TestBadConfigWhileRunningChangesNothing(t *testing.T) {
 	p := f.installApproval(feedHooks, "product_a")
 	l := newPluginLedgers(t, f)
 	l.approve(t, l.person(t), p, "product_a")
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(p.Key(), "product_a")
 	started, _ := f.startedPIDs()
 	events := len(l.events(t, "product_a"))
@@ -418,14 +418,14 @@ func TestWatchBacksOffWhenDatabaseDown(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	pk := l.person(t)
 	l.approve(t, pk, p, "product_a", "client_x")
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(p.Key(), "client_x", "product_a")
 
 	clock := time.Now()
 	lp.w.now = func() time.Time { return clock }
 	up := lp.ledgers["product_a"]
 	tries := 0
-	lp.w.ledgers["product_a"] = AgentLedger{db: up.db, admit: func(context.Context) error {
+	lp.w.ledgers["product_a"] = AgentLedger{ports: testPorts, db: up.db, admit: func(context.Context) error {
 		tries++
 		return action.Unavailable(errors.New("connection refused"))
 	}}
@@ -451,7 +451,7 @@ func TestWatchBacksOffWhenDatabaseDown(t *testing.T) {
 
 	// An answer decides: an agent the engine no longer admits (its guard
 	// gone or too old, a setup pending) is withheld, as at start.
-	lp.w.ledgers["product_a"] = AgentLedger{db: up.db, admit: func(context.Context) error {
+	lp.w.ledgers["product_a"] = AgentLedger{ports: testPorts, db: up.db, admit: func(context.Context) error {
 		return fmt.Errorf("%w: the guard is not installed", ErrNotAdmitted)
 	}}
 	lp.w.next = clock
@@ -523,13 +523,13 @@ func TestDisableRecordedOnceDatabaseAnswers(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
 	l := newPluginLedgers(t, f)
-	lp := f.live(l, Options{})
+	lp := f.live(l, Options{Ports: testPorts, Dialer: dial.Dialer{}})
 	lp.requireServing(p.Key(), "product_a")
 	clock := time.Now()
 	lp.w.now = func() time.Time { return clock }
 	up := lp.ledgers["product_a"]
 	down := true
-	lp.w.ledgers["product_a"] = AgentLedger{db: up.db, admit: func(context.Context) error {
+	lp.w.ledgers["product_a"] = AgentLedger{ports: testPorts, db: up.db, admit: func(context.Context) error {
 		if down {
 			return action.Unavailable(errors.New("connection refused"))
 		}

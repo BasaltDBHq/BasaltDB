@@ -524,7 +524,7 @@ func TestServedPerDatabase(t *testing.T) {
 	for _, a := range f.cfg.Agents {
 		d := guardtest.New(t).WithDemo(t)
 		ag := d.NewAgent(t, a.Name, demoTables, nil)
-		dbs[a.Name], l.roles[a.Name], l.dbs[a.Name] = d, ag.Role, AgentLedger{db: ag.Conn}
+		dbs[a.Name], l.roles[a.Name], l.dbs[a.Name] = d, ag.Role, AgentLedger{ports: testPorts, db: ag.Conn}
 	}
 	l.approve(t, registerPerson(t, dbs["product_a"]), p, "product_a")
 
@@ -746,7 +746,7 @@ func TestRequiredEntryDeniedWithoutALedger(t *testing.T) {
 	ep := f.plugins(nil)
 	require.Empty(t, servedTo(ep, p.Key()), "no agent before the check")
 	ledgers := map[string]AgentLedger{
-		"product_a": {db: l.dbs["product_a"].db, admit: func(context.Context) error { return ErrNotAdmitted }},
+		"product_a": {ports: testPorts, db: l.dbs["product_a"].db, admit: func(context.Context) error { return ErrNotAdmitted }},
 	}
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
 	require.Empty(t, servedTo(ep, p.Key()))

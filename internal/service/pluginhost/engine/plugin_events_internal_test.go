@@ -41,7 +41,7 @@ func newPluginLedgers(t *testing.T, f *pluginFixture) pluginLedgers {
 	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]AgentLedger{}, urls: map[string]string{}}
 	for _, a := range f.cfg.Agents {
 		ag := d.NewAgent(t, a.Name, demoTables, nil)
-		l.roles[a.Name], l.dbs[a.Name], l.urls[a.Name] = ag.Role, AgentLedger{db: ag.Conn}, ag.URL
+		l.roles[a.Name], l.dbs[a.Name], l.urls[a.Name] = ag.Role, AgentLedger{ports: testPorts, db: ag.Conn}, ag.URL
 	}
 	return l
 }
@@ -287,7 +287,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a", "client_x")
 	l := newPluginLedgers(t, f)
-	broken := map[string]AgentLedger{"product_a": l.dbs["product_a"], "client_x": {db: l.d.Admin}} // not an agent role: refused
+	broken := map[string]AgentLedger{"product_a": l.dbs["product_a"], "client_x": {ports: testPorts, db: l.d.Admin}} // not an agent role: refused
 	ep := f.plugins(nil)
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, broken, slog.New(slog.DiscardHandler))
 	require.Empty(t, l.events(t, "client_x"))
@@ -348,7 +348,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 		Network:  pluginhost.Network{Egress: []string{"ner.acme.example:443"}},
 	}
 	for _, m := range []pluginhost.Manifest{local, remote} {
-		d := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux")
+		d := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux", testPorts.Network)
 		for _, kind := range []guard.PluginEventKind{guard.PluginEnabled, guard.PluginDisabled, guard.PluginChanged} {
 			b, err := json.Marshal(map[string]any{"kind": kind, "detail": d})
 			require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 			require.NoError(t, sch.Validate(inst), string(b))
 		}
 	}
-	d := pluginDetail(k, pluginhost.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux")
+	d := pluginDetail(k, pluginhost.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux", testPorts.Network)
 	require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	require.Nil(t, d.Isolation, "a remote entry records no local isolation")
 	require.Equal(t, []string{"approval.deliver", "feed.observe"}, d.Hooks)
@@ -391,7 +391,7 @@ func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
 	got := withheldBy(context.Background(), pluginWant{
 		served: map[string]map[pluginhost.EntryKey]guardmodel.PluginDetail{"bot": {k: testDetail(k)}},
 		held:   map[string]map[pluginhost.EntryKey]bool{"bot": {}},
-	}, map[string]AgentLedger{"bot": {db: l.db, admit: func(context.Context) error {
+	}, map[string]AgentLedger{"bot": {ports: testPorts, db: l.db, admit: func(context.Context) error {
 		return fmt.Errorf("%w: a pending install setup", ErrNotAdmitted)
 	}}}, slog.New(slog.DiscardHandler))
 	require.Equal(t, map[string][]unrecordedEntry{"bot": {{key: k, why: whyNotAdmitted}}}, got)
@@ -460,7 +460,7 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 		}
 		require.NotEmpty(t, m.Network.Egress)
 		k := pluginhost.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
-		det := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux")
+		det := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux", testPorts.Network)
 		if det.Isolation != nil {
 			det.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkNotEnforced}
 		}
@@ -497,13 +497,13 @@ func TestPluginIsolationIsWhatRuns(t *testing.T) {
 		{"service macos", pluginhost.ModeService, "darwin", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
 		{"service macos egress", pluginhost.ModeService, "darwin", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
 	} {
-		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: tc.m}, tc.mode, tc.goos)
+		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: tc.m}, tc.mode, tc.goos, testPorts.Network)
 		require.Equal(t, tc.want, d.Isolation, tc.name)
 	}
 	remote := local("ner.acme.example:443")
 	remote.Endpoint = pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example"}}
 	for _, mode := range []pluginhost.Mode{pluginhost.ModeSameUser, pluginhost.ModeService} {
-		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: remote}, mode, "linux")
+		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: remote}, mode, "linux", testPorts.Network)
 		require.Nil(t, d.Isolation)
 		require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	}
@@ -542,7 +542,7 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 	require.NotEqual(t, v.SignerKeyID, w.SignerKeyID)
 
 	ledgers := map[string]AgentLedger{
-		"product_a": {db: refuseTrustKey{Querier: l.dbs["product_a"].db, keyID: v.SignerKeyID}},
+		"product_a": {ports: testPorts, db: refuseTrustKey{Querier: l.dbs["product_a"].db, keyID: v.SignerKeyID}},
 		"client_x":  l.dbs["client_x"],
 	}
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
@@ -651,7 +651,7 @@ func TestTrustRemovedOnVersion3IsOnlyLogged(t *testing.T) {
 	ep := f.plugins(nil)
 	// The guard refuses the kind as version 3's record_plugin_event does.
 	v3 := map[string]AgentLedger{
-		"product_a": {db: refuseKind{Querier: l.dbs["product_a"].db, kind: guard.PluginTrustRemoved}},
+		"product_a": {ports: testPorts, db: refuseKind{Querier: l.dbs["product_a"].db, kind: guard.PluginTrustRemoved}},
 		"client_x":  l.dbs["client_x"],
 	}
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, v3, slog.New(slog.DiscardHandler))

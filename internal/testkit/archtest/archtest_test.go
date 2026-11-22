@@ -191,6 +191,9 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/adapter/outbound/vault/vaulttest/h.go": "package vaulttest\n\n" + imp(m+"internal/service/svc"),
 		"internal/adapter/inbound/in2/i.go":              "package in2\n\n" + imp(m+"internal/adapter/outbound/vault/vaulttest"),
 		"internal/oddball/o.go":                          "package oddball\n",
+		"internal/service/pluginhost/p.go":               "package pluginhost\n\nfunc UsePathRules() {}\n",
+		"internal/adapter/outbound/rules/r.go":           "package rules\n\nimport \"" + m + "internal/service/pluginhost\"\n\nfunc init() { pluginhost.UsePathRules() }\n",
+		"internal/app/p.go":                              "package app\n\nimport \"" + m + "internal/service/pluginhost\"\n\nfunc init() { pluginhost.UsePathRules() }\n",
 		"ARCHITECTURE.md":                                "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n",
 	}
 	root := fixture(t, files)
@@ -212,6 +215,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"pkg/facade":                      {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
 		"pkg/lib2":                        {"imports api/x"},
 		"internal/oddball":                {"package is under internal/ but not in a layer"},
+		"internal/adapter/outbound/rules": {"imports internal/service/pluginhost", "r.go calls pluginhost.UsePathRules (only internal/app installs the path rule)"},
 		"internal/core/granted":           {"r.go imports crypto/rand (core must stay pure)"},
 		"internal/core/leaky": {
 			"l.go calls time.Now (core must stay pure)",

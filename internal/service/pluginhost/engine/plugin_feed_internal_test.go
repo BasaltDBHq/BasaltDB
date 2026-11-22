@@ -1005,7 +1005,7 @@ func TestFeedBacksOffWhenPluginDown(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(dead.Close)
 	before := len(p.received())
-	e.startWith(map[string]AgentLedger{"product_a": {db: dead}})
+	e.startWith(map[string]AgentLedger{"product_a": {ports: testPorts, db: dead}})
 	e.applied("product_a")
 	settle()
 	require.Len(t, p.received(), before)
@@ -1030,7 +1030,7 @@ func TestFeedNeverSlowsAnAgentCall(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(pool.Close)
 			p := e.serve("acme-feed", "product_a")
-			e.startWith(map[string]AgentLedger{"product_a": {db: pool}})
+			e.startWith(map[string]AgentLedger{"product_a": {ports: testPorts, db: pool}})
 			e.started(p.key, "product_a")
 			switch mode {
 			case "dead":

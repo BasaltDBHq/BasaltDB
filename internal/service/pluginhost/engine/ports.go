@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"io"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,7 +21,7 @@ type Querier = pgquerier.Querier
 // Guard is the port to the guard in an agent's database, where the plugin
 // records, the approvals of plugin entries and the feed's events are kept. An
 // outbound adapter implements it (adapter/outbound/postgres/pluginledger)
-// and the app installs it with Use. Every method takes the agent's handle and
+// and the app hands it over in Ports. Every method takes the agent's handle and
 // returns the database's errors unwrapped.
 type Guard interface {
 	// AgentVersion is the newest basalt_meta version installed.
@@ -55,7 +54,9 @@ type Guard interface {
 	ReadSnapshot(ctx context.Context, q Querier, fn func(guardmodel.FeedSnapshot) error) error
 }
 
-// Ports are the adapters the engine's plugin host is built on.
+// Ports are the adapters the engine's plugin host is built on. The app fills
+// them in Options (and in the ledgers and kept plugins it hands over); a
+// missing one is refused when the host is built.
 type Ports struct {
 	Guard Guard
 	// Network is how a local entry's network access is enforced on goos for
@@ -68,8 +69,6 @@ type Ports struct {
 	SystemdOverrides func(unit string) ([]string, error)
 	// NewUnitHost is the plugin units the engine configured by cfg expects.
 	NewUnitHost func(cfg config.Config, goos, configPath, engineUser string) UnitHost
-	// Dialer reaches an entry when Options names none (tests).
-	Dialer Dialer
 }
 
 // UnitHost is the plugin units a service engine expects: the OS service
@@ -99,48 +98,41 @@ type Dialer interface {
 	SocketDir(err error) bool
 }
 
-type portsHolder struct{ p Ports }
-
-var portsInUse atomic.Pointer[portsHolder]
-
-// Use installs the ports. The app calls it before the engine starts.
-func Use(p Ports) { portsInUse.Store(&portsHolder{p: p}) }
-
-func usedPorts() Ports {
-	if h := portsInUse.Load(); h != nil {
-		return h.p
+// check names a port that is missing, "" when none is.
+func (p Ports) check() string {
+	switch {
+	case p.Guard == nil:
+		return "Guard"
+	case p.Network == nil:
+		return "Network"
+	case p.InGroup == nil:
+		return "InGroup"
+	case p.SystemdOverrides == nil:
+		return "SystemdOverrides"
+	case p.NewUnitHost == nil:
+		return "NewUnitHost"
 	}
-	return Ports{}
-}
-
-// ledger is the installed Ledger. A host without one is a wiring mistake,
-// which stops loudly.
-func guardPort() Guard {
-	l := usedPorts().Guard
-	if l == nil {
-		panic("plugin host: no ledger adapter installed (engine.Use)")
-	}
-	return l
+	return ""
 }
 
 // approvalsVersion is the basalt_meta version that holds plugin approvals.
-func approvalsVersion() int { return guardPort().PluginApprovalsVersion() }
+func (p Ports) approvalsVersion() int { return p.Guard.PluginApprovalsVersion() }
 
 // NewOptions are the options of an engine run: stderr receives local plugins'
 // stderr (nil discards it), euid is the engine's user id, stateDir is where
 // it keeps its state ("" feeds no plugin), kept is a service engine's own
 // entries (nil in same-user mode) and dialer reaches the entries.
-func NewOptions(stderr io.Writer, euid int, stateDir string, kept *pluginhost.Store, dialer Dialer) Options {
-	return Options{Stderr: stderr, euid: euid, stateDir: stateDir, kept: kept, Dialer: dialer}
+func NewOptions(stderr io.Writer, euid int, stateDir string, kept *pluginhost.Store, dialer Dialer, ports Ports) Options {
+	return Options{Stderr: stderr, euid: euid, stateDir: stateDir, kept: kept, Dialer: dialer, Ports: ports}
 }
 
 // KeptStore is the engine's own entries' store, nil when it keeps none.
 func (o Options) KeptStore() *pluginhost.Store { return o.kept }
 
 // NewAgentLedger is an agent's ledger for the plugin records: its database
-// handle and the engine's admission of the agent (nil admits it).
-func NewAgentLedger(db Querier, admit func(context.Context) error) AgentLedger {
-	return AgentLedger{db: db, admit: admit}
+// handle, the engine's admission of the agent (nil admits it) and the ports.
+func NewAgentLedger(db Querier, admit func(context.Context) error, ports Ports) AgentLedger {
+	return AgentLedger{db: db, admit: admit, ports: ports}
 }
 
 // NewKeptAgent is an agent as the plugin methods reach it: its database

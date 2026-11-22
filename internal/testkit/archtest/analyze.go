@@ -312,6 +312,9 @@ func analyze(root string, reg *register) (violations, error) {
 				target := strings.TrimPrefix(ip, modulePath+"/")
 				checkLayer(v, rel, layer, target)
 			}
+			if rel != appPkg {
+				checkPathRulesInstall(v, rel, f)
+			}
 			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg || layer == lWeb {
 				checkDecisionCalls(v, rel, f, decisions)
 			}
@@ -364,6 +367,29 @@ func localNames(f *ast.File) map[string]string {
 		m[n] = ip
 	}
 	return m
+}
+
+// pluginhostPkg is the plugin host, whose path rule only the app installs.
+const pluginhostPkg = modulePath + "/internal/service/pluginhost"
+
+// appPkg is the package that wires everything.
+const appPkg = "internal/app"
+
+// checkPathRulesInstall flags a call to pluginhost.UsePathRules outside the
+// app: the path rule is installed once, by the wiring. Test files are not
+// loaded, so they may install it.
+func checkPathRulesInstall(v violations, rel string, f *goFile) {
+	names := localNames(f.ast)
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "UsePathRules" {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == pluginhostPkg {
+			v.add(rel, fmt.Sprintf("%s calls pluginhost.UsePathRules (only internal/app installs the path rule)", f.name))
+		}
+		return true
+	})
 }
 
 func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[string][]string) {

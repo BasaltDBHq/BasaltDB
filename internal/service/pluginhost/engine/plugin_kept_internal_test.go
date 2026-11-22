@@ -1,3 +1,5 @@
+//go:build unix
+
 package engine
 
 import (
@@ -38,6 +40,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
+// Uids of the kept-plugin cases: the person, and an agent's own OS user.
+// Neither is this process's (the server refuses its own uid).
 var keptPerson, keptAgentUID, keptOtherUID = func() (uint32, uint32, uint32) {
 	self := uint32(os.Getuid())
 	var out []uint32
@@ -49,6 +53,9 @@ var keptPerson, keptAgentUID, keptOtherUID = func() (uint32, uint32, uint32) {
 	return out[0], out[1], out[2]
 }()
 
+// keptFixture is a service engine's person socket serving the plugin
+// methods for agents on one real guard, with the uid of each connection
+// set by the test.
 type keptFixture struct {
 	t          *testing.T
 	base       string
@@ -64,6 +71,9 @@ type keptFixture struct {
 	cfg        config.Config
 }
 
+// newKeptFixture serves agents names on one database. The agents in
+// scoped run as keptAgentUID, the others as keptOtherUID, so keptPerson is
+// the person, no agent's osUser.
 func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "bk")
@@ -101,6 +111,7 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 	store, err := pluginhost.New(f.state, time.Now)
 	require.NoError(t, err)
 	f.s = &KeptPlugins{
+		ports: testPorts,
 		store: store, cfg: f.cfg, configPath: f.configPath, agents: f.agents, euid: os.Geteuid(), goos: runtimeGOOS(),
 		log: slog.New(slog.DiscardHandler),
 	}
@@ -113,6 +124,8 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 	return f
 }
 
+// source is an unsigned local plugin acme-ner at version: its files as the
+// command uploads them, and the executables it names.
 func source(version string) ([]shim.PluginFile, []string) {
 	exe := []byte("#!/bin/sh\nexit 0\n" + version)
 	manifest := fmt.Sprintf(`{
@@ -131,6 +144,7 @@ func source(version string) ([]shim.PluginFile, []string) {
 	}, []string{"bin/acme-ner"}
 }
 
+// add uploads source("1.0.0") and opens it for agents.
 func (f *keptFixture) add(instance string, agents ...string) (person.PluginOpenResult, error) {
 	f.t.Helper()
 	files, exec := source("1.0.0")
@@ -141,6 +155,8 @@ func (f *keptFixture) add(instance string, agents ...string) (person.PluginOpenR
 	})
 }
 
+// sign signs approval a with the person's passkey and relays it over the
+// socket.
 func (f *keptFixture) sign(a person.PluginOpenedApproval) {
 	f.t.Helper()
 	require.NotNil(f.t, a.ApprovalID, a.Refused)
@@ -172,6 +188,7 @@ func requirePersonError(t *testing.T, err error, code person.Code, reason string
 	require.Equal(t, reason, pe.Reason, pe.Message)
 }
 
+// snapshot is every path below dir but skip, with its mode and bytes.
 func snapshot(t *testing.T, dir, skip string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -194,6 +211,8 @@ func snapshot(t *testing.T, dir, skip string) map[string]string {
 	return out
 }
 
+// personSchema compiles api/plugin's schemas, for the results the
+// methods return.
 func personSchema(t *testing.T, def string) *jsonschema.Schema {
 	t.Helper()
 	const base = "https://basaltvault.app/schemas/plugin/"
@@ -220,6 +239,10 @@ func requireSchema(t *testing.T, def string, v any) {
 	require.NoError(t, personSchema(t, def).Validate(inst), string(raw))
 }
 
+// TestServiceModeAddOpensApproval: an add over the person socket, run as
+// the person (no sudo), stages and checks the copy inside the engine,
+// keeps the entry with approval REQUIRED, opens one approval per database
+// with files NONE, and writes nothing outside the state directory.
 func TestServiceModeAddOpensApproval(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a", "product_b"})
 	before := snapshot(t, f.base, f.state)
@@ -275,6 +298,8 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	require.Equal(t, "APPROVED", f.state0("product_b", pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}))
 }
 
+// TestFilesOverSocketRespectLimits: every limit of the upload and of the
+// engine's storage, through the person socket.
 func TestFilesOverSocketRespectLimits(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
 	f.s.store.WithLimits(pluginhost.Limits{PartBytes: 16, UploadBytes: 40, StorageBytes: 60, UploadPaths: 3, OpenUploads: 2})
@@ -321,6 +346,7 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	id = begin()
 	tooLarge(part(id, "a", 0, pluginhost.MaxPartBytes+1))
 
+	// A seventeenth entry is refused before anything is written.
 	require.NoError(t, f.s.store.Update(f.cfg, func([]config.Plugin) ([]config.Plugin, error) {
 		es := make([]config.Plugin, 0, config.MaxKeptPlugins)
 		for i := range config.MaxKeptPlugins {
@@ -338,9 +364,14 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
+// TestNameClashWithConfigRefused: a (name, instance) engine.json holds is
+// never an engine-kept entry, also one written to engine.json after the
+// engine started; the methods on it name the sudo command.
 func TestNameClashWithConfigRefused(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
 	held := config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: strings.Repeat("a", 64), Enabled: true, Agents: []string{"product_a"}}
+	// Written to engine.json while the engine runs: the clash is read from
+	// disk.
 	cfg := f.cfg
 	cfg.Plugins = []config.Plugin{held}
 	raw, err := json.Marshal(cfg)
@@ -358,10 +389,12 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.Empty(t, f.entries())
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
 
+	// Another instance is not a clash.
 	res, err := f.add("other", "product_a")
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
 
+	// Each row's health is asked of the engine for that row's own kind.
 	f.s.health = func(_ pluginhost.EntryKey, kept bool) string {
 		if kept {
 			return person.HealthUnavailable
@@ -379,6 +412,9 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.Equal(t, []string{"default:CONFIG:READY", "other:ENGINE:UNAVAILABLE"}, sources)
 }
 
+// TestScopedCallerReachesOnlyItsOwnAgents: a caller scoped to its own
+// agents (an agent asking through request_plugin) can add for those alone,
+// and can neither disable, remove nor widen an entry the person made for more.
 func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	f2 := newKeptFixture(t, []string{"product_a", "product_b"}, "product_a")
 	srvScoped := keptClient{s: f2.s, uid: func() uint32 { return keptAgentUID }, scope: person.Scope{"product_a": true}}
@@ -387,6 +423,8 @@ func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	require.Empty(t, f2.entries(), "nothing was written")
 	require.Equal(t, 1, f2.s.store.Open(), "a request refused for its scope does not use up its upload")
 
+	// The person adds for both; the scoped caller can neither disable nor
+	// remove it, nor enable it, and sees only its own agent.
 	_, err = f2.add("default", "product_a", "product_b")
 	require.NoError(t, err)
 	_, err = srvScoped.PluginDisable(context.Background(), person.PluginEntryParams{Name: "acme-ner", Instance: "default"})
@@ -401,6 +439,7 @@ func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	require.Equal(t, []string{"product_a"}, list.Plugins[0].Agents)
 	require.True(t, f2.entries()[0].Enabled)
 
+	// Its own agent alone: allowed.
 	res, err := f2.addVia(srvScoped, "1.0.0", "mine", "product_a")
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
@@ -414,6 +453,8 @@ func (f *keptFixture) addVia(c keptClient, version, instance string, agents ...s
 	return c.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: instance, Agents: agents, Executables: exec})
 }
 
+// failingDB fails every exec of record_plugin_event while fail is set: a
+// database that does not take an approval's end.
 type failingDB struct {
 	guard.Querier
 	fail *atomic.Bool
@@ -426,6 +467,10 @@ func (d failingDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Co
 	return d.Querier.Exec(ctx, sql, args...)
 }
 
+// TestDisableThenEnableNeedsNewApproval: an engine-kept entry turned off
+// never comes back on its old signed approval: disable ends it; when the
+// end cannot be written at disable, the enable writes it first, and when
+// it still cannot, the enable is refused with nothing written.
 func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	enable := func(f *keptFixture) (person.PluginOpenResult, error) {
@@ -465,6 +510,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		require.NoError(t, err, "the disable answers; its end is owed")
 		require.Equal(t, "APPROVED", f.state0("product_a", k), "the end could not be written")
 
+		// Still failing: the enable is refused, the entry stays off.
 		_, err = enable(f)
 		requirePersonError(t, err, person.CodePluginRefused, reasonDatabaseUnreachable)
 		require.False(t, f.entries()[0].Enabled)
@@ -516,6 +562,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 	})
 }
 
+// TestKeptOpenRefusals: the refusals before anything is written.
 func TestKeptOpenRefusals(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
 	_, err := f.add("default", "nobody")
@@ -523,6 +570,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
 	requirePersonError(t, err, person.CodeNotFound, "")
 
+	// The manifest's name, an unlisted file, a missing one.
 	files, exec := source("1.0.0")
 	id, err := f.client.PluginUpload(context.Background(), files)
 	require.NoError(t, err)
@@ -536,12 +584,14 @@ func TestKeptOpenRefusals(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonBadManifest)
+	// A file whose hash is not the manifest's.
 	bad := slices.Clone(files)
 	bad[2] = shim.PluginFile{Path: "share/model.txt", Data: []byte("other")}
 	id, err = f.client.PluginUpload(context.Background(), bad)
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonNotTrusted)
+	// An engine running as root refuses a local plugin.
 	f.s.euid = 0
 	_, err = f.add("default", "product_a")
 	requirePersonError(t, err, person.CodePluginRefused, reasonEngineIsRoot)
@@ -551,6 +601,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
 	require.Zero(t, f.s.store.Open(), "every upload is gone once PLUGIN_OPEN took it")
 
+	// An empty file is uploaded as one empty part.
 	files, exec = source("1.0.0")
 	empty := fmt.Sprintf(`"files": { "bin/acme-ner": "sha256:%x", "share/model.txt": "sha256:%x", "pkg/__init__.py": "sha256:%x" },`,
 		sha256.Sum256(files[1].Data), sha256.Sum256([]byte("model")), sha256.Sum256(nil))
@@ -565,6 +616,8 @@ func TestKeptOpenRefusals(t *testing.T) {
 	require.FileExists(t, filepath.Join(f.state, "plugins", "acme-ner", "default", f.entries()[0].ManifestSHA256, "pkg", "__init__.py"))
 }
 
+// failingOpen fails every open_plugin_approval while fail is set: an open
+// refused after the entry is written.
 type failingOpen struct {
 	guard.Querier
 	fail *atomic.Bool
@@ -581,6 +634,9 @@ type errRow struct{}
 
 func (errRow) Scan(...any) error { return errors.New("the database does not answer") }
 
+// TestNarrowThenWidenNeedsNewApproval: an agent removed from an enabled
+// entry has its approval ended, and an agent added never comes back on an
+// old signed approval, even when the new approval cannot be opened.
 func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	open := func(f *keptFixture, agents ...string) (person.PluginOpenResult, error) {
@@ -600,6 +656,7 @@ func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 	require.Equal(t, "APPROVED", f.state0("product_a", k))
 	require.Equal(t, "ENDED", f.state0("product_b", k), "the agent removed has its approval ended")
 
+	// Widened again while the open fails after the write.
 	fail := &atomic.Bool{}
 	a := f.agents["product_a"]
 	a.db = failingOpen{Querier: a.db, fail: fail}
@@ -610,6 +667,7 @@ func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 	require.NotNil(t, widened.Approvals[0].Refused)
 	require.Equal(t, "ENDED", f.state0("product_b", k), "the old approval does not come back")
 
+	// A disabled entry is never narrowed: turning it on opens an approval.
 	fail.Store(false)
 	_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 	require.NoError(t, err)
@@ -619,6 +677,8 @@ func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 	require.Len(t, again.Approvals, 1)
 }
 
+// TestRemoveThenAddWiderNeedsNewApproval: an end a remove could not write
+// is written before an agent is added to a new entry of the same name.
 func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	f := newKeptFixture(t, []string{"product_a", "product_b"})
@@ -637,6 +697,8 @@ func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	_, err = f.add("default", "product_a")
 	require.NoError(t, err)
 	require.Equal(t, "APPROVED", f.state0("product_b", k), "a new entry for product_a alone owes product_b nothing yet")
+	// The widen's own open fails after the write: only the end written for
+	// the agent it adds keeps the old approval from serving it.
 	failOpen := &atomic.Bool{}
 	a := f.agents["product_a"]
 	a.db = failingOpen{Querier: a.db, fail: failOpen}

@@ -59,8 +59,9 @@ func approvalReason(code string) bool {
 // start through the agent's own connection, and only when an entry served
 // to it requires approval.
 type agentApprovals struct {
-	db   Querier
-	read bool
+	db    Querier
+	ports Ports
+	read  bool
 	// unavailable is why they could not be read, "" when they were;
 	// transient when the database did not answer.
 	unavailable string
@@ -75,16 +76,16 @@ func (a *agentApprovals) load(ctx context.Context) {
 		return
 	}
 	a.read = true
-	v, err := guardPort().AgentVersion(ctx, a.db)
+	v, err := a.ports.Guard.AgentVersion(ctx, a.db)
 	switch {
 	case err != nil:
 		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
-	case v < approvalsVersion():
+	case v < a.ports.approvalsVersion():
 		a.unavailable = whyApprovalsOldGuard
 		return
 	}
-	recs, err := guardPort().ReadPluginApprovals(ctx, a.db)
+	recs, err := a.ports.Guard.ReadPluginApprovals(ctx, a.db)
 	if err != nil {
 		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
@@ -128,7 +129,7 @@ func (a *agentApprovals) check(ctx context.Context, k pluginhost.EntryKey, d gua
 	if r.ApprovedAt == nil {
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
-	sum, err := guardPort().PluginSettingsSHA256(ctx, a.db, s)
+	sum, err := a.ports.Guard.PluginSettingsSHA256(ctx, a.db, s)
 	if err != nil {
 		return withheldWhy{why: whyApprovalsUnread, transient: transientErr(err)}, false
 	}
@@ -195,7 +196,7 @@ func sameIsolation(a, b *guardmodel.PluginIsolation) bool {
 // approval itself, as its own child, in either mode), so an honest approval
 // always matches what the engine serves.
 func PluginApprovalDetail(k pluginhost.EntryKey, v pluginhost.Verified, roles []string) guardmodel.PluginApprovalDetail {
-	d := withSigner(pluginDetail(k, v, pluginhost.ModeSameUser, runtime.GOOS), v)
+	d := withSigner(pluginDetail(k, v, pluginhost.ModeSameUser, runtime.GOOS, nil), v)
 	return guardmodel.PluginApprovalDetail{
 		Agents: slices.Clone(roles), Name: d.Name, Instance: d.Instance, Version: d.Version,
 		ManifestSHA256: d.ManifestSHA256, Hooks: d.Hooks, Roles: d.Roles, Egress: d.Egress,

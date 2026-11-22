@@ -17,6 +17,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -75,7 +76,7 @@ func TestFeedFollowsTheRunningEngine(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	state := t.TempDir()
 	timing := fastFeed
-	ep := NewFor(cfg, f.configPath, Options{SocketBase: f.sockBase, euid: os.Geteuid(), stateDir: state, feedTiming: &timing}, log)
+	ep := NewFor(cfg, f.configPath, Options{Ports: testPorts, Dialer: dial.Dialer{}, SocketBase: f.sockBase, euid: os.Geteuid(), stateDir: state, feedTiming: &timing}, log)
 	ledgers := l.pools(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	RecordEvents(ctx, cfg, f.configPath, ep, ledgers, log)

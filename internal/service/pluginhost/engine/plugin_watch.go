@@ -487,11 +487,11 @@ func (w *pluginWatch) frozenNow() func(pluginhost.EntryKey) bool {
 func (w *pluginWatch) wanted(copyOf func(pluginhost.EntryKey) (pluginhost.Verified, bool)) pluginWant {
 	ep := w.ep
 	if !w.serviceKept() {
-		return wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, w.trust, ep.isKept)
+		return wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, ep.o.Ports.Network, w.trust, ep.isKept)
 	}
 	eff := w.eff
 	eff.Plugins = slices.DeleteFunc(slices.Clone(w.eff.Plugins), func(p config.Plugin) bool { return !ep.isKept(p.Key()) })
-	want := wantedFrom(eff, copyOf, ep.mode, ep.o.goos, w.trust, ep.isKept)
+	want := wantedFrom(eff, copyOf, ep.mode, ep.o.goos, ep.o.Ports.Network, w.trust, ep.isKept)
 	want.frozen = map[pluginhost.EntryKey]bool{}
 	for _, p := range w.start.Plugins {
 		k := p.Key()

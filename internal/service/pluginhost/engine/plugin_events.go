@@ -62,7 +62,7 @@ var ErrNotAdmitted = errors.New("the agent is served status only")
 
 // unrecordedWhy is why a record could not be written, for the agent's
 // status: never the error's text, which could name a value.
-func unrecordedWhy(err error) string {
+func unrecordedWhy(g Guard, err error) string {
 	var pg *pgconn.PgError
 	if errors.Is(err, ErrNotAdmitted) {
 		return whyNotAdmitted
@@ -76,7 +76,7 @@ func unrecordedWhy(err error) string {
 	case sqlstateUndefinedTable, sqlstateInvalidSchemaName:
 		return whyNoGuard
 	}
-	if guardPort().IsGuardError(err) {
+	if g.IsGuardError(err) {
 		return whyRefused
 	}
 	return whyUnreachable
@@ -110,6 +110,7 @@ func transientErr(err error) bool {
 type AgentLedger struct {
 	db    Querier
 	admit func(context.Context) error
+	ports Ports
 }
 
 // unrecordedEntry is a served entry withheld from one agent, and why: its
@@ -172,7 +173,11 @@ func wantedPlugins(cfg config.Config, ep *Plugins, trust trustWant) pluginWant {
 	if ep != nil {
 		cfg, kept = ep.startCfg, ep.isKept
 	}
-	return wantedFrom(cfg, ep.startedCopy, mode, goos, trust, kept)
+	var network func(string, []string) string
+	if ep != nil {
+		network = ep.o.Ports.Network
+	}
+	return wantedFrom(cfg, ep.startedCopy, mode, goos, network, trust, kept)
 }
 
 // wantedFrom is wantedPlugins with the verified copy of each started entry
@@ -183,7 +188,7 @@ func wantedPlugins(cfg config.Config, ep *Plugins, trust trustWant) pluginWant {
 // kept reports an engine-kept entry (nil: none): it always requires
 // approval and runs as the engine's own child, so it is recorded with
 // same-user isolation (CONTRACT.md, Plugin approval in service mode).
-func wantedFrom(cfg config.Config, copyOf func(pluginhost.EntryKey) (pluginhost.Verified, bool), mode pluginhost.Mode, goos string, trust trustWant, kept func(pluginhost.EntryKey) bool) pluginWant {
+func wantedFrom(cfg config.Config, copyOf func(pluginhost.EntryKey) (pluginhost.Verified, bool), mode pluginhost.Mode, goos string, network func(string, []string) string, trust trustWant, kept func(pluginhost.EntryKey) bool) pluginWant {
 	w := pluginWant{
 		served:   make(map[string]map[pluginhost.EntryKey]guardmodel.PluginDetail, len(cfg.Agents)),
 		held:     make(map[string]map[pluginhost.EntryKey]bool, len(cfg.Agents)),
@@ -217,7 +222,7 @@ func wantedFrom(cfg config.Config, copyOf func(pluginhost.EntryKey) (pluginhost.
 			if isKept {
 				m = pluginhost.ModeSameUser
 			}
-			d := pluginDetail(k, v, m, goos)
+			d := pluginDetail(k, v, m, goos, network)
 			if required {
 				d = withSigner(d, v)
 			}
@@ -244,7 +249,7 @@ func (ep *Plugins) startedCopy(k pluginhost.EntryKey) (pluginhost.Verified, bool
 // pluginDetail is what an agent's ledger records of entry k: the manifest's
 // identity, hooks, egress and endpoint, and for a local entry its
 // isolation. Never a config value, a credential, a path or an agent name.
-func pluginDetail(k pluginhost.EntryKey, v pluginhost.Verified, mode pluginhost.Mode, goos string) guardmodel.PluginDetail {
+func pluginDetail(k pluginhost.EntryKey, v pluginhost.Verified, mode pluginhost.Mode, goos string, network func(string, []string) string) guardmodel.PluginDetail {
 	m := v.Manifest
 	d := guardmodel.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: m.Version,
@@ -263,7 +268,7 @@ func pluginDetail(k pluginhost.EntryKey, v pluginhost.Verified, mode pluginhost.
 		return d
 	}
 	d.Endpoint = guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal}
-	d.Isolation = pluginIsolation(mode, goos, m)
+	d.Isolation = pluginIsolation(mode, goos, network, m)
 	return d
 }
 
@@ -274,11 +279,11 @@ func pluginDetail(k pluginhost.EntryKey, v pluginhost.Verified, mode pluginhost.
 // unit and OS user (the engine starts none otherwise: localRefusal), so
 // files OS_USER, and the network the unit gets, from the same rule the unit
 // is written by (service.PluginNetwork).
-func pluginIsolation(mode pluginhost.Mode, goos string, m pluginhost.Manifest) *guardmodel.PluginIsolation {
+func pluginIsolation(mode pluginhost.Mode, goos string, network func(string, []string) string, m pluginhost.Manifest) *guardmodel.PluginIsolation {
 	if mode != pluginhost.ModeService {
 		return &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced}
 	}
-	return &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesOSUser, Network: usedPorts().Network(goos, m.Network.Egress)}
+	return &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesOSUser, Network: network(goos, m.Network.Egress)}
 }
 
 // writePluginEvents records in each agent's own ledger what changed since
@@ -369,7 +374,7 @@ func writeDisables(ctx context.Context, passes map[string]agentPass, ledgers map
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			for _, d := range p.disables {
-				if err := guardPort().RecordPluginEntryEvent(ctx, ledgers[name].db, guardmodel.PluginDisabled, d); err != nil {
+				if err := ledgers[name].ports.Guard.RecordPluginEntryEvent(ctx, ledgers[name].db, guardmodel.PluginDisabled, d); err != nil {
 					failed.Store(true)
 					log.Warn("PLUGIN_DISABLED not recorded; the next check tries again", "agent", name,
 						"plugin", pluginhost.EntryKey{Name: d.Name, Instance: d.Instance}.String(), "err", err)
@@ -389,7 +394,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	all := func(err error) agentPass {
 		out := make([]unrecordedEntry, 0, len(served))
 		for _, k := range served {
-			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(err), transient: transientErr(err)})
+			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(err)})
 		}
 		return agentPass{withheld: out}
 	}
@@ -405,7 +410,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		}
 	}
 	db := l.db
-	recs, err := guardPort().ReadPluginRecords(ctx, db)
+	recs, err := l.ports.Guard.ReadPluginRecords(ctx, db)
 	if err != nil {
 		if len(served) > 0 {
 			log.Error("plugins not served to this agent: its ledger cannot be read", "err", err)
@@ -416,8 +421,8 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	for _, r := range recs.Entries {
 		last[pluginhost.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
 	}
-	recorded, unrecordedKeys := writeTrustEvents(ctx, db, want.trust, recs.TrustKeys, log)
-	approvals := &agentApprovals{db: db}
+	recorded, unrecordedKeys := writeTrustEvents(ctx, l.ports.Guard, db, want.trust, recs.TrustKeys, log)
+	approvals := &agentApprovals{db: db, ports: l.ports}
 	out := agentPass{reached: true}
 	approvedBy := map[pluginhost.EntryKey]uuid.UUID{}
 	for _, k := range served {
@@ -445,7 +450,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			// ledger never shows an entry served without that key.
 			why := whyTrustUnread
 			if err, ok := unrecordedKeys[s]; ok {
-				why = unrecordedWhy(err)
+				why = unrecordedWhy(l.ports.Guard, err)
 			} else if want.trust.read {
 				// The store was read and no longer holds the key (it changed
 				// since the entry was verified at start).
@@ -455,9 +460,9 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			continue
 		}
 		if kind, ok := entryEvent(last, k, d); ok {
-			if err := guardPort().RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
+			if err := l.ports.Guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
 				log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
-				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(err), transient: transientErr(err)})
+				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(err)})
 				continue
 			}
 		}
@@ -494,7 +499,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 // returns the keys the ledger now records as trusted, and why each added key
 // it could not record failed. A failed PLUGIN_TRUST_REMOVED (a guard older
 // than schema version 4) is logged and tried again at the next start.
-func writeTrustEvents(ctx context.Context, db Querier, trust trustWant, onRecord []string, log *slog.Logger) (map[string]bool, map[string]error) {
+func writeTrustEvents(ctx context.Context, g Guard, db Querier, trust trustWant, onRecord []string, log *slog.Logger) (map[string]bool, map[string]error) {
 	recorded := make(map[string]bool, len(onRecord))
 	for _, id := range onRecord {
 		recorded[id] = true
@@ -507,7 +512,7 @@ func writeTrustEvents(ctx context.Context, db Querier, trust trustWant, onRecord
 		if recorded[id] {
 			continue
 		}
-		if err := guardPort().RecordPluginTrustAdded(ctx, db, id); err != nil {
+		if err := g.RecordPluginTrustAdded(ctx, db, id); err != nil {
 			log.Warn("PLUGIN_TRUST_ADDED not recorded; until a later start writes it, plugins signed by this key are not served to this agent", "keyId", id, "err", err)
 			unrecorded[id] = err
 			continue
@@ -518,7 +523,7 @@ func writeTrustEvents(ctx context.Context, db Querier, trust trustWant, onRecord
 		if slices.Contains(trust.added, id) || pluginhost.BuiltInKey(id) {
 			continue
 		}
-		if err := guardPort().RecordPluginTrustRemoved(ctx, db, id); err != nil {
+		if err := g.RecordPluginTrustRemoved(ctx, db, id); err != nil {
 			log.Warn("PLUGIN_TRUST_REMOVED not recorded; the next start tries again", "keyId", id, "err", err)
 			continue
 		}

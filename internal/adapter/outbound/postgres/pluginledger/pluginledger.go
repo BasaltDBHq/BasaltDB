@@ -1,5 +1,5 @@
 // Package pluginledger is the guard's plugin records, approvals and feed
-// reads as the plugin host's ledger port (engine.Ledger).
+// reads as the plugin host's ledger port (engine.Guard).
 package pluginledger
 
 import (

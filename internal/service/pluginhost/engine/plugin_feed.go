@@ -398,7 +398,7 @@ func (r *feedReader) read(ctx context.Context) (feedRead, error) {
 		}
 	}
 	var out feedRead
-	err := guardPort().ReadSnapshot(ctx, r.ledger.db, func(tx guardmodel.FeedSnapshot) error {
+	err := r.ledger.ports.Guard.ReadSnapshot(ctx, r.ledger.db, func(tx guardmodel.FeedSnapshot) error {
 		var err error
 		out, err = r.readIn(ctx, tx)
 		return err

@@ -34,9 +34,15 @@ type rulesHolder struct{ r PathRules }
 
 var rulesInUse atomic.Pointer[rulesHolder]
 
-// UsePathRules installs the path rule. Until it is called every check
-// refuses: the host never trusts a path without the rule.
-func UsePathRules(r PathRules) { rulesInUse.Store(&rulesHolder{r: r}) }
+// UsePathRules installs the path rule, once: a second call panics, so the
+// rule cannot be swapped while the host runs. Only the app (and tests) may
+// call it; the architecture test enforces that. Until it is called every
+// check refuses: the host never trusts a path without the rule.
+func UsePathRules(r PathRules) {
+	if r == nil || !rulesInUse.CompareAndSwap(nil, &rulesHolder{r: r}) {
+		panic("pluginhost: UsePathRules called twice, or with no rule")
+	}
+}
 
 func rules() PathRules {
 	if h := rulesInUse.Load(); h != nil && h.r != nil {

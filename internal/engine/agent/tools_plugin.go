@@ -288,7 +288,9 @@ func (s *Service) noPortalLink() string {
 	case string(vault.StateKeyError):
 		return "the engine's Vault key file is refused (status shows vault KEY_ERROR)"
 	case string(vault.StateConnected):
-		return "this database revoked this engine's key (status shows engineRecord REVOKED)"
+		// Connected to the Vault, yet the relay hands over no link: the
+		// database revoked this engine's key, or the socket just dropped.
+		return "this engine cannot hand over a portal link now (status shows vault and engineRecord: a database that revoked the engine's key refuses its links)"
 	}
 	return "the engine has no connection to the Vault right now (status shows vault " + state + ")"
 }

@@ -549,7 +549,13 @@ func TestAgentOperatedEngineKeepsPlugins(t *testing.T) {
 	require.False(t, w.serviceKept())
 	require.False(t, w.frozenNow()(plugin.EntryKey{Name: "acme-config", Instance: "default"}), "config entries change while it runs")
 
+	// engine.json that cannot be read holds back hand edits, never a
+	// removal: the plugin stops before request_plugin answers REMOVED.
+	require.NoError(t, config.WriteFile(f.configPath, []byte("{")))
+	r.ep.applyNow(context.Background())
+	require.ElementsMatch(t, []string{"product_a"}, servedTo(r.ep, keptKey), "a bad engine.json changes nothing that runs")
 	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
 	require.NoError(t, err)
+	require.Empty(t, servedTo(r.ep, keptKey), "stopped when the removal answers")
 	r.requireNotRunning()
 }

@@ -13,7 +13,7 @@ import { deflateRawSync } from "node:zlib";
 
 import { b64urlDecode, b64urlEncode, sha256, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { HOOK_LABELS, HOOK_SEES, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
+import { HOOK_LABELS, HOOK_SEES, PLUGIN_SESSION_TEXT, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
@@ -64,7 +64,7 @@ function fakeNode(id, attrs) {
 // fakePage builds the page's elements by id, in document order, and the
 // browser around them: the location, fetch for a short link's engine, and
 // the passkey prompt.
-function fakePage({ href, fetch = null }) {
+function fakePage({ href, fetch = null, WebSocket = undefined }) {
   const nodes = new Map();
   for (const m of PAGE.matchAll(/<[a-z0-9]+(\s[^>]*?\bid="([^"]+)"[^>]*)>/g)) nodes.set(m[2], fakeNode(m[2], m[1]));
   globalThis.document = {
@@ -76,6 +76,7 @@ function fakePage({ href, fetch = null }) {
   globalThis.window = {
     location: { protocol: url.protocol, hostname: url.hostname, port: url.port, pathname: url.pathname, hash: url.hash, origin: url.origin },
     fetch,
+    WebSocket,
   };
   const prompts = [];
   Object.defineProperty(globalThis, "navigator", {
@@ -134,8 +135,8 @@ async function settle(page) {
 
 // open runs the page on a link and waits until it settled: a page that
 // shows a paste box waits for the person, so main is not awaited.
-async function open(href, { now = BEFORE, fetch = null } = {}) {
-  const page = fakePage({ href, fetch });
+async function open(href, { now = BEFORE, fetch = null, WebSocket = undefined } = {}) {
+  const page = fakePage({ href, fetch, WebSocket });
   main({ now });
   await settle(page);
   return page;
@@ -482,4 +483,54 @@ test("on the portal the page says, at every level, that Basalt and the agent sha
     if (limit >= 0) assert.ok(here.where.indexOf(SENTENCES.portalSameUser) < limit, "before the declared limit");
   }
   assert.equal(SENTENCES.fingerprint, "Plugin fingerprint: <fingerprint>", "named apart from the engine's fingerprint");
+});
+
+const PORTAL_ORIGIN = "https://portal.basaltvault.app";
+
+test("on the portal the page shows the shared-user sentence in its slot, and names the plugin's fingerprint apart", async () => {
+  for (const name of ["level-1-known-local", "level-3-unknown-local", "level-2-unknown-remote"]) {
+    const v = vector(name);
+    const page = await open(goLinks.get(name).url.replace(ORIGIN, PORTAL_ORIGIN));
+    assert.equal(page.$("error").hidden, true, page.$("error-text").textContent);
+    const got = shown(page.nodes);
+    const at = got.indexOf(SENTENCES.portalSameUser);
+    assert.ok(at >= 0, name);
+    // Every other sentence is the vector's, in its order.
+    assert.deepEqual(got.filter((s) => s !== SENTENCES.portalSameUser), v.expect.sentences, name);
+    const limit = got.findIndex((s) => s === SENTENCES.noNetwork || s.startsWith("It says it connects only to"));
+    if (limit >= 0) assert.equal(at, limit - 1, `${name}: right before the declared limit`);
+    const firstSees = got.findIndex((s) => Object.values(HOOK_SEES).includes(s));
+    assert.ok(at < firstSees, `${name}: before what it sees`);
+    assert.ok(got.some((s) => s.startsWith("Plugin fingerprint: ")), name);
+    // A long link has no session, so no engine line.
+    assert.equal(page.$("engine").hidden, true);
+  }
+  const local = await open(goLinks.get("level-3-unknown-local").url);
+  assert.ok(!shown(local.nodes).includes(SENTENCES.portalSameUser), "not on the engine's own pages");
+});
+
+test("on the portal a short link opens a session through the Vault, and a Vault it cannot reach shows an error and no approve button", async () => {
+  const sockets = [];
+  class NoVault {
+    constructor(url) {
+      sockets.push(url);
+      throw new Error("the Vault is not reachable");
+    }
+  }
+  const id = vectors[0].binding.match(/"approvalId": "([^"]+)"/)[1];
+  const page = await open(`${PORTAL_ORIGIN}/plugins/${id}#s=AAAAAAAAAAAAAAAAAAAAAA`, { WebSocket: NoVault });
+  assert.equal(sockets.length, 1, "one socket, to the Vault");
+  assert.match(sockets[0], /^wss:\/\/relay\.basaltvault\.app\/v1\/links\//);
+  assertNoApprove(page, PLUGIN_SESSION_TEXT.vault);
+});
+
+test("a session that fails says so in a plugin approval's words, never offering a long link", async () => {
+  const { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } = await import("./relay.js");
+  const { RelayError } = await import("./local.js");
+  const told = (personMessage) => describe(new RelayError("x", "UNAVAILABLE", 0, { personMessage }));
+  assert.equal(told(VAULT_UNREACHABLE), PLUGIN_SESSION_TEXT.vault);
+  assert.equal(told(ENGINE_NOT_CONNECTED), PLUGIN_SESSION_TEXT.offline);
+  assert.equal(told(BUSY), PLUGIN_SESSION_TEXT.busy);
+  assert.equal(told("The secure session to your engine failed (PROTOCOL), and this page used nothing from it."), PLUGIN_SESSION_TEXT.broken);
+  for (const text of Object.values(PLUGIN_SESSION_TEXT)) assert.doesNotMatch(text, /long link|basalt approve|basalt revert/);
 });

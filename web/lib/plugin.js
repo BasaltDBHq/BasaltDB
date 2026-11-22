@@ -29,6 +29,7 @@ import {
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
 import { $, el, fail, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } from "./relay.js";
 import { agentName } from "./scope.js";
 import { pageTransport } from "./transport.js";
 
@@ -211,10 +212,27 @@ const SETTINGS_DIFFER = "The settings in this link do not match what would be ap
 const LINK_GONE = "This plugin approval link is incomplete, was replaced by a newer one, or the approval is gone. Ask the agent for a new link.";
 const PLUGIN_REFUSALS = { [WRONG_KIND]: NOT_A_PLUGIN, [SETTINGS_MISMATCH]: SETTINGS_DIFFER };
 
+// A session through the Vault that cannot be opened, in a plugin
+// approval's words (CONTRACT.md, Close codes): engine offline, broken, or
+// try later. A plugin approval has no long link to offer instead.
+export const PLUGIN_SESSION_TEXT = Object.freeze({
+  vault: "This page cannot reach the BasaltDB Vault (relay.basaltvault.app), which carries it to your engine. Wait a minute and open the link again.",
+  offline: "Your engine is not connected to the BasaltDB Vault right now. Ask the agent to check its status, then open the link again.",
+  busy: "Your engine or the BasaltDB Vault is busy. Wait a minute and open the link again.",
+  broken: "The secure session to your engine failed, and this page used nothing from it. Open the link again. If it keeps failing, ask the agent to check its status.",
+});
+const SESSION_TEXTS = new Map([[VAULT_UNREACHABLE, PLUGIN_SESSION_TEXT.vault], [ENGINE_NOT_CONNECTED, PLUGIN_SESSION_TEXT.offline], [BUSY, PLUGIN_SESSION_TEXT.busy]]);
+
+function sessionText(told) {
+  if (SESSION_TEXTS.has(told)) return SESSION_TEXTS.get(told);
+  if (told.startsWith("The secure session to your engine failed")) return PLUGIN_SESSION_TEXT.broken;
+  return told;
+}
+
 // describe is the sentence the page shows when its link cannot be used.
 export function describe(err) {
   if (err?.name === "PluginLinkError") return PLUGIN_REFUSALS[err.reason] ?? `This plugin approval link cannot be used: ${err.message}`;
-  const told = err?.name === "RelayError" ? personText(err) : "";
+  const told = err?.name === "RelayError" ? sessionText(personText(err)) : "";
   if (told) return told;
   if (err?.name === "RelayError" && err.code === "NOT_FOUND") return LINK_GONE;
   if (err?.name === "RelayError") return `This plugin approval cannot be shown: ${err.message}`;

@@ -81,6 +81,13 @@ type pluginWatch struct {
 	retry bool
 	// serving is PluginServingFile as last written.
 	serving []byte
+	// On a same-user engine that keeps entries of its own: base is the
+	// config entries last read from engine.json (effective), and keptRaw
+	// the entries file last applied. A change of the entries file applies
+	// over base also while engine.json cannot be read: request_plugin's
+	// changes never wait on a hand edit.
+	base    *config.Config
+	keptRaw []byte
 }
 
 type cachedCheck struct {
@@ -148,15 +155,14 @@ func (w *pluginWatch) step(ctx context.Context) {
 	if readErr != nil {
 		raw = nil
 	}
-	if w.ep.kept != nil && raw != nil {
-		// A same-user engine that keeps entries of its own: a change of
-		// the entries file is a change too.
-		kept, err := os.ReadFile(w.ep.kept.EntriesPath())
-		if err != nil {
+	var kept []byte
+	if w.ep.kept != nil {
+		var err error
+		if kept, err = os.ReadFile(w.ep.kept.EntriesPath()); err != nil {
 			kept = []byte(err.Error())
 		}
-		raw = append(append(raw, 0), kept...)
 	}
+	keptChanged := w.ep.kept != nil && (w.keptRaw == nil || !bytes.Equal(kept, w.keptRaw))
 	if w.raw == nil || !bytes.Equal(raw, w.raw) {
 		w.raw = raw
 		cfg, err := config.Load(w.path)
@@ -169,6 +175,7 @@ func (w *pluginWatch) step(ctx context.Context) {
 			}
 			w.bad = true
 			w.ep.setConfigProblem(true)
+			w.applyKept(ctx, kept, keptChanged)
 			return
 		}
 		if w.bad {
@@ -178,14 +185,36 @@ func (w *pluginWatch) step(ctx context.Context) {
 		w.ep.setConfigProblem(false)
 		w.eff = w.effective(cfg)
 		if w.ep.kept != nil {
+			base := w.eff
+			w.base, w.keptRaw = &base, kept
 			w.eff = w.ep.reloadKept(w.eff, w.path)
 		}
 		w.pass(ctx, true)
 		return
 	}
+	if w.bad || keptChanged {
+		w.applyKept(ctx, kept, keptChanged)
+		return
+	}
 	if !w.bad && !w.next.IsZero() && !w.now().Before(w.next) {
 		w.pass(ctx, false)
 	}
+}
+
+// applyKept applies a change of the engine-kept entries while engine.json
+// cannot be read: over the config entries last read (the start's before
+// any), which keep running or stopped as they were.
+func (w *pluginWatch) applyKept(ctx context.Context, kept []byte, changed bool) {
+	if !changed {
+		return
+	}
+	base := w.start
+	if w.base != nil {
+		base = *w.base
+	}
+	w.keptRaw = kept
+	w.eff = w.ep.reloadKept(base, w.path)
+	w.pass(ctx, true)
 }
 
 // serviceKept reports a service engine that keeps entries of its own: only

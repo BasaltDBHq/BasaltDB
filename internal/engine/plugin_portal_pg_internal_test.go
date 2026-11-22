@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/shim"
 	"github.com/basaltdbhq/basaltdb/internal/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/vault/vaulttest"
 )
@@ -57,12 +61,12 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		d.PluginRequests, d.PluginApprovals = p, pg.store
 	})
 	server := mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)
-	files, exec := source("1.0.0")
+	files, executables := source("1.0.0")
 	install := func() (map[string]any, bool) {
 		t.Helper()
 		id, err := f.client.PluginUpload(ctx, files)
 		require.NoError(t, err)
-		meta := map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": exec}}
+		meta := map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": executables}}
 		return callWithMeta(ctx, t, server, "request_plugin", map[string]any{"source": "/home/bot/acme-ner"}, meta)
 	}
 
@@ -72,6 +76,27 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.Equal(t, "PLUGIN_REFUSED", body["code"], "%v", body)
 	require.Equal(t, agent.ReasonPluginNoPortalLink, body["reason"])
 	require.Empty(t, f.entries(), "nothing written without a portal link")
+
+	// basalt mcp uploads on an agent-operated engine; the engine refuses the
+	// upload where the tool would, and the agent gets the tool's own
+	// refusal, its steps included.
+	dir := t.TempDir()
+	for _, file := range files {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, file.Path)), 0o755))
+		mode := os.FileMode(0o644)
+		if slices.Contains(executables, file.Path) {
+			mode = 0o755
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file.Path), file.Data, mode))
+	}
+	uploader := shim.NewPluginUploader(serveAgentSocket(t, f.base, p, "bot", svc.PluginUploadsServed))
+	_, err = uploader(ctx, dir)
+	var te *mcp.ToolError
+	require.ErrorAs(t, err, &te)
+	require.Equal(t, "PLUGIN_REFUSED", te.Code)
+	require.Equal(t, agent.ReasonPluginNoPortalLink, te.Reason)
+	require.Contains(t, te.PersonMessage, "the Vault is off")
+	require.Equal(t, []string{mcp.ActionAskPerson, mcp.ActionCallTool}, []string{te.NextSteps[0].Action, te.NextSteps[1].Action})
 
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)
@@ -93,6 +118,11 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	})
 	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
 	relay.c.Store(ev.client)
+
+	// Once the Vault answers, basalt mcp's upload goes through.
+	up, err := uploader(ctx, dir)
+	require.NoError(t, err)
+	p.DropUpload("bot", uuid.MustParse(up.UploadID))
 
 	body, isError = install()
 	require.False(t, isError, "%v", body)
@@ -148,11 +178,21 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.Equal(t, agent.PluginStatePending, st.State)
 
 	// The person's passkey: Postgres verifies it, and the answer carries no
-	// receipt (there is no receipt kind for a plugin approval).
-	ok := do(http.MethodPost, "/api/v1/plugins/"+idText+"/approve", pluginSigned(t, f.pk, req))
-	require.Equal(t, http.StatusOK, ok.Status, ok.Body)
+	// receipt (there is no receipt kind for a plugin approval). With node,
+	// the portal's own page code reads and posts it through the Vault.
 	var answer map[string]any
-	require.NoError(t, json.Unmarshal([]byte(ok.Body), &answer))
+	if _, err := osexec.LookPath("node"); err == nil {
+		drv := startPageDriver(t, v.URL())
+		drv.ok(t, map[string]any{"op": "open", "secret": secret})
+		read := drv.ok(t, map[string]any{"op": "read", "kind": "plugins", "id": idText, "secret": secret})
+		require.Equal(t, idText, read["id"])
+		signed := drv.ok(t, map[string]any{"op": "sign", "kind": "plugins", "id": idText, "secret": secret, "assertion": sign(t, f.pk, read)})
+		answer = signed["result"].(map[string]any)
+	} else {
+		ok := do(http.MethodPost, "/api/v1/plugins/"+idText+"/approve", pluginSigned(t, f.pk, req))
+		require.Equal(t, http.StatusOK, ok.Status, ok.Body)
+		require.NoError(t, json.Unmarshal([]byte(ok.Body), &answer))
+	}
 	require.Equal(t, "APPROVED", answer["status"])
 	require.Equal(t, idText, answer["approvalId"])
 	require.NotContains(t, answer, "receipt")

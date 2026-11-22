@@ -74,7 +74,7 @@ func TestRequestPluginWithoutAPortalLink(t *testing.T) {
 		string(vault.StateKeyError):    "key file is refused",
 		string(vault.StateConnecting):  "no connection to the Vault right now (status shows vault CONNECTING)",
 		string(vault.StateUnreachable): "no connection to the Vault right now (status shows vault UNREACHABLE)",
-		string(vault.StateConnected):   "revoked this engine's key",
+		string(vault.StateConnected):   "status shows vault and engineRecord",
 	} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()

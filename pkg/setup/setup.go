@@ -373,13 +373,9 @@ func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guar
 	return guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
 }
 
-// agentTables are the tables the agent gets, in name order.
-func agentTables(s *setuprun.Setup) []string {
-	spec := s.Spec()
-	out := append(slices.Clone(spec.Write), spec.Read...)
-	slices.Sort(out)
-	return slices.Compact(out)
-}
+// agentTables are the tables the agent gets, in name order: for an AGENT
+// code that keeps the role's grants, the ones it holds.
+func agentTables(s *setuprun.Setup) []string { return s.AgentTables() }
 
 // newSetup is setuprun.New for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {

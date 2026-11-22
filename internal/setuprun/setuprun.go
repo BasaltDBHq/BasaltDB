@@ -77,6 +77,10 @@ type Setup struct {
 	// asInstall is an AGENT code with a verifier whose role does not
 	// exist: it runs as an INSTALL (Prepare).
 	asInstall bool
+	// kept are, for an AGENT code that keeps the role's grants, the tables
+	// the role holds a privilege on, read in Prepare: the column labels
+	// cover them, and nothing is granted or revoked.
+	kept []string
 	// given: Include was called with the page's ticks (given), which
 	// Prepare checks after the database's refusals; ticks: they apply
 	// (Ticked), and included are those tables.
@@ -235,6 +239,22 @@ func (s *Setup) Spec() guard.AgentSpec {
 	}
 }
 
+// AgentTables are the tables the agent has after the setup, in name order:
+// the code's (or the ticked) tables, or for an AGENT code that keeps the
+// role's grants the ones the role holds (known after Prepare).
+func (s *Setup) AgentTables() []string {
+	if s.P.Agent == nil {
+		return nil
+	}
+	if s.P.KeepsGrants() && !s.asInstall {
+		return slices.Clone(s.kept)
+	}
+	spec := s.Spec()
+	out := append(slices.Clone(spec.Write), spec.Read...)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
 // Tables are, for an agent.allTables code after Prepare, the tables the
 // agent gets and those left out; empty otherwise.
 func (s *Setup) Tables() guard.SchemaTables { return s.tables }
@@ -300,6 +320,11 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	}
 	if err := s.readAllTables(ctx, conn, &p.State); err != nil {
 		return nil, err
+	}
+	if s.P.KeepsGrants() && !s.asInstall {
+		if s.kept, err = guard.GrantedTables(ctx, conn, s.P.Role()); err != nil {
+			return nil, err
+		}
 	}
 	blind, err := guard.AgentBlindTables(ctx, conn, s.Names, s.Spec())
 	if err != nil {
@@ -558,7 +583,7 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guard.Script, er
 }
 
 func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable) (guard.Script, error) {
-	if p.asInstall && p.P.KeepsGrants() && !p.ticks {
+	if p.asInstall && p.Ticked() && !p.ticks {
 		// Never every table in public: only the ones the person ticked.
 		return guard.Script{}, errTicksRequired(p.P.Agent.Name)
 	}

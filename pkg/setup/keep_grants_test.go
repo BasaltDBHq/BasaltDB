@@ -78,12 +78,21 @@ func TestAgentCodeWithNoTablesKeepsTheRoleGrants(t *testing.T) {
 	require.Empty(t, desc.Write)
 	require.Empty(t, desc.Read)
 	require.Nil(t, desc.AllTablesSchemas)
-	checked, err := setup.Check(ctx, d.Admin, request(code))
+	checked, err := setup.Check(ctx, d.Admin, connectPage(code))
 	require.NoError(t, err)
 	require.False(t, checked.RunsAsInstall)
 	require.False(t, checked.Ticked)
 	require.Empty(t, checked.Tables, "nothing is listed: the grants stay")
 	require.Contains(t, checked.Summary, "bot keeps the tables it can use now: this setup grants and revokes none.")
+	labeled := map[string]bool{}
+	for _, c := range checked.Columns {
+		labeled[c.Table] = true
+	}
+	require.Equal(t, map[string]bool{"public.lead_notes": true, "public.leads": true}, labeled, "the labels cover the tables the role holds")
+	_, err = setup.Run(ctx, d.Admin, request(code), setup.RunInput{ColumnClasses: []setup.ColumnClass{
+		{Table: "public.payroll", Column: "id", Label: setup.Label{Class: "PUBLIC"}, Was: setup.Label{Class: "UNCLASSIFIED"}},
+	}})
+	require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, err), "no label on a table the role does not hold")
 	res, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
 	require.NoError(t, err)
 	require.True(t, res.Ran)

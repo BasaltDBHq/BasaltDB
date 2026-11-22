@@ -7,10 +7,14 @@
 // It follows the contract's calls, order of refusals and refusal reasons,
 // the address hand-off and the reach check included (the hold in its
 // PREVIEW and SET_UP phases, the ticket, CollectAddress, ReportReach,
-// HandoffStatus and OfferAddress). It differs from the hosted service in
-// what is not the setup's own logic: it dials the pasted string as given,
-// or through Options.Dial (the hosted service requires verified TLS and
-// refuses private addresses), and it has no limits.
+// HandoffStatus and OfferAddress), RevokePasskey, and the SET_UP hold of a
+// code with a target that ran against a trustRoot. It differs from the
+// hosted service in what is not the setup's own logic: it dials the pasted
+// string as given, or through Options.Dial (the hosted service requires
+// verified TLS and refuses private addresses), it takes a trustRoot the
+// request sends as the one the login was verified against (the hosted
+// service reads the chain and logs in against that certificate alone), and
+// it has no limits.
 package connecttest
 
 import (
@@ -24,6 +28,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -171,12 +176,15 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 
 // CheckSetup connects and reads.
 func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.CheckSetupRequest]) (*connect.Response[connectv1.CheckSetupResponse], error) {
+	req := s.afterOpen(r.Msg.GetCode())
+	if err := trustRootAllowed(req, r.Msg.GetTrustRoot()); err != nil {
+		return nil, err
+	}
 	conn, err := s.dial(ctx, r.Msg.GetDatabaseUrl())
 	if err != nil {
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
-	req := s.afterOpen(r.Msg.GetCode())
 	c, err := setup.Check(ctx, conn, req)
 	var se *setup.Error
 	if errors.As(err, &se) && se.Code == codeUsed {
@@ -204,6 +212,7 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	for _, l := range c.Columns {
 		out.Columns = append(out.Columns, &connectv1.ColumnLabel{Table: l.Table, Column: l.Column, Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion})
 	}
+	out.Passkeys = passkeysOf(c.Passkeys)
 	if c.NothingToDo == nil {
 		out.Notes = notes(c)
 	}
@@ -216,7 +225,7 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	// not refused gets a PREVIEW hold of the pasted database, unless a
 	// SET_UP hold exists.
 	if c.Description.Target == nil && c.Description.Kind == setup.KindInstall {
-		if out.Ticket, err = s.previewFor(c.Description, c.Database); err != nil {
+		if out.Ticket, err = s.previewFor(c.Description, c.Database, r.Msg.GetTrustRoot()); err != nil {
 			return nil, err
 		}
 	}
@@ -245,6 +254,9 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	if err != nil {
 		return nil, refuse(err)
 	}
+	if err := trustRootAllowed(req, m.GetTrustRoot()); err != nil {
+		return nil, err
+	}
 	var reg *registration
 	if m.GetPasskey() != nil {
 		if reg, err = s.verifyPasskey(m, d); err != nil {
@@ -267,7 +279,7 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	if d.Target == nil && errors.As(err, &se) && se.Code == codeUsed {
 		// The same connect-only code again in the database it ran in: the
 		// address is held again, nothing changes.
-		ticket, terr := s.holdFor(d, at)
+		ticket, terr := s.holdFor(d, at, m.GetTrustRoot())
 		if terr != nil {
 			return nil, terr
 		}
@@ -291,6 +303,10 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 		in.Passkey = &reg.verified // registered in the setup's transaction
 	}
 	in.RestPublic = m.GetRestPublic()
+	if tr := m.GetTrustRoot(); tr != "" {
+		// The certificate the login was verified against (here: as sent).
+		in.TrustPin = &setup.TrustPin{Host: at.Host, Port: at.Port, SHA256: tr}
+	}
 	for _, c := range m.GetColumnClasses() {
 		w := c.GetWas()
 		in.ColumnClasses = append(in.ColumnClasses, setup.ColumnClass{
@@ -304,8 +320,17 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 		return nil, refuse(err)
 	}
 	out := &connectv1.RunSetupResponse{Warnings: res.Warnings, NothingToDo: res.NothingToDo != nil}
-	if d.Target == nil {
-		if out.Ticket, err = s.holdFor(d, at); err != nil {
+	switch {
+	case d.Target == nil:
+		if out.Ticket, err = s.holdFor(d, at, m.GetTrustRoot()); err != nil {
+			return nil, err
+		}
+	case m.GetTrustRoot() != "":
+		// A code with a target run against a trustRoot: a SET_UP hold of
+		// its target, so the engine of a certificateChanged setup collects
+		// the certificate. No ticket: the page tells the person to say
+		// "done".
+		if _, err := s.holdFor(d, *d.Target, m.GetTrustRoot()); err != nil {
 			return nil, err
 		}
 	}
@@ -442,7 +467,7 @@ func summary(d setup.Description) *connectv1.SetupSummary {
 		Write: slices.Clone(d.Write), Read: slices.Clone(d.Read), AllTablesSchemas: slices.Clone(d.AllTablesSchemas),
 		StatementTimeoutMs: int32(d.StatementTimeoutMs), GuardFrom: int32(d.GuardFrom), GuardTo: int32(d.GuardTo),
 		ExpiresAt: d.ExpiresAt.UTC().Format(time.RFC3339), Fingerprint: d.Fingerprint,
-		EngineFingerprint: d.EngineFingerprint, Lines: slices.Clone(d.Summary),
+		EngineFingerprint: d.EngineFingerprint, Lines: slices.Clone(d.Summary), TrustPin: d.TrustPin,
 	}
 	if d.Target != nil {
 		out.Target = target(*d.Target)
@@ -595,8 +620,66 @@ func (s *Server) RunRemove(ctx context.Context, r *connect.Request[connectv1.Run
 	return connect.NewResponse(&connectv1.RunRemoveResponse{Database: done.Database, Bots: done.Bots, Lines: done.Lines, Warnings: done.Warnings}), nil
 }
 
-// RevokePasskey is not served yet: the Update check builds it
-// (CONTRACT.md, Update on the connect page).
-func (s *Server) RevokePasskey(context.Context, *connect.Request[connectv1.RevokePasskeyRequest]) (*connect.Response[connectv1.RevokePasskeyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("RevokePasskey is not served yet"))
+// RevokePasskey removes a passkey with the admin connection alone, for a
+// code with a target (CONTRACT.md, Update on the connect page).
+func (s *Server) RevokePasskey(ctx context.Context, r *connect.Request[connectv1.RevokePasskeyRequest]) (*connect.Response[connectv1.RevokePasskeyResponse], error) {
+	m := r.Msg
+	req := s.afterOpen(m.GetCode())
+	if err := trustRootAllowed(req, m.GetTrustRoot()); err != nil {
+		return nil, err
+	}
+	id, err := b64.DecodeString(m.GetCredentialId())
+	if err != nil || len(id) == 0 {
+		return nil, refusal(connect.CodeInvalidArgument, setup.CodeAnswersInvalid, passkeyNotActive)
+	}
+	conn, err := s.dial(ctx, m.GetDatabaseUrl())
+	if err != nil {
+		return nil, refuse(err)
+	}
+	defer conn.Close(ctx)
+	done, err := setup.RevokePasskey(ctx, conn, req, id)
+	var se *setup.Error
+	if errors.As(err, &se) && se.Code == setup.CodeAnswersInvalid {
+		return nil, refusal(connect.CodeInvalidArgument, setup.CodeAnswersInvalid, passkeyNotActive)
+	}
+	if err != nil {
+		return nil, refuse(err)
+	}
+	return connect.NewResponse(&connectv1.RevokePasskeyResponse{Remaining: int32(len(done.Remaining)), Lines: done.Lines}), nil
 }
+
+// passkeyNotActive is RevokePasskey's ANSWERS_INVALID message.
+const passkeyNotActive = "This passkey is not active any more. Nothing changed."
+
+// passkeysOf are passkeys as the page reads them.
+func passkeysOf(keys []setup.ActivePasskey) []*connectv1.ActivePasskey {
+	out := make([]*connectv1.ActivePasskey, 0, len(keys))
+	for _, k := range keys {
+		p := &connectv1.ActivePasskey{CredentialId: b64.EncodeToString(k.CredentialID), Label: k.Label, RpId: k.RPID, CreatedAt: k.CreatedAt.UTC().Format(time.RFC3339)}
+		if k.LastUsedAt != nil {
+			p.LastUsedAt = k.LastUsedAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// trustRootAllowed refuses a trustRoot with a code that may not use one: a
+// code with a target and no engine (TRUST_ROOT_MISMATCH), and a trustRoot
+// that is not 64 lowercase hex digits.
+func trustRootAllowed(req setup.Request, trustRoot string) error {
+	if trustRoot == "" {
+		return nil
+	}
+	d, err := setup.Describe(req)
+	if err != nil {
+		return refuse(err)
+	}
+	if !d.AcceptsTrustRoot() || !sha256Hex.MatchString(trustRoot) {
+		return refusal(connect.CodeFailedPrecondition, "TRUST_ROOT_MISMATCH",
+			"The database presents a different certificate authority than the one you trusted, so the password was not sent. Check it against your provider's console again.")
+	}
+	return nil
+}
+
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)

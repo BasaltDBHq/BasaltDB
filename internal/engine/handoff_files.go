@@ -100,3 +100,16 @@ func (f handoffFiles) WritePin(host string, pin handoff.Pin) error {
 	}
 	return err
 }
+
+// repinFiles are an agent's entry in engine.json and the config's trust.d,
+// for a certificateChanged setup (handoff.RepinFiles).
+type repinFiles struct {
+	handoffFiles
+}
+
+// ReplacePin replaces the engine's own pin for host, as the setup page's
+// TRUST fix does: never a profile that is not that pin.
+func (f repinFiles) ReplacePin(host string, pin handoff.Pin) error {
+	_, err := trustdir.Repin(f.configPath, host, pin.Top, pin.CAOnly)
+	return err
+}

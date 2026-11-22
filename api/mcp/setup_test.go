@@ -210,6 +210,11 @@ func checkSetupRules(p map[string]any) error {
 		return fmt.Errorf("expiresAt more than %v after the setup id's time", setupLifetime)
 	}
 	agent, hasAgent := p["agent"].(map[string]any)
+	if _, ok := p["trustPin"]; ok {
+		if _, hasTarget := p["target"]; !hasTarget {
+			return fmt.Errorf("a code without target carries trustPin")
+		}
+	}
 	if _, ok := p["target"]; !ok {
 		// A connect-only code: the engine collects the address, so it
 		// needs the engine key; an AGENT one is a recovery code.
@@ -257,7 +262,7 @@ func uuidV7Time(id string) time.Time {
 // setupKeyOrder is setup-code.schema.json's key order per object: the
 // order the compact JSON of a code is written in.
 var setupKeyOrder = map[string][]string{
-	"":          {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt", "engine"},
+	"":          {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt", "engine", "trustPin"},
 	"target":    {"host", "port", "database", "supabaseRef"},
 	"guard":     {"from", "to"},
 	"agent":     {"name", "write", "read", "allTables", "verifier", "statementTimeoutMs"},

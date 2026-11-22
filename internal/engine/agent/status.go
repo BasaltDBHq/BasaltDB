@@ -917,7 +917,8 @@ func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
 // (NONE here), as is a recorded one. A connect-only code still waiting for
 // its address stays PENDING through the collect window (the code's life
 // plus the 30-minute hold), so the engine can pick up a setup that
-// finished after expiresAt; the expired code is not reprinted.
+// finished after expiresAt, and so does an AGENT code marked
+// certificateChanged; the expired code is not reprinted.
 func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if p == nil || recorded {
 		return setupView{status: SetupStatus{State: setupNone}}
@@ -934,8 +935,11 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if expired && confirmed {
 		expired = false
 	}
-	// Still collecting during the hold after the code expires.
-	hold := connectOnly && p.AwaitingAddress && err == nil && now.Before(expires.Add(setupcode.CollectWindow-setupcode.Lifetime))
+	// Still collecting during the hold after the code expires: for its
+	// address, or, for a changed certificate, for the certificate the person
+	// trusted on the connect page.
+	collecting := (connectOnly && p.AwaitingAddress) || p.CertificateChanged
+	hold := collecting && err == nil && now.Before(expires.Add(setupcode.CollectWindow-setupcode.Lifetime))
 	if expired && hold {
 		expired = false
 	}

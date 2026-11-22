@@ -11,10 +11,13 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
 // ErrReload is what Serve and Run return after they stopped to serve the
@@ -197,4 +200,28 @@ func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos s
 		return handoff.State{}, err
 	}
 	return pending.StatusCollect(ctx), nil
+}
+
+// newRepin is the collect loop of agent a's certificateChanged setup
+// (CONTRACT.md, A changed certificate on persona 2), or nil when it has
+// none, the engine runs as root or its key is refused: the certificate is
+// collected only with the engine's key and as the engine's user.
+func newRepin(env agentEnv, a config.Agent, cc *pgx.ConnConfig, log *slog.Logger) func(context.Context) {
+	if a.Setup == nil || !a.Setup.CollectsCertificate() || env.asRoot || env.keys == nil {
+		return nil
+	}
+	t := setupcode.ConnTarget(cc.Host, int(cc.Port), cc.Database, cc.User)
+	r, err := handoff.NewRepin(handoff.RepinOptions{
+		Setup: *a.Setup, Credential: handoff.Address{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef},
+		Collector: handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now()),
+		Prober:    env.handoff.Prober,
+		Files:     repinFiles{handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}},
+		Log:       log.With("component", "connect"), Now: env.handoff.now(),
+	})
+	if err != nil {
+		log.Warn("the pending certificateChanged setup cannot be collected for", "err", err)
+		return nil
+	}
+	log.Info("the agent's pinned database presents another certificate; collecting the one trusted on the connect page", "setupId", a.Setup.SetupID)
+	return r.Run
 }

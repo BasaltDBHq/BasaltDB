@@ -1,5 +1,3 @@
-imports internal/adapter/outbound/postgres/guard
-imports internal/adapter/outbound/vault
 pages.go calls approval.DecodePluginResponse
 pages.go calls approval.DecodeResponse
 pages.go calls revert.DecodeResponse

@@ -11,8 +11,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
 // The fixes of the Update check (CONTRACT.md, The Update check): LABELS,
@@ -48,7 +49,7 @@ func (s *Service) fixDatabase(ctx context.Context, tx pgx.Tx, j agentJob) (strin
 	if _, err := s.installedGuard(ctx, tx, database, "to fix"); err != nil {
 		return "", err
 	}
-	if err := agentRole(ctx, tx, j, database); err != nil {
+	if err := s.agentRole(ctx, tx, j, database); err != nil {
 		return "", err
 	}
 	return database, nil
@@ -149,7 +150,7 @@ func (s *Service) runFix(ctx context.Context, j agentJob) (RunAnswer, error) {
 // UNCLASSIFIED, at most 500, with the classifier's suggestion for each,
 // sampled with the admin connection under the install's limits.
 func (s *Service) checkLabels(ctx context.Context, conn *pgx.Conn, tx pgx.Tx, j agentJob, database string) (CheckAnswer, error) {
-	cols, err := guard.AgentUnlabeled(ctx, tx, j.names, j.role)
+	cols, err := s.be.AgentUnlabeled(ctx, tx, j.names, j.role)
 	if err != nil {
 		return CheckAnswer{}, setupFailed("read the unlabeled columns", err)
 	}
@@ -180,15 +181,15 @@ func (s *Service) runLabels(ctx context.Context, tx pgx.Tx, j agentJob, database
 	if err := checkFixClasses(j.req.ColumnClasses); err != nil {
 		return err
 	}
-	changes := make([]guard.LabelChange, len(j.req.ColumnClasses))
+	changes := make([]guardmodel.LabelChange, len(j.req.ColumnClasses))
 	for i, c := range j.req.ColumnClasses {
-		changes[i] = guard.LabelChange{Table: c.Table, Column: c.Column, Label: c.label(), Was: c.Was.guard()}
+		changes[i] = guardmodel.LabelChange{Table: c.Table, Column: c.Column, Label: c.label(), Was: c.Was.guard()}
 	}
-	n, err := guard.WriteAgentLabels(ctx, tx, j.names, j.role, changes, j.req.RestPublic, s.opts.Now())
+	n, err := s.be.WriteAgentLabels(ctx, tx, j.names, j.role, changes, j.req.RestPublic, s.opts.Now())
 	switch {
-	case errors.Is(err, guard.ErrLabelNotListed):
+	case errors.Is(err, guardmodel.ErrLabelNotListed):
 		return refuse(CodeAnswersInvalid, "The column labels are not valid: a column the check does not list. Nothing changed.")
-	case errors.Is(err, guard.ErrClassesChanged):
+	case errors.Is(err, guardmodel.ErrClassesChanged):
 		return refuse(CodeClassesChanged, "A column's label changed since the page showed it (someone classified it, or the column is gone), so nothing changed. Read the labels again.")
 	case err != nil:
 		return setupFailed("write the labels", err)
@@ -213,9 +214,9 @@ func checkFixClasses(classes []ColumnClass) error {
 		switch {
 		case seen[key]:
 			return bad("a column given twice")
-		case !plainTable.MatchString(c.Table) || !plainColumn(c.Column) || !guard.ValidLabel(c.label()):
+		case !plainTable.MatchString(c.Table) || !plainColumn(c.Column) || !guardmodel.ValidLabel(c.label()):
 			return bad("a class, entity type or phone region the page does not set")
-		case c.Was.guard() != (guard.Label{Class: guard.ClassUnclassified}):
+		case c.Was.guard() != (guardmodel.Label{Class: guardmodel.ClassUnclassified}):
 			return bad("a column the check does not list")
 		}
 		seen[key] = true
@@ -243,7 +244,7 @@ func (s *Service) checkPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, da
 // passkeyRoom refuses a database that holds as many active passkeys as
 // the list shows.
 func (s *Service) passkeyRoom(ctx context.Context, tx pgx.Tx) error {
-	keys, err := guard.ActivePasskeys(ctx, tx)
+	keys, err := s.be.ActivePasskeys(ctx, tx)
 	if err != nil {
 		return setupFailed("read the passkeys", err)
 	}
@@ -261,7 +262,7 @@ func (s *Service) runPasskeyAdd(ctx context.Context, tx pgx.Tx, j agentJob, data
 	if err := s.passkeyRoom(ctx, tx); err != nil {
 		return err
 	}
-	if err := guard.RegisterPasskey(ctx, tx, cred, j.req.Passkey.Label); err != nil {
+	if err := s.be.RegisterPasskey(ctx, tx, cred, j.req.Passkey.Label); err != nil {
 		return setupFailed("register the passkey", err)
 	}
 	code, _ := cred.CheckCode()
@@ -279,16 +280,16 @@ func notActive() *RefusalError {
 
 // removedPasskey is the active passkey the request names, with the
 // passkeys of this page's origin that stay.
-func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (guard.RegisteredPasskey, int, error) {
+func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (setuprun.RegisteredPasskey, int, error) {
 	id, err := base64.RawURLEncoding.DecodeString(j.req.CredentialID)
 	if err != nil || len(id) == 0 || len(id) > maxCredentialIDBytes {
-		return guard.RegisteredPasskey{}, 0, notActive()
+		return setuprun.RegisteredPasskey{}, 0, notActive()
 	}
-	keys, err := guard.ActivePasskeys(ctx, tx)
+	keys, err := s.be.ActivePasskeys(ctx, tx)
 	if err != nil {
-		return guard.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
+		return setuprun.RegisteredPasskey{}, 0, setupFailed("read the passkeys", err)
 	}
-	var found *guard.RegisteredPasskey
+	var found *setuprun.RegisteredPasskey
 	others := 0
 	for i, k := range keys {
 		switch {
@@ -299,7 +300,7 @@ func (s *Service) removedPasskey(ctx context.Context, tx pgx.Tx, j agentJob) (gu
 		}
 	}
 	if found == nil {
-		return guard.RegisteredPasskey{}, 0, notActive()
+		return setuprun.RegisteredPasskey{}, 0, notActive()
 	}
 	return *found, others, nil
 }
@@ -323,7 +324,7 @@ func (s *Service) runPasskeyRemove(ctx context.Context, tx pgx.Tx, j agentJob, a
 	if err != nil {
 		return err
 	}
-	if _, err := guard.RevokePasskey(ctx, tx, k.ID, true); err != nil {
+	if _, err := s.be.RevokePasskey(ctx, tx, k.ID, true); err != nil {
 		var pg *pgconn.PgError
 		if errors.As(err, &pg) && pg.Code == sqlstateLedgerInputInvalid {
 			return notActive()

@@ -20,10 +20,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/service/classify"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
@@ -45,7 +43,7 @@ const (
 
 // Fixed values the engine chooses itself for a first install.
 const (
-	defaultPrefix    = guard.DefaultPrefix
+	defaultPrefix    = guardmodel.DefaultPrefix
 	statementTimeout = 30 * time.Second
 	// callLimit bounds one check or run; the transaction rolls back.
 	callLimit = 60 * time.Second
@@ -162,6 +160,9 @@ type RunAnswer struct {
 
 // Options are what the engine gives the setup.
 type Options struct {
+	// Backend is the database, the connection and the trust files the
+	// setup works on. Required.
+	Backend Backend
 	// ConfigPath is the engine.json the run writes; its folder is the
 	// engine's own.
 	ConfigPath string
@@ -170,11 +171,11 @@ type Options struct {
 	Origin string
 	// Now is the clock (time.Now outside tests).
 	Now func() time.Time
-	// Dial opens the admin connection (pgdial.Connect outside tests).
+	// Dial opens the admin connection (Backend.Connect outside tests).
 	Dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
 	// Users looks OS users up (the OS outside tests).
 	Users Users
-	// Prefix is the roles' prefix: guard.DefaultPrefix outside tests,
+	// Prefix is the roles' prefix: guardmodel.DefaultPrefix outside tests,
 	// whose databases share one server's roles.
 	Prefix string
 	// Configured is the setup of an engine that runs with its config: it
@@ -184,7 +185,7 @@ type Options struct {
 	// DialPinned opens the admin connection trusting only the pin's
 	// certificate for its host (pinnedDial outside tests).
 	DialPinned func(ctx context.Context, dsn string, pin *trustprofile.Profile) (*pgx.Conn, error)
-	// Profiles are the trust profiles in force (pgdial.Trust outside tests).
+	// Profiles are the trust profiles in force (Backend.Trust outside tests).
 	Profiles func() *trustprofile.Set
 	// Probe reads the chain a host presents (trustpin.Fetch outside tests).
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
@@ -201,6 +202,7 @@ type Options struct {
 // Service runs the setup jobs. One runs at a time.
 type Service struct {
 	opts Options
+	be   Backend
 	key  []byte
 	rp   passkey.Relying
 	busy sync.Mutex
@@ -213,7 +215,10 @@ func New(o Options) (*Service, error) {
 	if o.ConfigPath == "" || o.Origin == "" {
 		return nil, errors.New("localsetup: config path and origin required")
 	}
-	rp, err := passkey.Local(o.Origin)
+	if o.Backend == nil {
+		return nil, errors.New("localsetup: backend required")
+	}
+	rp, err := setuprun.LocalRelying(o.Origin)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +226,7 @@ func New(o Options) (*Service, error) {
 		o.Now = time.Now
 	}
 	if o.Dial == nil {
-		o.Dial = pgdial.Connect
+		o.Dial = o.Backend.Connect
 	}
 	if o.Users == nil {
 		o.Users = osUsers{}
@@ -230,10 +235,10 @@ func New(o Options) (*Service, error) {
 		o.Prefix = defaultPrefix
 	}
 	if o.DialPinned == nil {
-		o.DialPinned = pinnedDial
+		o.DialPinned = pinnedDial(o.Backend)
 	}
 	if o.Profiles == nil {
-		o.Profiles = pgdial.Trust
+		o.Profiles = o.Backend.Trust
 	}
 	if o.Probe == nil {
 		o.Probe = probe
@@ -248,7 +253,7 @@ func New(o Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{opts: o, key: key, rp: rp}, nil
+	return &Service{opts: o, be: o.Backend, key: key, rp: rp}, nil
 }
 
 // job is a validated request's job: the agent's role and its spec.
@@ -275,7 +280,7 @@ func (s *Service) validate(req Request) (job, error) {
 	if req.Job != JobInstall {
 		return job{}, refuse(CodeInvalidArgument, "This setup link names a job this engine does not run.")
 	}
-	role, err := (guard.Names{Prefix: s.opts.Prefix}).Agent(req.Agent)
+	role, err := (guardmodel.Names{Prefix: s.opts.Prefix}).Agent(req.Agent)
 	if err != nil {
 		return job{}, refuse(CodeInvalidArgument, "This setup link names an agent whose name cannot be used. Ask the agent for a new link.")
 	}
@@ -309,7 +314,7 @@ func (s *Service) validate(req Request) (job, error) {
 			return job{}, err
 		}
 	}
-	if j.host, err = checkAdminURL(req.DatabaseURL, role); err != nil {
+	if j.host, err = s.checkAdminURL(req.DatabaseURL, role); err != nil {
 		return job{}, err
 	}
 	return j, nil
@@ -317,13 +322,15 @@ func (s *Service) validate(req Request) (job, error) {
 
 // adminURLParams is the refusal of a parameter outside the allowlist. It
 // never names the parameter or its value.
-var adminURLParams = "The admin connection string can take only these parameters: " +
-	strings.Join(pgdial.ConnectionKeys(), ", ") + ". Remove the others (a file such as passfile, sslkey, sslcert or sslrootcert is never read from it) and paste it again."
+func (s *Service) adminURLParams() string {
+	return "The admin connection string can take only these parameters: " +
+		strings.Join(s.be.ConnectionKeys(), ", ") + ". Remove the others (a file such as passfile, sslkey, sslcert or sslrootcert is never read from it) and paste it again."
+}
 
 // checkAdminURL accepts a postgres:// or postgresql:// URL with a user and
 // a password that an agent's connection string can be built from. The
 // refusal never names any part of it.
-func checkAdminURL(raw, role string) (string, error) {
+func (s *Service) checkAdminURL(raw, role string) (string, error) {
 	bad := refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 	if !strings.HasPrefix(raw, "postgres://") && !strings.HasPrefix(raw, "postgresql://") {
 		return "", bad
@@ -346,11 +353,11 @@ func checkAdminURL(raw, role string) (string, error) {
 		return "", bad
 	}
 	for key := range query {
-		if !pgdial.ConnectionKey(key) {
-			return "", refuse(CodeConnectionStringRefused, adminURLParams)
+		if !s.be.ConnectionKey(key) {
+			return "", refuse(CodeConnectionStringRefused, s.adminURLParams())
 		}
 	}
-	if _, err := guard.AgentConnString(raw, role, ""); err != nil {
+	if _, err := s.be.AgentConnString(raw, role, ""); err != nil {
 		return "", bad
 	}
 	return strings.ToLower(u.Host), nil
@@ -376,7 +383,7 @@ func sameTarget(a, b string) bool {
 func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) {
 	conn, err := s.opts.Dial(ctx, admin)
 	if err != nil {
-		return nil, connectError(ctx, err)
+		return nil, s.connectError(ctx, err)
 	}
 	return conn, nil
 }
@@ -393,8 +400,8 @@ func (s *Service) open(ctx context.Context, req Request) (*pgx.Conn, *pin, error
 
 // planned is what plan found and built.
 type planned struct {
-	seeded demo.Plan
-	script guard.Script
+	seeded setuprun.DemoPlan
+	script setuprun.Script
 	keep   bool
 	// rekey: the role exists, an agent of this guard's group, with no
 	// password this engine holds (an earlier setup this engine forgot):
@@ -419,18 +426,18 @@ type planned struct {
 // commits (run).
 func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database string, answers []Answer) (planned, error) {
 	prefix := s.opts.Prefix
-	names := guard.Names{Prefix: prefix}
-	installed, err := guard.InstalledPrefix(ctx, tx)
+	names := guardmodel.Names{Prefix: prefix}
+	installed, err := s.be.InstalledPrefix(ctx, tx)
 	if err != nil {
 		return planned{}, setupFailed("read the guard prefix", err)
 	}
 	if installed != "" && installed != prefix {
 		return planned{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
 	}
-	if err := usable(ctx, tx); err != nil {
+	if err := s.usable(ctx, tx); err != nil {
 		return planned{}, err
 	}
-	exists, err := guard.AgentRoleExists(ctx, tx, names, j.req.Agent)
+	exists, err := s.be.AgentRoleExists(ctx, tx, names, j.req.Agent)
 	if err != nil {
 		return planned{}, setupFailed("read the agent role", err)
 	}
@@ -457,13 +464,13 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
 		}
 	}
-	spec := guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep && !p.rekey, StatementTimeout: statementTimeout}
-	opts := guard.InitOptions{Names: names}
+	spec := guardmodel.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep && !p.rekey, StatementTimeout: statementTimeout}
+	opts := setuprun.InitOptions{Names: names}
 	if j.req.Demo {
-		if p.seeded, err = demo.Seed(ctx, tx); err != nil {
+		if p.seeded, err = s.be.SeedDemo(ctx, tx); err != nil {
 			return planned{}, setupFailed("seed the sample data", err)
 		}
-		spec.Write = demo.Tables
+		spec.Write = s.be.DemoTables()
 	} else {
 		if p.list, err = readListing(ctx, tx, j.schemas); err != nil {
 			return planned{}, setupFailed("read the tables", err)
@@ -475,7 +482,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			return planned{}, err
 		}
 		spec.Write, spec.Read = p.write, p.read
-		blind, err := guard.AgentBlindTables(ctx, tx, names, spec)
+		blind, err := s.be.AgentBlindTables(ctx, tx, names, spec)
 		if err != nil {
 			return planned{}, setupFailed("read the tables without row-level security", err)
 		}
@@ -489,7 +496,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		p.answers = answers
 	}
 	opts.Agent = spec
-	if p.script, err = guard.PlanInit(ctx, tx, opts); err != nil {
+	if p.script, err = s.be.PlanInit(ctx, tx, opts); err != nil {
 		return planned{}, setupFailed("plan the install", err)
 	}
 	return p, nil
@@ -507,7 +514,7 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 	}
 	// Only a string that makes the driver read no file: the folder is the
 	// engine's own, but a credential is never trusted to be well-formed.
-	if pgdial.CheckForeignDSN(dsn) != nil {
+	if s.be.CheckForeignDSN(dsn) != nil {
 		return false
 	}
 	// The kept credential must be for the server and database this run's
@@ -530,11 +537,11 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 
 // usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
 // install over or update, before anything is planned or changed.
-func usable(ctx context.Context, tx pgx.Tx) error {
-	err := guard.CheckUsable(ctx, tx)
+func (s *Service) usable(ctx context.Context, tx pgx.Tx) error {
+	err := s.be.CheckUsable(ctx, tx)
 	switch {
-	case errors.Is(err, guard.ErrUnusableInstall):
-		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+guard.RemoveOldInstallDoc+" says how. Nothing changed.")
+	case s.be.UnusableInstall(err):
+		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+s.be.RemoveOldInstallDoc()+" says how. Nothing changed.")
 	case err != nil:
 		return setupFailed("read the installed guard", err)
 	}
@@ -594,7 +601,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
-	p, err := s.plan(ctx, tx, j, guard.NewPassword(), database, req.Answers)
+	p, err := s.plan(ctx, tx, j, s.be.NewPassword(), database, req.Answers)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -633,8 +640,8 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return out, nil
 	}
 	out := CheckAnswer{
-		Database: database, Lines: summary(j, database, p.seeded, needed, p.keep), SQL: p.seeded.Shown() + p.script.SQL(),
-		Questions: []Question{}, Notes: notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch,
+		Database: database, Lines: s.summary(j, database, p.seeded, needed, p.keep), SQL: p.seeded.Shown() + p.script.SQL(),
+		Questions: []Question{}, Notes: s.notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch,
 	}
 	facts.apply(&out)
 	out.Lines = append(out.Lines, rekeyLines(j, p)...)
@@ -692,7 +699,7 @@ func passkeyNeeded(ctx context.Context, tx pgx.Tx, origin string) (bool, error) 
 }
 
 // summary is the fixed account of the install the person reads.
-func summary(j job, database string, seeded demo.Plan, passkeyNeeded, keep bool) []string {
+func (s *Service) summary(j job, database string, seeded setuprun.DemoPlan, passkeyNeeded, keep bool) []string {
 	lines := []string{fmt.Sprintf("This sets up Basalt in the database %s.", database)}
 	if keep {
 		lines = append(lines, fmt.Sprintf("The agent %s (role %s) is already in the database, and this engine holds its password: this finishes its setup, which stopped before the engine wrote its config. Its password stays.", j.req.Agent, j.role))
@@ -700,9 +707,9 @@ func summary(j job, database string, seeded demo.Plan, passkeyNeeded, keep bool)
 		lines = append(lines, fmt.Sprintf("It creates the agent %s (role %s), which runs as the OS user %s. Its password is made by this engine and kept on this computer only.", j.req.Agent, j.role, j.req.OSUser))
 	}
 	if !seeded.Exists() {
-		lines = append(lines, "It creates the sample schema "+demo.Schema+" with its tables leads and lead_notes.")
+		lines = append(lines, "It creates the sample schema "+s.be.DemoSchema()+" with its tables leads and lead_notes.")
 	}
-	lines = append(lines, "The agent can read and write "+strings.Join(demo.Tables, " and ")+", and nothing else. Every write it makes is recorded, and a large one waits for your passkey.")
+	lines = append(lines, "The agent can read and write "+strings.Join(s.be.DemoTables(), " and ")+", and nothing else. Every write it makes is recorded, and a large one waits for your passkey.")
 	if passkeyNeeded {
 		lines = append(lines, "The database has no passkey for this computer yet: you create one now, and it approves the agent's held writes and reverts.")
 	}
@@ -710,10 +717,10 @@ func summary(j job, database string, seeded demo.Plan, passkeyNeeded, keep bool)
 }
 
 // notes are the lines that depend on what the database holds.
-func notes(seeded demo.Plan, script guard.Script) []string {
+func (s *Service) notes(seeded setuprun.DemoPlan, script setuprun.Script) []string {
 	out := []string{}
 	if seeded.Exists() {
-		out = append(out, "sample schema "+demo.Schema+" already exists; its rows are left as they are")
+		out = append(out, "sample schema "+s.be.DemoSchema()+" already exists; its rows are left as they are")
 	}
 	return append(out, script.Warnings...)
 }

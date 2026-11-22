@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -15,6 +16,7 @@ import (
 func TestNewCredentialKeepsTheUserName(t *testing.T) {
 	t.Parallel()
 	s, err := New(Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
 		Profiles: func() *trustprofile.Set { return trustprofile.NewSet(nil, nil, nil) },
 	})

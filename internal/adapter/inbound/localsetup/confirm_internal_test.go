@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -22,6 +23,7 @@ func TestCertificateKindIsWhatTheEngineDialsWith(t *testing.T) {
 	t.Parallel()
 	operator := &trustprofile.Profile{Spec: trustprofile.Spec{Name: trustprofile.PinName("db.example"), Match: []string{"=db.example"}}, Origin: trustprofile.Operator}
 	s, err := New(Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: "http://localhost:8787",
 		Profiles: func() *trustprofile.Set {
 			return trustprofile.NewSet(trustprofile.BuiltIns(), []*trustprofile.Profile{operator}, nil)

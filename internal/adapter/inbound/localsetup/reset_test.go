@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -28,6 +29,7 @@ func TestNotMineIsOnlyAMarkForBasaltInit(t *testing.T) {
 	refusal(t, err, localsetup.CodeJobUnavailable)
 
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix, Configured: true,
 		Now: func() time.Time { return f.now },
 		Dial: func(context.Context, string) (*pgx.Conn, error) {

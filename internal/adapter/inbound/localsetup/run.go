@@ -21,9 +21,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
@@ -202,11 +201,11 @@ func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 	if !s.opts.Now().Before(c.ExpiresAt) {
 		return nil, refuse(CodeChallengeExpired, "This page waited more than 15 minutes. Check again, then create the passkey.")
 	}
-	rr, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+	rr, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return nil, refuse(CodeChallengeInvalid, "This passkey was made for another setup page. Reload the page and start again.")
 	}
-	cred, err := passkey.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
+	cred, err := setuprun.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
 	if err != nil {
 		return nil, refuse(CodePasskeyInvalid, "The passkey could not be checked. Create it again on this page.")
 	}
@@ -304,8 +303,8 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		return RunAnswer{}, err
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
-	password := guard.NewPassword()
-	dsn, err := guard.AgentConnString(req.DatabaseURL, j.role, password)
+	password := s.be.NewPassword()
+	dsn, err := s.be.AgentConnString(req.DatabaseURL, j.role, password)
 	if err != nil {
 		return RunAnswer{}, refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 	}
@@ -341,20 +340,20 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			return setupFailed("install script", err)
 		}
 		if !req.Demo {
-			n, err := writeLabels(ctx, tx, guard.Names{Prefix: s.opts.Prefix}, j.picks, req, s.opts.Now())
+			n, err := s.writeLabels(ctx, tx, guardmodel.Names{Prefix: s.opts.Prefix}, j.picks, req, s.opts.Now())
 			if err != nil {
 				return err
 			}
 			p.labeled = n
 		}
 		if cred != nil {
-			if err := guard.RegisterPasskey(ctx, tx, *cred, req.Passkey.Label); err != nil {
+			if err := s.be.RegisterPasskey(ctx, tx, *cred, req.Passkey.Label); err != nil {
 				return setupFailed("register the passkey", err)
 			}
 		}
 		warnings = script.Warnings
 		if req.Demo {
-			leads, notes, err := demo.Counts(ctx, tx)
+			leads, notes, err := s.be.DemoCounts(ctx, tx)
 			if err != nil {
 				return setupFailed("count the sample data", err)
 			}
@@ -368,7 +367,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if pinned != nil {
 			// Before the commit, once the SQL succeeded: a pin that stays after
 			// a failed commit was approved and checked.
-			if err := pinned.write(ctx, tx, s.opts.ConfigPath); err != nil {
+			if err := pinned.write(ctx, s.be, tx, s.opts.ConfigPath); err != nil {
 				return err
 			}
 		}

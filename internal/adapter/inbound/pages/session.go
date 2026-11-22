@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -94,19 +95,41 @@ func matchSessionRoute(method, path string) (sessionRoute, string, bool) {
 	return sessionRoute{}, "", false
 }
 
+// SessionLink is the live relay link a session is served on: the one item
+// it may reach and the token its link secret derives to.
+type SessionLink struct {
+	Token channel.LinkToken
+	Item  uuid.UUID
+}
+
+// SessionRequest is a whole request the page sent in a session.
+type SessionRequest struct {
+	Method  string
+	Path    string
+	Headers map[string]string
+	Body    []byte
+}
+
+// SessionResponse is the answer to a SessionRequest.
+type SessionResponse struct {
+	Status      int
+	ContentType string
+	Body        []byte
+}
+
 // Dispatch answers one whole request of a session on link: the routes of
 // the allowlist only, for the session's own item only, with the session's
 // own link secret (its sha256 and its token both match), from the portal's
 // origin. Anything else is answered as on loopback: an unknown route, item
 // or secret as an unknown id (404 NOT_FOUND, one body for all), another
 // header 400, a foreign origin 403, a body over 16 KiB 413.
-func (s *Server) Dispatch(ctx context.Context, link vault.SessionLink, req vault.Request) vault.Response {
+func (s *Server) Dispatch(ctx context.Context, link SessionLink, req SessionRequest) SessionResponse {
 	w := newRecorder()
 	s.serveSession(ctx, w, link, req)
 	return w.response()
 }
 
-func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link vault.SessionLink, req vault.Request) {
+func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link SessionLink, req SessionRequest) {
 	route, id, ok := matchSessionRoute(req.Method, req.Path)
 	if !ok {
 		s.fail(w, unknownLink())
@@ -180,10 +203,10 @@ func (r *recorder) WriteHeader(status int) {
 	}
 }
 
-func (r *recorder) response() vault.Response {
+func (r *recorder) response() SessionResponse {
 	status := r.status
 	if status == 0 {
 		status = http.StatusOK
 	}
-	return vault.Response{Status: status, ContentType: r.header.Get("Content-Type"), Body: r.body.Bytes()}
+	return SessionResponse{Status: status, ContentType: r.header.Get("Content-Type"), Body: r.body.Bytes()}
 }

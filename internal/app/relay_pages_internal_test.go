@@ -86,7 +86,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	site := pages.New(links.Portal, quietLog())
 	site.Add(svc)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, stateDir, time.Now, quietLog(), live, site)
+	ev := openVault(cfg, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
 	require.NotNil(t, ev.client)
 	live.add("bot", secrets, ev.client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())

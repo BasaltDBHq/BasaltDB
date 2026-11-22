@@ -12,7 +12,7 @@ import (
 // maxCauseMessage bounds a cause's message in the log.
 const maxCauseMessage = 500
 
-// initStep is the prefix guard.Script.Apply puts on a statement's error.
+// initStep is the prefix setuprun.Script.Apply puts on a statement's error.
 var initStep = regexp.MustCompile(`^init step (\d+): `)
 
 // secretForms are the shapes a secret takes in an error's text: a

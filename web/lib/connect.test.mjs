@@ -200,6 +200,15 @@ function connectOnly(kind = "INSTALL") {
   return s;
 }
 
+// keepGrants is a connect-only AGENT code that names no tables: it keeps
+// the role's grants, or, when the role is gone or holds no table, the
+// service answers ticked and lists the tables of public.
+function keepGrants() {
+  const s = connectOnly("AGENT");
+  delete s.allTablesSchemas;
+  return s;
+}
+
 const SUPABASE = { host: "aws-0-eu-central-1.pooler.supabase.com", port: 5432, database: "postgres", supabaseRef: "abcdwxyzqrst" };
 const PREVIEW_TICKET = "preview-ticket-Q7x";
 const SETUP_TICKET = "setup-ticket-Z9k";
@@ -226,6 +235,7 @@ function connectOnlyCheck(extra = {}) {
       { table: "public.logs", column: "at" },
     ],
     ticket: PREVIEW_TICKET,
+    ticked: true,
     ...extra,
   };
 }
@@ -425,15 +435,26 @@ test("a database is named by its Supabase project or its host", () => {
   assert.equal(databaseView(null), null);
 });
 
-test("tables get ticks only for an allTables INSTALL that has not run", () => {
+test("tables get ticks only when CheckSetup says ticked and the setup has not run", () => {
   const all = tableRows(connectOnly(), connectOnlyCheck());
   assert.equal(all.ticks, true);
   assert.deepEqual(all.rows, [{ name: "public.logs", access: "noKey" }, { name: "public.payments", access: "write" }, { name: "public.users", access: "write" }]);
-  assert.equal(tableRows(connectOnly("AGENT"), connectOnlyCheck()).ticks, false, "a recovery code keeps its tables");
+  assert.equal(tableRows(connectOnly("AGENT"), connectOnlyCheck({ ticked: false })).ticks, false, "a recovery code keeps its tables");
+  assert.equal(tableRows(connectOnly(), connectOnlyCheck({ ticked: false })).ticks, false, "never ticks the service did not ask for");
   assert.equal(tableRows(connectOnly(), connectOnlyCheck({ alreadyRan: true })).ticks, false);
+  assert.equal(tableRows(connectOnly(), connectOnlyCheck({ nothingToDo: true })).ticks, false);
   const listed = tableRows(summary("INSTALL"), {});
   assert.equal(listed.ticks, false);
   assert.deepEqual(listed.rows, [{ name: "public.leads", access: "write" }, { name: "public.notes", access: "read" }]);
+});
+
+test("a keep-grants AGENT code: ticks over the listing for a dropped or empty role, no tables for a kept one", () => {
+  const dropped = tableRows(keepGrants(), connectOnlyCheck());
+  assert.equal(dropped.ticks, true);
+  assert.deepEqual(dropped.rows.map((r) => r.name), ["public.logs", "public.payments", "public.users"]);
+  const kept = tableRows(keepGrants(), { notes: [], tables: [] });
+  assert.equal(kept.ticks, false);
+  assert.deepEqual(kept.rows, []);
 });
 
 test("row-level security questions are answered all rows for the included tables only", () => {
@@ -1024,6 +1045,55 @@ test("a pick-up that takes over 2 minutes says to tell the bot", async () => {
   assert.ok(e.clock.t >= LATE_MS);
   assert.equal(nodes["pickup-text"].textContent, "Your bot hasn't picked it up yet. Tell it to check its status.");
   assert.equal(nodes["done-pickup"].className, "check wait");
+});
+
+test("a keep-grants code for a dropped or empty role: ticks, at least one, and only the ticked tables are sent", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: keepGrants(), challenge: challenge() } }),
+    CheckSetup: () => ({ body: connectOnlyCheck({ ticket: "", columns: [], passkeyNeeded: false }) }),
+    RunSetup: () => ({ body: {} }),
+  });
+  await toPaste(nodes, env(fetchFn));
+  await paste(nodes);
+  if (shown(nodes) !== "s-tables") await nodes["go-on"].click();
+  assert.equal(shown(nodes), "s-tables");
+  const boxes = [...nodes.tables.walk()].filter((n) => n.tagName === "INPUT");
+  assert.deepEqual(boxes.map((b) => b.value), ["public.logs", "public.payments", "public.users"]);
+  for (const b of boxes) {
+    b.checked = false;
+    b.fire("change");
+  }
+  assert.equal(nodes["tables-next"].disabled, true, "never all of public unticked");
+  assert.equal(nodes["tables-error"].textContent, "Tick at least one table.");
+  assert.equal(nodes["tables-error"].hidden, false);
+  boxes[2].checked = true;
+  boxes[2].fire("change");
+  assert.equal(nodes["tables-next"].disabled, false);
+  await nodes["tables-next"].click();
+  assert.equal(shown(nodes), "s-approve");
+  await nodes.approve.click();
+  const run = calls.filter((c) => c.method === "RunSetup").at(-1).body;
+  assert.deepEqual(run.includedTables, ["public.users"]);
+});
+
+test("a keep-grants code for a kept role: no ticks and no includedTables", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: keepGrants(), challenge: challenge() } }),
+    CheckSetup: () => ({ body: { passkeyNeeded: false, notes: [], database: SUPABASE } }),
+    RunSetup: () => ({ body: {} }),
+  });
+  await toPaste(nodes, env(fetchFn));
+  await paste(nodes);
+  if (shown(nodes) !== "s-tables") await nodes["go-on"].click();
+  assert.equal(shown(nodes), "s-tables");
+  assert.equal([...nodes.tables.walk()].filter((n) => n.tagName === "INPUT").length, 0, "no ticks");
+  assert.equal(nodes["tables-next"].disabled, false);
+  await nodes["tables-next"].click();
+  await nodes.approve.click();
+  const run = calls.filter((c) => c.method === "RunSetup").at(-1).body;
+  assert.equal(run.includedTables, undefined);
 });
 
 test("Back keeps the person's ticks and labels, and back to the paste step drops the string", async () => {

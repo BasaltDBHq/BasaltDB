@@ -311,19 +311,22 @@ export function databaseView(t) {
 }
 
 // tableRows is screen 4's list: the tables the agent will get, each with
-// what it may do, and whether the person may untick them. Ticks are only
-// for an allTables INSTALL code (CONTRACT.md, Tables on the connect page);
-// a re-run and an upgrade with nothing to do show none.
+// what it may do, and whether the person may untick them. Ticks come only
+// from CheckSetup's ticked (CONTRACT.md, Tables on the connect page): an
+// allTables INSTALL code, and an AGENT code that runs as an INSTALL (a
+// dropped role, or a kept role holding no table), whose code may name no
+// tables at all; the rows are then CheckSetup's listing. A re-run and an
+// upgrade with nothing to do show none.
 export function tableRows(summary, check) {
-  const allTables = strings(summary?.allTablesSchemas).length > 0;
+  const ticked = check?.ticked === true;
   let rows;
-  if (allTables) {
+  if (ticked || strings(summary?.allTablesSchemas).length > 0) {
     const readOnly = new Set(strings(check?.readOnly));
     rows = strings(check?.tables).map((name) => ({ name, access: readOnly.has(name) ? "noKey" : "write" }));
   } else {
     rows = [...strings(summary?.write).map((name) => ({ name, access: "write" })), ...strings(summary?.read).map((name) => ({ name, access: "read" }))];
   }
-  const ticks = summary?.kind === "INSTALL" && allTables && !check?.alreadyRan && !check?.nothingToDo;
+  const ticks = ticked && !check?.alreadyRan && !check?.nothingToDo;
   const excluded = (Array.isArray(check?.excluded) ? check.excluded : []).filter((e) => typeof e?.table === "string");
   return { rows, ticks, excluded };
 }
@@ -551,6 +554,9 @@ export class Flow {
       excluded: Array.isArray(out.excluded) ? out.excluded : [],
       columns: Array.isArray(out.columns) ? out.columns : [],
       alreadyRan: out.alreadyRan === true,
+      // Whether tables are listed with ticks and RunSetup needs the ticked
+      // ones (CONTRACT.md, Tables on the connect page).
+      ticked: out.ticked === true,
       // The confirm step's: the role the string signed in as, and what
       // verified the certificate.
       sessionUser: typeof out.sessionUser === "string" ? out.sessionUser : "",

@@ -196,6 +196,12 @@ message CheckSetupResponse {
   // current_database() on the pasted string's login, which the confirm
   // step names. Sensitive, as database is.
   string current_database = 15 [(sensitive) = true];
+  // True when the page shows tables with ticks and RunSetup needs
+  // included_tables (the setup package's Checked.Ticked): an INSTALL code
+  // with agent.allTables, and an AGENT code that runs as an INSTALL (its
+  // role is gone, or it names no tables and the role holds none). tables is
+  // then the listing to tick from.
+  bool ticked = 16;
 }
 
 // The database's certificate as the confirm step shows it.

@@ -562,3 +562,35 @@ func fromSetup(e *setup.Error) *refusalError {
 	}
 	return &refusalError{connect.CodeFailedPrecondition, "SETUP_FAILED", "The setup failed and nothing changed."}
 }
+
+// CheckRemove connects and reads what removing BasaltDB drops (the Remove
+// BasaltDB tab). It needs no setup code and changes nothing.
+func (s *Server) CheckRemove(ctx context.Context, r *connect.Request[connectv1.CheckRemoveRequest]) (*connect.Response[connectv1.CheckRemoveResponse], error) {
+	conn, err := s.dial(ctx, r.Msg.GetDatabaseUrl())
+	if err != nil {
+		return nil, refuse(err)
+	}
+	defer conn.Close(ctx)
+	rm, err := setup.CheckRemove(ctx, conn)
+	if err != nil {
+		return nil, refuse(err)
+	}
+	return connect.NewResponse(&connectv1.CheckRemoveResponse{
+		Database: rm.Database, Bots: rm.Bots, Lines: rm.Lines, Sql: rm.SQL, NothingToRemove: rm.NothingToRemove, SampleSchema: rm.SampleSchema,
+	}), nil
+}
+
+// RunRemove connects and removes BasaltDB in one transaction once
+// confirm_name is the database's name.
+func (s *Server) RunRemove(ctx context.Context, r *connect.Request[connectv1.RunRemoveRequest]) (*connect.Response[connectv1.RunRemoveResponse], error) {
+	conn, err := s.dial(ctx, r.Msg.GetDatabaseUrl())
+	if err != nil {
+		return nil, refuse(err)
+	}
+	defer conn.Close(ctx)
+	done, err := setup.RunRemove(ctx, conn, r.Msg.GetConfirmName())
+	if err != nil {
+		return nil, refuse(err)
+	}
+	return connect.NewResponse(&connectv1.RunRemoveResponse{Database: done.Database, Bots: done.Bots, Lines: done.Lines, Warnings: done.Warnings}), nil
+}

@@ -1,7 +1,7 @@
 package classify
 
 import (
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Why a column is shown in the review (CONTRACT.md, PII classification,
@@ -19,13 +19,13 @@ const (
 type ReviewColumn struct {
 	Result
 	// Stored is the column's row in pii_columns, nil when it has none.
-	Stored *guard.PIIColumn
+	Stored *guardmodel.PIIColumn
 	Status string
 }
 
 // Confirmed reports whether a person gave the column a class already.
 func (c ReviewColumn) Confirmed() bool {
-	return c.Stored != nil && c.Stored.Class != guard.ClassUnclassified
+	return c.Stored != nil && c.Stored.Class != guardmodel.ClassUnclassified
 }
 
 // ReviewTable is the review of one table, its columns in table order.
@@ -35,11 +35,11 @@ type ReviewTable struct {
 }
 
 // StatusOf is why col would be shown, given its stored row (nil for none).
-func StatusOf(stored *guard.PIIColumn, col Column, s Suggestion) string {
+func StatusOf(stored *guardmodel.PIIColumn, col Column, s Suggestion) string {
 	switch {
 	case stored == nil:
 		return StatusNew
-	case stored.Class == guard.ClassUnclassified:
+	case stored.Class == guardmodel.ClassUnclassified:
 		return StatusUnclassified
 	case stored.DataType != col.DataType:
 		return StatusTypeChanged
@@ -54,11 +54,11 @@ func StatusOf(stored *guard.PIIColumn, col Column, s Suggestion) string {
 // BuildReview groups results by table, in their order, with their stored
 // rows. all keeps UNCHANGED columns (--review=all); otherwise only the
 // columns that need a person are shown.
-func BuildReview(results []Result, stored map[guard.ColumnKey]guard.PIIColumn, all bool) []ReviewTable {
+func BuildReview(results []Result, stored map[guardmodel.ColumnKey]guardmodel.PIIColumn, all bool) []ReviewTable {
 	var out []ReviewTable
 	for _, r := range results {
 		rc := ReviewColumn{Result: r}
-		if row, ok := stored[guard.ColumnKey{Schema: r.Column.Schema, Table: r.Column.Table, Column: r.Column.Name}]; ok {
+		if row, ok := stored[guardmodel.ColumnKey{Schema: r.Column.Schema, Table: r.Column.Table, Column: r.Column.Name}]; ok {
 			rc.Stored = &row
 		}
 		rc.Status = StatusOf(rc.Stored, r.Column, r.Suggestion)
@@ -107,12 +107,12 @@ func (c ReviewColumn) Protected() Decision {
 // no class yet as UNCLASSIFIED with its suggestion. A shown column a person
 // confirmed earlier and did not decide on now keeps its row as it is
 // (owner decision OR-1: confirmed classes survive).
-func Rows(tables []ReviewTable, decided map[string]Decision) []guard.PIIColumn {
-	var out []guard.PIIColumn
+func Rows(tables []ReviewTable, decided map[string]Decision) []guardmodel.PIIColumn {
+	var out []guardmodel.PIIColumn
 	for _, t := range tables {
 		for _, c := range t.Columns {
 			s := c.Suggestion
-			row := guard.PIIColumn{
+			row := guardmodel.PIIColumn{
 				Schema: c.Column.Schema, Table: c.Column.Table, Column: c.Column.Name, DataType: c.Column.DataType,
 				SuggestedClass: s.Class, SuggestedEntityType: s.EntityType, Reason: s.Reason,
 			}
@@ -120,13 +120,13 @@ func Rows(tables []ReviewTable, decided map[string]Decision) []guard.PIIColumn {
 			switch {
 			case ok:
 				row.Class, row.EntityType, row.NeedsReview = d.Class, d.EntityType, d.NeedsReview
-				if d.EntityType == guard.EntityPhone {
+				if d.EntityType == guardmodel.EntityPhone {
 					row.PhoneRegion = d.PhoneRegion
 				}
 			case c.Confirmed():
 				continue
 			default:
-				row.Class, row.NeedsReview = guard.ClassUnclassified, s.NeedsReview
+				row.Class, row.NeedsReview = guardmodel.ClassUnclassified, s.NeedsReview
 			}
 			out = append(out, row)
 		}

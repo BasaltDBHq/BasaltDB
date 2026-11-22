@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
@@ -104,13 +104,13 @@ func (c Config) PluginRequiresApproval(p Plugin) bool {
 // and auth as engine.json holds them, timeoutMs and minConfidence by value,
 // each only when the entry sets it, no default filled in. Postgres turns
 // the object into the settings text; Go never builds that text.
-func (p Plugin) ApprovalSettings() guard.PluginSettings {
-	var s guard.PluginSettings
+func (p Plugin) ApprovalSettings() guardmodel.PluginSettings {
+	var s guardmodel.PluginSettings
 	if len(p.Config) > 0 {
 		s.Config = slices.Clone(p.Config)
 	}
 	if p.Auth != nil {
-		s.Auth = &guard.PluginAuth{CredentialFile: p.Auth.CredentialFile}
+		s.Auth = &guardmodel.PluginAuth{CredentialFile: p.Auth.CredentialFile}
 	}
 	if p.TimeoutMs != 0 {
 		v := p.TimeoutMs

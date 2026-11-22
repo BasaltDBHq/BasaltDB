@@ -10,8 +10,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 )
 
 var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
@@ -46,7 +44,7 @@ type KeyKind struct{ Key, Generated bool }
 // KeyColumns lists the columns that are internal ids: part of a primary or
 // foreign key, an identity column, or filled by a sequence (a serial's
 // nextval default). Any role may read the catalog.
-func KeyColumns(ctx context.Context, q guard.Querier) (map[KeyRef]KeyKind, error) {
+func KeyColumns(ctx context.Context, q Querier) (map[KeyRef]KeyKind, error) {
 	// Plain SQL: a UNION over three catalogs, which squirrel cannot express.
 	// Constant text, no arguments.
 	rows, err := q.Query(ctx, `SELECT conrelid, unnest(conkey), false FROM pg_catalog.pg_constraint WHERE contype IN ('p', 'f')
@@ -151,7 +149,7 @@ func readOnly(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error 
 // BaseTypes maps every column whose type is a domain to the type the domain
 // is built on, through domains of domains (format_type, no modifier), so a
 // domain over text is sampled as text. Any role may read pg_catalog.
-func BaseTypes(ctx context.Context, q guard.Querier) (map[KeyRef]string, error) {
+func BaseTypes(ctx context.Context, q Querier) (map[KeyRef]string, error) {
 	// Plain SQL: a recursive CTE over the catalog, which squirrel cannot
 	// express. Constant text, no arguments.
 	rows, err := q.Query(ctx, `WITH RECURSIVE b(attrelid, attnum, typ) AS (

@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,9 @@ import (
 )
 
 const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+
+// appImport is where cmd reaches pgdial.CheckForeignDSN from: app re-exports it.
+const appImport = "github.com/basaltdbhq/basaltdb/internal/app"
 
 // credentialReaders are the functions that read an agent's credential file:
 // the config package's, and this package's own. A new reader must be added
@@ -97,6 +101,8 @@ func funcName(fn *ast.FuncDecl) string {
 func credentialReadsIn(name string, f *ast.File, local bool) map[string]bool {
 	cfg, cfgDot := importNames(f, configImport)
 	pg, pgDot := importNames(f, pgdialImport)
+	appNames, _ := importNames(f, appImport)
+	maps.Copy(pg, appNames)
 	found := map[string]bool{}
 	scan := func(where string, body ast.Node) {
 		var reads []string

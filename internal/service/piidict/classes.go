@@ -18,7 +18,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
@@ -55,7 +55,7 @@ type Class struct {
 
 // Unclassified is the class of a column missing from the map: UNCLASSIFIED,
 // warned in M5.1 and refused from M5.2 (CONTRACT.md, PII classification).
-var Unclassified = Class{Class: guard.ClassUnclassified}
+var Unclassified = Class{Class: guardmodel.ClassUnclassified}
 
 // Name is schema.table.column (names are not PII).
 func (c Class) Name() string { return c.Schema + "." + c.Table + "." + c.Column }
@@ -130,13 +130,13 @@ func (m *Map) Loads() int64 { return m.loads.Load() }
 
 // Load reads agent_pii_columns, pii_fingerprint() and agent_pii_catalog
 // in one snapshot, begun after this call, and replaces the map.
-func (m *Map) Load(ctx context.Context, db guard.Querier) error {
+func (m *Map) Load(ctx context.Context, db Querier) error {
 	return m.load(ctx, db, true)
 }
 
 // load loads a snapshot. fresh asks for a load begun after this call (an
 // unknown oid, a moved catalog); otherwise a load already running will do.
-func (m *Map) load(ctx context.Context, db guard.Querier, fresh bool) error {
+func (m *Map) load(ctx context.Context, db Querier, fresh bool) error {
 	if _, ok := db.(beginner); !ok {
 		// Inside the caller's transaction: read on its own connection.
 		m.mu.Lock()
@@ -157,7 +157,7 @@ func (m *Map) load(ctx context.Context, db guard.Querier, fresh bool) error {
 	if !lead {
 		return waitFlight(ctx, f)
 	}
-	s, err := withSnapshot(ctx, db, func(ctx context.Context, q guard.Querier) (*snapshot, error) {
+	s, err := withSnapshot(ctx, db, func(ctx context.Context, q Querier) (*snapshot, error) {
 		return readSnapshot(ctx, q, m.between)
 	})
 	if err != nil {
@@ -223,7 +223,7 @@ func (m *Map) store(seq uint64, s *snapshot) {
 // reload once more, and missing columns are warned again), then reads the
 // fingerprint and the catalog row and reloads the map when either differs
 // from the values kept at the last load (or nothing was loaded yet).
-func (m *Map) Tick(ctx context.Context, db guard.Querier) (reloaded bool, err error) {
+func (m *Map) Tick(ctx context.Context, db Querier) (reloaded bool, err error) {
 	m.mu.Lock()
 	clear(m.tried)
 	clear(m.warned)
@@ -246,7 +246,7 @@ func (m *Map) Tick(ctx context.Context, db guard.Querier) (reloaded bool, err er
 // A column still missing is UNCLASSIFIED and warned about once per tick. A
 // computed column (oid 0) has no class: its zero Class. A load that fails
 // is an error, so the caller does not return values it cannot classify.
-func (m *Map) Resolve(ctx context.Context, db guard.Querier, refs []ColumnRef) ([]Class, error) {
+func (m *Map) Resolve(ctx context.Context, db Querier, refs []ColumnRef) ([]Class, error) {
 	s, err := m.current(ctx, db, refs)
 	if err != nil {
 		return nil, err
@@ -271,7 +271,7 @@ func (m *Map) Resolve(ctx context.Context, db guard.Querier, refs []ColumnRef) (
 // current is the snapshot to resolve refs against, loading it first when
 // none is loaded or a table oid of refs is unknown and not yet tried this
 // tick.
-func (m *Map) current(ctx context.Context, db guard.Querier, refs []ColumnRef) (*snapshot, error) {
+func (m *Map) current(ctx context.Context, db Querier, refs []ColumnRef) (*snapshot, error) {
 	s := m.snap.Load()
 	if s != nil && !s.unknown(refs) {
 		return s, nil
@@ -352,14 +352,14 @@ func (m *Map) warnMissing(refs []ColumnRef) {
 
 // Identifiers returns the IDENTIFIER columns of the map, loading it first
 // when nothing is loaded.
-func (m *Map) Identifiers(ctx context.Context, db guard.Querier) ([]IdentifierColumn, error) {
+func (m *Map) Identifiers(ctx context.Context, db Querier) ([]IdentifierColumn, error) {
 	if _, err := m.current(ctx, db, nil); err != nil {
 		return nil, err
 	}
 	s := m.snap.Load()
 	out := make([]IdentifierColumn, 0, len(s.cols))
 	for ref, c := range s.cols {
-		if c.Class == guard.ClassIdentifier {
+		if c.Class == guardmodel.ClassIdentifier {
 			out = append(out, IdentifierColumn{Ref: ref, Class: c})
 		}
 	}
@@ -380,7 +380,7 @@ type beginner interface {
 // withSnapshot runs read in one repeatable-read, read-only transaction when
 // db is a pool, so the map and its marks come from one snapshot; inside a
 // caller's transaction (a write's RETURNING) it runs there.
-func withSnapshot[T any](ctx context.Context, db guard.Querier, read func(context.Context, guard.Querier) (T, error)) (T, error) {
+func withSnapshot[T any](ctx context.Context, db Querier, read func(context.Context, Querier) (T, error)) (T, error) {
 	b, ok := db.(beginner)
 	if !ok {
 		return read(ctx, db)
@@ -401,7 +401,7 @@ func withSnapshot[T any](ctx context.Context, db guard.Querier, read func(contex
 // ones, so the next hourly tick sees the catalog move and reloads. (Read
 // the other way round, old classes would be kept with new marks and never
 // reloaded.) between runs between the two reads (tests).
-func readSnapshot(ctx context.Context, db guard.Querier, between func()) (*snapshot, error) {
+func readSnapshot(ctx context.Context, db Querier, between func()) (*snapshot, error) {
 	mk, err := readMarks(ctx, db)
 	if err != nil {
 		return nil, err
@@ -435,7 +435,7 @@ func readSnapshot(ctx context.Context, db guard.Querier, between func()) (*snaps
 
 // readMarks reads pii_fingerprint() and the agent_pii_catalog row (none
 // before the first basalt classify).
-func readMarks(ctx context.Context, db guard.Querier) (marks, error) {
+func readMarks(ctx context.Context, db Querier) (marks, error) {
 	var mk marks
 	q, args, err := psql.Select("basalt_meta.pii_fingerprint()").ToSql()
 	if err != nil {

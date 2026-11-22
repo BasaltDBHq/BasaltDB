@@ -60,8 +60,8 @@ type ExcludedTable struct {
 	Owner string
 }
 
-// Summary is what basalt init --setup-code shows before the SQL, one line
-// per item (CONTRACT.md, basalt init --setup-code, step 5): what the code
+// Summary is what the setup shows before the SQL, one line
+// per item (CONTRACT.md, The setup checks, step 5): what the code
 // does to the agent's role, in fixed words; the prefix and statement
 // timeout; the fingerprint to compare with the agent's; what the agent
 // gets, in words; and a flag per table outside public. A Payload that

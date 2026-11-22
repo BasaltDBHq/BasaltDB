@@ -136,7 +136,7 @@ The fingerprint stored in `pii_catalog` is never compared with the live one: eac
 
 ### Setup objects
 
-Planned, M4 ([Setup from your laptop](setup.md#setup), CO-13). Written only by the admin, inside the transaction of `basalt init --setup-code`.
+Planned, M4 ([Setup from your laptop](setup.md#setup), CO-13). Written only by the admin, inside the transaction of the setup the connect page runs.
 
 | Object | Purpose |
 |---|---|

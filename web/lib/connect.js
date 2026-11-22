@@ -34,11 +34,7 @@ export const PAGE_HOST = "portal.basaltvault.app";
 // opened in a new tab. The page sends nothing there itself.
 export const WAITLIST = "https://basaltvault.app/#waitlist";
 
-export const LAPTOP_COMMAND = "basalt init --setup-code <the code your bot sent>";
-const LAPTOP_LINE = `Or run the setup on your own computer instead, with no hosted service: ${LAPTOP_COMMAND}`;
-// A connect-only code names no database, and the laptop command refuses it:
-// the other way is a code made with the database's address.
-const CONNECT_ONLY_LINE = "Or ask your bot for a new setup code made with --database-url.";
+const TRY_AGAIN_LINE = "Try again later, or ask your bot for a new link.";
 
 // A setup code is at most 1500 characters (CONTRACT.md, The setup code).
 export const MAX_CODE_CHARS = 1500;
@@ -152,14 +148,13 @@ export async function call(fetchFn, method, request) {
 }
 
 // refusalText is what the page shows for a refusal: its message, when to
-// try again, and the other way (every reason but a limit, which passes):
-// the laptop command, or for a connect-only code, which the laptop command
-// refuses, a code made with --database-url.
-export function refusalText(err, connectOnly = false) {
+// try again, and what to do next (every reason but a limit, which passes):
+// try again later or ask the bot for a new link.
+export function refusalText(err) {
   if (!(err instanceof Refusal)) return "Something went wrong on this page. Nothing was sent.";
   const lines = [err.message];
   if (err.retryAfterSeconds > 0) lines.push(`Try again in ${err.retryAfterSeconds} seconds.`);
-  if (err.reason !== "RATE_LIMITED" && err.reason !== "BUSY") lines.push(connectOnly ? CONNECT_ONLY_LINE : LAPTOP_LINE);
+  if (err.reason !== "RATE_LIMITED" && err.reason !== "BUSY") lines.push(TRY_AGAIN_LINE);
   return lines.join("\n");
 }
 
@@ -1008,7 +1003,7 @@ export function start(env) {
       await flow.checkSetup(typed);
     } catch (err) {
       if (flow.step === "trust") showTrust("");
-      else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err, flow.connectOnly));
+      else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err));
       return;
     } finally {
       $("check").disabled = false;
@@ -1039,7 +1034,7 @@ export function start(env) {
       await flow.trust();
     } catch (err) {
       if (flow.step === "trust") showTrust(err.message);
-      else showPaste(refusalText(err, flow.connectOnly));
+      else showPaste(refusalText(err));
       return;
     } finally {
       $("trust-go").disabled = false;
@@ -1099,7 +1094,7 @@ export function start(env) {
       try {
         await flow.recheck(mine);
       } catch (err) {
-        if (!mine.cancelled) showPaste(refusalText(err, flow.connectOnly));
+        if (!mine.cancelled) showPaste(refusalText(err));
         return;
       }
       // The person went back while CheckSetup ran: stay where they are.
@@ -1313,7 +1308,7 @@ export function start(env) {
     // the service refused needs a fresh start (a new challenge and a new
     // passkey); sending the same registration again would be refused again.
     if (err instanceof Refusal && (err.reason.startsWith("CHALLENGE_") || err.reason === "PASSKEY_INVALID")) {
-      fail(refusalText(err, flow.connectOnly) + "\nOpen the link from your bot again to start over.");
+      fail(refusalText(err) + "\nOpen the link from your bot again to start over.");
       return;
     }
     // No answer arrived: the setup may have run. Pasting again would be
@@ -1327,7 +1322,7 @@ export function start(env) {
       }
       return;
     }
-    let text = refusalText(err, flow.connectOnly);
+    let text = refusalText(err);
     if (err instanceof Refusal && err.reason === "TABLES_CHANGED") text += "\nPaste the connection string again to see the tables as they are now.";
     else if (err instanceof Refusal && err.reason === "CLASSES_CHANGED") text += "\nPaste the connection string again to see the labels as they are now.";
     else text += "\nPaste the connection string again to retry.";

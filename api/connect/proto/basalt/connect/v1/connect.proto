@@ -101,7 +101,7 @@ message SetupSummary {
   // The engine's fingerprint, when the code carries an engine key.
   string engine_fingerprint = 14;
   // The summary lines that do not depend on the database, in the words
-  // basalt init --setup-code shows.
+  // the removed laptop command showed.
   repeated string lines = 15;
   // The schemas of agent.allTables (public only); empty when the code
   // names its tables in write and read.
@@ -156,7 +156,7 @@ message CheckSetupResponse {
   // True when RunSetup needs a passkey registration.
   bool passkey_needed = 2;
   // Lines that depend on the database's state, in the words
-  // basalt init --setup-code shows.
+  // the removed laptop command showed.
   repeated string notes = 3;
   // True for an UPGRADE code with nothing to do: RunSetup then changes and
   // records nothing.
@@ -252,7 +252,7 @@ message Question {
   string kind = 1;
   // schema.table.
   string table = 2;
-  // The question, in the words basalt init --setup-code asks it.
+  // The question, in the words the removed laptop command asked it.
   string text = 3;
   // The answers allowed: ALL_ROWS or NONE.
   repeated string choices = 4;

@@ -56,7 +56,7 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 }
 
 // CheckNotConnectOnly refuses a connect-only code (no target) on the laptop
-// path, basalt init --setup-code, before the clock checks: only the connect
+// path (removed), before the clock checks: only the connect
 // page runs it (CONNECT_ONLY).
 func CheckNotConnectOnly(p Payload) error {
 	if !p.ConnectOnly() {

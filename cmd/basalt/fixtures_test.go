@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 )
 
@@ -29,19 +28,6 @@ func cliRand(t *testing.T, env map[string]string, stdin string, args ...string) 
 	c.rand = fixedRand()
 	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}
-}
-
-// registrationCode is what the registration page returns for the request
-// basalt init makes with fixedRand on database db.
-func registrationCode(t *testing.T, person *passkeytest.Authenticator, db string) string {
-	t.Helper()
-	req, err := passkey.NewRegistrationRequest(fixedRand(), db, "BasaltDB · "+db)
-	require.NoError(t, err)
-	resp, err := person.Register(req, nil)
-	require.NoError(t, err)
-	code, err := resp.Code()
-	require.NoError(t, err)
-	return code
 }
 
 func dbName(t *testing.T, d *guardtest.DB) string {

@@ -3,6 +3,8 @@ package engine
 import (
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -123,4 +125,28 @@ func TestTakeHandedListener(t *testing.T) {
 	require.Nil(t, takeHandedListener(ln, ""), "pages off: closed")
 	_, err = ln.Accept()
 	require.ErrorIs(t, err, net.ErrClosed)
+}
+
+// Pages served on a handed listener keep the listener's hardening: a
+// foreign Host is refused, a loopback one served.
+func TestListenPagesOnAHandedListenerRefusesAForeignHost(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+	site, err := listenPages(config.Pages{Addr: addr, Origin: "http://localhost:8787"}, ln, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	require.Same(t, ln, site.ln, "served on the handed listener, not a new one")
+	t.Cleanup(func() { _ = site.ln.Close() })
+
+	get := func(host string) int {
+		req := httptest.NewRequest(http.MethodGet, "http://"+addr+"/healthz", nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		site.handler.ServeHTTP(w, req)
+		return w.Code
+	}
+	require.Equal(t, http.StatusOK, get(addr))
+	require.Equal(t, http.StatusOK, get("localhost:8787"))
+	require.NotEqual(t, http.StatusOK, get("evil.example"), "a foreign Host is refused")
 }

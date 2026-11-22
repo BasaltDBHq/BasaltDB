@@ -184,6 +184,7 @@ linters:
             - github.com/google/uuid
             - github.com/basaltdbhq/basaltdb/internal/lib/pagination
             - github.com/basaltdbhq/basaltdb/internal/core/approval
+            - github.com/basaltdbhq/basaltdb/internal/core/largevalue
             - github.com/basaltdbhq/basaltdb/internal/core/passkey
             - github.com/basaltdbhq/basaltdb/internal/core/revert
         # The codecs action imports never import it back.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
@@ -28,52 +27,6 @@ const (
 	// (basalt_meta version 23): nothing was reverted.
 	RevertRejected = "REJECTED"
 )
-
-// Revert is a revert the calling role prepared (basalt_meta.agent_reverts).
-// Lines are every line of a one-call revert, or a batched plan's sample.
-// SignedAt, ApplyBy and the progress counts are set on batched plans.
-type Revert struct {
-	ID          uuid.UUID
-	Status      string
-	Scope       string
-	ScopeID     uuid.UUID
-	Intent      string
-	Rows        int
-	Skipped     int
-	ExpiresAt   time.Time
-	BindingText string
-	Lines       []string
-	Batched     bool
-	SignedAt    *time.Time
-	ApplyBy     *time.Time
-	Batches     int
-	Progress    RevertProgress
-	// ChangeID is the revert's own change record (op REVERT), set once a
-	// one-call revert is applied or a batched plan is signed.
-	ChangeID *uuid.UUID
-	// Widened is set once the person widened the revert beyond the role's
-	// own work (version 20): the view then shows no binding, selection or
-	// lines.
-	Widened bool
-	// RejectedAt and RejectNote are set on a REJECTED revert: when the
-	// person rejected it, and the note they wrote for the agent ("" for
-	// none).
-	RejectedAt *time.Time
-	RejectNote string
-	// CreatedAt is when the revert was prepared.
-	CreatedAt time.Time
-	// LinesLeftOut and LinesCost are as on Approval: an agent's read left
-	// the lines out (Lines are their heads), and what they cost.
-	LinesLeftOut bool
-	LinesCost    int64
-}
-
-// RevertProgress counts a batched plan's lines by outcome.
-type RevertProgress struct {
-	Restored int
-	Skipped  int
-	Pending  int
-}
 
 func revertSelect(ctx context.Context) sq.SelectBuilder {
 	return withRequest(ctx, psql.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
@@ -109,13 +62,6 @@ func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, err
 	return r, err
 }
 
-// RevertListParams lists the calling role's open reverts. Status "" means
-// PENDING and APPLYING.
-type RevertListParams struct {
-	pagination.Params
-	Status string
-}
-
 // colRevertID is the revert id column of basalt_meta.agent_reverts.
 const colRevertID = "revert_id"
 
@@ -142,25 +88,6 @@ const (
 	OutcomeRestored = guard.OutcomeRestored
 	OutcomeSkipped  = guard.OutcomeSkipped
 )
-
-// RevertLine is one line of a batched plan: its number (execution order),
-// the signed text, and what happened to it. Batch is nil while pending.
-type RevertLine struct {
-	No       int
-	Text     string
-	Outcome  string
-	Conflict string
-	SQLState string
-	Batch    *int
-}
-
-// RevertLineParams lists a batched plan's lines in number order. Outcome
-// "" lists every line.
-type RevertLineParams struct {
-	pagination.Params
-	RevertID uuid.UUID
-	Outcome  string
-}
 
 // ListRevertLines returns one page of the lines of a batched plan the
 // calling role prepared, keyset on the line number.

@@ -541,6 +541,11 @@ func (c *credential) password() string {
 // a connect-only code, whose engine collects the address. It logs in as the
 // agent with the credentials for that database, .pending first.
 func (r *remoteInit) connection() error {
+	// Every code is run on the connect page, which needs an agent-operated
+	// engine with the Vault on.
+	if err := r.connectOnlyAllowed(); err != nil {
+		return err
+	}
 	cred, err := readCredentialIfAny(r.files, r.credFile)
 	if err != nil {
 		return err
@@ -575,11 +580,6 @@ func (r *remoteInit) connection() error {
 		if c != nil {
 			r.password = c.password()
 		}
-	}
-	// Before any login sends a startup message: offer to pin a chain no
-	// authority here verifies.
-	if err := r.pin(); err != nil {
-		return err
 	}
 	return r.login(pending, cred)
 }
@@ -1233,21 +1233,6 @@ func (r *remoteInit) writeCredential(p plan) error {
 	return r.files.write(path, []byte(dsn+"\n"))
 }
 
-// pin offers to pin the database's chain (initPin) and writes the pin to
-// the engine's trust.d on yes.
-func (r *remoteInit) pin() error {
-	if r.base == nil {
-		return nil
-	}
-	// The agent runs init --remote: it never pins a certificate, and says
-	// the person's basalt trust pin command instead.
-	choice, ok, err := r.c.initPin(r.base.String(), "", r.f.configPath, true)
-	if err != nil || !ok {
-		return err
-	}
-	return r.c.writePin(choice, r.f.configPath)
-}
-
 // writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
 	a := config.Agent{Name: r.f.agent, OSUser: r.osUser, Store: config.PostgresStore(r.credFile), InitArgs: saved, Setup: s}
@@ -1310,7 +1295,7 @@ func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) Rem
 		res.ConnectURL = url
 		res.PersonMessage, _ = agent.ConnectMessage("Finish setting up Basalt for "+r.f.agent+".", url, s.Fingerprint)
 	}
-	res.pasteAtPortal = r.connectBudget > 0 && url == ""
+	res.pasteAtPortal = url == ""
 	return res
 }
 
@@ -1345,11 +1330,10 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) Rem
 // agent.MaxPersonMessageLength for the longest agent name: it names the
 // agent once.
 func setupPersonMessage(name, fingerprint string) string {
-	return fmt.Sprintf("Finish setting up Basalt for %s on your own computer, not the agent's machine. "+
-		"Install basalt from the official release page:\n%s\n"+
-		"then run the basalt init --setup-code command the agent gave you. Check that it shows the setup fingerprint %s, "+
-		"then tell the agent it is done. Never paste your database password into this chat.",
-		name, releasePage, fingerprint)
+	return fmt.Sprintf("Finish setting up Basalt for %s: open %s, paste the setup code the agent shows you, "+
+		"check that it shows the setup fingerprint %s, and follow the page. "+
+		"The page asks for your database's connection string: paste it there only, never into this chat.",
+		name, strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"), fingerprint)
 }
 
 // printRemoteResult prints the result: the connect link or the code in a

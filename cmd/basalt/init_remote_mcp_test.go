@@ -23,7 +23,7 @@ func skipIfSystemConfig(t *testing.T) {
 
 // userRemote is a run not as root on host h, every agent login refused.
 func userRemote(h *fakeHost) remoteEnv {
-	return remoteEnv{host: h, login: refusedLogin, probe: noNetworkProbe, noNetwork: true}
+	return remoteEnv{host: h, login: refusedLogin, probe: noNetworkProbe}
 }
 
 // Non-root init --remote without --config prints `basalt mcp --agent NAME`

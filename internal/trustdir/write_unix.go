@@ -200,30 +200,6 @@ func fileOwner(trusted int) int {
 	return trusted
 }
 
-// Pin writes the exact-host operator profile for host (pin-<host>, match
-// =host) holding cert, the chain's top the person accepted, with verify:
-// ca when caOnly (a certificate that does not name the host). A pin for
-// host that trust.d holds already is replaced: the new PEM file first,
-// then the profile, then the old PEM file removed, under the config lock.
-// A profile of that name for another host, or one that is not a pin, is
-// ErrExists. It returns the pin and the fingerprints it replaced.
-func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustprofile.Profile, []string, error) {
-	pf, err := trustprofile.NewPin(host, cert, caOnly)
-	if err != nil {
-		return nil, nil, err
-	}
-	var replaced []string
-	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
-		var err error
-		replaced, err = writePin(d, trusted, pf)
-		return err
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return pf.Profile, replaced, nil
-}
-
 // ErrCovered: PinNew found a trust profile that covers the host already.
 var ErrCovered = errors.New("a trust profile covers this host already")
 

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -172,8 +171,7 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	pending := install.credFile + pendingSuffix
 	newPassword := credentialPassword(t, pending)
-	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", rotate.res.Code, "--yes")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	runViaConnect(t, d, rotate.res.Code)
 
 	// Sockets the test can make and no pages server; the rest as root
 	// wrote it.

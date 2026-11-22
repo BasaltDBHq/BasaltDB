@@ -18,9 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 )
 
@@ -237,50 +234,4 @@ func TestPastedWithoutATerminalReadsALine(t *testing.T) {
 	c = newIO(context.Background(), stdio{in: strings.NewReader(""), out: io.Discard, err: io.Discard}, func(string) string { return "" })
 	_, err = c.pasted(context.Background())
 	require.True(t, errors.Is(err, io.EOF))
-}
-
-// awaitCanonical waits until basalt is done with a paste and the terminal is
-// back in canonical mode, for the answer to a later prompt.
-func (term *terminal) awaitCanonical() {
-	deadline := time.Now().Add(5 * time.Second)
-	for !term.canonical() {
-		if time.Now().After(deadline) {
-			term.t.Error("the terminal never left raw input")
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func TestPasskeyCheckPromptTakesALongCode(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	credFile, laptop, phone := twoPasskeys(t, d)
-	req, err := passkey.NewCheckRequest(fixedRand(), []passkey.Labeled{{CredentialID: laptop.ID, Label: "x"}})
-	require.NoError(t, err)
-	as, err := laptop.Sign(passkey.CheckChallenge(req.Challenge), passkeytest.FlagsUPUV, nil)
-	require.NoError(t, err)
-	code, err := passkey.CheckResponse{
-		Challenge: req.Challenge,
-		Found: []passkey.CheckedAssertion{{
-			CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
-		}},
-		Missing: []passkey.Bytes{phone.ID},
-	}.Code()
-	require.NoError(t, err)
-
-	term := newTerminal(t)
-	var stdout, stderr bytes.Buffer
-	c := ptyIO(term, &stdout, &stderr)
-	go func() {
-		term.typeIn(strings.Repeat(" ", overLineLimit) + code + "\n")
-		term.awaitCanonical()
-		_, _ = io.WriteString(term.master, "n\n") // keep the phone's passkey
-	}()
-	exit, _ := inTime(t, func() (int, error) {
-		return runPasskey(c, takePathFlags(c, runPasskey, []string{"check", "--credential-file", credFile, "--pages-url", links.Portal})), nil
-	})
-	require.Equal(t, exitOK, exit, stderr.String())
-	require.Contains(t, stderr.String(), "Paste the code the page showed: ")
-	require.Contains(t, stdout.String(), "found on this device")
 }

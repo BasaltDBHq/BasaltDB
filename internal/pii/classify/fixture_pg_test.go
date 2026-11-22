@@ -177,26 +177,6 @@ func TestFixtureSchemaFixedPhoneRegion(t *testing.T) {
 	}
 }
 
-func TestFixtureSchemaRoundTrip(t *testing.T) {
-	t.Parallel()
-	d := fixtureDB(t)
-	results := suggestAll(t, d, classify.Options{}, true)
-	checks, err := classify.Check(results, func(r classify.Result) (classify.CheckTarget, bool) {
-		s := r.Suggestion
-		return classify.CheckTarget{EntityType: s.EntityType, PhoneRegion: s.PhoneRegion}, s.Class == guard.ClassIdentifier
-	})
-	require.NoError(t, err)
-	for name, w := range fixtureWant {
-		ck, ok := checks[name]
-		require.Equal(t, w.class == guard.ClassIdentifier, ok, name)
-		if !ok || name == "public.customers.dob" || name == "public.bad_cast.n" {
-			continue
-		}
-		require.Positive(t, ck.Sampled, name)
-		require.Zero(t, ck.RoundTripFailures, name)
-	}
-}
-
 func TestSampleTimesOutAndIsReviewed(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)

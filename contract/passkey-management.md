@@ -1,5 +1,7 @@
 ## Passkey management
 
+**Removed commands.** `basalt passkey` (`list`, `check`, `remove`) is gone from the binary ([Removed](cli.md#removed)). The person lists, checks and removes passkeys on the [setup page](setup.md#the-local-setup-page). The page, the request and the check response below stay as the record of the protocol the setup page uses; where the text names the commands, read the setup page.
+
 M4.1. WebAuthn gives the server no signal when a person deletes a passkey from a device or password manager, so Basalt never learns it on its own. Removal is explicit (`basalt passkey remove`, revoked in Postgres), `basalt passkey check` finds passkeys a device can no longer produce, and `basalt log` warns about passkeys unused for 90 days.
 
 - **Revoked means refused.** `_verify_assertion` refuses a revoked passkey, so it can no longer approve a held write, sign a revert or sign a large plan. Revocation is admin only; an agent role can neither register nor revoke a passkey.

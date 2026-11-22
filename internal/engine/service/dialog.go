@@ -73,16 +73,27 @@ func DialogPaths(goos string) ([]string, error) {
 	return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", goos)
 }
 
+// The fixed prompts the macOS administrator dialog shows for each action,
+// so a dialog the person did not expect names what it would do. They are
+// constants: no value from the agent, the engine or the environment
+// reaches them.
+const (
+	InstallPrompt = "BasaltDB wants to INSTALL its engine service on this computer: it creates the engine's own system account and folders and starts the engine. Cancel unless you just asked to set up BasaltDB."
+	RemovePrompt  = "BasaltDB wants to REMOVE its engine service from this computer: it stops the engine and deletes its folders and system accounts. Cancel unless you just removed BasaltDB on the setup page."
+	ResetPrompt   = "BasaltDB wants to RESET this computer's setup: it deletes the engine's config and credentials. Cancel unless you just answered 'No, this isn't mine' on the setup page."
+)
+
 // DialogCommand is the command that asks the person, through the system's
 // administrator dialog, to run script as root: osascript "with
-// administrator privileges" on macOS (the script is an argument of the
-// AppleScript, never part of its text), pkexec on Linux (with no text
-// prompt of its own, so only a desktop's dialog can answer).
-func DialogCommand(goos, script string) ([]string, error) {
+// administrator privileges" on macOS, showing prompt (the script and the
+// prompt are arguments of the AppleScript, never part of its text), pkexec
+// on Linux (with no text prompt of its own, so only a desktop's dialog can
+// answer; it shows polkit's generic text, not prompt).
+func DialogCommand(goos, prompt, script string) ([]string, error) {
 	switch goos {
 	case goosDarwin:
 		return []string{
-			osascriptPath, "-e", "on run argv", "-e", "do shell script (item 1 of argv) with administrator privileges", "-e", "end run", script,
+			osascriptPath, "-e", "on run argv", "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges", "-e", "end run", script, prompt,
 		}, nil
 	case goosLinux:
 		return []string{pkexecPath, "--disable-internal-agent", shPath, "-c", script}, nil

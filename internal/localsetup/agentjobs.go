@@ -129,6 +129,10 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if req.Job == JobChange {
 		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
 	}
+	if req.Job == "" && s.resetAsked() {
+		// basalt init's probe, after the person's "No, this isn't mine".
+		return agentJob{}, refuse(CodeResetAsked, "You answered that this database is not yours. basalt init asks for your computer's administrator password next, to reset BasaltDB on this computer.")
+	}
 	if !isAgentJob(req.Job) {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
 	}

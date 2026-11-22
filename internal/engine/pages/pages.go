@@ -190,10 +190,14 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST "+SetupCheckPath, st.check)
 		mux.HandleFunc("POST "+SetupRunPath, st.run)
 		mux.HandleFunc("POST "+SetupDoctorPath, st.doctor)
+		mux.HandleFunc("POST "+SetupEnginePath, st.engine)
+		mux.HandleFunc("POST "+SetupNotMinePath, st.notMine)
 	} else {
 		mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
 		mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
 		mux.HandleFunc("POST "+SetupDoctorPath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupEnginePath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupNotMinePath, s.configuredSetup)
 	}
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)

@@ -85,3 +85,13 @@ func TestHostCopiesMatchTheAdapters(t *testing.T) {
 	require.Equal(t, mcp.MetaPluginUpload, MetaPluginUpload)
 	require.Equal(t, mcp.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
 }
+
+// An error value the host left nil is a wiring defect, not "not this error":
+// sentinel panics rather than answer false.
+func TestSentinelPanicsOnUnsetTarget(t *testing.T) {
+	t.Parallel()
+	require.Panics(t, func() { sentinel(errors.New("x"), nil) })
+	require.Panics(t, func() { sentinel(nil, nil) })
+	require.True(t, sentinel(ledger.ErrRevertNotFound, ledger.ErrRevertNotFound))
+	require.False(t, sentinel(errors.New("x"), ledger.ErrRevertNotFound))
+}

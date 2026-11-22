@@ -20,6 +20,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+
+	// The app sets the agent's host at start; the stubs' agent.ToolError
+	// reads it, so the tests run with the engine's own.
+	_ "github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"

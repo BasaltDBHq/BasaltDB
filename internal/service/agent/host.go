@@ -14,8 +14,8 @@ import (
 // Host is what the agent takes from the adapters it may not import: the
 // error values it tells apart, and the functions that read the host (the
 // service manager, the crash directory, the Vault session). The app fills
-// it once at start, before any tool is served, with UseHost. A function
-// the app leaves nil is a build defect: its first use panics.
+// it once at start, before any tool is served, with UseHost. A function or
+// error value the app leaves nil is a build defect: its first use panics.
 type Host struct {
 	// StartCommand and RestartArgs are the service manager's start command
 	// and restart command line for goos.
@@ -82,9 +82,15 @@ func theHost() *Host {
 	panic("agent: host not set (internal/app sets it at start)")
 }
 
-// sentinel reports whether err is target, false for a target the host did
-// not set.
-func sentinel(err, target error) bool { return target != nil && errors.Is(err, target) }
+// sentinel reports whether err is target, one of the host's error values.
+// A target the host did not set panics: errors.Is would report false, and
+// the agent would answer INTERNAL where it means NOT_FOUND.
+func sentinel(err, target error) bool {
+	if target == nil {
+		panic("agent: host error value not set (internal/app sets it at start)")
+	}
+	return errors.Is(err, target)
+}
 
 // CrashReport is a crash report the engine saved: what status shows of it.
 type CrashReport struct {

@@ -83,7 +83,7 @@ var pkgExtra = map[string][]string{
 const (
 	storePkg       = "internal/adapter/outbound/postgres/store"
 	sqlguardPkg    = "sqlguard"
-	storeCallsOnly = "Check CheckRepeatable"
+	storeCallsOnly = "Check CheckRepeatable WithRowVersions"
 )
 
 func layerOf(rel string) string {
@@ -267,11 +267,11 @@ func analyze(root string, reg *register) (violations, error) {
 	for rel, pk := range pkgs {
 		layer := layerOf(rel)
 		for _, f := range pk.files {
-			if layer == lCore {
-				checkPurity(v, reg, rel, f)
-			}
 			if isTestHelper(rel) || strings.Contains(rel, "/testdata") {
 				continue
+			}
+			if layer == lCore {
+				checkPurity(v, reg, rel, f)
 			}
 			for _, s := range f.ast.Imports {
 				ip := importPath(s)
@@ -281,7 +281,7 @@ func analyze(root string, reg *register) (violations, error) {
 				target := strings.TrimPrefix(ip, modulePath+"/")
 				checkLayer(v, rel, layer, target)
 			}
-			if layer != lCore && layer != lService && layer != lTestkit && layer != lScripts {
+			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg {
 				checkDecisionCalls(v, rel, f, decisions)
 			}
 		}

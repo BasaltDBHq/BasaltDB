@@ -44,7 +44,7 @@ Every package under `internal/` sits in one of the layers above. A new top-level
 
 `internal/core` holds code that is pure: it does no I/O. It has three kinds of package.
 
-- **decision**: a safety decision (what SQL is allowed, whether an approval or revert code is valid, whether a passkey signature verifies). Only services call a decision's functions. The one exception: the Postgres store calls `sqlguard.Check` and `sqlguard.CheckRepeatable` right before it runs SQL. Any package may use a decision's types and constants.
+- **decision**: a safety decision (what SQL is allowed, whether an approval or revert code is valid, whether a passkey signature verifies). Services (and core) call a decision's functions; adapters, `cmd` and `pkg` do not. `internal/app`, which wires everything, may call them. The one exception: the Postgres store calls `sqlguard.Check`, `sqlguard.CheckRepeatable` and `sqlguard.WithRowVersions` right before it runs SQL. Any package may use a decision's types and constants.
 - **types**: a type that a port is written in, or a rule used by two or more callers. Anyone may import it.
 - **codec**: the code for a format written down in `api/`. Anyone may import it.
 

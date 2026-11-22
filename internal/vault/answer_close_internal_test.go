@@ -68,6 +68,7 @@ func establishedConn(t *testing.T) (*conn, *session, *channel.Session, *closeRec
 	code, _ := cn.sessions.add(id, lk.Token)
 	require.Zero(t, code)
 	ss := cn.sessions.open[id]
+	require.True(t, cn.sessions.tally.establish(lk.Token), "the session takes its link's slot, as an established one does")
 	_, cancel := context.WithCancel(context.Background())
 	ss.est = &established{cancel: cancel, idle: time.NewTimer(time.Hour), life: time.NewTimer(time.Hour), work: make(chan Request, 1), ch: engine}
 	return cn, ss, page, rec

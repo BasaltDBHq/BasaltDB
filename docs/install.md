@@ -215,46 +215,18 @@ A container usually has no service manager: PID 1 is your process or a small ini
 
 Ask your agent to remove BasaltDB. On the page that opens, pick **Remove BasaltDB**, paste the admin connection string, read the SQL and tick the confirmation. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey.
 
-Then remove the engine service yourself:
+Then your computer asks for your password once, in its own administrator dialog. That stops and removes the engine service, and everything it put on the computer:
 
-```sh
-sudo basalt service uninstall
-```
-
-That stops and removes the engine service.
-
-### What `service uninstall` leaves behind
-
-It removes only the service unit. Everything else stays, so a new install finds its config and credentials:
-
-| Kept | Linux | macOS |
+| Removed | Linux | macOS |
 |---|---|---|
-| Config directory: `engine.json` and `agents/<name>.url`, the agent's database credential | `/etc/basalt` | `/Library/Application Support/Basalt` |
+| The service unit | `/etc/systemd/system/basalt-engine.service` | `/Library/LaunchDaemons/dev.basaltdb.engine.plist` |
+| Config directory: `engine.json` and the agents' credentials | `/etc/basalt` | `/Library/Application Support/Basalt` |
 | State directory: the engine's keys, PII dictionary, ledger chain heads and link secrets | `/var/lib/basalt` | `/Library/Application Support/Basalt/state` |
-| Logs | none on disk; the engine logs to the journal (`journalctl -u basalt-engine`), which the system keeps | `/Library/Logs/Basalt`: the engine's `engine.log`, and in `plugins/` the stderr log of a plugin that is no longer installed (`service uninstall` deletes the logs of the plugins it removes). After an upgrade from an earlier release, the old logs are in `/Library/Logs/Basalt.old-<time>` |
-| The engine's OS user and group | `basalt` | `_basalt` |
+| Socket directory | `/run/basalt` | `/Library/Application Support/Basalt/run` |
+| Logs | none on disk; the journal keeps what the engine logged | `/Library/Logs/Basalt`, and `/Library/Logs/Basalt.old-*` from an upgrade |
+| Plugins: their service units, installed copies, trusted keys, sockets, logs and log rules | `/etc/systemd/system/basalt-plugin-*.service`, `/opt/basalt` | `/Library/LaunchDaemons/dev.basaltdb.plugin-*.plist`, `/etc/newsyslog.d/basalt-plugin-*.conf`, `/Library/Basalt` |
+| OS users and groups | `basalt` and every `basalt-plugin-*` | `_basalt` and every `_basalt-plugin-*` |
 
-The socket directory (`/run/basalt` on Linux, `/Library/Application Support/Basalt/run` on macOS) holds only sockets and the engine's lock. It goes away on Linux when the service stops; on macOS it sits inside the config directory and goes with it.
-
-Once the setup page removed BasaltDB, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
-
-On Linux:
-
-```sh
-sudo rm -rf /etc/basalt /var/lib/basalt
-sudo userdel basalt
-```
-
-`userdel` also removes the `basalt` group, which the install created with the user. Delete the group with `sudo groupdel basalt` if it is still listed.
-
-On macOS:
-
-```sh
-sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-*
-sudo dscl . -delete /Users/_basalt
-sudo dscl . -delete /Groups/_basalt
-```
-
-Remove the user last, after the files it owns. If you plan to install again, you can keep the config directory, the user and the state directory. The state directory holds each agent's ledger chain head. After a new install the engine sees that the head belongs to the old ledger, records that in the new ledger and starts a new head. The agent's `status` then carries a notice that the ledger was reinstalled, so that a reinstall nobody on your team made does not go unnoticed.
+The service stays when the engine still serves an agent of another database: remove that one too, and the service goes with the last. An OS user that can log in is never deleted; the dialog names it instead. If you close the dialog, ask your agent to remove BasaltDB again: the page has nothing left to drop, and the dialog comes back.
 
 For a bot on a server you cannot log in to, see [`bot-setup.md`](bot-setup.md).

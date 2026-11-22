@@ -457,3 +457,16 @@ button.widen { display: flex; gap: 12px; align-items: center; width: 100%; min-h
 .tabs [role="tab"] { min-height: 40px; padding: 0 14px; background: transparent; color: var(--ui-text-2); border: 0; border-bottom: 2px solid transparent; border-radius: 0; font-weight: 500; }
 .tabs [role="tab"][aria-selected="true"] { color: var(--ui-primary); border-bottom-color: var(--ui-primary); }
 pre.sql { white-space: pre-wrap; word-break: break-word; font-size: 0.85em; }
+
+/* The setup page's Update check (CONTRACT.md, The Update check): one row
+   per finding, a mark, its words and its action; and the passkey list. */
+.check-row { display: flex; align-items: flex-start; gap: 10px; background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 10px 12px; }
+.check-row .mark { width: 16px; flex: none; font-weight: 700; text-align: center; }
+.check-row.need .mark { color: var(--diff-hold-fg); }
+.check-row.good .mark { color: var(--diff-add-fg); }
+.check-row.later .mark { color: var(--ui-text-2); }
+.check-row .words { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.check-row .words strong { font-size: 14px; overflow-wrap: anywhere; }
+.check-row .words span { font-size: 13px; color: var(--ui-text-2); overflow-wrap: anywhere; }
+.check-row button { min-height: 0; padding: 0; margin-left: auto; background: transparent; color: var(--ui-primary); border: 0; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.check-row button.remove { padding: 4px 10px; color: var(--diff-del-fg); border: 1px solid var(--diff-del-fg); border-radius: var(--radius-ui-sm); background: var(--ui-panel); }

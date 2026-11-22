@@ -827,6 +827,10 @@ func versionAfter(installed, upTo int) int {
 	return max(v, installed)
 }
 
+// RemoveOldInstallDoc is the page that says how to remove an older
+// BasaltDB install from a database.
+const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
+
 // ErrUnusableInstall: the database has a basalt_meta this build can neither
 // install over nor update: an older install (from before the guard's
 // versions started again at 1, which this build cannot read), or a

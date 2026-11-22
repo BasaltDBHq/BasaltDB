@@ -1,16 +1,19 @@
 package localsetup_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 )
 
@@ -89,41 +92,71 @@ func TestAnInstallRefusesAnOlderInstallItCannotUse(t *testing.T) {
 	}
 }
 
-// A SETUP_FAILED carries its cause for the engine's log: the step, the
+// A SETUP_FAILED carries its cause to the engine's log: the step, the
 // SQLSTATE and the server's message, never the admin's password or a
-// connection string. The person sees the SQLSTATE and the step.
-func TestSetupFailedCarriesItsCauseWithoutSecrets(t *testing.T) {
+// connection string, even when the database's error holds them. The
+// person sees the SQLSTATE and the step.
+func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 	t.Parallel()
 	f := reset(t)
-	ctx := context.Background()
+	// An admin of its own, with a password no other text holds.
+	const adminPW = "Zq9-distinct-admin-pw"
+	admin := f.db.Names.Prefix + "_zadmin"
+	f.db.Exec(t, `CREATE ROLE `+admin+` LOGIN SUPERUSER PASSWORD '`+adminPW+`'`)
+	t.Cleanup(func() {
+		_, _ = f.db.Admin.Exec(context.Background(), `DROP OWNED BY `+admin+`; DROP ROLE `+admin)
+	})
 	u, err := url.Parse(f.db.URL)
 	require.NoError(t, err)
-	adminPW, _ := u.User.Password()
-	leak := "postgres://someone:" + adminPW + "@db.example:5432/app"
+	u.User = url.UserPassword(admin, adminPW)
+	adminURL := u.String()
+	const otherPW = "Xk7-another-secret"
 	// attach_all is the install script's last statement: make it fail with
-	// the admin's password and a connection string in its message.
+	// the admin's password, a connection string and a password parameter
+	// in its message.
 	f.db.Exec(t, `CREATE OR REPLACE FUNCTION basalt_meta.attach_all() RETURNS SETOF regclass LANGUAGE plpgsql AS $$
-		BEGIN RAISE EXCEPTION 'attach failed for % with password=%', '`+leak+`', '`+adminPW+`'; END $$`)
+		BEGIN RAISE EXCEPTION 'attach failed: % / postgres://x:`+otherPW+`@db.example/app / password=`+otherPW+`', '`+adminPW+`'; END $$`)
 
-	checked, err := f.svc.Check(ctx, f.request())
-	require.NoError(t, err)
+	var logs bytes.Buffer
+	h := pages.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
 	req := f.request()
+	req.DatabaseURL = adminURL
+	var checked localsetup.CheckAnswer
+	require.Equal(t, http.StatusOK, post(t, h, pages.SetupCheckPath, req, &checked))
 	req.Challenge = checked.Challenge
 	if checked.PasskeyNeeded {
 		req.Passkey = register(t, *checked.Challenge)
 	}
-	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeSetupFailed)
-	var r *localsetup.RefusalError
-	require.ErrorAs(t, err, &r)
-	require.NotNil(t, r.Cause, "a SETUP_FAILED names its cause")
-	require.Equal(t, "P0001", r.Cause.SQLState)
-	require.Equal(t, "install script, statement", r.Cause.Step[:len("install script, statement")])
-	require.Contains(t, r.Cause.Message, "attach failed for")
-	for _, s := range []string{r.Cause.Message, r.Cause.Step, r.Message} {
-		require.NotContains(t, s, adminPW)
-		require.NotContains(t, s, "postgres://someone")
+	var refused struct{ Code, Message string }
+	require.Equal(t, http.StatusConflict, post(t, h, pages.SetupRunPath, req, &refused))
+	require.Equal(t, localsetup.CodeSetupFailed, refused.Code)
+	require.Contains(t, refused.Message, "Postgres error P0001, install script, statement")
+	require.NotContains(t, refused.Message, "attach failed", "the cause stays in the log")
+
+	line := logs.String()
+	require.Contains(t, line, "code=SETUP_FAILED")
+	require.Contains(t, line, "sqlstate=P0001")
+	require.Contains(t, line, `step="install script, statement`)
+	require.Contains(t, line, "attach failed")
+	for _, secret := range []string{adminPW, otherPW, "postgres://"} {
+		require.NotContains(t, line, secret)
+		require.NotContains(t, refused.Message, secret)
 	}
-	require.True(t, strings.Contains(r.Message, "P0001"), r.Message)
 	require.NoFileExists(t, f.config)
+}
+
+// The Update check refuses an older install the same way, and never says
+// the guard is newer than this engine.
+func TestAnUpdateRefusesAnOlderInstallItCannotUse(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	f.db.Exec(t, `SET ROLE `+f.db.Names.Guard()+`; DROP TABLE basalt_meta.installs CASCADE;
+		INSERT INTO basalt_meta.schema_version (version) VALUES (30); RESET ROLE`)
+	before := guardObjects(t, f)
+	_, err := svc.Check(ctx, f.agentJob(localsetup.JobUpdate))
+	refusal(t, err, localsetup.CodeGuardUnusable)
+	_, err = svc.Run(ctx, f.agentJob(localsetup.JobUpdate))
+	refusal(t, err, localsetup.CodeGuardUnusable)
+	require.Equal(t, before, guardObjects(t, f), "nothing changed in basalt_meta")
 }

@@ -528,17 +528,13 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 	return user == j.role && db == database
 }
 
-// RemoveOldInstallDoc is the page that says how to remove an older
-// BasaltDB install from a database.
-const RemoveOldInstallDoc = "https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/remove-old-install.md"
-
 // usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
 // install over or update, before anything is planned or changed.
 func usable(ctx context.Context, tx pgx.Tx) error {
 	err := guard.CheckUsable(ctx, tx)
 	switch {
 	case errors.Is(err, guard.ErrUnusableInstall):
-		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+RemoveOldInstallDoc+" says how. Nothing changed.")
+		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+guard.RemoveOldInstallDoc+" says how. Nothing changed.")
 	case err != nil:
 		return setupFailed("read the installed guard", err)
 	}

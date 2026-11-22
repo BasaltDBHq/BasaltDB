@@ -1,0 +1,3 @@
+secret.go imports io/fs (core must stay pure)
+secret.go imports os (core must stay pure)
+secret.go imports path/filepath (core must stay pure)

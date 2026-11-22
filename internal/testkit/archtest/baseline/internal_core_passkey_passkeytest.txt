@@ -1,0 +1,1 @@
+passkeytest.go imports crypto/rand (core must stay pure)

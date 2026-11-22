@@ -1,0 +1,2 @@
+chainpin.go imports os (core must stay pure)
+chainpin.go imports path/filepath (core must stay pure)

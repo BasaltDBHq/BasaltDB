@@ -1,0 +1,2 @@
+rescope.go calls revert.ParseBinding
+revert.go calls revert.ParseBinding

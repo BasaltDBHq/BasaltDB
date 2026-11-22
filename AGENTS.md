@@ -16,6 +16,8 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 
 ## Layout
 
+Where code goes and which package may import which: [ARCHITECTURE.md](ARCHITECTURE.md). A Go test enforces it.
+
 ```
 cmd/basalt     the one binary
 internal/      engine, guard install, MCP transport, CLI internals

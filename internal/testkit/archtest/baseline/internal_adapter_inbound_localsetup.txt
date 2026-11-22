@@ -1,0 +1,8 @@
+imports internal/adapter/outbound/postgres/demo
+imports internal/adapter/outbound/postgres/guard
+imports internal/adapter/outbound/postgres/ledger
+imports internal/adapter/outbound/postgres/pgdial
+imports internal/adapter/outbound/trustdir
+localsetup.go calls passkey.Local
+run.go calls passkey.RegistrationRequestFor
+run.go calls passkey.VerifyRegistration

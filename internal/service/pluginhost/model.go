@@ -3,6 +3,8 @@ package pluginhost
 import (
 	"io/fs"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
@@ -78,30 +80,30 @@ func Fail(class FailureClass) error { return pluginmodel.Fail(class) }
 
 // Root is the directory installed copies live under.
 func Root(mode Mode, goos, configDir string) (string, error) {
-	return pluginmodel.Root(mode, goos, configDir)
+	return pluginpath.Root(mode, goos, configDir)
 }
 
 // TrustDir is the trust store's directory, next to Root.
 func TrustDir(mode Mode, goos, configDir string) (string, error) {
-	return pluginmodel.TrustDir(mode, goos, configDir)
+	return pluginpath.TrustDir(mode, goos, configDir)
 }
 
 // CheckSocketBase applies the path rule to a socket base directory.
-func CheckSocketBase(dir string) error { return pluginmodel.CheckSocketBase(dir) }
+func CheckSocketBase(dir string) error { return pluginpath.CheckSocketBase(dir) }
 
 var (
 	pathRefusal     = pluginmodel.PathRefusal
-	ruleRefusal     = pluginmodel.RuleRefusal
-	checkAbove      = pluginmodel.CheckAbove
-	checkStrict     = pluginmodel.CheckStrict
-	checkStrictInfo = pluginmodel.CheckStrictInfo
-	checkUnder      = pluginmodel.CheckUnder
-	currentUID      = pluginmodel.CurrentUID
+	ruleRefusal     = pluginpath.RuleRefusal
+	checkAbove      = pluginpath.CheckAbove
+	checkStrict     = pluginpath.CheckStrict
+	checkStrictInfo = pluginpath.CheckStrictInfo
+	checkUnder      = pluginpath.CheckUnder
+	currentUID      = pluginpath.CurrentUID
 )
 
-const noFollowFlags = pluginmodel.NoFollowFlags
+const noFollowFlags = pluginpath.NoFollowFlags
 
 // CheckSocketBaseInfo is CheckSocketBase's rule for dir alone, judged from fi.
 func CheckSocketBaseInfo(dir string, fi fs.FileInfo) error {
-	return pluginmodel.CheckSocketBaseInfo(dir, fi)
+	return pluginpath.CheckSocketBaseInfo(dir, fi)
 }

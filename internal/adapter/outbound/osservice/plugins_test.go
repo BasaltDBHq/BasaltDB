@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
@@ -36,7 +38,7 @@ func darwinHost() osservice.PluginHost {
 }
 
 func entry(goos, instance string, egress ...string) osservice.PluginEntry {
-	root, err := pluginmodel.Root(pluginmodel.ModeService, goos, "")
+	root, err := pluginpath.Root(pluginmodel.ModeService, goos, "")
 	if err != nil {
 		panic(err)
 	}

@@ -16,6 +16,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
@@ -116,7 +118,7 @@ type PluginNames struct {
 // /opt/basalt on Linux, /Library/Basalt on macOS. It holds the
 // installed copies, the trust store and the plugins' socket directories.
 func PluginBase(goos string) (string, error) {
-	root, err := pluginmodel.Root(pluginmodel.ModeService, goos, "")
+	root, err := pluginpath.Root(pluginmodel.ModeService, goos, "")
 	if err != nil {
 		return "", err
 	}

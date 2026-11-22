@@ -1,6 +1,6 @@
 //go:build unix
 
-package pluginmodel
+package pluginpath
 
 import (
 	"errors"

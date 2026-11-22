@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
@@ -163,7 +165,7 @@ func socketDir(base string) (dir, path string, err error) {
 	if err := socketPathFits(base); err != nil {
 		return "", "", err
 	}
-	if err := pluginmodel.CheckSocketBase(base); err != nil {
+	if err := pluginpath.CheckSocketBase(base); err != nil {
 		var ve *pluginmodel.VerifyError
 		if errors.As(err, &ve) {
 			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; "+

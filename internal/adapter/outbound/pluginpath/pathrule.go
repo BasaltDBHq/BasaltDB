@@ -1,28 +1,13 @@
-package pluginmodel
+package pluginpath
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
-
-// Mode is how the engine runs. Its values are engine.json's mode values.
-type Mode string
-
-// Modes.
-const (
-	// ModeService: installed files and the trust store belong to root.
-	ModeService Mode = "SERVICE"
-	// ModeSameUser: they belong to the engine's own user, which is no
-	// security boundary (CONTRACT.md, Plugins, Isolation and trust). An empty
-	// mode is same-user, as in engine.json.
-	ModeSameUser Mode = "SAME_USER"
-)
-
-// RootUID is the uid of root.
-const RootUID = 0
 
 // maxSymlinkHops bounds how many root-owned symlinks above a root are
 // followed, as the kernel bounds a path lookup.
@@ -31,23 +16,16 @@ const maxSymlinkHops = 40
 // groupOtherWrite is the group and other write bits.
 const groupOtherWrite = 0o022
 
-// WhyGroupWritable is the path rule's refusal of a directory or file that
-// its group or others can write.
-const WhyGroupWritable = "can be written by group or others"
-
-// ErrUnknownMode is a mode other than SERVICE and SAME_USER.
-var ErrUnknownMode = errors.New("plugin: unknown engine mode")
-
 // Owner is the uid the path rule requires: root in service mode, the
 // engine's own user in same-user mode.
-func (m Mode) Owner() (uint32, error) {
+func Owner(m pluginmodel.Mode) (uint32, error) {
 	switch m {
-	case ModeService:
-		return RootUID, nil
-	case ModeSameUser, "":
+	case pluginmodel.ModeService:
+		return pluginmodel.RootUID, nil
+	case pluginmodel.ModeSameUser, "":
 		return CurrentUID()
 	default:
-		return 0, ErrUnknownMode
+		return 0, pluginmodel.ErrUnknownMode
 	}
 }
 
@@ -62,64 +40,52 @@ const (
 	goosDarwin        = "darwin"
 )
 
-// The directory names under the base (service mode) or the config directory
-// (same-user mode).
-const (
-	PluginsDirName = "plugins"
-	TrustDirName   = "plugin-trust"
-)
-
 // base is the directory the plugin root and the trust store sit in: the
 // service base per OS in service mode, the config directory (the directory
 // that holds engine.json) in same-user mode. Another mode is refused.
-func base(mode Mode, goos, configDir string) (string, error) {
+func base(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	switch mode {
-	case ModeService:
+	case pluginmodel.ModeService:
 		if goos == goosDarwin {
 			return darwinServiceBase, nil
 		}
 		return linuxServiceBase, nil
-	case ModeSameUser, "":
+	case pluginmodel.ModeSameUser, "":
 		return configDir, nil
 	default:
-		return "", ErrUnknownMode
+		return "", pluginmodel.ErrUnknownMode
 	}
 }
 
 // Root is the directory installed copies live under:
 // /opt/basalt/plugins on Linux and /Library/Basalt/plugins on
 // macOS in service mode, <configDir>/plugins in same-user mode.
-func Root(mode Mode, goos, configDir string) (string, error) {
+func Root(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	b, err := base(mode, goos, configDir)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(b, PluginsDirName), nil
+	return filepath.Join(b, pluginmodel.PluginsDirName), nil
 }
 
 // TrustDir is the trust store's directory, next to Root:
 // /opt/basalt/plugin-trust on Linux and
 // /Library/Basalt/plugin-trust on macOS in service mode,
 // <configDir>/plugin-trust in same-user mode.
-func TrustDir(mode Mode, goos, configDir string) (string, error) {
+func TrustDir(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	b, err := base(mode, goos, configDir)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(b, TrustDirName), nil
-}
-
-// PathRefusal is a path-rule failure. It names the path and the rule.
-func PathRefusal(path, why string) *VerifyError {
-	return &VerifyError{Reason: RefusedNotTrusted, File: path, Why: why}
+	return filepath.Join(b, pluginmodel.TrustDirName), nil
 }
 
 // RuleRefusal is a refusal for who can write path, a symlink or its owner,
-// with what was found there (VerifyError.Path).
-func RuleRefusal(path, why string, kind PathFaultKind, fi fs.FileInfo, owners ...uint32) *VerifyError {
-	r := PathRefusal(path, why)
+// with what was found there (pluginmodel.VerifyError.Path).
+func RuleRefusal(path, why string, kind pluginmodel.PathFaultKind, fi fs.FileInfo, owners ...uint32) *pluginmodel.VerifyError {
+	r := pluginmodel.PathRefusal(path, why)
 	uid, _ := fileOwner(fi)
-	r.Path = &PathFault{Kind: kind, UID: uid, GID: fileGroup(fi), Mode: fi.Mode(), Owners: owners}
+	r.Path = &pluginmodel.PathFault{Kind: kind, UID: uid, GID: fileGroup(fi), Mode: uint32(fi.Mode()), Owners: owners}
 	return r
 }
 
@@ -144,7 +110,7 @@ func CheckAbove(base string, owner uint32) error {
 
 func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 	if !filepath.IsAbs(base) {
-		return PathRefusal(base, "is not an absolute path")
+		return pluginmodel.PathRefusal(base, "is not an absolute path")
 	}
 	base = filepath.Clean(base)
 	if err := checkAboveDir("/", owner, pol); err != nil {
@@ -166,7 +132,7 @@ func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 		p := filepath.Join(resolved, c)
 		fi, err := os.Lstat(p)
 		if err != nil {
-			return PathRefusal(p, "cannot be read")
+			return pluginmodel.PathRefusal(p, "cannot be read")
 		}
 		if fi.Mode()&fs.ModeSymlink == 0 {
 			if err := checkAboveInfo(p, fi, owner, pol); err != nil {
@@ -177,17 +143,17 @@ func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 		}
 		uid, err := fileOwner(fi)
 		if err != nil {
-			return PathRefusal(p, "has an owner that cannot be read")
+			return pluginmodel.PathRefusal(p, "has an owner that cannot be read")
 		}
-		if uid != RootUID {
-			return RuleRefusal(p, "is a symlink not owned by root", PathSymlink, fi, RootUID)
+		if uid != pluginmodel.RootUID {
+			return RuleRefusal(p, "is a symlink not owned by root", pluginmodel.PathSymlink, fi, pluginmodel.RootUID)
 		}
 		if hops++; hops > maxSymlinkHops {
-			return PathRefusal(p, "has too many symlinks")
+			return pluginmodel.PathRefusal(p, "has too many symlinks")
 		}
 		link, err := os.Readlink(p)
 		if err != nil {
-			return PathRefusal(p, "is a symlink that cannot be read")
+			return pluginmodel.PathRefusal(p, "is a symlink that cannot be read")
 		}
 		if filepath.IsAbs(link) {
 			resolved = "/"
@@ -197,10 +163,6 @@ func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 	return nil
 }
 
-// WhyNotStickyRoot refuses a socket base, or a directory above it, that
-// group or others can write and that is not root's with the sticky bit set.
-const WhyNotStickyRoot = WhyGroupWritable + ", and is not a directory root owns with the sticky bit set"
-
 // CheckSocketBase applies the path rule's "above a root" check to dir and
 // every directory above it, for the base same-user plugin socket
 // directories are made in: each is owned by root or the engine's own user
@@ -208,15 +170,15 @@ const WhyNotStickyRoot = WhyGroupWritable + ", and is not a directory root owns 
 // sticky bit set (such as /tmp) may be writable by group or others, since
 // there no other user can rename or remove a directory the engine made. A
 // symlink on the way is followed only when root owns it. The error is a
-// *VerifyError naming the path and the rule.
+// *pluginmodel.VerifyError naming the path and the rule.
 func CheckSocketBase(dir string) error {
 	owner, err := CurrentUID()
 	if err != nil {
-		return PathRefusal(dir, "has an owner that cannot be read")
+		return pluginmodel.PathRefusal(dir, "has an owner that cannot be read")
 	}
 	// CheckAbove checks the directories above its argument: name one inside
 	// dir so dir itself is checked too.
-	return checkAboveWith(filepath.Join(dir, "."+PluginsDirName), owner, abovePolicy{stickyRoot: true})
+	return checkAboveWith(filepath.Join(dir, "."+pluginmodel.PluginsDirName), owner, abovePolicy{stickyRoot: true})
 }
 
 // CheckSocketBaseInfo is CheckSocketBase's rule for dir alone, judged from
@@ -224,7 +186,7 @@ func CheckSocketBase(dir string) error {
 func CheckSocketBaseInfo(dir string, fi fs.FileInfo) error {
 	owner, err := CurrentUID()
 	if err != nil {
-		return PathRefusal(dir, "has an owner that cannot be read")
+		return pluginmodel.PathRefusal(dir, "has an owner that cannot be read")
 	}
 	return checkAboveInfo(dir, fi, owner, abovePolicy{stickyRoot: true})
 }
@@ -236,7 +198,7 @@ func splitComponents(p string) []string {
 func checkAboveDir(p string, owner uint32, pol abovePolicy) error {
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return PathRefusal(p, "cannot be read")
+		return pluginmodel.PathRefusal(p, "cannot be read")
 	}
 	return checkAboveInfo(p, fi, owner, pol)
 }
@@ -247,25 +209,25 @@ func checkAboveDir(p string, owner uint32, pol abovePolicy) error {
 // with the sticky bit.
 func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) error {
 	if !fi.IsDir() {
-		return PathRefusal(p, "is not a directory")
+		return pluginmodel.PathRefusal(p, "is not a directory")
 	}
 	uid, err := fileOwner(fi)
 	if err != nil {
-		return PathRefusal(p, "has an owner that cannot be read")
+		return pluginmodel.PathRefusal(p, "has an owner that cannot be read")
 	}
-	if uid != RootUID && uid != owner {
-		return RuleRefusal(p, "is owned by a user other than root and the required owner", PathOwner, fi, RootUID, owner)
+	if uid != pluginmodel.RootUID && uid != owner {
+		return RuleRefusal(p, "is owned by a user other than root and the required owner", pluginmodel.PathOwner, fi, pluginmodel.RootUID, owner)
 	}
 	if fi.Mode().Perm()&groupOtherWrite == 0 {
 		return nil
 	}
 	if !pol.stickyRoot {
-		return RuleRefusal(p, WhyGroupWritable, PathWritable, fi, RootUID, owner)
+		return RuleRefusal(p, pluginmodel.WhyGroupWritable, pluginmodel.PathWritable, fi, pluginmodel.RootUID, owner)
 	}
-	if uid == RootUID && fi.Mode()&fs.ModeSticky != 0 {
+	if uid == pluginmodel.RootUID && fi.Mode()&fs.ModeSticky != 0 {
 		return nil
 	}
-	return RuleRefusal(p, WhyNotStickyRoot, PathWritable, fi, RootUID, owner)
+	return RuleRefusal(p, pluginmodel.WhyNotStickyRoot, pluginmodel.PathWritable, fi, pluginmodel.RootUID, owner)
 }
 
 // CheckStrict applies the path rule to p at or below a root: it is not a
@@ -273,24 +235,24 @@ func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) err
 func CheckStrict(p string, owner uint32) (fs.FileInfo, error) {
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return nil, PathRefusal(p, "cannot be read")
+		return nil, pluginmodel.PathRefusal(p, "cannot be read")
 	}
 	return fi, CheckStrictInfo(p, fi, owner)
 }
 
 func CheckStrictInfo(p string, fi fs.FileInfo, owner uint32) error {
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		return RuleRefusal(p, "is a symlink", PathSymlink, fi)
+		return RuleRefusal(p, "is a symlink", pluginmodel.PathSymlink, fi)
 	}
 	uid, err := fileOwner(fi)
 	if err != nil {
-		return PathRefusal(p, "has an owner that cannot be read")
+		return pluginmodel.PathRefusal(p, "has an owner that cannot be read")
 	}
 	if uid != owner {
-		return RuleRefusal(p, "is not owned by the required owner", PathOwner, fi, owner)
+		return RuleRefusal(p, "is not owned by the required owner", pluginmodel.PathOwner, fi, owner)
 	}
 	if fi.Mode().Perm()&groupOtherWrite != 0 {
-		return RuleRefusal(p, WhyGroupWritable, PathWritable, fi, owner)
+		return RuleRefusal(p, pluginmodel.WhyGroupWritable, pluginmodel.PathWritable, fi, owner)
 	}
 	return nil
 }
@@ -308,7 +270,7 @@ func CheckUnder(owner uint32, dirs ...string) error {
 			return err
 		}
 		if !fi.IsDir() {
-			return PathRefusal(d, "is not a directory")
+			return pluginmodel.PathRefusal(d, "is not a directory")
 		}
 	}
 	return nil

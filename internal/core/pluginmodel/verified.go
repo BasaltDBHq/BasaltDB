@@ -1,7 +1,5 @@
 package pluginmodel
 
-import "io/fs"
-
 // Refusal is why a plugin was refused: the reason of the PLUGIN_REFUSED
 // error at basalt plugin add. At engine start every refusal shows in status
 // as PLUGIN_NOT_TRUSTED.
@@ -50,9 +48,9 @@ const (
 // path itself (not followed if it is a symlink).
 type PathFault struct {
 	Kind PathFaultKind
-	// UID and GID own the path; Mode is its mode.
+	// UID and GID own the path; Mode is its mode, the bits of an io/fs.FileMode.
 	UID, GID uint32
-	Mode     fs.FileMode
+	Mode     uint32
 	// Owners are the users allowed to own it there: root and the required
 	// owner above a root, the required owner from a root down, root for a
 	// symlink above a root.

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // whyFilesNameManifest: a listed file would overwrite the manifest or its
@@ -44,7 +46,7 @@ var (
 // A failure is a *VerifyError; the entry must then not be started, and
 // status shows PLUGIN_NOT_TRUSTED for its agents.
 func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
-	owner, err := mode.Owner()
+	owner, err := pluginpath.Owner(mode)
 	if err != nil {
 		return Verified{}, err
 	}

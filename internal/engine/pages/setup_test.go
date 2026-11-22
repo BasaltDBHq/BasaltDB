@@ -328,3 +328,26 @@ func TestSetupRefusalCarriesThePinnedCertificate(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"pinned":"`+strings.Repeat("b", 64)+`"`)
 	require.Contains(t, w.Body.String(), `"sha256":"`+strings.Repeat("a", 64)+`"`)
 }
+
+// A SETUP_FAILED's cause reaches the engine's log (step, SQLSTATE and the
+// redacted message) and never the person's answer; the request's admin
+// string reaches neither.
+func TestSetupFailedLogsItsCause(t *testing.T) {
+	t.Parallel()
+	var logs bytes.Buffer
+	jobs := &fakeJobs{refusal: &localsetup.RefusalError{
+		Code: localsetup.CodeSetupFailed, Message: "Reading the database or running the setup failed (Postgres error 42P01, install script, statement 3); nothing changed.",
+		Cause: &localsetup.Cause{Step: "install script, statement 3", SQLState: "42P01", Message: `relation "basalt_meta.installs" does not exist`},
+	}}
+	h := pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
+	w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	require.Equal(t, http.StatusConflict, w.Code)
+	require.NotContains(t, w.Body.String(), "does not exist", "the cause stays in the log")
+	line := logs.String()
+	require.Contains(t, line, "code=SETUP_FAILED")
+	require.Contains(t, line, "sqlstate=42P01")
+	require.Contains(t, line, `step="install script, statement 3"`)
+	require.Contains(t, line, `basalt_meta.installs`)
+	require.NotContains(t, line, adminSecret)
+	require.NotContains(t, line, "db.example")
+}

@@ -208,8 +208,12 @@ A container usually has no service manager: PID 1 is your process or a small ini
 - Setup says the binary is not owned by root: the service runs only a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy.
 - Setup says there is no administrator dialog: it needs a desktop session.
 - The page says `JOB_UNAVAILABLE`: the engine is run by a bot, or it is already set up and the page was an install. Ask your agent for a new link.
+- The page says `GUARD_UNUSABLE`: the database has an older BasaltDB install this version cannot use. Remove it as [Remove an older install](remove-old-install.md) says, then set up again.
+- The page says `SETUP_FAILED` with a Postgres error code: the engine log has the step and the database's message.
 
 ## Remove everything
+
+An install a newer alpha or beta cannot use, or one too broken for the page's Remove: see [Remove an older install](remove-old-install.md).
 
 Ask your agent to remove BasaltDB. On the page that opens, pick **Remove BasaltDB**, paste the admin connection string, read the SQL and type the database's name to confirm. In one transaction it drops the `basalt_meta` schema (the ledger goes for good), the guard's policies and the `basalt_*` roles, and removes the agent from the engine's config. It also drops the demo data (`basalt_demo`) when the schema carries the comment `BasaltDB demo data` and nothing of yours depends on it. It asks for no passkey.
 

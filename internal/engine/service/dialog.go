@@ -248,12 +248,26 @@ no_link() {
 }
 # make_dir DIR MODE OWNER GROUP: make DIR when it is missing; one that
 # exists must pass the walk. mkdir never follows a link at DIR, and chown -h
-# changes only what mkdir made.
+# changes only DIR itself. A DIR it made and cannot give to OWNER is removed
+# again. An existing DIR root owns (left by an install that stopped) is
+# given to OWNER only when it holds nothing but folders: find never
+# follows a link.
 make_dir() {
 	check_dir "$1" "$engine_uid"
-	[ -d "$1" ] && return 0
+	if [ -d "$1" ]; then
+		if [ "$3" != 0 ] && [ "$(uid_of "$1")" = 0 ]; then
+			[ -z "$(find "$1" -mindepth 1 ! -type d -print | head -n 1)" ] ||
+				fail "$1 is owned by root and holds files, so basalt does not give it to $3; remove it and run basalt init again"
+			chown -h "$3:$4" "$1"
+			chmod "$2" "$1"
+		fi
+		return 0
+	fi
 	mkdir -m "$2" "$1"
-	chown -h "$3:$4" "$1"
+	if ! chown -h "$3:$4" "$1"; then
+		rmdir "$1"
+		fail "$1 could not be given to $3:$4"
+	fi
 }
 # make_root_dir DIR MODE: make DIR root's when it is missing; one that
 # exists must be root's and pass the walk.
@@ -303,17 +317,25 @@ func shellCheck(user, shellCmd string) string {
 
 // linuxPreflight checks an existing engine account (a system uid, up to
 // SYS_UID_MAX, and no login shell; no group of that name without the user)
-// and every folder the script writes in.
+// and every folder the script writes in. A user whose group is missing gets
+// it back with the user's own gid, when no other group holds that gid.
 func linuxPreflight(s Spec) string {
 	u := s.User
 	return fmt.Sprintf(`engine_uid=
+make_group=
 if id -u %[1]s >/dev/null 2>&1; then
 	engine_uid=$(id -u %[1]s)
 	sys_max=$(awk '$1 == "SYS_UID_MAX" { print $2 }' /etc/login.defs 2>/dev/null || true)
 	case $sys_max in '' | *[!0-9]*) sys_max=%[4]d ;; esac
 	[ "$engine_uid" -ge 1 ] && [ "$engine_uid" -le "$sys_max" ] ||
 		fail "the OS user %[1]s exists with uid $engine_uid, not a system account (1 to $sys_max); basalt does not take it over"
-%[5]selif getent group %[1]s >/dev/null 2>&1; then
+%[5]s	engine_gid=$(id -g %[1]s)
+	if ! getent group %[1]s >/dev/null 2>&1; then
+		! getent group "$engine_gid" >/dev/null 2>&1 ||
+			fail "the OS user %[1]s has no group %[1]s, and its group id $engine_gid belongs to another group; basalt does not take it over"
+		make_group=1
+	fi
+elif getent group %[1]s >/dev/null 2>&1; then
 	fail "the group %[1]s exists without the OS user %[1]s; basalt does not take it over"
 fi
 check_dir %[2]s "$engine_uid"
@@ -328,15 +350,29 @@ check_dir %[8]s ""
 
 // darwinPreflight checks an existing engine account (uid 300 to 499, no
 // login shell; no group of that name without the user, whose gid dscl
-// would change) and every folder and file the script writes in.
+// would change) and every folder and file the script writes in. A user
+// whose group is missing (a removal that could not delete the user) gets
+// its group back with the user's own gid, when that gid is a system id no
+// other group holds.
 func darwinPreflight(s Spec) string {
 	u := s.User
 	return fmt.Sprintf(`engine_uid=
+make_group=
 if id -u %[1]s >/dev/null 2>&1; then
 	engine_uid=$(id -u %[1]s)
 	[ "$engine_uid" -ge %[2]d ] && [ "$engine_uid" -le %[3]d ] ||
 		fail "the OS user %[1]s exists with uid $engine_uid, not a system account (%[2]d to %[3]d); basalt does not take it over"
-%[4]selif dscl . -read /Groups/%[1]s >/dev/null 2>&1; then
+%[4]s	if ! dscl . -read /Groups/%[1]s >/dev/null 2>&1; then
+		engine_gid=$(dscl . -read /Users/%[1]s PrimaryGroupID | awk '{ print $2 }')
+		case $engine_gid in '' | *[!0-9]*) fail "the OS user %[1]s has no group %[1]s and no group id; basalt does not take it over" ;; esac
+		[ "$engine_gid" -ge %[2]d ] && [ "$engine_gid" -le %[3]d ] ||
+			fail "the OS user %[1]s has no group %[1]s, and its group id $engine_gid is not a system id (%[2]d to %[3]d); basalt does not take it over"
+		if dscl . -list /Groups PrimaryGroupID | awk -v id="$engine_gid" '$NF == id { f = 1 } END { exit !f }'; then
+			fail "the OS user %[1]s has no group %[1]s, and its group id $engine_gid belongs to another group; basalt does not take it over"
+		fi
+		make_group=1
+	fi
+elif dscl . -read /Groups/%[1]s >/dev/null 2>&1; then
 	fail "the group %[1]s exists without the OS user %[1]s; basalt does not take it over"
 fi
 check_dir %[5]s "$engine_uid"
@@ -359,6 +395,8 @@ func linuxScript(s Spec) string {
 	u := s.User
 	return fmt.Sprintf(`if [ -z "$engine_uid" ]; then
 	useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin %[1]s
+elif [ -n "$make_group" ]; then
+	groupadd --system --gid "$engine_gid" %[1]s
 fi
 engine_uid=$(id -u %[1]s)
 make_dir %[2]s %04[3]o %[1]s %[1]s
@@ -390,6 +428,9 @@ func darwinScript(s Spec) string {
 	dscl . -create /Users/%[1]s NFSHomeDirectory /var/empty
 	dscl . -create /Users/%[1]s RealName 'BasaltDB engine'
 	dscl . -create /Users/%[1]s IsHidden 1
+elif [ -n "$make_group" ]; then
+	dscl . -create /Groups/%[1]s
+	dscl . -create /Groups/%[1]s PrimaryGroupID "$engine_gid"
 fi
 engine_uid=$(id -u %[1]s)
 make_dir %[4]s %04[5]o %[1]s %[1]s

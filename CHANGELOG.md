@@ -72,6 +72,14 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 - A program on your computer could finish the first setup with a database it controls and leave you unable to set up your own. Running `basalt init` again now asks "Is this your database?" first. After "No, this isn't mine", `basalt init` asks for your password in the system's administrator dialog and resets BasaltDB on this computer: it deletes the engine's config, credentials and certificate pins, restarts the engine and opens the first-install page. No database is touched. On macOS the dialog says what it asks for.
 - The engine opens its agents' sockets before it reads the database, so a slow database no longer makes the engine look down to the bot. The first guard read runs beside the serving and gives up after 15 seconds.
 - Supabase pooler hosts under `.pooler.supabase.co` are recognised as the pooler, like `.pooler.supabase.com`.
+- Setup refuses a database with an older or partial BasaltDB install (`GUARD_UNUSABLE`) at the check, before you sign anything, and links [docs/remove-old-install.md](docs/remove-old-install.md). Before, the check passed and the install failed with `SETUP_FAILED`.
+- The passkey label defaults to "Passkey on <hostname>" when the setup page sends none, so the install and Add a passkey no longer fail.
+- A failed setup run logs its step, its SQLSTATE and the database's reason, with passwords removed.
+- Remove on macOS keeps the engine user and its group together, and says so when macOS refuses to delete the user.
+- Reinstall repairs a missing engine group and gives root-owned leftover engine folders back to the engine user, so `basalt init` no longer fails with `chown: _basalt: illegal group name` or leaves the engine crash-looping.
+- `basalt init` stops and names the log when the engine service keeps crashing, instead of waiting out the 30 seconds.
+- The plugin approval page names the plugin's fingerprint "Plugin fingerprint", apart from the engine's fingerprint.
+- `apply_revert_batch` errors for a revert that is not signed yet point at the revert page instead of the removed `basalt revert`.
 
 ### Security
 
@@ -82,6 +90,7 @@ The first release of the 0.1 line, for macOS and Linux (amd64 and arm64). Setup 
 
 ### Breaking for alpha installs
 
+- An install from an older alpha must be removed first, then set up again: see [docs/remove-old-install.md](docs/remove-old-install.md).
 - `basalt init` on your own computer only starts setup. It installs the engine service through the administrator dialog when needed, prints and opens the setup link, and prints the `basalt mcp` line the agent registers. It never asks for or reads the admin connection string. With no dialog, such as in an SSH session, it stops and never runs the engine as your user instead.
 - `basalt init --remote` takes `--agent` and no other flag, and its output is text only. A new engine is agent-operated with the Vault on, and the first run prints the connect link of a connect-only code. An expired or refused setup is forgotten on the next run, which makes a fresh code.
 - An agent's `credentialFile` in `engine.json` moves inside `store`. Replace `"credentialFile": "<path>"` with `"store": {"kind": "POSTGRES", "credentialFile": "<path>"}` by hand. An `engine.json` that still has `directAddr` is refused at load: delete the key.

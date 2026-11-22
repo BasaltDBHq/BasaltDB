@@ -1,6 +1,6 @@
 # Architecture
 
-Where code lives in this repo and which package may import which. The behaviour of every surface is fixed in [CONTRACT.md](CONTRACT.md); [docs/architecture.md](docs/architecture.md) is the five-minute tour of what runs where. This page is about the code layout, and a Go test enforces it (`internal/testkit/archtest`).
+Where code lives in this repo and which package may import which. The behaviour of every surface is fixed in [CONTRACT.md](CONTRACT.md); [docs/architecture.md](docs/architecture.md) tells how the pieces work together at runtime (one binary, the guard, how a held write reaches approval). This page is about the code layout, and a Go test enforces it (`internal/testkit/archtest`).
 
 ## Layers
 

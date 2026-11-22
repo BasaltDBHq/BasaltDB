@@ -34,3 +34,6 @@ func PinNew(string, string, *x509.Certificate, bool) (bool, error) { return fals
 
 // ErrCovered: PinNew found a trust profile that covers the host already.
 var ErrCovered = errors.New("a trust profile covers this host already")
+
+// Repin: see errUnsupported.
+func Repin(string, string, *x509.Certificate, bool) ([]string, error) { return nil, errUnsupported }

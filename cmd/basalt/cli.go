@@ -194,16 +194,6 @@ func (c *cliIO) promptAdminURL() (string, error) {
 	return c.line()
 }
 
-// confirm asks a yes/no question on stderr.
-func (c *cliIO) confirm(question string) (bool, error) {
-	fmt.Fprintf(c.stderr, "%s [y/N] ", question)
-	answer, err := c.line()
-	if err != nil {
-		return false, err
-	}
-	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
-}
-
 // connect opens one connection, usable through a transaction pooler
 // (pgdial).
 func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {

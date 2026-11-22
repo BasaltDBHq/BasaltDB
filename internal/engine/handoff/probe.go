@@ -207,6 +207,26 @@ func (p Prober) Approve(ctx context.Context, a Address, ip netip.Addr, approved 
 	return Pin{Profile: prof, Top: seen.Top, CAOnly: !seen.Full}, nil
 }
 
+// Repin is Approve for a host the engine pinned itself (pin-<host>) whose
+// server presents another chain top (CONTRACT.md, A changed certificate on
+// persona 2): the engine's own pin is left out, so the chain is read and
+// checked against approved, the SHA-256 the person trusted on the connect
+// page. Another profile covering the host decides as in Approve, and then
+// nothing is pinned (TRUST_ROOT_MISMATCH), and so does a chain that needs
+// no pin: only a pin whose top has approved's SHA-256 comes back.
+func (p Prober) Repin(ctx context.Context, a Address, ip netip.Addr, approved string) (Pin, error) {
+	own := trustprofile.PinName(trustprofile.NormalizeHost(a.Host))
+	p.Profiles = p.profiles().Replacing(own, nil)
+	pin, err := p.Approve(ctx, a, ip, approved)
+	switch {
+	case err != nil:
+		return Pin{}, err
+	case pin.Profile == nil || pin.Top == nil || trustprofile.DERSHA256(pin.Top) != approved:
+		return Pin{}, &ReachError{Reason: ReasonTrustRootMismatch}
+	}
+	return pin, nil
+}
+
 // dialTo dials ip, whatever address is asked for: the one the host
 // resolved to and the checks passed.
 func (p Prober) dialTo(ip netip.Addr, port int) trustpin.Dial {

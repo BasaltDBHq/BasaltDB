@@ -53,7 +53,7 @@ const (
 	resultUnreachable = "UNREACHABLE"
 )
 
-var reachReasons = map[string]bool{"ADDRESS_REFUSED": true, "NO_ROUTE": true, "TLS_NOT_VERIFIED": true, "TIMEOUT": true}
+var reachReasons = map[string]bool{"ADDRESS_REFUSED": true, "NO_ROUTE": true, "TLS_NOT_VERIFIED": true, "TIMEOUT": true, "TRUST_ROOT_MISMATCH": true}
 
 // runElsewhere is RUN_ELSEWHERE's fixed message: it names nothing of the
 // other database.
@@ -68,8 +68,11 @@ type hold struct {
 	Fingerprint string       `json:"fingerprint"`
 	Expires     time.Time    `json:"expires"`
 	Phase       string       `json:"phase"`
-	CollectedAt *time.Time   `json:"collectedAt,omitempty"`
-	Reach       *Reach       `json:"-"`
+	// TrustRoot is the certificate authority the login was verified
+	// against, "" for none; CollectAddress returns it.
+	TrustRoot   string     `json:"trustRoot,omitempty"`
+	CollectedAt *time.Time `json:"collectedAt,omitempty"`
+	Reach       *Reach     `json:"-"`
 }
 
 // Reach is the newest report the engine made for a hold's address.
@@ -124,6 +127,12 @@ func (s *Server) Held(setupID string) (setup.Target, bool) {
 	return h.Address, ok
 }
 
+// HeldTrustRoot is the trustRoot of the hold for setupID, "" without one.
+func (s *Server) HeldTrustRoot(setupID string) string {
+	h, _ := s.live(setupID)
+	return h.TrustRoot
+}
+
 // HeldPhase is the phase of the hold for setupID, "" without one.
 func (s *Server) HeldPhase(setupID string) string {
 	h, _ := s.live(setupID)
@@ -142,16 +151,16 @@ func (s *Server) Reached(setupID string) (Reach, bool) {
 // holdFor holds the address of a connect-only setup that just ran (or ran
 // again), as a SET_UP hold for 30 minutes from now, replacing any hold, and
 // returns its ticket.
-func (s *Server) holdFor(d setup.Description, at setup.Target) (string, error) {
-	h := hold{Address: at, EngineKey: d.EngineKey, SetupID: d.SetupID, Fingerprint: d.Fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhaseSetUp}
+func (s *Server) holdFor(d setup.Description, at setup.Target, trustRoot string) (string, error) {
+	h := hold{Address: at, EngineKey: d.EngineKey, SetupID: d.SetupID, Fingerprint: d.Fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhaseSetUp, TrustRoot: trustRoot}
 	s.put(h)
 	return s.ticket(h)
 }
 
 // previewFor makes a PREVIEW hold for at and returns its ticket, replacing
 // a PREVIEW hold, never a SET_UP one: then it makes none and returns "".
-func (s *Server) previewFor(d setup.Description, at setup.Target) (string, error) {
-	h := hold{Address: at, EngineKey: d.EngineKey, SetupID: d.SetupID, Fingerprint: d.Fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhasePreview}
+func (s *Server) previewFor(d setup.Description, at setup.Target, trustRoot string) (string, error) {
+	h := hold{Address: at, EngineKey: d.EngineKey, SetupID: d.SetupID, Fingerprint: d.Fingerprint, Expires: s.Now().Add(HoldLife).UTC().Truncate(time.Second), Phase: PhasePreview, TrustRoot: trustRoot}
 	s.holds.mu.Lock()
 	if old, ok := s.holds.m[d.SetupID]; ok && s.Now().Before(old.Expires) && old.Phase == PhaseSetUp {
 		s.holds.mu.Unlock()
@@ -235,7 +244,7 @@ func (s *Server) CollectAddress(_ context.Context, r *connect.Request[connectv1.
 		h.CollectedAt = &now
 		s.put(h)
 	}
-	return connect.NewResponse(&connectv1.CollectAddressResponse{Address: target(h.Address), Phase: h.Phase}), nil
+	return connect.NewResponse(&connectv1.CollectAddressResponse{Address: target(h.Address), Phase: h.Phase, TrustRoot: h.TrustRoot}), nil
 }
 
 // verifySigned checks a signature by the hold's engine key over context

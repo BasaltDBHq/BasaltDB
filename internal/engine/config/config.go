@@ -257,11 +257,22 @@ type Setup struct {
 	// the address the connect service handed over (ADDRESS_INVALID): the
 	// next basalt init --remote forgets the setup and makes a recovery code.
 	AddressInvalid bool `json:"addressInvalid,omitempty"`
+	// CertificateChanged is an AGENT code with no change that basalt init
+	// --remote made because the agent's pinned host presents another chain
+	// top (TRUST_ROOT_CHANGED): the engine collects the certificate the
+	// person trusted on the connect page for this setupId and replaces its
+	// pin only when its own reading matches (CONTRACT.md, A changed
+	// certificate on persona 2). Kept past expiry for the collect window.
+	CertificateChanged bool `json:"certificateChanged,omitempty"`
 }
 
 // ConnectOnly reports whether s is a connect-only setup: its engine
 // collects the address, or the person refused the one it collected.
 func (s Setup) ConnectOnly() bool { return s.AwaitingAddress || s.Refused }
+
+// CollectsCertificate reports whether s is a certificateChanged setup whose
+// engine collects the certificate trusted on the connect page.
+func (s Setup) CollectsCertificate() bool { return s.CertificateChanged && !s.ConnectOnly() }
 
 // SecretSuffix names the file that holds the password of a connect-only
 // setup until the person confirms its database: agents/<agent>.secret.

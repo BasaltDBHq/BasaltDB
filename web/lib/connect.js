@@ -19,6 +19,7 @@ import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
 import { startTabs } from "./remove.js";
 import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
+import { ADD_AGAIN, activePasskeys, checkView, passkeyLabel, passkeyLine, pinView, revokeLines, signalRemoved, unlabeledColumns } from "./connectupdate.js";
 
 // The pieces the local setup page shares with this one.
 export { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText };
@@ -423,6 +424,19 @@ export class Flow {
     return isConnectOnly(this.summary);
   }
 
+  // updateCheck: a code with a target that changes an agent or upgrades
+  // the guard gets the Update check after the paste (CONTRACT.md, Update on
+  // the connect page).
+  get updateCheck() {
+    return !this.connectOnly && (this.summary?.kind === "AGENT" || this.summary?.kind === "UPGRADE");
+  }
+
+  // pin is the trust step for a code that carries the bot's pin: MATCH,
+  // CHANGED or null (CONTRACT.md, The bot's pin).
+  get pin() {
+    return pinView(this.summary?.trustPin, this.asking);
+  }
+
   // needsNewPasskey: an INSTALL creates the approval passkey at the passkey
   // step, unless the person already has one for this database.
   get needsNewPasskey() {
@@ -531,8 +545,35 @@ export class Flow {
       excluded: Array.isArray(out.excluded) ? out.excluded : [],
       columns: Array.isArray(out.columns) ? out.columns : [],
       alreadyRan: out.alreadyRan === true,
+      // For a code with a target: every active passkey of the database
+      // (CONTRACT.md, Update on the connect page).
+      passkeys: activePasskeys(out.passkeys),
     };
     this.#ticket = typeof out.ticket === "string" ? out.ticket : "";
+  }
+
+  // revokePasskey is Remove on the passkey list: RevokePasskey with the
+  // code, the string the page holds and the trusted certificate, for one
+  // active passkey. The string stays for the fixes that follow; a refusal
+  // of the string or the database drops it (the person pastes it again),
+  // one of the passkey alone (ANSWERS_INVALID) keeps it.
+  async revokePasskey(credentialId) {
+    if (this.step !== "questions" || this.#databaseUrl === "" || !this.updateCheck) throw new Error("not at the passkey list");
+    const req = { code: this.code, databaseUrl: this.#databaseUrl, credentialId };
+    if (this.#trustRoot !== "") req.trustRoot = this.#trustRoot;
+    let out;
+    try {
+      out = await call(this.fetch, "RevokePasskey", req);
+    } catch (err) {
+      if (!(err instanceof Refusal) || err.reason !== "ANSWERS_INVALID") this.backToPaste();
+      throw err;
+    }
+    const removed = this.check.passkeys.find((p) => p.credentialId === credentialId) ?? null;
+    this.check.passkeys = this.check.passkeys.filter((p) => p.credentialId !== credentialId);
+    const remaining = Number.isInteger(out.remaining) && out.remaining > 0 ? out.remaining : 0;
+    // No portal passkey left: the approval registers one.
+    if (remaining === 0) this.check.passkeyNeeded = true;
+    return { removed, remaining, lines: strings(out.lines) };
   }
 
   // recheck is "Retry" without a preview ticket (the service's caps were
@@ -732,8 +773,14 @@ function show(id, on = true) {
 
 // The screens, in order, with the progress segment each fills and where
 // Back goes. Every screen but the result carries the address-bar strip.
-const SCREENS = ["s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-trust", "s-checking", "s-unreach", "s-tables", "s-labels", "s-approve", "s-done"];
-const PROGRESS = { "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-trust": 3, "s-checking": 3, "s-unreach": 3, "s-tables": 4, "s-labels": 5, "s-approve": 6 };
+const SCREENS = [
+  "s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-trust", "s-pinned", "s-newcert", "s-checking", "s-unreach",
+  "s-doctor", "s-passkeys", "s-revoke", "s-addpk", "s-tables", "s-labels", "s-approve", "s-done",
+];
+const PROGRESS = {
+  "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-trust": 3, "s-pinned": 3, "s-newcert": 3, "s-checking": 3, "s-unreach": 3,
+  "s-doctor": 4, "s-passkeys": 4, "s-revoke": 4, "s-addpk": 4, "s-tables": 4, "s-labels": 5, "s-approve": 6,
+};
 
 function showScreen(name) {
   for (const s of SCREENS) show(s, s === name);
@@ -818,14 +865,25 @@ export function start(env) {
   let labels = null;
   let labelMode = "skip";
   let reachOk = false;
+  // fixLabels: on an update, the person chose to label the unlabeled
+  // columns (Fix these, or Label on their row).
+  let fixLabels = false;
+  // revoking is the passkey the remove screen asks about.
+  let revoking = null;
   // Back is offered on these screens; on the checking screen only once
   // CheckSetup answered (checkReach shows it).
-  const back = { "s-passkey": "s-bot", "s-paste": "s-passkey", "s-unreach": "s-paste", "s-tables": "s-paste", "s-labels": "s-tables" };
+  const back = {
+    "s-passkey": "s-bot", "s-paste": "s-passkey", "s-unreach": "s-paste", "s-tables": "s-paste", "s-labels": "s-tables",
+    "s-doctor": "s-paste", "s-passkeys": "s-doctor", "s-revoke": "s-passkeys", "s-addpk": "s-doctor",
+  };
+  // checkScreen is where the screens after the check go back to: the
+  // Update check for a code with a target, else the tables.
+  const checkScreen = () => (flow.updateCheck ? "s-doctor" : "s-tables");
 
   const go = (name) => {
     screen = name;
     showScreen(name);
-    const to = name === "s-approve" ? (labelsApply() ? "s-labels" : "s-tables") : back[name];
+    const to = name === "s-approve" ? (labelsApply() ? "s-labels" : checkScreen()) : back[name];
     show("back", Boolean(to));
   };
   const bot = () => botName(flow.summary);
@@ -909,7 +967,9 @@ export function start(env) {
     }
     show("passkey-lead", !flow.passkeyDone);
     show("passkey-existing", install && !flow.passkeyDone);
-    show("passkey-skip", false);
+    // I don't have it: a person who lost their only device still reaches
+    // the passkey list (CONTRACT.md, The connect page, step 3).
+    show("passkey-skip", !install && !flow.passkeyDone);
     setText("passkey-status", "");
     go("s-passkey");
   };
@@ -1014,15 +1074,34 @@ export function start(env) {
   // ---- 3a: a certificate authority to trust ----
   // The question names the host, and the subject, SHA-256 and expiry the
   // service read with the TLS handshake alone; all of it as text.
+  // With the bot's pin in the code, the words change: the certificate the
+  // bot trusts, one click; or the new one with the pinned one as Was. The
+  // request is the same either way (CONTRACT.md, The bot's pin).
   const showTrust = (problem) => {
-    setText("trust-text", trustText(flow.trustHost, flow.asking));
-    setText("trust-error", problem);
-    show("trust-error", problem !== "");
-    go("s-trust");
+    const pin = flow.pin;
+    let name = "s-trust";
+    let error = "trust-error";
+    if (pin?.state === "MATCH") {
+      name = "s-pinned";
+      error = "pinned-error";
+      setText("pinned-title", `This matches the certificate ${bot()} trusts.`);
+      setText("pinned-fp", pin.fingerprint);
+    } else if (pin?.state === "CHANGED") {
+      name = "s-newcert";
+      error = "newcert-error";
+      setText("newcert-now", pin.now);
+      setText("newcert-detail", pin.detail);
+      setText("newcert-was", pin.was);
+    } else {
+      setText("trust-text", trustText(flow.trustHost, flow.asking));
+    }
+    setText(error, problem);
+    show(error, problem !== "");
+    go(name);
   };
 
-  $("trust-go").addEventListener("click", async () => {
-    $("trust-go").disabled = true;
+  const trustGo = async (button) => {
+    $(button).disabled = true;
     setText("checking-title", "Checking your database…");
     mark("chk-login", "wait", "Signing in to the database");
     mark("chk-tables", "hidden", "");
@@ -1037,15 +1116,18 @@ export function start(env) {
       else showPaste(refusalText(err));
       return;
     } finally {
-      $("trust-go").disabled = false;
+      $(button).disabled = false;
     }
     await checked();
-  });
-
-  $("trust-cancel").addEventListener("click", () => {
+  };
+  const trustCancel = () => {
     flow.cancelTrust();
     showPaste("");
-  });
+  };
+  for (const [go2, cancel] of [["trust-go", "trust-cancel"], ["pinned-go", "pinned-cancel"], ["newcert-go", "newcert-cancel"]]) {
+    $(go2).addEventListener("click", () => trustGo(go2));
+    $(cancel).addEventListener("click", trustCancel);
+  }
 
   // checked shows what CheckSetup found, then the reach check where it
   // applies.
@@ -1054,6 +1136,10 @@ export function start(env) {
     const n = tableRows(flow.summary, flow.check).rows.length;
     if (n > 0) mark("chk-tables", "ok", `Found ${n} ${n === 1 ? "table" : "tables"}`);
     reachOk = false;
+    if (flow.updateCheck) {
+      showDoctor(true);
+      return;
+    }
     if (!flow.reachApplies) {
       showTables(true);
       return;
@@ -1113,10 +1199,153 @@ export function start(env) {
   // ---- 4: the database and its tables ----
   const labelsApply = () => {
     const c = flow.check;
-    if (!c || c.alreadyRan || c.nothingToDo || flow.summary.kind === "UPGRADE") return false;
-    return labels !== null && labels.of(tablesNow()).length > 0;
+    if (!c || c.alreadyRan || labels === null) return false;
+    if (flow.updateCheck) return fixLabels && labels.of(labelTables()).length > 0;
+    if (c.nothingToDo || flow.summary.kind === "UPGRADE") return false;
+    return labels.of(tablesNow()).length > 0;
   };
   const tablesNow = () => included ?? tableRows(flow.summary, flow.check).rows.map((r) => r.name);
+  // labelTables are the tables whose columns the labels screen shows: on
+  // an update, those of the unlabeled columns alone (an UPGRADE names no
+  // table: its columns are every readable one).
+  const labelTables = () => (flow.updateCheck ? [...new Set(labels.columns.map((c) => c.table))] : tablesNow());
+
+  // ---- 4 on an update: the check ----
+  // showDoctor shows the check screen; fresh (after CheckSetup) starts the
+  // labels from the unlabeled columns alone.
+  const showDoctor = (fresh = false) => {
+    newLoop();
+    const c = flow.check;
+    if (fresh) {
+      included = null;
+      labels = new Labels(unlabeledColumns(c.columns));
+      fixLabels = false;
+      labelMode = "skip";
+    }
+    const view = checkView(c);
+    const db = c.database?.database ?? flow.summary.target?.database ?? "";
+    setText("doc-top", `BasaltDB / Setup · ${db}`);
+    setText("doc-title", view.title);
+    setText("doc-sub", view.sub);
+    const rows = $("doc-rows");
+    clear(rows);
+    for (const r of view.rows) {
+      const row = el("div", `fix-row ${r.mark}`);
+      row.appendChild(el("span", "fix-mark", r.mark === "good" ? "✓" : "!"));
+      const body = el("div", "fix-body");
+      body.appendChild(el("strong", "", r.title));
+      if (r.text) body.appendChild(el("span", "muted", r.text));
+      row.appendChild(body);
+      if (r.action) {
+        const act = el("button", "link fix-act", r.action);
+        act.type = "button";
+        act.addEventListener("click", () => rowAction(r.kind));
+        row.appendChild(act);
+      }
+      rows.appendChild(row);
+    }
+    show("doc-pending", flow.passkey !== null);
+    const notes = $("doc-notes");
+    clear(notes);
+    for (const n of c.notes) notes.appendChild(el("li", "", n));
+    show("doc-notes", c.notes.length > 0);
+    setText("doc-go", view.button);
+    go("s-doctor");
+  };
+
+  const rowAction = (kind) => {
+    if (kind === "LABELS") {
+      fixLabels = true;
+      showLabels();
+    } else if (kind === "PASSKEY_ADD") showAddPasskey("You'll use it to approve your bot's bigger changes.");
+    else if (kind === "PASSKEYS") showPasskeys("");
+  };
+
+  // Fix these walks the rows in order: the labels, then the approval, which
+  // registers a passkey when the database has no portal one.
+  $("doc-go").addEventListener("click", () => {
+    fixLabels = labels.columns.length > 0;
+    if (labelsApply()) showLabels();
+    else showApprove();
+  });
+
+  // ---- The passkey list ----
+  const showPasskeys = (done) => {
+    const list = $("pk-list");
+    clear(list);
+    for (const p of flow.check.passkeys) {
+      const row = el("div", "fix-row pk-row");
+      const body = el("div", "fix-body");
+      body.appendChild(el("strong", "", passkeyLabel(p)));
+      body.appendChild(el("span", "muted", passkeyLine(p, flow.now())));
+      row.appendChild(body);
+      const rm = el("button", "pk-remove", "Remove");
+      rm.type = "button";
+      rm.addEventListener("click", () => showRevoke(p));
+      row.appendChild(rm);
+      list.appendChild(row);
+    }
+    setText("pk-done", done);
+    show("pk-done", done !== "");
+    show("pk-error", false);
+    go("s-passkeys");
+  };
+
+  const showRevoke = (p) => {
+    revoking = p;
+    const lines = $("revoke-lines");
+    clear(lines);
+    for (const l of revokeLines(p, flow.check.passkeys)) lines.appendChild(el("li", "", l));
+    show("revoke-error", false);
+    go("s-revoke");
+  };
+
+  $("revoke-go").addEventListener("click", async () => {
+    $("revoke-go").disabled = true;
+    try {
+      const out = await flow.revokePasskey(revoking.credentialId);
+      await signalRemoved(env.PublicKeyCredential ?? globalThis.PublicKeyCredential, out.removed);
+      revoking = null;
+      if (out.remaining === 0) showAddPasskey(ADD_AGAIN);
+      else showPasskeys(out.lines.join("\n") || "The passkey is removed.");
+    } catch (err) {
+      if (flow.step === "paste") showPaste(refusalText(err, false));
+      else {
+        setText("revoke-error", err instanceof Refusal ? err.message : refusalText(err, false));
+        show("revoke-error");
+      }
+    } finally {
+      $("revoke-go").disabled = false;
+    }
+  });
+
+  $("revoke-cancel").addEventListener("click", () => showPasskeys(""));
+  $("pk-add").addEventListener("click", () => showAddPasskey("You'll use it to approve your bot's bigger changes."));
+
+  // The add screen makes the passkey now; the approval registers it.
+  const showAddPasskey = (lead) => {
+    setText("addpk-lead", lead);
+    setText("addpk-status", flow.passkey ? "Passkey created. It is registered when you approve." : "");
+    $("addpk-go").textContent = flow.passkey ? "Continue" : "Create passkey";
+    go("s-addpk");
+  };
+
+  $("addpk-go").addEventListener("click", async () => {
+    if (flow.passkey) {
+      showDoctor();
+      return;
+    }
+    $("addpk-go").disabled = true;
+    setText("addpk-status", "");
+    try {
+      await flow.createPasskey();
+      showDoctor();
+    } catch (err) {
+      setText("addpk-status", passkeyError(err));
+    } finally {
+      $("addpk-go").disabled = false;
+    }
+  });
 
   // showTables shows screen 4; fresh (after CheckSetup) ticks every table
   // and starts the labels from the database's classes, else it keeps the
@@ -1190,7 +1419,7 @@ export function start(env) {
   const showLabels = () => {
     const box = $("label-tables");
     clear(box);
-    const cols = labels.of(tablesNow());
+    const cols = labels.of(labelTables());
     const byTable = new Map();
     for (const c of cols) {
       if (!byTable.has(c.table)) byTable.set(c.table, []);
@@ -1220,10 +1449,10 @@ export function start(env) {
   // there are some, and the note under "Mark them as not personal" while
   // it is chosen: the choice is the confirmation.
   const restCount = () => {
-    const n = labels.unlabeled(tablesNow()).length;
+    const n = labels.unlabeled(labelTables()).length;
     show("rest-choice", n > 0);
     const note = $("rest-note");
-    const lines = $("rest-mark").checked ? restNote({ count: n, forced: labels.changes(tablesNow()).length + n > MAX_LABELS }) : [];
+    const lines = $("rest-mark").checked ? restNote({ count: n, forced: labels.changes(labelTables()).length + n > MAX_LABELS }) : [];
     clear(note);
     for (const line of lines) note.appendChild(el("span", "", line));
     note.hidden = lines.length === 0;
@@ -1240,7 +1469,7 @@ export function start(env) {
   // Continue keeps the labels the person picked, and with "Mark them as
   // not personal" marks the rest as its note says.
   $("labels-next").addEventListener("click", () => {
-    if (labelsProblem(labels.problem(tablesNow()))) return;
+    if (labelsProblem(labels.problem(labelTables()))) return;
     labelMode = !$("rest-choice").hidden && $("rest-mark").checked ? "rest" : "changes";
     showApprove();
   });
@@ -1257,10 +1486,11 @@ export function start(env) {
     const n = tablesNow().length;
     if (!c.alreadyRan && n > 0) parts.push(`${n} ${n === 1 ? "table" : "tables"}`);
     if (labelsApply() && labelMode !== "skip") {
-      const k = labels.changes(tablesNow()).length;
+      const k = labels.changes(labelTables()).length;
       if (k > 0) parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
-      if (labelMode === "rest" && labels.unlabeled(tablesNow()).length > 0) parts.push("the rest not personal");
+      if (labelMode === "rest" && labels.unlabeled(labelTables()).length > 0) parts.push("the rest not personal");
     }
+    if (flow.updateCheck && flow.passkey) parts.push("a passkey added");
     setText("ap-counts", parts.join(" · "));
     show("ap-counts", parts.length > 0);
     show("ap-limits", flow.summary.kind !== "UPGRADE" && !c.alreadyRan && !c.nothingToDo);
@@ -1286,7 +1516,7 @@ export function start(env) {
       }
       const choices = {};
       if (included) choices.includedTables = included;
-      if (labelsApply()) Object.assign(choices, labels.request(tablesNow(), labelMode));
+      if (labelsApply()) Object.assign(choices, labels.request(labelTables(), labelMode));
       setText("approve-status", "Running the setup…");
       let result;
       try {
@@ -1385,10 +1615,15 @@ export function start(env) {
       flow.backTo("passkey");
       showPasskey();
     }
-    else if (screen === "s-checking" || screen === "s-unreach" || screen === "s-tables" || screen === "s-trust") showPaste("");
-    else if (screen === "s-labels") showTables();
-    else if (screen === "s-approve") {
+    else if (["s-checking", "s-unreach", "s-tables", "s-trust", "s-pinned", "s-newcert", "s-doctor"].includes(screen)) showPaste("");
+    else if (screen === "s-passkeys" || screen === "s-addpk") showDoctor();
+    else if (screen === "s-revoke") showPasskeys("");
+    else if (screen === "s-labels") {
+      if (flow.updateCheck) showDoctor();
+      else showTables();
+    } else if (screen === "s-approve") {
       if (labelsApply()) showLabels();
+      else if (flow.updateCheck) showDoctor();
       else showTables();
     }
   });

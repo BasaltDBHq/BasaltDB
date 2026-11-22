@@ -155,6 +155,21 @@
       "name": "all tables of the auth schema",
       "code": "basalt-setup.1.PJDfbuI8FMTf5ah3X9zaFAJY4sJNoIUQStpAGz6tkBOc4OLEqZPwr-LdV1mt9lwdaX6a0cwPpNrkvAZKLKhE3ZTTHVDAhJO0P0hQrxMPUD955GiYYozwv0t7YMFBFi09XbyHbD4HC0ojUnkGCjGvuKrBgqzhZgf0B1Kjc6DYgloDJfbNgriR6k_Yfe8egwU8E0XdogXPBVBQgu-2sW5duFIhj5WoWrlK9iLnFdD_gTf1Hn7dLDgKI1MpDFB4d96Yj95fGOr07LsuHtqUBVP3ia2en07ZzMkq3w26yzEbje4u3c9z9HAtyqO7_O_jMNPLz4kM-PODV81U-D3Xg_3mWTmNfh2MaNZTkVvMuh_aN11bfuwv31GRcHf3lui-fz2SySV7eb3o_cN4BBZUNa9FLoo6lLnQTe1XQB_b6W4WiHMpjahYDRQ6uGMjQlCHhNimuEMJ2YAFoshkIdq-ZRMrmXjiAhT8yeE0PkUvnt5Mr1_YYUE0_fu7LEjcIGPj1fo0jE3xpcxhjLd9LyXh8Bpcn-yN2C7Io7dam6CsXjEjw8nCdO3V0o_QNldv5OBoOQk8NFiskeOv-nPfUfE53aBwzeB2-x0AAP__.1ZrQkg",
       "refusal": "INVALID"
+    },
+    {
+      "name": "trustPin in a connect-only code",
+      "code": "basalt-setup.1.hJDdbuI8EIbvZdSzL2nthPxZ4iBfGn5KAw0kkWC1Qg7Y1OAkrOMUSsW9r7K72tOdo5HeRzN63i_gjaqoBoINaJnuztM9EECYYu75O9OxSt_0djY1A46Qif4Os8GAk6h7OhzH8wwMOCvGxRUIlLSlUoMBh46qPZAv4KqpgCADdAMEu3cDyk7IX68enUcEBtADq3WP1rRiQEAyut-WTX-FSpnRUrK2j9vdO6toC-QbnLtSih18vxvwwZTggikgsIqWYWKuJqFpOe7DAAUuSfOX52VcjJfo_WV10kmWO295OBw-1LPP8TGYONb11S0Gts8lKxfFbRS-rk_uZKPnP0Rz2VuHc7ceksHt8FTzbBevljKO7IVcVNP_qqR4uvJ3qeNosBchpn4y_rgMwYBWU80qVutMVKzpdNICsfvq7gaw61ko1oYaCFjIck2MTQtlyCXYIhhvwABWH0TNeuPfmjP2CQSS0ekSX9aTWbOZ3o4oCtP19M_-HKa75_QQxnlxCUpVH6U6xWjrzTjOglt6-9_dsO0c27O8UOm5XaAQB6O5Grj5W7I2t5Vc4lPUiFE6M_15YUZJ7r0mkSyvfGNmRQh3A7TqWv0maiDg8KD0vMDB1KMU28jmQen4jNGg5NQP2L9yuP8MAAD__w.6rSU7w",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "trustPin in upper case",
+      "code": "basalt-setup.1.hFDBitswFPyXOUvGitdxrJsDSemhpZScWkp5tp-96tqWKz2zCyH_XmTa0lt1EcyMRjNzx-DDTAJrFCLLtr7vYZEbMn1RDbrj9qSrriBdD3mu87-nf4LCi1uSunl3-XiDwhp4cG-waCnSJFAQCiML7B3PPgos6DXqXPOmO14k0KRNtno_ccjitlJLkbPOz8nLB4E9lk-FQk-yU7BYfZQxcITCnwefeUjGbdfzMD67Hy_TvPj1Z4iCh8K4UehTgCH4GdYcFcSn-6HQbm7a22ZllkOBRl72sAvN6bOJqf_e-lTkNThh2K9Yt3ZyXZaoiG8Kgan_B-_8vNLi9oC_ocCj88sujkLCMy9yczP7TT5E2CKt-VDgt9UFjk1a6ZAfjtoYbYpbfrTmYI35ktYMW5RPboFFea3PVVWXpqmaxhR5ca3P5elyaerztTnVl__xePwKAAD__w.9wCQ3g",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "trustPin in an install",
+      "code": "basalt-setup.1.hJHLbts8EIXfZZDdTyqirItFwAslzs1_3DiJi1yKohhJI5mNJCokldgJ_O6FDLTorlzyI8-cM-cTKm1adCAFA0tu6K9KkOALFAVFKU-CfMqTYoI8rXyf-39OKYDBi-rG11df7tfZ9TUw6A1VagsScrTYOGDg0NTkQH7CRlsHEvDdcp_TwAvqnMGGC6_XuiHj2aHHHC15hW5HLW0cyDgKJwxKdAcEEnptXW3IAoPfH-6oGoXzoqSq3qifL03b6f7VWAd7BvWAphwNVEa3IH0GToMU8Z5BPqjmENeLPB8YYE3dwWuH7TirISx_5HrM8W6UI5DfoB_yRhXeiCx8Z2AIy7_uC9322Ck6sDcyqlJkQML96V225PeXGQ-i-Cj001hmt1fzk-zrxcl7vTit7XJ-G67OstnsaBc-bp-OP7r-bb767-FloVeP5-oWL47_t4tm_Xqtp5vni-Z00DfTmayj5mneLcIHvTRhrB42u9enrsB5eVfoZPnxJs539eXNTm-Oz2bjzhw6aqlza9WSHtzSgpyMhe4Z0LZXhmw21hT4QcyF4CJY-7EUgRTieazTDNatVAcSoirNkySNBCaIYuJPqjSPpkSY5hVOU_oXh_2vAAAA__8.nwbpRw",
+      "refusal": "INVALID"
     }
   ],
   "laptop": [
@@ -736,6 +751,41 @@
           "port": 6543,
           "supabaseRef": "abcdefghijklmnopqrst"
         }
+      }
+    },
+    {
+      "name": "agent change with the bot's pin",
+      "code": "basalt-setup.1.hFDBjtQwFPsXn5OqmW6n09z2gBAHEEJzAiH00r50w7ZNSV61K43m31EqQNw2l0i249i-wce0kMAahcyybx9GWNSGzNh0Xg_sLrobGtK9r2td_zvjAxSew1rUj-_ffbpCYUvswyssHGWaBQpCaWKBveEpZoEFvWRda971wKskmrWpthhnTlXeN3KUuRriUrxiEthz-9AojCQHBYstZpkSZyj8ffCFfTF2w8h-ego_n-dljduvlAV3hWmnNJYAPsUF1pwVJJb7ruD2MB9tq7aqoUATr0fYlZby2cw0_nCxFHlJQRj2G7bdzWGoCpXxXSExjf_hQ1w2WsMR8A-UeApxPcRZSHjhVa5h4bjLxwzblDXvCvy6hcT5sax0qk9nbYw2zbU-W3Oyxnwta6Y9y-ewwqL1veu6vjXUEZmmbnzv2gsz9c7Tpee3eNx_BwAA__8.KVa-1g",
+      "fingerprint": "ada0 7c27 d171 914b 88c9",
+      "payload": {
+        "agent": {
+          "name": "lead_bot",
+          "read": [
+            "public.companies",
+            "public.regions"
+          ],
+          "statementTimeoutMs": 30000,
+          "write": [
+            "public.leads"
+          ]
+        },
+        "build": "0.5.0",
+        "expiresAt": "2026-11-13T06:12:11Z",
+        "format": 1,
+        "guard": {
+          "from": 16,
+          "to": 16
+        },
+        "kind": "AGENT",
+        "prefix": "basalt",
+        "setupId": "01a1d37f-ceb8-7c3a-9f00-0000000000d4",
+        "target": {
+          "database": "postgres",
+          "host": "aws-0-eu-central-1.pooler.supabase.com",
+          "port": 6543,
+          "supabaseRef": "abcdefghijklmnopqrst"
+        },
+        "trustPin": "5f9b77951a7aa1303f9b58eea9bfa89e5f9b77951a7aa1303f9b58eea9bfa89e"
       }
     }
   ],

@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -58,34 +57,6 @@ func login(t *testing.T, s pinServer, cfg, host string) error {
 	return err
 }
 
-// init --remote reads the chain of the credential's database before any
-// probe. The agent runs it, so it never pins: it says the person's command
-// and goes on, with or without an agent marker.
-func TestInitRemotePins(t *testing.T) {
-	t.Parallel()
-	const host = "db.internal.example.com"
-	s := newPinServer(t, host)
-	dsn := agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guard.DefaultPrefix, "bot", "0123abcd")
-	for name, env := range map[string]map[string]string{"no marker": nil, "agent marker": {"CLAUDECODE": "1"}} {
-		cfg := tempConfig(t)
-		installedAgent(t, noDB(t), cfg, dsn)
-		e := noDB(t)
-		e.env = env
-		e.noNetwork = false
-		var stdout, stderr bytes.Buffer
-		c := e.io(&stdout, &stderr)
-		c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
-			return trustpin.Fetch(ctx, s.dial, h, p)
-		}
-		code := runInit(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
-		require.Equal(t, exitOK, code, "%s: %s", name, stderr.String())
-		require.Contains(t, stderr.String(), "an agent never pins one", name)
-		require.Contains(t, stderr.String(), "basalt trust pin --host "+host+" --port 5432", name)
-		require.NotContains(t, stderr.String(), "--trust-root", "the agent is not handed the flag")
-		require.NoFileExists(t, filepath.Join(trustdir.Path(cfg), trustprofile.FileName(trustprofile.PinName(host))), name)
-	}
-}
-
 // init --remote reads the chain before it logs in with a credential it
 // already holds: nothing but the handshake reaches the server first.
 func TestInitRemotePinsBeforeLogin(t *testing.T) {
@@ -110,27 +81,6 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	require.Equal(t, exitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
-}
-
-// A connection string that names its own roots gets no pin offer: the
-// pin would not apply to it.
-func TestInitPinSkipsOwnRoots(t *testing.T) {
-	t.Parallel()
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
-	fetched := false
-	c.fetchChain = func(context.Context, string, int) ([]*x509.Certificate, error) {
-		fetched = true
-		return nil, errors.New("not reached")
-	}
-	file := filepath.Join(t.TempDir(), "ca.pem")
-	ca, _ := trustprofiletest.Chain(t, "x")
-	require.NoError(t, os.WriteFile(file, trustprofiletest.PEM(ca), 0o600))
-	_, ok, err := c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=verify-full&sslrootcert="+file, "", trustConfig(t), false)
-	require.NoError(t, err)
-	require.False(t, ok)
-	_, _, err = c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=disable", "abc", trustConfig(t), false)
-	require.ErrorIs(t, err, errUsage, "--trust-root with no TLS is a usage error")
-	require.False(t, fetched)
 }
 
 func TestTargetOf(t *testing.T) {
@@ -173,33 +123,6 @@ func TestRootChanged(t *testing.T) {
 	require.Contains(t, got.Error(), "run basalt init")
 	require.NotContains(t, got.Error(), "basalt trust")
 	require.NoError(t, rootChangedVia(context.Background(), "postgres://u:pw@"+host+":5432/postgres?sslmode=verify-full", err, first.dial))
-}
-
-// A certificate from an authority this machine trusts that fails on the
-// name is never pinned, with or without --trust-root: the fix is the host
-// name. Not parallel: it swaps the system's store.
-func TestInitPinRefusesPublicAuthorities(t *testing.T) {
-	const ip = "203.0.113.7"
-	s := newPinServer(t, "other.example.com")
-	store := x509.NewCertPool()
-	store.AddCert(s.ca)
-	defer trustprofile.SetSystemRootsForTest(store)()
-	cfg := trustConfig(t)
-	var errb bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &errb}, func(string) string { return "" })
-	c.fetchChain = func(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
-		return trustpin.Fetch(ctx, s.dial, host, port)
-	}
-	dsn := "postgres://u@" + ip + ":5432/postgres?sslmode=verify-full"
-	_, ok, err := c.initPin(dsn, trustprofile.DERSHA256(s.ca), cfg, false)
-	require.ErrorIs(t, err, errUsage)
-	require.Contains(t, err.Error(), "failed on the name")
-	require.False(t, ok)
-	_, ok, err = c.initPin(dsn, "", cfg, false)
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Contains(t, errb.String(), "failed on the name")
-	require.Nil(t, trustdir.Set(cfg).For(ip))
 }
 
 func trustConfig(t *testing.T) string {

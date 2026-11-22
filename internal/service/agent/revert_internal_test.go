@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -45,7 +45,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	_, err = svc.RequestRevert(context.Background(), RequestRevertParams{
 		Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
 	})
-	require.Equal(t, guard.MCPPrepareTimeout, limit)
+	require.Equal(t, guardmodel.MCPPrepareTimeout, limit)
 	require.Equal(t, 100*time.Second, limit, "under Claude Code's 2-minute auto-background")
 	var te *mcp.ToolError
 	require.True(t, errors.As(err, &te), "%v", err)

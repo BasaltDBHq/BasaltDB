@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 const (
@@ -15,29 +17,29 @@ const (
 
 // byMessage lists the SQLSTATEs that carry several codes, told apart by
 // the MESSAGE the guard raised.
-var byMessage = map[string]map[string]Code{
+var byMessage = map[string]map[string]guardmodel.Code{
 	sqlstateApproval: {
-		string(CodeApprovalInvalid): CodeApprovalInvalid, string(CodeApprovalExpired): CodeApprovalExpired,
-		string(CodeRevertInvalid): CodeRevertInvalid, string(CodeRevertExpired): CodeRevertExpired,
+		string(guardmodel.CodeApprovalInvalid): guardmodel.CodeApprovalInvalid, string(guardmodel.CodeApprovalExpired): guardmodel.CodeApprovalExpired,
+		string(guardmodel.CodeRevertInvalid): guardmodel.CodeRevertInvalid, string(guardmodel.CodeRevertExpired): guardmodel.CodeRevertExpired,
 	},
 	sqlstateRevert: {
-		string(CodeNothingToRevert): CodeNothingToRevert,
-		string(CodeRevertCascade):   CodeRevertCascade,
+		string(guardmodel.CodeNothingToRevert): guardmodel.CodeNothingToRevert,
+		string(guardmodel.CodeRevertCascade):   guardmodel.CodeRevertCascade,
 	},
 }
 
-var sqlstateCodes = map[string]Code{
-	"BS001":              CodeIntentRequired,
-	"BS002":              CodeApprovalRequired,
-	"BS003":              CodeRowLimitExceeded,
-	"BS004":              CodeStaleRead,
-	sqlstateApproval:     CodeApprovalInvalid,
-	"BS006":              CodePreviewCannotCommit,
-	"BS007":              CodeNotAllowed,
-	"BS008":              CodeLedgerInputInvalid,
-	sqlstateRevert:       CodeNothingToRevert,
-	sqlstateSetupRefused: CodeSetupRefused,
-	sqlstateScopeRefused: CodeScopeRefused,
+var sqlstateCodes = map[string]guardmodel.Code{
+	"BS001":              guardmodel.CodeIntentRequired,
+	"BS002":              guardmodel.CodeApprovalRequired,
+	"BS003":              guardmodel.CodeRowLimitExceeded,
+	"BS004":              guardmodel.CodeStaleRead,
+	sqlstateApproval:     guardmodel.CodeApprovalInvalid,
+	"BS006":              guardmodel.CodePreviewCannotCommit,
+	"BS007":              guardmodel.CodeNotAllowed,
+	"BS008":              guardmodel.CodeLedgerInputInvalid,
+	sqlstateRevert:       guardmodel.CodeNothingToRevert,
+	sqlstateSetupRefused: guardmodel.CodeSetupRefused,
+	sqlstateScopeRefused: guardmodel.CodeScopeRefused,
 }
 
 // ScopeRefusal returns the detail (ScopeShape, ScopeNotOwnRun, ...) and the
@@ -55,7 +57,7 @@ func ScopeRefusal(err error) (detail, hint string, ok bool) {
 // err, and false when err is not a guard error. BS005 and BS009 carry
 // several codes, told apart by the message. MCP tool codes are mapped from SQLSTATEs in
 // internal/service/agent, per CONTRACT.md "Error codes".
-func CodeOf(err error) (Code, bool) {
+func CodeOf(err error) (guardmodel.Code, bool) {
 	var pg *pgconn.PgError
 	if !errors.As(err, &pg) {
 		return "", false

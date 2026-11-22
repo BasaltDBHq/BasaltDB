@@ -11,6 +11,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
@@ -72,15 +73,15 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 	t.Parallel()
 	soon := statusNow.Add(time.Hour)
-	missing := &fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}
-	ok := &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	missing := &fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}
+	ok := &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	for _, tc := range []struct {
 		problem string
 		probe   *fakeProbe
 		kind    string
 	}{
-		{problemSetupNotRun, missing, guard.SetupInstall},
-		{problemSetupChangePending, ok, guard.SetupAgent},
+		{problemSetupNotRun, missing, guardmodel.SetupInstall},
+		{problemSetupChangePending, ok, guardmodel.SetupAgent},
 	} {
 		t.Run(tc.problem, func(t *testing.T) {
 			t.Parallel()

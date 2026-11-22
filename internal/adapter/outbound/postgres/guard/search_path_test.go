@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // shadowCatalog makes the agent's session hold temporary tables named
@@ -63,16 +63,16 @@ func TestCatalogShadowDoesNotBypassGuard(t *testing.T) {
 	require.True(t, shadowed)
 
 	_, err = a.Conn.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 4`)
-	requireCode(t, err, guard.CodeIntentRequired)
+	requireCode(t, err, guardmodel.CodeIntentRequired)
 
 	err = guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'lost' WHERE id <= 25`)
-	requireCode(t, err, guard.CodeApprovalRequired)
+	requireCode(t, err, guardmodel.CodeApprovalRequired)
 
 	err = guardtest.Guarded(ctx, a.Conn, in, `DELETE FROM public.leads WHERE id = 5`)
-	requireCode(t, err, guard.CodeApprovalRequired)
+	requireCode(t, err, guardmodel.CodeApprovalRequired)
 
 	_, err = a.Conn.Exec(ctx, `TRUNCATE public.scratch`)
-	requireCode(t, err, guard.CodeNotAllowed)
+	requireCode(t, err, guardmodel.CodeNotAllowed)
 
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'lost' WHERE id = 4`))
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger

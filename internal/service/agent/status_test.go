@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
@@ -45,12 +46,12 @@ const statusCredential = "/etc/basalt/agents/bot.url"
 
 // fakeProbe is a Probe with a fixed answer.
 type fakeProbe struct {
-	st       guard.Status
+	st       guardmodel.Status
 	err      error
 	recorded bool
 	// recordedErr fails SetupRecorded.
 	recordedErr error
-	latest      *guard.AgentSetup
+	latest      *guardmodel.AgentSetup
 	// ledger is LedgerBytes's answer; ledgerErr fails it.
 	ledger    int64
 	ledgerErr error
@@ -65,15 +66,15 @@ func (p *fakeProbe) ReinstallNotice(_ context.Context, limit int) (string, bool,
 	return msg, ok, nil
 }
 
-func (p *fakeProbe) GuardStatus(context.Context) (guard.Status, error) { return p.st, p.err }
+func (p *fakeProbe) GuardStatus(context.Context) (guardmodel.Status, error) { return p.st, p.err }
 
 func (p *fakeProbe) SetupRecorded(context.Context, uuid.UUID) (bool, error) {
 	return p.recorded, p.recordedErr
 }
 
-func (p *fakeProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error) {
+func (p *fakeProbe) LatestSetup(context.Context) (guardmodel.AgentSetup, bool, error) {
 	if p.latest == nil {
-		return guard.AgentSetup{}, false, nil
+		return guardmodel.AgentSetup{}, false, nil
 	}
 	return *p.latest, true, nil
 }
@@ -107,13 +108,13 @@ var testKeys = sync.OnceValue(func() []passkey.Credential {
 // testCredentials are the first n of them, with distinct keys and ids.
 func testCredentials(n int) []passkey.Credential { return testKeys()[:n] }
 
-func guardAt(state string, missingBreaking, missingNonBreaking []int) guard.Status {
+func guardAt(state string, missingBreaking, missingNonBreaking []int) guardmodel.Status {
 	b := guard.LatestVersion()
 	installed := b
-	if state == guard.GuardNewer {
+	if state == guardmodel.GuardNewer {
 		installed = b + 1
 	}
-	return guard.Status{State: state, Installed: installed, Build: b, MissingBreaking: missingBreaking, MissingNonBreaking: missingNonBreaking}
+	return guardmodel.Status{State: state, Installed: installed, Build: b, MissingBreaking: missingBreaking, MissingNonBreaking: missingNonBreaking}
 }
 
 var statusNow = time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
@@ -175,13 +176,13 @@ func statusCases() map[string]statusCase { return statusCasesFor("") }
 // statusCasesFor are the status cases on an engine whose operatedBy is
 // operatedBy.
 func statusCasesFor(operatedBy string) map[string]statusCase {
-	ok := guardAt(guard.GuardOK, nil, nil)
+	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	soon, past := statusNow.Add(time.Hour), statusNow.Add(-time.Hour)
 	engineStatus := func(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) StatusReport {
 		return operatedStatus(probe, passkeys, setup, operatedBy)
 	}
 	cases := map[string]statusCase{
-		problemEngineUnreachable: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemEngineUnreachable: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
@@ -190,7 +191,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
-		problemEngineStartFailed: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemEngineStartFailed: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
@@ -199,7 +200,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
-		problemEngineGaveUp: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemEngineGaveUp: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux")
 			require.NoError(t, err)
@@ -210,65 +211,65 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
-		problemDatabaseUnreachable: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
-		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
+		problemDatabaseUnreachable: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
+		problemTooManyConnections: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "53300",
 			Message: `too many connections for role "basalt_agent_bot"`,
 		})}, 1, nil)},
-		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
+		problemCredentialRejected: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",
 		})}, 1, nil)},
-		problemGuardMissing:       {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
-		problemGuardOutdated:      {state: guard.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
-		problemUpgradeAvailable:   {state: guard.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
-		problemNoPasskey:          {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
-		problemSetupNotRun:        {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon))},
-		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guard.SetupInstall, past))},
-		problemSetupChangePending: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon))},
-		problemLockFileUnusable: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemGuardMissing:       {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
+		problemGuardOutdated:      {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
+		problemUpgradeAvailable:   {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
+		problemNoPasskey:          {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
+		problemSetupNotRun:        {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
+		problemSetupExpired:       {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
+		problemSetupChangePending: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
+		problemLockFileUnusable: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
 		}},
-		problemPortalMismatch: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemPortalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return portalStatus(t, operatedBy, fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
 		}},
-		problemDevLocalPages: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemDevLocalPages: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
 		}},
-		problemEngineRevoked: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemEngineRevoked: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return engineRecordStatusOf(t, operatedBy, recordOf(true))
 		}},
-		problemLedgerReinstalled: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
-		ProblemPluginUnavailable: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemLedgerReinstalled: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
+		ProblemPluginUnavailable: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginUnavailable))
 		}},
-		ProblemPluginNotTrusted: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginNotTrusted: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginNotTrusted))
 		}},
 		// Plugin approvals are same-user mode: a foreground engine.
-		ProblemPluginAwaitingApproval: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginAwaitingApproval: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginAwaitingApproval))
 		}},
-		ProblemPluginApprovalExpired: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginApprovalExpired: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalExpired))
 		}},
-		ProblemPluginApprovalMismatch: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginApprovalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalMismatch))
 		}},
-		ProblemPluginConfigInvalid: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginConfigInvalid: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, fakePlugins{"bot": {{Code: ProblemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}})
 		}},
-		ProblemPluginNoticesDropped: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginNoticesDropped: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginNoticesDropped))
 		}},
@@ -295,7 +296,7 @@ func sampleReinstalls() guard.Reinstalls {
 // points to basalt log; the tools keep working. No reinstall, no problem.
 func TestStatusLedgerReinstalled(t *testing.T) {
 	t.Parallel()
-	ok := guardAt(guard.GuardOK, nil, nil)
+	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	r := engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)(t)
 	p := findProblem(t, r, problemLedgerReinstalled)
 	require.True(t, r.Ready)
@@ -403,7 +404,7 @@ func requireStatusSchema(t *testing.T, tool mcpcontract.Tool, r StatusReport) st
 
 func TestStatusWhenEverythingIsReady(t *testing.T) {
 	t.Parallel()
-	r := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), ledger: 123456, latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupAgent}}, 2, nil)(t)
+	r := engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), ledger: 123456, latest: &guardmodel.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guardmodel.SetupAgent}}, 2, nil)(t)
 	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
 	requireStatusSchema(t, statusTool, r)
 	require.True(t, r.Ready)
@@ -413,31 +414,31 @@ func TestStatusWhenEverythingIsReady(t *testing.T) {
 	require.Equal(t, mcpcontract.OperatedByPerson, r.OperatedBy)
 	require.Equal(t, EnforcementEngineAndGuard, r.Enforcement)
 	require.True(t, r.Engine.Reachable)
-	require.Equal(t, guard.GuardOK, r.Guard.State)
+	require.Equal(t, guardmodel.GuardOK, r.Guard.State)
 	require.True(t, r.Passkeys.Registered)
 	require.Equal(t, ptr(2), r.Passkeys.Active)
-	require.Equal(t, SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guard.SetupAgent}, r.Setup)
+	require.Equal(t, SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guardmodel.SetupAgent}, r.Setup)
 	require.Nil(t, r.Vault, "no vault reporter yet: vault is left out")
 	require.Equal(t, &LedgerStatus{Bytes: 123456, ValuesKeptDays: 30, RecordsKeptDays: 365}, r.Ledger)
 }
 
 func TestStatusLeavesLedgerOutWhenTheGuardCannotBeRead(t *testing.T) {
 	t.Parallel()
-	r := engineStatus(&fakeProbe{err: context.DeadlineExceeded, ledger: 123456}, 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
+	r := engineStatus(&fakeProbe{err: context.DeadlineExceeded, ledger: 123456}, 1, pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour)))(t)
 	require.Nil(t, r.Ledger)
 	require.False(t, r.Ready)
 }
 
 func TestStatusLeavesLedgerOutWhenTheGuardIsMissing(t *testing.T) {
 	t.Parallel()
-	r := engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}, ledger: 123456}, 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
+	r := engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}, ledger: 123456}, 1, pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour)))(t)
 	require.Nil(t, r.Ledger)
 }
 
 func TestStatusLedgerReadFailureIsNotAProblem(t *testing.T) {
 	t.Parallel()
-	ok := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, 2, nil)(t)
-	r := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), ledgerErr: errors.New("boom")}, 2, nil)(t)
+	ok := engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, 2, nil)(t)
+	r := engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), ledgerErr: errors.New("boom")}, 2, nil)(t)
 	require.Nil(t, r.Ledger)
 	require.Equal(t, ok.Problems, r.Problems)
 	require.True(t, r.Ready)
@@ -466,7 +467,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 
 	// A same-user config the shim reads: its operator and its foreground engine.
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
-		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
+		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guardmodel.SetupInstall, statusNow.Add(time.Hour)),
 	}}}
 	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, nil, "test", statusNow)
 	require.NoError(t, err)
@@ -510,11 +511,11 @@ func TestSetupStates(t *testing.T) {
 		code     bool
 	}{
 		{"none", nil, false, setupNone, false},
-		{"pending install", pendingSetup(guard.SetupInstall, soon), false, setupPending, true},
-		{"recorded", pendingSetup(guard.SetupInstall, soon), true, setupNone, false},
-		{"expired install", pendingSetup(guard.SetupInstall, past), false, setupExpired, false},
-		{"expired upgrade is dropped", pendingSetup(guard.SetupUpgrade, past), false, setupNone, false},
-		{"pending upgrade", pendingSetup(guard.SetupUpgrade, soon), false, setupPending, true},
+		{"pending install", pendingSetup(guardmodel.SetupInstall, soon), false, setupPending, true},
+		{"recorded", pendingSetup(guardmodel.SetupInstall, soon), true, setupNone, false},
+		{"expired install", pendingSetup(guardmodel.SetupInstall, past), false, setupExpired, false},
+		{"expired upgrade is dropped", pendingSetup(guardmodel.SetupUpgrade, past), false, setupNone, false},
+		{"pending upgrade", pendingSetup(guardmodel.SetupUpgrade, soon), false, setupPending, true},
 		{"pending connect-only", &awaiting, false, setupPending, true},
 		{"connect-only hold after expiry", &hold, false, setupPending, false},
 		{"connect-only after the collect window", &ended, false, setupExpired, false},
@@ -611,12 +612,12 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 
 func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
-	probe := &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
+	probe := &fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}
 	srv, tools := degraded(t, probe, nil)
 	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "The agent gives you a link")
 
 	// The person upgrades: the next call is served, with no restart.
-	probe.st = guardAt(guard.GuardOK, nil, nil)
+	probe.st = guardAt(guardmodel.GuardOK, nil, nil)
 	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "%v", body)
 	require.Nil(t, body["warnings"])
@@ -624,13 +625,13 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 
 func TestAMissingGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
-	srv, tools := degraded(t, &fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, nil)
+	srv, tools := degraded(t, &fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, nil)
 	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "The agent gives you a link")
 }
 
 func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
 	t.Parallel()
-	srv, _ := degraded(t, &fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, nil)
+	srv, _ := degraded(t, &fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, nil)
 	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "%v", body)
 	warnings := body["warnings"].([]any)
@@ -645,7 +646,7 @@ var errNoRole = store.MapError(&pgconn.PgError{Code: "28P01", Message: "password
 func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{err: errNoRole, recordedErr: errNoRole}
-	srv, tools := degraded(t, probe, pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)))
+	srv, tools := degraded(t, probe, pendingSetup(guardmodel.SetupInstall, statusNow.Add(time.Hour)))
 	// The person runs the code on their own computer: basalt init
 	// --setup-code takes no --agent or --config, and the message names the
 	// fingerprint to check, not the code itself.
@@ -660,7 +661,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	// The person ran it and the agent checks status, which reads afresh
 	// (held calls may trust a not-recorded answer for a few seconds).
 	probe.recorded, probe.recordedErr = true, nil
-	probe.err, probe.st = nil, guardAt(guard.GuardOK, nil, nil)
+	probe.err, probe.st = nil, guardAt(guardmodel.GuardOK, nil, nil)
 	_, isError = serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError)
 	_, isError = serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
@@ -673,7 +674,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{err: context.DeadlineExceeded, recordedErr: context.DeadlineExceeded}
-	srv, _ := degraded(t, probe, pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)))
+	srv, _ := degraded(t, probe, pendingSetup(guardmodel.SetupInstall, statusNow.Add(time.Hour)))
 
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
@@ -689,7 +690,7 @@ func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 
 func TestStatusRefusesArguments(t *testing.T) {
 	t.Parallel()
-	srv, _ := degraded(t, &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, nil)
+	srv, _ := degraded(t, &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, nil)
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{"verbose": true})
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"])
@@ -729,7 +730,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError)
 	require.Equal(t, false, body["engine"].(map[string]any)["reachable"])
-	require.Equal(t, guard.GuardUnknown, body["guard"].(map[string]any)["state"])
+	require.Equal(t, guardmodel.GuardUnknown, body["guard"].(map[string]any)["state"])
 	require.Equal(t, mcpcontract.OperatedByPerson, body["operatedBy"])
 
 	body, isError = serveCall(t, srv, toolStatus, map[string]any{"x": 1})
@@ -777,17 +778,17 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 	t.Parallel()
 	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	ok := guardAt(guard.GuardOK, nil, nil)
+	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	soon := statusNow.Add(time.Hour)
 	reports := map[string]func(t *testing.T) StatusReport{
 		"credential rejected":  operatedStatusWith(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long),
 		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long),
-		"guard missing":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long),
-		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long),
-		"upgrade available":    operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil, "", long),
+		"guard missing":        operatedStatusWith(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long),
+		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long),
+		"upgrade available":    operatedStatusWith(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil, "", long),
 		"no passkey":           operatedStatusWith(&fakeProbe{st: ok}, 0, nil, "", long),
-		"setup not run":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon), "", long),
-		"setup change pending": operatedStatusWith(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon), "", long),
+		"setup not run":        operatedStatusWith(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon), "", long),
+		"setup change pending": operatedStatusWith(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon), "", long),
 	}
 	for name, report := range reports {
 		r := report(t)
@@ -805,9 +806,9 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	t.Helper()
 	d := deps()
 	d.OperatedBy = operatedBy
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}
 	setApprovals(&d, keys{n: 1})
-	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
+	d.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
 	d.Now = func() time.Time { return statusNow }
 	d.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
 	cmds, err := NewCommands("bot", "", "linux")
@@ -838,7 +839,7 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordRead
 	t.Helper()
 	d := deps()
 	d.OperatedBy = operatedBy
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
@@ -919,7 +920,7 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 		require.NoError(t, err)
 		r, err := LocalStatus{
 			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
-			Probe: &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)},
+			Probe: &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)},
 			Passkeys: func(context.Context) ([]passkey.Credential, error) {
 				return []passkey.Credential{{Relying: passkey.Relying{Origin: links.DefaultLocal}}}, nil
 			},
@@ -971,7 +972,7 @@ func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
 func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	t.Parallel()
 	probe := func() *fakeProbe {
-		return &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupInstall}}
+		return &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), latest: &guardmodel.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guardmodel.SetupInstall}}
 	}
 	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
 
@@ -993,10 +994,10 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 		require.Contains(t, two.Passkeys.Summary, k.CheckCode)
 	}
 
-	agentKind := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupAgent}}, 1, nil)(t)
+	agentKind := engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), latest: &guardmodel.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guardmodel.SetupAgent}}, 1, nil)(t)
 	require.Contains(t, agentKind.Passkeys.Summary, "If the setup page showed you a check code")
 
-	pending := engineStatus(probe(), 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
+	pending := engineStatus(probe(), 1, pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour)))(t)
 	require.Len(t, pending.Passkeys.Keys, 1, "status returns the codes whatever the setup's state")
 	require.Empty(t, pending.Passkeys.Summary, "the message waits for a recorded setup")
 
@@ -1074,7 +1075,7 @@ func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...strin
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.PagesBase = base
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, originKeys{origins: origins})
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux")
@@ -1123,7 +1124,7 @@ func TestStatusStartedBy(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{"hand": "HAND", "mcp": "MCP", "crash": "CRASH", "": ""} {
 		d := deps()
-		d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+		d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
 		d.StartedBy = in
 		r, err := NewService(d).Status(context.Background())

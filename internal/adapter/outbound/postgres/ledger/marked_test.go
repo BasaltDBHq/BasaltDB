@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -173,7 +174,7 @@ func itoa(i int) string { return strconv.Itoa(i) }
 // does on the agent's credential.
 func guardPrepare(t *testing.T, a *guardtest.Agent, run uuid.UUID) (uuid.UUID, error) {
 	t.Helper()
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: run}, "Undo the counts")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: run}, "Undo the counts")
 	if err != nil {
 		return uuid.Nil, err
 	}

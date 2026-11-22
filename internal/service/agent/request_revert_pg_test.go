@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -87,7 +88,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.NoError(t, err)
 	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
-	var out guard.AppliedRevert
+	var out guardmodel.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
 	require.Equal(t, 2, out.Rows)
 	require.Equal(t, "open", leadStatus(t, d, 71))
@@ -414,5 +415,5 @@ func requireRevertInvalid(t *testing.T, err error) {
 	t.Helper()
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
-	require.Equal(t, guard.CodeRevertInvalid, code, "%v", err)
+	require.Equal(t, guardmodel.CodeRevertInvalid, code, "%v", err)
 }

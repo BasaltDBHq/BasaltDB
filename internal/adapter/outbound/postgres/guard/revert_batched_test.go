@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -45,13 +46,13 @@ func newBulkEnv(t *testing.T) bulkEnv {
 	return e
 }
 
-func (e bulkEnv) scope() guard.RevertScope {
-	return guard.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}
+func (e bulkEnv) scope() guardmodel.RevertScope {
+	return guardmodel.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}
 }
 
 // prepareAndSign prepares the run's revert and signs it with the person's
 // passkey through apply_revert.
-func (e bulkEnv) prepareAndSign(t *testing.T) (guard.PreparedRevert, guard.AppliedRevert) {
+func (e bulkEnv) prepareAndSign(t *testing.T) (guardmodel.PreparedRevert, guardmodel.AppliedRevert) {
 	t.Helper()
 	prep, as := prepareSigned(t, e.a, e.p, revert.ScopeRun, e.in.RunID)
 	signed, err := guard.ApplyRevert(context.Background(), e.a.Conn, prep.RevertID, as)
@@ -72,9 +73,9 @@ func pendingLines(t *testing.T, c *pgx.Conn, revertID uuid.UUID, limit int) []in
 }
 
 // applyAll runs the agent's loop until no line is pending.
-func (e bulkEnv) applyAll(t *testing.T, revertID uuid.UUID) []guard.BatchResult {
+func (e bulkEnv) applyAll(t *testing.T, revertID uuid.UUID) []guardmodel.BatchResult {
 	t.Helper()
-	var out []guard.BatchResult
+	var out []guardmodel.BatchResult
 	for {
 		lines := pendingLines(t, e.a.Conn, revertID, revert.MaxBatch)
 		if len(lines) == 0 {
@@ -202,7 +203,7 @@ func TestBatchedRevertAppliesInBatches(t *testing.T) {
 	require.Zero(t, last.Pending)
 	require.Equal(t, "APPLYING", batches[0].Status)
 	require.Len(t, batches[0].Items, revert.MaxBatch)
-	require.Equal(t, guard.OutcomeRestored, batches[0].Items[0].Outcome)
+	require.Equal(t, guardmodel.OutcomeRestored, batches[0].Items[0].Outcome)
 
 	require.Equal(t, bulkRows-1, count(t, e.d.Admin, `SELECT count(id)::int FROM public.items WHERE v = 'before'`))
 	require.Equal(t, "person", scalarOf[string](t, e.d.Admin, `SELECT v FROM public.items WHERE id = 5`))
@@ -279,7 +280,7 @@ func TestBatchChecks(t *testing.T) {
 
 	e.d.Exec(t, `UPDATE basalt_meta.reverts SET apply_by = now() - interval '1 second' WHERE revert_id = $1`, prep.RevertID)
 	_, err = guard.ApplyRevertBatch(ctx, e.a.Conn, prep.RevertID, []int{3})
-	requireCode(t, err, guard.CodeRevertExpired)
+	requireCode(t, err, guardmodel.CodeRevertExpired)
 	require.Equal(t, "EXPIRED", scalarOf[string](t, e.a.Conn, `SELECT status FROM basalt_meta.agent_reverts WHERE revert_id = $1`, prep.RevertID))
 
 	// A one-call revert has no batches.
@@ -307,9 +308,9 @@ func TestBatchPeopleWinPerLine(t *testing.T) {
 	e.d.Exec(t, `UPDATE public.items SET v = 'person' WHERE id = 7`)
 	res, err := guard.ApplyRevertBatch(ctx, e.a.Conn, prep.RevertID, []int{lineOf(7), lineOf(8)})
 	require.NoError(t, err)
-	require.Equal(t, []guard.BatchItem{
-		{Line: lineOf(7), Outcome: guard.OutcomeSkipped, Conflict: revert.ConflictChangedAfter},
-		{Line: lineOf(8), Outcome: guard.OutcomeRestored},
+	require.Equal(t, []guardmodel.BatchItem{
+		{Line: lineOf(7), Outcome: guardmodel.OutcomeSkipped, Conflict: revert.ConflictChangedAfter},
+		{Line: lineOf(8), Outcome: guardmodel.OutcomeRestored},
 	}, res.Items)
 	require.Equal(t, "person", scalarOf[string](t, e.d.Admin, `SELECT v FROM public.items WHERE id = 7`))
 	require.Equal(t, "before", scalarOf[string](t, e.d.Admin, `SELECT v FROM public.items WHERE id = 8`))
@@ -377,7 +378,7 @@ func TestBatchedParentsBeforeChildren(t *testing.T) {
 	require.Equal(t, parents*(children+1), signed.Pending)
 	for _, res := range e.applyAll(t, prep.RevertID) {
 		for _, it := range res.Items {
-			require.Equal(t, guard.OutcomeRestored, it.Outcome, "line %d: %s %s", it.Line, it.Conflict, it.SQLState)
+			require.Equal(t, guardmodel.OutcomeRestored, it.Outcome, "line %d: %s %s", it.Line, it.Conflict, it.SQLState)
 		}
 	}
 	require.Equal(t, parents, count(t, d.Admin, `SELECT count(id)::int FROM public.folders`))

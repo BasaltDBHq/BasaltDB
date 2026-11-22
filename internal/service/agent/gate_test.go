@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -19,7 +20,7 @@ import (
 func gatedService(t *testing.T) *Service {
 	t.Helper()
 	d := deps()
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}
 	setApprovals(&d, struct{ approvalStore }{})
 	setReverts(&d, struct{ Reverts }{})
 	return NewService(d)

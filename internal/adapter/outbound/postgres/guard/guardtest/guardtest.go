@@ -22,6 +22,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // EnvURL names the admin connection string of the test server.
@@ -29,7 +30,7 @@ const EnvURL = "BASALTDB_TEST_POSTGRES_URL"
 
 // DB is one test database with its own role prefix.
 type DB struct {
-	Names guard.Names
+	Names guardmodel.Names
 	// URL is the admin connection string of this database.
 	URL   string
 	Admin *pgx.Conn
@@ -57,7 +58,7 @@ func NewRecreatable(t *testing.T) *DB {
 	t.Helper()
 	base := testBase(t)
 	suffix := randomHex(t)
-	names := guard.Names{Prefix: "bt" + suffix}
+	names := guardmodel.Names{Prefix: "bt" + suffix}
 	tpl := "bt_" + suffix + "_tpl"
 	ctx := context.Background()
 	server, err := pgdial.Connect(ctx, base)
@@ -165,7 +166,7 @@ func newDB(t *testing.T, base, suffix, template string) *DB {
 	dbName := "bt_" + suffix
 	prefix := "bt" + suffix
 	createDatabase(t, base, dbName, template)
-	d := &DB{Names: guard.Names{Prefix: prefix}, URL: dbURL(t, base, dbName), base: base, name: dbName, template: template}
+	d := &DB{Names: guardmodel.Names{Prefix: prefix}, URL: dbURL(t, base, dbName), base: base, name: dbName, template: template}
 	d.Admin = d.connect(t, d.URL)
 
 	t.Cleanup(func() {
@@ -223,7 +224,7 @@ func (d *DB) Exec(t *testing.T, sql string, args ...any) {
 }
 
 // Init plans and applies basalt init for spec in one transaction.
-func (d *DB) Init(t *testing.T, spec guard.AgentSpec) {
+func (d *DB) Init(t *testing.T, spec guardmodel.AgentSpec) {
 	t.Helper()
 	require.NoError(t, d.TryInit(spec))
 }
@@ -232,10 +233,10 @@ func (d *DB) Init(t *testing.T, spec guard.AgentSpec) {
 // test packages creating agent roles can make Postgres report a deadlock
 // (40P01) on the shared role catalog; the transaction rolled back, so the
 // plan is rebuilt and applied again.
-func (d *DB) TryInit(spec guard.AgentSpec) error {
+func (d *DB) TryInit(spec guardmodel.AgentSpec) error {
 	ctx := context.Background()
 	return RetryDeadlock(func() error {
-		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec})
+		s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names, Agent: spec})
 		if err != nil {
 			return err
 		}
@@ -317,7 +318,7 @@ type Agent struct {
 func (d *DB) NewAgent(t *testing.T, name string, write, read []string) *Agent {
 	t.Helper()
 	pw := guard.NewPassword()
-	d.Init(t, guard.AgentSpec{Name: name, Password: pw, Write: write, Read: read})
+	d.Init(t, guardmodel.AgentSpec{Name: name, Password: pw, Write: write, Read: read})
 	role, err := d.Names.Agent(name)
 	require.NoError(t, err)
 	dsn, err := guard.AgentConnString(d.URL, role, pw)

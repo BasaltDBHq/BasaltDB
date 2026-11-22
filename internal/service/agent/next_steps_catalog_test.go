@@ -19,11 +19,11 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -227,7 +227,7 @@ func catalogCases() map[string]catalogCase {
 			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it"),
 		},
 		caseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""):    {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
-		caseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guard.DetailHoldTooLarge)},
+		caseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guardmodel.DetailHoldTooLarge)},
 
 		caseKey("ROW_LIMIT_EXCEEDED", "", ""): {
 			"write", writeArgs0,
@@ -374,7 +374,7 @@ func catalogCases() map[string]catalogCase {
 			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
 			plainFunc(func() error {
 				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, store.MapError(&pgconn.PgError{
-					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guard.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
+					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guardmodel.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
 				}))
 			}),
 		},

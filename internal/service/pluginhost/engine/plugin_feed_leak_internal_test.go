@@ -24,6 +24,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -114,13 +115,13 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 
 	// A revert of the update, signed and applied; one of the insert,
 	// rejected with a note.
-	prep, err := guard.PrepareRevert(ctx, c, guard.RevertScope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
+	prep, err := guard.PrepareRevert(ctx, c, guardmodel.RevertScope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
 	require.NoError(t, err)
 	sig, err := pk.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, c, prep.RevertID, sig)
 	require.NoError(t, err)
-	rejected, err := guard.PrepareRevert(ctx, c, guard.RevertScope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
+	rejected, err := guard.PrepareRevert(ctx, c, guardmodel.RevertScope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
 	require.NoError(t, err)
 	_, err = guard.RejectRevert(ctx, c, rejected.RevertID, "not this one "+marker, nil)
 	require.NoError(t, err)
@@ -181,16 +182,16 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	id := func() *string { return s(uuid.Must(uuid.NewV7()).String()) }
 	change := uuid.NullUUID{UUID: uuid.Must(uuid.NewV7()), Valid: true}
 	at := time.Date(2026, 11, 19, 6, 2, 11, 513958000, time.UTC)
-	rows := []guard.FeedRow{
-		{Seq: 1, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
-		{Seq: 2, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("DELETE")},
-		{Seq: 3, At: at, Kind: guard.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("SQL_ERROR")},
-		{Seq: 4, At: at, Kind: guard.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},
-		{Seq: 5, At: at, Kind: guard.KindApproved, ChangeID: change, ApprovalID: id()},
-		{Seq: 6, At: at, Kind: guard.KindRevertPending, RevertID: id()},
-		{Seq: 7, At: at, Kind: guard.KindRevertSigned, ChangeID: change, RevertID: id()},
-		{Seq: 8, At: at, Kind: guard.KindReverted, ChangeID: change, RevertID: id()},
-		{Seq: 9, At: at, Kind: guard.KindRevertRejected, RevertID: id()},
+	rows := []guardmodel.FeedRow{
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
+		{Seq: 2, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("DELETE")},
+		{Seq: 3, At: at, Kind: guardmodel.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("SQL_ERROR")},
+		{Seq: 4, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},
+		{Seq: 5, At: at, Kind: guardmodel.KindApproved, ChangeID: change, ApprovalID: id()},
+		{Seq: 6, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
+		{Seq: 7, At: at, Kind: guardmodel.KindRevertSigned, ChangeID: change, RevertID: id()},
+		{Seq: 8, At: at, Kind: guardmodel.KindReverted, ChangeID: change, RevertID: id()},
+		{Seq: 9, At: at, Kind: guardmodel.KindRevertRejected, RevertID: id()},
 	}
 	events := make([]feedEvent, 0, 1+len(rows))
 	events = append(events, skippedEvent(install, "product_a", 0, 1))
@@ -210,14 +211,14 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	}
 	require.Equal(t, "public.\"we�ird\"", events[1].Data.Table)
 
-	for _, bad := range []guard.FeedRow{
+	for _, bad := range []guardmodel.FeedRow{
 		{Seq: 1, At: at, Kind: "READ", ChangeID: change, Op: s("SELECT")},
-		{Seq: 1, At: at, Kind: guard.KindChange, Op: s("UPDATE")},                                          // no change id
-		{Seq: 1, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("REVERT")},                        // no such op
-		{Seq: 1, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("UPDATE"), RunID: s("x")},         // not an id
-		{Seq: 1, At: at, Kind: guard.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Rows: s("1")}, // no approval, run or expiry
-		{Seq: 1, At: at, Kind: guard.KindRevertPending},                                                    // no revert id
-		{Seq: 0, At: at, Kind: guard.KindRevertPending, RevertID: id()},
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, Op: s("UPDATE")},                                          // no change id
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("REVERT")},                        // no such op
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE"), RunID: s("x")},         // not an id
+		{Seq: 1, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Rows: s("1")}, // no approval, run or expiry
+		{Seq: 1, At: at, Kind: guardmodel.KindRevertPending},                                                    // no revert id
+		{Seq: 0, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
 	} {
 		_, ok := feedEventOf(install, "product_a", bad)
 		require.False(t, ok, "%+v", bad)

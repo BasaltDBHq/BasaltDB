@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // bigRowTimeout is the statement timeout of a test that moves 64 MiB.
@@ -34,11 +35,11 @@ func docsAgent(t *testing.T, size int) (*guardtest.DB, *guardtest.Agent) {
 // preview lines are over guard.MaxHeldLinesBytes.
 func requireHoldTooLarge(t *testing.T, err error) {
 	t.Helper()
-	requireCode(t, err, guard.CodeNotAllowed)
+	requireCode(t, err, guardmodel.CodeNotAllowed)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
-	require.Equal(t, guard.DetailHoldTooLarge, pg.Detail)
-	require.Contains(t, pg.Hint, fmt.Sprint(guard.MaxHeldLinesBytes))
+	require.Equal(t, guardmodel.DetailHoldTooLarge, pg.Detail)
+	require.Contains(t, pg.Hint, fmt.Sprint(guardmodel.MaxHeldLinesBytes))
 }
 
 // A held DELETE of a row with a 2 MB value is held whole, signed and
@@ -68,7 +69,7 @@ func TestHoldKeepsALargeLine(t *testing.T) {
 // INTERNAL. Not parallel, and with a long statement timeout: it moves
 // 64 MiB rows, which a loaded machine can take seconds over.
 func TestHoldRefusesLinesOverTheCap(t *testing.T) {
-	_, a := docsAgent(t, guard.MaxHeldLinesBytes)
+	_, a := docsAgent(t, guardmodel.MaxHeldLinesBytes)
 	in := newRun(t, a, "drop the huge doc")
 	ctx := context.Background()
 
@@ -81,7 +82,7 @@ func TestHoldRefusesLinesOverTheCap(t *testing.T) {
 	requireHoldTooLarge(t, err)
 	require.NoError(t, tx.Rollback(ctx))
 
-	line := `{"op": "DELETE", "key": {"id": 1}, "old": {"id": 1, "body": "` + strings.Repeat("x", guard.MaxHeldLinesBytes) +
+	line := `{"op": "DELETE", "key": {"id": 1}, "old": {"id": 1, "body": "` + strings.Repeat("x", guardmodel.MaxHeldLinesBytes) +
 		`"}, "set": null, "table": "public.docs", "cascaded": false}`
 	_, err = guard.Hold(ctx, a.Conn, in, bigRowTimeout, guard.HoldRequest{
 		Statement: `DELETE FROM public.docs WHERE id = $1`, Params: []any{1}, Assigned: []string{}, Lines: []string{line},

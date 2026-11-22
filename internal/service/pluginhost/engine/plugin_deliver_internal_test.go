@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
@@ -573,7 +573,7 @@ func TestNoticeNeedsAnInstallID(t *testing.T) {
 		if fail.Load() {
 			return uuid.Nil, errors.New("connection refused: " + marker)
 		}
-		return uuid.Nil, guard.ErrNoInstall
+		return uuid.Nil, guardmodel.ErrNoInstall
 	}
 	e.start()
 	e.d.forAgent("product_a").DeliverLink(e.heldNotice(localShort))

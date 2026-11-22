@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Upkeep is the store side of the engine's timer (upkeep.Store) on one
@@ -107,7 +108,7 @@ func (u *Upkeep) UncoveredTables(ctx context.Context) ([]action.Uncovered, error
 	if err != nil {
 		return nil, err
 	}
-	return mapSlice(tables, func(t guard.Uncovered) action.Uncovered { return action.Uncovered(t) }), nil
+	return mapSlice(tables, func(t guardmodel.Uncovered) action.Uncovered { return action.Uncovered(t) }), nil
 }
 
 // RLSBlindTables lists the tables the agent can SELECT where row-level

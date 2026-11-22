@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -30,7 +31,7 @@ func lineChangeIDs(t *testing.T, lines []string) []uuid.UUID {
 // requireChangeAgents checks the catalog's map against the ledger: each
 // entry is the change's own agent, the agents' change counts match the
 // catalog's, and every change id the lines name is in it.
-func requireChangeAgents(t *testing.T, d *guardtest.DB, out guard.RescopedRevert, want map[string]int) {
+func requireChangeAgents(t *testing.T, d *guardtest.DB, out guardmodel.RescopedRevert, want map[string]int) {
 	t.Helper()
 	require.NotNil(t, out.Catalog)
 	got := map[string]int{}
@@ -58,7 +59,7 @@ func TestRescopeCatalogChangeAgents(t *testing.T) {
 
 	helperOnly := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}
 	narrow, err := guard.RescopeRevert(ctx, e.bot.Conn,
-		guard.RescopeRequest{RevertID: e.prep.RevertID, Select: helperOnly, Token: []byte(wide.ScopeToken)})
+		guardmodel.RescopeRequest{RevertID: e.prep.RevertID, Select: helperOnly, Token: []byte(wide.ScopeToken)})
 	require.NoError(t, err)
 	requireChangeAgents(t, e.d, narrow, map[string]int{e.bot.Role: 3, e.helper.Role: 2})
 	require.Equal(t, wide.Catalog.ChangeAgents, narrow.Catalog.ChangeAgents)
@@ -73,16 +74,16 @@ func TestChangeAgentsNeverReachTheAgent(t *testing.T) {
 	ctx := context.Background()
 	id := e.prep.RevertID
 
-	own, err := guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{RevertID: id, Select: e.own()})
+	own, err := guard.RescopeRevert(ctx, e.bot.Conn, guardmodel.RescopeRequest{RevertID: id, Select: e.own()})
 	require.NoError(t, err)
 	require.Nil(t, own.Catalog, "an unproven own-work rescope gets no map")
 
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{RevertID: id, Select: e.every()})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, guardmodel.RescopeRequest{RevertID: id, Select: e.every()})
 	requireWidenRefused(t, err)
 	as, _ := e.proof(t, id, e.every(), "the page's new secret")
 	other, err := revert.RescopeKey([]byte("another secret"))
 	require.NoError(t, err)
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{RevertID: id, Select: e.every(), Proof: &as, RescopeKey: other})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, guardmodel.RescopeRequest{RevertID: id, Select: e.every(), Proof: &as, RescopeKey: other})
 	requireWidenRefused(t, err)
 
 	wide := e.widen(t, e.every())

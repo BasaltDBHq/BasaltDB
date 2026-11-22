@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
@@ -32,7 +33,7 @@ var caseDatabase = handoff.Address{Host: "aws-0-eu-central-1.pooler.supabase.com
 // connectOnlySetup is the fixture's pending setup in engine.json.
 func connectOnlySetup(expires time.Time) config.Setup {
 	return config.Setup{
-		SetupID: caseSetupID, Kind: guard.SetupInstall, GuardVersion: guard.LatestVersion(),
+		SetupID: caseSetupID, Kind: guardmodel.SetupInstall, GuardVersion: guard.LatestVersion(),
 		ExpiresAt: expires.UTC().Format(time.RFC3339), Code: connectOnlyFixture, Fingerprint: caseFingerprint, AwaitingAddress: true,
 	}
 }
@@ -92,20 +93,20 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 	confirmed := waiting
 	confirmed.AwaitingAddress = false
 	return map[string]statusCase{
-		problemConfirmDatabase: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseConfirm, Database: &db})},
-		problemDatabaseRefused: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: refused, Phase: handoff.PhaseRefused})},
-		problemUnreachableFromBot: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
+		problemConfirmDatabase: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseConfirm, Database: &db})},
+		problemDatabaseRefused: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: refused, Phase: handoff.PhaseRefused})},
+		problemUnreachableFromBot: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
 			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemUnreachable, Database: &db,
 		})},
-		problemTrustRootMismatch: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
+		problemTrustRootMismatch: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
 			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemTrustRootMismatch, Database: &db,
 		})},
-		problemAddressInvalid: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
-		problemClockSkew:      {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
-		problemEngineAsRoot:   {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
-		problemSetupNotFound: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemAddressInvalid: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
+		problemClockSkew:      {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
+		problemEngineAsRoot:   {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
+		problemSetupNotFound: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
-			return operatedStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, 1, &confirmed, operatedBy)(t)
+			return operatedStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, 1, &confirmed, operatedBy)(t)
 		}},
 	}
 }

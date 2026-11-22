@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // rehashFrom3 rewrites the detail of row 3 and re-hashes the tail so the
@@ -119,7 +120,7 @@ func TestVerifyChainFromRefusesBadInput(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", leads, nil)
 	_, _, err := guard.VerifyChainFrom(context.Background(), a.Conn, guard.ChainHead{Seq: -1, Hash: []byte{1}})
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	st, _ := verifyFrom(t, a.Conn, guard.ChainHead{Seq: 99, Hash: []byte{1}})
 	require.Equal(t, guard.ChainStatus{BrokenAt: 1}, st, "a pin beyond the head means rows were removed")
 }
@@ -135,6 +136,6 @@ func TestRecordEventKinds(t *testing.T) {
 	require.Equal(t, 3, count(t, d.Admin,
 		`SELECT count(1)::int FROM basalt_meta.ledger WHERE kind IN ('HEARTBEAT', 'DEAD_MAN', 'UNCOVERED_TABLES')`))
 	err := guard.RecordEvent(ctx, a.Conn, "RUN_STARTED", nil)
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	requireIntact(t, a.Conn)
 }

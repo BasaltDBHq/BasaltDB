@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -298,7 +299,7 @@ func TestRevertPlanPagesPastALargeLineAndRestoresIt(t *testing.T) {
 		stmts = append(stmts, fmt.Sprintf(`UPDATE public.items SET v = 'agent' WHERE id BETWEEN %d AND %d`, i+1, i+10))
 	}
 	require.NoError(t, guardtest.Guarded(ctx, e.a.Conn, in, stmts...))
-	prep, err := guard.PrepareRevert(ctx, e.a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
+	prep, err := guard.PrepareRevert(ctx, e.a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
 	require.NoError(t, err)
 	require.True(t, prep.Batched)
 	as, err := e.person.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)

@@ -12,18 +12,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-// The ledger kinds a feed/1 event is made from (guardmodel.Kind*).
-const (
-	KindChange          = guardmodel.KindChange
-	KindRefused         = guardmodel.KindRefused
-	KindApprovalPending = guardmodel.KindApprovalPending
-	KindApproved        = guardmodel.KindApproved
-	KindRevertPending   = guardmodel.KindRevertPending
-	KindRevertSigned    = guardmodel.KindRevertSigned
-	KindReverted        = guardmodel.KindReverted
-	KindRevertRejected  = guardmodel.KindRevertRejected
-)
-
 // ledgerKind is the ledger's kind column.
 const ledgerKind = "kind"
 
@@ -31,17 +19,14 @@ const ledgerKind = "kind"
 // when its status is APPLIED, a REFUSED only when its op is not SELECT
 // (ReadFeedRows filters both).
 var FeedKinds = []string{
-	KindChange, KindRefused, KindApprovalPending, KindApproved,
-	KindRevertPending, KindRevertSigned, KindReverted, KindRevertRejected,
+	guardmodel.KindChange, guardmodel.KindRefused, guardmodel.KindApprovalPending, guardmodel.KindApproved,
+	guardmodel.KindRevertPending, guardmodel.KindRevertSigned, guardmodel.KindReverted, guardmodel.KindRevertRejected,
 }
-
-// FeedRow is one row of the calling agent's ledger that is a feed/1 event.
-type FeedRow = guardmodel.FeedRow
 
 // ReadFeedRows reads the calling agent's own ledger (agent_ledger shows only
 // session_user's rows) after seq after: at most limit rows that are feed/1
 // events, in seq order.
-func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int) ([]FeedRow, error) {
+func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int) ([]guardmodel.FeedRow, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -51,8 +36,8 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int) ([]Fee
 		From("basalt_meta.agent_ledger").
 		Where(sq.Gt{"seq": after}).
 		Where(sq.Eq{ledgerKind: FeedKinds}).
-		Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", KindChange)).
-		Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", KindRefused)).
+		Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange)).
+		Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused)).
 		OrderBy("seq").Limit(uint64(limit)).ToSql()
 	if err != nil {
 		return nil, err
@@ -61,8 +46,8 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int) ([]Fee
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (FeedRow, error) {
-		var r FeedRow
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.FeedRow, error) {
+		var r guardmodel.FeedRow
 		err := row.Scan(&r.Seq, &r.At, &r.Kind, &r.ChangeID, &r.Op,
 			&r.RunID, &r.TaskID, &r.Table, &r.Rows, &r.CascadedRows,
 			&r.ApprovalID, &r.ExpiresAt, &r.RevertID, &r.Code)
@@ -125,7 +110,7 @@ func OldestSeqAfter(ctx context.Context, q Querier, after int64) (int64, bool, e
 func ServedFrom(ctx context.Context, q Querier, name, instance string, after int64) (int64, bool, error) {
 	sql, args, err := psql.Select("seq", ledgerKind, "detail -> 'egress'", "detail -> 'endpoint'").
 		From("basalt_meta.agent_ledger").
-		Where(sq.Eq{ledgerKind: []string{string(PluginEnabled), string(PluginChanged), string(PluginDisabled)}}).
+		Where(sq.Eq{ledgerKind: []string{string(guardmodel.PluginEnabled), string(guardmodel.PluginChanged), string(guardmodel.PluginDisabled)}}).
 		Where(sq.Expr("detail ->> 'name' = ?", name)).
 		Where(sq.Expr("detail ->> 'instance' = ?", instance)).
 		OrderBy("seq").ToSql()
@@ -156,8 +141,8 @@ func ServedFrom(ctx context.Context, q Querier, name, instance string, after int
 		if r.seq <= after {
 			continue
 		}
-		starts := r.kind == string(PluginEnabled)
-		if r.kind == string(PluginChanged) && i > 0 {
+		starts := r.kind == string(guardmodel.PluginEnabled)
+		if r.kind == string(guardmodel.PluginChanged) && i > 0 {
 			starts = widens(recs[i-1].egress, recs[i-1].endpoint, r.egress, r.endpoint)
 		}
 		if starts {
@@ -172,7 +157,7 @@ func ServedFrom(ctx context.Context, q Querier, name, instance string, after int
 // not decode counts as a change: starting again at it only skips events.
 func widens(prevEgress, prevEndpoint, egress, endpoint []byte) bool {
 	var pe, e []string
-	var pp, p PluginEndpoint
+	var pp, p guardmodel.PluginEndpoint
 	if json.Unmarshal(prevEgress, &pe) != nil || json.Unmarshal(egress, &e) != nil ||
 		json.Unmarshal(prevEndpoint, &pp) != nil || json.Unmarshal(endpoint, &p) != nil {
 		return true

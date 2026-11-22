@@ -14,7 +14,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 const (
@@ -289,14 +289,14 @@ func TestRequestPluginWaitOnlyReads(t *testing.T) {
 // endedApprovals is the caller's guard holding one plugin approval.
 type endedApprovals struct{ id uuid.UUID }
 
-func (e endedApprovals) ReadPluginApproval(_ context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+func (e endedApprovals) ReadPluginApproval(_ context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	if id != e.id {
-		return guard.PluginApprovalRecord{}, false, nil
+		return guardmodel.PluginApprovalRecord{}, false, nil
 	}
-	return guard.PluginApprovalRecord{ApprovalID: id, Name: "local-ner", Instance: "default", Status: guard.PluginApprovalStatusCancelled}, true, nil
+	return guardmodel.PluginApprovalRecord{ApprovalID: id, Name: "local-ner", Instance: "default", Status: guardmodel.PluginApprovalStatusCancelled}, true, nil
 }
 
-func (endedApprovals) SubmitPluginApproval(context.Context, guard.PluginApprovalResponse) (time.Time, error) {
+func (endedApprovals) SubmitPluginApproval(context.Context, guardmodel.PluginApprovalResponse) (time.Time, error) {
 	return time.Time{}, errors.New("never")
 }
 

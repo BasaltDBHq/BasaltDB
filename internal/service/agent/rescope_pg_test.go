@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -233,8 +234,8 @@ func revertPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() }
 
 // scopeAnswer is the scope route's 200 answer as the page reads it.
 type scopeAnswer struct {
-	Request revert.Request       `json:"request"`
-	Catalog *guard.RevertCatalog `json:"catalog"`
+	Request revert.Request            `json:"request"`
+	Catalog *guardmodel.RevertCatalog `json:"catalog"`
 }
 
 // A widen with the person's proof rotates the revert's link to the page's

@@ -219,7 +219,7 @@ func TestTickRecordsUncoveredTablesWhenTheyChange(t *testing.T) {
 	require.Len(t, tables, 1)
 	require.Equal(t, "lead_files", tables[0].(map[string]any)["table"])
 
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	require.NoError(t, u.Tick(ctx))
 	ev = events(t, a.Conn, "UNCOVERED_TABLES")
 	require.Len(t, ev, 2, "the fix is recorded too")

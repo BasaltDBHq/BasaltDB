@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -27,13 +28,13 @@ import (
 
 // pluginApprovalDetail is the detail of a local wire.detect entry in same-user
 // mode with no known signer, for the given agent roles.
-func pluginApprovalDetail(version string, agents ...string) guard.PluginApprovalDetail {
-	return guard.PluginApprovalDetail{
+func pluginApprovalDetail(version string, agents ...string) guardmodel.PluginApprovalDetail {
+	return guardmodel.PluginApprovalDetail{
 		Agents: agents, Name: "local-ner", Instance: "client_x", Version: version,
 		ManifestSHA256: strings.Repeat("a1", 32), Hooks: []string{"wire.detect"}, Roles: []string{"VALUE"},
-		Egress: []string{}, Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
-		Signer:    guard.PluginSignerUnknown,
+		Egress: []string{}, Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
+		Signer:    guardmodel.PluginSignerUnknown,
 	}
 }
 
@@ -124,7 +125,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 
 	timeout := 300
 	opened, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.1", bot.Role, helper.Role),
-		guard.PluginSettings{TimeoutMs: &timeout})
+		guardmodel.PluginSettings{TimeoutMs: &timeout})
 	require.NoError(t, err)
 
 	secret := p.link(opened.ID)
@@ -173,10 +174,10 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.Equal(t, "This plugin approval is already signed. The plugin starts within a few seconds of the signature.", out["personMessage"])
 
 	// A newer approval of the same entry cancels the pending one.
-	first, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.2", bot.Role), guard.PluginSettings{})
+	first, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.2", bot.Role), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	firstSecret := p.link(first.ID)
-	second, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.3", bot.Role), guard.PluginSettings{})
+	second, err := guard.OpenPluginApproval(ctx, bot.Conn, pluginApprovalDetail("0.3.3", bot.Role), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	status, out = p.get(first.ID, firstSecret)
 	require.Equal(t, http.StatusConflict, status, out)
@@ -195,7 +196,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 
 	// An approval opened in the other database is that agent's alone.
 	p.offset.Store(0)
-	theirs, err := guard.OpenPluginApproval(ctx, other.Conn, pluginApprovalDetail("0.3.1", other.Role), guard.PluginSettings{})
+	theirs, err := guard.OpenPluginApproval(ctx, other.Conn, pluginApprovalDetail("0.3.1", other.Role), guardmodel.PluginSettings{})
 	require.NoError(t, err)
 	status, out = p.get(theirs.ID, p.link(theirs.ID))
 	require.Equal(t, http.StatusOK, status, out)

@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // fakePlugins reports problems per agent, as the engine's reporter does:
@@ -21,7 +21,7 @@ func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, 
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.Plugins = r
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", configPath, "linux")

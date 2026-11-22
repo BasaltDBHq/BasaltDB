@@ -21,9 +21,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -300,7 +300,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	require.Len(t, started, 2, "a new process for the new copy")
 	require.False(t, alive(old[0]))
 	rows := l.events(t, "product_a")
-	var d guard.PluginDetail
+	var d guardmodel.PluginDetail
 	require.NoError(t, json.Unmarshal([]byte(rows[len(rows)-1].Detail), &d))
 	require.Equal(t, "PLUGIN_ENABLED", rows[len(rows)-1].Kind)
 	require.Equal(t, next.ManifestSHA256, d.ManifestSHA256)

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -84,9 +85,9 @@ func ListOpenReverts(ctx context.Context, q guard.Querier, p RevertListParams) (
 
 // Outcomes of a batched plan's lines.
 const (
-	OutcomePending  = guard.OutcomePending
-	OutcomeRestored = guard.OutcomeRestored
-	OutcomeSkipped  = guard.OutcomeSkipped
+	OutcomePending  = guardmodel.OutcomePending
+	OutcomeRestored = guardmodel.OutcomeRestored
+	OutcomeSkipped  = guardmodel.OutcomeSkipped
 )
 
 // ListRevertLines returns one page of the lines of a batched plan the

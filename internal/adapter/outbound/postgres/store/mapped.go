@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -66,7 +67,7 @@ func (c *ColumnOrder) ColumnOrder(ctx context.Context, tables []string) (map[str
 }
 
 // GuardStatus reads schema_version.
-func (p Probe) GuardStatus(ctx context.Context) (guard.Status, error) {
+func (p Probe) GuardStatus(ctx context.Context) (guardmodel.Status, error) {
 	r0, err := p.guardStatusRaw(ctx)
 	return r0, MapError(err)
 }
@@ -78,7 +79,7 @@ func (p Probe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) {
 }
 
 // LatestSetup is the agent's newest recorded setup.
-func (p Probe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error) {
+func (p Probe) LatestSetup(ctx context.Context) (guardmodel.AgentSetup, bool, error) {
 	r0, r1, err := p.latestSetupRaw(ctx)
 	return r0, r1, MapError(err)
 }
@@ -157,14 +158,14 @@ func (s *Store) SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Asse
 
 // ReadPluginApproval returns one plugin approval the agent's role may see
 // (basalt_meta.agent_plugin_approvals), and false when there is none.
-func (s *Store) ReadPluginApproval(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+func (s *Store) ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	r0, r1, err := s.readPluginApprovalRaw(ctx, id)
 	return r0, r1, MapError(err)
 }
 
 // SubmitPluginApproval relays the person's signed plugin approval to
 // Postgres (basalt_meta.submit_plugin_approval).
-func (s *Store) SubmitPluginApproval(ctx context.Context, r guard.PluginApprovalResponse) (time.Time, error) {
+func (s *Store) SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error) {
 	r0, err := s.submitPluginApprovalRaw(ctx, r)
 	return r0, MapError(err)
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -21,7 +22,7 @@ import (
 // setup shows RecordSetupStatement, the SQL the person reads.
 // Postgres refuses a used, superseded, expired or forged-time code with
 // SETUP_REFUSED (see SetupRefusal).
-func RecordSetup(ctx context.Context, q Querier, n Names, s Setup) (int64, error) {
+func RecordSetup(ctx context.Context, q Querier, n guardmodel.Names, s guardmodel.Setup) (int64, error) {
 	if err := n.Validate(); err != nil {
 		return 0, err
 	}
@@ -47,27 +48,27 @@ func RecordSetup(ctx context.Context, q Querier, n Names, s Setup) (int64, error
 // written in, so the SQL a person reads before saying yes shows it. Every
 // value is checked or formatted here: a UUID, a kind of three, a role from
 // Names, an int and a UTC time.
-func RecordSetupStatement(n Names, s Setup) (Statement, error) {
+func RecordSetupStatement(n guardmodel.Names, s guardmodel.Setup) (guardmodel.Statement, error) {
 	if err := n.Validate(); err != nil {
-		return Statement{}, err
+		return guardmodel.Statement{}, err
 	}
 	switch s.Kind {
-	case SetupInstall, SetupAgent, SetupUpgrade:
+	case guardmodel.SetupInstall, guardmodel.SetupAgent, guardmodel.SetupUpgrade:
 	default:
-		return Statement{}, fmt.Errorf("%w: setup kind %q", ErrInvalidAgent, s.Kind)
+		return guardmodel.Statement{}, fmt.Errorf("%w: setup kind %q", guardmodel.ErrInvalidAgent, s.Kind)
 	}
 	agent := "NULL"
 	if s.Agent != "" {
 		role, err := n.Agent(s.Agent)
 		if err != nil {
-			return Statement{}, err
+			return guardmodel.Statement{}, err
 		}
 		agent = quoteLiteral(role)
 	}
 	sql := fmt.Sprintf("\nSELECT basalt_meta.record_setup(%s::uuid, %s, %s::name, %d, %s::timestamptz);",
 		quoteLiteral(s.ID.String()), quoteLiteral(s.Kind), agent, s.GuardVersion,
 		quoteLiteral(s.ExpiresAt.UTC().Format(time.RFC3339)))
-	return Statement{SQL: sql}, nil
+	return guardmodel.Statement{SQL: sql}, nil
 }
 
 // SetupRefusal returns the reason (SetupUsed, ...) of a SETUP_REFUSED
@@ -85,7 +86,7 @@ func SetupRefusal(err error) (string, bool) {
 // holds no quote or backslash.
 func CheckVerifier(v string) error {
 	if !setupcode.ValidVerifier(v) {
-		return fmt.Errorf("%w: the password must be a SCRAM-SHA-256 verifier", ErrInvalidAgent)
+		return fmt.Errorf("%w: the password must be a SCRAM-SHA-256 verifier", guardmodel.ErrInvalidAgent)
 	}
 	return nil
 }
@@ -113,24 +114,24 @@ func SetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
 // LatestAgentSetup is the newest setup the agent connection q sees through
 // basalt_meta.agent_setups: its own setups and every UPGRADE. ok is false
 // when none is recorded or the guard has no setups (before version 16).
-func LatestAgentSetup(ctx context.Context, q Querier) (s AgentSetup, ok bool, err error) {
+func LatestAgentSetup(ctx context.Context, q Querier) (s guardmodel.AgentSetup, ok bool, err error) {
 	var readable bool
 	// Plain SQL: catalog and privilege lookups, which any role may run.
 	err = q.QueryRow(ctx, `SELECT coalesce(has_table_privilege(to_regclass('basalt_meta.agent_setups'), 'SELECT'), false)`).Scan(&readable)
 	if err != nil || !readable {
-		return AgentSetup{}, false, err
+		return guardmodel.AgentSetup{}, false, err
 	}
 	sql, args, err := psql.Select("setup_id", "kind").From("basalt_meta.agent_setups").
 		OrderBy("used_at DESC", "setup_id DESC").Limit(1).ToSql()
 	if err != nil {
-		return AgentSetup{}, false, err
+		return guardmodel.AgentSetup{}, false, err
 	}
 	err = q.QueryRow(ctx, sql, args...).Scan(&s.SetupID, &s.Kind)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return AgentSetup{}, false, nil
+		return guardmodel.AgentSetup{}, false, nil
 	}
 	if err != nil {
-		return AgentSetup{}, false, err
+		return guardmodel.AgentSetup{}, false, err
 	}
 	return s, true, nil
 }
@@ -185,8 +186,8 @@ func SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]set
 
 // RoleStatementTimeout is the statement_timeout role has set for every
 // database and for the connected database only.
-func RoleStatementTimeout(ctx context.Context, q Querier, role string) (RoleTimeouts, error) {
-	var v RoleTimeouts
+func RoleStatementTimeout(ctx context.Context, q Querier, role string) (guardmodel.RoleTimeouts, error) {
+	var v guardmodel.RoleTimeouts
 	// Raw SQL: a catalog query over unnest(setconfig) with FILTER aggregates.
 	err := q.QueryRow(ctx, `SELECT
 		coalesce(max(substr(c, length('statement_timeout=') + 1)) FILTER (WHERE s.setdatabase = 0), ''),

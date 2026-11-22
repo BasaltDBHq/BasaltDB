@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -68,8 +69,8 @@ func TestInitAddsGuardPolicyOnRLSTables(t *testing.T) {
 	require.Equal(t, "note_tags", uncovered[0].Table)
 	require.Equal(t, "RLS_WITHOUT_GUARD_POLICY", uncovered[0].Why)
 
-	d.Init(t, guard.AgentSpec{})
-	d.Init(t, guard.AgentSpec{}) // idempotent
+	d.Init(t, guardmodel.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{}) // idempotent
 	require.Equal(t, []string{"lead_notes", "leads", "note_tags"}, guardPolicies(t, d))
 	uncovered, err = guard.UncoveredTables(ctx, a.Conn)
 	require.NoError(t, err)
@@ -167,7 +168,7 @@ func TestAgentRLSUnchanged(t *testing.T) {
 	// preview bot's run at all (RS-1): it reads like a run that does not
 	// exist.
 	other := d.NewAgent(t, "auditor", nil, leads)
-	_, err := guard.PreviewRevert(ctx, other.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID})
-	requireScopeRefused(t, err, guard.ScopeNotOwnRun)
+	_, err := guard.PreviewRevert(ctx, other.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID})
+	requireScopeRefused(t, err, guardmodel.ScopeNotOwnRun)
 	require.Equal(t, 98, count(t, other.Conn, `SELECT count(1)::int FROM public.leads`), "1 to 100 without the deleted 4 and the moved 51")
 }

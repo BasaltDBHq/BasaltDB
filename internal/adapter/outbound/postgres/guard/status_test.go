@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 func TestEveryMigrationIsListedBreakingByDefault(t *testing.T) {
@@ -32,22 +33,22 @@ func TestAgentStatus(t *testing.T) {
 
 	st, err := guard.AgentStatus(ctx, a.Conn, migs)
 	require.NoError(t, err)
-	require.Equal(t, guard.Status{State: guard.GuardOK, Installed: latest, Build: latest}, st)
+	require.Equal(t, guardmodel.Status{State: guardmodel.GuardOK, Installed: latest, Build: latest}, st)
 	require.True(t, st.Served())
 
 	// A build with a breaking version the guard lacks: outdated.
 	next := latest + 1
-	build := append(append([]guard.Migration(nil), migs...), guard.Migration{Version: next, Breaking: true})
+	build := append(append([]guardmodel.Migration(nil), migs...), guardmodel.Migration{Version: next, Breaking: true})
 	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
-	require.Equal(t, guard.Status{State: guard.GuardOutdated, Installed: latest, Build: next, MissingBreaking: []int{next}}, st)
+	require.Equal(t, guardmodel.Status{State: guardmodel.GuardOutdated, Installed: latest, Build: next, MissingBreaking: []int{next}}, st)
 	require.False(t, st.Served())
 
 	// The same version flagged non-breaking: served, with the upgrade available.
 	build[len(build)-1].Breaking = false
 	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
-	require.Equal(t, guard.Status{State: guard.GuardUpgradeAvailable, Installed: latest, Build: next, MissingNonBreaking: []int{next}}, st)
+	require.Equal(t, guardmodel.Status{State: guardmodel.GuardUpgradeAvailable, Installed: latest, Build: next, MissingNonBreaking: []int{next}}, st)
 	require.True(t, st.Served())
 
 	// A breaking version in the middle not recorded: missing, though a newer
@@ -56,7 +57,7 @@ func TestAgentStatus(t *testing.T) {
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = 1`)
 	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardOutdated, st.State)
+	require.Equal(t, guardmodel.GuardOutdated, st.State)
 	require.Equal(t, []int{1}, st.MissingBreaking)
 	require.Equal(t, next, st.Installed)
 	require.False(t, st.Served())
@@ -65,7 +66,7 @@ func TestAgentStatus(t *testing.T) {
 	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES (1)`)
 	st, err = guard.AgentStatus(ctx, a.Conn, migs)
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardNewer, st.State)
+	require.Equal(t, guardmodel.GuardNewer, st.State)
 	require.True(t, st.Served())
 
 	// An agent that cannot read schema_version, which every version grants
@@ -81,8 +82,8 @@ func TestAgentStatus(t *testing.T) {
 		}
 		nonBreaking = append(nonBreaking, m.Version)
 	}
-	require.Equal(t, guard.Status{
-		State: guard.GuardOutdated, Build: next, MissingBreaking: breaking, MissingNonBreaking: nonBreaking,
+	require.Equal(t, guardmodel.Status{
+		State: guardmodel.GuardOutdated, Build: next, MissingBreaking: breaking, MissingNonBreaking: nonBreaking,
 	}, st)
 }
 
@@ -91,7 +92,7 @@ func TestAgentStatusNoGuard(t *testing.T) {
 	d := guardtest.New(t)
 	st, err := guard.AgentStatus(context.Background(), d.Admin, guard.Migrations())
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardMissing, st.State)
+	require.Equal(t, guardmodel.GuardMissing, st.State)
 	require.Zero(t, st.Installed)
 	require.False(t, st.Served())
 }

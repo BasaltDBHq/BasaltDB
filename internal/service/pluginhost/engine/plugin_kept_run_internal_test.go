@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
@@ -463,8 +464,8 @@ func TestSudoInstalledPluginStillIsolated(t *testing.T) {
 
 	cfg.Plugins = append(cfg.Plugins, kept)
 	want := wantedFrom(cfg, func(pluginhost.EntryKey) (pluginhost.Verified, bool) { return v, true }, pluginhost.ModeService, "linux", testPorts.Network, trustWant{}, ep.isKept)
-	require.Equal(t, guard.PluginFilesOSUser, want.served["product_a"][p.Key()].Isolation.Files)
-	require.Equal(t, guard.PluginFilesNone, want.served["product_a"][kept.Key()].Isolation.Files)
+	require.Equal(t, guardmodel.PluginFilesOSUser, want.served["product_a"][p.Key()].Isolation.Files)
+	require.Equal(t, guardmodel.PluginFilesNone, want.served["product_a"][kept.Key()].Isolation.Files)
 	require.True(t, want.approval[kept.Key()])
 	require.False(t, want.approval[p.Key()])
 }
@@ -477,12 +478,12 @@ func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
 	sudoKey := pluginhost.EntryKey{Name: "acme-sudo", Instance: "default"}
 	held := config.Plugin{Name: sudoKey.Name, Instance: sudoKey.Instance, ManifestSHA256: strings.Repeat("a", 64), Enabled: true, Agents: []string{"product_a"}}
 	db := f.agents["product_a"].db
-	recorded := guard.PluginDetail{
+	recorded := guardmodel.PluginDetail{
 		Name: sudoKey.Name, Instance: sudoKey.Instance, Version: "1.0.0", ManifestSHA256: held.ManifestSHA256,
-		Hooks: []string{"feed.observe"}, Egress: []string{}, Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkEnforced}, Signer: string(pluginhost.SignerUnknown),
+		Hooks: []string{"feed.observe"}, Egress: []string{}, Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesOSUser, Network: guardmodel.PluginNetworkEnforced}, Signer: string(pluginhost.SignerUnknown),
 	}
-	require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), db, guard.PluginEnabled, recorded))
+	require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), db, guardmodel.PluginEnabled, recorded))
 
 	start := f.cfg
 	start.Plugins = []config.Plugin{held}

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // The column labels of the connect page (CONTRACT.md, Connect, Column
@@ -16,7 +18,7 @@ import (
 // written in the setup's transaction as basalt classify writes them.
 
 // unlabeled is the class of a column with no row in pii_columns.
-var unlabeled = Label{Class: ClassUnclassified}
+var unlabeled = guardmodel.Label{Class: guardmodel.ClassUnclassified}
 
 // tableColumn is a column of a listed table, with its type as
 // pii_readable_columns() reports it.
@@ -51,7 +53,7 @@ func tableColumns(ctx context.Context, q Querier, tables []string) ([]tableColum
 
 // storedLabels reads, as the guard role, the rows of pii_columns for
 // tables (FOR UPDATE when lock), by schema.table and column.
-func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (map[[2]string]PIIColumn, error) {
+func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (map[[2]string]guardmodel.PIIColumn, error) {
 	b := psql.Select("table_schema", "table_name", "column_name", "data_type", "class",
 		"coalesce(entity_type, '')", "coalesce(suggested_class, '')", "coalesce(suggested_entity_type, '')",
 		"coalesce(reason, '')", "needs_review", "coalesce(phone_region, '')").
@@ -68,8 +70,8 @@ func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (m
 	if err != nil {
 		return nil, fmt.Errorf("read the stored classes: %w", err)
 	}
-	out := map[[2]string]PIIColumn{}
-	var c PIIColumn
+	out := map[[2]string]guardmodel.PIIColumn{}
+	var c guardmodel.PIIColumn
 	_, err = pgx.ForEachRow(rows, []any{
 		&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
 		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion,
@@ -80,8 +82,8 @@ func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (m
 	return out, err
 }
 
-func labelOf(c PIIColumn) Label {
-	return Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
+func labelOf(c guardmodel.PIIColumn) guardmodel.Label {
+	return guardmodel.Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
 }
 
 // ReadLabels is every ordinary column of tables (schema.table), by table in
@@ -89,7 +91,7 @@ func labelOf(c PIIColumn) Label {
 // UNCLASSIFIED for a column with no row, and for every column when the
 // database has no guard yet. It reads in a transaction of its own, as the
 // guard role, and changes nothing.
-func ReadLabels(ctx context.Context, conn *pgx.Conn, n Names, tables []string) ([]ColumnLabel, error) {
+func ReadLabels(ctx context.Context, conn *pgx.Conn, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
 	cols, err := tableColumns(ctx, conn, tables)
 	if err != nil {
 		return nil, err
@@ -98,7 +100,7 @@ func ReadLabels(ctx context.Context, conn *pgx.Conn, n Names, tables []string) (
 	if err := conn.QueryRow(ctx, "SELECT pg_catalog.to_regclass('basalt_meta.pii_columns') IS NOT NULL").Scan(&exists); err != nil {
 		return nil, err
 	}
-	stored := map[[2]string]PIIColumn{}
+	stored := map[[2]string]guardmodel.PIIColumn{}
 	if exists {
 		tx, err := conn.Begin(ctx)
 		if err != nil {
@@ -114,13 +116,13 @@ func ReadLabels(ctx context.Context, conn *pgx.Conn, n Names, tables []string) (
 			return nil, err
 		}
 	}
-	out := make([]ColumnLabel, 0, len(cols))
+	out := make([]guardmodel.ColumnLabel, 0, len(cols))
 	for _, c := range cols {
 		l := unlabeled
 		if s, ok := stored[[2]string{c.table, c.column}]; ok {
 			l = labelOf(s)
 		}
-		out = append(out, ColumnLabel{Table: c.table, Column: c.column, Label: l})
+		out = append(out, guardmodel.ColumnLabel{Table: c.table, Column: c.column, Label: l})
 	}
 	return out, nil
 }
@@ -129,7 +131,7 @@ func ReadLabels(ctx context.Context, conn *pgx.Conn, n Names, tables []string) (
 // name order), read in q as the guard role: the tables an UPGRADE code
 // labels, which names no agent (CONTRACT.md, Connect, Column labels on the
 // connect page). None when the database has no guard yet.
-func ReadableTables(ctx context.Context, q pgx.Tx, n Names) ([]string, error) {
+func ReadableTables(ctx context.Context, q pgx.Tx, n guardmodel.Names) ([]string, error) {
 	var exists bool
 	if err := q.QueryRow(ctx, "SELECT pg_catalog.to_regprocedure('basalt_meta.pii_readable_columns()') IS NOT NULL").Scan(&exists); err != nil {
 		return nil, err
@@ -137,7 +139,7 @@ func ReadableTables(ctx context.Context, q pgx.Tx, n Names) ([]string, error) {
 	if !exists {
 		return nil, nil
 	}
-	var cols []ReadableColumn
+	var cols []guardmodel.ReadableColumn
 	err := asGuard(ctx, q, n, func() error {
 		var err error
 		cols, err = readableColumns(ctx, q)
@@ -157,7 +159,7 @@ func ReadableTables(ctx context.Context, q pgx.Tx, n Names) ([]string, error) {
 // ReadReadableLabels is ReadLabels for every readable column of the
 // database (pii_readable_columns()): the labels an UPGRADE code shows. It
 // reads in a transaction of its own and changes nothing.
-func ReadReadableLabels(ctx context.Context, conn *pgx.Conn, n Names) ([]ColumnLabel, error) {
+func ReadReadableLabels(ctx context.Context, conn *pgx.Conn, n guardmodel.Names) ([]guardmodel.ColumnLabel, error) {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -180,7 +182,7 @@ func ReadReadableLabels(ctx context.Context, conn *pgx.Conn, n Names) ([]ColumnL
 // UNCLASSIFIED) is written PUBLIC the same way. When anything was written,
 // pii_catalog is set to pii_fingerprint(), so a running engine reloads its
 // classes. It reports how many columns it wrote.
-func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, changes []LabelChange, restPublic bool, at time.Time) (int, error) {
+func WriteLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error) {
 	if len(changes) == 0 && !restPublic {
 		return 0, nil
 	}
@@ -203,20 +205,20 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 		if err != nil {
 			return err
 		}
-		var out []PIIColumn
+		var out []guardmodel.PIIColumn
 		changed := map[[2]string]bool{}
 		for _, ch := range changes {
 			key := [2]string{ch.Table, ch.Column}
 			dataType, ok := types[key]
 			if !ok {
-				return ErrClassesChanged
+				return guardmodel.ErrClassesChanged
 			}
-			now, prev := unlabeled, PIIColumn{}
+			now, prev := unlabeled, guardmodel.PIIColumn{}
 			if s, ok := stored[key]; ok {
 				now, prev = labelOf(s), s
 			}
 			if now != ch.Was {
-				return ErrClassesChanged
+				return guardmodel.ErrClassesChanged
 			}
 			out = append(out, labeled(ch.Table, ch.Column, dataType, ch.Label, prev))
 			changed[key] = true
@@ -225,10 +227,10 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 			for _, c := range cols {
 				key := [2]string{c.table, c.column}
 				s, ok := stored[key]
-				if changed[key] || (ok && s.Class != ClassUnclassified) {
+				if changed[key] || (ok && s.Class != guardmodel.ClassUnclassified) {
 					continue
 				}
-				out = append(out, labeled(c.table, c.column, c.dataType, Label{Class: ClassPublic}, s))
+				out = append(out, labeled(c.table, c.column, c.dataType, guardmodel.Label{Class: guardmodel.ClassPublic}, s))
 			}
 		}
 		if len(out) == 0 {
@@ -250,9 +252,9 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 
 // labeled is the pii_columns row for table.column with label l, keeping
 // prev's suggestion, reason and needs_review.
-func labeled(table, column, dataType string, l Label, prev PIIColumn) PIIColumn {
+func labeled(table, column, dataType string, l guardmodel.Label, prev guardmodel.PIIColumn) guardmodel.PIIColumn {
 	schema, rel, _ := strings.Cut(table, ".")
-	return PIIColumn{
+	return guardmodel.PIIColumn{
 		Schema: schema, Table: rel, Column: column, DataType: dataType,
 		Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion,
 		SuggestedClass: prev.SuggestedClass, SuggestedEntityType: prev.SuggestedEntityType,

@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // installRow is basalt_meta.installs' row for install, read as the admin.
@@ -79,7 +80,7 @@ func TestInstallsKeepsTheVaultUser(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names})
+	s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT set_config('basalt.vault_user', 'alice@example.com', true)`); err != nil {
@@ -102,7 +103,7 @@ func TestUpgradeKeepsTheInstall(t *testing.T) {
 	next := guardtest.NextVersion(t, false)
 	ctx := context.Background()
 	apply := func(upTo int) {
-		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, UpTo: upTo})
+		s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names, UpTo: upTo})
 		require.NoError(t, err)
 		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 	}
@@ -131,9 +132,9 @@ func TestInitWithoutAnInstallRowWritesANewInstall(t *testing.T) {
 	require.NoError(t, err)
 	d.Exec(t, `DELETE FROM basalt_meta.installs`)
 	_, err = guard.InstallID(ctx, d.Admin)
-	require.ErrorIs(t, err, guard.ErrNoInstall)
+	require.ErrorIs(t, err, guardmodel.ErrNoInstall)
 	_, err = guard.InstallID(ctx, a.Conn)
-	require.ErrorIs(t, err, guard.ErrNoInstall)
+	require.ErrorIs(t, err, guardmodel.ErrNoInstall)
 
 	d.NewAgent(t, "bot", leads, nil)
 	install, err := guard.InstallID(ctx, d.Admin)
@@ -201,7 +202,7 @@ func TestAgentCannotTouchInstalls(t *testing.T) {
 
 func requireDetail(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	var pg *pgconn.PgError
 	require.ErrorAs(t, err, &pg)
 	require.Equal(t, detail, pg.Detail)

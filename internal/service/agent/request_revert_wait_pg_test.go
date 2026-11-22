@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -373,7 +374,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	var r revert.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &r))
 
-	var out guard.AppliedRevert
+	var out guardmodel.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, p.signRevertPage(id, secret, env.person), &out))
 	body = requestRevert(t, env.h, map[string]any{"revertId": id, "reissueLink": true})
 	require.Equal(t, "APPLIED", body["status"])
@@ -524,7 +525,7 @@ func TestRelayedRevertRefusesSignaturesThePersonDidNotMakeForIt(t *testing.T) {
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idB, asB)
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
-	require.Equal(t, guard.CodeRevertExpired, code)
+	require.Equal(t, guardmodel.CodeRevertExpired, code)
 	require.Equal(t, "won", leadStatus(t, env.d, 90))
 	require.Equal(t, "EXPIRED", revertStatus(t, env.h, idB.String()))
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // The service speaks internal/core/action; the guard's functions take their own
@@ -37,37 +38,37 @@ func guardRefusal(r action.Refusal) guard.Refusal {
 	}
 }
 
-func previewPageOf(p guard.PreviewPage) action.PreviewPage {
+func previewPageOf(p guardmodel.PreviewPage) action.PreviewPage {
 	return action.PreviewPage{
 		Lines: p.Lines, Restore: p.Restore, AllAlreadyReverted: p.AllAlreadyReverted, CursorFound: p.CursorFound,
-		Page: mapSlice(p.Page, func(l guard.PreviewLine) action.PreviewLine { return action.PreviewLine(l) }),
+		Page: mapSlice(p.Page, func(l guardmodel.PreviewLine) action.PreviewLine { return action.PreviewLine(l) }),
 		More: p.More,
 	}
 }
 
-func batchResultOf(b guard.BatchResult) action.BatchResult {
+func batchResultOf(b guardmodel.BatchResult) action.BatchResult {
 	return action.BatchResult{
 		RevertID: b.RevertID, Batch: b.Batch, Status: b.Status,
 		Restored: b.Restored, Skipped: b.Skipped, Pending: b.Pending,
-		Items: mapSlice(b.Items, func(it guard.BatchItem) action.BatchItem { return action.BatchItem(it) }),
+		Items: mapSlice(b.Items, func(it guardmodel.BatchItem) action.BatchItem { return action.BatchItem(it) }),
 	}
 }
 
-func rescopedOf(r guard.RescopedRevert) action.RescopedRevert {
+func rescopedOf(r guardmodel.RescopedRevert) action.RescopedRevert {
 	return action.RescopedRevert{
 		RevertID: r.RevertID, BindingText: r.BindingText, ExpiresAt: r.ExpiresAt, Lines: r.Lines,
 		RescopeNonce: r.RescopeNonce, Catalog: catalogOf(r.Catalog), ScopeToken: r.ScopeToken,
 	}
 }
 
-func catalogOf(c *guard.RevertCatalog) *action.RevertCatalog {
+func catalogOf(c *guardmodel.RevertCatalog) *action.RevertCatalog {
 	if c == nil {
 		return nil
 	}
 	return &action.RevertCatalog{
-		Agents:       mapSlice(c.Agents, func(a guard.CatalogAgent) action.CatalogAgent { return action.CatalogAgent(a) }),
-		Runs:         mapSlice(c.Runs, func(r guard.CatalogRun) action.CatalogRun { return action.CatalogRun(r) }),
-		Tables:       mapSlice(c.Tables, func(t guard.CatalogTable) action.CatalogTable { return action.CatalogTable(t) }),
+		Agents:       mapSlice(c.Agents, func(a guardmodel.CatalogAgent) action.CatalogAgent { return action.CatalogAgent(a) }),
+		Runs:         mapSlice(c.Runs, func(r guardmodel.CatalogRun) action.CatalogRun { return action.CatalogRun(r) }),
+		Tables:       mapSlice(c.Tables, func(t guardmodel.CatalogTable) action.CatalogTable { return action.CatalogTable(t) }),
 		ChangeAgents: c.ChangeAgents,
 	}
 }

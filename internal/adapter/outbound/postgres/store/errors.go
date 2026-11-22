@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // SQLSTATEs and names the mapping tells apart.
@@ -41,9 +42,9 @@ var guardCodes = map[string]string{
 
 // messageCodes are guard codes, told apart by message within one SQLSTATE
 // (BS005, BS009), that are also contract tool codes.
-var messageCodes = []guard.Code{
-	guard.CodeApprovalExpired, guard.CodeRevertInvalid, guard.CodeRevertExpired,
-	guard.CodeNothingToRevert,
+var messageCodes = []guardmodel.Code{
+	guardmodel.CodeApprovalExpired, guardmodel.CodeRevertInvalid, guardmodel.CodeRevertExpired,
+	guardmodel.CodeNothingToRevert,
 }
 
 // unavailableClasses are SQLSTATE classes meaning the database cannot serve
@@ -137,7 +138,7 @@ func guardReason(code, detail string) string {
 		if strings.Contains(detail, "has no primary key") {
 			return action.ReasonNoPrimaryKey
 		}
-		if detail == guard.DetailHoldTooLarge {
+		if detail == guardmodel.DetailHoldTooLarge {
 			return action.ReasonHoldTooLarge
 		}
 		return action.ReasonNotAllowed

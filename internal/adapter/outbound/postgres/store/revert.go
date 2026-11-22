@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -20,13 +21,13 @@ import (
 
 // previewRevertRaw is PreviewRevert before MapError.
 func (s *Store) previewRevertRaw(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
-	var page guard.PreviewPage
+	var page guardmodel.PreviewPage
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
 			return err
 		}
 		var err error
-		page, err = guard.PreviewRevertPage(ctx, tx, guard.RevertScope(scope), after, limit)
+		page, err = guard.PreviewRevertPage(ctx, tx, guardmodel.RevertScope(scope), after, limit)
 		if err != nil {
 			return err
 		}
@@ -40,10 +41,10 @@ func (s *Store) previewRevertRaw(ctx context.Context, scope action.Scope, after 
 
 // prepareRevertRaw is PrepareRevert before MapError.
 func (s *Store) prepareRevertRaw(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
-	var p guard.PreparedRevert
+	var p guardmodel.PreparedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
-		p, err = guard.PrepareRevertWithin(ctx, savepoint{tx}, guard.RevertScope(scope), intent, timeout)
+		p, err = guard.PrepareRevertWithin(ctx, savepoint{tx}, guardmodel.RevertScope(scope), intent, timeout)
 		if err != nil {
 			return err
 		}
@@ -60,13 +61,13 @@ func (s *Store) prepareRevertRaw(ctx context.Context, scope action.Scope, intent
 
 // rescopeRevertRaw is RescopeRevert before MapError.
 func (s *Store) rescopeRevertRaw(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error) {
-	var out guard.RescopedRevert
+	var out guardmodel.RescopedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
 			return err
 		}
 		var err error
-		out, err = guard.RescopeRevert(ctx, tx, guard.RescopeRequest(req))
+		out, err = guard.RescopeRevert(ctx, tx, guardmodel.RescopeRequest(req))
 		return err
 	})
 	return rescopedOf(out), err
@@ -74,7 +75,7 @@ func (s *Store) rescopeRevertRaw(ctx context.Context, req action.RescopeRequest,
 
 // resetRevertRaw is ResetRevert before MapError.
 func (s *Store) resetRevertRaw(ctx context.Context, id uuid.UUID, timeout time.Duration) (action.RescopedRevert, error) {
-	var out guard.RescopedRevert
+	var out guardmodel.RescopedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
 			return err
@@ -168,7 +169,7 @@ func (s *Store) revertLinesRaw(ctx context.Context, p ledger.RevertLineParams) (
 
 // applyRevertBatchRaw is ApplyRevertBatch before MapError.
 func (s *Store) applyRevertBatchRaw(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error) {
-	var out guard.BatchResult
+	var out guardmodel.BatchResult
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
 			return err
@@ -182,7 +183,7 @@ func (s *Store) applyRevertBatchRaw(ctx context.Context, id uuid.UUID, lines []i
 
 // applyRevertRaw is ApplyRevert before MapError.
 func (s *Store) applyRevertRaw(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
-	var out guard.AppliedRevert
+	var out guardmodel.AppliedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := guard.SetTimeouts(ctx, tx, s.limits.StatementTimeout); err != nil {
 			return err
@@ -212,7 +213,7 @@ func (s *Store) revealNonceRaw(ctx context.Context, kind string, id uuid.UUID) (
 
 // revealRevertRowsRaw is RevealRevertRows before MapError.
 func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
-	var out guard.RevealedRevert
+	var out guardmodel.RevealedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
 		out, err = guard.RevealRevertRows(ctx, tx, id, proof, key)

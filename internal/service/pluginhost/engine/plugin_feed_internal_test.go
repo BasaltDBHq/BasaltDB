@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -334,7 +335,7 @@ func (e *feedEnv) appendRow(agent, kind string, op any, changeID any, detail map
 // applied appends a write's CHANGE row for agent and returns its seq.
 func (e *feedEnv) applied(agent string) int64 {
 	e.t.Helper()
-	return e.appendRow(agent, guard.KindChange, "UPDATE", uuid.Must(uuid.NewV7()), map[string]any{
+	return e.appendRow(agent, guardmodel.KindChange, "UPDATE", uuid.Must(uuid.NewV7()), map[string]any{
 		"runId": uuid.Must(uuid.NewV7()), "taskId": nil, "intent": "set the score", "statement": "UPDATE public.leads SET score = 1",
 		"table": "public.leads", "rows": 1, "cascadedRows": 0, "durationMs": 3, "status": "APPLIED",
 	})
@@ -612,16 +613,16 @@ func TestNewCursorStartsAtHead(t *testing.T) {
 
 // recordServed writes the record that begins serving entry k to product_a, as
 // the engine writes it before it serves the entry, and returns its seq.
-func (e *feedEnv) recordServed(k pluginhost.EntryKey, kind guard.PluginEventKind, egress ...string) int64 {
+func (e *feedEnv) recordServed(k pluginhost.EntryKey, kind guardmodel.PluginEventKind, egress ...string) int64 {
 	e.t.Helper()
 	if egress == nil {
 		egress = []string{}
 	}
-	d := guard.PluginDetail{
+	d := guardmodel.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: "1.0.0", ManifestSHA256: strings.Repeat("ab", 32),
 		SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA", Hooks: []string{"feed.observe"}, Egress: egress,
-		Endpoint:  guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
+		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
 	}
 	require.NoError(e.t, guard.RecordPluginEntryEvent(context.Background(), e.l.dbs["product_a"].db, kind, d))
 	return e.head()
@@ -635,7 +636,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	t.Parallel()
 	e := newFeedEnv(t)
 	p := e.serve("acme-feed", "product_a")
-	e.recordServed(p.key, guard.PluginEnabled)
+	e.recordServed(p.key, guardmodel.PluginEnabled)
 	e.start()
 	e.started(p.key, "product_a")
 	a := e.applied("product_a")
@@ -646,9 +647,9 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 
 	e.unserve(p.key)
 	settle()
-	e.recordServed(p.key, guard.PluginDisabled)
+	e.recordServed(p.key, guardmodel.PluginDisabled)
 	e.applied("product_a") // while not served
-	e.recordServed(p.key, guard.PluginEnabled)
+	e.recordServed(p.key, guardmodel.PluginEnabled)
 	b := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b)
@@ -658,7 +659,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	e.unserve(p.key)
 	settle()
 	c := e.applied("product_a")
-	e.recordServed(p.key, guard.PluginChanged)
+	e.recordServed(p.key, guardmodel.PluginChanged)
 	d := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b, c, d)
@@ -668,7 +669,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	e.unserve(p.key)
 	settle()
 	e.applied("product_a")
-	e.recordServed(p.key, guard.PluginChanged, "hooks.example:443")
+	e.recordServed(p.key, guardmodel.PluginChanged, "hooks.example:443")
 	f := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b, c, d, f)
@@ -689,7 +690,7 @@ func TestNewInstallStartsAtHead(t *testing.T) {
 		require.NoError(t, writeFileAtomic(filepath.Join(dir, k.Name, k.Instance), "product_a.json", old))
 	}
 	e.applied("product_a")
-	enabled := e.recordServed(p.key, guard.PluginEnabled)
+	enabled := e.recordServed(p.key, guardmodel.PluginEnabled)
 	a := e.applied("product_a")
 	head := e.head()
 	e.start()

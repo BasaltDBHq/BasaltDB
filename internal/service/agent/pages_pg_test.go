@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -285,7 +286,7 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Mark leads won"}
 	require.NoError(t, guard.StartRun(ctx, a.Conn, in))
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id BETWEEN 40 AND 45`))
-	prep, err := guard.PrepareRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Revert the run")
+	prep, err := guard.PrepareRevert(ctx, a.Conn, guardmodel.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Revert the run")
 	require.NoError(t, err)
 	id := prep.RevertID.String()
 
@@ -305,7 +306,7 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, "", signed, &perr), "no secret, no relay")
 	require.Equal(t, http.StatusForbidden, p.post("/api/v1/reverts/"+id+"/apply", "http://localhost:9999", secret, signed, &perr))
-	var out guard.AppliedRevert
+	var out guardmodel.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
 	require.Equal(t, 6, out.Rows)
 	require.Equal(t, "open", leadStatus(t, d, 40))

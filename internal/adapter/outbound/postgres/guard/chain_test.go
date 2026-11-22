@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // writeSome makes n single-row agent writes (each one ROW_CHANGE and one
@@ -141,8 +142,8 @@ func TestAgentCannotForgeLedger(t *testing.T) {
 	}
 
 	_, err := a.Conn.Exec(ctx, `SELECT basalt_meta.record_event('ROW_CHANGE', NULL, '{}')`)
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	err = guard.Heartbeat(ctx, a.Conn, map[string]any{"pad": strings.Repeat("x", 70*1024)})
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	requireIntact(t, a.Conn)
 }

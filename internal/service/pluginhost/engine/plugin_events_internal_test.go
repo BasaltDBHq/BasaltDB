@@ -112,8 +112,8 @@ func TestEnabledWrittenOnce(t *testing.T) {
 		require.Equal(t, p.ManifestSHA256, d.ManifestSHA256)
 		require.Equal(t, "default", d.Instance)
 		require.Equal(t, []string{"feed.observe"}, d.Hooks)
-		require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointLocal}, d.Endpoint)
-		require.Equal(t, &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced}, d.Isolation,
+		require.Equal(t, guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal}, d.Endpoint)
+		require.Equal(t, &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced}, d.Isolation,
 			"same-user mode: no file or network isolation")
 	}
 }
@@ -197,7 +197,7 @@ func TestTrustAddedToEveryAgent(t *testing.T) {
 	for _, a := range []string{"product_a", "client_x"} {
 		var got []string
 		for _, r := range l.events(t, a) {
-			if r.Kind != string(guard.PluginTrustAdded) {
+			if r.Kind != string(guardmodel.PluginTrustAdded) {
 				continue
 			}
 			var d struct {
@@ -349,7 +349,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 	}
 	for _, m := range []pluginhost.Manifest{local, remote} {
 		d := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux", testPorts.Network)
-		for _, kind := range []guard.PluginEventKind{guard.PluginEnabled, guard.PluginDisabled, guard.PluginChanged} {
+		for _, kind := range []guardmodel.PluginEventKind{guardmodel.PluginEnabled, guardmodel.PluginDisabled, guardmodel.PluginChanged} {
 			b, err := json.Marshal(map[string]any{"kind": kind, "detail": d})
 			require.NoError(t, err)
 			inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
@@ -358,7 +358,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 		}
 	}
 	d := pluginDetail(k, pluginhost.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux", testPorts.Network)
-	require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
+	require.Equal(t, guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	require.Nil(t, d.Isolation, "a remote entry records no local isolation")
 	require.Equal(t, []string{"approval.deliver", "feed.observe"}, d.Hooks)
 }
@@ -401,8 +401,8 @@ func testDetail(k pluginhost.EntryKey) guardmodel.PluginDetail {
 	return guardmodel.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: "1.4.0", ManifestSHA256: strings.Repeat("ab", 32),
 		SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA", Hooks: []string{"feed.observe"}, Egress: []string{},
-		Endpoint:  guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
+		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
 	}
 }
 
@@ -462,9 +462,9 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 		k := pluginhost.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
 		det := pluginDetail(k, pluginhost.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginhost.ModeSameUser, "linux", testPorts.Network)
 		if det.Isolation != nil {
-			det.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkNotEnforced}
+			det.Isolation = &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesOSUser, Network: guardmodel.PluginNetworkNotEnforced}
 		}
-		require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), a.Conn, guard.PluginEnabled, det), "remote %v", remote)
+		require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), a.Conn, guardmodel.PluginEnabled, det), "remote %v", remote)
 	}
 }
 
@@ -480,22 +480,22 @@ func TestPluginIsolationIsWhatRuns(t *testing.T) {
 			Network:  pluginhost.Network{Egress: egress},
 		}
 	}
-	iso := func(files, network string) *guard.PluginIsolation {
-		return &guard.PluginIsolation{Files: files, Network: network}
+	iso := func(files, network string) *guardmodel.PluginIsolation {
+		return &guardmodel.PluginIsolation{Files: files, Network: network}
 	}
 	for _, tc := range []struct {
 		name string
 		mode pluginhost.Mode
 		goos string
 		m    pluginhost.Manifest
-		want *guard.PluginIsolation
+		want *guardmodel.PluginIsolation
 	}{
-		{"same-user", pluginhost.ModeSameUser, "linux", local(), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
-		{"same-user with egress", pluginhost.ModeSameUser, "darwin", local("x.example:443"), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
-		{"service linux no egress", pluginhost.ModeService, "linux", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkEnforced)},
-		{"service linux egress", pluginhost.ModeService, "linux", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkDeclared)},
-		{"service macos", pluginhost.ModeService, "darwin", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
-		{"service macos egress", pluginhost.ModeService, "darwin", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
+		{"same-user", pluginhost.ModeSameUser, "linux", local(), iso(guardmodel.PluginFilesNone, guardmodel.PluginNetworkNotEnforced)},
+		{"same-user with egress", pluginhost.ModeSameUser, "darwin", local("x.example:443"), iso(guardmodel.PluginFilesNone, guardmodel.PluginNetworkNotEnforced)},
+		{"service linux no egress", pluginhost.ModeService, "linux", local(), iso(guardmodel.PluginFilesOSUser, guardmodel.PluginNetworkEnforced)},
+		{"service linux egress", pluginhost.ModeService, "linux", local("x.example:443"), iso(guardmodel.PluginFilesOSUser, guardmodel.PluginNetworkDeclared)},
+		{"service macos", pluginhost.ModeService, "darwin", local(), iso(guardmodel.PluginFilesOSUser, guardmodel.PluginNetworkNotEnforced)},
+		{"service macos egress", pluginhost.ModeService, "darwin", local("x.example:443"), iso(guardmodel.PluginFilesOSUser, guardmodel.PluginNetworkNotEnforced)},
 	} {
 		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: tc.m}, tc.mode, tc.goos, testPorts.Network)
 		require.Equal(t, tc.want, d.Isolation, tc.name)
@@ -505,7 +505,7 @@ func TestPluginIsolationIsWhatRuns(t *testing.T) {
 	for _, mode := range []pluginhost.Mode{pluginhost.ModeSameUser, pluginhost.ModeService} {
 		d := pluginDetail(pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}, pluginhost.Verified{Manifest: remote}, mode, "linux", testPorts.Network)
 		require.Nil(t, d.Isolation)
-		require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
+		require.Equal(t, guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	}
 }
 
@@ -518,7 +518,7 @@ type refuseTrustKey struct {
 }
 
 func (q refuseTrustKey) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	if strings.Contains(fmt.Sprint(args...), string(guard.PluginTrustAdded)) && strings.Contains(fmt.Sprint(args...), q.keyID) {
+	if strings.Contains(fmt.Sprint(args...), string(guardmodel.PluginTrustAdded)) && strings.Contains(fmt.Sprint(args...), q.keyID) {
 		return pgconn.CommandTag{}, &pgconn.PgError{Code: "BS008", Message: "refused"}
 	}
 	return q.Querier.Exec(ctx, sql, args...)
@@ -573,7 +573,7 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 // kind is refused with BS008, as a guard without that kind refuses it.
 type refuseKind struct {
 	guard.Querier
-	kind guard.PluginEventKind
+	kind guardmodel.PluginEventKind
 }
 
 func (q refuseKind) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -591,7 +591,7 @@ func (l pluginLedgers) trustRows(t *testing.T, agentName string) [][2]string {
 	t.Helper()
 	var out [][2]string
 	for _, r := range l.events(t, agentName) {
-		if r.Kind != string(guard.PluginTrustAdded) && r.Kind != string(guard.PluginTrustRemoved) {
+		if r.Kind != string(guardmodel.PluginTrustAdded) && r.Kind != string(guardmodel.PluginTrustRemoved) {
 			continue
 		}
 		var d struct {
@@ -651,7 +651,7 @@ func TestTrustRemovedOnVersion3IsOnlyLogged(t *testing.T) {
 	ep := f.plugins(nil)
 	// The guard refuses the kind as version 3's record_plugin_event does.
 	v3 := map[string]AgentLedger{
-		"product_a": {ports: testPorts, db: refuseKind{Querier: l.dbs["product_a"].db, kind: guard.PluginTrustRemoved}},
+		"product_a": {ports: testPorts, db: refuseKind{Querier: l.dbs["product_a"].db, kind: guardmodel.PluginTrustRemoved}},
 		"client_x":  l.dbs["client_x"],
 	}
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, v3, slog.New(slog.DiscardHandler))

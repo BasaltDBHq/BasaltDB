@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -78,7 +79,7 @@ func (r remoteAgent) configSetup(t *testing.T) *config.Setup {
 func (r remoteAgent) record(t *testing.T, d *guardtest.DB, kind string) {
 	t.Helper()
 	_, err := guard.RecordSetup(context.Background(), d.Admin, d.Names,
-		guard.Setup{ID: r.setupID, Kind: kind, Agent: "bot", GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
+		guardmodel.Setup{ID: r.setupID, Kind: kind, Agent: "bot", GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 }
 
@@ -106,7 +107,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	pw := guard.NewPassword()
 	dsn, err := guard.AgentConnString(d.URL, role, pw)
 	require.NoError(t, err)
-	r := newRemoteAgent(t, dsn, guard.SetupInstall)
+	r := newRemoteAgent(t, dsn, guardmodel.SetupInstall)
 	rt := r.start(t)
 
 	// Before the person's laptop: every tool but status is held.
@@ -119,15 +120,15 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 
 	// The guard and the role alone are not the setup: until the code is
 	// recorded the engine clears nothing.
-	d.Init(t, guard.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw), CreateOnly: true, Write: demoTables, Read: demoTables})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw), CreateOnly: true, Write: demoTables, Read: demoTables})
 	require.ErrorAs(t, rt.svc.Admit(ctx), &se)
 	require.NotNil(t, r.configSetup(t))
 
 	// The laptop records the code in the install's transaction.
-	r.record(t, d, guard.SetupInstall)
+	r.record(t, d, guardmodel.SetupInstall)
 	st, err = rt.svc.Status(ctx)
 	require.NoError(t, err)
-	require.Equal(t, agent.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guard.SetupInstall}, st.Setup)
+	require.Equal(t, agent.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guardmodel.SetupInstall}, st.Setup)
 	require.Equal(t, []string{"NO_PASSKEY"}, problemCodes(st), "no passkey yet: a usual problem, not an unfinished setup")
 	require.Equal(t, "AGENT", st.Problems[0].NextSteps[0].Actor, "the agent makes the code that registers one")
 	require.False(t, st.Ready, "not ready until a passkey can sign; the tools are still served")
@@ -144,7 +145,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", demoTables, demoTables)
-	r := newRemoteAgent(t, a.URL, guard.SetupAgent)
+	r := newRemoteAgent(t, a.URL, guardmodel.SetupAgent)
 	pw2 := guard.NewPassword()
 	pending, err := guard.AgentConnString(d.URL, a.Role, pw2)
 	require.NoError(t, err)
@@ -158,14 +159,14 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 
 	// The laptop rotates the password to the one in .pending and records
 	// the code: the engine's own password stops working.
-	d.Init(t, guard.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw2), Write: demoTables, Read: demoTables})
-	r.record(t, d, guard.SetupAgent)
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw2), Write: demoTables, Read: demoTables})
+	r.record(t, d, guardmodel.SetupAgent)
 
 	st, err = rt.svc.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "DONE", st.Setup.State)
 	require.NotContains(t, problemCodes(st), "CREDENTIAL_REJECTED", "the pool logs in with the promoted password")
-	require.Equal(t, guard.GuardOK, st.Guard.State)
+	require.Equal(t, guardmodel.GuardOK, st.Guard.State)
 	got, err := os.ReadFile(r.credFile)
 	require.NoError(t, err)
 	require.Equal(t, pending+"\n", string(got))
@@ -184,10 +185,10 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", demoTables, demoTables)
-	r := newRemoteAgent(t, a.URL, guard.SetupUpgrade)
+	r := newRemoteAgent(t, a.URL, guardmodel.SetupUpgrade)
 	rt := r.start(t)
 	_, err := guard.RecordSetup(ctx, d.Admin, d.Names,
-		guard.Setup{ID: r.setupID, Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
+		guardmodel.Setup{ID: r.setupID, Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 
 	unlock, err := config.LockFile(r.credFile + lockSuffix)

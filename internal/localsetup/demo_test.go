@@ -86,7 +86,13 @@ func TestDemoInstallAgainKeepsEdits(t *testing.T) {
 	f.db.Exec(t, `UPDATE basalt_demo.leads SET status = 'WON' WHERE id = 2; DELETE FROM basalt_demo.lead_notes WHERE id = 1`)
 
 	// Another engine's agent: an install never takes over a role.
-	lines := installDemo(t, fixtureOn(t, f.db), "demo_two")
+	second := fixtureOn(t, f.db)
+	req := second.request()
+	req.Agent = "demo_two"
+	checked, err := second.svc.Check(context.Background(), req)
+	require.NoError(t, err)
+	require.Contains(t, checked.Notes, "sample schema basalt_demo already exists; its rows are left as they are")
+	lines := installDemo(t, second, "demo_two")
 	require.Contains(t, lines, "demo ready: leads 30, lead_notes 19")
 	var status string
 	require.NoError(t, f.db.Admin.QueryRow(context.Background(), `SELECT status FROM basalt_demo.leads WHERE id = 2`).Scan(&status))

@@ -45,11 +45,19 @@ type relayEnv struct {
 	d      *guardtest.DB
 	person *passkeytest.Authenticator
 	server *mcp.Server
+	svc    *agent.Service
 	v      *vaulttest.Vault
 	keys   *channel.EngineKeys
 }
 
 func newRelayEnv(t *testing.T) *relayEnv {
+	t.Helper()
+	return newRelayEnvWith(t, vaulttest.Options{})
+}
+
+// newRelayEnvWith is newRelayEnv behind a fake Vault with opts (a hostile
+// one, with Tamper).
+func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	t.Helper()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
@@ -69,7 +77,7 @@ func newRelayEnv(t *testing.T) *relayEnv {
 		dp.PagesBase, dp.Links, dp.Relay, dp.Receipts, dp.Poll = links.Portal, secrets, relay, keys, relayPoll
 	})
 
-	v := vaulttest.New(vaulttest.Options{})
+	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
 	live := newRelayLinks(quietLog())
 	site := pages.New(links.Portal, quietLog())
@@ -90,7 +98,7 @@ func newRelayEnv(t *testing.T) *relayEnv {
 	})
 	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
 	relay.c.Store(ev.client)
-	return &relayEnv{d: d, person: person, server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...), v: v, keys: keys}
+	return &relayEnv{d: d, person: person, server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...), svc: svc, v: v, keys: keys}
 }
 
 // call runs one tools/call as the agent would and returns its body and

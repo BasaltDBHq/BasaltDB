@@ -75,7 +75,7 @@ Changing the scope needs the page served by the engine, from the short link the 
 `basalt approve` and `basalt revert` go once the hosted relay is live, together with the pasted codes. Until then you may need them in two cases:
 
 - On a bot's computer, the portal's page shows a code. Paste it to your agent, which passes it on with `write` (`approval`) or `request_revert` (`signature`). You can also run `basalt approve '<code>'` on the machine that holds the agent's credential.
-- For a revert too large for the agent to prepare, or one that covers a whole task, run `basalt revert --agent NAME --task <taskId> --open` prepares that agent's own lines (possibly none) and opens the page, where you include the others.
+- For a revert too large for the agent to prepare, or one that covers a whole task, run `basalt revert --agent NAME --task <taskId> --open`. It prepares that agent's own lines (possibly none) and opens the page, where you include the others.
 
 On an engine that runs as a service, a person who is not root runs both with `sudo`, because they read the agent's credential. Add `--config PATH` when the engine runs from a non-default config.
 

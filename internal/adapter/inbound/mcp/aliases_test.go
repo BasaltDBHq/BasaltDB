@@ -12,7 +12,7 @@ import (
 )
 
 func TestToolErrorAliasIsOneType(t *testing.T) {
-	var err error = fmt.Errorf("wrapped: %w", &toolresult.ToolError{Code: "X", Message: "m"})
+	err := fmt.Errorf("wrapped: %w", &toolresult.ToolError{Code: "X", Message: "m"})
 	var got *mcp.ToolError
 	require.True(t, errors.As(err, &got))
 	require.Equal(t, "X", got.Code)

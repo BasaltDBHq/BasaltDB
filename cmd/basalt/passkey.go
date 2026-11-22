@@ -96,13 +96,12 @@ func pastedRegistrationCode(c *cliIO) (string, error) {
 }
 
 // serveLocalPages serves the embedded pages on a local http://localhost
-// origin while basalt init waits for the registration code, so the link
-// works without a separate page server (the engine serves them later,
+// origin while a command waits for a code from them, so the link works
+// without a separate page server (the engine serves them later,
 // CONTRACT.md, Local pages). It serves nothing for another origin, or when
 // the port is taken (a page server already runs there). stop ends it and
-// frees the port. With hb it also serves the registration hand-back route
-// (CONTRACT.md, CLI).
-func serveLocalPages(origin string, hb *registrationHandBack) (stop func(), served bool) {
+// frees the port.
+func serveLocalPages(origin string) (stop func(), served bool) {
 	noop := func() {}
 	addr, ok := localPagesAddr(origin)
 	if !ok {
@@ -110,14 +109,7 @@ func serveLocalPages(origin string, hb *registrationHandBack) (stop func(), serv
 	}
 	// No agents: the registration page only, no short links.
 	site := pages.New(origin, slog.New(slog.DiscardHandler))
-	routes := site.Handler()
-	if hb != nil {
-		mux := http.NewServeMux()
-		mux.Handle("POST "+handBackPath, hb)
-		mux.Handle("/", routes)
-		routes = mux
-	}
-	ln, h, err := server.Listen(server.Options{}, "registration page", addr, routes)
+	ln, h, err := server.Listen(server.Options{}, "registration page", addr, site.Handler())
 	if err != nil {
 		return noop, false
 	}
@@ -139,9 +131,8 @@ func serveLocalPages(origin string, hb *registrationHandBack) (stop func(), serv
 // pageHeaderTimeout bounds a page request's headers.
 const pageHeaderTimeout = 10 * time.Second
 
-// pageReadTimeout bounds a whole page request, body included, so a post to
-// the hand-back route that stalls its body is dropped.
-const pageReadTimeout = pageHeaderTimeout + handBackReadTimeout
+// pageReadTimeout bounds a whole page request, body included.
+const pageReadTimeout = 2 * pageHeaderTimeout
 
 // localPagesAddr is the loopback address for a local development origin
 // http://localhost:<port>, the default the engine's config resolves to.

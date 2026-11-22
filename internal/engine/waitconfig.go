@@ -11,9 +11,32 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
+	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 )
+
+// WaitOptions are where and how an engine with no config serves its setup
+// page.
+type WaitOptions struct {
+	// Addr is the listener's address (SetupAddr) and Origin the page
+	// origin a setup POST must carry (SetupOrigin).
+	Addr, Origin string
+	// ConfigPath is the engine.json it waits for, and the setup writes.
+	ConfigPath string
+	Log        *slog.Logger
+	// Dial, Users and Prefix replace the setup's defaults (tests only:
+	// localsetup.Options).
+	Dial   func(ctx context.Context, dsn string) (*pgx.Conn, error)
+	Users  localsetup.Users
+	Prefix string
+}
+
+// SetupOrigin is the setup page's origin.
+const SetupOrigin = links.DefaultLocal
 
 // SetupAddr is where an engine with no config serves its setup page: the
 // default local pages address (origin http://localhost:8787).
@@ -29,8 +52,13 @@ const configPollInterval = time.Second
 // port is never free for another process between the two. A taken port is
 // an error naming it; so is a config path that cannot be looked at. On any
 // error the listener is closed.
-func WaitForConfig(ctx context.Context, addr, configPath string, log *slog.Logger) (net.Listener, error) {
-	ln, h, err := server.Listen(server.Options{}, "setup page", addr, pages.SetupOnlyHandler())
+func WaitForConfig(ctx context.Context, o WaitOptions) (net.Listener, error) {
+	addr, configPath, log := o.Addr, o.ConfigPath, o.Log
+	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix})
+	if err != nil {
+		return nil, err
+	}
+	ln, h, err := server.Listen(server.Options{}, "setup page", addr, pages.SetupOnlyHandler(o.Origin, jobs, log.With("component", "setup")))
 	if err != nil {
 		return nil, setupPortError(addr, err)
 	}

@@ -120,11 +120,40 @@ func readListing(ctx context.Context, q guard.Querier, schemas []string) (listin
 // catalog.
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < ' ' || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+		if r < ' ' || r == 0x7f || (r >= 0x80 && r < 0xa0) || bidiControl(r) {
 			return '?'
 		}
 		return r
 	}, s)
+}
+
+// bidiControl is a Unicode bidirectional control, which can reorder what a
+// person reads.
+func bidiControl(r rune) bool {
+	switch {
+	case r == 0x061c, r == 0x200e, r == 0x200f:
+		return true
+	}
+	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+}
+
+// answersKey is the answers as the challenge binds them.
+func answersKey(answers []Answer) string {
+	parts := make([]string, len(answers))
+	for i, a := range answers {
+		parts[i] = a.Table + ":" + a.Choice
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+// allRows answers every question ALL_ROWS, the page's answer.
+func allRows(blind []guard.BlindTable) []Answer {
+	out := make([]Answer, len(blind))
+	for i, b := range blind {
+		out[i] = Answer{Table: b.Table, Choice: ChoiceAllRows}
+	}
+	return out
 }
 
 // checkSchemas applies the rules of the request's schemas for a real
@@ -218,16 +247,19 @@ func policies(blind []guard.BlindTable, answers []Answer) ([]guard.BlindTable, e
 	if len(answers) != len(blind) {
 		return nil, bad
 	}
-	var out []guard.BlindTable
-	seen := map[string]bool{}
+	choice := map[string]string{}
 	for _, a := range answers {
-		i := slices.IndexFunc(blind, func(b guard.BlindTable) bool { return b.Table == a.Table })
-		if i < 0 || seen[a.Table] || (a.Choice != ChoiceAllRows && a.Choice != ChoiceNone) {
+		_, dup := choice[a.Table]
+		if dup || (a.Choice != ChoiceAllRows && a.Choice != ChoiceNone) || !slices.ContainsFunc(blind, func(b guard.BlindTable) bool { return b.Table == a.Table }) {
 			return nil, bad
 		}
-		seen[a.Table] = true
-		if a.Choice == ChoiceAllRows {
-			out = append(out, blind[i])
+		choice[a.Table] = a.Choice
+	}
+	// In the order of the questions, not of the answers.
+	var out []guard.BlindTable
+	for _, b := range blind {
+		if choice[b.Table] == ChoiceAllRows {
+			out = append(out, b)
 		}
 	}
 	return out, nil

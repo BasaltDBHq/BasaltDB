@@ -444,19 +444,61 @@ ALTER TABLE public.vault ENABLE ROW LEVEL SECURITY`)
 	require.Contains(t, checked.SQL, "POLICY", "the check shows the page's answer, ALL_ROWS")
 
 	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
-	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
-	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "MAYBE"}}
-	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
-	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}, {Table: "public.other", Choice: "NONE"}}
-	_, err = f.svc.Run(ctx, req)
-	refusal(t, err, localsetup.CodeAnswersInvalid)
+	// The challenge binds the answers the check showed (ALL_ROWS): a run
+	// with none, another choice or another table is refused, nothing changed.
+	for _, answers := range [][]localsetup.Answer{
+		nil,
+		{{Table: "public.vault", Choice: "NONE"}},
+		{{Table: "public.vault", Choice: "MAYBE"}},
+		{{Table: "public.vault", Choice: "ALL_ROWS"}, {Table: "public.other", Choice: "NONE"}},
+	} {
+		req.Answers = answers
+		_, err = f.svc.Run(ctx, req)
+		refusal(t, err, localsetup.CodeChallengeInvalid)
+	}
 	require.False(t, exists(t, f.db, "basalt_demo"))
+	_, statErr := os.Stat(f.config)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+	noChallenge := req
+	noChallenge.Challenge = nil
+	noChallenge.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
+	_, err = f.svc.Run(ctx, noChallenge)
+	refusal(t, err, localsetup.CodeChallengeInvalid)
 
 	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
 	_, err = f.svc.Run(ctx, req)
 	require.NoError(t, err)
+}
+
+func TestRealInstallNoneAnswerCreatesNoPolicyAndOtherOwnersAreExcluded(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	other := f.db.Names.Prefix + "_other"
+	f.db.Exec(t, `CREATE ROLE `+other+` NOLOGIN`)
+	f.db.Exec(t, `CREATE TABLE public.vault (id bigint PRIMARY KEY, v text);
+ALTER TABLE public.vault ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.theirs (id bigint PRIMARY KEY);
+ALTER TABLE public.theirs OWNER TO `+other)
+	listing, err := f.svc.Check(ctx, f.real())
+	require.NoError(t, err)
+	require.Contains(t, listing.Excluded, localsetup.ExcludedTable{Table: "public.theirs", Owner: other})
+	for _, tbl := range listing.Tables {
+		require.NotEqual(t, "public.theirs", tbl.Table)
+	}
+
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.vault", Access: localsetup.AccessWrite}}
+	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "NONE"}}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.NotRegexp(t, `(?is)CREATE POLICY[^;]*public\.vault`, checked.SQL)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, req)
+	require.NoError(t, err)
+	var n int
+	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT count(polname)::int FROM pg_catalog.pg_policy WHERE polrelid = 'public.vault'::regclass`).Scan(&n))
+	require.Zero(t, n, "NONE makes no policy")
 }
 
 func TestRealInstallRunRefusesTablesThatChangedSinceTheCheck(t *testing.T) {

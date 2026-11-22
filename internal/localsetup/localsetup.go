@@ -311,7 +311,9 @@ type planned struct {
 	write     []string
 	read      []string
 	questions []Question
-	list      listing
+	// answers are the answers the script was planned with.
+	answers []Answer
+	list    listing
 }
 
 // plan reads the database for j in tx: refusals, then the sample data or
@@ -366,10 +368,12 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		}
 		p.questions = questions(blind, j.req.Agent)
 		if answers == nil {
-			opts.AgentPolicies = blind
-		} else if opts.AgentPolicies, err = policies(blind, answers); err != nil {
+			answers = allRows(blind)
+		}
+		if opts.AgentPolicies, err = policies(blind, answers); err != nil {
 			return planned{}, err
 		}
+		p.answers = answers
 	}
 	opts.Agent = spec
 	if p.script, err = guard.PlanInit(ctx, tx, opts); err != nil {
@@ -452,7 +456,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if !req.Demo && j.picks == nil {
 		return listingAnswer(j, database, p, needed)
 	}
-	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks)})
+	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers)})
 	if err != nil {
 		return CheckAnswer{}, setupFailed()
 	}

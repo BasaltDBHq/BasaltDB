@@ -2,7 +2,7 @@
 
 From nothing to your agent's first guarded write. It works with Supabase and with any plain Postgres you can log in to as an admin (RDS, self-hosted).
 
-After step 1 you type no `basalt` command. Your agent sets BasaltDB up and gives you a link; you finish on that page. Type your database's admin connection string only there, never to the agent.
+Type your database's admin connection string only on the setup page, never to the agent.
 
 You need:
 

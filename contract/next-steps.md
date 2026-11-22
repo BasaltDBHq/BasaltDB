@@ -115,19 +115,22 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `UNAVAILABLE` | `SETUP_EXPIRED` | — | O `RUN_COMMAND` (`basalt init --remote --new-code ...`, saved flags), A `END_TURN`; +pm |
 | `UNAVAILABLE` | `DATABASE_NOT_CONFIRMED` | — | For a connect-only code. A `ASK_PERSON` (`The setup points me at <database>. Is that your database?`), A `END_TURN`, A `CALL_TOOL` (`confirm_database` with the `setupId`, the database it named and the person's answer); +pm |
 | `INTERNAL` | — | — | A `STOP`; +pm |
-| `PLUGIN_REFUSED` | `AGENT_OPERATED` | — | A `STOP`, A `ASK_PERSON` (an agent never adds or widens a plugin; on a person-operated engine the person runs the command in a terminal of their own, and on an agent-operated engine in service mode a plugin is added without `sudo`, which opens an approval the person signs; the refusal's text names the person's consent as the missing step); +pm |
-| `PLUGIN_REFUSED` | `TOO_MANY_PENDING` | — | A `STOP`, A `ASK_PERSON` (8 plugin approvals already wait in this database: the person signs them or lets them expire, 24 hours after each was opened, then the agent tries again); +pm |
-| `PLUGIN_REFUSED` | `GUARD_OUTDATED` | — | P `RUN_COMMAND` (`basalt upgrade ...` for the agent), P `TELL_AGENT`, A `STOP`; +pm. On an agent-operated engine its variant is in the [agent-operated table](#next-steps-on-an-agent-operated-engine) |
-| `PLUGIN_REFUSED` | `DATABASE_UNREACHABLE` | — | A `ASK_PERSON` (check the database is up), O `RUN_COMMAND` (the refused command again; after the entry was written, `basalt plugin enable <name> --instance <instance> --approve-with-passkey --json`); +pm |
-| `PLUGIN_REFUSED` | `BAD_MANIFEST` | — | A `STOP` (the plugin's publisher fixes the manifest; the message names the rule); +pm |
-| `PLUGIN_REFUSED` | `NOT_TRUSTED` | — | A `STOP` (the plugin failed verification; the text names an untrusted signing key only when that is the cause); +pm |
-| `PLUGIN_REFUSED` | `UNKNOWN_AGENT` | — | P `RUN_COMMAND` (the refused command with `--agents` naming only the engine's agents); +pm |
-| `PLUGIN_REFUSED` | `UNSAFE_PATH` | — | A `ASK_PERSON` (the personMessage names the path, who can write it, its owner or that it is a symlink, and what to do in words: trusting a key does not fix it, Basalt changes no directory it does not own, and the agent changes nothing), P `RUN_COMMAND` (the refused command again, once the path is fixed); +pm |
-| `PLUGIN_REFUSED` | `NAME_TAKEN` | — | A `STOP`, A `ASK_PERSON` (service mode: the `(name, instance)` is the other kind of entry's; the person removes one or picks another instance); +pm |
-| `PLUGIN_REFUSED` | `CONFIG_ENTRY` | — | A `STOP`, A `ASK_PERSON` (service mode without `sudo`: the entry was added with `sudo`, and only `sudo basalt plugin` changes it); +pm |
-| `PLUGIN_REFUSED` | `TOO_LARGE` | — | A `STOP`, A `ASK_PERSON` (service mode: an upload or the engine's plugin storage is over its limit; the message names it); +pm |
-| `PLUGIN_REFUSED` | `TOO_MANY_UPLOADS` | — | A `STOP`, A `ASK_PERSON` (service mode: 4 uploads are open; they expire 15 minutes after they began); +pm |
-| `PLUGIN_REFUSED` | `ENGINE_IS_ROOT` | — | A `STOP`, A `ASK_PERSON` (service mode: the engine runs as root and never runs a local plugin); +pm |
+| `PLUGIN_REFUSED` | `AGENT_OPERATED` | `request_plugin` | A `STOP`, A `ASK_PERSON` (plugin changes are refused on an engine an agent operates, until remote installation is designed); +pm |
+| `PLUGIN_REFUSED` | `SAME_USER_MODE` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the engine runs as the person's own OS user and keeps no plugins of its own; its `engine.json` is edited by hand); +pm |
+| `PLUGIN_REFUSED` | `NO_LOCAL_PAGES` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the engine serves no local pages, so the person could sign nowhere; the setup turns them on); +pm |
+| `PLUGIN_REFUSED` | `AGENT_NOT_ALLOWED` | `request_plugin` | A `STOP`, A `ASK_PERSON` (an agent outside the caller's reach: the caller not listed, an agent on another database or of another OS user, or a person socket that refuses this OS user; the message names it); +pm |
+| `PLUGIN_REFUSED` | `BAD_MANIFEST` | `request_plugin` | A `STOP` (the plugin's publisher fixes the manifest; the message names the rule); +pm |
+| `PLUGIN_REFUSED` | `NOT_TRUSTED` | `request_plugin` | A `STOP` (the plugin failed verification; the text names the cause); +pm |
+| `PLUGIN_REFUSED` | `UNKNOWN_AGENT` | `request_plugin` | A `REVISE_CALL` (`agents` naming only the engine's agents); +pm |
+| `PLUGIN_REFUSED` | `UNSAFE_PATH` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the personMessage names the path and what is wrong with it; Basalt changes no directory it does not own, and the agent changes nothing); +pm |
+| `PLUGIN_REFUSED` | `TOO_MANY_PENDING` | `request_plugin` | A `STOP`, A `ASK_PERSON` (8 plugin approvals already wait in this database: the person signs them or lets them expire, 24 hours after each was opened, then the agent tries again); +pm |
+| `PLUGIN_REFUSED` | `GUARD_OUTDATED` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the guard is updated first, as `status` says); +pm |
+| `PLUGIN_REFUSED` | `DATABASE_UNREACHABLE` | `request_plugin` | A `ASK_PERSON` (check the database is up), A `CALL_TOOL` (`request_plugin` with `name` and `instance`, once it answers: a new approval for the entry, which may already be written); +pm |
+| `PLUGIN_REFUSED` | `NAME_TAKEN` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the `(name, instance)` is a config entry's; the person removes it from `engine.json` or the agent picks another instance); +pm |
+| `PLUGIN_REFUSED` | `CONFIG_ENTRY` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the entry is in `engine.json`, which only a hand edit changes); +pm |
+| `PLUGIN_REFUSED` | `TOO_LARGE` | `request_plugin` | A `STOP`, A `ASK_PERSON` (an upload or the engine's plugin storage is over its limit; the message names it); +pm |
+| `PLUGIN_REFUSED` | `TOO_MANY_UPLOADS` | `request_plugin` | A `STOP`, A `ASK_PERSON` (4 uploads are open; they expire 15 minutes after they began); +pm |
+| `PLUGIN_REFUSED` | `ENGINE_IS_ROOT` | `request_plugin` | A `STOP`, A `ASK_PERSON` (the engine runs as root and never runs a local plugin); +pm |
 
 Results and warnings:
 
@@ -142,6 +145,13 @@ Results and warnings:
 | `request_revert` | `APPLIED` | A `STOP`; +pm |
 | `request_revert` | `EXPIRED` | A `ASK_PERSON`, A `REVISE_CALL` (request form again); +pm |
 | `request_revert` | `REJECTED` | A `STOP` (do not request it again unless the person asks); +pm: "The revert was rejected on the signing page. Nothing was reverted.", with the person's note when they wrote one |
+| `request_plugin` | `REQUESTED` (an approval just opened) | P `OPEN_LINK`, A `CALL_TOOL` (wait form, once); +pm |
+| `request_plugin` | `WAIT_ENDED` (`PENDING` after a wait) | P `OPEN_LINK` (the short link the agent gave earlier, no `url`), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (wait form, `waitForApproval: 0`); +pm |
+| `request_plugin` | `APPROVED` | A `CALL_TOOL` (`status`: its `plugins` and problems say why the plugin does not run yet); +pm |
+| `request_plugin` | `RUNNING` | A `STOP` (tell the person the plugin runs); +pm |
+| `request_plugin` | `NARROWED` | A `STOP` (tell the person); +pm |
+| `request_plugin` | `REMOVED` | A `STOP` (tell the person); +pm |
+| `request_plugin` | `ENDED` | A `ASK_PERSON` (whether to ask again), A `CALL_TOOL` (`request_plugin` with `name` and `instance`, when they want it); +pm |
 | `describe` | `OVERVIEW_LARGE` (more than 50 visible tables) | A `CALL_TOOL` (`describe` with `query`) |
 | `describe` | `NOT_GRANTED` (overview with `counts.notGranted` above 0) | P `RUN_COMMAND` (`basalt access --agent <agent>`, always a `PERSON` step), P `TELL_AGENT`; +pm: the count and the command, and no `ASK_PERSON` (platform schemas such as Supabase's `auth` are ungranted on every project, so asking on every overview would nag) |
 | `list_pending` item | `PENDING` | P `OPEN_LINK`; +pm |
@@ -197,13 +207,13 @@ Status problems (`status` tool, every one +pm):
 | `DEV_LOCAL_PAGES` | `WARNING` | P `RUN_COMMAND` (`basalt init ... --add-passkey`, saved flags without `--dev-local-pages` and `--passkey-origin`, so the portal's pages and a passkey for them) |
 | `ENGINE_REVOKED` | `WARNING` | A `ASK_PERSON` (whether they revoked this engine on purpose; the revocation shows in `status`; the engine hands over no relay short link for that database and has ended the ones it handed over ([Engine revocation](vault-channel.md#engine-revocation)); a revoked engine is set up again from the start, with a new setup code), A `END_TURN` |
 | `LEDGER_REINSTALLED` | `WARNING` | [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record). A `ASK_PERSON` (show the notice and ask whether someone on their team reinstalled Basalt; the tools keep working, and the notice stays until an admin acknowledges it) |
-| `PLUGIN_UNAVAILABLE` | `ERROR` | P `RUN_COMMAND` (`basalt plugin check <name>`), P `RUN_COMMAND` (`basalt plugin disable <name>`). For an engine-kept entry only the second, without `sudo` (`check` does not find an engine-kept entry, and `sudo` is refused for it). For the engine's unusable entries file, which names no entry: P `RUN_COMMAND` (`sudo mv <file> <file>.bad`), P `RUN_COMMAND` (the engine restart) |
-| `PLUGIN_NOT_TRUSTED` | `ERROR` | P `RUN_COMMAND` (`basalt plugin check <name>`: it names the check that failed), P `RUN_COMMAND` (`basalt plugin disable <name>`); for an engine-kept entry only the second, without `sudo` |
-| `PLUGIN_AWAITING_APPROVAL` | `ERROR` | P `OPEN_LINK` (no `url`: the link the agent handed over when the approval was opened), O `RUN_COMMAND` (`basalt plugin enable <name> --instance <instance> --approve-with-passkey --json`, only when that link is lost or no approval is pending: it opens a new one, and its output carries the link and its own steps). No restart: the engine starts the entry once the approval is signed ([Plugin changes while the engine runs](plugins-approval.md#plugin-changes-while-the-engine-runs)) |
-| `PLUGIN_APPROVAL_EXPIRED` | `ERROR` | O `RUN_COMMAND` (`basalt plugin enable <name> --instance <instance> --approve-with-passkey --json`: a new approval for the installed copy; `basalt plugin add` again does the same), O `RUN_COMMAND` (`basalt plugin remove <name> --instance <instance>`, when the person no longer wants it) |
-| `PLUGIN_APPROVAL_MISMATCH` | `ERROR` | A `ASK_PERSON` (whether the change was theirs; the message names the fields that differ), O `RUN_COMMAND` (`basalt plugin enable <name> --instance <instance> --approve-with-passkey --json`: a new approval for the entry as it now is), O `RUN_COMMAND` (`basalt plugin disable <name> --instance <instance>`, when they do not want it) |
-| `PLUGIN_CONFIG_INVALID` | `WARNING` | [Plugin changes while the engine runs](plugins-approval.md#plugin-changes-while-the-engine-runs): `engine.json` changed and its plugins cannot be read, so no plugin change is applied and every plugin keeps its state. O `RUN_COMMAND` (`basalt plugin list`, which says what is wrong with the file) |
-| `PLUGIN_NOTICES_DROPPED` | `WARNING` | [Notifier messages](plugins-runtime.md#notifier-messages): an `approval.deliver` entry served to the agent dropped notices in the last 24 hours; the message names the entry and how many, never what they were about. P `RUN_COMMAND` (`basalt plugin check <name>`; for an engine-kept entry, which `check` does not find, `basalt plugin list`). The person's message says nothing is lost: the agent's answers carried the links, so they ask the agent what waits for their approval |
+| `PLUGIN_UNAVAILABLE` | `ERROR` | A `ASK_PERSON` (whether to remove it), A `CALL_TOOL` (`request_plugin` with `name`, `instance` and `remove: true`, only when they say so); for a config entry only the first, which says it is removed from `engine.json` by hand. For the engine's unusable entries file, which names no entry: P `RUN_COMMAND` (`sudo mv <file> <file>.bad`), P `RUN_COMMAND` (the engine restart) |
+| `PLUGIN_NOT_TRUSTED` | `ERROR` | A `ASK_PERSON` (the message names the check that failed; whether to remove it), A `CALL_TOOL` (`request_plugin` with `name`, `instance` and `remove: true`, only when they say so); for a config entry only the first |
+| `PLUGIN_AWAITING_APPROVAL` | `ERROR` | P `OPEN_LINK` (no `url`: the link the agent handed over when the approval was opened), A `CALL_TOOL` (`request_plugin` with `name` and `instance`, only when that link is lost or no approval is pending: it opens a new one, and its result carries the link and its own steps); for a config entry only the first. No restart: the engine starts the entry once the approval is signed ([Plugin changes while the engine runs](plugins-approval.md#plugin-changes-while-the-engine-runs)) |
+| `PLUGIN_APPROVAL_EXPIRED` | `ERROR` | A `ASK_PERSON` (whether to ask again or remove it), A `CALL_TOOL` (`request_plugin` with `name` and `instance`: a new approval for the installed copy); for a config entry only the first |
+| `PLUGIN_APPROVAL_MISMATCH` | `ERROR` | A `ASK_PERSON` (whether the change was theirs; the message names the fields that differ), A `CALL_TOOL` (`request_plugin` with `name` and `instance`: a new approval for the entry as it now is, when it was); for a config entry only the first |
+| `PLUGIN_CONFIG_INVALID` | `WARNING` | [Plugin changes while the engine runs](plugins-approval.md#plugin-changes-while-the-engine-runs): `engine.json` changed and its plugins cannot be read, so no plugin change is applied and every plugin keeps its state. A `ASK_PERSON` (fix the hand edit of `engine.json`; the engine's log says what is wrong) |
+| `PLUGIN_NOTICES_DROPPED` | `WARNING` | [Notifier messages](plugins-runtime.md#notifier-messages): an `approval.deliver` entry served to the agent dropped notices in the last 24 hours; the message names the entry and how many, never what they were about. A `CALL_TOOL` (`list_pending`: what waits for the person's approval). The person's message says nothing is lost: the agent's answers carried the links |
 
 ### Next steps on an agent-operated engine
 
@@ -216,7 +226,6 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | error | `UNAVAILABLE` | `CREDENTIAL_REJECTED` | A `RUN_COMMAND` (init --remote --new-code: an `AGENT` code with a new password); +pm |
 | error | `UNAVAILABLE` | `GUARD_MISSING` | A `RUN_COMMAND` (init --remote: an `INSTALL` code); +pm |
 | error | `UNAVAILABLE` | `GUARD_OUTDATED` | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
-| error | `PLUGIN_REFUSED` | `GUARD_OUTDATED` | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
 | error | `UNAVAILABLE` | `ENGINE_UNREACHABLE` | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (same call, `repeatCall`) |
 | warning | `RLS_HIDES_ROWS` | — | A `ASK_PERSON`, A `RUN_COMMAND` (init --remote: an `AGENT` code; the person answers the row-level security question on their computer); +pm |
 | warning | `GUARD_UPGRADE_AVAILABLE` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |

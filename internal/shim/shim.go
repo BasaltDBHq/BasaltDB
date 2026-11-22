@@ -99,6 +99,11 @@ type Options struct {
 	// own local pages, when the engine said in its hello answer that a
 	// person operates it (CONTRACT.md, Auto-open). Nil opens nothing.
 	Open func(ctx context.Context, link string) error
+
+	// UploadPlugin, when set, reads and uploads the plugin folder a
+	// request_plugin call names (CONTRACT.md, MCP tools, request_plugin).
+	// Nil uploads nothing, and the engine refuses such a call.
+	UploadPlugin PluginUploader
 }
 
 // ServeWith is Serve with options.
@@ -122,7 +127,7 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 		neg:  negotiation{build: buildinfo.Version, minEngine: minEngine},
 		path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial,
 		reconnectWait: wait, start: opts.Start, startWait: startWait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
-		opener: newAutoOpener(opts.Open),
+		opener: newAutoOpener(opts.Open), upload: opts.UploadPlugin,
 	}
 	return serve(ctx, r, in)
 }
@@ -220,6 +225,9 @@ type relay struct {
 	// opener opens the engine's local page links (Options.Open); nil when
 	// there is no opener.
 	opener *autoOpener
+	// upload reads and uploads a request_plugin call's folder
+	// (Options.UploadPlugin); nil uploads nothing.
+	upload PluginUploader
 
 	// retries carries the in-flight reads a dying session hands back to the
 	// serve loop; retried holds the ids already given their one retry.
@@ -357,14 +365,18 @@ func (r *relay) startEngine(ctx context.Context, err error) (*session, error) {
 // it. A connection the engine refused before it could take line (its
 // refusal and close came first) answers line with that refusal.
 func (r *relay) send(ctx context.Context, line []byte) error {
-	if r.sess != nil && r.sess.forward(line) {
-		return nil
+	if r.sess != nil {
+		prepared, answered := r.prepare(ctx, r.sess, line)
+		if answered || r.sess.forward(prepared) {
+			return nil
+		}
 	}
 	r.close()
 	sess, err := r.dialWaiting(ctx)
 	if err == nil {
 		r.sess = sess
-		if sess.forward(line) {
+		prepared, answered := r.prepare(ctx, sess, line)
+		if answered || sess.forward(prepared) {
 			return nil
 		}
 		r.close()

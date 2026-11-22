@@ -713,7 +713,7 @@ func (w *pluginWatch) writeServing() {
 		return
 	}
 	if err := writeFileAtomic(w.ep.o.stateDir, PluginServingFile, raw); err != nil {
-		w.log.Warn("which plugins run could not be written to the state directory; basalt plugin enable --approval-id cannot see them", "err", err)
+		w.log.Warn("which plugins run could not be written to the state directory", "err", err)
 		return
 	}
 	w.serving = raw

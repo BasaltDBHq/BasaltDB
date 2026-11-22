@@ -226,7 +226,9 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 	}
 	// Links to the engine's own local pages open in the browser on a
 	// person-operated engine; the engine says which in its hello answer.
-	opts := shim.Options{Open: h.OpenURL}
+	// A plugin the agent asks for (request_plugin) is uploaded over the
+	// person socket in the same socket directory.
+	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(config.PersonSocketPath(socketDir))}
 	if exe, err := shimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = engineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)

@@ -42,7 +42,8 @@
         "build": { "$ref": "#/$defs/build" },
         "agent": { "$ref": "#/$defs/changedAgent" },
         "expiresAt": { "$ref": "#/$defs/expiresAt" },
-        "engine": { "$ref": "#/$defs/engine" }
+        "engine": { "$ref": "#/$defs/engine" },
+        "trustPin": { "$ref": "#/$defs/trustPin" }
       }
     },
     "upgrade": {
@@ -59,8 +60,14 @@
         "guard": { "$ref": "#/$defs/guard" },
         "build": { "$ref": "#/$defs/build" },
         "expiresAt": { "$ref": "#/$defs/expiresAt" },
-        "engine": { "$ref": "#/$defs/engine" }
+        "engine": { "$ref": "#/$defs/engine" },
+        "trustPin": { "$ref": "#/$defs/trustPin" }
       }
+    },
+    "trustPin": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "CONTRACT.md, Pinning from the connect page: the SHA-256 (DER, lowercase hex) of the certificate the bot's engine has pinned for target's host, when it has a pin. A hint for the connect page, which says whether the certificate the database presents matches it. It adds no trust: the engine still checks its own reading. Only in a code with target."
     },
     "engine": {
       "type": "object",

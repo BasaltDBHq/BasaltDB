@@ -293,7 +293,7 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 	s.notifyRevert(ctx, r, n)
 	return RequestedRevert{
 		Revert: r, RevertURL: n.URL, RequestFile: n.File, PersonMessage: n.Message, Links: n.Links,
-		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL), n.File),
+		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL, n.short == ""), n.File),
 		headline:  n.Headline, issued: n.short != "",
 	}, nil
 }
@@ -452,7 +452,7 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, s.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
 		return out, nil
 	}
-	if s.PagesOrigin != "" || link.Kind == linkPage {
+	if s.shortLinked(r.ID) || link.Kind == linkPage {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)

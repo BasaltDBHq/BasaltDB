@@ -27,18 +27,22 @@
       {
         "action": "OPEN_LINK",
         "actor": "PERSON",
-        "text": "Open the link, review the rows and approve with your passkey.",
+        "text": "Open the link to review the rows. It cannot be signed yet.",
         "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "Do not wait: this link cannot be signed. End your turn, showing approval.personMessage."
       },
       {
         "action": "CALL_TOOL",
         "actor": "AGENT",
         "arguments": {
-          "approvalId": "<id-5>"
+          "reissueLink": true
         },
-        "repeatCall": true,
-        "text": "In this turn, call write again with the same arguments plus approvalId: it waits up to 90 seconds for the approval.",
-        "tool": "write"
+        "text": "Once status shows the Vault connected, call this for a link the person can sign, and show it.",
+        "tool": "list_pending"
       }
     ],
     "personMessage": "Held for your approval: Update 11 rows in public·leads.\nReview only: this link cannot be signed. Ask the agent for a new link later.\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nExpires <time>.",

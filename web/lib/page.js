@@ -219,7 +219,7 @@ export function fail(message) {
 
 // showEngine names the engine a portal session reached, with the
 // fingerprint of the key the session verified, for the person to compare
-// with basalt status (CONTRACT.md, Engine keys: shown on every portal page
+// with the agent's status (CONTRACT.md, Engine keys: shown on every portal page
 // with a session). Nothing for the engine's own local pages.
 export function showEngine(session) {
   const engine = session?.engine;
@@ -256,7 +256,7 @@ export async function openSession(transport, link) {
 function noReceiptText(result) {
   switch (result.noReceipt) {
     case "KEY_ERROR":
-      return "No receipt: the engine's key file is refused (basalt status shows KEY_ERROR), so nothing confirms what was signed.";
+      return "No receipt: the engine's key file is refused (the agent's status tool shows KEY_ERROR), so nothing confirms what was signed.";
     case "WIDENED": {
       const rows = result.batched ? `${result.pending ?? 0} rows to restore in batches` : `${result.rows ?? 0} rows restored`;
       return `No receipt: the revert's scope was changed on the signing page (${rows}). If you did not change it, tell the agent at once.`;

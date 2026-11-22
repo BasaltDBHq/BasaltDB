@@ -167,46 +167,32 @@ func TestPluginRequestRefuses(t *testing.T) {
 	require.ErrorIs(t, err, approval.ErrInvalid)
 }
 
-// TestParsePluginResponse: the vectors' response travels as a
-// basalt-plugin.1. code and back; another code, an unknown field or a
-// missing one is refused.
-func TestParsePluginResponse(t *testing.T) {
+// TestDecodePluginResponse: the vectors' response is the JSON the page
+// posts and decodes back; an unknown field or a missing one is refused.
+func TestDecodePluginResponse(t *testing.T) {
 	t.Parallel()
 	vs := readPluginVectors(t)
 	var want approval.PluginApprovalResponse
 	require.NoError(t, json.Unmarshal(vs.Response, &want))
 
-	code, err := want.Code()
-	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(code, "basalt-plugin.1."), code)
-	got, err := approval.ParsePluginResponse("\n " + code + "\t")
-	require.NoError(t, err)
-	require.Equal(t, want, got)
-	again, err := got.Code()
-	require.NoError(t, err)
-	require.Equal(t, code, again)
-
 	body, err := json.Marshal(want)
 	require.NoError(t, err)
-	require.JSONEq(t, string(vs.Response), string(body), "the code carries the response JSON of the contract")
+	require.JSONEq(t, string(vs.Response), string(body), "the page posts the response JSON of the contract")
+	got, err := approval.DecodePluginResponse(body)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 
 	for name, bad := range map[string]string{
-		"empty":           "",
-		"an approval":     approval.ResponsePrefix + passkey.Bytes(body).String(),
-		"a revert":        "basalt-revert.1." + passkey.Bytes(body).String(),
-		"not base64url":   approval.PluginResponsePrefix + "%%%",
-		"an unknown key":  approval.PluginResponsePrefix + passkey.Bytes(strings.Replace(string(body), "{", `{"extra":1,`, 1)).String(),
-		"no signature":    approval.PluginResponsePrefix + passkey.Bytes(`{"approvalId":"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ"}`).String(),
-		"no approval id":  approval.PluginResponsePrefix + passkey.Bytes(`{"credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`).String(),
-		"a bad id":        approval.PluginResponsePrefix + passkey.Bytes(`{"approvalId":"nope","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`).String(),
-		"a padded base64": approval.PluginResponsePrefix + passkey.Bytes(body).String() + "==",
+		"empty":          "",
+		"an unknown key": strings.Replace(string(body), "{", `{"extra":1,`, 1),
+		"no signature":   `{"approvalId":"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ"}`,
+		"no approval id": `{"credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`,
+		"a bad id":       `{"approvalId":"nope","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`,
+		"padded base64":  `{"approvalId":"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d","credentialId":"AQ==","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ"}`,
 	} {
-		_, err := approval.ParsePluginResponse(bad)
+		_, err := approval.DecodePluginResponse([]byte(bad))
 		require.ErrorIs(t, err, approval.ErrInvalid, name)
 	}
-	// The held write's parser refuses a plugin code in turn.
-	_, err = approval.ParseResponse(code)
-	require.ErrorIs(t, err, approval.ErrInvalid)
 }
 
 func TestVerifyPlugin(t *testing.T) {
@@ -217,9 +203,9 @@ func TestVerifyPlugin(t *testing.T) {
 	require.NoError(t, err)
 	as, err := person.Sign(approval.Challenge(v.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	code, err := approval.NewPluginApprovalResponse(id, as).Code()
+	body, err := json.Marshal(approval.NewPluginApprovalResponse(id, as))
 	require.NoError(t, err)
-	resp, err := approval.ParsePluginResponse(code)
+	resp, err := approval.DecodePluginResponse(body)
 	require.NoError(t, err)
 
 	count, err := approval.VerifyPlugin(v.Binding, person.Credential(), resp)

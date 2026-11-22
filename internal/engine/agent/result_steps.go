@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -164,7 +166,7 @@ func openItemLink(b *Steps, p PendingItem) {
 // link the hold handed over; CONTRACT.md, The request file and pasted
 // blocks), else at the link the hold handed over.
 func (s *Service) openHeldLink(b *Steps, n *mcp.ApprovalNotice, text string) {
-	if s.PagesOrigin != "" || isPageAddress(n.ApprovalURL) {
+	if id, err := uuid.Parse(n.ApprovalID); (err == nil && s.shortLinked(id)) || isPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink("Open the short link the agent gave you earlier and approve with your passkey.")
 		return
 	}

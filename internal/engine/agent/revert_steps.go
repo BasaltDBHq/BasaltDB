@@ -63,11 +63,27 @@ func openLink(url, text string) mcp.NextStep {
 }
 
 // requestedSteps: the person signs at link, the agent waits once.
-func requestedSteps(id uuid.UUID, link string) []mcp.NextStep {
+func requestedSteps(id uuid.UUID, link string, reviewOnly bool) []mcp.NextStep {
+	if reviewOnly {
+		return reviewOnlyRevertSteps(id, link)
+	}
 	return []mcp.NextStep{
 		openLink(link, "Open the link, review the rows and sign with your passkey."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: int(DefaultRevertWait.Seconds())},
 			fmt.Sprintf("In this turn, call request_revert once with revertId: it waits up to %d seconds.", int(DefaultRevertWait.Seconds()))),
+	}
+}
+
+// reviewOnlyRevertSteps: the request handed over a long or hash link,
+// which no page can sign (no local pages, and no live Vault connection). A
+// wait cannot succeed: the agent ends its turn and, once status shows the
+// Vault connected again, reissues the link, which is then a short link.
+func reviewOnlyRevertSteps(id uuid.UUID, link string) []mcp.NextStep {
+	return []mcp.NextStep{
+		openLink(link, "Open the link to review the rows. It cannot be signed yet."),
+		agentStep(mcp.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
+			"Once status shows the Vault connected, call this for a link the person can sign, and show it."),
 	}
 }
 
@@ -244,7 +260,7 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 	switch {
 	case r.Widened:
 		return openLink("", text), nil
-	case s.PagesOrigin != "":
+	case s.shortLinked(r.ID):
 		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	pick, err := s.restatedRevertLink(ctx, r)
@@ -282,7 +298,7 @@ func (s *Service) restatedRevertLink(ctx context.Context, r ledger.Revert) (hand
 		}
 		return handOver{URL: s.pageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
-	if s.PagesOrigin != "" {
+	if s.shortLinked(r.ID) {
 		return handOver{URL: long, Kind: linkLong}, nil
 	}
 	return chooseLink("", long, s.LinkBudget, links.RevertFile(r.ID))

@@ -130,6 +130,9 @@ type heldNotice struct {
 	pick     handOver
 	longURL  string
 	shortURL string // "" when no short link was issued
+	// shortHeld is set when the person holds a short link to the item that
+	// still works (shortLinked): a restating result points back to it.
+	shortHeld bool
 	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES, NO_PASSKEY
 	// or REQUEST_TOO_LARGE (WAIT_ENDED is set by the wait that ran out).
 	reason string
@@ -182,7 +185,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	var text string
 	var msgLinks []mcp.Link
 	switch {
-	case short == "" && s.PagesOrigin != "":
+	case short == "" && s.shortLinked(id):
 		// A wait or a list that issues no new link: the link already handed
 		// over still works, so the message adds no URL.
 		pick = handOver{URL: long, Kind: linkLong}
@@ -202,9 +205,10 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: pick.URL, RequestFile: pick.File, PersonMessage: text, Links: msgLinks,
 		},
-		pick:     pick,
-		longURL:  long,
-		shortURL: short,
+		pick:      pick,
+		longURL:   long,
+		shortURL:  short,
+		shortHeld: s.shortLinked(id),
 	}, nil
 }
 
@@ -344,6 +348,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 		n.PersonMessage = s.tooLargeMessage("The held write", req.Cost, expires, false)
 		return n, nil
 	}
+	n.shortHeld = s.shortLinked(id)
 	if noPasskey {
 		n.reason = reasonNoPasskey
 	}

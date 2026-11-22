@@ -33,9 +33,6 @@ const (
 	SecretHeader = "basalt-link-secret" //nolint:gosec // G101: a header name, not a credential
 	// secretFragment starts a short link's fragment.
 	secretFragment = "s="
-	// proofLabel separates the issue proof from the passkey challenge,
-	// sha256(binding text), which signed responses reveal.
-	proofLabel = "basalt-link.1\n"
 )
 
 // WithSecret is the short link with its secret: <link>#s=<secret>.
@@ -54,20 +51,6 @@ func SecretOf(link string) string {
 		return ""
 	}
 	return secret
-}
-
-// IssueProof is what the CLI shows to have a short link issued for an
-// item: lowercase hex of sha256("basalt-link.1\n" + binding text). Only a
-// holder of the binding text, who can see the whole preview already, has
-// it.
-func IssueProof(bindingText string) string {
-	sum := sha256.Sum256([]byte(proofLabel + bindingText))
-	return hex.EncodeToString(sum[:])
-}
-
-// ProofMatches compares a proof with the binding text's in constant time.
-func ProofMatches(bindingText, proof string) bool {
-	return subtle.ConstantTimeCompare([]byte(IssueProof(bindingText)), []byte(proof)) == 1
 }
 
 // Secrets holds the hash of each held item's one live link secret, and for
@@ -467,6 +450,19 @@ func (s *Secrets) Check(id uuid.UUID, secret string) bool {
 	tell(f, dropped)
 	match := subtle.ConstantTimeCompare(got[:], e.hash[:]) == 1
 	return ok && secret != "" && match
+}
+
+// HasRelay reports whether item id has a live, unexpired portal short link
+// (one issued with IssueRelay): the person holds a link the relay carries,
+// so a result that issues no new link points back to it.
+func (s *Secrets) HasRelay(id uuid.UUID) bool {
+	s.mu.Lock()
+	dropped := s.prune()
+	e, ok := s.live[id]
+	f := s.onDrop
+	s.mu.Unlock()
+	tell(f, dropped)
+	return ok && e.keys != nil
 }
 
 // prune drops expired secrets and returns the relay links' tokens among

@@ -127,7 +127,7 @@ func (s *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue b
 			return err
 		}
 		a.Notice = n.ApprovalNotice
-		a.Restated = !reissue && (s.PagesOrigin != "" || isPageAddress(n.ApprovalURL))
+		a.Restated = !reissue && (s.shortLinked(a.ID) || isPageAddress(n.ApprovalURL))
 		if n.reason == reasonRequestTooLarge {
 			a.tooLargeSteps = n.steps
 		}
@@ -198,7 +198,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 	p.PersonMessage = fmt.Sprintf("%s It waits for your passkey at the link the agent gave you, until %s. If you lost it, "+
 		"ask the agent for a new one.", headline, expires)
 	open := p.RevertURL
-	if s.PagesOrigin != "" || pick.Kind == linkPage {
+	if s.shortLinked(p.ID) || pick.Kind == linkPage {
 		open = "" // the person has the short link the agent handed over
 	}
 	p.NextSteps = withSendRequest(pendingRevertSteps(p.ID, open,

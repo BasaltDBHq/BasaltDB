@@ -124,7 +124,7 @@
       }
     },
     "approveParams": {
-      "description": "Relay a signed plugin approval: the decoded basalt-plugin.1. code without its approvalId repeated.",
+      "description": "Relay a signed plugin approval: the signed plugin approval response without its approvalId repeated.",
       "type": "object",
       "additionalProperties": false,
       "required": ["approvalId", "assertion"],

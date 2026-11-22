@@ -414,6 +414,69 @@ func TestRelayApprovalAfterTheVaultWasDown(t *testing.T) {
 	require.Equal(t, "closed", e.leadStatus(t, 41))
 }
 
+// A wait that runs out on a persona 2 engine points back to the portal
+// short link the person already holds: never the long link, never review
+// only, and no step hands over a URL.
+func TestRelayWaitThatRunsOutPointsBackToTheShortLink(t *testing.T) {
+	t.Parallel()
+	e := newRelayEnv(t)
+	run, isError := e.call(t, "run_start", map[string]any{"intent": "Close the stale leads"})
+	require.False(t, isError, "%v", run)
+	args := map[string]any{
+		"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3", "params": []any{"closed", 61, 75},
+		"intent": "Leads 61 to 75 went cold", "runId": run["runId"],
+	}
+	held, isError := e.call(t, "write", args)
+	require.True(t, isError)
+	id, _ := portalLink(t, held["approval"].(map[string]any)["approvalUrl"].(string), "approvals")
+
+	args["approvalId"], args["waitForApproval"] = id, 1
+	ended, isError := e.call(t, "write", args)
+	require.True(t, isError)
+	require.Equal(t, "APPROVAL_REQUIRED", ended["code"], "%v", ended)
+	requirePointsBack(t, ended)
+
+	pending, isError := e.call(t, "list_pending", map[string]any{})
+	require.False(t, isError, "%v", pending)
+	requirePointsBack(t, pending)
+
+	revertID, _ := e.prepareRevert(t, e.winRun(t, "91, 92"))
+	waited, isError := e.call(t, "request_revert", map[string]any{"revertId": revertID, "waitForSignature": 1})
+	require.False(t, isError, "%v", waited)
+	require.Equal(t, "PENDING", waited["status"], "%v", waited)
+	requirePointsBack(t, waited)
+}
+
+// requirePointsBack checks a result that issues no new link: nothing says
+// review only, and no message, link or step hands over a long link (the
+// person has the short link). approvalUrl may restate the long link, as on
+// the engine's own pages.
+func requirePointsBack(t *testing.T, body map[string]any) {
+	t.Helper()
+	text, err := json.Marshal(body)
+	require.NoError(t, err)
+	require.NotContains(t, string(text), "Review only")
+	require.NotContains(t, string(text), "cannot be signed")
+	requireNothingToPaste(t, body)
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, val := range x {
+				if s, ok := val.(string); ok && (k == "personMessage" || k == "url") {
+					require.NotContains(t, s, "#2.", "%s hands over the long link", k)
+				}
+				walk(val)
+			}
+		case []any:
+			for _, val := range x {
+				walk(val)
+			}
+		}
+	}
+	walk(body)
+}
+
 // winRun applies a small write in a run and returns the run's id.
 func (e *relayEnv) winRun(t *testing.T, ids string) string {
 	t.Helper()

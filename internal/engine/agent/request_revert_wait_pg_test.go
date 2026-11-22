@@ -164,6 +164,11 @@ func requireResultSteps(t *testing.T, body map[string]any, kase string) []map[st
 	t.Helper()
 	c, err := mcpcontract.LoadNextSteps()
 	require.NoError(t, err)
+	// A request that handed over a long or hash link (no local pages, no
+	// live Vault connection) cannot be signed: its own case.
+	if link, _ := body["revertUrl"].(string); kase == "REQUESTED" && (strings.Contains(link, "#2.") || strings.Contains(link, "#h=")) {
+		kase = "REQUESTED_NO_PAGES"
+	}
 	for _, r := range c.Results {
 		if r.Tool == "request_revert" && r.Case == kase {
 			return requireSteps(t, body, r.Steps, r.PersonMessage)

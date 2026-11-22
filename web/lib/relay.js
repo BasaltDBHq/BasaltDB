@@ -48,7 +48,7 @@ export const ENGINE_NOT_CONNECTED =
 export const BUSY = "Your engine or the BasaltDB Vault is busy. Wait a minute and open the link again. " + LONG_LINK;
 export const ENGINE_CHANGED =
   "The engine answered this link with a different key than the one this page showed you, so the page stopped. Open the link again and " +
-  "compare the fingerprint with basalt status before you sign.";
+  "compare the fingerprint with the one the agent showed you in the chat before you sign.";
 
 function broken(code) {
   return `The secure session to your engine failed (${code}), and this page used nothing from it. Open the link again. If it keeps failing: ${LONG_LINK}`;

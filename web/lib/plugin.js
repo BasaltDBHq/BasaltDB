@@ -21,14 +21,13 @@ import {
   SIGNER_KNOWN,
   WRONG_KIND,
   checkPluginRequest,
-  encodePluginResponse,
   parsePluginRequest,
   pluginResponseJSON,
   relyingParty,
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
-import { $, el, fail, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, NO_CARRIER, el, fail, loadOrPaste, openSession, personText, relayFailure, setPill, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { BUSY, ENGINE_NOT_CONNECTED, VAULT_UNREACHABLE } from "./relay.js";
 import { agentName } from "./scope.js";
 import { pageTransport } from "./transport.js";
@@ -308,9 +307,11 @@ function render(req, view) {
   $("settings").textContent = visibleText(req.settingsText);
 }
 
-// allowed: the approve button works only before the approval expires and,
-// at level 3, only once the tick is set.
+// allowed: the approve button works only on a short link (a long link has
+// no engine to send the signature to), before the approval expires and, at
+// level 3, only once the tick is set.
 function allowed(state) {
+  if (state.relay === null) return false;
   if (state.req.binding.expiresAt.getTime() <= state.now().getTime()) return false;
   return state.view.level !== 3 || $("tick").checked === true;
 }
@@ -320,25 +321,23 @@ const TICK_FIRST = "Set the tick above to approve.";
 function gate(state) {
   const ok = allowed(state);
   $("approve").disabled = !ok;
-  $("status").textContent = !ok && state.view.level === 3 && !$("tick").checked ? TICK_FIRST : "";
+  if (state.relay === null) $("status").textContent = NO_CARRIER;
+  else $("status").textContent = !ok && state.view.level === 3 && !$("tick").checked ? TICK_FIRST : "";
   return ok;
 }
 
-// finish relays the signed response when the page came from a short link,
-// and otherwise (or when the relay fails) shows the code for the agent.
+// finish relays the signed response to the engine that served the short
+// link. Nothing is ever shown to paste: when the relay fails, the person
+// opens the link again or asks the agent for a new one.
 async function finish(response, relay) {
-  if (relay !== null) {
-    try {
-      await postResponse(relay.session, relay.path, relay.secret, pluginResponseJSON(response));
-      showDone(SENTENCES.approved);
-      setPill("state", "Approved", "ok");
-      return;
-    } catch (err) {
-      showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, give the code below to your agent.`);
-    }
+  try {
+    await postResponse(relay.session, relay.path, relay.secret, pluginResponseJSON(response));
+    showDone(SENTENCES.approved);
+    setPill("state", "Approved", "ok");
+  } catch (err) {
+    showRelayFailed(relayFailure(err, "approval"));
+    setPill("state", "Not approved", "bad");
   }
-  showCode(encodePluginResponse(response));
-  setPill("state", "Signed", "ok");
 }
 
 async function approve(rp, state) {

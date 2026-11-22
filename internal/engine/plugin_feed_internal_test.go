@@ -435,6 +435,9 @@ func TestFeedDeliversInOrder(t *testing.T) {
 	e.started(p.key, "product_a")
 	a := e.applied("product_a")
 	waitSeqs(t, p, "product_a", a)
+	// The cursor is written after the plugin answers: stopping before it is
+	// written sends a again on restart, which at least once allows.
+	e.waitCursor(p.key, a)
 
 	// While the engine is stopped, 130 more: a batch of 100, then 30.
 	e.stop()
@@ -989,6 +992,7 @@ func TestFeedBacksOffWhenPluginDown(t *testing.T) {
 	sent := time.Now()
 	require.Eventually(t, func() bool { return slices.Contains(p.seqsFor("product_a"), b) }, 10*time.Second, 5*time.Millisecond)
 	require.Less(t, time.Since(sent), 5*time.Second, "back to the poll after an answer")
+	e.waitCursor(p.key, b)
 
 	// A database that does not answer: nothing is read, nothing moves.
 	e.stop()

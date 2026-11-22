@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The plugin approval page names the plugin's fingerprint "Plugin fingerprint", apart from the engine's fingerprint a portal page shows.
 
 - The README, `llms.txt` and `docs/` describe the simplified product: the agent runs `basalt init`, the person finishes on the setup page, and no guide asks a person to type a `basalt` command or paste an admin connection string into a terminal. `docs/bot-setup.md` asks the person for nothing but the page they open. The same-user limit of the local setup is written down in the install guide and the README.
+- The Vault guide and the approving guide say the portal page opens a Vault session, and no longer name old `basalt_meta` versions; the channel spec names the portal check as `make portal-verify`, run in the release workflow.
 - The MCP initialize instructions tell an agent on a computer the person cannot reach to run `basalt init --remote`.
 - `basalt --help` and the error for an agent missing from the config tell an agent to run `basalt init` on the person's own computer and `basalt init --remote` on one the person cannot reach, and to show the person the link it prints, instead of a setup code.
 

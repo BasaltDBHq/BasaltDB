@@ -15,14 +15,14 @@ import (
 // unguarded. The after statements run last, once that check passed (a
 // setup code's record_setup).
 func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script Script, after ...Statement) error {
-	if err := applyScript(ctx, tx, script); err != nil {
+	if err := b.ApplyScript(ctx, tx, script); err != nil {
 		return err
 	}
 	if err := checkCovered(ctx, b, tx); err != nil {
 		return err
 	}
 	for _, st := range after {
-		if _, err := tx.Exec(ctx, st.SQL); err != nil {
+		if err := b.Run(ctx, tx, st.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 	}

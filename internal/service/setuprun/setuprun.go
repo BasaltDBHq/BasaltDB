@@ -687,7 +687,7 @@ func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script Scrip
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, record.SQL); err != nil {
+		if err := b.Run(ctx, tx, record.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 		return nil

@@ -38,24 +38,14 @@ func VerifyRegistrationCode(code string, req passkey.RegistrationRequest, rp pas
 	return passkey.VerifyRegistration(req, resp, rp)
 }
 
-// HasPasskeyFor reports whether an active passkey of this database belongs
-// to origin. A passkey signs only on the origin it was registered on, so
-// one for the local pages does not count for the portal.
-func HasPasskeyFor(ctx context.Context, q Querier, origin string) (bool, error) {
-	var ok bool
-	// Plain SQL: a presence check on the admin connection.
-	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys WHERE origin = $1 AND revoked_at IS NULL)`, origin).Scan(&ok)
-	return ok, err
-}
-
 // PasskeyNeeded is whether the setup registers a portal passkey (step 7):
 // when no active one is registered, or add asks for another. Before the
 // setup ran, a database without the guard has none.
-func PasskeyNeeded(ctx context.Context, q Querier, add bool) (bool, error) {
+func PasskeyNeeded(ctx context.Context, b Backend, q Querier, add bool) (bool, error) {
 	if add {
 		return true, nil
 	}
-	has, err := HasPasskeyFor(ctx, q, passkey.Production.Origin)
+	has, err := b.HasPasskeyFor(ctx, q, passkey.Production.Origin)
 	if isUndefinedTable(err) {
 		return true, nil
 	}

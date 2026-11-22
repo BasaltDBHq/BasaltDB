@@ -3,7 +3,6 @@ package setuprun
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -45,16 +44,6 @@ type (
 	// Uncovered is an agent-writable table or cascade target without the guard.
 	Uncovered = guardmodel.Uncovered
 )
-
-// applyScript runs the script on tx. The caller commits.
-func applyScript(ctx context.Context, tx pgx.Tx, s Script) error {
-	for i, st := range s.Statements {
-		if _, err := tx.Exec(ctx, st.SQL); err != nil {
-			return fmt.Errorf("init step %d: %w", i+1, err)
-		}
-	}
-	return nil
-}
 
 // ActivePasskey is an active passkey as the doctor lists it.
 type ActivePasskey struct {

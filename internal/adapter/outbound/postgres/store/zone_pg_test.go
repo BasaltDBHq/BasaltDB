@@ -14,9 +14,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -121,7 +121,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			require.NoError(t, err)
 			requireNoSkip(t, prep.Lines)
 
-			cli := app.NewPersonLedger(zonedConn(t, a.URL, zones[1]), time.Now)
+			cli := ledger.NewPerson(zonedConn(t, a.URL, zones[1]), time.Now)
 			lines, err := cli.PreviewRevert(ctx, scope)
 			require.NoError(t, err)
 			requireNoSkip(t, lines)
@@ -134,7 +134,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			// rebuilds the lines at apply and finds the same rowsHash.
 			as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 			require.NoError(t, err)
-			applied, err := app.NewPersonLedger(zonedConn(t, a.URL, zones[0]), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+			applied, err := ledger.NewPerson(zonedConn(t, a.URL, zones[0]), time.Now).ApplyRevert(ctx, prep.RevertID, as)
 			require.NoError(t, err)
 			require.Equal(t, 2, applied.Rows)
 			require.Zero(t, applied.Skipped)
@@ -280,7 +280,7 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 	requireNoSkip(t, prep.Lines)
 	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	applied, err := app.NewPersonLedger(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+	applied, err := ledger.NewPerson(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
 	require.NoError(t, err)
 	require.Equal(t, 2, applied.Rows)
 	require.Zero(t, applied.Skipped)
@@ -365,7 +365,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	requireNoSkip(t, prep.Lines)
 	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	applied, err := app.NewPersonLedger(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+	applied, err := ledger.NewPerson(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
 	require.NoError(t, err)
 	require.Equal(t, 2, applied.Rows)
 	require.Zero(t, applied.Skipped)

@@ -602,7 +602,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
-	needed, err := passkeyNeeded(ctx, tx, s.opts.Origin)
+	needed, err := passkeyNeeded(ctx, s.be, tx, s.opts.Origin)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, setupFailed("read the passkeys", err))
 	}
@@ -680,14 +680,14 @@ func currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
 
 // passkeyNeeded: the database has no active passkey for origin (none at
 // all on a fresh database, whose passkeys table does not exist yet).
-func passkeyNeeded(ctx context.Context, tx pgx.Tx, origin string) (bool, error) {
+func passkeyNeeded(ctx context.Context, b setuprun.Backend, tx pgx.Tx, origin string) (bool, error) {
 	// A savepoint: on a fresh database the lookup fails and must not abort tx.
 	sub, err := tx.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = sub.Rollback(context.WithoutCancel(ctx)) }()
-	has, err := setuprun.HasPasskeyFor(ctx, sub, origin)
+	has, err := b.HasPasskeyFor(ctx, sub, origin)
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && (pg.Code == "42P01" || pg.Code == "3F000") {
 		return true, nil // basalt_meta or its passkeys table does not exist yet

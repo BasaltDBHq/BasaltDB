@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -176,20 +178,20 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 
-	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", serviceManager())
+	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", agenttest.ServiceManager())
 	require.NoError(t, err)
 	sent := &notices{}
 	var watched *finds
 	var watchedReverts *revertFinds
 	var blind *agent.BlindCache
 	// As the engine runs it: every read of a call charged to its budget.
-	svc := pgService(t, a.URL, withLimits(limits), withBudget(), withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithLimits(limits), agenttest.WithBudget(), agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		watched = &finds{SQLStore: d.Core.Store.(agent.SQLStore)}
 		watchedReverts = &revertFinds{SQLStore: watched}
 		blind = agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 			return guard.RLSBlindTables(ctx, pool, "", tables)
 		})
-		useStore(d, watchedReverts)
+		agenttest.UseStore(d, watchedReverts)
 		d.Delivery.Notifier = sent
 		d.Approval.Columns = store.NewColumnOrder(pool)
 		d.Core.Commands, d.Core.PagesOrigin, d.Delivery.Poll, d.Write.RLS, d.Delivery.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
@@ -311,7 +313,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	forger.ID = person.ID
 	err = relayApproval(e.svc, signLink(t, link, forger))
 	require.Error(t, err)
-	require.Equal(t, "APPROVAL_INVALID", toolError(err).Code, "%v", err)
+	require.Equal(t, "APPROVAL_INVALID", agenttest.ToolError(err).Code, "%v", err)
 	body, isError = h.call(t, "write", withApproval(map[string]any{"waitForApproval": 0}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
 	require.Contains(t, body["message"], "not approved yet", "a forged signature approves nothing")

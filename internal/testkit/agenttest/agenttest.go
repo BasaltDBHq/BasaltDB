@@ -1,4 +1,7 @@
-package agent_test
+// Package agenttest is the Postgres test harness of the agent services: a
+// service wired to a real database the way the engine wires it, for the tests of
+// the agent and of the packages that take over its use cases.
+package agenttest
 
 import (
 	"context"
@@ -18,19 +21,19 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
-// useStore binds every port of d that reads the agent's store to s.
-func useStore(d *agent.Deps, s agent.SQLStore) {
+// UseStore binds every port of d that reads the agent's store to s.
+func UseStore(d *agent.Deps, s agent.SQLStore) {
 	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
 }
 
-// toolError and serviceManager are the adapters' values, as the
+// ToolError and ServiceManager are the adapters' values, as the
 // app wires them.
-func toolError(err error) *toolresult.ToolError { return app.AgentErrors().ToolError(err) }
+func ToolError(err error) *toolresult.ToolError { return app.AgentErrors().ToolError(err) }
 
-func serviceManager() agent.ServiceManager { return app.AgentServiceManager() }
+func ServiceManager() agent.ServiceManager { return app.AgentServiceManager() }
 
-// pgWiring is what pgService builds the service from; a pgOption changes it.
-type pgWiring struct {
+// PgWiring is what PgService builds the service from; a PgOption changes it.
+type PgWiring struct {
 	limits   sqlguard.Limits
 	conns    int32
 	poolCfg  func(*pgxpool.Config)
@@ -39,46 +42,46 @@ type pgWiring struct {
 	deps     []func(*agent.Deps, *pgxpool.Pool)
 }
 
-type pgOption func(*pgWiring)
+type PgOption func(*PgWiring)
 
-// withLimits runs the service with the given limits instead of the defaults.
-func withLimits(l sqlguard.Limits) pgOption { return func(w *pgWiring) { w.limits = l } }
+// WithLimits runs the service with the given limits instead of the defaults.
+func WithLimits(l sqlguard.Limits) PgOption { return func(w *PgWiring) { w.limits = l } }
 
-// withConns sets the pool's size (2 by default).
-func withConns(n int32) pgOption { return func(w *pgWiring) { w.conns = n } }
+// WithConns sets the pool's size (2 by default).
+func WithConns(n int32) PgOption { return func(w *PgWiring) { w.conns = n } }
 
-// withPoolConfig changes the pool's configuration before it is opened.
-func withPoolConfig(f func(*pgxpool.Config)) pgOption { return func(w *pgWiring) { w.poolCfg = f } }
+// WithPoolConfig changes the pool's configuration before it is opened.
+func WithPoolConfig(f func(*pgxpool.Config)) PgOption { return func(w *PgWiring) { w.poolCfg = f } }
 
-// withBudget charges every read of a call to its result budget, as the
+// WithBudget charges every read of a call to its result budget, as the
 // engine runs it.
-func withBudget() pgOption { return func(w *pgWiring) { w.budgeted = true } }
+func WithBudget() PgOption { return func(w *PgWiring) { w.budgeted = true } }
 
-// withReturned sets the store's hook for the values a call returned.
-func withReturned(f postgres.ReturnedFunc) pgOption { return func(w *pgWiring) { w.returned = f } }
+// WithReturned sets the store's hook for the values a call returned.
+func WithReturned(f postgres.ReturnedFunc) PgOption { return func(w *PgWiring) { w.returned = f } }
 
-// withDeps changes the service's dependencies after the Postgres ones are
+// WithDeps changes the service's dependencies after the Postgres ones are
 // filled in, to add optional ones or to wrap a store. It also gets the pool,
 // for the dependencies that read the database themselves.
-func withDeps(f func(*agent.Deps, *pgxpool.Pool)) pgOption {
-	return func(w *pgWiring) { w.deps = append(w.deps, f) }
+func WithDeps(f func(*agent.Deps, *pgxpool.Pool)) PgOption {
+	return func(w *PgWiring) { w.deps = append(w.deps, f) }
 }
 
-// pgEnv is a service wired to Postgres, with the parts tests reach for.
-type pgEnv struct {
+// PgEnv is a service wired to Postgres, with the parts tests reach for.
+type PgEnv struct {
 	Svc    *agent.Service
 	Pool   *pgxpool.Pool
 	Store  *postgres.Store
 	Reader *postgres.Reader
 }
 
-// pgService builds an agent service the way the engine does for one agent
+// PgService builds an agent service the way the engine does for one agent
 // whose connection string is url: a pool, the store, the reader, the default
 // limits and the real clock. Every Postgres test builds its service here, so
 // a change to the wiring is made in one place.
-func pgService(t *testing.T, url string, opts ...pgOption) pgEnv {
+func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 	t.Helper()
-	w := &pgWiring{limits: sqlguard.DefaultLimits(), conns: 2}
+	w := &PgWiring{limits: sqlguard.DefaultLimits(), conns: 2}
 	for _, o := range opts {
 		o(w)
 	}
@@ -107,9 +110,9 @@ func pgService(t *testing.T, url string, opts ...pgOption) pgEnv {
 	reader := postgres.NewReader(db, w.limits, time.Now)
 	d := app.AgentHostDeps()
 	d.Core.Name, d.Core.Log, d.Core.Now = "bot", slog.New(slog.DiscardHandler), time.Now
-	useStore(&d, store)
+	UseStore(&d, store)
 	for _, f := range w.deps {
 		f(&d, pool)
 	}
-	return pgEnv{Svc: agent.NewService(d), Pool: pool, Store: store, Reader: reader}
+	return PgEnv{Svc: agent.NewService(d), Pool: pool, Store: store, Reader: reader}
 }

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
@@ -60,7 +62,7 @@ func newHarness(t *testing.T, agentURL string, limits sqlguard.Limits) harness {
 // newHarnessConns is newHarness with a pool of conns connections.
 func newHarnessConns(t *testing.T, agentURL string, limits sqlguard.Limits, conns int32) harness {
 	t.Helper()
-	env := pgService(t, agentURL, withLimits(limits), withConns(conns))
+	env := agenttest.PgService(t, agentURL, agenttest.WithLimits(limits), agenttest.WithConns(conns))
 	return harness{
 		server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(env.Svc), agent.WithMeta)...),
 		reader: env.Reader,
@@ -232,7 +234,7 @@ const wideColumns = 300
 func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	r := pgService(t, agentURL, withConns(1)).Reader
+	r := agenttest.PgService(t, agentURL, agenttest.WithConns(1)).Reader
 	_, err := r.Read(context.Background(), "SELECT repeat('x', 20000000) AS big", nil, action.Statement{})
 	var tooLarge *resultsize.RowTooLargeError
 	require.ErrorAs(t, err, &tooLarge)
@@ -304,7 +306,7 @@ func TestReadsRunReadOnly(t *testing.T) {
 	// Past the engine's policy, the database still refuses a write inside a
 	// read: the agent role may INSERT into audit, but not from a read.
 	_, err := h.reader.Read(context.Background(), "SELECT bump()", nil, action.Statement{})
-	te := toolError(err)
+	te := agenttest.ToolError(err)
 	require.Equal(t, agent.CodeSQLError, te.Code)
 	require.Equal(t, "25006", te.SQLState, "read_only_sql_transaction")
 

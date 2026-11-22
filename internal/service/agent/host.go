@@ -1,12 +1,8 @@
 package agent
 
 import (
-	"errors"
 	"time"
 )
-
-// sentinel reports whether err is target, false for a nil target.
-func sentinel(err, target error) bool { return target != nil && errors.Is(err, target) }
 
 // CrashReport is a crash report the engine saved: what status shows of it.
 type CrashReport struct {

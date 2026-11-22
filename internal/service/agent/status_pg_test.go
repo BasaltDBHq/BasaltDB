@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/basaltdbhq/basaltdb/internal/app"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,7 +32,7 @@ func guardWithout(t *testing.T, version int, migs []guard.Migration) (harness, *
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, version)
 
-	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Status.Probe = app.NewAgentProbe(store.Probe{Q: pool, Migrations: migs})
 	})).Svc
 	return harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, d
@@ -144,7 +146,7 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 func TestStatusOnAFullGuard(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	svc := pgService(t, agentURL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, agentURL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Status.Probe = app.NewAgentProbe(store.Probe{Q: pool, Migrations: guard.Migrations()})
 	})).Svc
 	r, err := svc.Status(context.Background())

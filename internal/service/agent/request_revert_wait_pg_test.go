@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -462,7 +464,7 @@ func TestRelayedRevertRefusesSignaturesThePersonDidNotMakeForIt(t *testing.T) {
 	idB, bindingB := longLinkBinding(t, str(t, reqB["revertUrl"]))
 	refused := func(revertID uuid.UUID, as passkey.Assertion, want, reason string) {
 		t.Helper()
-		te := toolError(relayRevert(env.svc, revertID, as))
+		te := agenttest.ToolError(relayRevert(env.svc, revertID, as))
 		require.Equal(t, want, te.Code, "%v", te)
 		require.Equal(t, reason, te.Reason, "%v", te)
 	}

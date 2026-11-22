@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
 
 	"github.com/jackc/pgx/v5"
@@ -54,7 +56,7 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 	dict, err := dictfile.Open(dir, keys, pii.DefaultDictionaryOptions(time.Now))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	env := pgService(t, a.URL, withReturned(returned), withDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
+	env := agenttest.PgService(t, a.URL, agenttest.WithReturned(returned), agenttest.WithDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
 		if obs == nil {
 			obs = piidict.NewObserver(piidict.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
 		}
@@ -89,7 +91,7 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 	out, err := svc.Query(context.Background(), agent.QueryParams{SQL: `SELECT email FROM people`})
 	require.Error(t, err)
 	require.Empty(t, out.Rows)
-	require.Equal(t, agent.CodeInternal, toolError(err).Code)
+	require.Equal(t, agent.CodeInternal, agenttest.ToolError(err).Code)
 	var reads int
 	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(change_id) FROM basalt_meta.changes WHERE op = 'SELECT'`).Scan(&reads))
 	require.Zero(t, reads, "a read the agent did not get is not recorded as one")

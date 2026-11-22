@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -418,7 +420,7 @@ func TestAgentRoleCannotRevealDirectly(t *testing.T) {
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
 
 	// A preview of the held write with a ticket the agent guessed.
-	store := pgService(t, s.env.a.URL, withConns(1)).Store
+	store := agenttest.PgService(t, s.env.a.URL, agenttest.WithConns(1)).Store
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
 	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, uuid.MustParse(s.approval), make([]byte, 16))
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
@@ -435,7 +437,7 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	id := uuid.MustParse(s.approval)
 
 	// The person's ticket, opened as the engine does.
-	store := pgService(t, s.env.a.URL, withConns(1)).Store
+	store := agenttest.PgService(t, s.env.a.URL, agenttest.WithConns(1)).Store
 	raw := make([]byte, links.SecretBytes)
 	_, err := rand.Read(raw)
 	require.NoError(t, err)

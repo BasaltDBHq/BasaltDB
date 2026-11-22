@@ -309,17 +309,6 @@ func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) 
 	return err
 }
 
-// PageError is an answer meant for the revert page as it is: the pages
-// answer it without the agent's catalog, since no agent tool returns it.
-// RescopeNonce, when set, goes in the page's error body: the nonce of the
-// widen the page asks the person for.
-type PageError struct {
-	*toolresult.ToolError
-	RescopeNonce passkey.Bytes
-}
-
-func (e *PageError) Unwrap() error { return e.ToolError }
-
 // widenRefused is every failed proof or token check (CONTRACT.md, check
 // order 3): one fixed answer, so the agent holding the link learns nothing
 // about other agents' runs or tables from it.

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
 
 	"github.com/google/uuid"
@@ -139,11 +141,11 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStor
 	t.Helper()
 	secrets, err := secretfile.Open(e.linksPath, time.Now, rand.Reader)
 	require.NoError(t, err)
-	e.svc = pgService(t, e.bot.URL,
-		withPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),
-		withDeps(func(d *agent.Deps, _ *pgxpool.Pool) {
+	e.svc = agenttest.PgService(t, e.bot.URL,
+		agenttest.WithPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),
+		agenttest.WithDeps(func(d *agent.Deps, _ *pgxpool.Pool) {
 			if wrap != nil {
-				useStore(d, wrap(d.Core.Store.(agent.SQLStore)))
+				agenttest.UseStore(d, wrap(d.Core.Store.(agent.SQLStore)))
 			}
 			d.Delivery.Notifier, d.Core.PagesOrigin, d.Delivery.Links, d.Delivery.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc

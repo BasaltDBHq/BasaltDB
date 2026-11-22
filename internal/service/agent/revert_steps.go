@@ -21,47 +21,9 @@ import (
 // actionable-errors design (section 4.3): results REQUESTED, WAIT_ENDED,
 // APPLYING, APPLIED and EXPIRED, and the error cases the tool returns.
 
-// Reasons of the error cases request_revert returns (CONTRACT.md, Next
-// steps per code).
-const (
-	reasonRevert              = "REVERT"
-	reasonBadSignature        = action.ReasonBadSignature
-	reasonPasskeyRevoked      = action.ReasonPasskeyRevoked
-	reasonRowsChanged         = action.ReasonRowsChanged
-	reasonPlanFinished        = action.ReasonPlanFinished
-	reasonNotSigned           = action.ReasonNotSigned
-	reasonNotFinished         = "NOT_FINISHED"
-	reasonReadsOnly           = "READS_ONLY"
-	reasonAllChangedByPeople  = "ALL_CHANGED_BY_PEOPLE"
-	reasonAlreadyReverted     = "ALREADY_REVERTED"
-	toolRequestRevert         = "request_revert"
-	toolRevertPlan            = "revert_plan"
-	toolApplyRevertBatch      = "apply_revert_batch"
-	toolListRuns              = "list_runs"
-	argRevertID               = "revertId"
-	argWaitForSignature       = "waitForSignature"
-	stepEndTurnPersonActsNext = "End your turn: the person acts next."
-)
-
-func agentStep(action, text string) toolresult.NextStep {
-	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: action, Text: text}
-}
-
-func personStep(action, text string) toolresult.NextStep {
-	return toolresult.NextStep{Actor: toolresult.ActorPerson, Action: action, Text: text}
-}
-
-func callTool(tool string, args map[string]any, text string) toolresult.NextStep {
-	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool, Text: text, Tool: tool, Arguments: args}
-}
-
 // reviseRequestRevert: call request_revert again, with what the agent adds.
 func reviseRequestRevert(args map[string]any, text string) toolresult.NextStep {
 	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Text: text, Tool: toolRequestRevert, Arguments: args}
-}
-
-func openLink(url, text string) toolresult.NextStep {
-	return toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: text, URL: url}
 }
 
 // requestedSteps: the person signs at link, the agent waits once.
@@ -314,14 +276,6 @@ func revertTitle(r action.Revert) string {
 		return "the revert you widened on the signing page"
 	}
 	return "the revert of " + scopeText(r.Scope, r.ScopeID)
-}
-
-// sentence starts s with a capital letter.
-func sentence(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func (s *Service) badSignature(ctx context.Context, r action.Revert, message string) error {

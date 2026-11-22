@@ -7,66 +7,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-
-	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 )
-
-// Reasons of the catalog (api/mcp/errors/next-steps.json) the engine sets
-// itself, beyond the ones ToolError reads from the guard.
-const (
-	reasonHeld                = "HELD"
-	reasonHeldNoPages         = "HELD_NO_PAGES"
-	reasonNoPasskey           = "NO_PASSKEY"
-	reasonWaitEnded           = "WAIT_ENDED"
-	reasonNoRowsNow           = "NO_ROWS_NOW"
-	reasonAlreadyUsed         = action.ReasonAlreadyUsed
-	reasonDifferentWrite      = action.ReasonDifferentWrite
-	reasonNotThisAgent        = action.ReasonNotThisAgent
-	reasonLineInvalid         = action.ReasonLineInvalid
-	reasonPlanNotSigned       = action.ReasonPlanNotSigned
-	reasonDatabaseUnreachable = action.ReasonDatabaseUnreachable
-	reasonTooManyConnections  = action.ReasonTooManyConnections
-	reasonCredentialRejected  = action.ReasonCredentialRejected
-	reasonGuardMissing        = action.ReasonGuardMissing
-	reasonGuardOutdated       = "GUARD_OUTDATED"
-	reasonEngineUnreachable   = "ENGINE_UNREACHABLE"
-	reasonPagesOff            = "PAGES_OFF"
-	reasonSetupPending        = "SETUP_PENDING"
-	reasonSetupExpired        = "SETUP_EXPIRED"
-	reasonRun                 = "RUN"
-	reasonChange              = "CHANGE"
-	reasonApproval            = "APPROVAL"
-	reasonLink                = "LINK"
-	reasonLinkReset           = "LINK_RESET"
-
-	toolWrite         = "write"
-	toolQuery         = "query"
-	toolListPending   = "list_pending"
-	toolRunHistory    = "run_history"
-	toolPreviewRevert = "preview_revert"
-	argRunID          = "runId"
-	argApprovalID     = "approvalId"
-	argChangeID       = "changeId"
-	argWaitApproval   = "waitForApproval"
-)
-
-var catalog = sync.OnceValue(func() mcpcontract.NextSteps {
-	c, err := mcpcontract.LoadNextSteps()
-	if err != nil {
-		panic(err) // the catalog is embedded: a failure is a build defect
-	}
-	return c
-})
 
 // failure is the call an error answers: the tool and its arguments.
 type failure struct {
@@ -358,15 +307,10 @@ func sizeLimitText(tool string) string {
 	return "Select fewer or shorter columns (for example left(col, 200)) or fewer rows so the result stays under 16 MiB, then call it again."
 }
 
-func approvalExpiredSteps(b *Steps) {
-	b.AskPerson("Tell the person the approval expired and the write stays blocked; ask whether to send it again.")
-	b.ReviseCall(toolWrite, nil, "On yes, send the write again without approvalId, so it is held anew.")
-}
-
 func (s *Service) approvalRequiredSteps(b *Steps, te *toolresult.ToolError) string {
 	n := te.Approval
 	if n == nil {
-		b.fail(fmt.Errorf("APPROVAL_REQUIRED carries no approval"))
+		b.Fail(fmt.Errorf("APPROVAL_REQUIRED carries no approval"))
 		return ""
 	}
 	again := map[string]any{argApprovalID: n.ApprovalID}
@@ -418,7 +362,7 @@ func approvalInvalidSteps(b *Steps, te *toolresult.ToolError, f failure) string 
 		b.ReviseCall(toolWrite, nil, "Send the write again with the new rows in mind: it is held anew for approval.")
 		return "Rows changed after you were asked, so that approval no longer applies and nothing was written. The agent reads the rows again and the write is held anew for you."
 	default:
-		b.fail(fmt.Errorf("APPROVAL_INVALID %s needs the approval page's link", te.Reason))
+		b.Fail(fmt.Errorf("APPROVAL_INVALID %s needs the approval page's link", te.Reason))
 	}
 	return ""
 }
@@ -444,7 +388,7 @@ func revertInvalidSteps(b *Steps, te *toolresult.ToolError, f failure) {
 	case reasonNotThisAgent:
 		b.Stop("This revert is not one of yours: do not retry.")
 	default:
-		b.fail(fmt.Errorf("REVERT_INVALID %s needs the revert page's link", te.Reason))
+		b.Fail(fmt.Errorf("REVERT_INVALID %s needs the revert page's link", te.Reason))
 	}
 }
 
@@ -492,7 +436,7 @@ func notFoundSteps(b *Steps, te *toolresult.ToolError, f failure) string {
 		b.TellAgent("Ask the agent for the new link to this revert.")
 		return linkResetMessage
 	default:
-		b.fail(fmt.Errorf("NOT_FOUND has no reason %q", te.Reason))
+		b.Fail(fmt.Errorf("NOT_FOUND has no reason %q", te.Reason))
 	}
 	return ""
 }
@@ -552,7 +496,7 @@ func (s *Service) unavailableSteps(b *Steps, te *toolresult.ToolError, f failure
 	case reasonDatabaseNotConfirmed:
 		var dn *DatabaseNotConfirmedError
 		if !errors.As(f.err, &dn) {
-			b.fail(errors.New("a database waiting for confirmation needs its setup and address"))
+			b.Fail(errors.New("a database waiting for confirmation needs its setup and address"))
 			return ""
 		}
 		return confirmDatabaseSteps(b, dn.SetupID, dn.Database)
@@ -560,124 +504,8 @@ func (s *Service) unavailableSteps(b *Steps, te *toolresult.ToolError, f failure
 		b.CallTool(toolListPending, map[string]any{}, "Read the held writes: each has the link the person opens, since this engine serves no pages.")
 		return ""
 	}
-	b.fail(fmt.Errorf("UNAVAILABLE has no reason %q", te.Reason))
+	b.Fail(fmt.Errorf("UNAVAILABLE has no reason %q", te.Reason))
 	return ""
-}
-
-// databaseUnreachableMessage is the person's message when the database
-// cannot be reached, in an error and in status.
-const databaseUnreachableMessage = "The agent cannot reach the database. Check that Postgres is running and reachable from the machine the engine runs on."
-
-// tooManyConnectionsAsk is the ASK_PERSON step when the agent role is at its
-// connection limit, in an error and in status.
-const tooManyConnectionsAsk = "Tell the person the agent has used all the database connections Basalt allows it, and ask them to stop any second engine for this agent."
-
-// tooManyConnectionsMessage is the person's message when the agent role is at
-// its connection limit, in an error and in status (CONTRACT.md, Error codes).
-func tooManyConnectionsMessage(cmds Commands) string {
-	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
-		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
-		"Stop any second engine; stale sessions close on their own within a few minutes.",
-		cmds.agent, guardmodel.AgentConnectionLimit)
-}
-
-// fixes are what the person is told for the machine problems of the guard
-// and the credential, shared by the UNAVAILABLE errors and the status
-// problems of the same name. basalt init fixes each: its link opens the
-// setup page, or the connect page on an agent-operated engine, for that job.
-var fixes = map[string]string{
-	reasonCredentialRejected: "The database refuses the agent's credential (its password changed or was never right), so the agent needs a new one.",
-	reasonGuardMissing:       "Basalt's guard is not installed in this database (or was removed), so the agent cannot work.",
-	reasonGuardOutdated:      "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is updated.",
-}
-
-// fixSteps: the agent runs basalt init, whose link the person opens to fix
-// reason; the person tells the agent when it is done and the agent stops
-// until then. On an agent-operated engine the agent follows what init
-// prints instead (RI-17 for CREDENTIAL_REJECTED).
-func fixSteps(b *Steps, cmds Commands, reason string) string {
-	problem, ok := fixes[reason]
-	if !ok {
-		b.fail(fmt.Errorf("no fix for %s", reason))
-		return ""
-	}
-	if cmds.AgentOperated() {
-		return remoteSetupSteps(b, cmds, problem)
-	}
-	if cmds.engineRemoved() {
-		// The setup page removed BasaltDB and the engine's last agent: its
-		// role is gone, so every call fails. basalt init finishes the
-		// removal (CONTRACT.md, The local setup page, Removing the engine
-		// service).
-		b.AgentRunCommand(cmds.Init(), removedInitText)
-		b.TellAgent("Tell the agent when it is done.")
-		b.Stop("Do not retry: BasaltDB is removed from this database.")
-		return removedPersonText
-	}
-	if reason == reasonGuardOutdated && cmds.updateLink != "" {
-		b.OpenLink(cmds.updateLink, "Show the person this link: its page updates the guard once they type the admin connection string there.")
-		b.TellAgent("Tell the agent when it is done.")
-		b.Stop("Do not retry until the person says it is fixed.")
-		return problem + " Open the link the agent gives you, follow the page, then tell the agent."
-	}
-	b.AgentRunCommand(cmds.Init(), initStepText)
-	b.TellAgent("Tell the agent when it is done.")
-	b.Stop("Do not retry until the person says it is fixed.")
-	return problem + " " + initPersonText
-}
-
-// removedInitText and removedPersonText are the fix steps' texts on an
-// engine the setup page removed.
-const (
-	removedInitText   = "BasaltDB is removed from this database. Run this once to finish: it removes the engine service, and the person types their password once in the computer's own dialog."
-	removedPersonText = "BasaltDB is removed from this database. Last step: the agent runs basalt init once, and your computer asks for your password once to remove the engine service."
-)
-
-// initStepText is the text of the agent's basalt init step: it prints the
-// one link the person opens (CONTRACT.md, basalt init).
-const initStepText = "Run this once and show the person the link it prints; they fix it on that page."
-
-// passkeyInitText is the text of the agent's basalt init step for a passkey
-// the database does not accept.
-const passkeyInitText = "Run this once and show the person the link it prints, where they register the passkey they use."
-
-// askAgentForRegisterLinkText is a page's step for a passkey the database does not
-// accept: the page cannot run basalt init, so the person asks the agent.
-const askAgentForRegisterLinkText = "Ask the agent for a link to register the passkey you use."
-
-// initPersonText tells the person what follows the agent's basalt init.
-const initPersonText = "The agent gives you a link: open it, follow the page, then tell the agent."
-
-// remoteSetupSteps: on an agent-operated engine, the agent runs basalt init
-// now; what it prints (the connect link, its personMessage and nextSteps)
-// replaces the rest of these steps (RI-2). The person's message names no
-// command on the agent's machine.
-func remoteSetupSteps(b *Steps, cmds Commands, problem string) string {
-	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the link it prints and follow its steps.")
-	return problem + " " + initPersonText
-}
-
-// engineUnreachableSteps: the person starts the engine; on an agent-operated
-// engine the agent starts it, once, then repeats tool (status when tool is
-// empty or status itself).
-func engineUnreachableSteps(b *Steps, cmds Commands, tool string) string {
-	if !cmds.AgentOperated() {
-		return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
-	}
-	b.AgentRunCommand(cmds.EngineStart(), "Start the Basalt engine on this machine, once; ask the person when it still does not answer.")
-	if tool == "" || tool == toolStatus {
-		b.CallTool(toolStatus, map[string]any{}, "Then call status to check that the engine answers.")
-		return ""
-	}
-	b.RepeatCall(tool, nil, 0, "Then make the same call again, once.")
-	return ""
-}
-
-func personFix(b *Steps, command, problem string) string {
-	b.RunCommand(command, "Run this to fix it.")
-	b.TellAgent("Tell the agent when it is done.")
-	b.Stop("Do not retry until the person says it is fixed.")
-	return fmt.Sprintf("%s Run: %s then tell the agent.", problem, command)
 }
 
 // approvalLinkError is the APPROVAL_INVALID answer for an approval that
@@ -742,30 +570,6 @@ func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []too
 	return approvalMessage(lead, handOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true})
 }
 
-// SetupError is a call refused because the agent's setup from the laptop has
-// not run (CONTRACT.md, Setup from your laptop). Code is the pending setup
-// code, which the person runs on their own computer, and Fingerprint the
-// one it shows; Expired when it ran out.
-type SetupError struct {
-	Code        string
-	Fingerprint string
-	Expired     bool
-	// ConnectOnly: the pending code is connect-only, so status's setup
-	// problem says what comes next (CONTRACT.md, Next steps for a
-	// connect-only code).
-	ConnectOnly bool
-}
-
-func (e *SetupError) Error() string {
-	if e.Expired {
-		return "the agent's setup code expired before it was used"
-	}
-	return "the agent's setup has not run yet"
-}
-
-// setupCode is a setup code's alphabet: basalt-setup.1.<base64url>.<check>.
-var setupCode = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
 // setupSteps: a pending setup is run by the person on their own computer;
 // an expired one is renewed on the engine's machine (an OPERATOR step).
 func (s *Service) setupSteps(b *Steps, te *toolresult.ToolError, f failure) string {
@@ -774,7 +578,7 @@ func (s *Service) setupSteps(b *Steps, te *toolresult.ToolError, f failure) stri
 	}
 	var se *SetupError
 	if !errors.As(f.err, &se) {
-		b.fail(errors.New("a pending setup needs its code"))
+		b.Fail(errors.New("a pending setup needs its code"))
 		return ""
 	}
 	if se.ConnectOnly {
@@ -784,48 +588,6 @@ func (s *Service) setupSteps(b *Steps, te *toolresult.ToolError, f failure) stri
 	person, ls := setupPendingSteps(b, s.deps.Core.Commands, se.Code, se.Fingerprint, true, s.deps.Status.ConnectBudget)
 	te.Links = ls
 	return person
-}
-
-// setupExpiredSteps: the agent runs basalt init again for a new link.
-func setupExpiredSteps(b *Steps, cmds Commands) string {
-	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
-	b.EndTurn("End your turn: the person opens the new link next.")
-	return "The setup link for this agent expired before it was used. " + initPersonText
-}
-
-// setupPendingSteps: the person finishes the pending setup on the connect
-// page, checking it shows fingerprint. An INSTALL code blocks the tools
-// (blocking), so the agent ends its turn and checks status after; an AGENT
-// or UPGRADE code does not.
-//
-// With a connect link (budget is not 0 and the whole link fits it) the
-// person opens it, and the message says the link uses Basalt Vault, a
-// hosted service (CONTRACT.md, Next steps with the connect link). Without
-// one there is no page to hand over: the agent runs basalt init, which
-// prints the link. The links are those of the message.
-func setupPendingSteps(b *Steps, cmds Commands, code, fingerprint string, blocking bool, budget int) (string, []toolresult.Link) {
-	if !setupCode.MatchString(code) || fingerprint == "" {
-		b.fail(errors.New("a pending setup needs its code and fingerprint"))
-		return "", nil
-	}
-	url := ConnectLink(code, budget)
-	if url != "" {
-		b.OpenLink(url, ConnectStepText)
-	} else {
-		b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they finish the setup.")
-	}
-	b.TellAgent("Tell the agent when it is done.")
-	lead := "A change to this agent's setup is waiting for you."
-	if blocking {
-		b.EndTurn("End your turn: the person acts next.")
-		b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
-		lead = "This agent's setup has not run yet."
-	}
-	if url != "" {
-		return ConnectMessage(lead, url, fingerprint)
-	}
-	return lead + " The agent gives you a link: open it, check that it shows the setup fingerprint " + fingerprint +
-		", and follow the page, then tell the agent. Never paste your database password into this chat.", nil
 }
 
 // sanitizeIdent quotes a column name for the SQL a step suggests: in double

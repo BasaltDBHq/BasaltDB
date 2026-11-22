@@ -229,9 +229,6 @@ func pointBackMessage(lead string, tail ...string) (string, []toolresult.Link) {
 	return msg.Build()
 }
 
-// personTime is how a person-facing message states a deadline.
-const personTime = "2006-01-02 15:04 UTC"
-
 // shortLink issues a new short link page(origin, id)#s=<secret> for an
 // item that expires at expires, revoking its earlier one, when issue is
 // set: the portal's short link when the Vault registered it (relayLink),

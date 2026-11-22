@@ -1,6 +1,6 @@
 package agent
 
-// Status problems of plugin entries (CONTRACT.md, Plugins, Problems and
+// Status problems of plugin entries (CONTRACT.md, Plugins, problems and
 // errors; Next steps per code).
 const (
 	ProblemPluginUnavailable = "PLUGIN_UNAVAILABLE"
@@ -53,12 +53,12 @@ func pluginArgs(p PluginProblem, remove bool) map[string]any {
 	return args
 }
 
-func (s statusDeps) addPluginProblems(ps *problems) {
+func (s statusDeps) addPluginProblems(ps *Problems) {
 	if s.plugins == nil {
 		return
 	}
 	for _, p := range s.plugins.PluginProblems(s.name) {
-		ps.add(p.Code, p.Message, func(b *Steps) string {
+		ps.Add(p.Code, p.Message, func(b *Steps) string {
 			switch p.Code {
 			case ProblemPluginAwaitingApproval, ProblemPluginApprovalExpired, ProblemPluginApprovalMismatch:
 				return pluginApprovalSteps(b, p)

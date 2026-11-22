@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
+
 	"github.com/basaltdbhq/basaltdb/internal/app"
 
 	"github.com/jackc/pgx/v5"
@@ -85,7 +87,7 @@ func describeDBWithUpdate(t *testing.T, update func() *agent.UpdateNotice) descr
 		GRANT SELECT ON "Sales"."Order Items" TO `+role)
 	classifyDescribe(t, d)
 
-	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 		d.Status.Update = update
@@ -325,7 +327,7 @@ func TestDescribeSearchScale(t *testing.T) {
 	d.Exec(t, `GRANT USAGE ON SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize()+`;
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
-	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
@@ -372,7 +374,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 			END LOOP; END $$`, from, from+249, role, role))
 	}
 
-	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc

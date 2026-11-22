@@ -80,6 +80,11 @@ type relayLinks struct {
 	stores []*links.Secrets
 	// agents names each store's agent, by index.
 	agents []string
+	// revoked is what each agent's database says of this engine's key;
+	// nil when nothing watches it. endRevoked unregisters a revoked
+	// agent's token and closes its sessions with ENGINE_REVOKED.
+	revoked    *revocation
+	endRevoked func(channel.LinkToken)
 }
 
 func newRelayLinks(log *slog.Logger) *relayLinks { return &relayLinks{log: log} }
@@ -87,11 +92,28 @@ func newRelayLinks(log *slog.Logger) *relayLinks { return &relayLinks{log: log} 
 // add takes an agent's store; its dropped relay links are unregistered
 // with unregister.
 func (r *relayLinks) add(agent string, s *links.Secrets, unregister func(channel.LinkToken)) {
-	s.OnDrop(unregister)
+	s.OnDrop(func(token channel.LinkToken) {
+		r.mu.Lock()
+		rev, end := r.revoked, r.endRevoked
+		r.mu.Unlock()
+		if end != nil && rev.isRevoked(agent) {
+			end(token)
+			return
+		}
+		unregister(token)
+	})
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.stores = append(r.stores, s)
 	r.agents = append(r.agents, agent)
+}
+
+// watch has the links act on rev: a revoked agent's dropped links end with
+// end (ENGINE_REVOKED), and its sessions are refused.
+func (r *relayLinks) watch(rev *revocation, end func(channel.LinkToken)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.revoked, r.endRevoked = rev, end
 }
 
 func (r *relayLinks) all() []*links.Secrets {
@@ -118,7 +140,7 @@ func (r *relayLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) 
 	var out vault.SessionLink
 	found := false
 	r.mu.Lock()
-	stores, agents := slices.Clone(r.stores), slices.Clone(r.agents)
+	stores, agents, rev := slices.Clone(r.stores), slices.Clone(r.agents), r.revoked
 	r.mu.Unlock()
 	for i, s := range stores {
 		l, ok := s.Session(token)
@@ -127,6 +149,13 @@ func (r *relayLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) 
 			found = true
 		}
 		l.Keys.PSK.Zero()
+	}
+	// Each relay session reads the record: a database that revoked this
+	// engine's key has its sessions refused at message 1 (LINK_REFUSED),
+	// and the read revokes the agent's links.
+	if found && rev.check(context.Background(), out.Agent) {
+		out.PSK.Zero()
+		return vault.SessionLink{}, false
 	}
 	return out, found
 }

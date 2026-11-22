@@ -48,7 +48,7 @@ The person revokes an engine on the portal's passkeys page, signed with their pa
 
 - **Per database.** `engines` has no agent column, so a revoke applies to every agent of that database.
 - **What the engine does.** For every agent of a database that revoked its key, the engine reports `engineRecord.state` `REVOKED` and the problem `ENGINE_REVOKED` in `status`.
-- **Planned, with the relay.** The engine reads its record at start, at every heartbeat and at each relay session. A revoked database makes it stop handing over relay short links for its agents, revoke their live short links, unregister their tokens at the Vault and close their relay sessions with `ENGINE_REVOKED`; it leaves the Vault when every database it serves has revoked the key. A failed read keeps the last state the engine read. Until this lands, a person who revokes an engine should treat any relay short link it handed over as live.
+- **On the relay.** The engine reads its record at start, at every heartbeat and at each relay session (on the agent's credential, at most 5 seconds; that session's message 1 waits for it). A revoked database makes it stop handing over relay short links for its agents (they get the long link, as with no Vault), revoke their live short links, unregister their tokens at the Vault and close their relay sessions with `ENGINE_REVOKED`; a session opened after that is refused at message 1 (`LINK_REFUSED`, as for any link the engine does not hold). It leaves the Vault (closes its socket) when every database it serves has revoked the key. A failed read keeps the last state the engine read, and a revoked key stays revoked (it is never recorded again). The Vault holds no engine record and needs nothing for this: it forwards the engine's `UNREGISTER_LINK` and `SESSION_CLOSE` as for any other link.
 - **No new key.** A revoked key is never recorded again. With rotate-key removed, a revoked engine is set up again from the start.
 - **Limit.** A revoked engine on a compromised server can ignore all this. It still cannot sign anything a person did not, and the record tells the person not to open its links.
 
@@ -176,7 +176,7 @@ WebSocket close codes, with the name as the close reason. Registry: [`close-code
 | 4010 | `RATE_LIMITED` | engine, Vault | Too many handshakes for a link, requests in a session, or connections at the Vault | try later |
 | 4011 | `SESSION_LIMIT` | engine, Vault | Too many open sessions for the link or the engine | try later |
 | 4012 | `TIMEOUT` | page, engine, Vault | The handshake took over 10 seconds, the session was idle 5 minutes, or it reached 30 minutes or its link's expiry; on `DIRECT`, the engine could not read its record in 5 seconds | try later |
-| 4013 | `ENGINE_REVOKED` | engine | The engine's key is revoked in the database of the session's agent (M4.1, [Direct transport](cli.md#removed)), on `DIRECT` (on `RELAY` planned) | engine offline; on `DIRECT` also that the engine may be revoked, with the pin left as it is ([Direct transport](cli.md#removed)) |
+| 4013 | `ENGINE_REVOKED` | engine | The engine's key is revoked in the database of the session's agent: its open sessions when the engine reads the revocation ([Engine revocation](#engine-revocation)) | engine offline |
 | 4014 | `ENGINE_SHUTDOWN` | engine | The engine is stopping, or rotated its keys | engine offline |
 
 A page that ends a session normally closes with 1000. A refusal inside a session that leaves it usable (`404`, `409`, `410`, `413`) is an HTTP status in a `RESPONSE`, not a close.

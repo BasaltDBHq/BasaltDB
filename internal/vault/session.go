@@ -406,7 +406,7 @@ func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	if old == token {
 		return
 	}
-	cn.endLink(old)
+	cn.endLink(old, channel.ErrLinkRefused)
 }
 
 // respond sends resp as a RESPONSE and as many CONTINUEs as its body needs,
@@ -536,10 +536,10 @@ func (cn *conn) endAsync(id sid, code channel.CloseError) {
 	}
 }
 
-// endLink ends every session of token with LINK_REFUSED: its link was
-// revoked or expired.
-func (cn *conn) endLink(token channel.LinkToken) {
+// endLink ends every session of token with code: LINK_REFUSED for a link
+// revoked or expired, ENGINE_REVOKED for one whose engine was revoked.
+func (cn *conn) endLink(token channel.LinkToken, code channel.CloseError) {
 	for _, id := range cn.sessions.ofToken(token) {
-		cn.endAsync(id, channel.ErrLinkRefused)
+		cn.endAsync(id, code)
 	}
 }

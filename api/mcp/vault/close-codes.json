@@ -95,7 +95,7 @@
       "code": 4013,
       "name": "ENGINE_REVOKED",
       "sentBy": ["ENGINE"],
-      "when": "The engine's key is revoked in the database of the session's agent (M4.1, CONTRACT.md, Direct transport), on either transport; the engine serves that agent no session. Comes outside the session, so anyone on the path can send it: on DIRECT the page says the engine may be revoked and changes no pin unless the person confirms.",
+      "when": "The engine's key is revoked in the database of the session's agent (CONTRACT.md, Vault channel, Engine revocation): the engine closes that agent's open sessions with it when it reads the revocation, and serves that agent no session after. Comes outside the session, so anyone on the path can send it: the page only shows that the engine is offline.",
       "pageShows": "ENGINE_OFFLINE"
     },
     {

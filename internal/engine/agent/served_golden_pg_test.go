@@ -66,6 +66,9 @@ var unreachableCodes = map[string]string{
 	"write QUERY_TIMEOUT":               "needs a write that runs past the statement timeout",
 	"write UNAVAILABLE":                 "needs the database to be down",
 	"write INTERNAL":                    "needs a failure the engine does not expect",
+	"request_plugin NOT_FOUND":          "the harness keeps no engine-kept plugins; tools_plugin_test.go and the engine's plugin_requests tests cover request_plugin",
+	"request_plugin UNAVAILABLE":        "needs the database to be down",
+	"request_plugin INTERNAL":           "needs a failure the engine does not expect",
 }
 
 // declaredErrors reads every served tool's error codes from the contract's
@@ -276,6 +279,11 @@ func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	g.callErr("apply_revert_batch_not_signed", "apply_revert_batch", map[string]any{
 		"revertId": str(t, requested["revertId"]), "lines": []any{1},
 	}, "REVERT_INVALID")
+	// request_plugin on this harness, which keeps no engine-kept plugins: a
+	// call with no form is refused for its arguments, and a removal for the
+	// engine it runs on.
+	g.callErr("request_plugin_no_form", "request_plugin", map[string]any{}, "INVALID_ARGUMENT")
+	g.callErr("request_plugin_not_served", "request_plugin", map[string]any{"name": "local-ner", "remove": true}, "PLUGIN_REFUSED")
 	return g, e
 }
 

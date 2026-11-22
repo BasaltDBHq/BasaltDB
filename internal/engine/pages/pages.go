@@ -125,9 +125,6 @@ type PluginApprovals interface {
 	// submit_plugin_approval, which verifies it, and returns when Postgres
 	// recorded the approval.
 	RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error)
-	// IssuePluginLink issues a new short link for the approval to a caller
-	// that shows proof of its binding text (links.IssueProof).
-	IssuePluginLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
@@ -189,7 +186,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
-	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/links", s.postPluginLink)
 	return mux
 }
 
@@ -556,14 +552,6 @@ func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reply(w, pluginApprovedDTO{ApprovalID: id.String(), Status: "APPROVED", ApprovedAt: at.UTC()})
-}
-
-func (s *Server) postPluginLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
-		return asPlugins(func(ctx context.Context, p PluginApprovals) (string, error) {
-			return p.IssuePluginLink(ctx, id, proof)
-		})(ctx, a)
-	})
 }
 
 // issueLink issues a short link for the CLI, to a caller that shows proof

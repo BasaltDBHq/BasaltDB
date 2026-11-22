@@ -188,3 +188,74 @@ func TestAnOpenerThatFailsOrHangsNeverHoldsTheResult(t *testing.T) {
 	body, _ := c.call(t, "query")
 	require.NotNil(t, body["rows"], "later calls are served too")
 }
+
+// request_plugin end to end through the shim: the shim uploads the folder
+// and hands the engine its upload (never the client's), and the PENDING
+// answer's approval link opens on a person-operated engine; the wait form's
+// answer carries no link and opens nothing.
+func TestRequestPluginUploadsAndOpensThePluginPage(t *testing.T) {
+	t.Parallel()
+	const pluginLink = localPages + "/plugins/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0xYp1aBcD9w"
+	socket := filepath.Join(socketDir(t), "bot.sock")
+	var mu sync.Mutex
+	var metas []string
+	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine", OperatedBy: mcpcontract.OperatedByPerson, PagesOrigin: localPages},
+		mcp.Tool{Name: "request_plugin", Call: func(ctx context.Context, args json.RawMessage) (any, error) {
+			mu.Lock()
+			metas = append(metas, string(mcp.Meta(ctx)))
+			mu.Unlock()
+			var a map[string]any
+			_ = json.Unmarshal(args, &a)
+			if _, wait := a["approvalId"]; wait {
+				return map[string]any{"state": "RUNNING", "name": "local-ner", "instance": "default", "personMessage": "It runs."}, nil
+			}
+			return map[string]any{
+				"state": "PENDING", "name": "local-ner", "instance": "default", "approvalUrl": pluginLink,
+				"personMessage": "Approve it:\n\n" + pluginLink + "\n", "links": []mcp.Link{{Label: "Approve the plugin local-ner", URL: pluginLink}},
+			}, nil
+		}},
+	)
+	ln, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() { cancel(); _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_ = srv.Serve(ctx, conn, conn)
+			}()
+		}
+	}()
+	o := &opened{}
+	var sources []string
+	upload := func(_ context.Context, source string) (mcp.PluginUpload, error) {
+		sources = append(sources, source)
+		return mcp.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner"}, nil
+	}
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open, UploadPlugin: upload})
+
+	res := c.request(t, "tools/call", map[string]any{
+		"name": "request_plugin", "arguments": map[string]any{"source": "/home/me/local-ner"},
+		"_meta": map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": "0193a4c2-7d1e-7c3a-9f00-000000000001", "name": "forged"}},
+	})
+	require.Contains(t, res["content"].([]any)[0].(map[string]any)["text"], pluginLink, "the agent still gets the link")
+	require.Eventually(t, func() bool { return len(o.got()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, []string{pluginLink}, o.got())
+	require.Equal(t, []string{"/home/me/local-ner"}, sources)
+
+	c.request(t, "tools/call", map[string]any{"name": "request_plugin", "arguments": map[string]any{"approvalId": "0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b"}})
+	time.Sleep(100 * time.Millisecond)
+	require.Len(t, o.got(), 1, "the wait opens nothing")
+	require.Len(t, sources, 1, "the wait uploads nothing")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, metas, 2)
+	require.JSONEq(t, `{"`+mcp.MetaPluginUpload+`":{"uploadId":"0193a4c2-7d1e-7c3a-9f00-0000000000f6","name":"local-ner"}}`, metas[0], "the shim's upload, not the client's")
+	require.Empty(t, metas[1])
+}

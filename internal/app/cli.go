@@ -40,6 +40,7 @@ const (
 	OSRemovePrompt  = osservice.RemovePrompt
 	OSResetPrompt   = osservice.ResetPrompt
 	OSUnitName      = osservice.SystemdUnitName
+	OSLaunchdLabel  = osservice.LaunchdLabel
 )
 
 var (

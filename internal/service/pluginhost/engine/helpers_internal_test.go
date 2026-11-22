@@ -15,12 +15,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -101,7 +108,7 @@ func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*agent.Service, m
 	pg := newPGAgent(t, a.URL, 2)
 	svc := pg.service(func(dp *agent.Deps) {
 		dp.Plugins = ep
-		dp.Probe = postgres.Probe{Q: pool, Migrations: guard.Migrations()}
+		dp.Probe = testProbe{postgres.Probe{Q: pool, Migrations: guard.Migrations()}}
 	})
 	return svc, map[string]AgentLedger{"bot": {ports: testPorts, db: pool, admit: pluginAdmit(svc)}}
 }
@@ -128,4 +135,55 @@ var testPorts = Ports{
 	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) UnitHost {
 		return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
 	},
+}
+
+// testProbe is the store's probe as the agent reads it; these tests have no
+// reinstall to tell of.
+type testProbe struct{ postgres.Probe }
+
+func (testProbe) ReinstallNotice(context.Context, int) (string, bool, error) { return "", false, nil }
+
+// testHost is what the app gives the agent service (app.agentHost), for the
+// tests that build one.
+func testHost() agent.Host {
+	return agent.Host{
+		StartCommand: osservice.StartCommand,
+		RestartArgs:  osservice.RestartArgs,
+		StartHoldOffUntil: func(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
+			return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
+		},
+		CrashReports: func(dirs ...string) []agent.CrashReport {
+			reports := crash.List(dirs...)
+			out := make([]agent.CrashReport, 0, len(reports))
+			for _, r := range reports {
+				out = append(out, agent.CrashReport{
+					ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
+					IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
+				})
+			}
+			return out
+		},
+		VaultConflict:        vault.IsConflict,
+		ErrVaultNotConnected: vault.ErrNotConnected,
+		AfterAnswer:          vault.AfterAnswer,
+		RotateSession:        vault.RotateSession,
+		RowTooLarge: func(err error) (string, bool) {
+			var rl *resultsize.RowTooLargeError
+			if errors.As(err, &rl) {
+				return rl.Error(), true
+			}
+			return "", false
+		},
+		ErrRevertNotFound:      ledger.ErrRevertNotFound,
+		ErrApprovalNotFound:    ledger.ErrApprovalNotFound,
+		ErrInvalidParams:       ledger.ErrInvalidParams,
+		ErrInvalidIntent:       guard.ErrInvalidIntent,
+		ApprovalSortSpec:       ledger.ApprovalSortSpec,
+		Record:                 func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) },
+		PluginApprovalsVersion: guard.PluginApprovalsVersion,
+		LatestGuardVersion:     guard.LatestVersion,
+		UpdateMessage: func(n agent.UpdateNotice, exe string) string {
+			return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
+		},
+	}
 }

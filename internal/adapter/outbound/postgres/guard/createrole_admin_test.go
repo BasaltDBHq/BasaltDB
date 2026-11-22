@@ -60,7 +60,7 @@ func TestInitByCreateRoleAdmin(t *testing.T) {
 		Names: d.Names, Agent: guard.AgentSpec{Name: "bot", Password: agentPW, Write: []string{"app.leads"}},
 	})
 	require.NoError(t, err)
-	require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 
 	uncovered, err := guard.UncoveredTables(ctx, conn)
 	require.NoError(t, err)

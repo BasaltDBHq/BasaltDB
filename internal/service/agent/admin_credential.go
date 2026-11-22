@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // ReasonAdminCredential is INVALID_ARGUMENT for a tool call whose arguments
@@ -189,8 +189,8 @@ func adminCredentialError() error {
 
 // adminCredentialToolError is the refusal as a tool error with its steps,
 // for the tools that answer without the service (the engine-down tools).
-func adminCredentialToolError(tool string) *mcp.ToolError {
-	te := &mcp.ToolError{Code: CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
+func adminCredentialToolError(tool string) *toolresult.ToolError {
+	te := &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
 	b := NewSteps()
 	invalidArgumentSteps(b, te, failure{tool: tool})
 	te.NextSteps, _ = b.Build() // fixed steps: they cannot fail

@@ -49,7 +49,7 @@ func TestTheRemoveOldInstallDocSQLRemovesAnInstall(t *testing.T) {
 		require.NotEmpty(t, blind, "the agent gets a row-level security policy, which the removal drops")
 		s, err := guard.PlanInit(ctx, conn, guard.InitOptions{Names: d.Names, Agent: spec, AgentPolicies: blind})
 		require.NoError(t, err)
-		require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+		require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 	}
 	install()
 

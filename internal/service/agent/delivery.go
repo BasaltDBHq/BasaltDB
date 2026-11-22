@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/google/uuid"
 )
 
 // NoticeKind is why an approval.deliver notice is made (CONTRACT.md,
@@ -104,7 +104,7 @@ func (s *Service) deliver(n LinkNotice) {
 // Write calls it once, when the write is held, also when the call then
 // waits for the person.
 func (s *Service) deliverHeld(id uuid.UUID, expires time.Time, answer error) {
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	if !errors.As(answer, &te) || te.Code != CodeApprovalRequired || te.Approval == nil {
 		return
 	}

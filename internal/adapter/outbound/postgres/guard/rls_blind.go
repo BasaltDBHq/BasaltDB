@@ -80,17 +80,6 @@ func listedBlind(ctx context.Context, q Querier, role, group string, tables []st
 	return rlsBlind(ctx, q, role, group, tables)
 }
 
-// BlindTable is one of an agent's tables where row-level security hides
-// every row from the agent role.
-type BlindTable struct {
-	// Table is schema.table.
-	Table string
-	// Rows is how many rows the table holds, counted by the admin.
-	Rows int64
-	// Write is true for a --write table: its agent policy is FOR ALL.
-	Write bool
-}
-
 // AgentBlindTables lists the agent's --write and --read tables where
 // row-level security would hide every row from its role, before or after
 // init creates the role. Missing tables fail as in PlanInit. Only the

@@ -40,6 +40,7 @@ func TestMain(m *testing.M) {
 	}
 	// The path rule is the app's to install; the tests install the real one.
 	pluginhost.UsePathRules(pluginpath.Rules{})
+	agent.UseHost(testHost())
 	os.Exit(m.Run())
 }
 

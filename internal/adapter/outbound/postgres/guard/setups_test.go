@@ -180,7 +180,7 @@ func TestAgentLogsInWithVerifierPassword(t *testing.T) {
 	require.NotContains(t, shown, pw)
 	require.NotContains(t, shown, "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '"+d.Names.Prefix+"_agent_bot')",
 		"INSTALL creates the role with a plain CREATE ROLE")
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 
 	// Postgres stored the verifier as given, so the bot's password logs in
 	// and nothing else does.

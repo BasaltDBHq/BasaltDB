@@ -1,8 +1,8 @@
 package agent
 
 import (
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // LabelConnect labels the connect link next to a personMessage
@@ -28,7 +28,7 @@ func ConnectLink(code string, budget int) string {
 // ConnectMessage is the personMessage that hands the person the connect
 // link. lead says what is pending; it names the Basalt Vault, a hosted
 // service, as what the link uses.
-func ConnectMessage(lead, url, fingerprint string) (string, []mcp.Link) {
+func ConnectMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 	return newMessage().
 		Text(lead+" Open this link and follow the page, and check that it shows the setup fingerprint "+fingerprint+". The link uses Basalt Vault, a hosted service, to run the setup once:").
 		Link(LabelConnect, url).
@@ -45,7 +45,7 @@ const ConnectStepText = "Open the link on your own computer or phone, check that
 // the link, the fingerprint to check, and that the page asks for the
 // database's connection string, which the agent never needs. No laptop
 // command.
-func ConnectOnlyMessage(lead, url, fingerprint string) (string, []mcp.Link) {
+func ConnectOnlyMessage(lead, url, fingerprint string) (string, []toolresult.Link) {
 	return newMessage().
 		Text(lead+" Open this link, check that it shows the setup fingerprint "+fingerprint+", and follow the page. It uses Basalt Vault, a hosted service:").
 		Link(LabelConnect, url).

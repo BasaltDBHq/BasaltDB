@@ -41,8 +41,8 @@ func (unsafeGuard) LatestSetup(context.Context) (guard.AgentSetup, bool, error) 
 
 func (unsafeGuard) LedgerBytes(context.Context) (int64, error) { return 0, nil }
 
-func (unsafeGuard) Reinstalls(context.Context) (guard.Reinstalls, error) {
-	return guard.Reinstalls{}, nil
+func (unsafeGuard) ReinstallNotice(context.Context, int) (string, bool, error) {
+	return "", false, nil
 }
 
 // gatedService is a real agent service on an unsafe guard. Its stores are

@@ -219,7 +219,7 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	srv.Add(pg.service(func(dp *agent.Deps) {
 		dp.PagesOrigin, dp.Links, dp.PluginApprovals = origin, secrets, pg.store
-		dp.Probe = store.Probe{Q: pool, Migrations: guard.Migrations()}
+		dp.Probe = testProbe{store.Probe{Q: pool, Migrations: guard.Migrations()}}
 	}))
 	id := uuid.Must(uuid.NewV7())
 	secret, err := secrets.Issue(id, time.Now().Add(time.Hour))

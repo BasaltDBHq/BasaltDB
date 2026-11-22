@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -27,7 +28,7 @@ func devLocalMessage(pm string) string {
 
 // devLocalError is te with the warning on its personMessage and its held
 // approval's, on a copy: te may be shared.
-func devLocalError(te *mcp.ToolError) *mcp.ToolError {
+func devLocalError(te *toolresult.ToolError) *toolresult.ToolError {
 	out := *te
 	out.PersonMessage = devLocalMessage(out.PersonMessage)
 	if out.Approval != nil {

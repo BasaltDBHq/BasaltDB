@@ -7,10 +7,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 )
 
@@ -21,15 +23,15 @@ import (
 // submit_plugin_approval verifies the passkey signature in Postgres.
 
 // PluginApprovalStore is the guard's plugin approvals on the agent's own
-// credential (schema version guard.PluginApprovalsVersion).
+// credential (schema version theHost().PluginApprovalsVersion).
 type PluginApprovalStore interface {
 	// ReadPluginApproval is one plugin approval the role may see, and false
 	// when there is none. Its texts are set only for the role that opened
 	// it.
-	ReadPluginApproval(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error)
+	ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error)
 	// SubmitPluginApproval relays the person's assertion; Postgres verifies
 	// it and records the approval.
-	SubmitPluginApproval(ctx context.Context, r guard.PluginApprovalResponse) (time.Time, error)
+	SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error)
 }
 
 // PluginApprovalRequest is the request of a pending plugin approval this
@@ -54,7 +56,7 @@ func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginAppr
 	if _, err := s.openPluginApproval(ctx, r.ApprovalID); err != nil {
 		return time.Time{}, err
 	}
-	at, err := s.PluginApprovals.SubmitPluginApproval(ctx, guard.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
+	at, err := s.PluginApprovals.SubmitPluginApproval(ctx, guardmodel.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
 	if err != nil {
 		return time.Time{}, s.pluginRelayError(ctx, r.ApprovalID, err)
 	}
@@ -67,58 +69,58 @@ func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginAppr
 // schema version 5 (which cannot hold one), an approval the role cannot
 // see or only sees as a named agent (no binding text, so the opener is
 // asked instead), and a proof that does not match the binding text.
-func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, error) {
+func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
 	if s.PluginApprovals == nil {
-		return guard.PluginApprovalRecord{}, ErrNotThisAgent
+		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	if err := s.Admit(ctx); err != nil {
-		return guard.PluginApprovalRecord{}, err
+		return guardmodel.PluginApprovalRecord{}, err
 	}
 	st, err := s.Probe.GuardStatus(ctx)
 	if err != nil {
-		return guard.PluginApprovalRecord{}, err
+		return guardmodel.PluginApprovalRecord{}, err
 	}
 	if !holdsPluginApprovals(st) {
-		return guard.PluginApprovalRecord{}, ErrNotThisAgent
+		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	r, ok, err := s.PluginApprovals.ReadPluginApproval(ctx, id)
 	if err != nil {
-		return guard.PluginApprovalRecord{}, err
+		return guardmodel.PluginApprovalRecord{}, err
 	}
 	if !ok || r.BindingText == "" {
-		return guard.PluginApprovalRecord{}, ErrNotThisAgent
+		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	switch {
-	case r.Status == guard.PluginApprovalStatusExpired || (r.Status == guard.PluginApprovalStatusPending && !s.Now().Before(r.ExpiresAt)):
+	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !s.Now().Before(r.ExpiresAt)):
 		return r, pluginExpired(r.ApprovalID, r.ExpiresAt)
-	case r.Status == guard.PluginApprovalStatusApproved:
+	case r.Status == guardmodel.PluginApprovalStatusApproved:
 		return r, pluginAlreadyApproved(r.ApprovalID)
-	case r.Status == guard.PluginApprovalStatusCancelled:
+	case r.Status == guardmodel.PluginApprovalStatusCancelled:
 		return r, pluginCancelled(r.ApprovalID)
-	case r.Status != guard.PluginApprovalStatusPending:
+	case r.Status != guardmodel.PluginApprovalStatusPending:
 		return r, ErrNotThisAgent
 	}
 	return r, nil
 }
 
 // holdsPluginApprovals reports whether a guard has plugin approvals: schema
-// version guard.PluginApprovalsVersion is installed.
-func holdsPluginApprovals(st guard.Status) bool {
-	return st.Installed >= guard.PluginApprovalsVersion &&
-		!slices.Contains(st.MissingBreaking, guard.PluginApprovalsVersion) &&
-		!slices.Contains(st.MissingNonBreaking, guard.PluginApprovalsVersion)
+// version theHost().PluginApprovalsVersion is installed.
+func holdsPluginApprovals(st guardmodel.Status) bool {
+	return st.Installed >= theHost().PluginApprovalsVersion &&
+		!slices.Contains(st.MissingBreaking, theHost().PluginApprovalsVersion) &&
+		!slices.Contains(st.MissingNonBreaking, theHost().PluginApprovalsVersion)
 }
 
 // The plugin page's answers. They are the page's own (PageError), never
 // the held-write guidance of the agent's catalog: a person reads them on
 // the plugin approval page.
 
-func pluginPageError(code, reason, message, person string, steps []mcp.NextStep) error {
-	return &PageError{ToolError: &mcp.ToolError{Code: code, Reason: reason, Message: message, PersonMessage: person, NextSteps: steps}}
+func pluginPageError(code, reason, message, person string, steps []toolresult.NextStep) error {
+	return &PageError{ToolError: &toolresult.ToolError{Code: code, Reason: reason, Message: message, PersonMessage: person, NextSteps: steps}}
 }
 
 // askAgentForLink is the person's step when the page can do nothing more.
-func askAgentForLink() []mcp.NextStep {
+func askAgentForLink() []toolresult.NextStep {
 	steps, err := NewSteps().TellAgent("Ask the agent for a new link.").Build()
 	if err != nil {
 		return nil
@@ -159,20 +161,20 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 	detail := storeDetail(err)
 	msg := ToolError(err).Message
 	switch {
-	case code == guard.CodeApprovalExpired:
+	case code == guardmodel.CodeApprovalExpired:
 		r, found, readErr := s.PluginApprovals.ReadPluginApproval(ctx, id)
 		if readErr == nil && found {
 			return pluginExpired(id, r.ExpiresAt)
 		}
 		return pluginPageError(CodeApprovalExpired, "", msg,
 			"This plugin approval expired. Nothing was approved; ask the agent for a new link.", askAgentForLink())
-	case code != guard.CodeApprovalInvalid:
+	case code != guardmodel.CodeApprovalInvalid:
 		return err
-	case detail == guard.DetailAlreadyApproved:
+	case detail == guardmodel.DetailAlreadyApproved:
 		return pluginAlreadyApproved(id)
-	case detail == guard.DetailApprovalCancelled:
+	case detail == guardmodel.DetailApprovalCancelled:
 		return pluginCancelled(id)
-	case detail == guard.DetailApprovalNotFound:
+	case detail == guardmodel.DetailApprovalNotFound:
 		return ErrNotThisAgent
 	}
 	te := ToolError(err)

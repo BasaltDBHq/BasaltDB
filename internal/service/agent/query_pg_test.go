@@ -62,7 +62,7 @@ func newHarnessConns(t *testing.T, agentURL string, limits sqlguard.Limits, conn
 	t.Helper()
 	env := pgService(t, agentURL, withLimits(limits), withConns(conns))
 	return harness{
-		server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(env.Svc)...),
+		server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(env.Svc), agent.WithMeta)...),
 		reader: env.Reader,
 	}
 }

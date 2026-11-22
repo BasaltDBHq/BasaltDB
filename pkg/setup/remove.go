@@ -67,7 +67,7 @@ func CheckRemove(ctx context.Context, conn *pgx.Conn) (Removal, error) {
 	if err != nil {
 		return Removal{}, asError(err)
 	}
-	p, err := setuprun.PlanRemove(ctx, tx, prefix)
+	p, err := setuprun.PlanRemove(ctx, store, tx, prefix)
 	if err != nil {
 		return Removal{}, asError(err)
 	}
@@ -94,7 +94,7 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 		if err != nil {
 			return err
 		}
-		p, kept, err := setuprun.RunRemove(ctx, tx, prefix, confirmName)
+		p, kept, err := setuprun.RunRemove(ctx, store, tx, prefix, confirmName)
 		if err != nil {
 			return err
 		}

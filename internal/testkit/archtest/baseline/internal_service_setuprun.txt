@@ -1,2 +1,0 @@
-imports internal/adapter/outbound/postgres/demo
-imports internal/adapter/outbound/postgres/guard

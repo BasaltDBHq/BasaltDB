@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -105,23 +105,23 @@ func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (Recei
 //
 // It admits the call first (Admit): the pages and the MCP tools reach a held write only on a guard this build serves, so no
 // signature is relayed to a guard it calls unsafe.
-func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	if err := s.Admit(ctx); err != nil {
-		return ledger.Approval{}, err
+		return action.Approval{}, err
 	}
 	a, err := s.Store.FindApproval(ctx, id)
-	if errors.Is(err, ledger.ErrApprovalNotFound) {
-		return ledger.Approval{}, ErrNotThisAgent
+	if sentinel(err, theHost().ErrApprovalNotFound) {
+		return action.Approval{}, ErrNotThisAgent
 	}
 	if err != nil {
-		return ledger.Approval{}, err
+		return action.Approval{}, err
 	}
 	switch {
-	case a.Status == ledger.ApprovalExpired || !s.Now().Before(a.ExpiresAt):
-		return a, &mcp.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(personTime))}
-	case a.Status == ledger.ApprovalApproved:
+	case a.Status == approvalExpired || !s.Now().Before(a.ExpiresAt):
+		return a, &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(personTime))}
+	case a.Status == approvalApproved:
 		return a, approvalInvalid(reasonAlreadyUsed, "this write is already approved; the agent applies it")
-	case a.Status == ledger.ApprovalApplied:
+	case a.Status == approvalApplied:
 		return a, approvalInvalid(reasonAlreadyUsed, "this approval was already used")
 	}
 	return a, nil
@@ -202,21 +202,21 @@ func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.Ap
 
 // openRevert is a revert this agent's role prepared that can still be
 // signed, admitted first as openApproval is.
-func (s *Service) openRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (s *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	if err := s.Admit(ctx); err != nil {
-		return ledger.Revert{}, err
+		return action.Revert{}, err
 	}
 	r, err := s.Store.FindRevert(ctx, id)
-	if errors.Is(err, ledger.ErrRevertNotFound) {
-		return ledger.Revert{}, ErrNotThisAgent
+	if sentinel(err, theHost().ErrRevertNotFound) {
+		return action.Revert{}, ErrNotThisAgent
 	}
 	if err != nil {
-		return ledger.Revert{}, err
+		return action.Revert{}, err
 	}
 	switch {
-	case r.Status == ledger.RevertExpired || (r.Status == ledger.RevertPending && !s.Now().Before(r.ExpiresAt)):
+	case r.Status == revertExpired || (r.Status == revertPending && !s.Now().Before(r.ExpiresAt)):
 		return r, s.revertExpired(r)
-	case r.Status != ledger.RevertPending:
+	case r.Status != revertPending:
 		return r, alreadySigned(r)
 	}
 	return r, nil
@@ -236,7 +236,7 @@ func (s *Service) issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, 
 		return "", err
 	}
 	if link == "" {
-		return "", &mcp.ToolError{Code: CodeUnavailable, Message: "this engine serves no pages"}
+		return "", &toolresult.ToolError{Code: CodeUnavailable, Message: "this engine serves no pages"}
 	}
 	return link, nil
 }

@@ -404,7 +404,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 // (a removal whose engine.json write failed) plans only IF EXISTS drops,
 // and the run finishes the removal on this engine.
 func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob) (agentPlan, error) {
-	rp, err := setuprun.PlanRemove(ctx, tx, s.opts.Prefix)
+	rp, err := setuprun.PlanRemove(ctx, s.be, tx, s.opts.Prefix)
 	if err != nil {
 		return agentPlan{}, err
 	}
@@ -497,7 +497,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 			// The typed name is read against the database inside the
 			// transaction, before anything is planned or dropped
 			// (setuprun.RunRemove, as the connect page's removal).
-			rp, kept, err := setuprun.RunRemove(ctx, tx, s.opts.Prefix, req.ConfirmName)
+			rp, kept, err := setuprun.RunRemove(ctx, s.be, tx, s.opts.Prefix, req.ConfirmName)
 			if err != nil {
 				return removeRefusal(err)
 			}
@@ -507,7 +507,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err
 		}
-		if err := setuprun.ApplyInitTx(ctx, tx, p.script); err != nil {
+		if err := setuprun.ApplyInitTx(ctx, s.be, tx, p.script); err != nil {
 			return setupFailed("update script", err)
 		}
 		return nil

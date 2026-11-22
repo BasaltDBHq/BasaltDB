@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
@@ -69,7 +71,7 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	r := &relay{
-		path: socket, fallback: down.Server(mcp.Info{Name: "basalt", Version: "test"}),
+		path: socket, fallback: app.NewEngineDownServer(down),
 		out: &lineWriter{w: outW}, files: defaultRequestFiles(),
 		reconnectWait: 5 * time.Second, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
 	}

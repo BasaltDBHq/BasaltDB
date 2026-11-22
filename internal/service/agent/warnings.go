@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // maxTableChars is the most of a table's name a personMessage quotes.
@@ -91,11 +91,11 @@ type UpgradeChecker interface {
 // security hides from the agent, when the statement returned or changed no
 // row: an empty result there says nothing about the data. A check that fails
 // is logged and gives no warning: the call itself worked.
-func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []mcp.Warning {
+func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []toolresult.Warning {
 	if rows > 0 {
 		return nil
 	}
-	var out []mcp.Warning
+	var out []toolresult.Warning
 	for _, table := range tables {
 		name, err := s.RLS.Hides(ctx, table)
 		if err != nil {
@@ -115,7 +115,7 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 	return out
 }
 
-func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
+func (s *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
 	table := shown(dbName, maxTableChars)
 	b := NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
 	b.AgentRunCommand(s.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
@@ -127,10 +127,10 @@ func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
 		"Leave it as it is if the agent should not see that table.", table)
 	steps, err := b.Build()
 	if err != nil {
-		return mcp.Warning{}, err
+		return toolresult.Warning{}, err
 	}
-	return mcp.Warning{
-		Code:  mcp.WarningRLSHidesRows,
+	return toolresult.Warning{
+		Code:  toolresult.WarningRLSHidesRows,
 		Table: dbName,
 		Message: fmt.Sprintf("row-level security hides every row of %s from this agent, so an empty result says nothing about its data; "+
 			"do not conclude the table is empty", table),
@@ -141,7 +141,7 @@ func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
 
 // upgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
 // only non-breaking guard migrations are missing.
-func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
+func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
 	available, err := s.Upgrade.UpgradeAvailable(ctx)
 	if err != nil {
 		s.Log.Error("check for a guard upgrade", "err", err)
@@ -157,8 +157,8 @@ func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
 		s.Log.Error("cannot build the guard upgrade warning", "err", err)
 		return nil
 	}
-	return []mcp.Warning{{
-		Code:          mcp.WarningGuardUpgradeAvailable,
+	return []toolresult.Warning{{
+		Code:          toolresult.WarningGuardUpgradeAvailable,
 		Message:       "the guard in this database misses non-breaking migrations; everything works, the person can upgrade when it suits them",
 		PersonMessage: person,
 		NextSteps:     steps,

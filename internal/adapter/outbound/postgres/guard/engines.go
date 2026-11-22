@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -20,16 +19,6 @@ const (
 	EngineRefusedRevoked = "ENGINE_REVOKED"
 	EngineRefusedUnknown = "ENGINE_UNKNOWN"
 )
-
-// RecordedEngine is a row of basalt_meta.engines: an engine's public
-// identity and whether it is revoked. Never key material beyond the public
-// key.
-type RecordedEngine struct {
-	ID         string
-	PublicKey  []byte
-	RecordedAt time.Time
-	RevokedAt  *time.Time
-}
 
 // RecordEngine records an engine's signing key (its SPKI DER) with the
 // admin connection and returns its engine id. Postgres refuses a malformed

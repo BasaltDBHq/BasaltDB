@@ -20,8 +20,9 @@ import (
 )
 
 // Querier is the part of a pgx connection, pool or transaction this
-// package needs.
-type Querier interface {
+// package needs. It is an alias of the interface itself, so the setup
+// service's port, which cannot import this package, names the same type.
+type Querier = interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -33,50 +34,8 @@ const (
 	redacted      = "********"
 )
 
-// InitOptions configures PlanInit. Agent is optional: an empty Name
-// installs or upgrades basalt_meta only.
-type InitOptions struct {
-	Names Names
-	Agent AgentSpec
-	// AgentPolicies are the agent's tables the person confirmed the agent
-	// may see every row of (from AgentBlindTables). Each gets a policy
-	// named after the agent role and a ledger row; nothing else does.
-	AgentPolicies []BlindTable
-	// UpTo stops the migrations at this version (a setup code's guard.to);
-	// 0 applies every migration this build has.
-	UpTo int
-}
-
-// Statement is one step of a Script. Shown is what the person sees when it
-// differs from SQL (a password redacted).
-type Statement struct {
-	SQL   string
-	Shown string
-}
-
-// Script is the ordered SQL basalt init runs, in one transaction.
-type Script struct {
-	Statements []Statement
-	// Warnings are for the person, shown before the script runs; none
-	// stops it.
-	Warnings []string
-}
-
-// SQL renders the script for the person to read, secrets redacted.
-func (s Script) SQL() string {
-	parts := make([]string, 0, len(s.Statements))
-	for _, st := range s.Statements {
-		text := st.SQL
-		if st.Shown != "" {
-			text = st.Shown
-		}
-		parts = append(parts, strings.TrimSpace(text))
-	}
-	return strings.Join(parts, "\n\n") + "\n"
-}
-
-// Apply runs the script on tx. The caller commits.
-func (s Script) Apply(ctx context.Context, tx pgx.Tx) error {
+// ApplyScript runs the script on tx. The caller commits.
+func ApplyScript(ctx context.Context, tx pgx.Tx, s Script) error {
 	for i, st := range s.Statements {
 		if _, err := tx.Exec(ctx, st.SQL); err != nil {
 			return fmt.Errorf("init step %d: %w", i+1, err)

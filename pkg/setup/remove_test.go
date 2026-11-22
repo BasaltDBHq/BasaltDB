@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
@@ -96,7 +97,7 @@ func TestRemovePlanWithoutAGuard(t *testing.T) {
 
 	tx, err := d.Admin.Begin(ctx)
 	require.NoError(t, err)
-	p, err := setuprun.PlanRemove(ctx, tx, d.Names.Prefix)
+	p, err := setuprun.PlanRemove(ctx, setupstore.New(), tx, d.Names.Prefix)
 	require.NoError(t, err)
 	require.False(t, p.Installed)
 	require.Equal(t, []string{"sales_bot"}, p.Agents)
@@ -108,7 +109,7 @@ func TestRemovePlanWithoutAGuard(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT current_database()`).Scan(&database))
 	tx, err = d.Admin.Begin(ctx)
 	require.NoError(t, err)
-	_, _, err = setuprun.RunRemove(ctx, tx, d.Names.Prefix, database)
+	_, _, err = setuprun.RunRemove(ctx, setupstore.New(), tx, d.Names.Prefix, database)
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit(ctx))
 	require.Zero(t, prefixRoles(t, d))
@@ -116,7 +117,7 @@ func TestRemovePlanWithoutAGuard(t *testing.T) {
 	tx, err = d.Admin.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
-	p, err = setuprun.PlanRemove(ctx, tx, d.Names.Prefix)
+	p, err = setuprun.PlanRemove(ctx, setupstore.New(), tx, d.Names.Prefix)
 	require.NoError(t, err)
 	require.True(t, p.Nothing())
 	require.Contains(t, p.Lines()[0], "nothing to drop")
@@ -131,7 +132,7 @@ func TestRemovePlanRefusesAnotherPrefix(t *testing.T) {
 	tx, err := d.Admin.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
-	_, err = setuprun.PlanRemove(ctx, tx, d.Names.Prefix+"x")
+	_, err = setuprun.PlanRemove(ctx, setupstore.New(), tx, d.Names.Prefix+"x")
 	var r *setuprun.RefusalError
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, "PREFIX_MISMATCH", r.Code)

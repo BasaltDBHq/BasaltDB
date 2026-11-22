@@ -263,7 +263,7 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 // serverOf is svc's MCP server and tools.
 func serverOf(svc *Service) (*mcp.Server, []mcp.Tool) {
 	tools := Tools(svc)
-	return mcp.NewServer(mcp.Info{Name: "basalt"}, tools...), tools
+	return mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...), mcp.ToolsFrom(tools, WithMeta)
 }
 
 // A lock file the engine cannot open is reported, not retried in silence,

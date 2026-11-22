@@ -2,7 +2,6 @@ package guard
 
 import (
 	"context"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -10,18 +9,6 @@ import (
 
 // maxPasskeys bounds a passkey list; a database has a handful.
 const maxPasskeys = 100
-
-// RegisteredPasskey is an active passkey as the admin connection sees it:
-// its public data, never key material.
-type RegisteredPasskey struct {
-	ID         []byte
-	Label      string
-	RPID       string
-	Origin     string
-	UserHandle []byte
-	CreatedAt  time.Time
-	LastUsedAt *time.Time
-}
 
 // ActivePasskeys lists the active passkeys with the admin connection
 // (basalt passkey remove), oldest first.

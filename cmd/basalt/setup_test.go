@@ -50,6 +50,10 @@ type fakeHost struct {
 	setupCodes []string
 	setupErrs  []error
 	setupCalls int
+	// runs are what ServiceRuns reads, one per call (the last one repeats),
+	// with lastExit; none is no service manager.
+	runs     []int
+	lastExit int
 }
 
 const fakeBin = "/opt/basalt/bin/basalt"
@@ -76,6 +80,17 @@ func (h *fakeHost) LookPath(string) (string, error) {
 func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 
 func (h *fakeHost) DialogAvailable(string) error { return h.noDialog }
+
+func (h *fakeHost) ServiceRuns(context.Context, string) (int, int, error) {
+	if len(h.runs) == 0 {
+		return 0, 0, errors.New("no service manager here")
+	}
+	runs := h.runs[0]
+	if len(h.runs) > 1 {
+		h.runs = h.runs[1:]
+	}
+	return runs, h.lastExit, nil
+}
 
 func (h *fakeHost) SetupState(context.Context, string) (string, error) {
 	h.setupCalls++

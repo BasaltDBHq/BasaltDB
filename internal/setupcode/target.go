@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/supabase"
+
 	"github.com/google/uuid"
 )
 
@@ -21,7 +23,6 @@ const (
 	// connection string it offers: a person may paste that line as is. It
 	// is no password.
 	supabasePlaceholder = ":[YOUR-PASSWORD]@"
-	supabasePoolerHost  = ".pooler.supabase.com"
 	supabaseDirectHost  = ".supabase.co"
 	supabaseDirectStart = "db."
 	defaultPort         = 5432
@@ -153,7 +154,7 @@ func supabaseRef(user, host string) string {
 	ref := ""
 	host = strings.ToLower(host)
 	switch {
-	case strings.HasSuffix(host, supabasePoolerHost):
+	case supabase.PoolerHost(host):
 		_, ref, _ = strings.Cut(user, ".")
 	case strings.HasPrefix(host, supabaseDirectStart) && strings.HasSuffix(host, supabaseDirectHost):
 		ref = strings.TrimSuffix(strings.TrimPrefix(host, supabaseDirectStart), supabaseDirectHost)

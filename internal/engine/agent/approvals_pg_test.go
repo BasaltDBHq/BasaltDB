@@ -168,7 +168,11 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 	if keys != nil {
 		receipts = keys
 	}
-	person, err := passkeytest.New(passkey.Production)
+	// The person's passkey is on the pages the agent's links open: the
+	// default local pages, as the service has no other pages base.
+	rp, err := passkey.Local(links.DefaultLocal)
+	require.NoError(t, err)
+	person, err := passkeytest.New(rp)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 

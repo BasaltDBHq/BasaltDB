@@ -101,7 +101,10 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	bot, helper := d.NewAgent(t, "bot", leads, nil), d.NewAgent(t, "helper", leads, nil)
 	elsewhere := guardtest.New(t).WithDemo(t)
 	other := elsewhere.NewAgent(t, "other", leads, nil)
-	person, err := passkeytest.New(passkey.Production)
+	// The person's passkey is on the local pages the links open.
+	rp, err := passkey.Local("http://localhost:8787")
+	require.NoError(t, err)
+	person, err := passkeytest.New(rp)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
 

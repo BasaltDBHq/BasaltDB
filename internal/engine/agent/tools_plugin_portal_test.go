@@ -41,6 +41,7 @@ func portalPluginService(t *testing.T, f *fakePluginRequests, r *pluginRelay, va
 	s.Commands = s.Commands.OperatedBy(mcpcontract.OperatedByAgent)
 	s.OperatedBy, s.SameUser = mcpcontract.OperatedByAgent, true
 	s.PagesOrigin, s.PagesBase = "", links.Portal
+	setApprovals(&s.Deps, originKeys{origins: []string{links.Portal}}) // a passkey that signs on the portal
 	s.Relay = r
 	s.Vault = fixedVault{VaultStatus{State: vaultState}}
 	return s

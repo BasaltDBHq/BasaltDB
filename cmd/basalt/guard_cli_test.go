@@ -53,7 +53,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "upgrade": runUpgrade,
+	"init": runInitAdmin, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "upgrade": runUpgrade,
 	"engine": runEngineRecords,
 }
 

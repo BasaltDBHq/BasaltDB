@@ -74,7 +74,7 @@ func initRemoteJSON(t *testing.T, h *fakeHost, adminURL string, args []string) R
 			return ""
 		})
 	c.host = h
-	code := runInit(c, takePathFlags(c, runInit, args))
+	code := runInitAdmin(c, takePathFlags(c, runInit, args))
 	require.Equal(t, exitOK, code, stderr.String())
 	return decodeRemoteResult(t, stdout.String())
 }

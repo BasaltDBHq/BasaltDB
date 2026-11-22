@@ -119,13 +119,14 @@ run_has() {
 	grep -qx "$1" <<<"$log"
 }
 
-# status_out is the agent's status tool, called as the agent's OS user
-# through basalt mcp (basalt status is removed).
+# status_out is the agent's status tool through basalt mcp (basalt status is
+# removed), called as the OS user basalt init named for the agent: the
+# person running this script, as on a person's own computer.
 status_out() {
 	printf '%s\n%s\n' \
 		'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
 		'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' |
-		sudo -u "$agent_user" timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
+		timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
 }
 # unavailable: the status tool names PLUGIN_UNAVAILABLE, or gave no result
 # at all (a basalt mcp call that failed is never read as healthy).
@@ -178,18 +179,11 @@ sudo install -o root -g root -m 0755 "$work/basalt" "$basalt"
 step "basalt init installs the engine service"
 sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$agent_user"
 # The hosted runner has no desktop, so no administrator dialog: basalt init
-# says so and stops before it reaches the database, never falling back to
-# running the engine as this user.
+# says so and stops, never falling back to running the engine as this user.
+# It never reads the admin connection string, which this job's environment
+# holds: the setup page takes it.
 [ ! -e /usr/bin/pkexec ] || sudo mv /usr/bin/pkexec /usr/bin/pkexec.smoke-aside
-# init_on_tty runs basalt init on a pseudo-terminal, the admin connection
-# string typed at its prompt: init without --remote refuses the admin path
-# when stdin is not a terminal, and never reads BASALT_ADMIN_DATABASE_URL
-# (it refuses when it is set).
-init_on_tty() {
-	printf '%s\n' "$BASALT_ADMIN_DATABASE_URL" |
-		script -qec "$(printf '%q ' env -u BASALT_ADMIN_DATABASE_URL "$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes)" /dev/null
-}
-if init_on_tty >"$work/nodialog.out" 2>&1; then
+if "$basalt" init --demo >"$work/nodialog.out" 2>&1 </dev/null; then
 	cat "$work/nodialog.out" >&2
 	fail "basalt init went on without an administrator dialog"
 fi
@@ -197,35 +191,39 @@ grep -q "cannot be shown here" "$work/nodialog.out" || {
 	cat "$work/nodialog.out" >&2
 	fail "basalt init did not say there is no administrator dialog"
 }
-! grep -q "guard installed" "$work/nodialog.out" || fail "basalt init reached the database without an administrator dialog"
 [ ! -e /etc/systemd/system/basalt-engine.service ] || fail "a unit was installed without an administrator dialog"
 # A stand-in pkexec answers yes through sudo, so the real install script
-# runs as root; it takes only the arguments basalt init passes. Like a
-# person between the dialog and the sudo prompt, it then waits until the
-# engine, started with no engine.json yet, answers on its setup address.
+# runs as root; it takes only the arguments basalt init passes.
 sudo tee /usr/bin/pkexec >/dev/null <<'EOF'
 #!/bin/sh
 [ "$1" = --disable-internal-agent ] || exit 127
 shift
-sudo -n "$@" || exit
-for _ in $(seq 100); do
-	curl -sf http://127.0.0.1:8787/healthz >/dev/null && exit 0
-	sleep 0.1
-done
-echo "pkexec stand-in: the engine with no config never answered on 127.0.0.1:8787" >&2
-exit 1
+exec sudo -n "$@"
 EOF
 sudo chmod 0755 /usr/bin/pkexec
-# Its output is the setup SQL (the password redacted): shown only on failure.
-init_on_tty >"$work/init.out" 2>&1 || {
-	cat "$work/init.out" >&2
+# init installs the service, waits for the engine's setup page and prints
+# the link (then the agent's MCP line); there is no browser to open here.
+"$basalt" init --demo >"$work/init.out" 2>"$work/init.err" </dev/null || {
+	cat "$work/init.out" "$work/init.err" >&2
 	fail "basalt init"
 }
+link=$(head -1 "$work/init.out")
+case $link in http://localhost:8787/setup/\#1.*) ;; *) cat "$work/init.out" >&2; fail "basalt init printed no setup link" ;; esac
+grep -qx "basalt mcp --agent $agent" "$work/init.out" || fail "basalt init printed no MCP line for $agent"
+if sudo test -e /etc/basalt/engine.json; then fail "an engine.json exists before the setup page ran"; fi
+# The person's part of the page: the check, a passkey, the run.
+CGO_ENABLED=0 go build -trimpath -o "$work/setup" ./scripts/systemd-smoke/setup
+printf '%s\n' "$BASALT_ADMIN_DATABASE_URL" | "$work/setup" "$link" >"$work/setup.out" || fail "the setup page's install"
+[ "$(cat "$work/setup.out")" = "$agent" ] || fail "the setup set up $(cat "$work/setup.out"), not $agent"
 wait_for "the engine's agent socket" sudo test -S "/run/basalt/$agent.sock"
-# A first install starts the unit twice (the dialog's script, then the
-# restart after sudo writes the config), and the steps below restart it
-# several times within seconds: clear systemd's start-rate count so its
-# default limit (5 starts in 10s) measures the steps, not the install.
+# The engine wrote its own files, as its own user, for no one else to read.
+for f in /etc/basalt/engine.json "/etc/basalt/agents/$agent.url"; do
+	got=$(sudo stat -c '%U %a' "$f") || fail "the setup did not write $f"
+	[ "$got" = "basalt 600" ] || fail "$f is $got, not basalt 600"
+done
+# The steps below restart the engine several times within seconds: clear
+# systemd's start-rate count so its default limit (5 starts in 10s)
+# measures the steps, not the install.
 sudo systemctl reset-failed "$engine_unit"
 # Started by the dialog before engine.json existed, the engine waited for it
 # and served only its setup page: no exit on the missing file, no crash loop.

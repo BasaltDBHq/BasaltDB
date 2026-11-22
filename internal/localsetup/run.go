@@ -217,6 +217,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	}
 	files := s.files(req.Agent)
 	var warnings, lines []string
+	wrote := false
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		database, err := currentDatabase(ctx, tx)
 		if err != nil {
@@ -227,7 +228,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 				return err
 			}
 		}
-		_, script, err := s.plan(ctx, tx, j, password)
+		_, script, keep, err := s.plan(ctx, tx, j, password, database)
 		if err != nil {
 			return err
 		}
@@ -252,17 +253,24 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			return setupFailed()
 		}
 		lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
+		if keep {
+			return nil // the credential of the role this engine already holds stays
+		}
 		// The credential goes to disk before the commit: a write that fails
 		// rolls the database back with it, so no role is left without it.
+		wrote = true
 		return files.writeCredential(dsn)
 	})
 	if err != nil {
-		files.removeCredential()
+		if wrote {
+			files.removeCredential() // its role was rolled back
+		}
 		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
 	}
+	// The credential is never removed after the commit: a run that finds
+	// its role finishes with it (ownRole).
 	if err := files.writeConfig(req, j.uid); err != nil {
-		files.removeCredential()
-		r := refuse(CodeSetupFailed, "The database is set up, but this engine could not write its config. Ask the agent to run basalt init again for a repair link.")
+		r := refuse(CodeSetupFailed, "The database is set up, but this engine could not write its config. Check that the engine's own folder can be written, then run the setup again on this page: it finishes with the agent this engine already holds.")
 		r.Status = http.StatusInternalServerError
 		return RunAnswer{}, r
 	}

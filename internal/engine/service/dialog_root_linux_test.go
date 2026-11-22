@@ -60,7 +60,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 	sh(t, `printf '#!/bin/sh\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)
 	sh(t, "mkdir -p /etc/systemd/system /usr/local/bin && install -o root -g root -m 0755 /bin/true "+rootBinary)
 	clean := func() {
-		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt "+service.SystemdUnitPath+
+		sh(t, "userdel basalt 2>/dev/null; groupdel basalt 2>/dev/null; rm -rf /etc/basalt /opt/basalt "+service.SystemdUnitPath+
 			"; chmod 0755 /etc/systemd/system /usr/local/bin; chown root:root "+rootBinary+"; chmod 0755 "+rootBinary+"; true")
 	}
 	clean()
@@ -124,6 +124,7 @@ func TestInstallScriptAsRoot(t *testing.T) {
 		}
 		require.True(t, exists("getent passwd basalt | grep -q ':/usr/sbin/nologin$'"), "a system user that cannot log in")
 		require.True(t, exists(`[ "$(stat -c '%U:%G %a' /etc/basalt)" = "basalt:basalt 750" ]`))
+		require.True(t, exists(`[ "$(stat -c '%U:%G %a' /opt/basalt /opt/basalt/run | sort -u)" = "root:root 755" ]`), "the plugin base, root's")
 		require.True(t, exists(`[ "$(stat -c '%U:%G %a' `+service.SystemdUnitPath+`)" = "root:root 644" ]`))
 		unit, err := os.ReadFile(service.SystemdUnitPath)
 		require.NoError(t, err)

@@ -40,7 +40,7 @@ A write can touch rows in tables the agent's role cannot `SELECT`, cascaded rows
 - **What the agent sees.** Nothing about the values. Its tools, its views in `basalt_meta` and its chat show the rows as hidden, as before. The ledger records that you looked (`ROWS_REVEALED`, with counts and hashes only).
 - **Long links.** A long link (a `#2.` link) is review only and has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name.
 
-This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you update the guard from the setup page (see [next-steps.md](next-steps.md)).
+This needs the current guard: the schema is one version, with approvals, reverts and the reveal fix in it. An engine on an older guard serves the agent degraded until you update the guard from the setup page (see [next-steps.md](next-steps.md)).
 
 ## Reverting from the agent
 
@@ -68,7 +68,7 @@ The revert page shows what the agent proposed. You can sign it as it is, change 
 - **If the agent resets it.** If the agent asks for a new link (`reissueLink`), the revert goes back to its own proposal and your page says "The agent reset this revert to its own work." Ask the agent for the new link, and widen again if you still want the other agents' changes.
 - **Reject.** Reject stops the revert. You can leave a note of up to 500 characters, which the agent reads; the page says so. Rejecting needs no passkey, and nothing is reverted. The agent's wait ends with `REJECTED`, and it does not ask again unless you tell it to.
 
-Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link) is for review only: it shows the revert and its scope read only, and cannot be signed or changed. Sign through the engine's own page or the portal short link; once the Vault is back, `request_revert` with `reissueLink: true` gives a short link. To decline, close the page. A revert you do not sign expires within the hour.
+Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link) is for review only: it shows the revert and its scope read only, and cannot be signed or changed. Sign through the engine's own page or the portal short link; once the Vault is connected again, `request_revert` with `reissueLink: true` gives a short link. To decline, close the page. A revert you do not sign expires within the hour.
 
 ## Large reverts and whole tasks
 
@@ -86,7 +86,7 @@ Every link is built from one base URL, `pagesUrl` in `engine.json`. On a person'
 
 The pages run on two origins only, compiled into `basalt`: the portal, and `http://localhost:<port>` when you operate the engine yourself. Cloudflare's `*.pages.dev` addresses and every other host are refused.
 
-The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is on by default when an agent operates the engine and off otherwise, and its page side is not finished, so until it connects, the engine hands over long links instead (`/approvals/<id>#2....`, which hold the whole preview). A long link is for review only: its page cannot be signed, so ask for a short link with `reissueLink` once the Vault is back. See [vault.md](vault.md), and [relay-privacy.md](relay-privacy.md) for what the relay sees and keeps.
+The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, carries portal short links to an engine with no inbound port; it is on by default when an agent operates the engine and off otherwise, and the portal page opens its session through it. While the engine is not connected, it hands over long links instead (`/approvals/<id>#2....`, which hold the whole preview). A long link is for review only: its page cannot be signed, so ask for a short link with `reissueLink` once the Vault is back. See [vault.md](vault.md), and [relay-privacy.md](relay-privacy.md) for what the relay sees and keeps.
 
 ## Revoking an engine
 

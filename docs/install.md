@@ -87,8 +87,6 @@ Supabase and Amazon RDS hosts verify with no extra step. Google Cloud SQL, Digit
 
 ### Connections
 
-### Connections
-
 Each agent's engine opens up to 4 connections to the database, plus 1 while the `status` tool runs. Postgres caps each agent role at 8 connections (`CONNECTION LIMIT 8`).
 
 Budget for it. The number of agents times 8 must fit next to your app's own connections, within the limit your database allows in total.

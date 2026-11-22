@@ -1,4 +1,5 @@
 imports internal/adapter/outbound/crash
+imports internal/adapter/outbound/laststop
 imports internal/adapter/outbound/osservice
 imports internal/adapter/outbound/postgres/demo
 imports internal/adapter/outbound/postgres/guard

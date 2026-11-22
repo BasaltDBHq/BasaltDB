@@ -139,11 +139,11 @@ func TestArchitecture(t *testing.T) {
 	}
 }
 
-// TestRulesCatchViolations runs the checks on a small module with one breach of each rule.
-func TestRulesCatchViolations(t *testing.T) {
+// fixture writes a small module and returns its root.
+func fixture(t *testing.T, files map[string]string) string {
+	t.Helper()
 	root := t.TempDir()
-	write := func(name, src string) {
-		t.Helper()
+	for name, src := range files {
 		p := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -152,18 +152,46 @@ func TestRulesCatchViolations(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m := modulePath
-	write("go.mod", "module "+m+"\n")
-	write("internal/adapter/outbound/db/db.go", "package db\n")
-	write("internal/core/sqlguard/g.go", "package sqlguard\n\nfunc Check() {}\n\ntype Limits struct{}\n")
-	write("internal/core/leaky/l.go", "package leaky\n\nimport (\n\t\"os\"\n\t\"time\"\n)\n\nvar _ = os.Getenv\nvar Now = time.Now\n")
-	write("internal/core/rnd/r.go", "package rnd\n\nimport _ \"crypto/rand\"\n")
-	write("internal/service/svc/s.go", "package svc\n\nimport (\n\t_ \""+m+"/internal/adapter/outbound/db\"\n\t\""+m+"/internal/core/sqlguard\"\n)\n\nvar _ = sqlguard.Check\n")
-	write("internal/adapter/inbound/in/i.go", "package in\n\nimport \""+m+"/internal/core/sqlguard\"\n\nvar _ = sqlguard.Check\nvar _ sqlguard.Limits\n")
-	write("internal/adapter/outbound/postgres/store/s.go", "package store\n\nimport \""+m+"/internal/core/sqlguard\"\n\nvar _ = sqlguard.Check\n")
-	write("internal/oddball/o.go", "package oddball\n")
-	write("ARCHITECTURE.md", "| `sqlguard` | sql | decision | 1 | - |\n| `leaky` | x | types | 2 | - |\n| `rnd` | x | codec | 3 | `crypto/rand` |\n")
+	return root
+}
 
+func imp(paths ...string) string {
+	var b strings.Builder
+	b.WriteString("import (\n")
+	for _, p := range paths {
+		b.WriteString("\t_ \"" + p + "\"\n")
+	}
+	b.WriteString(")\n")
+	return b.String()
+}
+
+// TestRulesCatchViolations runs the checks on a small module with a breach of each rule.
+func TestRulesCatchViolations(t *testing.T) {
+	m := modulePath + "/"
+	guard := "package sqlguard\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\ntype Limits struct{}\n"
+	use := func(_, fn string) string { return "\nvar _ = sqlguard." + fn + "\n" }
+	files := map[string]string{
+		"go.mod":                                         "module " + modulePath + "\n",
+		"internal/adapter/outbound/db/db.go":             "package db\n",
+		"internal/core/sqlguard/g.go":                    guard,
+		"internal/core/leaky/l.go":                       "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
+		"internal/core/rnd/r.go":                         "package rnd\n\n" + imp("crypto/rand"),
+		"internal/core/granted/r.go":                     "package granted\n\n" + imp("crypto/rand"),
+		"internal/service/svc/s.go":                      "package svc\n\n" + imp(m+"internal/adapter/outbound/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"internal/adapter/inbound/in/i.go":               "package in\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
+		"internal/adapter/outbound/other/o.go":           "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"internal/adapter/outbound/postgres/store/s.go":  "package store\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "WithRowVersions") + use("", "Other"),
+		"internal/app/a.go":                              "package app\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"cmd/tool/c.go":                                  "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
+		"pkg/facade/p.go":                                "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
+		"pkg/lib2/p.go":                                  "package lib2\n\n" + imp(m+"api/x"),
+		"api/x/x.go":                                     "package x\n",
+		"internal/adapter/outbound/vault/vaulttest/h.go": "package vaulttest\n\n" + imp(m+"internal/service/svc"),
+		"internal/adapter/inbound/in2/i.go":              "package in2\n\n" + imp(m+"internal/adapter/outbound/vault/vaulttest"),
+		"internal/oddball/o.go":                          "package oddball\n",
+		"ARCHITECTURE.md":                                "| `sqlguard` | sql | decision | 1 | - |\n| `leaky` | x | types | 2 | - |\n| `rnd` | x | codec | 3 | `crypto/rand` |\n| `granted` | x | codec | 3 | - |\n",
+	}
+	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -173,10 +201,23 @@ func TestRulesCatchViolations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][]string{
-		"internal/service/svc":        {"imports internal/adapter/outbound/db"},
-		"internal/adapter/inbound/in": {"i.go calls sqlguard.Check"},
-		"internal/oddball":            {"package is under internal/ but not in a layer"},
-		"internal/core/leaky":         {"l.go calls time.Now (core must stay pure)", "l.go imports os (core must stay pure)"},
+		"internal/service/svc":                     {"imports internal/adapter/outbound/db"},
+		"internal/adapter/inbound/in":              {"i.go calls sqlguard.Check"},
+		"internal/adapter/inbound/in2":             {"imports internal/adapter/outbound/vault/vaulttest"},
+		"internal/adapter/outbound/other":          {"o.go calls sqlguard.Check"},
+		"internal/adapter/outbound/postgres/store": {"s.go calls sqlguard.Other"},
+		"cmd/tool":              {"c.go calls sqlguard.Check"},
+		"pkg/facade":            {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
+		"pkg/lib2":              {"imports api/x"},
+		"internal/oddball":      {"package is under internal/ but not in a layer"},
+		"internal/core/granted": {"r.go imports crypto/rand (core must stay pure)"},
+		"internal/core/leaky": {
+			"l.go calls time.Now (core must stay pure)",
+			"l.go calls time.Since (core must stay pure)",
+			"l.go dot-imports strings (not allowed in core)",
+			"l.go imports os (core must stay pure)",
+			"l.go imports syscall (core must stay pure)",
+		},
 	}
 	for pkg, lines := range want {
 		if strings.Join(got[pkg], "|") != strings.Join(lines, "|") {
@@ -186,6 +227,39 @@ func TestRulesCatchViolations(t *testing.T) {
 	for pkg := range got {
 		if _, ok := want[pkg]; !ok {
 			t.Errorf("unexpected violations in %s: %q", pkg, got[pkg])
+		}
+	}
+}
+
+func TestRegisterChecksCatchProblems(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"go.mod":                     "module " + modulePath + "\n",
+		"internal/core/noRow/a.go":   "package noRow\n",
+		"internal/core/badkind/a.go": "package badkind\n",
+		"internal/core/badrow/a.go":  "package badrow\n",
+		"internal/core/extra/a.go":   "package extra\n",
+		"internal/core/chan/a.go":    "package channel\n",
+		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - |\n| `badrow` | x | types | 4 | - |\n| `extra` | x | codec | 3 | `crypto/rand` |\n| `chan` | x | codec | 3 | `os` |\n| `ghost` | x | types | 2 | - |\n",
+	})
+	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(checkRegister(pkgs, reg), "\n")
+	for _, w := range []string{
+		"internal/core/noRow is not in the core register",
+		"lists ghost but internal/core/ghost does not exist",
+		`register row badkind: kind "gadget"`,
+		`register row badrow: admitted-by "4"`,
+		`register row extra: extra import "crypto/rand" is not allowed`,
+		`register row chan: extra import "os" is not allowed`,
+	} {
+		if !strings.Contains(all, w) {
+			t.Errorf("checkRegister did not report %q; got:\n%s", w, all)
 		}
 	}
 }

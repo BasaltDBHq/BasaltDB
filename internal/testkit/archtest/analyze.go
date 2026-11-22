@@ -68,7 +68,7 @@ var allowed = map[string][]string{
 	lOutbound: {lOutbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lInbound:  {lInbound, lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lCmd:      {lCmd, lApp, lService, lInbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
-	lPkg:      {lPkg, lLib, lApi},
+	lPkg:      {lPkg, lLib},
 	lApi:      {lApi},
 	lWeb:      {},
 }
@@ -98,7 +98,28 @@ func layerOf(rel string) string {
 	return "other"
 }
 
-func isTestHelper(rel string) bool { return strings.HasSuffix(path.Base(rel), "test") }
+// testHelpers lists the packages that only tests import: fakes and fixtures.
+// They are exempt from the layer rules, core purity and the decision rule.
+var testHelpers = []string{
+	"internal/testkit/archtest",
+	"internal/testkit/connecttest",
+	"internal/core/passkey/passkeytest",
+	"internal/adapter/inbound/mcp/mcptest",
+	"internal/adapter/outbound/plugintransport/adaptertest",
+	"internal/adapter/outbound/vault/vaulttest",
+	"internal/adapter/outbound/vault/pagetest",
+	"internal/adapter/outbound/postgres/guard/guardtest",
+	"pkg/trustprofile/trustprofiletest",
+}
+
+func isTestHelper(rel string) bool {
+	for _, h := range testHelpers {
+		if rel == h || strings.HasPrefix(rel, h+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // register is the parsed core register of ARCHITECTURE.md.
 type register struct {
@@ -294,9 +315,6 @@ func analyze(root string, reg *register) (violations, error) {
 }
 
 func checkLayer(v violations, rel, layer, target string) {
-	if isTestHelper(target) {
-		return
-	}
 	ok, listed := allowed[layer]
 	if !listed {
 		return // app, testkit, scripts, other: no rule
@@ -366,7 +384,7 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 	})
 }
 
-var bannedExact = []string{"os", "io/fs", "path/filepath", "net", "os/exec", "math/rand", "database/sql"}
+var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", "net", "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
 
 func bannedImport(p string) bool {
 	switch {
@@ -389,6 +407,9 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 	extras := reg.rows[area].extras
 	for _, s := range f.ast.Imports {
 		ip := importPath(s)
+		if s.Name != nil && s.Name.Name == "." {
+			v.add(rel, fmt.Sprintf("%s dot-imports %s (not allowed in core)", f.name, ip))
+		}
 		if bannedImport(ip) && !in(extras, ip) {
 			v.add(rel, fmt.Sprintf("%s imports %s (core must stay pure)", f.name, ip))
 		}
@@ -399,8 +420,8 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 		if !ok {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == "time" && sel.Sel.Name == "Now" {
-			v.add(rel, f.name+" calls time.Now (core must stay pure)")
+		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
+			v.add(rel, f.name+" calls time."+sel.Sel.Name+" (core must stay pure)")
 		}
 		return true
 	})
@@ -429,6 +450,11 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 		}
 		if !in([]string{"1", "2", "3"}, row.row) {
 			problems = append(problems, fmt.Sprintf("register row %s: admitted-by %q must be 1, 2 or 3", name, row.row))
+		}
+		for _, e := range row.extras {
+			if e != "crypto/rand" || (name != "channel" && name != "setupcode") {
+				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode)", name, e))
+			}
 		}
 		if row.area == "" {
 			problems = append(problems, fmt.Sprintf("register row %s: area is empty", name))

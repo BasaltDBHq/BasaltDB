@@ -1,2 +1,1 @@
-imports internal/adapter/inbound/pages
 imports web

@@ -34,9 +34,9 @@ Each row lists what a package in that layer may import from this repo. Anything 
 | adapter/inbound | inbound, service, config, core, lib, pkg, api, web |
 | app | everything |
 | cmd | app, service, inbound, config, core, lib, pkg, api, web (not outbound) |
-| pkg | pkg, lib, api; `pkg/setup` also service and core |
+| pkg | pkg, lib; `pkg/setup` also service and core |
 
-Test files and packages whose name ends in `test` (fakes and helpers) are exempt from these rules.
+Test files and the test helper packages (`guardtest`, `mcptest`, `passkeytest`, `pagetest`, `vaulttest`, `adaptertest`, `trustprofiletest`, `connecttest`, `archtest`) are exempt from the layer rules, core purity and the decision rule. The list is in the test.
 
 Every package under `internal/` sits in one of the layers above. A new top-level directory under `internal/` needs a row here and in the test.
 
@@ -44,11 +44,11 @@ Every package under `internal/` sits in one of the layers above. A new top-level
 
 `internal/core` holds code that is pure: it does no I/O. It has three kinds of package.
 
-- **decision**: a safety decision (what SQL is allowed, whether an approval or revert code is valid, whether a passkey signature verifies). Services (and core) call a decision's functions; adapters, `cmd` and `pkg` do not. `internal/app`, which wires everything, may call them. The one exception: the Postgres store calls `sqlguard.Check`, `sqlguard.CheckRepeatable` and `sqlguard.WithRowVersions` right before it runs SQL. Any package may use a decision's types and constants.
+- **decision**: a safety decision (what SQL is allowed, whether an approval or revert code is valid, whether a passkey signature verifies). Services, core, `internal/config` and `internal/app` (which wires everything) call a decision's functions; adapters, `cmd` and `pkg` do not. The test checks package-level functions only; methods on a decision's types are left to review. The one exception: the Postgres store calls `sqlguard.Check`, `sqlguard.CheckRepeatable` and `sqlguard.WithRowVersions` right before it runs SQL. Any package may use a decision's types and constants.
 - **types**: a type that a port is written in, or a rule used by two or more callers. Anyone may import it.
 - **codec**: the code for a format written down in `api/`. Anyone may import it.
 
-Core stays pure. A package in `internal/core` does not import `os`, `io/fs`, `path/filepath`, `net` (`net/url` is fine), `net/http`, `os/exec`, `math/rand`, `crypto/rand` or a database driver, and does not call `time.Now` or `os.Getenv`. The exception is key and salt generation in the codecs `channel` and `setupcode`, which may import `crypto/rand`; the register below records it.
+Core stays pure. A package in `internal/core` does not import `os`, `io/fs`, `path/filepath`, `net` (`net/url` is fine), `net/http`, `os/exec`, `syscall`, `io/ioutil`, `math/rand`, `crypto/rand` or a database driver, does not dot-import, and does not call `time.Now`, `time.Since`, `time.Until` or `os.Getenv`. The exception is key and salt generation in the codecs `channel` and `setupcode`, which may import `crypto/rand`; the register below records it.
 
 ## Where does this code go
 
@@ -81,6 +81,9 @@ Every package directly under `internal/core` has one row: its area, its kind, th
 | `pii` | PII handling | decision | 1 | - |
 | `chainpin` | ledger | decision | 1 | - |
 | `action` | ledger | types | 2 | - |
+| `budget` | SQL | types | 2 | - |
+| `guardmodel` | ledger | types | 2 | - |
+| `pluginmodel` | plugin | types | 2 | - |
 | `supabase` | setup | types | 2 | - |
 | `channel` | Vault channel | codec | 3 | `crypto/rand` |
 | `links` | links | codec | 3 | - |

@@ -1,0 +1,23 @@
+{
+  "body": {
+    "code": "PLUGIN_REFUSED",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "request_plugin is refused: this engine runs as the person's own OS user and keeps no plugins of its own. Nothing was written",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "Stop: the engine refused this plugin change; do not work around it."
+      },
+      {
+        "action": "ASK_PERSON",
+        "actor": "AGENT",
+        "text": "Show the person the personMessage; only they can decide about this plugin."
+      }
+    ],
+    "personMessage": "This Basalt engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.",
+    "reason": "SAME_USER_MODE"
+  },
+  "isError": true,
+  "tool": "request_plugin"
+}

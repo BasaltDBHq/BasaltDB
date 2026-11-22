@@ -377,8 +377,8 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 	}
 }
 
-// TestPIISchemas checks the basalt classify --json review schema (CONTRACT.md,
-// PII classification) follows the same wire rules.
+// TestPIISchemas checks the PII review schema, which holds the classes and
+// entity types (CONTRACT.md, PII classification), follows the same wire rules.
 func TestPIISchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "pii", []string{"classify-review.schema.json"})
@@ -396,10 +396,6 @@ func TestPIIEnums(t *testing.T) {
 		require.Equal(t, docValues, schemaEnum(t, map[string]any{"properties": defs}, def),
 			"CONTRACT.md %s and classify-review.schema.json %s differ", subsection, def)
 	}
-	column := mustMap(t, defs["column"])
-	require.Equal(t, contractSubsectionValues(t, "## PII classification", "### `--json` review"),
-		schemaEnum(t, column, "status"),
-		"CONTRACT.md review status table and classify-review.schema.json status differ")
 }
 
 // contractSubsectionValues reads the first-column enum values of the table

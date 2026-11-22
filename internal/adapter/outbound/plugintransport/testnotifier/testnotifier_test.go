@@ -21,8 +21,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
 	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 var bin string
@@ -46,25 +46,25 @@ func TestMain(m *testing.M) {
 
 const timeout = 300 * time.Millisecond
 
-func entry(hooks ...string) plugin.Entry {
-	decl := map[string]protocol.HookDecl{}
+func entry(hooks ...string) pluginhost.Entry {
+	decl := map[string]pluginproto.HookDecl{}
 	for _, h := range hooks {
-		decl[h] = protocol.HookDecl{Contract: map[string]string{tn.HookFeedObserve: "feed/1", tn.HookApprovalDeliver: "deliver/1"}[h]}
+		decl[h] = pluginproto.HookDecl{Contract: map[string]string{tn.HookFeedObserve: "feed/1", tn.HookApprovalDeliver: "deliver/1"}[h]}
 	}
-	return plugin.Entry{
-		Key: plugin.EntryKey{Name: tn.Name, Instance: "default"},
-		Manifest: plugin.Manifest{
+	return pluginhost.Entry{
+		Key: pluginhost.EntryKey{Name: tn.Name, Instance: "default"},
+		Manifest: pluginhost.Manifest{
 			ManifestVersion: 1, Name: tn.Name, Version: tn.Version, Publisher: "t",
-			Protocol: []string{protocol.Version1}, Hooks: decl,
-			Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/" + tn.Binary}},
+			Protocol: []string{pluginproto.Version1}, Hooks: decl,
+			Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/" + tn.Binary}},
 		},
 		Agents: []string{"product_a"}, Timeout: timeout,
 	}
 }
 
 type started struct {
-	h       *plugin.Host
-	key     plugin.EntryKey
+	h       *pluginhost.Host
+	key     pluginhost.EntryKey
 	record  string
 	control string
 }
@@ -87,7 +87,7 @@ func start(t *testing.T, o tn.Options) *started {
 		hooks = []string{tn.HookFeedObserve, tn.HookApprovalDeliver}
 	}
 	e := entry(hooks...)
-	h := plugin.NewHost()
+	h := pluginhost.NewHost()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, h.Register(ctx, e, tr))
@@ -114,8 +114,8 @@ func (s *started) records(t *testing.T) []tn.Record {
 	return r
 }
 
-func classOf(err error) plugin.FailureClass {
-	var c *plugin.CallError
+func classOf(err error) pluginhost.FailureClass {
+	var c *pluginhost.CallError
 	if errors.As(err, &c) {
 		return c.Class
 	}
@@ -147,13 +147,13 @@ func TestOKRecordsWhatItReceived(t *testing.T) {
 func TestFaultModes(t *testing.T) {
 	for _, tc := range []struct {
 		mode tn.Mode
-		feed plugin.FailureClass
-		dlvr plugin.FailureClass // "" when deliver succeeds
+		feed pluginhost.FailureClass
+		dlvr pluginhost.FailureClass // "" when deliver succeeds
 	}{
-		{tn.ModeLate, plugin.ClassTimeout, plugin.ClassTimeout},
-		{tn.ModeHang, plugin.ClassTimeout, plugin.ClassTimeout},
-		{tn.ModeBadSeq, plugin.ClassBadResponse, ""},
-		{tn.ModeBadJSON, plugin.ClassBadResponse, plugin.ClassBadResponse},
+		{tn.ModeLate, pluginhost.ClassTimeout, pluginhost.ClassTimeout},
+		{tn.ModeHang, pluginhost.ClassTimeout, pluginhost.ClassTimeout},
+		{tn.ModeBadSeq, pluginhost.ClassBadResponse, ""},
+		{tn.ModeBadJSON, pluginhost.ClassBadResponse, pluginhost.ClassBadResponse},
 	} {
 		t.Run(string(tc.mode), func(t *testing.T) {
 			o := tn.Options{Mode: tc.mode, Delay: 2 * timeout}
@@ -181,15 +181,15 @@ func TestFaultModes(t *testing.T) {
 	t.Run("crash", func(t *testing.T) {
 		s := start(t, tn.Options{Mode: tn.ModeCrash})
 		_, err := s.observe(5)
-		require.Equal(t, plugin.ClassExited, classOf(err), "%v", err)
+		require.Equal(t, pluginhost.ClassExited, classOf(err), "%v", err)
 		require.Len(t, s.records(t), 1)
-		require.Equal(t, plugin.StateUnavailable, s.h.State(s.key))
+		require.Equal(t, pluginhost.StateUnavailable, s.h.State(s.key))
 	})
 	t.Run("not-ready", func(t *testing.T) {
 		s := start(t, tn.Options{Mode: tn.ModeNotReady})
-		var h protocol.HealthResponse
-		require.NoError(t, s.h.Control(context.Background(), s.key, protocol.MethodHealth, protocol.HealthRequest{}, &h))
-		require.Equal(t, protocol.HealthNotReady, h.Status)
+		var h pluginproto.HealthResponse
+		require.NoError(t, s.h.Control(context.Background(), s.key, pluginproto.MethodHealth, pluginproto.HealthRequest{}, &h))
+		require.Equal(t, pluginproto.HealthNotReady, h.Status)
 	})
 }
 
@@ -201,7 +201,7 @@ func TestControlFileSwitchesModesWhileItRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tn.SetMode(s.control, tn.ModeLate))
 	_, err = s.observe(2)
-	require.Equal(t, plugin.ClassTimeout, classOf(err))
+	require.Equal(t, pluginhost.ClassTimeout, classOf(err))
 	require.NoError(t, tn.SetMode(s.control, tn.ModeOK))
 	// The late call's handler still holds a slot for its delay (5s by
 	// default here); the next call takes another.
@@ -222,8 +222,8 @@ func TestHooksOption(t *testing.T) {
 	s := start(t, tn.Options{Hooks: []string{tn.HookFeedObserve}})
 	_, err := s.observe(1)
 	require.NoError(t, err)
-	err = s.h.Call(context.Background(), s.key, []string{"product_a"}, protocol.MethodApprovalDeliver,
-		protocol.ApprovalDeliverRequest{Agent: "product_a", Event: json.RawMessage(adaptertest.Notice)}, nil)
+	err = s.h.Call(context.Background(), s.key, []string{"product_a"}, pluginproto.MethodApprovalDeliver,
+		pluginproto.ApprovalDeliverRequest{Agent: "product_a", Event: json.RawMessage(adaptertest.Notice)}, nil)
 	require.Error(t, err, "approval.deliver is not served")
 }
 
@@ -241,9 +241,9 @@ func TestConnectRPCTransport(t *testing.T) {
 	tr, err := connect.DialLocal(context.Background(), sock)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = tr.Close() })
-	var res protocol.FeedObserveResponse
-	require.NoError(t, tr.Call(context.Background(), protocol.MethodFeedObserve,
-		protocol.FeedObserveRequest{Agent: "product_a", Events: adaptertest.Batch(adaptertest.FeedEvent(7))}, &res))
+	var res pluginproto.FeedObserveResponse
+	require.NoError(t, tr.Call(context.Background(), pluginproto.MethodFeedObserve,
+		pluginproto.FeedObserveRequest{Agent: "product_a", Events: adaptertest.Batch(adaptertest.FeedEvent(7))}, &res))
 	require.Equal(t, int64(7), res.LastSeq)
 	r, err := tn.ReadRecords(rec)
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func TestRawModeOverAUnixSocket(t *testing.T) {
 	tr, err := jsonrpc.Dial(context.Background(), sock)
 	require.NoError(t, err)
 	e := entry(tn.HookFeedObserve, tn.HookApprovalDeliver)
-	h := plugin.NewHost()
+	h := pluginhost.NewHost()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, h.Register(ctx, e, tr))
@@ -273,7 +273,7 @@ func TestRawModeOverAUnixSocket(t *testing.T) {
 	s := &started{h: h, key: e.Key, record: rec}
 
 	_, err = s.observe(4)
-	require.Equal(t, plugin.ClassBadResponse, classOf(err), "%v", err)
+	require.Equal(t, pluginhost.ClassBadResponse, classOf(err), "%v", err)
 	require.NoError(t, s.deliver())
 	r := s.records(t)
 	require.Len(t, r, 2)
@@ -287,12 +287,12 @@ func TestManifestMatchesTheOptions(t *testing.T) {
 	dir := t.TempDir()
 	o := tn.Options{Mode: tn.ModeHang, Record: "/r", Control: "/c", Hooks: []string{tn.HookApprovalDeliver}, Transport: "jsonrpc-unix"}
 	require.NoError(t, tn.WriteDir(dir, bin, o))
-	b, err := os.ReadFile(filepath.Join(dir, plugin.ManifestFile))
+	b, err := os.ReadFile(filepath.Join(dir, pluginhost.ManifestFile))
 	require.NoError(t, err)
-	m, err := plugin.ParseManifest(b)
+	m, err := pluginhost.ParseManifest(b)
 	require.NoError(t, err)
 	require.Equal(t, tn.Name, m.Name)
-	require.Equal(t, map[string]protocol.HookDecl{tn.HookApprovalDeliver: {Contract: "deliver/1"}}, m.Hooks)
+	require.Equal(t, map[string]pluginproto.HookDecl{tn.HookApprovalDeliver: {Contract: "deliver/1"}}, m.Hooks)
 	require.Equal(t, "jsonrpc-unix", m.Endpoint.Local.Transport)
 	require.Equal(t, o.Args(), m.Endpoint.Local.Args)
 	require.True(t, strings.HasPrefix(m.Files["bin/"+tn.Binary], "sha256:"))
@@ -302,12 +302,12 @@ func TestManifestMatchesTheOptions(t *testing.T) {
 // at once. The suite sends more at a time than the engine ever does, and an
 // SDK plugin answers calls past its waiting cap busy instead of queueing them.
 type capped struct {
-	plugin.Transport
+	pluginhost.Transport
 	slots chan struct{}
 }
 
-func engineCapped(tr plugin.Transport) plugin.Transport {
-	return capped{Transport: tr, slots: make(chan struct{}, protocol.MaxInFlight)}
+func engineCapped(tr pluginhost.Transport) pluginhost.Transport {
+	return capped{Transport: tr, slots: make(chan struct{}, pluginproto.MaxInFlight)}
 }
 
 func (c capped) Call(ctx context.Context, method string, params, result any) error {
@@ -327,7 +327,7 @@ func (c capped) Call(ctx context.Context, method string, params, result any) err
 // fails here.
 func TestSDKNotifierPassesTheNotifierSuite(t *testing.T) {
 	t.Run("jsonrpc-stdio", func(t *testing.T) {
-		adaptertest.RunNotifier(t, func(t *testing.T) plugin.Transport {
+		adaptertest.RunNotifier(t, func(t *testing.T) pluginhost.Transport {
 			tr, err := jsonrpc.Spawn(context.Background(), child.Spec{Path: bin, Dir: t.TempDir()})
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = tr.Close() })
@@ -337,13 +337,13 @@ func TestSDKNotifierPassesTheNotifierSuite(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		opts tn.Options
-		dial func(context.Context, string) (plugin.Transport, error)
+		dial func(context.Context, string) (pluginhost.Transport, error)
 	}{
 		{"jsonrpc-unix", tn.Options{}, jsonrpc.Dial},
 		{"connectrpc", tn.Options{Transport: "connectrpc"}, connect.DialLocal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adaptertest.RunNotifier(t, func(t *testing.T) plugin.Transport {
+			adaptertest.RunNotifier(t, func(t *testing.T) pluginhost.Transport {
 				dir, err := os.MkdirTemp("", "tn")
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = os.RemoveAll(dir) })

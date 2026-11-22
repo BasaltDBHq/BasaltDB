@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
@@ -23,7 +23,7 @@ import (
 // not writable by group or others), and every file is then reached
 // relative to them, for the engine's lifetime.
 type rootFiles struct {
-	configDir, agentsDir *service.TrustedDir
+	configDir, agentsDir *osservice.TrustedDir
 	configName, name     string
 	// trusted is the config directory's owner: the config must be owned
 	// by root or that user (config.CheckTrustedConfig).
@@ -45,11 +45,11 @@ func openRootFiles(configPath, agent, credFile string) (agentFiles, error) {
 	if err != nil {
 		return nil, err
 	}
-	cd, err := service.OpenTrustedDir(dir, trusted, false)
+	cd, err := osservice.OpenTrustedDir(dir, trusted, false)
 	if err != nil {
 		return nil, fmt.Errorf("the config directory %s is refused: %w", dir, err)
 	}
-	ad, err := service.OpenTrustedDir(filepath.Dir(path), trusted, false)
+	ad, err := osservice.OpenTrustedDir(filepath.Dir(path), trusted, false)
 	if err != nil {
 		_ = cd.Close()
 		return nil, fmt.Errorf("the credential directory %s is refused: %w", filepath.Dir(path), err)

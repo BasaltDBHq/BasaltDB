@@ -2,7 +2,7 @@
 // every transport carries: initialize, health and shutdown, and the hooks
 // declaration shared with the manifest. The field names match the schemas
 // under api/plugin; unknown JSON fields are ignored on decode.
-package protocol
+package pluginproto
 
 // Version1 is the only protocol version this engine speaks.
 const Version1 = "basalt-plugin/1"

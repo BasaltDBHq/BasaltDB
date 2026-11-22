@@ -1,4 +1,4 @@
-package postgres
+package store
 
 import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"

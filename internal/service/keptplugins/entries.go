@@ -15,7 +15,7 @@ import (
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // EntriesPath is the entries file.
@@ -185,12 +185,12 @@ func writeAtomic(dir, name string, raw []byte) error {
 // manifest lists; then plugin.Stage copies and verifies it under Root with
 // plugin.RequireApproval, as a same-user install of an entry that requires
 // approval. The staged copy is not in place until Commit.
-func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*plugin.Staged, error) {
+func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*pluginhost.Staged, error) {
 	manifest, err := t.Manifest()
 	if err != nil {
 		return nil, err
 	}
-	m, err := plugin.ParseManifest(manifest)
+	m, err := pluginhost.ParseManifest(manifest)
 	if err != nil {
 		return nil, refusalOf(err)
 	}
@@ -198,7 +198,7 @@ func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*p
 		return nil, refused(ReasonBadManifest, "the manifest names the plugin %q, not %q", m.Name, name)
 	}
 	for _, p := range t.Paths {
-		if p == plugin.ManifestFile || p == plugin.SignatureFile {
+		if p == pluginhost.ManifestFile || p == pluginhost.SignatureFile {
 			continue
 		}
 		if _, ok := m.Files[p]; !ok {
@@ -225,7 +225,7 @@ func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*p
 	if err := os.MkdirAll(s.Root(), copiesDirMode); err != nil {
 		return nil, refused(ReasonUnsafePath, "%s cannot be made", s.Root())
 	}
-	st, err := plugin.Stage(t.Dir, s.Root(), instance, trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+	st, err := pluginhost.Stage(t.Dir, s.Root(), instance, trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
 	if err != nil {
 		return nil, refusalOf(err)
 	}
@@ -235,34 +235,34 @@ func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*p
 // Manifest reads the upload's manifest: inside the upload only, never
 // through a link, a regular file of at most plugin.MaxManifestBytes.
 func (t *Taken) Manifest() ([]byte, error) {
-	if !slices.Contains(t.Paths, plugin.ManifestFile) {
-		return nil, refused(ReasonBadManifest, "the upload holds no %s", plugin.ManifestFile)
+	if !slices.Contains(t.Paths, pluginhost.ManifestFile) {
+		return nil, refused(ReasonBadManifest, "the upload holds no %s", pluginhost.ManifestFile)
 	}
 	root, err := os.OpenRoot(t.Dir)
 	if err != nil {
 		return nil, refused(ReasonUnsafePath, "the upload's directory cannot be opened")
 	}
 	defer func() { _ = root.Close() }()
-	f, err := root.OpenFile(plugin.ManifestFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := root.OpenFile(pluginhost.ManifestFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return nil, refused(ReasonUnsafePath, "%s of the upload cannot be opened, or is a symlink", plugin.ManifestFile)
+		return nil, refused(ReasonUnsafePath, "%s of the upload cannot be opened, or is a symlink", pluginhost.ManifestFile)
 	}
 	defer func() { _ = f.Close() }()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return nil, refused(ReasonUnsafePath, "%s of the upload is not a regular file", plugin.ManifestFile)
+		return nil, refused(ReasonUnsafePath, "%s of the upload is not a regular file", pluginhost.ManifestFile)
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, plugin.MaxManifestBytes+1))
-	if err != nil || len(raw) > plugin.MaxManifestBytes {
-		return nil, refused(ReasonTooLarge, "%s of the upload is over %d bytes", plugin.ManifestFile, plugin.MaxManifestBytes)
+	raw, err := io.ReadAll(io.LimitReader(f, pluginhost.MaxManifestBytes+1))
+	if err != nil || len(raw) > pluginhost.MaxManifestBytes {
+		return nil, refused(ReasonTooLarge, "%s of the upload is over %d bytes", pluginhost.ManifestFile, pluginhost.MaxManifestBytes)
 	}
 	return raw, nil
 }
 
 // Commit puts a staged copy in place and recounts the storage.
-func (s *Store) Commit(st *plugin.Staged) (plugin.Verified, error) {
+func (s *Store) Commit(st *pluginhost.Staged) (pluginhost.Verified, error) {
 	dir, err := st.Commit()
 	if err != nil {
-		return plugin.Verified{}, refusalOf(err)
+		return pluginhost.Verified{}, refusalOf(err)
 	}
 	s.recountCopies()
 	v := st.Verified
@@ -272,17 +272,17 @@ func (s *Store) Commit(st *plugin.Staged) (plugin.Verified, error) {
 
 // Verify checks the installed copy of an engine-kept entry, as the engine
 // does before it serves or starts one.
-func (s *Store) Verify(k plugin.EntryKey, manifestSHA256 string) (plugin.Verified, error) {
+func (s *Store) Verify(k pluginhost.EntryKey, manifestSHA256 string) (pluginhost.Verified, error) {
 	trust, err := s.Trust()
 	if err != nil {
-		return plugin.Verified{}, err
+		return pluginhost.Verified{}, err
 	}
-	return plugin.Verify(s.Root(), k, manifestSHA256, trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+	return pluginhost.Verify(s.Root(), k, manifestSHA256, trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
 }
 
 // Tidy removes entry k's instance and name directories when they hold
 // nothing: what a refused staging leaves.
-func (s *Store) Tidy(k plugin.EntryKey) {
+func (s *Store) Tidy(k pluginhost.EntryKey) {
 	inst := filepath.Join(s.Root(), k.Name, k.Instance)
 	if filepath.Dir(filepath.Dir(inst)) != s.Root() {
 		return
@@ -293,8 +293,8 @@ func (s *Store) Tidy(k plugin.EntryKey) {
 
 // RemoveCopies removes entry k's copies but keep ("" removes every one),
 // and recounts the storage.
-func (s *Store) RemoveCopies(k plugin.EntryKey, keep string) error {
-	err := plugin.Sweep(s.Root(), k, keep, plugin.ModeSameUser)
+func (s *Store) RemoveCopies(k pluginhost.EntryKey, keep string) error {
+	err := pluginhost.Sweep(s.Root(), k, keep, pluginhost.ModeSameUser)
 	s.recountCopies()
 	return err
 }
@@ -306,7 +306,7 @@ func (s *Store) Sweep(entries []config.Plugin) {
 	if err != nil {
 		return
 	}
-	keep := map[plugin.EntryKey]string{}
+	keep := map[pluginhost.EntryKey]string{}
 	for _, p := range entries {
 		keep[p.Key()] = p.ManifestSHA256
 	}
@@ -316,12 +316,12 @@ func (s *Store) Sweep(entries []config.Plugin) {
 			continue
 		}
 		for _, i := range insts {
-			k := plugin.EntryKey{Name: n.Name(), Instance: i.Name()}
+			k := pluginhost.EntryKey{Name: n.Name(), Instance: i.Name()}
 			sha, ok := keep[k]
 			if !ok {
 				sha = ""
 			}
-			_ = plugin.Sweep(s.Root(), k, sha, plugin.ModeSameUser)
+			_ = pluginhost.Sweep(s.Root(), k, sha, pluginhost.ModeSameUser)
 		}
 	}
 	s.recountCopies()
@@ -330,7 +330,7 @@ func (s *Store) Sweep(entries []config.Plugin) {
 // refusalOf maps a verification failure to its PLUGIN_REFUSED reason:
 // BAD_MANIFEST, UNSAFE_PATH for the path rule, NOT_TRUSTED otherwise.
 func refusalOf(err error) error {
-	var ve *plugin.VerifyError
+	var ve *pluginhost.VerifyError
 	if !errors.As(err, &ve) {
 		return err
 	}

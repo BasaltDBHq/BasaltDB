@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // upload is one open upload: bytes the engine holds for a peer uid, read by
@@ -96,10 +96,10 @@ func (s *Store) usedLocked() int64 {
 // for any other file.
 func (s *Store) fileLimit(p string) int64 {
 	switch p {
-	case plugin.ManifestFile:
-		return plugin.MaxManifestBytes
-	case plugin.SignatureFile:
-		return plugin.MaxSignatureFileBytes
+	case pluginhost.ManifestFile:
+		return pluginhost.MaxManifestBytes
+	case pluginhost.SignatureFile:
+		return pluginhost.MaxSignatureFileBytes
 	}
 	return s.lim.UploadBytes
 }
@@ -120,7 +120,7 @@ func (s *Store) Part(uid uint32, id uuid.UUID, p string, offset int64, data stri
 	if !ok || u.uid != uid || u.taken {
 		return 0, errNoUpload
 	}
-	if !plugin.ValidRelativePath(p) {
+	if !pluginhost.ValidRelativePath(p) {
 		return 0, invalid("path %q breaks the manifest's path rules: relative, at most 255 characters, "+
 			"letters, digits, '.', '_' and '-', no segment starting with '.'", p)
 	}

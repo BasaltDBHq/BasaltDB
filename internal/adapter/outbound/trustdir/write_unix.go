@@ -12,7 +12,7 @@ import (
 	"slices"
 	"syscall"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -49,7 +49,7 @@ func Add(configPath, name string, match []string, ca []byte) (*trustprofile.Prof
 	if err != nil {
 		return nil, err
 	}
-	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+	err = write(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		if exists(d, trustprofile.FileName(name)) {
 			return fmt.Errorf("%w (%s)", ErrExists, name)
 		}
@@ -80,7 +80,7 @@ func Disable(configPath, name string) error {
 		return err
 	}
 	raw = append(raw, '\n')
-	return write(configPath, func(d *service.TrustedDir, trusted int) error {
+	return write(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		if exists(d, trustprofile.FileName(name)) {
 			return fmt.Errorf("%w (%s)", ErrExists, name)
 		}
@@ -93,7 +93,7 @@ func Disable(configPath, name string) error {
 // it names. A profile that does not load (refused) is removed too. No such
 // profile is ErrNotFound.
 func Remove(configPath, name string) error {
-	return writeExisting(configPath, func(d *service.TrustedDir, trusted int) error {
+	return writeExisting(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		file := trustprofile.FileName(name)
 		if !exists(d, file) {
 			return fmt.Errorf("%w (%s)", ErrNotFound, name)
@@ -128,7 +128,7 @@ func Remove(configPath, name string) error {
 // otherRoots are the roots files the other profiles in d name, which
 // Remove keeps. A profile file that cannot be read keeps every file: Remove
 // then deletes only the profile's JSON.
-func otherRoots(d *service.TrustedDir, name string, trusted int) ([]string, error) {
+func otherRoots(d *osservice.TrustedDir, name string, trusted int) ([]string, error) {
 	names, err := d.Names()
 	if err != nil {
 		return nil, err
@@ -154,7 +154,7 @@ func otherRoots(d *service.TrustedDir, name string, trusted int) ([]string, erro
 // which roots files it names and keeps them all.
 var errKeepRoots = errors.New("another profile cannot be read")
 
-func exists(d *service.TrustedDir, name string) bool {
+func exists(d *osservice.TrustedDir, name string) bool {
 	f, err := d.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err == nil {
 		_ = f.Close()
@@ -164,16 +164,16 @@ func exists(d *service.TrustedDir, name string) bool {
 
 // write runs change on configPath's trust.d, made when missing, under the
 // config lock, with the owner its files must have (or root).
-func write(configPath string, change func(d *service.TrustedDir, trusted int) error) error {
+func write(configPath string, change func(d *osservice.TrustedDir, trusted int) error) error {
 	return locked(configPath, true, change)
 }
 
 // writeExisting is write on a trust.d that must exist already.
-func writeExisting(configPath string, change func(d *service.TrustedDir, trusted int) error) error {
+func writeExisting(configPath string, change func(d *osservice.TrustedDir, trusted int) error) error {
 	return locked(configPath, false, change)
 }
 
-func locked(configPath string, create bool, change func(d *service.TrustedDir, trusted int) error) error {
+func locked(configPath string, create bool, change func(d *osservice.TrustedDir, trusted int) error) error {
 	held, err := config.LockConfigAs(configPath, -1)
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustpr
 		return nil, nil, err
 	}
 	var replaced []string
-	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+	err = write(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		var err error
 		replaced, err = writePin(d, trusted, pf)
 		return err
@@ -237,7 +237,7 @@ func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool,
 		return false, err
 	}
 	wrote := false
-	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+	err = write(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		if cur := Set(configPath).For(host); cur != nil {
 			if cur.Name == pf.Profile.Name && slices.ContainsFunc(cur.Certificates(), cert.Equal) {
 				return nil
@@ -265,7 +265,7 @@ func Repin(configPath, host string, cert *x509.Certificate, caOnly bool) ([]stri
 		return nil, err
 	}
 	var replaced []string
-	err = writeExisting(configPath, func(d *service.TrustedDir, trusted int) error {
+	err = writeExisting(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		if cur := Set(configPath).For(host); cur == nil || cur.Name != pf.Profile.Name || !cur.Exact() {
 			return fmt.Errorf("%w: the engine's pin %s is not what covers %s now", ErrCovered, pf.Profile.Name, host)
 		}
@@ -278,7 +278,7 @@ func Repin(configPath, host string, cert *x509.Certificate, caOnly bool) ([]stri
 
 // writePin writes pf in d, replacing the pin of the same name, and returns
 // the fingerprints it replaced. The config lock is held.
-func writePin(d *service.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]string, error) {
+func writePin(d *osservice.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]string, error) {
 	name, match, pemName, pemBytes, raw := pf.Profile.Name, pf.Profile.Match[0], pf.PEMName, pf.PEM, pf.JSON
 	var replaced []string
 	err := func() error {
@@ -312,7 +312,7 @@ type oldPin struct {
 
 // existingPin is the pin for match that trust.d holds as name, or none. A
 // file of that name that is not that host's pin is ErrExists.
-func existingPin(d *service.TrustedDir, name, match string, trusted int) (oldPin, error) {
+func existingPin(d *osservice.TrustedDir, name, match string, trusted int) (oldPin, error) {
 	file := trustprofile.FileName(name)
 	if !exists(d, file) {
 		return oldPin{}, nil

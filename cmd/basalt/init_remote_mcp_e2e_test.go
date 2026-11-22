@@ -17,8 +17,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -81,7 +81,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, socketDir string) {
 	t.Helper()
 	t.Cleanup(func() {
-		if pid, up, _ := server.Running(engine.LockPath(socketDir)); up {
+		if pid, up, _ := httpserver.Running(app.LockPath(socketDir)); up {
 			if ppid, err := parentOf(pid); err == nil {
 				_ = syscall.Kill(ppid, syscall.SIGTERM)
 			}

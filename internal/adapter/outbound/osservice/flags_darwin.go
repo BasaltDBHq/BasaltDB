@@ -1,4 +1,4 @@
-package service
+package osservice
 
 import "golang.org/x/sys/unix"
 

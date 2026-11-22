@@ -20,8 +20,8 @@ import (
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // shortDir returns a fresh directory with a short path: a Unix socket path
@@ -94,7 +94,7 @@ func startLocalPeer(t *testing.T, mode string) string {
 }
 
 func TestLocalAdapter(t *testing.T) {
-	adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) plugin.Transport {
+	adaptertest.Run(t, func(t *testing.T, b adaptertest.Behavior) pluginhost.Transport {
 		t.Helper()
 		sock := startLocalPeer(t, modeOf(b))
 		tr, err := dialLocal(context.Background(), sock, options{methods: testMethods()})
@@ -141,7 +141,7 @@ func newLocalServer(t *testing.T, h http.Handler) *localServer {
 	return s
 }
 
-func dialLocalServer(t *testing.T, s *localServer) plugin.Transport {
+func dialLocalServer(t *testing.T, s *localServer) pluginhost.Transport {
 	t.Helper()
 	tr, err := dialLocal(context.Background(), s.sock, options{methods: testMethods()})
 	if err != nil {
@@ -154,8 +154,8 @@ func dialLocalServer(t *testing.T, s *localServer) plugin.Transport {
 func TestLocalSpeaksGRPC(t *testing.T) {
 	s := newLocalServer(t, peerHandler("echo"))
 	tr := dialLocalServer(t, s)
-	var got protocol.HealthResponse
-	if err := tr.Call(context.Background(), protocol.MethodHealth, protocol.HealthRequest{}, &got); err != nil {
+	var got pluginproto.HealthResponse
+	if err := tr.Call(context.Background(), pluginproto.MethodHealth, pluginproto.HealthRequest{}, &got); err != nil {
 		t.Fatal(err)
 	}
 	if got.Status != "READY" {
@@ -202,7 +202,7 @@ func TestLocalSpeaksGRPC(t *testing.T) {
 func TestLocalSendsNoCredential(t *testing.T) {
 	s := newLocalServer(t, peerHandler("echo"))
 	tr := dialLocalServer(t, s)
-	if err := tr.Call(context.Background(), protocol.MethodHealth, nil, nil); err != nil {
+	if err := tr.Call(context.Background(), pluginproto.MethodHealth, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	headers, _ := s.seen()
@@ -244,8 +244,8 @@ func TestLocalNeverDialsTCP(t *testing.T) {
 		http.Redirect(w, r, "http://"+tl.Addr().String()+"/x", http.StatusFound)
 	}))
 	tr := dialLocalServer(t, s)
-	err = tr.Call(context.Background(), protocol.MethodHealth, nil, nil)
-	if got := classOf(err); got != plugin.ClassBadResponse {
+	err = tr.Call(context.Background(), pluginproto.MethodHealth, nil, nil)
+	if got := classOf(err); got != pluginhost.ClassBadResponse {
 		t.Fatalf("redirect: class %q, err %v", got, err)
 	}
 
@@ -307,11 +307,11 @@ func TestLocalInstancesShareNothing(t *testing.T) {
 	b := newLocalServer(t, peerHandler("echo"))
 	ta := dialLocalServer(t, a)
 	tb := dialLocalServer(t, b)
-	if err := ta.Call(context.Background(), protocol.MethodHealth, nil, nil); err != nil {
+	if err := ta.Call(context.Background(), pluginproto.MethodHealth, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	_ = ta.Close()
-	if err := tb.Call(context.Background(), protocol.MethodHealth, nil, nil); err != nil {
+	if err := tb.Call(context.Background(), pluginproto.MethodHealth, nil, nil); err != nil {
 		t.Fatalf("closing one entry broke the other: %v", err)
 	}
 	if h, _ := a.seen(); len(h) != 1 {
@@ -335,7 +335,7 @@ func TestLocalContextEndsTheCall(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	err := tr.Call(ctx, protocol.MethodHealth, nil, nil)
+	err := tr.Call(ctx, pluginproto.MethodHealth, nil, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want the deadline", err)
 	}
@@ -361,7 +361,7 @@ func TestLocalRechecksTheSocketOnEveryConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tr.Close() })
-	if err := tr.Call(context.Background(), protocol.MethodHealth, protocol.HealthRequest{}, nil); err != nil {
+	if err := tr.Call(context.Background(), pluginproto.MethodHealth, pluginproto.HealthRequest{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The first server goes away with its connection and its socket file.
@@ -372,7 +372,7 @@ func TestLocalRechecksTheSocketOnEveryConnection(t *testing.T) {
 	if err := os.Symlink(other.sock, sock); err != nil {
 		t.Fatal(err)
 	}
-	if err := tr.Call(context.Background(), protocol.MethodHealth, protocol.HealthRequest{}, nil); err == nil {
+	if err := tr.Call(context.Background(), pluginproto.MethodHealth, pluginproto.HealthRequest{}, nil); err == nil {
 		t.Fatal("a call through a symbolic link to another socket succeeded")
 	}
 	if h, _ := other.seen(); len(h) != 0 {

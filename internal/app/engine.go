@@ -3,7 +3,7 @@
 // (owner decision #2). A connection is served only when the peer's OS user
 // is the one configured for the agent; the agent's MCP client reaches the
 // socket through the stdio shim and never holds a database credential.
-package engine
+package app
 
 import (
 	"context"

@@ -38,8 +38,8 @@ import (
 
 	connectrpc "connectrpc.com/connect"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 const (
@@ -77,11 +77,11 @@ type options struct {
 // "Authorization: Bearer <token>" on every call; the plugin never sees the
 // path. A refusal names the endpoint's host or the credential file, and
 // wraps one of the Err values of this package (or ctx's error).
-func Dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, credentialFile string) (plugin.Transport, error) {
+func Dial(ctx context.Context, ep pluginhost.RemoteEndpoint, egress []string, credentialFile string) (pluginhost.Transport, error) {
 	return dial(ctx, ep, egress, credentialFile, options{})
 }
 
-func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, credentialFile string, opts options) (plugin.Transport, error) {
+func dial(ctx context.Context, ep pluginhost.RemoteEndpoint, egress []string, credentialFile string, opts options) (pluginhost.Transport, error) {
 	tgt, err := checkEndpoint(ep, egress)
 	if err != nil {
 		return nil, err
@@ -165,8 +165,8 @@ func newConn(tr *http.Transport, baseURL string, auth func(http.Header), opts op
 				// No compressed replies: a small gzip body could expand
 				// far past the cap before the cap is checked.
 				connectrpc.WithAcceptCompression("gzip", nil, nil),
-				connectrpc.WithReadMaxBytes(protocol.MaxMessageBytes),
-				connectrpc.WithSendMaxBytes(protocol.MaxMessageBytes),
+				connectrpc.WithReadMaxBytes(pluginproto.MaxMessageBytes),
+				connectrpc.WithSendMaxBytes(pluginproto.MaxMessageBytes),
 			),
 		}
 	}
@@ -272,7 +272,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	if !ok {
 		// No mapping for the method: nothing is sent. The plugin is not at
 		// fault, so the call fails as a bad exchange, not as UNAVAILABLE.
-		return plugin.Fail(plugin.ClassBadResponse)
+		return pluginhost.Fail(pluginhost.ClassBadResponse)
 	}
 	body, err := encodeParams(cl.method, params)
 	if err != nil {
@@ -282,7 +282,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	defer cancel()
 	id, ok := c.enter(cancel)
 	if !ok {
-		return plugin.Fail(plugin.ClassUnavailable)
+		return pluginhost.Fail(pluginhost.ClassUnavailable)
 	}
 	defer c.leave(id)
 
@@ -336,14 +336,14 @@ func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 		return ctxErr
 	}
 	if c.isClosed() {
-		return plugin.Fail(plugin.ClassUnavailable) // closed while in flight
+		return pluginhost.Fail(pluginhost.ClassUnavailable) // closed while in flight
 	}
 	if dropped {
 		// The connection went away while the call was open and nothing came
 		// back, so no status of the plugin's own can be in the error. Which
 		// connect code the loss maps to (a reset, a closed stream) depends on
 		// how the peer died.
-		return plugin.Fail(plugin.ClassExited)
+		return pluginhost.Fail(pluginhost.ClassExited)
 	}
 	code := connectrpc.CodeOf(err)
 	if connectrpc.IsWireError(err) {
@@ -353,14 +353,14 @@ func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 			}
 		}
 		// The plugin answered with an error status; its message is never read.
-		return plugin.Fail(plugin.ClassBadResponse)
+		return pluginhost.Fail(pluginhost.ClassBadResponse)
 	}
 	if code == connectrpc.CodeUnavailable {
 		// No connection, or an HTTP 503 (or similar) in front of the plugin.
-		return plugin.Fail(plugin.ClassUnavailable)
+		return pluginhost.Fail(pluginhost.ClassUnavailable)
 	}
 	// Over the size cap, not gRPC, an HTTP error or a redirect.
-	return plugin.Fail(plugin.ClassBadResponse)
+	return pluginhost.Fail(pluginhost.ClassBadResponse)
 }
 
 // ownDeadline reports ctx's error when a DEADLINE_EXCEEDED from the plugin

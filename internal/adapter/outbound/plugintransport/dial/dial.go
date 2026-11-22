@@ -18,7 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Transport names in a manifest's endpoint.
@@ -91,7 +91,7 @@ type Options struct {
 //
 // A local plugin's transport has an Exited method whose channel is closed
 // once its process has exited.
-func Entry(ctx context.Context, k plugin.EntryKey, v plugin.Verified, o Options) (plugin.Transport, error) {
+func Entry(ctx context.Context, k pluginhost.EntryKey, v pluginhost.Verified, o Options) (pluginhost.Transport, error) {
 	m := v.Manifest
 	if r := m.Endpoint.Remote; r != nil {
 		return wrap(k)(connect.Dial(ctx, *r, m.Network.Egress, o.CredentialFile))
@@ -119,8 +119,8 @@ func Entry(ctx context.Context, k plugin.EntryKey, v plugin.Verified, o Options)
 	return nil, fmt.Errorf("plugin %s: transport %q is not served", k, l.Transport)
 }
 
-func wrap(k plugin.EntryKey) func(plugin.Transport, error) (plugin.Transport, error) {
-	return func(t plugin.Transport, err error) (plugin.Transport, error) {
+func wrap(k pluginhost.EntryKey) func(pluginhost.Transport, error) (pluginhost.Transport, error) {
+	return func(t pluginhost.Transport, err error) (pluginhost.Transport, error) {
 		if err != nil {
 			return nil, fmt.Errorf("plugin %s: %w", k, err)
 		}
@@ -163,8 +163,8 @@ func socketDir(base string) (dir, path string, err error) {
 	if err := socketPathFits(base); err != nil {
 		return "", "", err
 	}
-	if err := plugin.CheckSocketBase(base); err != nil {
-		var ve *plugin.VerifyError
+	if err := pluginhost.CheckSocketBase(base); err != nil {
+		var ve *pluginhost.VerifyError
 		if errors.As(err, &ve) {
 			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; "+
 				"a directory there may be writable by others only when root owns it and its sticky bit is set, as for /tmp. "+
@@ -205,8 +205,8 @@ func socketPathFits(base string) error {
 // its socket, and connects with dial. On any failure the child is stopped
 // and the directory removed.
 func startSocket(ctx context.Context, spec child.Spec, base string,
-	dial func(context.Context, string) (plugin.Transport, error),
-) (plugin.Transport, error) {
+	dial func(context.Context, string) (pluginhost.Transport, error),
+) (pluginhost.Transport, error) {
 	dir, sock, err := socketDir(base)
 	if err != nil {
 		return nil, err
@@ -256,7 +256,7 @@ func waitSocket(ctx context.Context, sock string, exited <-chan struct{}) error 
 // group and removes the socket directory: as for jsonrpc.Spawn, a graceful
 // stop is the shutdown call made before Close.
 type socketTransport struct {
-	plugin.Transport
+	pluginhost.Transport
 	p   *child.Process
 	dir string
 }

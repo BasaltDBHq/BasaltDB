@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package engine_test
+package app_test
 
 import (
 	"bufio"
@@ -21,7 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 // shortDir is a socket directory short enough for macOS's ~104-byte Unix
@@ -40,8 +40,8 @@ func whoami(name string) mcp.Tool {
 	}}
 }
 
-func agent(name, dir string, uid uint32) engine.Agent {
-	return engine.Agent{
+func agent(name, dir string, uid uint32) app.Agent {
+	return app.Agent{
 		Name:       name,
 		UID:        uid,
 		SocketPath: filepath.Join(dir, name+".sock"),
@@ -49,11 +49,11 @@ func agent(name, dir string, uid uint32) engine.Agent {
 	}
 }
 
-func startEngine(t *testing.T, agents ...engine.Agent) {
+func startEngine(t *testing.T, agents ...app.Agent) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	e := engine.New(slog.New(slog.DiscardHandler), agents)
+	e := app.New(slog.New(slog.DiscardHandler), agents)
 	go func() { done <- e.Serve(ctx) }()
 	t.Cleanup(func() {
 		cancel()
@@ -180,7 +180,7 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	bot := agent("bot", dir, myUID())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).
+	e := app.New(slog.New(slog.DiscardHandler), []app.Agent{bot}).
 		WithPeerUID(func(*net.UnixConn) (uint32, error) { return 0, io.ErrUnexpectedEOF })
 	go func() { _ = e.Serve(ctx) }()
 	waitListening(t, bot.SocketPath)
@@ -220,7 +220,7 @@ func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {
 
 	other := agent("other", dir, myUID())
 	require.NoError(t, os.WriteFile(other.SocketPath, []byte("keep me"), 0o600))
-	err = engine.New(slog.New(slog.DiscardHandler), []engine.Agent{other}).Serve(context.Background())
+	err = app.New(slog.New(slog.DiscardHandler), []app.Agent{other}).Serve(context.Background())
 	require.ErrorContains(t, err, "not a socket")
 	raw, err := os.ReadFile(other.SocketPath)
 	require.NoError(t, err)
@@ -240,9 +240,9 @@ func TestShimAnswersItselfWithoutAnEngine(t *testing.T) {
 
 func TestNewPanicsWithoutAgents(t *testing.T) {
 	t.Parallel()
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), nil) })
-	require.Panics(t, func() { engine.New(nil, []engine.Agent{agent("a", "/tmp", 0)}) })
-	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), []engine.Agent{{Name: "a"}}) })
+	require.Panics(t, func() { app.New(slog.New(slog.DiscardHandler), nil) })
+	require.Panics(t, func() { app.New(nil, []app.Agent{agent("a", "/tmp", 0)}) })
+	require.Panics(t, func() { app.New(slog.New(slog.DiscardHandler), []app.Agent{{Name: "a"}}) })
 }
 
 // Refused peers are drained a few at a time per agent; past the cap the
@@ -254,7 +254,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	bot := agent("bot", dir, myUID()+1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2).
+	e := app.New(slog.New(slog.DiscardHandler), []app.Agent{bot}).WithRefusedDrains(2).
 		// A long drain window, so no drain times out while the test runs.
 		WithRefuseDrain(time.Minute)
 	done := make(chan struct{})

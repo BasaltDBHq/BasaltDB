@@ -1,4 +1,4 @@
-package service_test
+package osservice_test
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 const dialogBinary = "/usr/local/bin/basalt"
@@ -23,14 +23,14 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 		goos, unitPath, start string
 		want                  []string
 	}{
-		{"linux", service.SystemdUnitPath, "systemctl enable --now " + service.SystemdUnitName, []string{
+		{"linux", osservice.SystemdUnitPath, "systemctl enable --now " + osservice.SystemdUnitName, []string{
 			"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
 			"make_dir /etc/basalt 0750 basalt basalt",
 			"make_root_dir /opt/basalt 0755",
 			"make_root_dir /opt/basalt/run 0755",
 			"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json --supervise\n",
 		}},
-		{"darwin", service.LaunchdPlist, "launchctl bootstrap system " + service.LaunchdPlist, []string{
+		{"darwin", osservice.LaunchdPlist, "launchctl bootstrap system " + osservice.LaunchdPlist, []string{
 			"dscl . -create /Users/_basalt UniqueID \"$id\"",
 			"make_dir '/Library/Application Support/Basalt' 0755 _basalt _basalt",
 			"make_dir '/Library/Application Support/Basalt/run' 0755 _basalt _basalt",
@@ -42,7 +42,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 	} {
 		t.Run(v.goos, func(t *testing.T) {
 			t.Parallel()
-			script, err := service.InstallScript(v.goos, dialogBinary)
+			script, err := osservice.InstallScript(v.goos, dialogBinary)
 			require.NoError(t, err)
 			for _, w := range append(v.want, "put_file "+shellWord(v.unitPath), v.start, "PATH=/usr/bin:/bin:/usr/sbin:/sbin\n", "cd /\n") {
 				require.Contains(t, script, w)
@@ -52,7 +52,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 			for _, never := range []string{"--agent", "--credential", "--init-arg", "--os-user", "--person-uid", "--pages-url", "postgres", "$HOME", "$PWD"} {
 				require.NotContains(t, script, never)
 			}
-			again, err := service.InstallScript(v.goos, dialogBinary)
+			again, err := osservice.InstallScript(v.goos, dialogBinary)
 			require.NoError(t, err)
 			require.Equal(t, script, again, "the same machine and binary make the same script")
 
@@ -81,11 +81,11 @@ func TestInstallScriptChecksBeforeItCreates(t *testing.T) {
 			"-ge 300", "-le 499", "dscl . -read /Groups/_basalt", "dscl . -read /Users/_basalt UserShell",
 		}},
 	} {
-		script, err := service.InstallScript(v.goos, dialogBinary)
+		script, err := osservice.InstallScript(v.goos, dialogBinary)
 		require.NoError(t, err)
-		_, rest, ok := strings.Cut(script, service.ScriptHelpersEnd)
+		_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 		require.True(t, ok)
-		checks, _, ok := strings.Cut(rest, service.ScriptPreflightEnd)
+		checks, _, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
 		require.True(t, ok)
 		for _, c := range append(v.checks, "bin=/usr/local/bin/basalt\n", `[ "$(uid_of "$bin")" = 0 ]`) {
 			require.Contains(t, checks, c, v.goos)
@@ -108,11 +108,11 @@ func shellWord(s string) string {
 func TestInstallScriptMakesThePluginBase(t *testing.T) {
 	t.Parallel()
 	for _, goos := range []string{"linux", "darwin"} {
-		base, err := service.PluginBase(goos)
+		base, err := osservice.PluginBase(goos)
 		require.NoError(t, err)
-		run, err := service.PluginRunDir(goos)
+		run, err := osservice.PluginRunDir(goos)
 		require.NoError(t, err)
-		script, err := service.InstallScript(goos, dialogBinary)
+		script, err := osservice.InstallScript(goos, dialogBinary)
 		require.NoError(t, err)
 		require.Contains(t, script, "make_root_dir "+base+" 0755", goos)
 		require.Contains(t, script, "make_root_dir "+run+" 0755", goos)
@@ -126,27 +126,27 @@ func TestInstallScriptRefusesAnUnsafeBinaryPath(t *testing.T) {
 		"/opt/my basalt/basalt", "/usr/local/bin/basalt\nExecStartPre=/bin/sh", "/usr/local/bin/$(id)", "/usr/local/bin/`id`",
 		"/usr/local/bin/basalt\\", "/usr/local/bin/a\"b",
 	} {
-		_, err := service.InstallScript("linux", bin)
+		_, err := osservice.InstallScript("linux", bin)
 		require.Error(t, err, bin)
 	}
-	_, err := service.InstallScript("windows", dialogBinary)
+	_, err := osservice.InstallScript("windows", dialogBinary)
 	require.Error(t, err)
 }
 
 func TestDialogCommand(t *testing.T) {
 	t.Parallel()
-	argv, err := service.DialogCommand("darwin", service.ResetPrompt, "echo hi")
+	argv, err := osservice.DialogCommand("darwin", osservice.ResetPrompt, "echo hi")
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"/usr/bin/osascript", "-e", "on run argv", "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges", "-e", "end run", "echo hi", service.ResetPrompt,
+		"/usr/bin/osascript", "-e", "on run argv", "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges", "-e", "end run", "echo hi", osservice.ResetPrompt,
 	}, argv, "the script and the prompt go as arguments, never inside AppleScript text")
 
-	argv, err = service.DialogCommand("linux", service.ResetPrompt, "echo hi")
+	argv, err = osservice.DialogCommand("linux", osservice.ResetPrompt, "echo hi")
 	require.NoError(t, err)
 	require.Equal(t, []string{"/usr/bin/pkexec", "--disable-internal-agent", "/bin/sh", "-c", "echo hi"}, argv,
 		"no text prompt: only the desktop's dialog answers")
 
-	_, err = service.DialogCommand("windows", service.ResetPrompt, "echo hi")
+	_, err = osservice.DialogCommand("windows", osservice.ResetPrompt, "echo hi")
 	require.Error(t, err)
 }
 
@@ -154,17 +154,17 @@ func TestDialogCommand(t *testing.T) {
 // unexpected dialog reads as one to cancel.
 func TestDialogPromptsNameTheirAction(t *testing.T) {
 	t.Parallel()
-	for prompt, action := range map[string]string{service.InstallPrompt: "INSTALL", service.RemovePrompt: "REMOVE", service.ResetPrompt: "RESET"} {
+	for prompt, action := range map[string]string{osservice.InstallPrompt: "INSTALL", osservice.RemovePrompt: "REMOVE", osservice.ResetPrompt: "RESET"} {
 		require.Contains(t, prompt, "BasaltDB wants to "+action+" ")
 		require.Contains(t, prompt, "Cancel unless you just ")
 		require.NotContainsf(t, prompt, `"`, "the prompt is an AppleScript argument; keep it plain: %s", prompt)
 	}
-	require.Contains(t, service.ResetPrompt, "No, this isn't mine")
+	require.Contains(t, osservice.ResetPrompt, "No, this isn't mine")
 }
 
 func TestDialogError(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, service.DialogError("linux", 0, "", nil))
+	require.NoError(t, osservice.DialogError("linux", 0, "", nil))
 	run := errors.New("exit status 1")
 	for _, v := range []struct {
 		goos   string
@@ -172,14 +172,14 @@ func TestDialogError(t *testing.T) {
 		stderr string
 		is     error
 	}{
-		{"linux", 126, "", service.ErrDialogCancelled},
-		{"linux", 127, "Error executing command as another user: No authentication agent found.", service.ErrNoDialog},
-		{"darwin", 1, "0:58: execution error: User canceled. (-128)", service.ErrDialogCancelled},
-		{"darwin", 1, "execution error: No user interaction allowed. (-1713)", service.ErrNoDialog},
-		{"darwin", 1, "execution error: basalt: /etc is owned by uid 501, not root (1)", service.ErrDialogScript},
-		{"linux", 1, "basalt: /etc/basalt is writable by group or others", service.ErrDialogScript},
+		{"linux", 126, "", osservice.ErrDialogCancelled},
+		{"linux", 127, "Error executing command as another user: No authentication agent found.", osservice.ErrNoDialog},
+		{"darwin", 1, "0:58: execution error: User canceled. (-128)", osservice.ErrDialogCancelled},
+		{"darwin", 1, "execution error: No user interaction allowed. (-1713)", osservice.ErrNoDialog},
+		{"darwin", 1, "execution error: basalt: /etc is owned by uid 501, not root (1)", osservice.ErrDialogScript},
+		{"linux", 1, "basalt: /etc/basalt is writable by group or others", osservice.ErrDialogScript},
 	} {
-		err := service.DialogError(v.goos, v.code, v.stderr, run)
+		err := osservice.DialogError(v.goos, v.code, v.stderr, run)
 		require.ErrorIs(t, err, v.is, "%s %d %q", v.goos, v.code, v.stderr)
 	}
 }
@@ -189,9 +189,9 @@ func TestDialogError(t *testing.T) {
 // the engine's.
 func helperScript(t *testing.T, call string) (string, error) {
 	t.Helper()
-	script, err := service.InstallScript(runtime.GOOS, dialogBinary)
+	script, err := osservice.InstallScript(runtime.GOOS, dialogBinary)
 	require.NoError(t, err)
-	helpers, _, ok := strings.Cut(script, service.ScriptHelpersEnd)
+	helpers, _, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 	require.True(t, ok)
 	out, err := exec.Command("/bin/sh", "-c", helpers+"\n"+call).CombinedOutput()
 	return string(out), err

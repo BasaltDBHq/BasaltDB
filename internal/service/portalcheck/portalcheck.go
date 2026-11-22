@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	websec "github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -118,10 +118,10 @@ const ConnectPageFile = "connect/index.html"
 // same.
 func Options(base string) portalverify.Options {
 	o := portalverify.Options{
-		Base: base, Files: web.Files, Headers: websec.ExpectedPortal(),
+		Base: base, Files: web.Files, Headers: httpsec.ExpectedPortal(),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
-		FileHeaders: map[string]http.Header{ConnectPageFile: websec.ExpectedConnectPage()},
+		FileHeaders: map[string]http.Header{ConnectPageFile: httpsec.ExpectedConnectPage()},
 	}
 	for _, r := range pages.PortalPages() {
 		o.Routes = append(o.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})

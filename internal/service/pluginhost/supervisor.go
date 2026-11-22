@@ -1,4 +1,4 @@
-package plugin
+package pluginhost
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // Supervision timing (CONTRACT.md, Plugins, Protocol and Failure).
@@ -323,8 +323,8 @@ func (s *Supervisor) runOnce(ctx context.Context, r *entryRun) bool {
 			s.stopEntry(ctx, k, t)
 			return healthy
 		}
-		var resp protocol.HealthResponse
-		err := s.h.Control(ctx, k, protocol.MethodHealth, protocol.HealthRequest{}, &resp)
+		var resp pluginproto.HealthResponse
+		err := s.h.Control(ctx, k, pluginproto.MethodHealth, pluginproto.HealthRequest{}, &resp)
 		switch {
 		case ctx.Err() != nil:
 			s.stopEntry(ctx, k, t)
@@ -333,7 +333,7 @@ func (s *Supervisor) runOnce(ctx context.Context, r *entryRun) bool {
 			r.setFailure(classOf(err))
 			s.stopEntry(ctx, k, t)
 			return healthy
-		case resp.Status == protocol.HealthReady:
+		case resp.Status == pluginproto.HealthReady:
 			healthy = true
 			r.setFailure("")
 			s.h.SetState(k, StateReady)
@@ -376,7 +376,7 @@ func (s *Supervisor) stopEntry(ctx context.Context, k EntryKey, t Transport) {
 	cancelDrain()
 	exitCtx, cancelExit := context.WithDeadline(base, deadline.Add(-killReserve))
 	defer cancelExit()
-	if err := s.h.Control(exitCtx, k, protocol.MethodShutdown, protocol.ShutdownRequest{}, nil); err == nil {
+	if err := s.h.Control(exitCtx, k, pluginproto.MethodShutdown, pluginproto.ShutdownRequest{}, nil); err == nil {
 		if ex, ok := t.(Exiter); ok {
 			select {
 			case <-ex.Exited():

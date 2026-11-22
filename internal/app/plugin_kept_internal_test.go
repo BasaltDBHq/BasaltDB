@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"bytes"
@@ -38,7 +38,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/service/keptplugins"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Uids of the kept-plugin cases: the person, and an agent's own OS user.
@@ -138,7 +138,7 @@ func source(version string) ([]shim.PluginFile, []string) {
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
 	return []shim.PluginFile{
-		{Path: plugin.ManifestFile, Data: []byte(manifest)},
+		{Path: pluginhost.ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
 	}, []string{"bin/acme-ner"}
@@ -174,7 +174,7 @@ func (f *keptFixture) entries() []config.Plugin {
 	return es
 }
 
-func (f *keptFixture) state0(agentName string, k plugin.EntryKey) string {
+func (f *keptFixture) state0(agentName string, k pluginhost.EntryKey) string {
 	f.t.Helper()
 	r := newKeptApprovalReader(context.Background(), f.s, nil, []config.Plugin{{Name: k.Name, Instance: k.Instance, Agents: []string{agentName}}})
 	return r.stateOf(agentName, k).State
@@ -282,7 +282,7 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	require.Zero(t, f.s.store.Open(), "the upload is gone once used")
 
 	require.Equal(t, before, snapshot(t, f.base, f.state), "nothing outside the state directory changed")
-	require.Equal(t, "PENDING", f.state0("product_a", plugin.EntryKey{Name: "acme-ner", Instance: "default"}))
+	require.Equal(t, "PENDING", f.state0("product_a", pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}))
 
 	list, err := f.client.PluginList(context.Background())
 	require.NoError(t, err)
@@ -295,7 +295,7 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	require.JSONEq(t, `{"files":"NONE","network":"NOT_ENFORCED"}`, string(list.Plugins[0].Isolation))
 
 	f.sign(a)
-	require.Equal(t, "APPROVED", f.state0("product_b", plugin.EntryKey{Name: "acme-ner", Instance: "default"}))
+	require.Equal(t, "APPROVED", f.state0("product_b", pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}))
 }
 
 // TestFilesOverSocketRespectLimits: every limit of the upload and of the
@@ -342,7 +342,7 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 
 	f.s.store.WithLimits(keptplugins.DefaultLimits())
 	id = begin()
-	tooLarge(part(id, plugin.SignatureFile, 0, plugin.MaxSignatureFileBytes+1))
+	tooLarge(part(id, pluginhost.SignatureFile, 0, pluginhost.MaxSignatureFileBytes+1))
 	id = begin()
 	tooLarge(part(id, "a", 0, keptplugins.MaxPartBytes+1))
 
@@ -395,7 +395,7 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.Len(t, res.Approvals, 1)
 
 	// Each row's health is asked of the engine for that row's own kind.
-	f.s.health = func(_ plugin.EntryKey, kept bool) string {
+	f.s.health = func(_ pluginhost.EntryKey, kept bool) string {
 		if kept {
 			return person.HealthUnavailable
 		}
@@ -472,7 +472,7 @@ func (d failingDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Co
 // end cannot be written at disable, the enable writes it first, and when
 // it still cannot, the enable is refused with nothing written.
 func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
-	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	enable := func(f *keptFixture) (person.PluginOpenResult, error) {
 		return f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a"}})
 	}
@@ -638,7 +638,7 @@ func (errRow) Scan(...any) error { return errors.New("the database does not answ
 // entry has its approval ended, and an agent added never comes back on an
 // old signed approval, even when the new approval cannot be opened.
 func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
-	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	open := func(f *keptFixture, agents ...string) (person.PluginOpenResult, error) {
 		return f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: agents})
 	}
@@ -680,7 +680,7 @@ func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 // TestRemoveThenAddWiderNeedsNewApproval: an end a remove could not write
 // is written before an agent is added to a new entry of the same name.
 func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
-	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	k := pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 	f := newKeptFixture(t, []string{"product_a", "product_b"})
 	res, err := f.add("default", "product_a", "product_b")
 	require.NoError(t, err)

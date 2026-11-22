@@ -21,7 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // maxSourceBytes bounds what is read of a plugin folder: the upload's own
@@ -212,7 +212,7 @@ type PluginSource struct {
 	Files []PluginFile
 	// Executables are the listed files with an execute bit.
 	Executables []string
-	Manifest    plugin.Manifest
+	Manifest    pluginhost.Manifest
 }
 
 // ReadPluginSource reads a plugin folder for an upload: the manifest, its
@@ -261,11 +261,11 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 		}
 		return b, fi.Mode().Perm()&0o111 != 0, nil
 	}
-	manifest, _, err := read(plugin.ManifestFile, plugin.MaxManifestBytes)
+	manifest, _, err := read(pluginhost.ManifestFile, pluginhost.MaxManifestBytes)
 	if err != nil {
 		return PluginSource{}, err
 	}
-	m, err := plugin.ParseManifest(manifest)
+	m, err := pluginhost.ParseManifest(manifest)
 	if err != nil {
 		return PluginSource{}, &mcp.ToolError{
 			Code: codePluginRefused, Reason: "BAD_MANIFEST", Message: "the plugin is refused: " + err.Error() + ". Nothing was written",
@@ -273,13 +273,13 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 			NextSteps:     []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
 		}
 	}
-	files := []PluginFile{{Path: plugin.ManifestFile, Data: manifest}}
-	if _, err := root.Lstat(plugin.SignatureFile); err == nil {
-		sig, _, err := read(plugin.SignatureFile, plugin.MaxSignatureFileBytes)
+	files := []PluginFile{{Path: pluginhost.ManifestFile, Data: manifest}}
+	if _, err := root.Lstat(pluginhost.SignatureFile); err == nil {
+		sig, _, err := read(pluginhost.SignatureFile, pluginhost.MaxSignatureFileBytes)
 		if err != nil {
 			return PluginSource{}, err
 		}
-		files = append(files, PluginFile{Path: plugin.SignatureFile, Data: sig})
+		files = append(files, PluginFile{Path: pluginhost.SignatureFile, Data: sig})
 	}
 	var execs []string
 	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {

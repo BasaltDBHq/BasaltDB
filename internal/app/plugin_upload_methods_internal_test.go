@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"bufio"
@@ -21,7 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/keptplugins"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // uploadSource writes a plugin folder basalt mcp can read.
@@ -125,7 +125,7 @@ func bigSource(t *testing.T, size int) (string, []byte) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "share"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, plugin.ManifestFile), []byte(manifest), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, pluginhost.ManifestFile), []byte(manifest), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", "acme-ner"), exe, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "share", "model.txt"), model, 0o644))
 	return dir, model

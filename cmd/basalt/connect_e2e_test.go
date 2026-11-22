@@ -31,7 +31,7 @@ import (
 	connectv1 "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -436,7 +436,7 @@ func startConnectEngine(t *testing.T, cfgPath string) connectEngine {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- engine.Run(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler)) }()
+	go func() { done <- app.Run(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler)) }()
 	t.Cleanup(func() {
 		cancel()
 		require.NoError(t, <-done)

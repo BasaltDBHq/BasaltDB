@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // transportName is the only transport a remote endpoint may name.
@@ -58,7 +58,7 @@ func endpointError(host string, reason error) error {
 // checkEndpoint applies the rules for a remote endpoint that need no
 // network: https only, no credentials, query or fragment in the URL, and the
 // URL's host and port in egress. It never returns the URL's text.
-func checkEndpoint(ep plugin.RemoteEndpoint, egress []string) (target, error) {
+func checkEndpoint(ep pluginhost.RemoteEndpoint, egress []string) (target, error) {
 	u, err := url.Parse(ep.URL)
 	if err != nil {
 		return target{}, endpointError("", ErrEndpointURL)

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
 )
@@ -49,7 +49,7 @@ func TestATickTheGuardRefusesDoesNothing(t *testing.T) {
 	t.Parallel()
 	pins := &savedPins{}
 	refuse := errors.New("the guard misses breaking migrations 18")
-	u := upkeep.New("bot", "test", postgres.NewUpkeep(noDB{t: t}), slog.New(slog.DiscardHandler), time.Now).
+	u := upkeep.New("bot", "test", store.NewUpkeep(noDB{t: t}), slog.New(slog.DiscardHandler), time.Now).
 		WithPins(pins).WithGate(func(context.Context) error { return refuse })
 	err := u.Tick(context.Background())
 	require.ErrorIs(t, err, refuse)

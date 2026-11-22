@@ -34,7 +34,7 @@ import (
 	connectv1 "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -160,7 +160,7 @@ type handoffEngine struct {
 	reloads chan struct{}
 }
 
-func startHandoffEngine(t *testing.T, cfgPath string, o engine.HandoffOptions) handoffEngine {
+func startHandoffEngine(t *testing.T, cfgPath string, o app.HandoffOptions) handoffEngine {
 	t.Helper()
 	sameUserConfig(t, cfgPath)
 	e := handoffEngine{reloads: make(chan struct{}, 4)}
@@ -173,8 +173,8 @@ func startHandoffEngine(t *testing.T, cfgPath string, o engine.HandoffOptions) h
 				done <- err
 				return
 			}
-			err = engine.RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), engine.RestartOptions{Handoff: o})
-			if !errors.Is(err, engine.ErrReload) || ctx.Err() != nil {
+			err = app.RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), app.RestartOptions{Handoff: o})
+			if !errors.Is(err, app.ErrReload) || ctx.Err() != nil {
 				done <- err
 				return
 			}
@@ -292,8 +292,8 @@ func (e handoffEngine) waitForState(t *testing.T, state string) map[string]any {
 	return st
 }
 
-func (f handoffFixture) engineOptions(resolver handoff.Resolver) engine.HandoffOptions {
-	return engine.HandoffOptions{
+func (f handoffFixture) engineOptions(resolver handoff.Resolver) app.HandoffOptions {
+	return app.HandoffOptions{
 		ServiceURL: f.page.base,
 		Prober:     handoff.Prober{Resolver: resolver, Dial: f.proxy.Dial, Roots: f.proxy.Roots},
 	}

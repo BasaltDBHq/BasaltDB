@@ -1,11 +1,11 @@
-package engine_test
+package app_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 // Soft ceiling (owner, 13 Nov): keep the server instructions to the core
@@ -13,6 +13,6 @@ import (
 func TestInstructionsStayShort(t *testing.T) {
 	t.Parallel()
 	const ceiling = 4000
-	require.LessOrEqual(t, len(engine.Instructions), ceiling,
-		"the instructions are %d characters; move detail to the docs", len(engine.Instructions))
+	require.LessOrEqual(t, len(app.Instructions), ceiling,
+		"the instructions are %d characters; move detail to the docs", len(app.Instructions))
 }

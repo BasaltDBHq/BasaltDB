@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"bytes"
@@ -30,7 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // keptWait bounds a wait on the running engine: a cold start of the test
@@ -106,7 +106,7 @@ func runSource(t *testing.T, report, hooks string) ([]shim.PluginFile, []string)
   "network": { "egress": [] }
 }
 `, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
-	return []shim.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
+	return []shim.PluginFile{{Path: pluginhost.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.
@@ -128,7 +128,7 @@ func (r *keptRun) addWith(hooks string, agents ...string) person.PluginOpenResul
 	return res
 }
 
-var keptKey = plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+var keptKey = pluginhost.EntryKey{Name: "acme-ner", Instance: "default"}
 
 // requireServed waits until the engine serves keptKey READY to agents, on
 // approval, and PLUGIN_LIST says so.
@@ -136,7 +136,7 @@ func (r *keptRun) requireServed(approval person.PluginOpenedApproval, agents ...
 	r.t.Helper()
 	require.Eventually(r.t, func() bool {
 		got := servedTo(r.ep, keptKey)
-		return len(got) == len(agents) && r.ep.host.State(keptKey) == plugin.StateReady
+		return len(got) == len(agents) && r.ep.host.State(keptKey) == pluginhost.StateReady
 	}, keptWait, 50*time.Millisecond, "served to %v", agents)
 	require.ElementsMatch(r.t, agents, servedTo(r.ep, keptKey))
 	list, err := r.f.client.PluginList(context.Background())
@@ -158,7 +158,7 @@ func (r *keptRun) requireNotRunning() {
 	}, keptWait, 50*time.Millisecond)
 }
 
-func containsKey(ks []plugin.EntryKey, k plugin.EntryKey) bool {
+func containsKey(ks []pluginhost.EntryKey, k pluginhost.EntryKey) bool {
 	for _, x := range ks {
 		if x == k {
 			return true
@@ -455,14 +455,14 @@ func TestSudoInstalledPluginStillIsolated(t *testing.T) {
 	v := svcVerified()
 	p := cfg.Plugins[0]
 	ep := serviceEngine(cfg, &fakeUnits{uids: map[string]int{"basalt-plugin-acme-ner-default": 990}}, 995)
-	ep.keptKeys = map[plugin.EntryKey]bool{{Name: "acme-kept", Instance: "default"}: true}
+	ep.keptKeys = map[pluginhost.EntryKey]bool{{Name: "acme-kept", Instance: "default"}: true}
 	require.Equal(t, whyNoUnit, ep.localRefusal(p, v), "no unit: the engine never starts a config entry itself")
 	require.NotContains(t, ep.targets, p.Key())
 	kept := config.Plugin{Name: "acme-kept", Instance: "default", Enabled: true, Agents: []string{"product_a"}, Approval: config.PluginApprovalRequired}
 	require.Empty(t, ep.localRefusal(kept, v), "an engine-kept local entry runs as the engine's child")
 
 	cfg.Plugins = append(cfg.Plugins, kept)
-	want := wantedFrom(cfg, func(plugin.EntryKey) (plugin.Verified, bool) { return v, true }, plugin.ModeService, "linux", trustWant{}, ep.isKept)
+	want := wantedFrom(cfg, func(pluginhost.EntryKey) (pluginhost.Verified, bool) { return v, true }, pluginhost.ModeService, "linux", trustWant{}, ep.isKept)
 	require.Equal(t, guard.PluginFilesOSUser, want.served["product_a"][p.Key()].Isolation.Files)
 	require.Equal(t, guard.PluginFilesNone, want.served["product_a"][kept.Key()].Isolation.Files)
 	require.True(t, want.approval[kept.Key()])
@@ -474,21 +474,21 @@ func TestSudoInstalledPluginStillIsolated(t *testing.T) {
 // record is never ended by a pass, and their status is never cleared.
 func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
-	sudoKey := plugin.EntryKey{Name: "acme-sudo", Instance: "default"}
+	sudoKey := pluginhost.EntryKey{Name: "acme-sudo", Instance: "default"}
 	held := config.Plugin{Name: sudoKey.Name, Instance: sudoKey.Instance, ManifestSHA256: strings.Repeat("a", 64), Enabled: true, Agents: []string{"product_a"}}
 	db := f.agents["product_a"].db
 	recorded := guard.PluginDetail{
 		Name: sudoKey.Name, Instance: sudoKey.Instance, Version: "1.0.0", ManifestSHA256: held.ManifestSHA256,
 		Hooks: []string{"feed.observe"}, Egress: []string{}, Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkEnforced}, Signer: string(plugin.SignerUnknown),
+		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkEnforced}, Signer: string(pluginhost.SignerUnknown),
 	}
 	require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), db, guard.PluginEnabled, recorded))
 
 	start := f.cfg
 	start.Plugins = []config.Plugin{held}
-	ep := &enginePlugins{kept: f.s.store, keptKeys: map[plugin.EntryKey]bool{}, mode: plugin.ModeService, o: pluginOptions{goos: "linux"}}
+	ep := &enginePlugins{kept: f.s.store, keptKeys: map[pluginhost.EntryKey]bool{}, mode: pluginhost.ModeService, o: pluginOptions{goos: "linux"}}
 	w := &pluginWatch{ep: ep, start: start, eff: start}
-	notStarted := func(plugin.EntryKey) (plugin.Verified, bool) { return plugin.Verified{}, false }
+	notStarted := func(pluginhost.EntryKey) (pluginhost.Verified, bool) { return pluginhost.Verified{}, false }
 	want := w.wanted(notStarted)
 	require.True(t, want.frozen[sudoKey])
 	pass := writeAgentPluginEvents(context.Background(), "product_a", want, pluginLedger{db: db}, slog.New(slog.DiscardHandler))
@@ -501,8 +501,8 @@ func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
 	require.NotEmpty(t, pass.disables)
 
 	// A pass keeps a config entry's status and replaces a kept entry's.
-	keptKey := plugin.EntryKey{Name: "acme-kept", Instance: "default"}
-	ep.unrecorded = map[plugin.EntryKey]map[string]withheldWhy{
+	keptKey := pluginhost.EntryKey{Name: "acme-kept", Instance: "default"}
+	ep.unrecorded = map[pluginhost.EntryKey]map[string]withheldWhy{
 		sudoKey: {"product_a": {why: "start"}},
 		keptKey: {"product_a": {why: "old"}},
 	}
@@ -534,7 +534,7 @@ func TestAgentOperatedEngineKeepsPlugins(t *testing.T) {
 	require.NoError(t, config.WriteFile(f.configPath, raw))
 	_, err = config.Load(f.configPath)
 	require.NoError(t, err, "the watch reads engine.json")
-	require.Equal(t, plugin.ModeSameUser, r.ep.mode)
+	require.Equal(t, pluginhost.ModeSameUser, r.ep.mode)
 	require.NotNil(t, r.ep.kept)
 	res := r.add("product_a")
 	r.requireNotRunning()
@@ -547,7 +547,7 @@ func TestAgentOperatedEngineKeepsPlugins(t *testing.T) {
 
 	w := &pluginWatch{ep: r.ep, start: f.cfg, eff: f.cfg}
 	require.False(t, w.serviceKept())
-	require.False(t, w.frozenNow()(plugin.EntryKey{Name: "acme-config", Instance: "default"}), "config entries change while it runs")
+	require.False(t, w.frozenNow()(pluginhost.EntryKey{Name: "acme-config", Instance: "default"}), "config entries change while it runs")
 
 	// engine.json that cannot be read holds back hand edits, never a
 	// removal: the plugin stops before request_plugin answers REMOVED.

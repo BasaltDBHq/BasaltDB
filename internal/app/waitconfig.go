@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -58,7 +58,7 @@ func WaitForConfig(ctx context.Context, o WaitOptions) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	ln, h, err := server.Listen(server.Options{}, "setup page", addr, pages.SetupOnlyHandler(o.Origin, jobs, log.With("component", "setup")))
+	ln, h, err := httpserver.Listen(httpserver.Options{}, "setup page", addr, pages.SetupOnlyHandler(o.Origin, jobs, log.With("component", "setup")))
 	if err != nil {
 		return nil, setupPortError(addr, err)
 	}

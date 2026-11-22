@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // ErrNotSocket: the path is missing or is not a Unix socket (a symbolic link
@@ -27,14 +27,14 @@ var ErrNotSocket = errors.New("the plugin socket path is not a unix socket")
 // no Authorization header and no credential file. A refusal names the
 // socket's file name only and wraps ErrNotSocket, ErrUnreachable or ctx's
 // error.
-func DialLocal(ctx context.Context, socketPath string) (plugin.Transport, error) {
+func DialLocal(ctx context.Context, socketPath string) (pluginhost.Transport, error) {
 	return dialLocal(ctx, socketPath, options{})
 }
 
 // DialLocalChecked is DialLocal with check run on every new connection
 // before it is used: a connection check refuses is closed, and the call
 // fails ErrWrongPeer. A service-mode engine checks the peer's OS user.
-func DialLocalChecked(ctx context.Context, socketPath string, check func(net.Conn) error) (plugin.Transport, error) {
+func DialLocalChecked(ctx context.Context, socketPath string, check func(net.Conn) error) (pluginhost.Transport, error) {
 	return dialLocal(ctx, socketPath, options{check: check})
 }
 
@@ -42,7 +42,7 @@ func DialLocalChecked(ctx context.Context, socketPath string, check func(net.Con
 // entry's unit runs.
 var ErrWrongPeer = errors.New("the plugin socket is served by another process than the plugin's")
 
-func dialLocal(ctx context.Context, socketPath string, opts options) (plugin.Transport, error) {
+func dialLocal(ctx context.Context, socketPath string, opts options) (pluginhost.Transport, error) {
 	name := filepath.Base(socketPath)
 	if !isSocket(socketPath) {
 		return nil, localError(name, ErrNotSocket)

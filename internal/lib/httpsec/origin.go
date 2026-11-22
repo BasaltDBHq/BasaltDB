@@ -1,4 +1,4 @@
-package websec
+package httpsec
 
 import (
 	"net"

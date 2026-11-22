@@ -1,4 +1,4 @@
-package service_test
+package osservice_test
 
 import (
 	"context"
@@ -12,35 +12,35 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the plugin unit golden files under testdata/")
 
 const copySHA = "4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3"
 
-func linuxHost() service.PluginHost {
-	return service.PluginHost{
+func linuxHost() osservice.PluginHost {
+	return osservice.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: "/var/lib/basalt", SocketDir: "/run/basalt",
 		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/creds/client_x.url", "/srv/acme.token"},
 	}
 }
 
-func darwinHost() service.PluginHost {
-	return service.PluginHost{
+func darwinHost() osservice.PluginHost {
+	return osservice.PluginHost{
 		GOOS: "darwin", EngineUser: "_basalt", ConfigDir: "/Library/Application Support/Basalt",
 		StateDir: "/Library/Application Support/Basalt/state", SocketDir: "/Library/Application Support/Basalt/run",
 		CredentialFiles: []string{"/Library/Application Support/Basalt/agents/product_a.url"},
 	}
 }
 
-func entry(goos, instance string, egress ...string) service.PluginEntry {
-	root, err := plugin.Root(plugin.ModeService, goos, "")
+func entry(goos, instance string, egress ...string) osservice.PluginEntry {
+	root, err := pluginhost.Root(pluginhost.ModeService, goos, "")
 	if err != nil {
 		panic(err)
 	}
-	return service.PluginEntry{
+	return osservice.PluginEntry{
 		Name: "acme-ner", Instance: instance, Dir: filepath.Join(root, "acme-ner", instance, copySHA),
 		Command: "bin/acme-ner", Args: []string{"--serve", "--lang=en id"}, Egress: egress, Enabled: true,
 	}
@@ -71,26 +71,26 @@ func TestPluginUnitsGolden(t *testing.T) {
 		{"plugin-darwin-egress.plist", "darwin", []string{"hooks.slack.com:443"}},
 	} {
 		h := linuxHost()
-		render := service.SystemdPluginUnit
+		render := osservice.SystemdPluginUnit
 		if tc.goos == "darwin" {
-			h, render = darwinHost(), service.LaunchdPluginDaemon
+			h, render = darwinHost(), osservice.LaunchdPluginDaemon
 		}
 		got, err := render(h, entry(tc.goos, "default", tc.egress...))
 		require.NoError(t, err)
 		golden(t, tc.file, got)
 	}
-	rule, err := service.NewsyslogPluginRule("acme-ner", "default")
+	rule, err := osservice.NewsyslogPluginRule("acme-ner", "default")
 	require.NoError(t, err)
 	golden(t, "plugin-darwin.newsyslog.conf", rule)
 }
 
 func TestDarwinPluginStderrLog(t *testing.T) {
 	t.Parallel()
-	n, err := service.NamesFor("darwin", "acme-ner", "default")
+	n, err := osservice.NamesFor("darwin", "acme-ner", "default")
 	require.NoError(t, err)
 	require.Equal(t, "/Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log", n.Log)
 	require.Equal(t, "/etc/newsyslog.d/basalt-plugin-acme-ner-default.conf", n.LogRule)
-	plist, err := service.LaunchdPluginDaemon(darwinHost(), entry("darwin", "default"))
+	plist, err := osservice.LaunchdPluginDaemon(darwinHost(), entry("darwin", "default"))
 	require.NoError(t, err)
 	require.Contains(t, plist, "<key>StandardErrorPath</key>\n\t<string>"+n.Log+"</string>\n")
 	require.NotContains(t, plist, "StandardOutPath")
@@ -98,24 +98,24 @@ func TestDarwinPluginStderrLog(t *testing.T) {
 
 	// A shortened user names the log; the rule keeps the entry's real name.
 	long := strings.Repeat("n", 40)
-	ln, err := service.NamesFor("darwin", long, "default")
+	ln, err := osservice.NamesFor("darwin", long, "default")
 	require.NoError(t, err)
 	require.Equal(t, "/Library/Logs/Basalt/plugins/"+ln.User+".log", ln.Log)
 	require.Equal(t, "/etc/newsyslog.d/basalt-plugin-"+long+"-default.conf", ln.LogRule)
-	rule, err := service.NewsyslogPluginRule(long, "default")
+	rule, err := osservice.NewsyslogPluginRule(long, "default")
 	require.NoError(t, err)
 	require.Contains(t, rule, "\n"+ln.Log+"\t"+ln.User+":"+ln.User+"\t600\t1\t1024\t*\tNB\n")
 
 	// Linux has no log file or rule: stderr goes to the journal.
-	lx, err := service.NamesFor("linux", "acme-ner", "default")
+	lx, err := osservice.NamesFor("linux", "acme-ner", "default")
 	require.NoError(t, err)
 	require.Empty(t, lx.Log)
 	require.Empty(t, lx.LogRule)
-	unit, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
+	unit, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	require.NotContains(t, unit, "StandardError")
 
-	_, err = service.NewsyslogPluginRule("acme;rm", "default")
+	_, err = osservice.NewsyslogPluginRule("acme;rm", "default")
 	require.Error(t, err)
 }
 
@@ -123,7 +123,7 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
 	sys.outputs["dscl . -list /Users UniqueID"] = "root 0\n"
-	steps, err := service.PluginInstallPlan(context.Background(), sys, darwinHost(), []service.PluginEntry{entry("darwin", "default")})
+	steps, err := osservice.PluginInstallPlan(context.Background(), sys, darwinHost(), []osservice.PluginEntry{entry("darwin", "default")})
 	require.NoError(t, err)
 	var plan []string
 	for _, st := range steps {
@@ -147,9 +147,9 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 		"launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.plugin-acme-ner-default.plist",
 	}, plan)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, sys.ran, "create -m 0600 -o _basalt-plugin-acme-ner-default /Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log")
-	rule, err := service.NewsyslogPluginRule("acme-ner", "default")
+	rule, err := osservice.NewsyslogPluginRule("acme-ner", "default")
 	require.NoError(t, err)
 	const rulePath = "/etc/newsyslog.d/basalt-plugin-acme-ner-default.conf"
 	require.Equal(t, rule, sys.written[rulePath])
@@ -168,10 +168,10 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 	sys.outputs["dscl . -list /Users UniqueID"] = "root 0\n"
 	sys.exists["/Library/Logs/Basalt"] = true
 	sys.owners["/Library/Logs/Basalt"] = "_basalt"
-	steps, err = service.PluginInstallPlan(context.Background(), sys, darwinHost(), []service.PluginEntry{entry("darwin", "default")})
+	steps, err = osservice.PluginInstallPlan(context.Background(), sys, darwinHost(), []osservice.PluginEntry{entry("darwin", "default")})
 	require.NoError(t, err)
 	out.Reset()
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, out.String(), "moved the old /Library/Logs/Basalt, which _basalt owned, to /Library/Logs/Basalt.old-20261119T000000Z\n")
 	require.Equal(t, []string{
 		"move-aside /Library/Logs/Basalt _basalt",
@@ -183,20 +183,20 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 	sys = newFake()
 	sys.outputs["dscl . -list /Users UniqueID"] = "root 0\n"
 	spec := darwinSpec()
-	spec.Plugins = []service.PluginEntry{entry("darwin", "default")}
-	steps, err = service.InstallPlan(context.Background(), sys, spec)
+	spec.Plugins = []osservice.PluginEntry{entry("darwin", "default")}
+	steps, err = osservice.InstallPlan(context.Background(), sys, spec)
 	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, sys.ran, "create -m 0600 -o _basalt-plugin-acme-ner-default /Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log")
 	require.Equal(t, rule, sys.written[rulePath])
 }
 
 func TestDarwinPluginDisableKeepsTheLog(t *testing.T) {
 	t.Parallel()
-	steps, err := service.PluginStopSteps("darwin", "acme-ner", "default")
+	steps, err := osservice.PluginStopSteps("darwin", "acme-ner", "default")
 	require.NoError(t, err)
 	for _, st := range steps {
-		require.NotEqual(t, service.StepRemove, st.Kind, st.String())
+		require.NotEqual(t, osservice.StepRemove, st.Kind, st.String())
 		require.NotContains(t, st.String(), "/Library/Logs")
 		require.NotContains(t, st.String(), "newsyslog")
 	}
@@ -204,15 +204,15 @@ func TestDarwinPluginDisableKeepsTheLog(t *testing.T) {
 
 func TestPluginNetwork(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "ENFORCED", service.PluginNetwork("linux", nil))
-	require.Equal(t, "DECLARED", service.PluginNetwork("linux", []string{"hooks.slack.com:443"}))
-	require.Equal(t, "NOT_ENFORCED", service.PluginNetwork("darwin", nil))
+	require.Equal(t, "ENFORCED", osservice.PluginNetwork("linux", nil))
+	require.Equal(t, "DECLARED", osservice.PluginNetwork("linux", []string{"hooks.slack.com:443"}))
+	require.Equal(t, "NOT_ENFORCED", osservice.PluginNetwork("darwin", nil))
 
-	none, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
+	none, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, none, "\nPrivateNetwork=yes\n", "an empty egress runs without network")
 	require.Contains(t, none, "\nRestrictAddressFamilies=AF_UNIX\n")
-	some, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default", "hooks.slack.com:443"))
+	some, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default", "hooks.slack.com:443"))
 	require.NoError(t, err)
 	require.NotContains(t, some, "PrivateNetwork")
 	require.Contains(t, some, "\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n")
@@ -226,7 +226,7 @@ func TestPluginNetwork(t *testing.T) {
 
 func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 	t.Parallel()
-	unit, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
+	unit, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	for _, want := range []string{
 		`InaccessiblePaths=/etc/basalt`,
@@ -243,7 +243,7 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 	// Each path once, whatever the host lists twice.
 	h := linuxHost()
 	h.CredentialFiles = append(h.CredentialFiles, "/etc/basalt", "/srv/creds/client_x.url")
-	unit, err = service.SystemdPluginUnit(h, entry("linux", "default"))
+	unit, err = osservice.SystemdPluginUnit(h, entry("linux", "default"))
 	require.NoError(t, err)
 	require.Equal(t, 1, strings.Count(unit, "=/etc/basalt\n"))
 	require.Equal(t, 1, strings.Count(unit, "/srv/creds/client_x.url"))
@@ -252,7 +252,7 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 	h = linuxHost()
 	h.ConfigDir = "/etc/my basalt"
 	h.CredentialFiles = []string{`/srv/my creds/a%h"b.url`}
-	unit, err = service.SystemdPluginUnit(h, entry("linux", "default"))
+	unit, err = osservice.SystemdPluginUnit(h, entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, unit, "InaccessiblePaths=\"/etc/my basalt\"\n")
 	require.Contains(t, unit, "InaccessiblePaths=\"-/srv/my creds/a%%h\\\"b.url\"\n")
@@ -265,25 +265,25 @@ func TestRemoteEntryHasNoUnit(t *testing.T) {
 	// the base and nothing for any plugin.
 	sys := newFake()
 	sys.users["basalt"] = true
-	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	steps, err := osservice.InstallPlan(context.Background(), sys, linuxSpec())
 	require.NoError(t, err)
 	for _, st := range steps {
 		require.NotContains(t, st.String(), "basalt-plugin-")
 	}
-	plan, err := service.PluginInstallPlan(context.Background(), sys, linuxHost(), nil)
+	plan, err := osservice.PluginInstallPlan(context.Background(), sys, linuxHost(), nil)
 	require.NoError(t, err)
 	require.Empty(t, plan)
 	// A PluginEntry with no copy or command is refused, never rendered.
-	_, err = service.SystemdPluginUnit(linuxHost(), service.PluginEntry{Name: "acme-ner", Instance: "default"})
+	_, err = osservice.SystemdPluginUnit(linuxHost(), osservice.PluginEntry{Name: "acme-ner", Instance: "default"})
 	require.Error(t, err)
 }
 
 func TestInstancesAreSeparate(t *testing.T) {
 	t.Parallel()
 	for _, goos := range []string{"linux", "darwin"} {
-		a, err := service.NamesFor(goos, "acme-ner", "default")
+		a, err := osservice.NamesFor(goos, "acme-ner", "default")
 		require.NoError(t, err)
-		b, err := service.NamesFor(goos, "acme-ner", "client_x")
+		b, err := osservice.NamesFor(goos, "acme-ner", "client_x")
 		require.NoError(t, err)
 		require.NotEqual(t, a.Unit, b.Unit)
 		require.NotEqual(t, a.UnitPath, b.UnitPath)
@@ -299,11 +299,11 @@ func TestInstancesAreSeparate(t *testing.T) {
 	sys.outputs["dscl . -list /Users UniqueID"] = "root 0\n_basalt 300\n"
 	sys.outputs["dscl . -list /Groups PrimaryGroupID"] = "_basalt 300\n"
 	h := darwinHost()
-	steps, err := service.PluginInstallPlan(context.Background(), sys, h,
-		[]service.PluginEntry{entry("darwin", "default"), entry("darwin", "client_x")})
+	steps, err := osservice.PluginInstallPlan(context.Background(), sys, h,
+		[]osservice.PluginEntry{entry("darwin", "default"), entry("darwin", "client_x")})
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt-plugin-acme-ner-default UniqueID 301")
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt-plugin-acme-ner-client_x UniqueID 302")
 	require.Contains(t, sys.ran, "mkdir -m 2750 -o _basalt-plugin-acme-ner-default -g _basalt /Library/Basalt/run/_basalt-plugin-acme-ner-default")
@@ -312,10 +312,10 @@ func TestInstancesAreSeparate(t *testing.T) {
 	require.Contains(t, sys.written, "/Library/LaunchDaemons/dev.basaltdb.plugin-acme-ner-client_x.plist")
 
 	lsys := newFake()
-	steps, err = service.PluginInstallPlan(context.Background(), lsys, linuxHost(),
-		[]service.PluginEntry{entry("linux", "default"), entry("linux", "client_x")})
+	steps, err = osservice.PluginInstallPlan(context.Background(), lsys, linuxHost(),
+		[]osservice.PluginEntry{entry("linux", "default"), entry("linux", "client_x")})
 	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), lsys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), lsys, steps, false, &out))
 	require.Contains(t, lsys.ran, "useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --comment BasaltDB plugin acme-ner default basalt-plugin-acme-ner-default")
 	require.Contains(t, lsys.ran, "useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --comment BasaltDB plugin acme-ner client_x basalt-plugin-acme-ner-client_x")
 	ua := lsys.written["/etc/systemd/system/basalt-plugin-acme-ner-default.service"]
@@ -331,24 +331,24 @@ func TestInstancesAreSeparate(t *testing.T) {
 
 func TestPluginUserShortening(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "basalt-plugin-acme-ner-default", service.PluginUser("linux", "acme-ner", "default"))
-	require.Equal(t, "_basalt-plugin-acme-ner-default", service.PluginUser("darwin", "acme-ner", "default"))
+	require.Equal(t, "basalt-plugin-acme-ner-default", osservice.PluginUser("linux", "acme-ner", "default"))
+	require.Equal(t, "_basalt-plugin-acme-ner-default", osservice.PluginUser("darwin", "acme-ner", "default"))
 
 	long := strings.Repeat("n", 40)
 	inst := strings.Repeat("i", 32)
 	seen := map[string]bool{}
 	for _, goos := range []string{"linux", "darwin"} {
 		for _, k := range [][2]string{{long, inst}, {long, "default"}, {"acme-ner", "client_x_with_a_long_name"}, {long[:39] + "m", inst}} {
-			u := service.PluginUser(goos, k[0], k[1])
+			u := osservice.PluginUser(goos, k[0], k[1])
 			require.LessOrEqual(t, len(u), 32, u)
-			require.Equal(t, u, service.PluginUser(goos, k[0], k[1]), "deterministic")
+			require.Equal(t, u, osservice.PluginUser(goos, k[0], k[1]), "deterministic")
 			require.False(t, seen[u], "two entries share user %s", u)
 			seen[u] = true
 			// A shortened name ends in '-', '0' and hex digits, which no
 			// instance does (an instance starts with a letter).
 			last := u[strings.LastIndex(u, "-")+1:]
 			require.Regexp(t, `^0[0-9a-f]{12}$`, last)
-			n, err := service.NamesFor(goos, k[0], k[1])
+			n, err := osservice.NamesFor(goos, k[0], k[1])
 			require.NoError(t, err)
 			require.Equal(t, u, n.User)
 			require.Contains(t, n.Unit, k[0]+"-"+k[1], "the unit keeps the real name")
@@ -360,7 +360,7 @@ func TestPluginUserShortening(t *testing.T) {
 func TestPluginNamesRefuseBadKeys(t *testing.T) {
 	t.Parallel()
 	for _, k := range [][2]string{{"Acme", "default"}, {"acme", "a-b"}, {"acme;rm", "default"}, {"acme", "x\ny"}, {"../x", "default"}, {"acme", ""}} {
-		_, err := service.NamesFor("linux", k[0], k[1])
+		_, err := osservice.NamesFor("linux", k[0], k[1])
 		require.Error(t, err, k)
 	}
 }
@@ -400,7 +400,7 @@ func TestPluginArgsCannotInjectIntoUnits(t *testing.T) {
 	odd := []string{`a "quoted" \ word`, "%h $HOME ${X} %%", "it's; fine", "--x=<y>&z", "ünïcode"}
 	e := entry("linux", "default")
 	e.Args = odd
-	unit, err := service.SystemdPluginUnit(linuxHost(), e)
+	unit, err := osservice.SystemdPluginUnit(linuxHost(), e)
 	require.NoError(t, err)
 	var execLine string
 	for _, l := range strings.Split(unit, "\n") {
@@ -412,36 +412,36 @@ func TestPluginArgsCannotInjectIntoUnits(t *testing.T) {
 
 	d := entry("darwin", "default")
 	d.Args = odd
-	plist, err := service.LaunchdPluginDaemon(darwinHost(), d)
+	plist, err := osservice.LaunchdPluginDaemon(darwinHost(), d)
 	require.NoError(t, err)
 	require.Contains(t, plist, "<string>--x=&lt;y&gt;&amp;z</string>")
 	require.Contains(t, plist, "<string>a &#34;quoted&#34; \\ word</string>")
 
 	for _, bad := range []string{"a\nExecStartPre=/bin/sh", "a\rb", "nul\x00", "\x1b[31m", ";", "line sep", string([]byte{0xff})} {
 		e.Args = []string{bad}
-		_, err := service.SystemdPluginUnit(linuxHost(), e)
+		_, err := osservice.SystemdPluginUnit(linuxHost(), e)
 		require.Error(t, err, "%q", bad)
 		d.Args = []string{bad}
-		_, err = service.LaunchdPluginDaemon(darwinHost(), d)
+		_, err = osservice.LaunchdPluginDaemon(darwinHost(), d)
 		require.Error(t, err, "%q", bad)
 	}
 	for _, cmd := range []string{"../bin/x", "/bin/sh", "bin/../../x", "bin/a b", "bin/x\n"} {
 		e = entry("linux", "default")
 		e.Command = cmd
-		_, err := service.SystemdPluginUnit(linuxHost(), e)
+		_, err := osservice.SystemdPluginUnit(linuxHost(), e)
 		require.Error(t, err, cmd)
 	}
 	e = entry("linux", "default")
 	e.Dir = "/opt/basalt/plugins/x y"
-	_, err = service.SystemdPluginUnit(linuxHost(), e)
+	_, err = osservice.SystemdPluginUnit(linuxHost(), e)
 	require.Error(t, err)
 	h := linuxHost()
 	h.CredentialFiles = []string{"/etc/a\nExecStartPre=/bin/sh"}
-	_, err = service.SystemdPluginUnit(h, entry("linux", "default"))
+	_, err = osservice.SystemdPluginUnit(h, entry("linux", "default"))
 	require.Error(t, err)
 	h = linuxHost()
 	h.EngineUser = "root"
-	_, err = service.SystemdPluginUnit(h, entry("linux", "default"))
+	_, err = osservice.SystemdPluginUnit(h, entry("linux", "default"))
 	require.Error(t, err, "the socket's group is never root's")
 }
 
@@ -450,10 +450,10 @@ func TestPluginInstallPlanCreatesTheUser(t *testing.T) {
 	sys := newFake()
 	disabled := entry("linux", "default")
 	disabled.Enabled = false
-	steps, err := service.PluginInstallPlan(context.Background(), sys, linuxHost(), []service.PluginEntry{disabled})
+	steps, err := osservice.PluginInstallPlan(context.Background(), sys, linuxHost(), []osservice.PluginEntry{disabled})
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
 		"mkdir -m 0755 -o root /opt/basalt",
 		"mkdir -m 0755 -o root /opt/basalt/run",
@@ -468,9 +468,9 @@ func TestPluginInstallPlanCreatesTheUser(t *testing.T) {
 
 	sys = newFake()
 	sys.users["basalt-plugin-acme-ner-default"] = true
-	steps, err = service.PluginInstallPlan(context.Background(), sys, linuxHost(), []service.PluginEntry{entry("linux", "default")})
+	steps, err = osservice.PluginInstallPlan(context.Background(), sys, linuxHost(), []osservice.PluginEntry{entry("linux", "default")})
 	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.NotContains(t, strings.Join(sys.ran, "\n"), "useradd", "an existing user is reused")
 	require.Equal(t, []string{"systemctl enable basalt-plugin-acme-ner-default.service", "systemctl restart basalt-plugin-acme-ner-default.service"},
 		sys.ran[len(sys.ran)-2:])
@@ -480,10 +480,10 @@ func TestPluginInstallPlanCreatesTheUser(t *testing.T) {
 	sys = newFake()
 	sys.users["basalt"] = true
 	spec := linuxSpec()
-	spec.Plugins = []service.PluginEntry{entry("linux", "default")}
-	steps, err = service.InstallPlan(context.Background(), sys, spec)
+	spec.Plugins = []osservice.PluginEntry{entry("linux", "default")}
+	steps, err = osservice.InstallPlan(context.Background(), sys, spec)
 	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	ran := strings.Join(sys.ran, "\n")
 	require.Contains(t, ran, "basalt-plugin-acme-ner-default\n")
 	require.Less(t, strings.Index(ran, "systemctl enable --now basalt-engine.service"), strings.Index(ran, "systemctl restart basalt-plugin-acme-ner-default.service"),
@@ -499,10 +499,10 @@ func TestDarwinDisabledPluginStaysUnloaded(t *testing.T) {
 	sys.outputs["dscl . -list /Users UniqueID"] = "root 0\n"
 	disabled := entry("darwin", "default")
 	disabled.Enabled = false
-	steps, err := service.PluginInstallPlan(context.Background(), sys, darwinHost(), []service.PluginEntry{disabled})
+	steps, err := osservice.PluginInstallPlan(context.Background(), sys, darwinHost(), []osservice.PluginEntry{disabled})
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
 		"launchctl bootout system/dev.basaltdb.plugin-acme-ner-default",
 		"launchctl disable system/dev.basaltdb.plugin-acme-ner-default",
@@ -536,19 +536,19 @@ func TestPluginRemoveDeletesWhatInstallMade(t *testing.T) {
 		}},
 	} {
 		sys := newFake()
-		n, err := service.NamesFor(tc.goos, "acme-ner", "default")
+		n, err := osservice.NamesFor(tc.goos, "acme-ner", "default")
 		require.NoError(t, err)
 		sys.users[n.User] = true
 		sys.exists[n.UnitPath] = true
-		steps, err := service.PluginRemoveSteps(sys, tc.goos, "acme-ner", "default")
+		steps, err := osservice.PluginRemoveSteps(sys, tc.goos, "acme-ner", "default")
 		require.NoError(t, err)
 		var out strings.Builder
-		require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+		require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 		require.Equal(t, tc.want, sys.ran, tc.goos)
 		require.Equal(t, tc.removed, sys.removed, tc.goos)
 
 		// Another instance's user, unit and directory are not touched.
-		other, err := service.NamesFor(tc.goos, "acme-ner", "client_x")
+		other, err := osservice.NamesFor(tc.goos, "acme-ner", "client_x")
 		require.NoError(t, err)
 		for _, r := range append(sys.ran, sys.removed...) {
 			require.NotContains(t, r, other.User)
@@ -557,9 +557,9 @@ func TestPluginRemoveDeletesWhatInstallMade(t *testing.T) {
 
 		// Run again with nothing left: nothing fails, no user is deleted.
 		sys = newFake()
-		steps, err = service.PluginRemoveSteps(sys, tc.goos, "acme-ner", "default")
+		steps, err = osservice.PluginRemoveSteps(sys, tc.goos, "acme-ner", "default")
 		require.NoError(t, err)
-		require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+		require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 		require.NotContains(t, strings.Join(sys.ran, "\n"), "userdel")
 		require.NotContains(t, strings.Join(sys.ran, "\n"), "-delete")
 	}
@@ -573,9 +573,9 @@ func TestPluginRemoveDeletesWhatInstallMade(t *testing.T) {
 	} {
 		sys := newFake()
 		sys.exists[left] = true
-		steps, err := service.PluginRemoveSteps(sys, "darwin", "acme-ner", "default")
+		steps, err := osservice.PluginRemoveSteps(sys, "darwin", "acme-ner", "default")
 		require.NoError(t, err)
-		require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
+		require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 		require.Contains(t, sys.removed, left)
 	}
 }
@@ -589,11 +589,11 @@ func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {
 	sys.failOn = "mkdir /opt/basalt"
 	sys.users["basalt"] = true
 	spec := linuxSpec()
-	spec.Plugins = []service.PluginEntry{entry("linux", "default")}
-	steps, err := service.InstallPlan(context.Background(), sys, spec)
+	spec.Plugins = []osservice.PluginEntry{entry("linux", "default")}
+	steps, err := osservice.InstallPlan(context.Background(), sys, spec)
 	require.NoError(t, err)
 	var out strings.Builder
-	err = service.Apply(context.Background(), sys, steps, false, &out)
+	err = osservice.Apply(context.Background(), sys, steps, false, &out)
 	require.ErrorContains(t, err, "mkdir -m 0755 -o root /opt/basalt")
 	require.NotContains(t, out.String(), "skipped")
 	require.Contains(t, sys.ran, "systemctl enable --now basalt-engine.service")
@@ -605,7 +605,7 @@ func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {
 func TestUserClash(t *testing.T) {
 	t.Parallel()
 	long := "acme-ner-presidio"
-	others := []plugin.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
-	require.Nil(t, service.UserClash(long, "default", others), "an entry does not clash with itself")
-	require.Nil(t, service.UserClash("other", "default", others))
+	others := []pluginhost.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
+	require.Nil(t, osservice.UserClash(long, "default", others), "an entry does not clash with itself")
+	require.Nil(t, osservice.UserClash("other", "default", others))
 }

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -25,9 +25,9 @@ func realDir(t *testing.T) string {
 
 // openDir opens dir as root would (service.OpenTrustedDir), trusting this
 // process's user.
-func openDir(t *testing.T, dir string) *service.TrustedDir {
+func openDir(t *testing.T, dir string) *osservice.TrustedDir {
 	t.Helper()
-	d, err := service.OpenTrustedDir(dir, os.Geteuid(), false)
+	d, err := osservice.OpenTrustedDir(dir, os.Geteuid(), false)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	return d
@@ -64,7 +64,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.Len(t, c.Agents, 2, "the write went to the directory opened, merged with what it read there")
 
 	// Opening the swapped path again is refused.
-	_, err = service.OpenTrustedDir(cfgDir, os.Geteuid(), false)
+	_, err = osservice.OpenTrustedDir(cfgDir, os.Geteuid(), false)
 	require.ErrorContains(t, err, "a symlink is refused")
 
 	cleared, err := config.ClearSetupAt(d, "engine.json", trustedCheck, -1, "two", "none")
@@ -194,7 +194,7 @@ func TestUpsertAgentVaultAtGivesTheConfigToItsOwnerAsRoot(t *testing.T) {
 	const nobody = 65534
 	dir := realDir(t)
 	require.NoError(t, os.Chown(dir, nobody, -1))
-	d, err := service.OpenTrustedDir(dir, nobody, false)
+	d, err := osservice.OpenTrustedDir(dir, nobody, false)
 	require.NoError(t, err)
 	defer d.Close()
 	check := func(f *os.File) error { return config.CheckTrustedConfig(f, nobody) }

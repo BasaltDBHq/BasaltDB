@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"context"
@@ -15,11 +15,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 const svcCopy = "/opt/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3"
@@ -35,9 +35,9 @@ func svcConfig() config.Config {
 	}
 }
 
-func svcVerified() plugin.Verified {
-	return plugin.Verified{Dir: svcCopy, Manifest: plugin.Manifest{
-		Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportUnix, Command: "bin/acme-ner"}},
+func svcVerified() pluginhost.Verified {
+	return pluginhost.Verified{Dir: svcCopy, Manifest: pluginhost.Manifest{
+		Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: dial.TransportUnix, Command: "bin/acme-ner"}},
 	}}
 }
 
@@ -85,23 +85,23 @@ func (f *fakeUnits) source() *unitSource {
 
 // installed is a fake machine where the entry's unit is the one install
 // writes, run by uid.
-func installed(t *testing.T, cfg config.Config, v plugin.Verified, uid int) *fakeUnits {
+func installed(t *testing.T, cfg config.Config, v pluginhost.Verified, uid int) *fakeUnits {
 	t.Helper()
-	h := service.HostFor(cfg, "linux", "/etc/basalt/engine.json", "basalt")
-	e, ok := service.EntryFor(cfg.Plugins[0], v)
+	h := osservice.HostFor(cfg, "linux", "/etc/basalt/engine.json", "basalt")
+	e, ok := osservice.EntryFor(cfg.Plugins[0], v)
 	require.True(t, ok)
-	unit, err := service.PluginUnit(h, e)
+	unit, err := osservice.PluginUnit(h, e)
 	require.NoError(t, err)
-	n, err := service.NamesFor("linux", "acme-ner", "default")
+	n, err := osservice.NamesFor("linux", "acme-ner", "default")
 	require.NoError(t, err)
 	return &fakeUnits{units: map[string]string{n.UnitPath: unit}, uids: map[string]int{n.User: uid}, gid: 980}
 }
 
 func serviceEngine(cfg config.Config, f *fakeUnits, euid int) *enginePlugins {
 	ep := &enginePlugins{
-		host: plugin.NewHost(), log: slog.New(slog.DiscardHandler), mode: plugin.ModeService,
+		host: pluginhost.NewHost(), log: slog.New(slog.DiscardHandler), mode: pluginhost.ModeService,
 		o:     pluginOptions{goos: "linux", euid: euid, units: f.source()},
-		first: map[plugin.EntryKey]plugin.Verified{}, notTrusted: map[plugin.EntryKey]error{}, refused: map[plugin.EntryKey]string{},
+		first: map[pluginhost.EntryKey]pluginhost.Verified{}, notTrusted: map[pluginhost.EntryKey]error{}, refused: map[pluginhost.EntryKey]string{},
 		configured: cfg.Plugins,
 	}
 	ep.initServiceUnits(cfg, "/etc/basalt/engine.json")
@@ -158,7 +158,7 @@ func TestServiceEngineReachesOnlyAMatchingUnit(t *testing.T) {
 	require.Equal(t, whyLocalAsRoot, ep.localRefusal(p, v))
 
 	// A remote entry has no unit and is not refused here.
-	remote := plugin.Verified{Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://x.example"}}}}
+	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://x.example"}}}}
 	ep = serviceEngine(cfg, &fakeUnits{}, 995)
 	require.Empty(t, ep.localRefusal(p, remote))
 	require.Empty(t, ep.targets)
@@ -172,12 +172,12 @@ func TestServiceEngineRefusesWhenAnAgentIsInItsGroup(t *testing.T) {
 	v := svcVerified()
 	p := cfg.Plugins[0]
 	f := installed(t, cfg, v, 990)
-	f.inGroup = &plugin.AgentInGroupError{Agent: "product_a"}
+	f.inGroup = &pluginhost.AgentInGroupError{Agent: "product_a"}
 	ep := serviceEngine(cfg, f, 995)
 	e, err := p.Entry(v.Manifest)
 	require.NoError(t, err)
 	require.Empty(t, ep.localRefusal(p, v))
-	ep.entries, ep.first[p.Key()] = []plugin.Entry{e}, v
+	ep.entries, ep.first[p.Key()] = []pluginhost.Entry{e}, v
 	ep.checkServiceAgents(cfg)
 	require.Empty(t, ep.entries, "no local plugin starts")
 	require.Empty(t, ep.targets)
@@ -231,7 +231,7 @@ func TestServiceEngineConnectsToTheUnitSocket(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("the engine did not connect to the unit's socket")
 	}
-	_, isProcess := tr.(plugin.Exiter)
+	_, isProcess := tr.(pluginhost.Exiter)
 	require.False(t, isProcess, "no process is started in service mode")
 
 	// A unit whose OS user is now another one is refused before any
@@ -316,7 +316,7 @@ func TestServiceEngineChecksTheUnitAtEachConnection(t *testing.T) {
 	f := installed(t, cfg, v, me)
 	f.gid = int(dirGID(t, dir))
 	ep := serviceEngine(cfg, f, 995)
-	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, plugin.RealClock())
+	ep.sup = pluginhost.NewSupervisor(ep.host, ep.dial, pluginhost.RealClock())
 	require.Empty(t, ep.localRefusal(p, v))
 	ep.targets[k] = serviceTarget{socket: sock, uid: uint32(me), gid: uint32(f.gid)}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -382,7 +382,7 @@ func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
 	f := installed(t, cfg, v, me)
 	f.gid = int(dirGID(t, dir))
 	ep := serviceEngine(cfg, f, 995)
-	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, plugin.RealClock())
+	ep.sup = pluginhost.NewSupervisor(ep.host, ep.dial, pluginhost.RealClock())
 	ep.first[k] = v
 	ep.targets[k] = serviceTarget{socket: filepath.Join(dir, "p.sock"), uid: uint32(me), gid: uint32(f.gid)}
 	_, err = ep.dial(context.Background(), e)

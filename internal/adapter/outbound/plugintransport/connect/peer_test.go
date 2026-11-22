@@ -23,7 +23,7 @@ import (
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // The test binary doubles as the remote plugin: TestMain runs peerMain when
@@ -37,7 +37,7 @@ const (
 	// echoProcedure is a test-only call: a Struct in, the same Struct out.
 	echoProcedure = "/" + pluginv1connect.PluginServiceName + "/Echo"
 	echoMethod    = "echo"
-	oversizeBytes = protocol.MaxMessageBytes + 1024
+	oversizeBytes = pluginproto.MaxMessageBytes + 1024
 )
 
 // testMethods adds the suite's echo call to the platform's table.

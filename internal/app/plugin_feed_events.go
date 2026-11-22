@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // The CloudEvents envelope of a feed/1 event (CONTRACT.md, Wire format and
@@ -280,6 +280,6 @@ func feedBatch(events []feedEvent) (json.RawMessage, []int64, error) {
 	for _, e := range events {
 		seqs = append(seqs, e.Data.Seq)
 	}
-	raw, err := protocol.Marshal(events)
+	raw, err := pluginproto.Marshal(events)
 	return raw, seqs, err
 }

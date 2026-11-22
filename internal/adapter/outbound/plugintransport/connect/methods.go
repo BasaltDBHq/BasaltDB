@@ -9,8 +9,8 @@ import (
 
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // method maps one protocol method (the JSON-RPC name the host calls) to its
@@ -32,27 +32,27 @@ type method struct {
 
 func platformMethods() map[string]method {
 	return map[string]method{
-		protocol.MethodInitialize: {
+		pluginproto.MethodInitialize: {
 			procedure:   pluginv1connect.PluginServiceInitializeProcedure,
 			newRequest:  func() proto.Message { return new(pluginv1.InitializeRequest) },
 			newResponse: func() proto.Message { return new(pluginv1.InitializeResponse) },
 		},
-		protocol.MethodHealth: {
+		pluginproto.MethodHealth: {
 			procedure:   pluginv1connect.PluginServiceHealthProcedure,
 			newRequest:  func() proto.Message { return new(pluginv1.HealthRequest) },
 			newResponse: func() proto.Message { return new(pluginv1.HealthResponse) },
 		},
-		protocol.MethodShutdown: {
+		pluginproto.MethodShutdown: {
 			procedure:   pluginv1connect.PluginServiceShutdownProcedure,
 			newRequest:  func() proto.Message { return new(pluginv1.ShutdownRequest) },
 			newResponse: func() proto.Message { return new(pluginv1.ShutdownResponse) },
 		},
-		protocol.MethodFeedObserve: {
+		pluginproto.MethodFeedObserve: {
 			procedure:   pluginv1connect.PluginServiceFeedObserveProcedure,
 			newRequest:  func() proto.Message { return new(pluginv1.FeedObserveRequest) },
 			newResponse: func() proto.Message { return new(pluginv1.FeedObserveResponse) },
 			fromJSON: func(js []byte, msg proto.Message) error {
-				var in protocol.FeedObserveRequest
+				var in pluginproto.FeedObserveRequest
 				if err := json.Unmarshal(js, &in); err != nil {
 					return err
 				}
@@ -62,15 +62,15 @@ func platformMethods() map[string]method {
 			},
 			toJSON: func(msg proto.Message) ([]byte, error) {
 				m, _ := msg.(*pluginv1.FeedObserveResponse)
-				return json.Marshal(protocol.FeedObserveResponse{LastSeq: m.GetLastSeq()})
+				return json.Marshal(pluginproto.FeedObserveResponse{LastSeq: m.GetLastSeq()})
 			},
 		},
-		protocol.MethodApprovalDeliver: {
+		pluginproto.MethodApprovalDeliver: {
 			procedure:   pluginv1connect.PluginServiceApprovalDeliverProcedure,
 			newRequest:  func() proto.Message { return new(pluginv1.ApprovalDeliverRequest) },
 			newResponse: func() proto.Message { return new(pluginv1.ApprovalDeliverResponse) },
 			fromJSON: func(js []byte, msg proto.Message) error {
-				var in protocol.ApprovalDeliverRequest
+				var in pluginproto.ApprovalDeliverRequest
 				if err := json.Unmarshal(js, &in); err != nil {
 					return err
 				}
@@ -95,27 +95,27 @@ var (
 func encodeParams(m method, params any) ([]byte, error) {
 	msg := m.newRequest()
 	if params != nil {
-		js, err := protocol.Marshal(params)
+		js, err := pluginproto.Marshal(params)
 		if err != nil {
-			return nil, plugin.Fail(plugin.ClassBadResponse)
+			return nil, pluginhost.Fail(pluginhost.ClassBadResponse)
 		}
-		if len(js) > protocol.MaxMessageBytes {
-			return nil, plugin.Fail(plugin.ClassOverLimit)
+		if len(js) > pluginproto.MaxMessageBytes {
+			return nil, pluginhost.Fail(pluginhost.ClassOverLimit)
 		}
 		fill := jsonToProto.Unmarshal
 		if m.fromJSON != nil {
 			fill = m.fromJSON
 		}
 		if err := fill(js, msg); err != nil {
-			return nil, plugin.Fail(plugin.ClassBadResponse)
+			return nil, pluginhost.Fail(pluginhost.ClassBadResponse)
 		}
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return nil, plugin.Fail(plugin.ClassBadResponse)
+		return nil, pluginhost.Fail(pluginhost.ClassBadResponse)
 	}
-	if len(body) > protocol.MaxMessageBytes {
-		return nil, plugin.Fail(plugin.ClassOverLimit)
+	if len(body) > pluginproto.MaxMessageBytes {
+		return nil, pluginhost.Fail(pluginhost.ClassOverLimit)
 	}
 	return body, nil
 }
@@ -125,7 +125,7 @@ func encodeParams(m method, params any) ([]byte, error) {
 func decodeResult(m method, body []byte, result any) error {
 	msg := m.newResponse()
 	if err := proto.Unmarshal(body, msg); err != nil {
-		return plugin.Fail(plugin.ClassBadResponse)
+		return pluginhost.Fail(pluginhost.ClassBadResponse)
 	}
 	if result == nil {
 		return nil
@@ -136,10 +136,10 @@ func decodeResult(m method, body []byte, result any) error {
 	}
 	js, err := render(msg)
 	if err != nil {
-		return plugin.Fail(plugin.ClassBadResponse)
+		return pluginhost.Fail(pluginhost.ClassBadResponse)
 	}
 	if err := json.Unmarshal(js, result); err != nil {
-		return plugin.Fail(plugin.ClassBadResponse)
+		return pluginhost.Fail(pluginhost.ClassBadResponse)
 	}
 	return nil
 }

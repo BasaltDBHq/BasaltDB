@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"context"
@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // The numbers of approval.deliver (CONTRACT.md, Notifier messages, Limits
@@ -147,7 +147,7 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 		}
 	}
 	d.Instruction = noticeInstructions[held][d.LinkOpens]
-	return protocol.Marshal(noticeEvent{
+	return pluginproto.Marshal(noticeEvent{
 		SpecVersion: cloudEventsSpecVersion, ID: m.id.String(), Source: feedSource(install), Type: typ,
 		Time: m.at.UTC().Format(feedTimeLayout), Subject: m.agent, DataContentType: feedDataContentType, Data: d,
 	})
@@ -161,11 +161,11 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 // counted. It is held in memory only. It carries the link of the agent's
 // answer and issues none. Nothing an agent does waits on it.
 type pluginDelivery struct {
-	host    *plugin.Host
-	served  func() []plugin.Entry
+	host    *pluginhost.Host
+	served  func() []pluginhost.Entry
 	senders *pluginSenders
 	now     func() time.Time
-	clock   plugin.Clock
+	clock   pluginhost.Clock
 	timing  deliverTiming
 	log     *slog.Logger
 
@@ -175,9 +175,9 @@ type pluginDelivery struct {
 	mu sync.Mutex
 	// waiting counts, per entry, the notices made and not yet delivered or
 	// dropped.
-	waiting map[plugin.EntryKey]int
+	waiting map[pluginhost.EntryKey]int
 	// drops are the times of the notices dropped, per agent and entry.
-	drops map[string]map[plugin.EntryKey][]time.Time
+	drops map[string]map[pluginhost.EntryKey][]time.Time
 
 	// installs lets one read of an agent's install id run at a time, and
 	// readInstall reads it: through the agent's own connection, unless a
@@ -187,16 +187,16 @@ type pluginDelivery struct {
 	readInstall func(ctx context.Context, agent string) (uuid.UUID, error)
 }
 
-func newPluginDelivery(host *plugin.Host, served func() []plugin.Entry, senders *pluginSenders, now func() time.Time,
-	clock plugin.Clock, log *slog.Logger,
+func newPluginDelivery(host *pluginhost.Host, served func() []pluginhost.Entry, senders *pluginSenders, now func() time.Time,
+	clock pluginhost.Clock, log *slog.Logger,
 ) *pluginDelivery {
 	if host == nil || served == nil || senders == nil || now == nil || clock == nil || log == nil {
 		panic("engine: the plugin delivery needs a host, the served entries, senders, clocks and a log")
 	}
 	return &pluginDelivery{
 		host: host, served: served, senders: senders, now: now, clock: clock, timing: defaultDeliverTiming, log: log,
-		intake: make(chan madeNotice, deliverIntake), waiting: map[plugin.EntryKey]int{},
-		drops: map[string]map[plugin.EntryKey][]time.Time{}, installs: map[string]chan struct{}{},
+		intake: make(chan madeNotice, deliverIntake), waiting: map[pluginhost.EntryKey]int{},
+		drops: map[string]map[pluginhost.EntryKey][]time.Time{}, installs: map[string]chan struct{}{},
 	}
 }
 
@@ -265,17 +265,17 @@ func (d *pluginDelivery) run(ctx context.Context, ledgers map[string]pluginLedge
 // targets are the entries a notice of agent goes to: those the engine
 // serves to that agent now that declare approval.deliver. An entry not
 // served to the agent gets nothing, and nothing is counted for it.
-func (d *pluginDelivery) targets(agentName string) []plugin.EntryKey {
-	var out []plugin.EntryKey
+func (d *pluginDelivery) targets(agentName string) []pluginhost.EntryKey {
+	var out []pluginhost.EntryKey
 	for _, e := range d.served() {
-		if _, ok := e.Manifest.Hooks[string(plugin.HookApprovalDeliver)]; ok && slices.Contains(e.Agents, agentName) {
+		if _, ok := e.Manifest.Hooks[string(pluginhost.HookApprovalDeliver)]; ok && slices.Contains(e.Agents, agentName) {
 			out = append(out, e.Key)
 		}
 	}
 	return out
 }
 
-func (d *pluginDelivery) admit(k plugin.EntryKey) bool {
+func (d *pluginDelivery) admit(k pluginhost.EntryKey) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.waiting[k] >= deliverWaiting {
@@ -285,7 +285,7 @@ func (d *pluginDelivery) admit(k plugin.EntryKey) bool {
 	return true
 }
 
-func (d *pluginDelivery) release(k plugin.EntryKey) {
+func (d *pluginDelivery) release(k pluginhost.EntryKey) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.waiting[k]--; d.waiting[k] <= 0 {
@@ -299,7 +299,7 @@ var errNoticeDropped = errors.New("plugin: the notice is dropped")
 // deliver tries m on entry k at each of the tries' times, until one is
 // answered, the notice expires or the tries are used up. A notice still
 // waiting when the engine stops is dropped uncounted.
-func (d *pluginDelivery) deliver(ctx context.Context, m madeNotice, k plugin.EntryKey) {
+func (d *pluginDelivery) deliver(ctx context.Context, m madeNotice, k pluginhost.EntryKey) {
 	var raw json.RawMessage
 	for _, after := range d.timing.tries {
 		if wait := m.at.Add(after).Sub(d.now()); wait > 0 {
@@ -336,10 +336,10 @@ func (d *pluginDelivery) expired(m madeNotice) bool { return !d.now().Before(m.n
 
 // try is one try of m on entry k. *raw is the notice's bytes, built at the
 // first try that could read the install id and sent unchanged after.
-func (d *pluginDelivery) try(ctx context.Context, m madeNotice, k plugin.EntryKey, raw *json.RawMessage) error {
+func (d *pluginDelivery) try(ctx context.Context, m madeNotice, k pluginhost.EntryKey, raw *json.RawMessage) error {
 	s := d.senders.sender(k)
-	if s == nil || d.host.State(k) != plugin.StateReady {
-		return &plugin.CallError{Entry: k, Class: plugin.ClassUnavailable}
+	if s == nil || d.host.State(k) != pluginhost.StateReady {
+		return &pluginhost.CallError{Entry: k, Class: pluginhost.ClassUnavailable}
 	}
 	if *raw == nil {
 		install, err := d.installID(ctx, m.agent)
@@ -356,7 +356,7 @@ func (d *pluginDelivery) try(ctx context.Context, m madeNotice, k plugin.EntryKe
 	event := *raw
 	outcome := make(chan error, 1)
 	err := s.SendNotice(pluginCall{
-		run: func(ctx context.Context, h *plugin.Host, k plugin.EntryKey) error {
+		run: func(ctx context.Context, h *pluginhost.Host, k pluginhost.EntryKey) error {
 			// Checked again here, after any wait for a worker, and the
 			// call itself ends at the expiry: nothing leaves after it.
 			left := m.n.ExpiresAt.Sub(d.now())
@@ -405,12 +405,12 @@ func (d *pluginDelivery) installID(ctx context.Context, agentName string) (uuid.
 
 // drop counts a notice of agent that entry k did not get, and logs it with
 // the entry, the agent and why in fixed words: never what it was about.
-func (d *pluginDelivery) drop(agentName string, k plugin.EntryKey, why string) {
+func (d *pluginDelivery) drop(agentName string, k pluginhost.EntryKey, why string) {
 	now := d.now()
 	d.mu.Lock()
 	byEntry := d.drops[agentName]
 	if byEntry == nil {
-		byEntry = map[plugin.EntryKey][]time.Time{}
+		byEntry = map[pluginhost.EntryKey][]time.Time{}
 		d.drops[agentName] = byEntry
 	}
 	byEntry[k] = append(d.recent(byEntry[k], now), now)
@@ -425,7 +425,7 @@ func (d *pluginDelivery) recent(times []time.Time, now time.Time) []time.Time {
 
 // droppedNotices is how many notices of one agent an entry dropped.
 type droppedNotices struct {
-	key   plugin.EntryKey
+	key   pluginhost.EntryKey
 	count int
 }
 

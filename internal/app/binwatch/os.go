@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 )
 
@@ -17,7 +17,7 @@ type OS struct{}
 var _ System = OS{}
 
 // Trusted is the root-only check of basalt service install.
-func (OS) Trusted(path string) error { return service.OSSystem{}.CheckBinary(path) }
+func (OS) Trusted(path string) error { return osservice.OSSystem{}.CheckBinary(path) }
 
 // probeWaitDelay bounds the wait for the probe's output after it exits or
 // is killed.

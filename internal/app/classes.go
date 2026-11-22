@@ -1,9 +1,9 @@
-package engine
+package app
 
 import (
 	"context"
 
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 )
 
@@ -16,15 +16,15 @@ type storeClasses struct {
 
 func (m storeClasses) Resolve(ctx context.Context, refs []piidict.ColumnRef) ([]piidict.Class, error) {
 	c, err := m.BoundMap.Resolve(ctx, refs)
-	return c, postgres.MapError(err)
+	return c, store.MapError(err)
 }
 
 func (m storeClasses) Secrets(ctx context.Context) ([]piidict.ColumnRef, error) {
 	s, err := m.BoundMap.Secrets(ctx)
-	return s, postgres.MapError(err)
+	return s, store.MapError(err)
 }
 
 func (m storeClasses) CatalogFingerprint(ctx context.Context) (string, error) {
 	f, err := m.BoundMap.CatalogFingerprint(ctx)
-	return f, postgres.MapError(err)
+	return f, store.MapError(err)
 }

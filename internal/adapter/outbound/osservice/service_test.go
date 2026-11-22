@@ -1,4 +1,4 @@
-package service_test
+package osservice_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 // fakeSystem records what install would do; it never touches the machine.
@@ -110,12 +110,12 @@ func (f *fakeSystem) Remove(path string) error {
 	return os.ErrNotExist
 }
 
-func linuxSpec() service.Spec {
-	return service.Spec{GOOS: "linux", Binary: "/usr/local/bin/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"}
+func linuxSpec() osservice.Spec {
+	return osservice.Spec{GOOS: "linux", Binary: "/usr/local/bin/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"}
 }
 
-func darwinSpec() service.Spec {
-	return service.Spec{
+func darwinSpec() osservice.Spec {
+	return osservice.Spec{
 		GOOS: "darwin", Binary: "/usr/local/bin/basalt",
 		ConfigPath: "/Library/Application Support/Basalt/engine.json", User: "_basalt",
 	}
@@ -123,7 +123,7 @@ func darwinSpec() service.Spec {
 
 func TestSystemdUnit(t *testing.T) {
 	t.Parallel()
-	unit := service.SystemdUnit(linuxSpec())
+	unit := osservice.SystemdUnit(linuxSpec())
 	// Every directive is set once: a repeated one is at best noise.
 	seen := map[string]bool{}
 	for _, line := range strings.Split(unit, "\n") {
@@ -154,13 +154,13 @@ func TestSystemdUnit(t *testing.T) {
 
 	spaced := linuxSpec()
 	spaced.ConfigPath = `/etc/my basalt/engine "x".json`
-	require.Contains(t, service.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise`)
-	require.Contains(t, service.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
+	require.Contains(t, osservice.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json" --supervise`)
+	require.Contains(t, osservice.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
 }
 
 func TestLaunchdDaemon(t *testing.T) {
 	t.Parallel()
-	plist := service.LaunchdDaemon(darwinSpec())
+	plist := osservice.LaunchdDaemon(darwinSpec())
 	for _, want := range []string{
 		"<string>dev.basaltdb.engine</string>",
 		"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
@@ -173,21 +173,21 @@ func TestLaunchdDaemon(t *testing.T) {
 	}
 	odd := darwinSpec()
 	odd.ConfigPath = "/a&b/<c>.json"
-	require.Contains(t, service.LaunchdDaemon(odd), "<string>/a&amp;b/&lt;c&gt;.json</string>")
+	require.Contains(t, osservice.LaunchdDaemon(odd), "<string>/a&amp;b/&lt;c&gt;.json</string>")
 }
 
 func TestUnitsLimitTheEngineMemoryFromThePIIBudget(t *testing.T) {
 	t.Parallel()
-	unit := service.SystemdUnit(linuxSpec())
+	unit := osservice.SystemdUnit(linuxSpec())
 	require.Contains(t, unit, "MemoryHigh=1536M\n", "three times the default 512 MiB budget")
 	require.Contains(t, unit, "MemoryMax=2048M\n")
-	plist := service.LaunchdDaemon(darwinSpec())
+	plist := osservice.LaunchdDaemon(darwinSpec())
 	require.Contains(t, plist, "<key>SoftResourceLimits</key>\n\t<dict>\n\t\t<key>ResidentSetSize</key>\n\t\t<integer>1610612736</integer>")
 	require.Contains(t, plist, "<key>HardResourceLimits</key>\n\t<dict>\n\t\t<key>ResidentSetSize</key>\n\t\t<integer>2147483648</integer>")
 
 	small := linuxSpec()
 	small.MemoryMB = 64
-	unit = service.SystemdUnit(small)
+	unit = osservice.SystemdUnit(small)
 	require.Contains(t, unit, "MemoryHigh=192M\n")
 	require.Contains(t, unit, "MemoryMax=256M\n")
 }
@@ -195,10 +195,10 @@ func TestUnitsLimitTheEngineMemoryFromThePIIBudget(t *testing.T) {
 func TestLinuxInstallPlan(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
-	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	steps, err := osservice.InstallPlan(context.Background(), sys, linuxSpec())
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
 		"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
 		"mkdir -m 0750 -o basalt /etc/basalt",
@@ -207,12 +207,12 @@ func TestLinuxInstallPlan(t *testing.T) {
 		"mkdir -m 0755 -o root /opt/basalt",
 		"mkdir -m 0755 -o root /opt/basalt/run",
 	}, sys.ran)
-	require.Equal(t, service.SystemdUnit(linuxSpec()), sys.written[service.SystemdUnitPath])
+	require.Equal(t, osservice.SystemdUnit(linuxSpec()), sys.written[osservice.SystemdUnitPath])
 	require.Contains(t, out.String(), "write /etc/systemd/system/basalt-engine.service")
 
 	sys = newFake()
 	sys.users["basalt"] = true
-	steps, err = service.InstallPlan(context.Background(), sys, linuxSpec())
+	steps, err = osservice.InstallPlan(context.Background(), sys, linuxSpec())
 	require.NoError(t, err)
 	require.NotContains(t, steps[0].String(), "useradd", "an existing user is reused")
 }
@@ -222,10 +222,10 @@ func TestDarwinInstallPlan(t *testing.T) {
 	sys := newFake()
 	sys.outputs["dscl . -list /Users UniqueID"] = "_www 70\nroot 0\n_other 300\n"
 	sys.outputs["dscl . -list /Groups PrimaryGroupID"] = "_grp 301\n"
-	steps, err := service.InstallPlan(context.Background(), sys, darwinSpec())
+	steps, err := osservice.InstallPlan(context.Background(), sys, darwinSpec())
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt UniqueID 302")
 	require.Contains(t, sys.ran, "dscl . -create /Groups/_basalt PrimaryGroupID 302")
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt UserShell /usr/bin/false")
@@ -244,20 +244,20 @@ func TestDarwinInstallPlan(t *testing.T) {
 		"launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.engine.plist",
 		"launchctl enable system/dev.basaltdb.engine",
 	}, sys.ran[len(sys.ran)-2:])
-	require.Equal(t, service.LaunchdDaemon(darwinSpec()), sys.written[service.LaunchdPlist])
+	require.Equal(t, osservice.LaunchdDaemon(darwinSpec()), sys.written[osservice.LaunchdPlist])
 	require.Contains(t, out.String(), `mkdir -m 0755 -o _basalt "/Library/Application Support/Basalt/run"`)
 
 	// Over an earlier install whose log directory is the engine user's, the
 	// install moves it aside itself, says where, and carries on.
 	sys = newFake()
 	sys.users["_basalt"] = true
-	sys.exists[service.LaunchdPlist] = true
+	sys.exists[osservice.LaunchdPlist] = true
 	sys.exists["/Library/Logs/Basalt"] = true
 	sys.owners["/Library/Logs/Basalt"] = "_basalt"
-	steps, err = service.InstallPlan(context.Background(), sys, darwinSpec())
+	steps, err = osservice.InstallPlan(context.Background(), sys, darwinSpec())
 	require.NoError(t, err)
 	out.Reset()
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, out.String(), "  mv /Library/Logs/Basalt /Library/Logs/Basalt.old-<time> (only when _basalt owns it)\n")
 	require.Contains(t, out.String(), "  moved the old /Library/Logs/Basalt, which _basalt owned, to /Library/Logs/Basalt.old-20261119T000000Z\n")
 	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1], "the engine restarts onto the new log")
@@ -266,10 +266,10 @@ func TestDarwinInstallPlan(t *testing.T) {
 func TestDryRunRunsNothing(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
-	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	steps, err := osservice.InstallPlan(context.Background(), sys, linuxSpec())
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, true, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, true, &out))
 	require.Empty(t, sys.ran)
 	require.Empty(t, sys.written)
 	require.Contains(t, out.String(), "systemctl enable --now basalt-engine.service")
@@ -280,9 +280,9 @@ func TestApplyStopsAtTheFirstFailure(t *testing.T) {
 	sys := newFake()
 	sys.users["basalt"] = true
 	sys.failOn = "mkdir"
-	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	steps, err := osservice.InstallPlan(context.Background(), sys, linuxSpec())
 	require.NoError(t, err)
-	err = service.Apply(context.Background(), sys, steps, false, &strings.Builder{})
+	err = osservice.Apply(context.Background(), sys, steps, false, &strings.Builder{})
 	require.ErrorContains(t, err, "mkdir -m 0750")
 	require.Empty(t, sys.written, "no unit written after a failed step")
 }
@@ -292,29 +292,29 @@ func TestApplyStopsAtTheFirstFailure(t *testing.T) {
 func TestManagerRunning(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
-	require.True(t, service.ManagerRunning(sys, "darwin"))
-	require.False(t, service.ManagerRunning(sys, "linux"), "a container without systemd")
+	require.True(t, osservice.ManagerRunning(sys, "darwin"))
+	require.False(t, osservice.ManagerRunning(sys, "linux"), "a container without systemd")
 	sys.exists["/run/systemd/system"] = true
-	require.True(t, service.ManagerRunning(sys, "linux"))
+	require.True(t, osservice.ManagerRunning(sys, "linux"))
 }
 
 // A skipped step fails uninstall only where the service manager runs.
 func TestSettleSkippedSteps(t *testing.T) {
 	t.Parallel()
-	skipped := fmt.Errorf("%w: systemctl daemon-reload", service.ErrStepsSkipped)
+	skipped := fmt.Errorf("%w: systemctl daemon-reload", osservice.ErrStepsSkipped)
 	other := errors.New("rm failed")
 	sys := newFake()
-	require.NoError(t, service.Settle(skipped, sys, "linux"), "no systemd: expected")
-	require.ErrorIs(t, service.Settle(skipped, sys, "darwin"), service.ErrStepsSkipped, "launchd runs")
-	require.ErrorIs(t, service.Settle(other, sys, "linux"), other)
-	require.NoError(t, service.Settle(nil, sys, "darwin"))
+	require.NoError(t, osservice.Settle(skipped, sys, "linux"), "no systemd: expected")
+	require.ErrorIs(t, osservice.Settle(skipped, sys, "darwin"), osservice.ErrStepsSkipped, "launchd runs")
+	require.ErrorIs(t, osservice.Settle(other, sys, "linux"), other)
+	require.NoError(t, osservice.Settle(nil, sys, "darwin"))
 	sys.exists["/run/systemd/system"] = true
-	require.ErrorIs(t, service.Settle(skipped, sys, "linux"), service.ErrStepsSkipped)
+	require.ErrorIs(t, osservice.Settle(skipped, sys, "linux"), osservice.ErrStepsSkipped)
 }
 
 func TestSpecValidate(t *testing.T) {
 	t.Parallel()
-	bad := []service.Spec{
+	bad := []osservice.Spec{
 		{GOOS: "windows", Binary: "/b", ConfigPath: "/c", User: "u"},
 		{GOOS: "linux", Binary: "basalt", ConfigPath: "/c", User: "u"},
 		{GOOS: "linux", Binary: "/b", ConfigPath: "engine.json", User: "u"},
@@ -322,17 +322,17 @@ func TestSpecValidate(t *testing.T) {
 		{GOOS: "linux", Binary: "/b", ConfigPath: "/c"},
 	}
 	for _, s := range bad {
-		_, err := service.InstallPlan(context.Background(), newFake(), s)
+		_, err := osservice.InstallPlan(context.Background(), newFake(), s)
 		require.Error(t, err, "%+v", s)
 	}
 }
 
 func TestPickFreeID(t *testing.T) {
 	t.Parallel()
-	id, err := service.PickFreeID("")
+	id, err := osservice.PickFreeID("")
 	require.NoError(t, err)
 	require.Equal(t, 300, id)
-	id, err = service.PickFreeID("a 300\nb 301\n\nmalformed\nc x\n")
+	id, err = osservice.PickFreeID("a 300\nb 301\n\nmalformed\nc x\n")
 	require.NoError(t, err)
 	require.Equal(t, 302, id)
 
@@ -340,30 +340,30 @@ func TestPickFreeID(t *testing.T) {
 	for i := 300; i <= 499; i++ {
 		all.WriteString("u " + strconv.Itoa(i) + "\n")
 	}
-	_, err = service.PickFreeID(all.String())
+	_, err = osservice.PickFreeID(all.String())
 	require.Error(t, err)
 }
 
 func TestDefaultUser(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "basalt", service.DefaultUser("linux"))
-	require.Equal(t, "_basalt", service.DefaultUser("darwin"))
+	require.Equal(t, "basalt", osservice.DefaultUser("linux"))
+	require.Equal(t, "_basalt", osservice.DefaultUser("darwin"))
 }
 
 func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	t.Parallel()
 	spec := linuxSpec()
-	spec.Files = []service.File{
+	spec.Files = []osservice.File{
 		{Path: "/etc/basalt/engine.json", Content: []byte(`{"socketDir":"/run/basalt"}`)},
 		{Path: "/etc/basalt/agents/bot.url", Content: []byte("postgres://secret")},
 	}
 	sys := newFake()
 	sys.users["basalt"] = true
-	sys.exists[service.SystemdUnitPath] = true
-	steps, err := service.InstallPlan(context.Background(), sys, spec)
+	sys.exists[osservice.SystemdUnitPath] = true
+	steps, err := osservice.InstallPlan(context.Background(), sys, spec)
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
 		"mkdir -m 0750 -o basalt /etc/basalt",
 		"mkdir -m 0700 -o basalt /etc/basalt/agents",
@@ -377,28 +377,28 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.Equal(t, "postgres://secret", sys.written["/etc/basalt/agents/bot.url"])
 	require.Equal(t, os.FileMode(0o600), sys.modes["/etc/basalt/agents/bot.url"])
 	require.Equal(t, os.FileMode(0o600), sys.modes["/etc/basalt/engine.json"])
-	require.Equal(t, os.FileMode(0o644), sys.modes[service.SystemdUnitPath])
+	require.Equal(t, os.FileMode(0o644), sys.modes[osservice.SystemdUnitPath])
 	require.NotContains(t, out.String(), "secret", "file contents are never printed")
 
 	dspec := darwinSpec()
-	dspec.Files = []service.File{{Path: "/Library/Application Support/Basalt/agents/bot.url", Content: []byte("x")}}
+	dspec.Files = []osservice.File{{Path: "/Library/Application Support/Basalt/agents/bot.url", Content: []byte("x")}}
 	sys = newFake()
 	sys.users["_basalt"] = true
-	sys.exists[service.LaunchdPlist] = true
-	steps, err = service.InstallPlan(context.Background(), sys, dspec)
+	sys.exists[osservice.LaunchdPlist] = true
+	steps, err = osservice.InstallPlan(context.Background(), sys, dspec)
 	require.NoError(t, err)
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
+	require.NoError(t, osservice.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 	require.Contains(t, sys.ran, "mkdir -m 0700 -o _basalt /Library/Application Support/Basalt/agents")
 	require.Equal(t, "_basalt", sys.owners["/Library/Application Support/Basalt/agents/bot.url"])
 	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1])
-	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
+	require.NotContains(t, sys.ran, "launchctl bootstrap system "+osservice.LaunchdPlist)
 }
 
 // The install makes the directories with the modes the unit gives them.
 func TestEngineDirsMatchTheUnit(t *testing.T) {
-	dirs := service.EngineDirs("linux")
+	dirs := osservice.EngineDirs("linux")
 	require.Len(t, dirs, 2)
-	unit := service.SystemdUnit(service.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
+	unit := osservice.SystemdUnit(osservice.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
 	require.Equal(t, "/run/basalt", dirs[0].Path)
 	require.Contains(t, unit, fmt.Sprintf("RuntimeDirectory=basalt\nRuntimeDirectoryMode=%04o\n", dirs[0].Mode))
 	require.Equal(t, "/var/lib/basalt", dirs[1].Path)
@@ -406,10 +406,10 @@ func TestEngineDirsMatchTheUnit(t *testing.T) {
 
 	sys := newFake()
 	sys.users["_basalt"] = true
-	steps, err := service.InstallPlan(context.Background(), sys, darwinSpec())
+	steps, err := osservice.InstallPlan(context.Background(), sys, darwinSpec())
 	require.NoError(t, err)
-	for _, d := range service.EngineDirs("darwin") {
-		require.Contains(t, steps, service.Step{Kind: service.StepMkdir, Path: d.Path, Mode: d.Mode, Owner: "_basalt"}, d.Path)
+	for _, d := range osservice.EngineDirs("darwin") {
+		require.Contains(t, steps, osservice.Step{Kind: osservice.StepMkdir, Path: d.Path, Mode: d.Mode, Owner: "_basalt"}, d.Path)
 	}
 }
 

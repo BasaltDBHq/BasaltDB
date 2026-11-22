@@ -1,10 +1,10 @@
-package server
+package httpserver
 
 import (
 	"net"
 	"net/http"
 
-	websec "github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 )
 
 const schemeHTTP = "http"
@@ -14,6 +14,6 @@ func secureHTTPHandler(opts Options, requestedListen string, ln net.Listener, h 
 	if opts.TLSCert != "" {
 		scheme = "https"
 	}
-	allowed := websec.AllowedHostsForListener(requestedListen, ln.Addr())
-	return websec.Wrap(h, allowed, scheme, ln.Addr())
+	allowed := httpsec.AllowedHostsForListener(requestedListen, ln.Addr())
+	return httpsec.Wrap(h, allowed, scheme, ln.Addr())
 }

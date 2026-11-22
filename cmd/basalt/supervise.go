@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/app/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -35,7 +35,7 @@ const (
 	maxFastCrashes = 5
 	// childStopWait is how long a child gets after SIGTERM before SIGKILL.
 	childStopWait = 30 * time.Second
-	lastStopFile  = engine.LastStopFile
+	lastStopFile  = app.LastStopFile
 	superviseLock = "supervise.lock"
 )
 
@@ -151,7 +151,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 
 	log := engineLog(io.err)
 	stateDir := cfg.StateDirFor(runtime.GOOS)
-	lockPath := engine.LockPath(cfg.SocketDir)
+	lockPath := app.LockPath(cfg.SocketDir)
 	o := superviseOptions{
 		firstStartedBy: startedBy,
 		start:          childStarter(startedFrom, configPath, lockPath, stateDir, io, log),
@@ -280,7 +280,7 @@ func writeFileAtomic(path string, data []byte) error {
 // a holder, so one look that finds it free means no engine runs.
 func anotherEngineRuns(lockPath string) bool {
 	return heldAtEveryLook(func() bool {
-		_, up, _ := server.Running(lockPath)
+		_, up, _ := httpserver.Running(lockPath)
 		return up
 	}, time.Sleep)
 }

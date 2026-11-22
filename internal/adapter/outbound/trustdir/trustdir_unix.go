@@ -13,7 +13,7 @@ import (
 	"strings"
 	"syscall"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -72,7 +72,7 @@ func profileFile(name string) bool {
 // Open opens configPath's trust.d under the rules, made (mode 0700, owned
 // by the config directory's owner) when create is set and it is missing,
 // with the owner its files must have (or root).
-func Open(configPath string, create bool) (*service.TrustedDir, int, error) {
+func Open(configPath string, create bool) (*osservice.TrustedDir, int, error) {
 	configPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return nil, 0, err
@@ -82,7 +82,7 @@ func Open(configPath string, create bool) (*service.TrustedDir, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("the config directory %s: %w", cfgDir, err)
 	}
-	d, err := service.OpenTrustedDir(Path(configPath), trusted, create)
+	d, err := osservice.OpenTrustedDir(Path(configPath), trusted, create)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%s is refused: %w", Path(configPath), err)
 	}
@@ -102,7 +102,7 @@ func owner(path string) (int, error) {
 	return int(st.Uid), nil
 }
 
-func loadOne(d *service.TrustedDir, name string, trusted int) (*trustprofile.Profile, error) {
+func loadOne(d *osservice.TrustedDir, name string, trusted int) (*trustprofile.Profile, error) {
 	raw, err := Read(d, name, trusted, trustprofile.MaxProfileBytes)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func loadOne(d *service.TrustedDir, name string, trusted int) (*trustprofile.Pro
 // Read is the file name in d, opened without following a link, a regular
 // file with one link, owned by root or trusted and not writable by group or
 // others, read through the descriptor that was checked, up to limit bytes.
-func Read(d *service.TrustedDir, name string, trusted int, limit int64) ([]byte, error) {
+func Read(d *osservice.TrustedDir, name string, trusted int, limit int64) ([]byte, error) {
 	f, err := config.OpenPlainAt(d, name, func(f *os.File) error { return config.CheckTrustedConfig(f, trusted) })
 	if err != nil {
 		return nil, err

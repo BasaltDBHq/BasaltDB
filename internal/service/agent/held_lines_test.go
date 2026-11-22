@@ -10,7 +10,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 )
 
 // holdTooLarge refuses lines over the cap before the hold, and maps an
@@ -20,7 +20,7 @@ func TestHoldTooLarge(t *testing.T) {
 	t.Parallel()
 	small := []string{strings.Repeat("x", 1000)}
 	wide := []string{strings.Repeat("x", guard.MaxHeldLineBytesBefore37+1)}
-	bs008 := postgres.MapError(&pgconn.PgError{Code: "BS008", Message: "LEDGER_INPUT_INVALID", Detail: "each line must be the jsonb text of a preview line"})
+	bs008 := store.MapError(&pgconn.PgError{Code: "BS008", Message: "LEDGER_INPUT_INVALID", Detail: "each line must be the jsonb text of a preview line"})
 
 	require.Nil(t, holdTooLarge(small, nil))
 	require.Nil(t, holdTooLarge(wide, nil), "within the cap: the hold decides")
@@ -45,7 +45,7 @@ func TestHoldTooLarge(t *testing.T) {
 // themselves or have the agent write fewer rows.
 func TestHoldTooLargeTellsThePerson(t *testing.T) {
 	t.Parallel()
-	older := holdTooLarge([]string{strings.Repeat("x", guard.MaxHeldLineBytesBefore37+1)}, postgres.MapError(&pgconn.PgError{Code: "BS008"}))
+	older := holdTooLarge([]string{strings.Repeat("x", guard.MaxHeldLineBytesBefore37+1)}, store.MapError(&pgconn.PgError{Code: "BS008"}))
 	over := holdTooLarge([]string{strings.Repeat("x", guard.MaxHeldLinesBytes+1)}, nil)
 	for _, operatedBy := range []string{"", mcpcontract.OperatedByAgent} {
 		s := operatedService(t, "linux", "", operatedBy)

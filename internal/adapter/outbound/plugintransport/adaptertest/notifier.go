@@ -11,14 +11,14 @@ import (
 
 	"go.uber.org/goleak"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // NewNotifier connects to a peer that is a notifier: it answers feed.observe
 // with the seq of the batch's last event and approval.deliver with {}. It
 // registers its own cleanup with t.
-type NewNotifier func(t *testing.T) plugin.Transport
+type NewNotifier func(t *testing.T) pluginhost.Transport
 
 // RunNotifier holds a transport to the notifier hooks' rules, whatever the
 // wire: both hooks are carried, concurrent calls get their own answers, an
@@ -66,9 +66,9 @@ const (
 	everyFourth = 4
 )
 
-func observe(ctx context.Context, tr plugin.Transport, events json.RawMessage) (int64, error) {
-	var res protocol.FeedObserveResponse
-	err := tr.Call(ctx, protocol.MethodFeedObserve, protocol.FeedObserveRequest{Agent: notifierAgent, Events: events}, &res)
+func observe(ctx context.Context, tr pluginhost.Transport, events json.RawMessage) (int64, error) {
+	var res pluginproto.FeedObserveResponse
+	err := tr.Call(ctx, pluginproto.MethodFeedObserve, pluginproto.FeedObserveRequest{Agent: notifierAgent, Events: events}, &res)
 	return res.LastSeq, err
 }
 
@@ -90,8 +90,8 @@ func testApprovalDeliver(t *testing.T, newTransport NewNotifier) {
 	ctx, cancel := context.WithTimeout(context.Background(), waitPrompt)
 	defer cancel()
 	var res map[string]any
-	err := tr.Call(ctx, protocol.MethodApprovalDeliver,
-		protocol.ApprovalDeliverRequest{Agent: notifierAgent, Event: json.RawMessage(Notice)}, &res)
+	err := tr.Call(ctx, pluginproto.MethodApprovalDeliver,
+		pluginproto.ApprovalDeliverRequest{Agent: notifierAgent, Event: json.RawMessage(Notice)}, &res)
 	if err != nil {
 		t.Fatalf("approval.deliver: %v", err)
 	}
@@ -113,8 +113,8 @@ func testUnknownCarried(t *testing.T, newTransport NewNotifier) {
 		t.Fatalf("lastSeq %d, %v; want 9", got, err)
 	}
 	notice := strings.Replace(Notice, `"kind":"APPROVAL_REQUESTED"`, `"kind":"APPROVAL_REQUESTED","laterField":1`, 1)
-	if err := tr.Call(ctx, protocol.MethodApprovalDeliver,
-		protocol.ApprovalDeliverRequest{Agent: notifierAgent, Event: json.RawMessage(notice)}, nil); err != nil {
+	if err := tr.Call(ctx, pluginproto.MethodApprovalDeliver,
+		pluginproto.ApprovalDeliverRequest{Agent: notifierAgent, Event: json.RawMessage(notice)}, nil); err != nil {
 		t.Fatalf("approval.deliver with a field the peer does not know: %v", err)
 	}
 }
@@ -130,8 +130,8 @@ func testHooksConcurrent(t *testing.T, newTransport NewNotifier) {
 			ctx, cancel := context.WithTimeout(context.Background(), waitPrompt*2)
 			defer cancel()
 			if i%everyFourth == 0 {
-				errs <- tr.Call(ctx, protocol.MethodApprovalDeliver,
-					protocol.ApprovalDeliverRequest{Agent: notifierAgent, Event: json.RawMessage(Notice)}, nil)
+				errs <- tr.Call(ctx, pluginproto.MethodApprovalDeliver,
+					pluginproto.ApprovalDeliverRequest{Agent: notifierAgent, Event: json.RawMessage(Notice)}, nil)
 				return
 			}
 			seq := int64(i + 1)

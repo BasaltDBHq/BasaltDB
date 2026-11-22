@@ -1,4 +1,4 @@
-package postgres_test
+package store_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
@@ -15,7 +15,7 @@ import (
 // Capabilities), which the engine may rely on.
 func TestPostgresCapabilities(t *testing.T) {
 	t.Parallel()
-	s := postgres.NewStore(nopDB{}, sqlguard.DefaultLimits(), time.Now)
+	s := store.NewStore(nopDB{}, sqlguard.DefaultLimits(), time.Now)
 	require.Equal(t, action.StorePostgres, s.Kind())
 	require.Equal(t, action.Capabilities{
 		InStoreEnforcement:    true,
@@ -30,4 +30,4 @@ func TestPostgresCapabilities(t *testing.T) {
 }
 
 // nopDB is a DB the test never queries.
-type nopDB struct{ postgres.DB }
+type nopDB struct{ store.DB }

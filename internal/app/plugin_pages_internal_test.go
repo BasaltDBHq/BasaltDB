@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -213,13 +213,13 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	pg := newPGAgent(t, old.URL, 2)
 	origin := "http://localhost:8787"
 	srv := pages.New(origin, quietLog())
-	pool, err := postgres.NewPool(context.Background(), old.URL, 1)
+	pool, err := store.NewPool(context.Background(), old.URL, 1)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	srv.Add(pg.service(func(dp *agent.Deps) {
 		dp.PagesOrigin, dp.Links, dp.PluginApprovals = origin, secrets, pg.store
-		dp.Probe = postgres.Probe{Q: pool, Migrations: guard.Migrations()}
+		dp.Probe = store.Probe{Q: pool, Migrations: guard.Migrations()}
 	}))
 	id := uuid.Must(uuid.NewV7())
 	secret, err := secrets.Issue(id, time.Now().Add(time.Hour))

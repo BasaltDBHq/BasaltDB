@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"bufio"
@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // fedSeqs are the seqs every test plugin process received for agent, over
@@ -105,7 +105,7 @@ func TestFeedFollowsTheRunningEngine(t *testing.T) {
 	f.writeConfig()
 	l.approve(t, pk, p, "product_a")
 	require.Eventually(t, func() bool {
-		return ep.host.State(p.Key()) == plugin.StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
+		return ep.host.State(p.Key()) == pluginhost.StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
 	}, 20*time.Second, 20*time.Millisecond)
 	b := fe.applied("product_a")
 	require.Eventually(t, func() bool { return slices.Contains(f.fedSeqs(sch, "product_a"), b) }, 20*time.Second, 20*time.Millisecond)

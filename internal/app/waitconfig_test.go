@@ -1,4 +1,4 @@
-package engine_test
+package app_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 )
 
 // adminURL is an admin connection string with a password in it; no
@@ -32,8 +32,8 @@ func pageOrigin(addr string) string {
 	return "http://localhost:" + port
 }
 
-func waitOptions(addr, configPath string) engine.WaitOptions {
-	return engine.WaitOptions{Addr: addr, Origin: pageOrigin(addr), ConfigPath: configPath, Log: slog.New(slog.DiscardHandler)}
+func waitOptions(addr, configPath string) app.WaitOptions {
+	return app.WaitOptions{Addr: addr, Origin: pageOrigin(addr), ConfigPath: configPath, Log: slog.New(slog.DiscardHandler)}
 }
 
 // freeAddr is a loopback address nothing listens on, right now.
@@ -90,7 +90,7 @@ func TestWaitForConfigServesOnlyTheSetupPageThenReturns(t *testing.T) {
 	}
 	done := make(chan waited, 1)
 	go func() {
-		ln, err := engine.WaitForConfig(context.Background(), waitOptions(addr, configPath))
+		ln, err := app.WaitForConfig(context.Background(), waitOptions(addr, configPath))
 		done <- waited{ln, err}
 	}()
 	waitUp(t, addr)
@@ -156,7 +156,7 @@ func TestWaitForConfigNamesATakenPort(t *testing.T) {
 	t.Cleanup(func() { _ = ln.Close() })
 	_, port, err := net.SplitHostPort(ln.Addr().String())
 	require.NoError(t, err)
-	_, err = engine.WaitForConfig(context.Background(), waitOptions(ln.Addr().String(), filepath.Join(t.TempDir(), "engine.json")))
+	_, err = app.WaitForConfig(context.Background(), waitOptions(ln.Addr().String(), filepath.Join(t.TempDir(), "engine.json")))
 	require.ErrorContains(t, err, "serves its setup page on "+ln.Addr().String()+", but another process holds it")
 	require.ErrorContains(t, err, "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
 }
@@ -167,7 +167,7 @@ func TestWaitForConfigStopsWithItsContext(t *testing.T) {
 	addr := freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		_, err := engine.WaitForConfig(ctx, waitOptions(addr, filepath.Join(t.TempDir(), "engine.json")))
+		_, err := app.WaitForConfig(ctx, waitOptions(addr, filepath.Join(t.TempDir(), "engine.json")))
 		done <- err
 	}()
 	waitUp(t, addr)

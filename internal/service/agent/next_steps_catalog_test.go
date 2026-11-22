@@ -22,7 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -92,7 +92,7 @@ func (catalogApprovals) Passkeys(context.Context) ([]passkey.Credential, error) 
 
 func pgFail(code, message, detail string) func(*testing.T, *Service) error {
 	return func(*testing.T, *Service) error {
-		return postgres.MapError(&pgconn.PgError{Code: code, Message: message, Detail: detail})
+		return store.MapError(&pgconn.PgError{Code: code, Message: message, Detail: detail})
 	}
 }
 
@@ -164,7 +164,7 @@ func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) f
 	return func(t *testing.T, s *Service) error {
 		setReverts(&s.Deps, catalogReverts{lines: lines, by: by})
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return s.nothingToRevert(context.Background(), tool, scope, postgres.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
+		return s.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
 	}
 }
 
@@ -235,7 +235,7 @@ func catalogCases() map[string]catalogCase {
 		},
 
 		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(action.ErrRowLimit)},
-		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(postgres.ErrSizeLimit)},
+		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(store.ErrSizeLimit)},
 		caseKey("QUERY_TIMEOUT", "ROW_TOO_LARGE", ""): {
 			"query", queryArgs0,
 			plain(&resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}}),
@@ -373,7 +373,7 @@ func catalogCases() map[string]catalogCase {
 			"preview_revert",
 			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
 			plainFunc(func() error {
-				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, postgres.MapError(&pgconn.PgError{
+				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, store.MapError(&pgconn.PgError{
 					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guard.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
 				}))
 			}),
@@ -834,7 +834,7 @@ func TestStepRulesRefuseABadStep(t *testing.T) {
 func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 	t.Parallel()
 	s := serviceFor(t, "linux", "")
-	te := s.Failure("write", writeArgs0, postgres.MapError(&pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"}))
+	te := s.Failure("write", writeArgs0, store.MapError(&pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"}))
 	require.Equal(t, CodeStaleRead, te.Code)
 	require.Len(t, te.NextSteps, 2)
 	require.Equal(t, mcp.ActionStop, te.NextSteps[0].Action)
@@ -847,7 +847,7 @@ func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 	t.Parallel()
 	s := serviceFor(t, "linux", "")
-	tooLarge := postgres.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}))
+	tooLarge := store.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}))
 	for tool, want := range map[string]string{
 		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
 		"run_history": CodeQueryTimeout, "list_pending": CodeQueryTimeout, "revert_plan": CodeQueryTimeout,
@@ -893,7 +893,7 @@ func TestPermissionDeniedHandsTheGrantToTheSetupPage(t *testing.T) {
 		"permission denied for table events":        "events",
 		`permission denied for table "a,b"`:         `"a,b"`,
 	} {
-		te := s.Failure("query", queryArgs0, postgres.MapError(&pgconn.PgError{Code: "42501", Message: message}))
+		te := s.Failure("query", queryArgs0, store.MapError(&pgconn.PgError{Code: "42501", Message: message}))
 		last := te.NextSteps[len(te.NextSteps)-1]
 		require.Equal(t, mcp.ActorAgent, last.Actor, message)
 		require.Equal(t, "basalt init --agent bot", last.Command, message)

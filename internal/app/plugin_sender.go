@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // pluginSenderQueue is how many calls wait per entry (CONTRACT.md, Notifier
@@ -29,7 +29,7 @@ type pluginCall struct {
 	// calls (plugin.Host.ObserveFeedOn, DeliverApproval), which keep the
 	// listed agent, the entry's 4 call slots and its timeoutMs. ctx is the
 	// sender's: it ends when the sender stops.
-	run func(ctx context.Context, h *plugin.Host, k plugin.EntryKey) error
+	run func(ctx context.Context, h *pluginhost.Host, k pluginhost.EntryKey) error
 	// notAfter: a call still waiting at this time is dropped, never sent.
 	// Zero is no limit.
 	notAfter time.Time
@@ -45,8 +45,8 @@ type pluginCall struct {
 // the entry's call cap and timeoutMs. Whoever hands it a call never waits
 // on the plugin: Send returns at once, and a full queue refuses the call.
 type pluginSender struct {
-	host *plugin.Host
-	key  plugin.EntryKey
+	host *pluginhost.Host
+	key  pluginhost.EntryKey
 	now  func() time.Time
 
 	queue chan pluginCall
@@ -65,7 +65,7 @@ type pluginSender struct {
 }
 
 // newPluginSender starts the sender of entry k on host.
-func newPluginSender(host *plugin.Host, k plugin.EntryKey, now func() time.Time) *pluginSender {
+func newPluginSender(host *pluginhost.Host, k pluginhost.EntryKey, now func() time.Time) *pluginSender {
 	if host == nil || now == nil {
 		panic("engine: a plugin sender needs a host and a clock")
 	}
@@ -75,7 +75,7 @@ func newPluginSender(host *plugin.Host, k plugin.EntryKey, now func() time.Time)
 		notices: make(chan pluginCall, pluginSenderQueue), ctx: ctx, cancel: cancel,
 	}
 	s.wg.Go(s.workNotices)
-	for range protocol.MaxInFlight - 1 {
+	for range pluginproto.MaxInFlight - 1 {
 		s.wg.Go(s.work)
 	}
 	return s
@@ -195,19 +195,19 @@ func finish(c pluginCall, err error) {
 // declare a notifier hook, one per entry, started and stopped with the
 // entries (sync).
 type pluginSenders struct {
-	host *plugin.Host
+	host *pluginhost.Host
 	now  func() time.Time
 
 	mu sync.Mutex
-	m  map[plugin.EntryKey]*pluginSender
+	m  map[pluginhost.EntryKey]*pluginSender
 }
 
-func newPluginSenders(host *plugin.Host, now func() time.Time) *pluginSenders {
-	return &pluginSenders{host: host, now: now, m: map[plugin.EntryKey]*pluginSender{}}
+func newPluginSenders(host *pluginhost.Host, now func() time.Time) *pluginSenders {
+	return &pluginSenders{host: host, now: now, m: map[pluginhost.EntryKey]*pluginSender{}}
 }
 
 // sync keeps a sender for each of keys and stops the others.
-func (r *pluginSenders) sync(keys []plugin.EntryKey) {
+func (r *pluginSenders) sync(keys []pluginhost.EntryKey) {
 	r.mu.Lock()
 	var stop []*pluginSender
 	for k, s := range r.m {
@@ -226,7 +226,7 @@ func (r *pluginSenders) sync(keys []plugin.EntryKey) {
 }
 
 // sender is entry k's sender, nil when the engine serves no such entry.
-func (r *pluginSenders) sender(k plugin.EntryKey) *pluginSender {
+func (r *pluginSenders) sender(k pluginhost.EntryKey) *pluginSender {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.m[k]

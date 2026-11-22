@@ -2,14 +2,14 @@
 // agents each entry serves and the shape of a call, and nothing about how
 // bytes reach a plugin: transports are adapters behind the Transport
 // interface and live in other packages.
-package plugin
+package pluginhost
 
 import (
 	"encoding/json"
 	"errors"
 	"time"
 
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
 // Hook names a point in the engine where a plugin is called.
@@ -74,17 +74,17 @@ type Resources struct {
 
 // Manifest is a plugin's basalt-plugin.json. Unknown fields are ignored.
 type Manifest struct {
-	ManifestVersion int                          `json:"manifestVersion"`
-	Name            string                       `json:"name"`
-	Version         string                       `json:"version"`
-	Publisher       string                       `json:"publisher"`
-	Description     string                       `json:"description,omitempty"`
-	Protocol        []string                     `json:"protocol"`
-	Hooks           map[string]protocol.HookDecl `json:"hooks"`
-	Endpoint        Endpoint                     `json:"endpoint"`
-	Files           map[string]string            `json:"files,omitempty"`
-	Network         Network                      `json:"network"`
-	Resources       *Resources                   `json:"resources,omitempty"`
+	ManifestVersion int                             `json:"manifestVersion"`
+	Name            string                          `json:"name"`
+	Version         string                          `json:"version"`
+	Publisher       string                          `json:"publisher"`
+	Description     string                          `json:"description,omitempty"`
+	Protocol        []string                        `json:"protocol"`
+	Hooks           map[string]pluginproto.HookDecl `json:"hooks"`
+	Endpoint        Endpoint                        `json:"endpoint"`
+	Files           map[string]string               `json:"files,omitempty"`
+	Network         Network                         `json:"network"`
+	Resources       *Resources                      `json:"resources,omitempty"`
 }
 
 // Entry is one configured plugin: a manifest, the agents it serves, and its

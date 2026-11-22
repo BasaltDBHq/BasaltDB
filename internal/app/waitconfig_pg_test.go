@@ -1,4 +1,4 @@
-package engine_test
+package app_test
 
 import (
 	"bytes"
@@ -25,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -87,7 +87,7 @@ func TestFirstInstallThroughTheSetupRoutes(t *testing.T) {
 	go func() {
 		o := waitOptions(addr, configPath)
 		o.Users, o.Prefix = agentUsers{}, d.Names.Prefix
-		ln, err := engine.WaitForConfig(context.Background(), o)
+		ln, err := app.WaitForConfig(context.Background(), o)
 		done <- waited{ln, err}
 	}()
 	waitUp(t, addr)
@@ -177,7 +177,7 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 	go func() {
 		o := waitOptions(addr, configPath)
 		o.Users, o.Prefix = agentUsers{}, d.Names.Prefix
-		ln, err := engine.WaitForConfig(context.Background(), o)
+		ln, err := app.WaitForConfig(context.Background(), o)
 		done <- waited{ln, err}
 	}()
 	waitUp(t, addr)
@@ -335,7 +335,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 		go func() {
 			o := waitOptions(addr, configPath)
 			o.Users, o.Prefix = agentUsers{}, d.Names.Prefix
-			ln, err := engine.WaitForConfig(ctx, o)
+			ln, err := app.WaitForConfig(ctx, o)
 			done <- waited{ln, err}
 		}()
 		waitUp(t, addr)

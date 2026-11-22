@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/service/keptplugins"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 const peer uint32 = 1001
@@ -193,7 +193,7 @@ func TestUploadHardening(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 3, n)
 
-		_, err = s.Part(peer, u.ID, plugin.SignatureFile, 0, b64(make([]byte, plugin.MaxSignatureFileBytes+1)))
+		_, err = s.Part(peer, u.ID, pluginhost.SignatureFile, 0, b64(make([]byte, pluginhost.MaxSignatureFileBytes+1)))
 		requireRefused(t, err, keptplugins.KindRefused, keptplugins.ReasonTooLarge)
 		require.Zero(t, s.Open(), "a part over a limit drops the upload")
 	})
@@ -346,12 +346,12 @@ func TestUploadLimits(t *testing.T) {
 		require.NoError(t, err)
 		var off int64
 		chunk := make([]byte, keptplugins.MaxPartBytes)
-		for off < plugin.MaxManifestBytes {
-			n, err := s.Part(peer, u.ID, plugin.ManifestFile, off, b64(chunk))
+		for off < pluginhost.MaxManifestBytes {
+			n, err := s.Part(peer, u.ID, pluginhost.ManifestFile, off, b64(chunk))
 			require.NoError(t, err)
 			off = n
 		}
-		_, err = s.Part(peer, u.ID, plugin.ManifestFile, off, b64([]byte("x")))
+		_, err = s.Part(peer, u.ID, pluginhost.ManifestFile, off, b64([]byte("x")))
 		requireRefused(t, err, keptplugins.KindRefused, keptplugins.ReasonTooLarge)
 	})
 }

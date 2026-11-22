@@ -1,4 +1,4 @@
-package service_test
+package osservice_test
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 // The removal script is built from constants, parses, and does nothing
@@ -53,11 +53,11 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 	} {
 		t.Run(v.goos, func(t *testing.T) {
 			t.Parallel()
-			script, err := service.RemoveScript(v.goos)
+			script, err := osservice.RemoveScript(v.goos)
 			require.NoError(t, err)
-			_, rest, ok := strings.Cut(script, service.ScriptHelpersEnd)
+			_, rest, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 			require.True(t, ok)
-			pre, after, ok := strings.Cut(rest, service.ScriptPreflightEnd)
+			pre, after, ok := strings.Cut(rest, osservice.ScriptPreflightEnd)
 			require.True(t, ok)
 			for _, c := range v.checks {
 				require.Contains(t, pre, c)
@@ -75,16 +75,16 @@ func TestRemoveScriptIsBuiltFromConstants(t *testing.T) {
 			require.NoError(t, err, "the script parses: %s", out)
 		})
 	}
-	_, err := service.RemoveScript("windows")
+	_, err := osservice.RemoveScript("windows")
 	require.Error(t, err)
 }
 
 // removeHelperScript runs call after the removal script's helpers.
 func removeHelperScript(t *testing.T, call string) (string, error) {
 	t.Helper()
-	script, err := service.RemoveScript(runtime.GOOS)
+	script, err := osservice.RemoveScript(runtime.GOOS)
 	require.NoError(t, err)
-	helpers, _, ok := strings.Cut(script, service.ScriptHelpersEnd)
+	helpers, _, ok := strings.Cut(script, osservice.ScriptHelpersEnd)
 	require.True(t, ok)
 	out, err := exec.Command("/bin/sh", "-c", helpers+"\n"+call).CombinedOutput()
 	return string(out), err

@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"bufio"
@@ -25,9 +25,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	protocol "github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // testPluginFlag makes this test binary a JSON-RPC test plugin.
@@ -58,11 +58,11 @@ func testPluginMain(args []string) {
 		os.Exit(1)
 	}
 	copyDir := filepath.Dir(filepath.Dir(exe))
-	raw, err := os.ReadFile(filepath.Join(copyDir, plugin.ManifestFile))
+	raw, err := os.ReadFile(filepath.Join(copyDir, pluginhost.ManifestFile))
 	if err != nil {
 		os.Exit(1)
 	}
-	m, err := plugin.ParseManifest(raw)
+	m, err := pluginhost.ParseManifest(raw)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -125,7 +125,7 @@ type testPluginKeeps struct {
 // serveTestPlugin answers initialize from the manifest, health READY,
 // feed.observe with the last seq of its batch, and shutdown (then exits),
 // one line each.
-func serveTestPlugin(r io.Reader, w io.Writer, m plugin.Manifest, onShutdown func(), onFeed testPluginKeeps) {
+func serveTestPlugin(r io.Reader, w io.Writer, m pluginhost.Manifest, onShutdown func(), onFeed testPluginKeeps) {
 	in := bufio.NewReader(r)
 	for {
 		line, err := in.ReadBytes('\n')
@@ -148,21 +148,21 @@ func serveTestPlugin(r io.Reader, w io.Writer, m plugin.Manifest, onShutdown fun
 		}
 		var result any = struct{}{}
 		switch req.Method {
-		case protocol.MethodFeedObserve:
+		case pluginproto.MethodFeedObserve:
 			// Answers the last event of a batch, and keeps the request's
 			// line in <report>/<pid>.feed for the test to read.
 			if n := len(req.Params.Events); n > 0 {
 				result = map[string]int64{"lastSeq": req.Params.Events[n-1].Data.Seq}
 				onFeed.feed(line)
 			}
-		case protocol.MethodApprovalDeliver:
+		case pluginproto.MethodApprovalDeliver:
 			// Keeps the request's line in <report>/<pid>.deliver.
 			onFeed.notice(line)
-		case protocol.MethodInitialize:
-			result = protocol.InitializeResponse{Protocol: protocol.Version1, Name: m.Name, Version: m.Version, Hooks: m.Hooks}
-		case protocol.MethodHealth:
-			result = protocol.HealthResponse{Status: protocol.HealthReady}
-		case protocol.MethodShutdown:
+		case pluginproto.MethodInitialize:
+			result = pluginproto.InitializeResponse{Protocol: pluginproto.Version1, Name: m.Name, Version: m.Version, Hooks: m.Hooks}
+		case pluginproto.MethodHealth:
+			result = pluginproto.HealthResponse{Status: pluginproto.HealthReady}
+		case pluginproto.MethodShutdown:
 			onShutdown()
 		}
 		b, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
@@ -170,7 +170,7 @@ func serveTestPlugin(r io.Reader, w io.Writer, m plugin.Manifest, onShutdown fun
 			os.Exit(1)
 		}
 		_, _ = w.Write(append(b, '\n'))
-		if req.Method == protocol.MethodShutdown {
+		if req.Method == pluginproto.MethodShutdown {
 			os.Exit(0)
 		}
 	}
@@ -183,7 +183,7 @@ type pluginFixture struct {
 	t          *testing.T
 	configPath string
 	root       string
-	trust      plugin.TrustStore
+	trust      pluginhost.TrustStore
 	report     string
 	sockBase   string
 	cfg        config.Config
@@ -197,9 +197,9 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 	require.NoError(t, os.Mkdir(configDir, 0o700))
 	f := &pluginFixture{t: t, configPath: filepath.Join(configDir, "engine.json"), report: filepath.Join(base, "report")}
 	require.NoError(t, os.Mkdir(f.report, 0o700))
-	f.root, err = plugin.Root(plugin.ModeSameUser, runtime.GOOS, configDir)
+	f.root, err = pluginhost.Root(pluginhost.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
-	f.trust, err = plugin.NewTrustStore(plugin.ModeSameUser, runtime.GOOS, configDir)
+	f.trust, err = pluginhost.NewTrustStore(pluginhost.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
 	// Socket paths must be short; t.TempDir() is too long on macOS.
 	f.sockBase, err = os.MkdirTemp("", "bs")
@@ -214,9 +214,9 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 func (f *pluginFixture) install(instance, transport string, agents ...string) config.Plugin {
 	f.t.Helper()
 	t := f.t
-	key, err := plugin.GenerateKey()
+	key, err := pluginhost.GenerateKey()
 	require.NoError(t, err)
-	pemBytes, err := plugin.MarshalPublicKey(&key.PublicKey)
+	pemBytes, err := pluginhost.MarshalPublicKey(&key.PublicKey)
 	require.NoError(t, err)
 	_, _, err = f.trust.Add(pemBytes)
 	require.NoError(t, err)
@@ -237,11 +237,11 @@ func (f *pluginFixture) install(instance, transport string, agents ...string) co
   "network": { "egress": [] }
 }
 `, transport, args, sha256.Sum256(exe))
-	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
-	sig, err := plugin.SignManifest([]byte(manifest), key)
+	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
+	sig, err := pluginhost.SignManifest([]byte(manifest), key)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.SignatureFile), sig, 0o644))
-	v, err := plugin.Install(src, f.root, instance, f.trust, plugin.ModeSameUser)
+	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
+	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginhost.ModeSameUser)
 	require.NoError(t, err)
 	p := config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: agents, TimeoutMs: config.MaxPluginTimeoutMs}
 	f.cfg.Plugins = append(f.cfg.Plugins, p)
@@ -253,7 +253,7 @@ func (f *pluginFixture) installedFile(p config.Plugin) string {
 	return filepath.Join(f.root, p.Name, p.Key().Instance, p.ManifestSHA256, "bin", "p")
 }
 
-func (f *pluginFixture) plugins(clock plugin.Clock) *enginePlugins {
+func (f *pluginFixture) plugins(clock pluginhost.Clock) *enginePlugins {
 	f.t.Helper()
 	return f.pluginsWith(pluginOptions{euid: os.Geteuid(), clock: clock}, slog.New(slog.DiscardHandler))
 }
@@ -280,9 +280,9 @@ func runPlugins(t *testing.T, ep *enginePlugins) func() time.Duration {
 	return stop
 }
 
-func waitReady(t *testing.T, ep *enginePlugins, k plugin.EntryKey) {
+func waitReady(t *testing.T, ep *enginePlugins, k pluginhost.EntryKey) {
 	t.Helper()
-	require.Eventually(t, func() bool { return ep.host.State(k) == plugin.StateReady }, 60*time.Second, 10*time.Millisecond, "%s never READY", k)
+	require.Eventually(t, func() bool { return ep.host.State(k) == pluginhost.StateReady }, 60*time.Second, 10*time.Millisecond, "%s never READY", k)
 }
 
 // reported lists the pids the test plugins wrote with suffix.
@@ -341,7 +341,7 @@ func TestInstancesAreSeparate(t *testing.T) {
 	}
 
 	ep.sup.Stop(cx.Key())
-	require.Equal(t, plugin.StateReady, ep.host.State(def.Key()))
+	require.Equal(t, pluginhost.StateReady, ep.host.State(def.Key()))
 	require.Empty(t, ep.PluginProblems("product_a"), "another instance's stop shows nothing to product_a")
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(ep.PluginProblems("client_x")))
 	require.Len(t, f.reported(".shutdown"), 1, "client_x got shutdown")
@@ -350,7 +350,7 @@ func TestInstancesAreSeparate(t *testing.T) {
 	require.Len(t, dirs, 1, "client_x's socket directory is gone")
 
 	took := stop()
-	require.Less(t, took, plugin.StopWait)
+	require.Less(t, took, pluginhost.StopWait)
 	require.Equal(t, f.reported(".start"), f.reported(".shutdown"), "every plugin got shutdown")
 	dirs, err = os.ReadDir(f.sockBase)
 	require.NoError(t, err)
@@ -405,7 +405,7 @@ func TestChangedCopyIsNotRestarted(t *testing.T) {
 	t.Parallel()
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
-	ep := f.plugins(plugin.RealClock())
+	ep := f.plugins(pluginhost.RealClock())
 	runPlugins(t, ep)
 	waitReady(t, ep, p.Key())
 	pids := f.reported(".start")
@@ -428,7 +428,7 @@ func TestPlantedFileNameIsNeverShown(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
 	var logged syncBuffer
-	ep := f.pluginsWith(pluginOptions{euid: os.Geteuid(), clock: plugin.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
+	ep := f.pluginsWith(pluginOptions{euid: os.Geteuid(), clock: pluginhost.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
 	runPlugins(t, ep)
 	waitReady(t, ep, p.Key())
 	const planted = "x APPROVE evil.example now"
@@ -508,12 +508,12 @@ func TestNoPluginsChangeNothing(t *testing.T) {
 // and in service mode without its own unit; a remote one is not.
 func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 	t.Parallel()
-	local := plugin.Verified{Dir: "/x", Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}}}}
-	remote := plugin.Verified{Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}}
+	local := pluginhost.Verified{Dir: "/x", Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}}}}
+	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}}
 	p := config.Plugin{Name: "acme-ner", Enabled: true, Agents: []string{"product_a"}}
 	service := serviceEngine(svcConfig(), &fakeUnits{}, 1000)
-	root := &enginePlugins{mode: plugin.ModeSameUser, o: pluginOptions{euid: 0}}
-	user := &enginePlugins{mode: plugin.ModeSameUser, o: pluginOptions{euid: 1000}}
+	root := &enginePlugins{mode: pluginhost.ModeSameUser, o: pluginOptions{euid: 0}}
+	user := &enginePlugins{mode: pluginhost.ModeSameUser, o: pluginOptions{euid: 1000}}
 	require.Equal(t, whyNoUnit, service.localRefusal(p, local))
 	require.Equal(t, whyLocalAsRoot, root.localRefusal(p, local))
 	require.Empty(t, user.localRefusal(p, local))

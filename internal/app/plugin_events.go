@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"bytes"
@@ -22,12 +22,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // pluginEventTimeout bounds one agent's plugin events at start: reading
@@ -136,7 +136,7 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 // has no matching one. code is the status problem, PLUGIN_UNAVAILABLE when
 // empty.
 type unrecordedEntry struct {
-	key  plugin.EntryKey
+	key  pluginhost.EntryKey
 	why  string
 	code string
 	// transient: the database did not answer, so nothing was decided
@@ -149,23 +149,23 @@ type unrecordedEntry struct {
 type pluginWant struct {
 	// served are the entries each configured agent is served now, with the
 	// detail its ledger records of each.
-	served map[string]map[plugin.EntryKey]guard.PluginDetail
+	served map[string]map[pluginhost.EntryKey]guard.PluginDetail
 	// held are entries enabled and listed for an agent that this engine does
 	// not start (verification failed, or it may not run here): their
 	// record is left as it is, so a passing failure writes nothing, unless
 	// the key that signed it is no longer recorded as trusted.
-	held map[string]map[plugin.EntryKey]bool
+	held map[string]map[pluginhost.EntryKey]bool
 	// approval are the enabled entries that require a plugin approval
 	// (config.Config.PluginRequiresApproval), served or held: one is served
 	// to an agent only on a matching signed approval, in place of the trust
 	// record, and settings are what that approval binds of each.
-	approval map[plugin.EntryKey]bool
-	settings map[plugin.EntryKey]guard.PluginSettings
+	approval map[pluginhost.EntryKey]bool
+	settings map[pluginhost.EntryKey]guard.PluginSettings
 	// trust is the trust store's state.
 	trust trustWant
 	// frozen are a service engine's config entries while it runs: held,
 	// their records always kept (pluginWatch.wanted).
-	frozen map[plugin.EntryKey]bool
+	frozen map[pluginhost.EntryKey]bool
 }
 
 // trustWant is what the trust store holds besides the built-in keys
@@ -183,11 +183,11 @@ type trustWant struct {
 // entries ep starts (none when ep is nil), the ones it holds back, and the
 // trust store's keys.
 func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) pluginWant {
-	mode, goos := plugin.ModeSameUser, runtime.GOOS
+	mode, goos := pluginhost.ModeSameUser, runtime.GOOS
 	if ep != nil {
 		mode, goos = ep.mode, ep.o.goos
 	}
-	var kept func(plugin.EntryKey) bool
+	var kept func(pluginhost.EntryKey) bool
 	if ep != nil {
 		cfg, kept = ep.startCfg, ep.isKept
 	}
@@ -202,16 +202,16 @@ func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) plugin
 // kept reports an engine-kept entry (nil: none): it always requires
 // approval and runs as the engine's own child, so it is recorded with
 // same-user isolation (CONTRACT.md, Plugin approval in service mode).
-func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified, bool), mode plugin.Mode, goos string, trust trustWant, kept func(plugin.EntryKey) bool) pluginWant {
+func wantedFrom(cfg config.Config, copyOf func(pluginhost.EntryKey) (pluginhost.Verified, bool), mode pluginhost.Mode, goos string, trust trustWant, kept func(pluginhost.EntryKey) bool) pluginWant {
 	w := pluginWant{
-		served:   make(map[string]map[plugin.EntryKey]guard.PluginDetail, len(cfg.Agents)),
-		held:     make(map[string]map[plugin.EntryKey]bool, len(cfg.Agents)),
-		approval: map[plugin.EntryKey]bool{},
-		settings: map[plugin.EntryKey]guard.PluginSettings{},
+		served:   make(map[string]map[pluginhost.EntryKey]guard.PluginDetail, len(cfg.Agents)),
+		held:     make(map[string]map[pluginhost.EntryKey]bool, len(cfg.Agents)),
+		approval: map[pluginhost.EntryKey]bool{},
+		settings: map[pluginhost.EntryKey]guard.PluginSettings{},
 		trust:    trust,
 	}
 	for _, a := range cfg.Agents {
-		w.served[a.Name], w.held[a.Name] = map[plugin.EntryKey]guard.PluginDetail{}, map[plugin.EntryKey]bool{}
+		w.served[a.Name], w.held[a.Name] = map[pluginhost.EntryKey]guard.PluginDetail{}, map[pluginhost.EntryKey]bool{}
 	}
 	for _, p := range cfg.Plugins {
 		if !p.Enabled {
@@ -234,7 +234,7 @@ func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified
 			}
 			m := mode
 			if isKept {
-				m = plugin.ModeSameUser
+				m = pluginhost.ModeSameUser
 			}
 			d := pluginDetail(k, v, m, goos)
 			if required {
@@ -250,9 +250,9 @@ func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified
 // starts none (ep nil, or the entry failed verification or was refused).
 // It is read before the supervisor runs, while every started entry still
 // has the copy verified at start.
-func (ep *enginePlugins) startedCopy(k plugin.EntryKey) (plugin.Verified, bool) {
+func (ep *enginePlugins) startedCopy(k pluginhost.EntryKey) (pluginhost.Verified, bool) {
 	if ep == nil {
-		return plugin.Verified{}, false
+		return pluginhost.Verified{}, false
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
@@ -263,7 +263,7 @@ func (ep *enginePlugins) startedCopy(k plugin.EntryKey) (plugin.Verified, bool) 
 // pluginDetail is what an agent's ledger records of entry k: the manifest's
 // identity, hooks, egress and endpoint, and for a local entry its
 // isolation. Never a config value, a credential, a path or an agent name.
-func pluginDetail(k plugin.EntryKey, v plugin.Verified, mode plugin.Mode, goos string) guard.PluginDetail {
+func pluginDetail(k pluginhost.EntryKey, v pluginhost.Verified, mode pluginhost.Mode, goos string) guard.PluginDetail {
 	m := v.Manifest
 	d := guard.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: m.Version,
@@ -272,12 +272,12 @@ func pluginDetail(k plugin.EntryKey, v plugin.Verified, mode plugin.Mode, goos s
 		Egress: append([]string{}, m.Network.Egress...),
 	}
 	slices.Sort(d.Egress)
-	if decl, ok := m.Hooks[string(plugin.HookWireDetect)]; ok && len(decl.Roles) > 0 {
+	if decl, ok := m.Hooks[string(pluginhost.HookWireDetect)]; ok && len(decl.Roles) > 0 {
 		d.Roles = append([]string(nil), decl.Roles...)
 		slices.Sort(d.Roles)
 	}
 	if r := m.Endpoint.Remote; r != nil {
-		host, _ := plugin.RemoteHostPort(r.URL) // the manifest's rules checked it
+		host, _ := pluginhost.RemoteHostPort(r.URL) // the manifest's rules checked it
 		d.Endpoint = guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: host}
 		return d
 	}
@@ -293,11 +293,11 @@ func pluginDetail(k plugin.EntryKey, v plugin.Verified, mode plugin.Mode, goos s
 // unit and OS user (the engine starts none otherwise: localRefusal), so
 // files OS_USER, and the network the unit gets, from the same rule the unit
 // is written by (service.PluginNetwork).
-func pluginIsolation(mode plugin.Mode, goos string, m plugin.Manifest) *guard.PluginIsolation {
-	if mode != plugin.ModeService {
+func pluginIsolation(mode pluginhost.Mode, goos string, m pluginhost.Manifest) *guard.PluginIsolation {
+	if mode != pluginhost.ModeService {
 		return &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced}
 	}
-	return &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: service.PluginNetwork(goos, m.Network.Egress)}
+	return &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: osservice.PluginNetwork(goos, m.Network.Egress)}
 }
 
 // writePluginEvents records in each agent's own ledger what changed since
@@ -331,9 +331,9 @@ type agentPass struct {
 	// with why; approved are the entries that require approval whose
 	// approval matched and whose record holds.
 	withheld []unrecordedEntry
-	approved []plugin.EntryKey
+	approved []pluginhost.EntryKey
 	// approvalIDs is the approval each approved entry matched.
-	approvalIDs map[plugin.EntryKey]uuid.UUID
+	approvalIDs map[pluginhost.EntryKey]uuid.UUID
 	// disables are the PLUGIN_DISABLED records still to write, each the
 	// detail last recorded: written after the entry stopped serving the
 	// agent (writeDisables), so the ledger never shows an entry not served
@@ -391,7 +391,7 @@ func writeDisables(ctx context.Context, passes map[string]agentPass, ledgers map
 				if err := guard.RecordPluginEntryEvent(ctx, ledgers[name].db, guard.PluginDisabled, d); err != nil {
 					failed.Store(true)
 					log.Warn("PLUGIN_DISABLED not recorded; the next check tries again", "agent", name,
-						"plugin", plugin.EntryKey{Name: d.Name, Instance: d.Instance}.String(), "err", err)
+						"plugin", pluginhost.EntryKey{Name: d.Name, Instance: d.Instance}.String(), "err", err)
 				}
 			}
 		})
@@ -431,14 +431,14 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		}
 		return all(err)
 	}
-	last := make(map[plugin.EntryKey]guard.PluginRecord, len(recs.Entries))
+	last := make(map[pluginhost.EntryKey]guard.PluginRecord, len(recs.Entries))
 	for _, r := range recs.Entries {
-		last[plugin.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
+		last[pluginhost.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
 	}
 	recorded, unrecordedKeys := writeTrustEvents(ctx, db, want.trust, recs.TrustKeys, log)
 	approvals := &agentApprovals{db: db}
 	out := agentPass{reached: true}
-	approvedBy := map[plugin.EntryKey]uuid.UUID{}
+	approvedBy := map[pluginhost.EntryKey]uuid.UUID{}
 	for _, k := range served {
 		d := want.served[name][k]
 		if want.approval[k] {
@@ -458,7 +458,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 				}
 				continue
 			}
-		} else if s := d.SignerKeyID; !recorded[s] && !plugin.BuiltInKey(s) {
+		} else if s := d.SignerKeyID; !recorded[s] && !pluginhost.BuiltInKey(s) {
 			// An entry is served only when the ledger records the key that
 			// signed it as trusted (a built-in key needs no record): the
 			// ledger never shows an entry served without that key.
@@ -483,13 +483,13 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		if want.approval[k] {
 			out.approved = append(out.approved, k)
 			if out.approvalIDs == nil {
-				out.approvalIDs = map[plugin.EntryKey]uuid.UUID{}
+				out.approvalIDs = map[pluginhost.EntryKey]uuid.UUID{}
 			}
 			out.approvalIDs[k] = approvedBy[k]
 		}
 	}
 	for _, r := range recs.Entries {
-		k := plugin.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}
+		k := pluginhost.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}
 		if _, ok := want.served[name][k]; ok || !r.Enabled() {
 			continue
 		}
@@ -497,7 +497,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		// longer recorded as trusted: the ledger never shows an entry served
 		// without that key. An entry that requires approval rests on its
 		// approval, not on a key: held, it always keeps its record.
-		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.frozen[k] || want.approval[k] || recorded[s] || plugin.BuiltInKey(s)) {
+		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.frozen[k] || want.approval[k] || recorded[s] || pluginhost.BuiltInKey(s)) {
 			continue
 		}
 		out.disables = append(out.disables, r.Detail)
@@ -534,7 +534,7 @@ func writeTrustEvents(ctx context.Context, db guard.Querier, trust trustWant, on
 		recorded[id] = true
 	}
 	for _, id := range onRecord {
-		if slices.Contains(trust.added, id) || plugin.BuiltInKey(id) {
+		if slices.Contains(trust.added, id) || pluginhost.BuiltInKey(id) {
 			continue
 		}
 		if err := guard.RecordPluginTrustRemoved(ctx, db, id); err != nil {
@@ -549,7 +549,7 @@ func writeTrustEvents(ctx context.Context, db guard.Querier, trust trustWant, on
 // entryEvent is the event a served entry needs given the agent's last
 // records: PLUGIN_ENABLED when there is none or it was disabled,
 // PLUGIN_CHANGED when the detail differs, none when it is the same.
-func entryEvent(last map[plugin.EntryKey]guard.PluginRecord, k plugin.EntryKey, d guard.PluginDetail) (guard.PluginEventKind, bool) {
+func entryEvent(last map[pluginhost.EntryKey]guard.PluginRecord, k pluginhost.EntryKey, d guard.PluginDetail) (guard.PluginEventKind, bool) {
 	r, ok := last[k]
 	switch {
 	case !ok || !r.Enabled():
@@ -573,18 +573,18 @@ func sameDetail(a, b guard.PluginDetail) bool {
 	return errA == nil && errB == nil && bytes.Equal(ja, jb)
 }
 
-func compareEntryKeys(a, b plugin.EntryKey) int {
+func compareEntryKeys(a, b pluginhost.EntryKey) int {
 	return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Instance, b.Instance))
 }
 
 // trustedKeys is the trust store of an engine run with cfg from configPath:
 // the keys the person added, or not read, logged, when it cannot be read.
 func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWant {
-	mode := plugin.ModeSameUser
+	mode := pluginhost.ModeSameUser
 	if cfg.Service() {
-		mode = plugin.ModeService
+		mode = pluginhost.ModeService
 	}
-	trust, err := plugin.NewTrustStore(mode, runtime.GOOS, filepath.Dir(configPath))
+	trust, err := pluginhost.NewTrustStore(mode, runtime.GOOS, filepath.Dir(configPath))
 	if err != nil {
 		log.Warn("plugin trust keys not recorded: the trust store cannot be read", "err", err)
 		return trustWant{}
@@ -620,7 +620,7 @@ func (ep *enginePlugins) withhold(passes map[string]agentPass) {
 	defer ep.mu.Unlock()
 	ep.setWithheldLocked(passes, nil, nil)
 	kept := ep.entries[:0]
-	ep.approvedBy = map[plugin.EntryKey]map[string]uuid.UUID{}
+	ep.approvedBy = map[pluginhost.EntryKey]map[string]uuid.UUID{}
 	for _, e := range ep.entries {
 		e.Agents = ep.servedAgentsLocked(e.Key, passes, nil)
 		if len(e.Agents) > 0 {
@@ -642,9 +642,9 @@ func (ep *enginePlugins) withhold(passes map[string]agentPass) {
 // what decides (or for every agent when keep is nil, as at start), why
 // each entry is withheld from it; an entry frozen reports (nil: none) keeps
 // what it had. ep.mu is held.
-func (ep *enginePlugins) setWithheldLocked(passes map[string]agentPass, keep func(agentName string) bool, frozen func(plugin.EntryKey) bool) {
+func (ep *enginePlugins) setWithheldLocked(passes map[string]agentPass, keep func(agentName string) bool, frozen func(pluginhost.EntryKey) bool) {
 	if ep.unrecorded == nil {
-		ep.unrecorded = map[plugin.EntryKey]map[string]withheldWhy{}
+		ep.unrecorded = map[pluginhost.EntryKey]map[string]withheldWhy{}
 	}
 	for agentName, p := range passes {
 		if keep != nil && keep(agentName) {
@@ -676,7 +676,7 @@ func (ep *enginePlugins) setWithheldLocked(passes map[string]agentPass, keep fun
 // check could not read what decides). The host refuses any call naming a
 // withheld agent, an entry left with no agent is not started, and status
 // shows the problem for that agent. ep.mu is held.
-func (ep *enginePlugins) servedAgentsLocked(k plugin.EntryKey, passes map[string]agentPass, kept func(agentName string) bool) []string {
+func (ep *enginePlugins) servedAgentsLocked(k pluginhost.EntryKey, passes map[string]agentPass, kept func(agentName string) bool) []string {
 	var out []string
 	for _, a := range ep.configuredLocked(k).Agents {
 		p, checked := passes[a]
@@ -695,7 +695,7 @@ func (ep *enginePlugins) servedAgentsLocked(k plugin.EntryKey, passes map[string
 
 // unrecordedFor is why entry k is withheld from agent name, empty when it
 // is not.
-func (ep *enginePlugins) unrecordedFor(k plugin.EntryKey, name string) withheldWhy {
+func (ep *enginePlugins) unrecordedFor(k pluginhost.EntryKey, name string) withheldWhy {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	return ep.unrecorded[k][name]

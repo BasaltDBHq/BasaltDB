@@ -18,7 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
@@ -45,7 +45,7 @@ func events(t *testing.T, c *pgx.Conn, kind string) []event {
 func heartbeats(t *testing.T, c *pgx.Conn) []event { return events(t, c, "HEARTBEAT") }
 
 func newUpkeep(c *pgx.Conn, now func() time.Time) *upkeep.Upkeep {
-	return upkeep.New("bot", "test", postgres.NewUpkeep(c), slog.New(slog.DiscardHandler), now)
+	return upkeep.New("bot", "test", store.NewUpkeep(c), slog.New(slog.DiscardHandler), now)
 }
 
 // rewriteHistory changes row 1 and re-hashes the whole chain: the full
@@ -247,7 +247,7 @@ func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
 	var buf bytes.Buffer
-	u := upkeep.New("bot", "test", postgres.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
+	u := upkeep.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
 	require.NoError(t, u.Tick(context.Background()))
 	require.Contains(t, buf.String(), "row-level security hides every row")
 	require.Contains(t, buf.String(), "table=public.leads")
@@ -308,7 +308,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 
 	b := reinstall(t, d, a)
 	var logs bytes.Buffer
-	again := upkeep.New("bot", "test", postgres.NewUpkeep(b.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	again := upkeep.New("bot", "test", store.NewUpkeep(b.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, again.Tick(ctx))
 	require.NoError(t, again.Tick(ctx))
 	for _, hb := range heartbeats(t, b.Conn) {
@@ -331,7 +331,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 	require.Equal(t, old.Head.Seq, fresh.SetAside[0].PinnedSeq)
 	require.Equal(t, fresh.Install, fresh.SetAside[0].Install)
 
-	rs, err := guard.ReadReinstalls(ctx, b.Conn, postgres.GuardSetAside(fresh.SetAside))
+	rs, err := guard.ReadReinstalls(ctx, b.Conn, store.GuardSetAside(fresh.SetAside))
 	require.NoError(t, err)
 	lines := ledger.ReinstallNotices(rs)
 	require.Len(t, lines, 1)
@@ -354,7 +354,7 @@ func TestReinstallWhileRunningIsRecorded(t *testing.T) {
 	ctx := context.Background()
 	pins := chainpin.File{Dir: t.TempDir()}
 	sw := &switchDB{q: a.Conn}
-	u := upkeep.New("bot", "test", postgres.NewUpkeep(sw), slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
+	u := upkeep.New("bot", "test", store.NewUpkeep(sw), slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
 	// Twice: the second pins the first heartbeat, past the genesis.
 	require.NoError(t, u.Tick(ctx))
 	require.NoError(t, u.Tick(ctx))
@@ -411,7 +411,7 @@ func TestSameLedgerUnderANewInstallMovesThePin(t *testing.T) {
 	require.Positive(t, moved.Head.Seq, "a pinned row, not the genesis")
 
 	var logs bytes.Buffer
-	u := upkeep.New("bot", "test", postgres.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	u := upkeep.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, u.Tick(ctx))
 	require.Empty(t, events(t, a.Conn, "PIN_SET_ASIDE"), "nothing recorded")
 	for _, hb := range heartbeats(t, a.Conn) {
@@ -509,7 +509,7 @@ func TestUnreportedPinIsKeptAndReportedBroken(t *testing.T) {
 			noReport(t, d, kind)
 
 			var logs bytes.Buffer
-			u := upkeep.New("bot", "test", postgres.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+			u := upkeep.New("bot", "test", store.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 			for range 2 {
 				require.NoError(t, u.Tick(ctx))
 				hb := heartbeats(t, a.Conn)
@@ -643,7 +643,7 @@ func TestRecreatedDatabaseIsARecordedReinstall(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, old.Install, fresh.Install)
 	require.Len(t, fresh.SetAside, 1)
-	rs, err := guard.ReadReinstalls(ctx, b.Conn, postgres.GuardSetAside(fresh.SetAside))
+	rs, err := guard.ReadReinstalls(ctx, b.Conn, store.GuardSetAside(fresh.SetAside))
 	require.NoError(t, err)
 	require.Len(t, ledger.ReinstallNotices(rs), 1)
 }

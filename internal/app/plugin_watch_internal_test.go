@@ -1,6 +1,6 @@
 //go:build unix
 
-package engine
+package app
 
 import (
 	"context"
@@ -25,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // writeConfig writes f.cfg as engine.json, as a basalt plugin command
@@ -111,12 +111,12 @@ func (lp *livePlugins) poll() { lp.w.pass(lp.ctx, false) }
 
 // callAs is a hook call to entry k naming agentName, as the engine makes
 // it: refused before anything is sent when the entry does not serve it.
-func (lp *livePlugins) callAs(k plugin.EntryKey, agentName string) error {
+func (lp *livePlugins) callAs(k pluginhost.EntryKey, agentName string) error {
 	return lp.ep.host.Call(context.Background(), k, []string{agentName}, "feed.observe", nil, nil)
 }
 
 // requireServing: k runs and serves exactly agents.
-func (lp *livePlugins) requireServing(k plugin.EntryKey, agents ...string) {
+func (lp *livePlugins) requireServing(k pluginhost.EntryKey, agents ...string) {
 	lp.t.Helper()
 	slices.Sort(agents)
 	require.Equal(lp.t, agents, servedTo(lp.ep, k))
@@ -126,17 +126,17 @@ func (lp *livePlugins) requireServing(k plugin.EntryKey, agents ...string) {
 		if slices.Contains(agents, a.Name) {
 			require.NoError(lp.t, err, a.Name)
 		} else {
-			require.ErrorIs(lp.t, err, plugin.ErrAgentNotListed, a.Name)
+			require.ErrorIs(lp.t, err, pluginhost.ErrAgentNotListed, a.Name)
 		}
 	}
 }
 
 // requireStopped: k runs for no agent, and its process got shutdown.
-func (lp *livePlugins) requireStopped(k plugin.EntryKey) {
+func (lp *livePlugins) requireStopped(k pluginhost.EntryKey) {
 	lp.t.Helper()
 	require.Empty(lp.t, servedTo(lp.ep, k))
 	require.NotContains(lp.t, lp.ep.sup.Supervised(), k)
-	require.Equal(lp.t, plugin.StateUnavailable, lp.ep.host.State(k))
+	require.Equal(lp.t, pluginhost.StateUnavailable, lp.ep.host.State(k))
 	for _, a := range lp.f.cfg.Agents {
 		require.Error(lp.t, lp.callAs(k, a.Name))
 	}
@@ -176,7 +176,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	// approval through the engine's own derivation.
 	p := f.installApproval(feedHooks, "product_a")
 	f.writeConfig()
-	v, err := plugin.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+	v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), p.ApprovalSettings())
 	require.Eventually(t, func() bool {
@@ -188,7 +188,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	l.sign(t, l.person(t), "product_a", a)
 	signed := time.Now()
 	require.Eventually(t, func() bool {
-		return ep.host.State(p.Key()) == plugin.StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
+		return ep.host.State(p.Key()) == pluginhost.StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
 	}, 10*time.Second, 20*time.Millisecond, "served without a restart")
 	require.Less(t, time.Since(signed), 5*time.Second)
 	require.Empty(t, ep.PluginProblems("product_a"))
@@ -286,7 +286,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	lp.change()
 	lp.requireStopped(p.Key())
 	require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
-	v, err := plugin.Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+	v, err := pluginhost.Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), f.cfg.Plugins[0].ApprovalSettings())
 	lp.poll()

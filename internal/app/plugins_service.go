@@ -1,4 +1,4 @@
-package engine
+package app
 
 import (
 	"bytes"
@@ -8,10 +8,10 @@ import (
 	"os/user"
 	"strconv"
 
-	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	plugin "github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Why a service engine does not reach a local entry's unit.
@@ -78,8 +78,8 @@ func osUnitSource() *unitSource {
 			}
 			return u.Username, nil
 		},
-		checkAgents: plugin.CheckAgentUsers,
-		inGroup:     service.InGroup,
+		checkAgents: pluginhost.CheckAgentUsers,
+		inGroup:     osservice.InGroup,
 		lookupGID: func(group string) (int, error) {
 			g, err := user.LookupGroup(group)
 			if err != nil {
@@ -87,7 +87,7 @@ func osUnitSource() *unitSource {
 			}
 			return strconv.Atoi(g.Gid)
 		},
-		overrides: service.SystemdOverridesOnMachine,
+		overrides: osservice.SystemdOverridesOnMachine,
 	}
 }
 
@@ -114,7 +114,7 @@ var errNoEngineUser = errors.New("plugin: the engine's OS user cannot be looked 
 // or lost its isolation is never connected to; on Linux no drop-in or unit
 // file systemd reads first may change it; its OS user must exist, be
 // neither root nor the engine's user and not be in the engine's group.
-func (ep *enginePlugins) serviceRefusal(p config.Plugin, v plugin.Verified) string {
+func (ep *enginePlugins) serviceRefusal(p config.Plugin, v pluginhost.Verified) string {
 	t, why := ep.unitTarget(p, v)
 	if why == "" {
 		ep.targets[p.Key()] = t
@@ -128,24 +128,24 @@ func (ep *enginePlugins) serviceRefusal(p config.Plugin, v plugin.Verified) stri
 // changed while the engine runs is caught when the plugin is next reached:
 // a changed unit takes effect only when its process starts again, which
 // drops the engine's connection.
-func (ep *enginePlugins) unitTarget(p config.Plugin, v plugin.Verified) (serviceTarget, string) {
+func (ep *enginePlugins) unitTarget(p config.Plugin, v pluginhost.Verified) (serviceTarget, string) {
 	k := p.Key()
-	entry, local := service.EntryFor(p, v)
+	entry, local := osservice.EntryFor(p, v)
 	if !local {
 		return serviceTarget{}, ""
 	}
-	names, err := service.NamesFor(ep.o.goos, k.Name, k.Instance)
+	names, err := osservice.NamesFor(ep.o.goos, k.Name, k.Instance)
 	if err != nil {
 		return serviceTarget{}, whyNoUnit
 	}
-	if service.UserClash(k.Name, k.Instance, ep.allKeys) != nil {
+	if osservice.UserClash(k.Name, k.Instance, ep.allKeys) != nil {
 		// Two entries would share an OS user, socket and directory.
 		return serviceTarget{}, whyNoUnit
 	}
 	if ep.unitHostErr != nil {
 		return serviceTarget{}, whyNoUnit
 	}
-	want, err := service.PluginUnit(ep.unitHost, entry)
+	want, err := osservice.PluginUnit(ep.unitHost, entry)
 	if err != nil {
 		return serviceTarget{}, whyNoUnit
 	}
@@ -169,7 +169,7 @@ func (ep *enginePlugins) unitTarget(p config.Plugin, v plugin.Verified) (service
 		return serviceTarget{}, whyUserGroups
 	}
 	if in {
-		return serviceTarget{}, service.PluginUserInGroup(ep.o.goos, names.User, group)
+		return serviceTarget{}, osservice.PluginUserInGroup(ep.o.goos, names.User, group)
 	}
 	gid, err := src.lookupGID(group)
 	if err != nil || gid <= 0 {
@@ -193,7 +193,7 @@ func dialFailure(err error) string {
 // recheckUnit runs unitTarget again before a connection to local entry k,
 // verified as v, that start reached as t. When the unit or its OS user
 // changed since, the entry is refused (status shows why) and not reached.
-func (ep *enginePlugins) recheckUnit(k plugin.EntryKey, v plugin.Verified, t serviceTarget) error {
+func (ep *enginePlugins) recheckUnit(k pluginhost.EntryKey, v pluginhost.Verified, t serviceTarget) error {
 	now, why := ep.unitTarget(ep.configuredEntry(k), v)
 	if why == "" && (now.uid != t.uid || now.gid != t.gid) {
 		why = whyUnitUserMoved
@@ -220,7 +220,7 @@ func (ep *enginePlugins) units() *unitSource {
 // hold: its own OS user (whose group reaches their sockets) and the paths
 // they hide, from cfg at configPath.
 func (ep *enginePlugins) initServiceUnits(cfg config.Config, configPath string) {
-	ep.targets = map[plugin.EntryKey]serviceTarget{}
+	ep.targets = map[pluginhost.EntryKey]serviceTarget{}
 	for _, p := range cfg.Plugins {
 		ep.allKeys = append(ep.allKeys, p.Key())
 	}
@@ -229,7 +229,7 @@ func (ep *enginePlugins) initServiceUnits(cfg config.Config, configPath string) 
 		ep.unitHostErr = errNoEngineUser
 		return
 	}
-	ep.unitHost = service.HostFor(cfg, ep.o.goos, configPath, name)
+	ep.unitHost = osservice.HostFor(cfg, ep.o.goos, configPath, name)
 }
 
 // checkServiceAgents refuses every local entry when an agent's OS user is

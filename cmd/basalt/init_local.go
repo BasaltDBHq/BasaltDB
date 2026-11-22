@@ -154,6 +154,7 @@ func waitForRemoval(c *cliIO) engineState {
 func resetEngineService(c *cliIO) int {
 	return runServiceDialog(c, serviceDialog{
 		script:    service.ResetScript,
+		prompt:    service.ResetPrompt,
 		noDialog:  "BasaltDB on this computer is reset through the system's administrator dialog, which cannot be shown here (%w), so nothing was reset. Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: you answered that the database this computer's BasaltDB serves is not yours. Asking for your password in the system's administrator dialog to reset BasaltDB on this computer: it deletes the engine's config, its agents' credentials and its certificate pins, and restarts the engine. No database is touched.",
 		cancelled: "the administrator dialog was closed, so nothing was reset. Run basalt init again and answer the question on the page again",
@@ -168,6 +169,7 @@ func resetEngineService(c *cliIO) int {
 func removeEngineService(c *cliIO) int {
 	return runServiceDialog(c, serviceDialog{
 		script:    service.RemoveScript,
+		prompt:    service.RemovePrompt,
 		noDialog:  "BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.",
 		cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init again to remove it",
@@ -179,8 +181,8 @@ func removeEngineService(c *cliIO) int {
 // serviceDialog is one fixed script run through the administrator dialog,
 // with what init says around it.
 type serviceDialog struct {
-	script                                    func(goos string) (string, error)
-	noDialog, asking, cancelled, failed, done string
+	script                                            func(goos string) (string, error)
+	prompt, noDialog, asking, cancelled, failed, done string
 }
 
 func runServiceDialog(c *cliIO, d serviceDialog) int {
@@ -192,7 +194,7 @@ func runServiceDialog(c *cliIO, d serviceDialog) int {
 		return c.fail(err)
 	}
 	fmt.Fprintln(c.stderr, d.asking)
-	if err := c.host.AdminDialog(c.ctx, c.goos, script, c.stderr); err != nil {
+	if err := c.host.AdminDialog(c.ctx, c.goos, d.prompt, script, c.stderr); err != nil {
 		if errors.Is(err, service.ErrDialogCancelled) {
 			return c.fail(errors.New(d.cancelled))
 		}
@@ -250,7 +252,7 @@ func ensureEngineService(c *cliIO) error {
 	}
 	fmt.Fprintf(c.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
 		service.DefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
-	if err := c.host.AdminDialog(c.ctx, c.goos, script, c.stderr); err != nil {
+	if err := c.host.AdminDialog(c.ctx, c.goos, service.InstallPrompt, script, c.stderr); err != nil {
 		if errors.Is(err, service.ErrNoDialog) {
 			return noDialog(err)
 		}

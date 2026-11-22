@@ -79,6 +79,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	script, err := service.InstallScript("linux", fakeBin)
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
+	require.Equal(t, []string{service.InstallPrompt}, h.prompts, "the dialog names the install")
 	require.Empty(t, h.sudo, "no sudo")
 	require.Equal(t, 3, h.setupCalls, "init waited for the setup page")
 
@@ -203,6 +204,7 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	script, err := service.RemoveScript("linux")
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog")
+	require.Equal(t, []string{service.RemovePrompt}, h.prompts, "the dialog names the removal")
 	require.Empty(t, h.sudo)
 	require.Contains(t, r.stderr, "the engine service is removed")
 	require.NotContains(t, read, envAdminURL)
@@ -261,6 +263,7 @@ func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
 	script, err := service.ResetScript("linux")
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog, for the fixed reset script")
+	require.Equal(t, []string{service.ResetPrompt}, h.prompts, "the dialog names the reset")
 	require.Empty(t, h.sudo)
 	require.Len(t, h.opened, 2, "the Update check's link, then the install link")
 	require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[0]))

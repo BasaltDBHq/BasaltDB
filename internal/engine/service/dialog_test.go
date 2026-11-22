@@ -135,19 +135,31 @@ func TestInstallScriptRefusesAnUnsafeBinaryPath(t *testing.T) {
 
 func TestDialogCommand(t *testing.T) {
 	t.Parallel()
-	argv, err := service.DialogCommand("darwin", "echo hi")
+	argv, err := service.DialogCommand("darwin", service.ResetPrompt, "echo hi")
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"/usr/bin/osascript", "-e", "on run argv", "-e", "do shell script (item 1 of argv) with administrator privileges", "-e", "end run", "echo hi",
-	}, argv, "the script goes as an argument, never inside AppleScript text")
+		"/usr/bin/osascript", "-e", "on run argv", "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges", "-e", "end run", "echo hi", service.ResetPrompt,
+	}, argv, "the script and the prompt go as arguments, never inside AppleScript text")
 
-	argv, err = service.DialogCommand("linux", "echo hi")
+	argv, err = service.DialogCommand("linux", service.ResetPrompt, "echo hi")
 	require.NoError(t, err)
 	require.Equal(t, []string{"/usr/bin/pkexec", "--disable-internal-agent", "/bin/sh", "-c", "echo hi"}, argv,
 		"no text prompt: only the desktop's dialog answers")
 
-	_, err = service.DialogCommand("windows", "echo hi")
+	_, err = service.DialogCommand("windows", service.ResetPrompt, "echo hi")
 	require.Error(t, err)
+}
+
+// Each action's prompt names it in capitals and says when to cancel, so an
+// unexpected dialog reads as one to cancel.
+func TestDialogPromptsNameTheirAction(t *testing.T) {
+	t.Parallel()
+	for prompt, action := range map[string]string{service.InstallPrompt: "INSTALL", service.RemovePrompt: "REMOVE", service.ResetPrompt: "RESET"} {
+		require.Contains(t, prompt, "BasaltDB wants to "+action+" ")
+		require.Contains(t, prompt, "Cancel unless you just ")
+		require.NotContainsf(t, prompt, `"`, "the prompt is an AppleScript argument; keep it plain: %s", prompt)
+	}
+	require.Contains(t, service.ResetPrompt, "No, this isn't mine")
 }
 
 func TestDialogError(t *testing.T) {

@@ -55,17 +55,13 @@ func editSetup(t *testing.T, cfg string, edit func(s *config.Setup)) {
 }
 
 // connectOnlyWithPrefix is a fresh connect-only INSTALL code for the bot
-// whose saved flags name the role prefix, so tests sharing a database
-// server keep their roles apart.
+// with the role prefix prefix, so tests sharing a database server keep
+// their roles apart.
 func connectOnlyWithPrefix(t *testing.T, cfg, prefix string) remoteRun {
 	t.Helper()
-	remote(t, cfg, connectOnlyArgs...)
-	require.NoError(t, os.Remove(secretPathOf(cfg)))
-	editConfig(t, cfg, func(c *config.Config) {
-		c.Agents[0].Setup = nil
-		c.Agents[0].InitArgs = []string{"--agent=bot", "--" + flagAllTables + "=true", "--prefix=" + prefix}
-	})
-	r := remote(t, cfg, connectOnlyArgs...)
+	e := noDB(t)
+	e.prefix = prefix
+	r := remoteWith(t, e, cfg, connectOnlyArgs...)
 	require.Equal(t, prefix, r.payload.Prefix)
 	require.Equal(t, string(setupcode.KindInstall), r.res.Kind)
 	return r
@@ -97,7 +93,6 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	s := r.cfg.Agents[0].Setup
 	require.True(t, s.AwaitingAddress)
 	require.False(t, s.Refused)
-	require.Contains(t, r.cfg.Agents[0].InitArgs, "--"+flagAllTables+"=true")
 
 	// The link and the fingerprint, no laptop command.
 	require.Equal(t, links.Portal+"/connect#"+r.res.Code, r.res.ConnectURL)
@@ -161,7 +156,7 @@ func TestInitRemoteConnectOnlyRecoveryCodes(t *testing.T) {
 			require.NotEqual(t, first.res.SetupID, again.res.SetupID)
 			require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
 			require.True(t, again.payload.ConnectOnly())
-			require.NotNil(t, again.payload.Agent.AllTables)
+			require.True(t, again.payload.KeepsGrants(), "a recovery code names no tables: a role that exists keeps its grants")
 			password := secretOf(t, cfg)
 			require.NotEqual(t, old, password)
 			requireVerifierOf(t, again.payload.Agent.Verifier, password)
@@ -211,26 +206,30 @@ func TestInitRemoteConnectOnlyNeedsTheEngineKey(t *testing.T) {
 	require.NoFileExists(t, secretPathOf(cfg))
 }
 
-// A recovery code asks for what the agent's saved flags ask for (tables,
-// prefix, timeout).
-func TestInitRemoteRecoveryKeepsTheSavedRequest(t *testing.T) {
+// A recovery code after a refused database asks for no tables and the
+// fixed prefix and timeout, whatever an older engine.json saved: an old
+// initArgs is ignored, and the next write drops it.
+func TestInitRemoteRecoveryIgnoresOldSavedFlags(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
 	first := remote(t, cfg, connectOnlyArgs...)
-	editConfig(t, cfg, func(c *config.Config) {
-		c.Agents[0].InitArgs = []string{"--agent=bot", "--" + flagAllTables + "=true", "--prefix=acme", "--statement-timeout=45s"}
-		c.Agents[0].Setup.Refused = true
-	})
-	saved, err := config.Load(cfg)
+	editSetup(t, cfg, func(s *config.Setup) { s.Refused = true })
+	raw, err := os.ReadFile(cfg)
 	require.NoError(t, err)
+	old := strings.Replace(string(raw), `"osUser"`, `"initArgs":["--agent=bot","--all-tables=true","--prefix=acme","--statement-timeout=45s"],"osUser"`, 1)
+	require.NotEqual(t, string(raw), old)
+	require.NoError(t, config.WriteFile(cfg, []byte(old)))
+
 	again := remote(t, cfg, connectOnlyArgs...)
 	require.NotEqual(t, first.res.SetupID, again.res.SetupID)
 	require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
-	require.Equal(t, "acme", again.payload.Prefix)
-	require.Equal(t, int64(45000), again.payload.Agent.StatementTimeoutMs)
-	require.NotNil(t, again.payload.Agent.AllTables)
+	require.Equal(t, guard.DefaultPrefix, again.payload.Prefix)
+	require.Equal(t, guard.DefaultStatementTimeout.Milliseconds(), again.payload.Agent.StatementTimeoutMs)
+	require.True(t, again.payload.KeepsGrants())
 	require.Equal(t, mcpcontract.OperatedByAgent, again.cfg.OperatedBy)
-	require.Subset(t, again.cfg.Agents[0].InitArgs, saved.Agents[0].InitArgs)
+	raw, err = os.ReadFile(cfg)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "initArgs")
 }
 
 // A connect link over the engine's linkBudget is left out: the message

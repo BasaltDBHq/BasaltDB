@@ -70,15 +70,16 @@ type Setup struct {
 	Names   guard.Names
 	ID      uuid.UUID
 	Expires time.Time
-	// tables are, for an agent.allTables code, what Prepare read from the
-	// database: the agent's write and read-only tables, and those left out.
+	// tables are, for a code that lists schemas (listedSchemas), what
+	// Prepare read from the database: the agent's write and read-only
+	// tables, and those left out.
 	tables guard.SchemaTables
 	// asInstall is an AGENT code with a verifier whose role does not
 	// exist: it runs as an INSTALL (Prepare).
 	asInstall bool
 	// given: Include was called with the page's ticks (given), which
-	// Prepare checks after the database's refusals; ticks: they apply (an
-	// agent.allTables INSTALL code), and included are those tables.
+	// Prepare checks after the database's refusals; ticks: they apply
+	// (Ticked), and included are those tables.
 	given    *[]string
 	ticks    bool
 	included []string
@@ -89,10 +90,38 @@ type Setup struct {
 var includedShape = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$`)
 
 // Ticked reports whether the connect page ticks tables for this code: an
-// INSTALL code with agent.allTables (CONTRACT.md, Connect, Tables on the
-// connect page).
+// INSTALL code with agent.allTables, and an AGENT code whose role does not
+// exist (it runs as an INSTALL) with agent.allTables or no tables
+// (CONTRACT.md, Connect, Tables on the connect page). For an AGENT code it
+// is known once Prepare found the role missing.
 func (s *Setup) Ticked() bool {
-	return s.P.Kind == setupcode.KindInstall && s.P.Agent != nil && s.P.Agent.AllTables != nil
+	return s.listedSchemas() != nil && (s.P.Kind == setupcode.KindInstall || s.asInstall)
+}
+
+// listedSchemas are the schemas whose tables Prepare lists for the agent:
+// agent.allTables's, and schema public for an AGENT code that names no
+// tables and whose role does not exist (the person ticks its tables, never
+// every table in public); nil otherwise.
+func (s *Setup) listedSchemas() []string {
+	a := s.P.Agent
+	switch {
+	case a == nil:
+		return nil
+	case a.AllTables != nil:
+		return a.AllTables.Schemas
+	case s.asInstall && s.P.KeepsGrants():
+		return []string{publicSchema}
+	}
+	return nil
+}
+
+// publicSchema is the schema a dropped role's tables are ticked in.
+const publicSchema = "public"
+
+// errTicksRequired refuses to grant a listing the person did not tick: an
+// AGENT code whose role does not exist and that names no tables.
+func errTicksRequired(agent string) error {
+	return refuse(CodeNoTables, fmt.Sprintf("The role of %s does not exist any more, so the setup creates it: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
 }
 
 // Include gives Prepare the tables the person left ticked on the connect
@@ -126,7 +155,7 @@ func (s *Setup) checkIncluded() error {
 	seen := make(map[string]bool, len(tables))
 	for _, t := range tables {
 		schema, _, _ := strings.Cut(t, ".")
-		if !includedShape.MatchString(t) || !slices.Contains(s.P.Agent.AllTables.Schemas, schema) || seen[t] {
+		if !includedShape.MatchString(t) || !slices.Contains(s.listedSchemas(), schema) || seen[t] {
 			return refuse(CodeAnswersInvalid, "a ticked table is not a table of this setup's schemas, or is ticked twice; nothing changed")
 		}
 		seen[t] = true
@@ -187,19 +216,21 @@ func AgentWord(p setupcode.Payload) string {
 	return p.Agent.Name
 }
 
-// Spec is the agent part of the code as an install input. For an
-// agent.allTables code its write tables are those Prepare read; a recovery
-// code whose role does not exist is an INSTALL.
+// Spec is the agent part of the code as an install input. For a code that
+// lists schemas its write tables are those Prepare read (the ticked ones);
+// a recovery code whose role does not exist is an INSTALL. An AGENT code
+// that names no tables keeps the role's grants.
 func (s *Setup) Spec() guard.AgentSpec {
 	a := s.P.Agent
 	write, read := a.Write, a.Read
-	if a.AllTables != nil {
+	if s.listedSchemas() != nil {
 		write, read = s.tables.Write, s.tables.ReadOnly
 	}
 	install := s.P.Kind == setupcode.KindInstall || s.asInstall
+	change := s.P.Kind == setupcode.KindAgent && !install
 	return guard.AgentSpec{
 		Name: a.Name, Write: write, Read: read, Verifier: a.Verifier,
-		CreateOnly: install, Change: s.P.Kind == setupcode.KindAgent && !install,
+		CreateOnly: install, Change: change, KeepGrants: change && s.P.KeepsGrants(),
 		StatementTimeout: time.Duration(a.StatementTimeoutMs) * time.Millisecond,
 	}
 }
@@ -247,13 +278,14 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := setupcode.CheckDatabase(s.P, db); err != nil {
 		return nil, err
 	}
+	// CheckDatabase let an AGENT code with a verifier through without its
+	// role: it runs as an INSTALL, with ticks (Ticked), so it is settled
+	// before the ticks are checked.
+	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.HasVerifier() && len(db.Roles) == 0
+	state.RunsAsInstall = s.asInstall
 	if err := s.checkIncluded(); err != nil {
 		return nil, err
 	}
-	// CheckDatabase let an AGENT code with a verifier through without its
-	// role: it runs as an INSTALL.
-	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.HasVerifier() && len(db.Roles) == 0
-	state.RunsAsInstall = s.asInstall
 	engine, err := s.readEngine(ctx, conn)
 	if err != nil {
 		return nil, err
@@ -277,12 +309,12 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	return p, nil
 }
 
-// readAllTables reads, for an agent.allTables code, the tables of its
-// schemas the admin role owns (with a primary key the agent's write tables,
-// without one read only) and those left out, into s and the summary's
-// state. No table at all is NO_TABLES.
+// readAllTables reads, for a code that lists schemas (listedSchemas), the
+// tables of those schemas the admin role owns (with a primary key the
+// agent's write tables, without one read only) and those left out, into s
+// and the summary's state. No table at all is NO_TABLES.
 func (s *Setup) readAllTables(ctx context.Context, q guard.Querier, state *setupcode.SummaryState) error {
-	if s.P.Agent.AllTables == nil {
+	if s.listedSchemas() == nil {
 		return nil
 	}
 	tables, err := s.listAllTables(ctx, q)
@@ -299,11 +331,11 @@ func (s *Setup) readAllTables(ctx context.Context, q guard.Querier, state *setup
 	return nil
 }
 
-// listAllTables lists the tables of an agent.allTables code's schemas.
+// listAllTables lists the tables of the listed schemas (listedSchemas).
 func (s *Setup) listAllTables(ctx context.Context, q guard.Querier) (guard.SchemaTables, error) {
-	all := s.P.Agent.AllTables
+	schemas := s.listedSchemas()
 	out := guard.SchemaTables{Write: []string{}, ReadOnly: []string{}}
-	for _, schema := range all.Schemas {
+	for _, schema := range schemas {
 		got, err := guard.AllTablesIn(ctx, q, schema)
 		if err != nil {
 			return guard.SchemaTables{}, err
@@ -316,7 +348,7 @@ func (s *Setup) listAllTables(ctx context.Context, q guard.Querier) (guard.Schem
 	}
 	if len(out.Write)+len(out.ReadOnly) == 0 {
 		return guard.SchemaTables{}, refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
-			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(all.Schemas, ", "), AgentWord(s.P)))
+			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(schemas, ", "), AgentWord(s.P)))
 	}
 	return out, nil
 }
@@ -349,7 +381,7 @@ func pickIncluded(all guard.SchemaTables, included []string) (guard.SchemaTables
 // included); without, when the listing is not the one Prepare read, which
 // the plan grants and the person was shown. Other codes pass.
 func (s *Setup) RecheckTables(ctx context.Context, q guard.Querier) error {
-	if s.P.Agent == nil || s.P.Agent.AllTables == nil {
+	if s.listedSchemas() == nil {
 		return nil
 	}
 	now, err := s.listAllTables(ctx, q)
@@ -526,6 +558,10 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guard.Script, er
 }
 
 func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable) (guard.Script, error) {
+	if p.asInstall && p.P.KeepsGrants() && !p.ticks {
+		// Never every table in public: only the ones the person ticked.
+		return guard.Script{}, errTicksRequired(p.P.Agent.Name)
+	}
 	opts := guard.InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
 	agent := ""
 	if p.P.Agent != nil {

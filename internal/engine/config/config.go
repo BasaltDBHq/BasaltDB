@@ -207,11 +207,6 @@ type Agent struct {
 	// Store is the one store the agent's actions land in (CONTRACT.md,
 	// Stores).
 	Store Store `json:"store"`
-	// InitArgs are the flags basalt init was run with for this agent (never
-	// the admin connection string, a password or a one-shot flag). init
-	// reads them back on a re-run; no step names them (CONTRACT.md, Next
-	// steps), and they go with the CLI cut.
-	InitArgs []string `json:"initArgs,omitempty"`
 	// Setup is the pending setup code basalt init --remote made for this
 	// agent; nil when none is pending.
 	Setup *Setup `json:"setup,omitempty"`
@@ -386,6 +381,7 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	if err := refuseOldCredentialFile(raw); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	raw = dropInitArgs(raw)
 	var c Config
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -451,6 +447,42 @@ func refuseParked(raw []byte) error {
 		}
 	}
 	return nil
+}
+
+// dropInitArgs is raw without the per-agent "initArgs" key that older
+// builds of basalt init saved: nothing reads it (the database's grants are
+// the only record of an agent's tables), so a config that has it still
+// loads, and the next write leaves it out. Anything else, or a config that
+// is not of this shape, is returned as it is, for the decoder.
+func dropInitArgs(raw []byte) []byte {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return raw
+	}
+	var agents []map[string]json.RawMessage
+	if err := json.Unmarshal(top["agents"], &agents); err != nil {
+		return raw
+	}
+	dropped := false
+	for _, a := range agents {
+		if _, ok := a["initArgs"]; ok {
+			delete(a, "initArgs")
+			dropped = true
+		}
+	}
+	if !dropped {
+		return raw
+	}
+	list, err := json.Marshal(agents)
+	if err != nil {
+		return raw
+	}
+	top["agents"] = list
+	out, err := json.Marshal(top)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // OldCredentialFileError is the error of a config with the older per-agent

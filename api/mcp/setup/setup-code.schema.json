@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/setup-code.v1.json",
   "title": "Setup code",
-  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer, and the connect service reads it from the connect page. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table in write or read, unless agent.allTables; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 10 minutes; a code without target carries engine, and an AGENT code without target carries agent.verifier) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
+  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer, and the connect service reads it from the connect page. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table in write or read in an INSTALL code, unless agent.allTables; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 10 minutes; a code without target carries engine, and an AGENT code without target carries agent.verifier) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
   "oneOf": [
     { "$ref": "#/$defs/install" },
     { "$ref": "#/$defs/agentChange" },
@@ -30,7 +30,7 @@
     "agentChange": {
       "type": "object",
       "additionalProperties": false,
-      "description": "AGENT: an existing agent's tables, replaced by write and read (or agent.allTables) as given; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active. Without target, a connect-only recovery code (it must carry engine and agent.verifier); the connect service rotates the password of an existing role, or creates the role as INSTALL does when it does not exist.",
+      "description": "AGENT: an existing agent's tables, replaced by write and read (or agent.allTables) as given, or kept as the role holds them when write and read are both empty; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active. Without target, a connect-only recovery code (it must carry engine and agent.verifier); the connect service rotates the password of an existing role, or creates the role as INSTALL does when it does not exist (then the person ticks its tables on the connect page when the code has agent.allTables or names no tables).",
       "required": ["format", "setupId", "kind", "prefix", "guard", "build", "agent", "expiresAt"],
       "properties": {
         "format": { "$ref": "#/$defs/format" },
@@ -202,7 +202,7 @@
       ]
     },
     "changedAgent": {
-      "description": "The changed agent: its tables in write and read, or agent.allTables in their place; a verifier when its password is rotated. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
+      "description": "The changed agent: its tables in write and read, or agent.allTables in their place; write and read both empty keep the role's current grants; a verifier when its password is rotated. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
       "oneOf": [
         {
           "type": "object",

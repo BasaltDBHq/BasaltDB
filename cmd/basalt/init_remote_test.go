@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -64,6 +62,8 @@ type remoteEnv struct {
 	login     func(context.Context, string) (agentConn, error)
 	probe     func(context.Context, string) error
 	noNetwork bool
+	// prefix is the role prefix of a first code (cliIO.rolePrefix).
+	prefix string
 }
 
 // noDB is a run as root (the system socket directory keeps socket paths
@@ -89,6 +89,7 @@ func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cliIO {
 			return e.env[k]
 		})
 	c.host = e.host
+	c.rolePrefix = e.prefix
 	if e.login != nil {
 		c.agentLogin = e.login
 	}
@@ -194,9 +195,8 @@ func agentDSN(t *testing.T, base, prefix, name, pw string) string {
 // seedCredential leaves cfg as the engine does once the person confirmed
 // a connect-only setup's database: basalt init --remote made the code, the
 // agent's credential file holds dsn, .secret is gone and the pending setup
-// no longer waits for an address. saved replace the saved flags of the
-// agent's entry beside --agent (its tables, its prefix).
-func seedCredential(t *testing.T, e remoteEnv, cfg, name, dsn string, saved ...string) remoteRun {
+// no longer waits for an address. The role's prefix is dsn's user's.
+func seedCredential(t *testing.T, e remoteEnv, cfg, name, dsn string) remoteRun {
 	t.Helper()
 	withState(t, cfg)
 	first := remoteWith(t, e, cfg, "--agent", name)
@@ -205,9 +205,6 @@ func seedCredential(t *testing.T, e remoteEnv, cfg, name, dsn string, saved ...s
 	editConfig(t, cfg, func(c *config.Config) {
 		a := &c.Agents[0]
 		a.Setup.AwaitingAddress = false
-		if len(saved) > 0 {
-			a.InitArgs = append([]string{"--agent=" + name}, saved...)
-		}
 	})
 	return first
 }
@@ -344,8 +341,7 @@ func TestInitRemoteWithoutAgent(t *testing.T) {
 func TestInitRemoteMakesATargetCode(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	seed := seedCredential(t, noDB(t), cfg, "lead_bot", agentDSN(t, supabaseURL, guard.DefaultPrefix, "lead_bot", "0123abcd"),
-		"--write=public.leads", "--read=public.companies")
+	seed := seedCredential(t, noDB(t), cfg, "lead_bot", agentDSN(t, supabaseURL, guard.DefaultPrefix, "lead_bot", "0123abcd"))
 	r := remote(t, cfg, "--agent", "lead_bot")
 
 	p := r.payload
@@ -353,8 +349,9 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 	require.Equal(t, setupcode.KindInstall, p.Kind)
 	require.Equal(t, &setupcode.Target{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: supabaseRef}, p.Target)
 	require.Equal(t, setupcode.Guard{From: 0, To: guard.LatestVersion()}, p.Guard)
-	require.Equal(t, []string{"public.leads"}, p.Agent.Write)
-	require.Equal(t, []string{"public.companies"}, p.Agent.Read)
+	require.Equal(t, &setupcode.AllTables{Schemas: []string{"public"}}, p.Agent.AllTables, "the person ticks the tables")
+	require.Nil(t, p.Agent.Write)
+	require.Nil(t, p.Agent.Read)
 	require.Equal(t, guard.DefaultStatementTimeout.Milliseconds(), p.Agent.StatementTimeoutMs)
 	requireVerifierOf(t, p.Agent.Verifier, "0123abcd")
 	require.Equal(t, "0123abcd", credentialPassword(t, r.credFile), "the credential stays")
@@ -384,7 +381,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,
 	}, a.Setup)
 	_, err = agent.NewCommands(a.Name, cfg, "linux")
-	require.NoError(t, err, "the saved flags are ones the engine accepts")
+	require.NoError(t, err, "the agent's entry is one the engine accepts")
 	pages, err := r.cfg.Pages()
 	require.NoError(t, err)
 	require.Empty(t, pages.Addr, "the engine serves no local pages for the portal")
@@ -612,23 +609,6 @@ func TestInitRemoteRefusesASymlinkedCredential(t *testing.T) {
 	require.Equal(t, "postgres://x@h/db\n", string(raw))
 }
 
-func TestInitRemoteRefusesALongCode(t *testing.T) {
-	t.Parallel()
-	tables := make([]string, 0, 60)
-	for i := range 60 {
-		sum := sha256.Sum256([]byte{byte(i)})
-		tables = append(tables, "public.t"+hex.EncodeToString(sum[:20]))
-	}
-	cfg := tempConfig(t)
-	seed := seedCredential(t, noDB(t), cfg, "bot", supabaseDSN(t), "--write="+strings.Join(tables, ","))
-	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code, r.stderr)
-	require.Contains(t, r.stderr, "name fewer tables")
-	c, err := config.Load(cfg)
-	require.NoError(t, err)
-	require.Equal(t, seed.res.SetupID, c.Agents[0].Setup.SetupID, "nothing changed")
-}
-
 // remoteDB is a database for --remote runs: its URL without the password.
 func remoteDB(t *testing.T) (*guardtest.DB, string) {
 	t.Helper()
@@ -639,17 +619,17 @@ func remoteDB(t *testing.T) (*guardtest.DB, string) {
 	return d, u.String()
 }
 
-// seedDB is seedCredential for the bot in database d: the role's prefix and
-// tables saved, the credential with password pw.
+// seedDB is seedCredential for the bot in database d: the credential, for
+// the role of d's prefix, with password pw.
 func seedDB(t *testing.T, e remoteEnv, cfg string, d *guardtest.DB, dbURL, pw string) {
 	t.Helper()
-	seedCredential(t, e, cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", pw),
-		"--write=public.leads", "--prefix="+d.Names.Prefix)
+	seedCredential(t, e, cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", pw))
 }
 
 // runCode does what the connect page does with an INSTALL or AGENT code:
 // the role from the verifier, the grants and record_setup, in one
-// transaction as the admin.
+// transaction as the admin. With agent.allTables the person ticks
+// public.leads; an AGENT code that names no tables keeps the grants.
 func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 	t.Helper()
 	ctx := context.Background()
@@ -661,6 +641,9 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 			Name: p.Agent.Name, Write: p.Agent.Write, Read: p.Agent.Read,
 			Verifier: p.Agent.Verifier, CreateOnly: p.Kind == setupcode.KindInstall,
 			StatementTimeout: time.Duration(p.Agent.StatementTimeoutMs) * time.Millisecond,
+		}
+		if p.Agent.AllTables != nil {
+			spec.Write = []string{"public.leads"}
 		}
 	}
 	expires, err := p.ExpiresTime()
@@ -704,6 +687,7 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	require.Equal(t, "AGENT", noChange.res.Kind)
 	require.NotEqual(t, install.res.SetupID, noChange.res.SetupID)
 	require.Empty(t, noChange.payload.Agent.Verifier)
+	require.True(t, noChange.payload.KeepsGrants(), "it names no tables: the role keeps its grants")
 	require.Equal(t, setupcode.Guard{From: guard.LatestVersion(), To: guard.LatestVersion()}, noChange.payload.Guard)
 	require.Equal(t, "0123abcd", credentialPassword(t, install.credFile))
 
@@ -722,6 +706,7 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	d.Exec(t, `ALTER ROLE `+pgx.Identifier{role}.Sanitize()+` PASSWORD 'not-the-bots'`)
 	rotate := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", rotate.res.Kind)
+	require.True(t, rotate.payload.KeepsGrants(), "a rejected password asks for no tables")
 	require.Equal(t, "0123abcd", credentialPassword(t, install.credFile))
 	pw2 := credentialPassword(t, install.credFile+pendingSuffix)
 	require.NotEqual(t, "0123abcd", pw2)
@@ -777,14 +762,14 @@ func TestInitRemoteSetupNotFoundGetsANewPassword(t *testing.T) {
 	requireVerifierOf(t, r.payload.Agent.Verifier, pw)
 }
 
-// After a connect-only INSTALL where the person ticked some tables, the
-// saved request names those tables: later AGENT codes never ask for every
-// table in public.
-func TestInitRemoteSavesTheTablesThePersonGranted(t *testing.T) {
+// After a connect-only INSTALL where the person ticked some tables, a
+// re-run's AGENT code names no tables, never every table in public: the
+// role keeps the grants it holds, and engine.json keeps no copy of them.
+func TestInitRemoteAgentCodeKeepsTheGrants(t *testing.T) {
 	t.Parallel()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	seedCredential(t, withDB(t), cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", botPassword), "--"+flagAllTables+"=true", "--prefix="+d.Names.Prefix)
+	seedCredential(t, withDB(t), cfg, "bot", agentDSN(t, dbURL, d.Names.Prefix, "bot", botPassword))
 	pending, err := config.Load(cfg)
 	require.NoError(t, err)
 	verifier, err := setupcode.VerifierWithSalt(botPassword, make([]byte, 16))
@@ -795,38 +780,66 @@ func TestInitRemoteSavesTheTablesThePersonGranted(t *testing.T) {
 		SetupID: pending.Agents[0].Setup.SetupID, Kind: setupcode.KindInstall, ExpiresAt: pending.Agents[0].Setup.ExpiresAt,
 		Guard: setupcode.Guard{To: guard.LatestVersion()}, Agent: &setupcode.Agent{Name: "bot", Write: []string{"public.leads"}, Verifier: verifier},
 	})
-
-	// Grants that name no access the flags save are skipped: REFERENCES
-	// alone, or part of the write privileges (read, with SELECT).
 	role, err := d.Names.Agent("bot")
 	require.NoError(t, err)
 	ident := pgx.Identifier{role}.Sanitize()
-	d.Exec(t, `GRANT REFERENCES, TRIGGER ON public.payroll TO `+ident)
-	d.Exec(t, `GRANT SELECT, INSERT ON public.lead_notes TO `+ident)
 
 	r := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", r.res.Kind)
 	require.Nil(t, r.payload.Agent.AllTables)
-	require.Equal(t, []string{"public.leads"}, r.payload.Agent.Write)
-	require.Equal(t, []string{"public.lead_notes"}, r.payload.Agent.Read)
-	args := r.cfg.Agents[0].InitArgs
-	require.Contains(t, args, "--write=public.leads")
-	require.NotContains(t, args, "--"+flagAllTables+"=true")
+	require.Empty(t, r.payload.Agent.Write)
+	require.Empty(t, r.payload.Agent.Read)
+	require.True(t, r.payload.KeepsGrants())
+	raw, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "initArgs", "engine.json saves no flags")
+	require.NotContains(t, string(raw), "public.leads", "engine.json keeps no copy of the tables")
 
 	again := remoteDBRun(t, cfg, "--agent", "bot")
-	require.True(t, again.res.Reused, "the saved request is the same as the grants")
+	require.True(t, again.res.Reused, "the pending code is printed again")
+
+	// The database rejects the bot's password: the re-run's AGENT code
+	// rotates it and names no tables, and on the connect page the role
+	// keeps exactly the table it had. Nothing is added.
+	runViaConnect(t, d, r.res.Code)
+	clearSetup(t, cfg)
+	d.Exec(t, `ALTER ROLE `+ident+` PASSWORD 'not-the-bots'`)
+	rotate := remoteDBRun(t, cfg, "--agent", "bot")
+	require.Equal(t, "AGENT", rotate.res.Kind)
+	require.NotEmpty(t, rotate.payload.Agent.Verifier)
+	require.True(t, rotate.payload.KeepsGrants())
+	runViaConnect(t, d, rotate.res.Code)
+	require.Equal(t, []string{"public.leads"}, grantedTables(t, d, role), "exactly the role's grants")
+
+	// The role was dropped: the next code is the same kind of code, and on
+	// the connect page it runs as an INSTALL with ticks.
+	promoted := remoteDBRun(t, cfg, "--agent", "bot") // logs in with .pending, moves it over
+	require.FileExists(t, promoted.credFile)
+	runViaConnect(t, d, promoted.res.Code)
+	clearSetup(t, cfg)
+	d.Exec(t, `DROP OWNED BY `+ident+`; DROP ROLE `+ident)
+	dropped := remoteDBRun(t, cfg, "--agent", "bot")
+	require.Equal(t, "AGENT", dropped.res.Kind)
+	require.True(t, dropped.payload.KeepsGrants())
+	runViaConnect(t, d, dropped.res.Code, "public.lead_notes")
+	require.Equal(t, []string{"public.lead_notes"}, grantedTables(t, d, role), "only the ticked table")
 }
 
-func TestGrantedAs(t *testing.T) {
-	t.Parallel()
-	for want, privs := range map[string][]string{
-		"write": {"DELETE", "INSERT", "SELECT", "UPDATE"},
-		"read":  {"SELECT", "INSERT", "UPDATE"},
-		"":      {"REFERENCES"},
-	} {
-		require.Equal(t, want, grantedAs(privs), "%v", privs)
+// grantedTables are the tables role holds a privilege on, in name order.
+func grantedTables(t *testing.T, d *guardtest.DB, role string) []string {
+	t.Helper()
+	rows, err := d.Admin.Query(context.Background(), `SELECT DISTINCT c.oid::pg_catalog.regclass::text FROM pg_catalog.pg_class c,
+		LATERAL pg_catalog.aclexplode(c.relacl) a WHERE a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $1) AND c.relkind IN ('r', 'p', 'v')
+		ORDER BY 1`, role)
+	require.NoError(t, err)
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	for i, name := range got {
+		if !strings.Contains(name, ".") {
+			got[i] = "public." + name
+		}
 	}
-	require.Empty(t, grantedAs([]string{"INSERT", "UPDATE", "DELETE", "TRIGGER", "TRUNCATE"}), "no SELECT: no access the flags name")
+	return got
 }
 
 func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {

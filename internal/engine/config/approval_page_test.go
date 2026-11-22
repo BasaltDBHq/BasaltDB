@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,4 +46,35 @@ func TestLoadRefusesOldCredentialFile(t *testing.T) {
 	_, err := config.Load(path)
 	require.EqualError(t, err, "config "+path+`: agent "a": "credentialFile" now goes inside "store"; `+
 		`replace "credentialFile": "/c/a.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/a.cred"}`)
+}
+
+// An engine.json from an older basalt init carries the agent's saved
+// flags in "initArgs". Nothing reads them any more (the database's grants
+// are the only record of an agent's tables), but the file still loads,
+// with every other field, and the next write leaves the key out.
+func TestLoadIgnoresOldInitArgs(t *testing.T) {
+	t.Parallel()
+	path := write(t, "engine.json", `{"socketDir": "/s", "operatedBy": "AGENT", "pagesUrl": "https://portal.basaltvault.app", "agents": [
+		{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c/a.url"},
+		 "initArgs": ["--agent=a", "--write=public.leads", "--all-tables=true", "--operated-by=agent"]},
+		{"name": "b", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c/b.url"}}]}`, 0o600)
+	c, err := config.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, "AGENT", c.OperatedBy)
+	require.Equal(t, []config.Agent{
+		{Name: "a", OSUser: "u", Store: config.PostgresStore("/c/a.url")},
+		{Name: "b", OSUser: "u", Store: config.PostgresStore("/c/b.url")},
+	}, c.Agents)
+
+	require.NoError(t, config.UpsertAgent(path, config.Settings{}, config.Agent{Name: "b", OSUser: "u", Store: config.PostgresStore("/c/b.url")}))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "initArgs", "the next write drops the old key")
+	_, err = config.Load(path)
+	require.NoError(t, err)
+
+	// Any other unknown agent key is still refused.
+	other := write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}, "initArg": []}]}`, 0o600)
+	_, err = config.Load(other)
+	require.ErrorContains(t, err, "unknown field")
 }

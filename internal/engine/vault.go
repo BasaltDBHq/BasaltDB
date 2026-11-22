@@ -182,8 +182,7 @@ func (r *relayLinks) Conflict(token channel.LinkToken) {
 	}
 }
 
-// RevokeAll revokes every agent's relay links, unregistering their tokens:
-// what rotating the engine's keys does first (VC-40).
+// RevokeAll revokes every agent's relay links, unregistering their tokens.
 func (r *relayLinks) RevokeAll() {
 	for _, s := range r.all() {
 		if err := s.RevokeRelay(); err != nil {

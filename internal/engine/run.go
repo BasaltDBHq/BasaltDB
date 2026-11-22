@@ -119,6 +119,14 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
+	// A listener a waiting engine handed on is closed on any return before
+	// the pages take it (takeHandedListener).
+	handed := restart.PagesListener
+	defer func() {
+		if handed != nil {
+			_ = handed.Close()
+		}
+	}()
 	// Every configured agent's OS user, before any agent is skipped: the
 	// person socket scopes a peer that runs an agent to that agent (SM-4),
 	// served or not, so a skipped agent's user never looks like the person.
@@ -154,8 +162,10 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
 	}
 	var site *pagesSite
+	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
+	handed = nil
 	if pagesCfg.Addr != "" {
-		site, err = listenPages(pagesCfg, log)
+		site, err = listenPages(pagesCfg, pagesLn, log)
 		if err != nil {
 			return err
 		}
@@ -541,14 +551,32 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the approval pages. A port it cannot bind stops the
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
-func listenPages(p config.Pages, log *slog.Logger) (*pagesSite, error) {
+func listenPages(p config.Pages, handed net.Listener, log *slog.Logger) (*pagesSite, error) {
 	srv := pages.New(p.Origin, log.With("component", "pages"))
+	if handed != nil {
+		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)
+		return &pagesSite{pages: srv, ln: handed, handler: server.Wrap(p.Addr, handed, srv.Handler()), origin: p.Origin}, nil
+	}
 	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
 		return nil, pagesPortError(p.Addr, err)
 	}
 	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
 	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}, nil
+}
+
+// takeHandedListener is the listener a waiting engine handed on, when the
+// config serves its pages at that same address; else it is closed and the
+// pages bind as usual.
+func takeHandedListener(ln net.Listener, addr string) net.Listener {
+	if ln == nil {
+		return nil
+	}
+	if addr == SetupAddr && ln.Addr().String() == addr {
+		return ln
+	}
+	_ = ln.Close()
+	return nil
 }
 
 func pagesPortError(addr string, err error) error {

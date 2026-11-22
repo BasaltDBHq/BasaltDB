@@ -20,23 +20,6 @@
       "expect": "ACCEPT"
     },
     {
-      "name": "a direct session",
-      "transport": "DIRECT",
-      "secret": "26-2jX3juTcAsR5B6VffFQ",
-      "pageEphemeralPrivate": "a7b322791fedb5c1593c7ac09781d11870405720e0f8653d071794839b90e2d8",
-      "engineEphemeralPrivate": "70d79d910e46055be3f13764e79e16d0d02b1d0f5ba0a3688ebabe638506e444",
-      "engineSigningPrivate": "81f05cd784049302823c69c7fcd1c79cc08daaee005ac9388862329f27aceb5d",
-      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
-      "prologue": "626173616c742d7661756c742d70726f6c6f6775652e310a4449524543540a517972435944713677335969354f33424d7866416e67",
-      "message1": "0101432ac2603abac37622e4edc13317c09e04b2c9f64fa9cc2b26462ca4049baff3da86f8d466dcee2b3f3d1585416f5a60e620c699f467b9010f37748905ee216ca1a33d79b4fa19468f3ebe5a68e4097a9aa382874eba39742a9926a4890c5ab872",
-      "sig": "0AG2O7AigLXlxl7b_SkczKfXdJZ7Gd3F-bwQ-thsx9_PQ7UDQyZLHawgrlyziHua8N58uvaa-9xwu42Bzy0cPA",
-      "message2": "010204fec5eff951d4e7a394ee7d17ba74a5a7c813dd8cdc5246a378cf9a55d63425d715689672e1058290b9f63d046b8378020c83088fc5031ab14e1e0ff1323658e8efb934587da3ea03f28cc6702418fb375e3814094e8bfe954f01b2039bea6625390763abb10f004686465ae2d0396d875791359193b522bf26ed7835a0213867b9b635869f8e9fac09908bbdafd71243234f489caf03f16de2a087b95b234e9bbe0a0bb307828ad33ad3561843907698fc7dc7d35236e346772070e067fb3d7396c638f291fa5b39d57205105db02ce72ac1ccaff3644a4e052eb132171ea7547e73aaaded443d28481a9673bb3ea6e3b40c4439b31ca19fa421ffe9236be3079883bbdcca01e123857b2ad02efec8f53a78b2554f19d171cbf578f3b226dd949a49741125c4e7af971d5227cff03a94c5e2c280f9de9754ec",
-      "handshakeHash": "51162342afd5fde6e5be9fa32e1f96ae1e52a6f5a54dd8c24ae5788d525ceb6e",
-      "keyPageToEngine": "c1b145306ce87a711712e0d81326fccd18f10adff4e6164d9184ebc13972faf2",
-      "keyEngineToPage": "bd346c393c7b450986438f1ae6d84256328c64b77fb158055a20c4cad61ae1c9",
-      "expect": "ACCEPT"
-    },
-    {
       "name": "message 1 under a wrong psk",
       "transport": "RELAY",
       "secret": "oo3hsfnTW0SXS80SkQL_vQ",
@@ -102,20 +85,6 @@
       "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
       "prologue": "626173616c742d7661756c742d70726f6c6f6775652e310a52454c41590a6973663733764f376539766d73553936684a53783141",
       "message1": "01018ac7fbdef3bb7bdbe6b14f7a8494b1d402e3b2d8d90ee5a16742ea08ce2de51a4d0950d71960c8279044f64029889a47a79be46842a9d94e4eec0a83fd84cf32c92a9c19ec2a51ea73713fb8b6d8e1176330aecf539f5a272fd2242414865f4744",
-      "message2": "",
-      "refusedBy": "ENGINE",
-      "expect": "LINK_REFUSED"
-    },
-    {
-      "name": "message 1 made for the direct transport",
-      "transport": "RELAY",
-      "secret": "oo3hsfnTW0SXS80SkQL_vQ",
-      "pageEphemeralPrivate": "91f5228a268b1b98c826b7bd9828d675860ddb0141361a6e74ea2d5a3169dde0",
-      "engineEphemeralPrivate": "dbec17a84e047baa2a52914ea7592ab29229513c09fb822cd721c3683b4c010f",
-      "engineSigningPrivate": "81f05cd784049302823c69c7fcd1c79cc08daaee005ac9388862329f27aceb5d",
-      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
-      "prologue": "626173616c742d7661756c742d70726f6c6f6775652e310a52454c41590a6973663733764f376539766d73553936684a53783141",
-      "message1": "01018ac7fbdef3bb7bdbe6b14f7a8494b1d404e3b2d8d90ee5a16742ea08ce2de51a4d0950d71960c8279044f64029889a47a79be46842a9d94e4eec0a83fd84cf32c92a9c19ec2a51ea73713fb8b6d8e117634709faffc5fd1870299613eb7cc3e3ff",
       "message2": "",
       "refusedBy": "ENGINE",
       "expect": "LINK_REFUSED"

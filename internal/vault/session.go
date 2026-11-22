@@ -145,11 +145,8 @@ func (cn *conn) handshake(ctx context.Context, ss *session, msg []byte) error {
 		link = l
 		return psk, ok
 	}
-	check := channel.HelloCheck{Transport: cn.transport, Lookup: lookup}
-	if cn.transport == channel.TransportRelay {
-		token := ss.token
-		check.SessionToken = &token
-	}
+	token := ss.token
+	check := channel.HelloCheck{Transport: cn.transport, SessionToken: &token, Lookup: lookup}
 	resp, err := channel.ReadHello(msg, check)
 	if err != nil {
 		code := channel.ErrLinkRefused

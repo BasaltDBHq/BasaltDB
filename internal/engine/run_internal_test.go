@@ -3,6 +3,8 @@ package engine
 import (
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -29,7 +31,7 @@ func TestListenPagesRefusesATakenPort(t *testing.T) {
 	_, port, err := net.SplitHostPort(addr)
 	require.NoError(t, err)
 
-	_, err = listenPages(config.Pages{Addr: addr, Origin: "http://localhost:" + port}, slog.New(slog.DiscardHandler))
+	_, err = listenPages(config.Pages{Addr: addr, Origin: "http://localhost:" + port}, nil, slog.New(slog.DiscardHandler))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "another process holds "+addr)
 	require.Contains(t, err.Error(), "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
@@ -91,7 +93,7 @@ func TestInstructionsTeachRevertScope(t *testing.T) {
 
 func TestListenPagesServesAFreePort(t *testing.T) {
 	t.Parallel()
-	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, slog.New(slog.DiscardHandler))
+	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, nil, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.NoError(t, site.ln.Close())
 }
@@ -104,4 +106,47 @@ func TestInstructionsKeepTheAdminCredentialAway(t *testing.T) {
 	require.Contains(t, Instructions, "Never ask the person for, or accept, their database admin connection string or password, "+
 		"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote "+
 		"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now.")
+}
+
+// A waiting engine's listener is served on only when the config's pages
+// use its address; any other is closed.
+func TestTakeHandedListener(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, takeHandedListener(nil, SetupAddr))
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	require.Nil(t, takeHandedListener(ln, SetupAddr), "bound elsewhere: closed")
+	_, err = ln.Accept()
+	require.ErrorIs(t, err, net.ErrClosed)
+
+	ln, err = net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	require.Nil(t, takeHandedListener(ln, ""), "pages off: closed")
+	_, err = ln.Accept()
+	require.ErrorIs(t, err, net.ErrClosed)
+}
+
+// Pages served on a handed listener keep the listener's hardening: a
+// foreign Host is refused, a loopback one served.
+func TestListenPagesOnAHandedListenerRefusesAForeignHost(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+	site, err := listenPages(config.Pages{Addr: addr, Origin: "http://localhost:8787"}, ln, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	require.Same(t, ln, site.ln, "served on the handed listener, not a new one")
+	t.Cleanup(func() { _ = site.ln.Close() })
+
+	get := func(host string) int {
+		req := httptest.NewRequest(http.MethodGet, "http://"+addr+"/healthz", nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		site.handler.ServeHTTP(w, req)
+		return w.Code
+	}
+	require.Equal(t, http.StatusOK, get(addr))
+	require.Equal(t, http.StatusOK, get("localhost:8787"))
+	require.NotEqual(t, http.StatusOK, get("evil.example"), "a foreign Host is refused")
 }

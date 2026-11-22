@@ -640,6 +640,9 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	e.started(p.key, "product_a")
 	a := e.applied("product_a")
 	waitSeqs(t, p, "product_a", a)
+	// The cursor is written after the plugin answers: stopping the reader
+	// before it is written sends the event again when it serves again.
+	e.waitCursor(p.key, a)
 
 	e.unserve(p.key)
 	settle()
@@ -649,6 +652,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	b := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b)
+	e.waitCursor(p.key, b)
 
 	// A change that adds no host: what came before it still arrives.
 	e.unserve(p.key)
@@ -658,6 +662,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	d := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b, c, d)
+	e.waitCursor(p.key, d)
 
 	// A change that adds an egress host is a new consent: a new start.
 	e.unserve(p.key)

@@ -6,11 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -42,33 +43,33 @@ const (
 	stepEndTurnPersonActsNext = "End your turn: the person acts next."
 )
 
-func agentStep(action, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorAgent, Action: action, Text: text}
+func agentStep(action, text string) toolresult.NextStep {
+	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: action, Text: text}
 }
 
-func personStep(action, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorPerson, Action: action, Text: text}
+func personStep(action, text string) toolresult.NextStep {
+	return toolresult.NextStep{Actor: toolresult.ActorPerson, Action: action, Text: text}
 }
 
-func callTool(tool string, args map[string]any, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionCallTool, Text: text, Tool: tool, Arguments: args}
+func callTool(tool string, args map[string]any, text string) toolresult.NextStep {
+	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool, Text: text, Tool: tool, Arguments: args}
 }
 
 // reviseRequestRevert: call request_revert again, with what the agent adds.
-func reviseRequestRevert(args map[string]any, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionReviseCall, Text: text, Tool: toolRequestRevert, Arguments: args}
+func reviseRequestRevert(args map[string]any, text string) toolresult.NextStep {
+	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Text: text, Tool: toolRequestRevert, Arguments: args}
 }
 
-func openLink(url, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Text: text, URL: url}
+func openLink(url, text string) toolresult.NextStep {
+	return toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: text, URL: url}
 }
 
 // requestedSteps: the person signs at link, the agent waits once.
-func requestedSteps(id uuid.UUID, link string, reviewOnly bool) []mcp.NextStep {
+func requestedSteps(id uuid.UUID, link string, reviewOnly bool) []toolresult.NextStep {
 	if reviewOnly {
 		return reviewOnlyRevertSteps(id, link)
 	}
-	return []mcp.NextStep{
+	return []toolresult.NextStep{
 		openLink(link, "Open the link, review the rows and sign with your passkey."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: int(DefaultRevertWait.Seconds())},
 			fmt.Sprintf("In this turn, call request_revert once with revertId: it waits up to %d seconds.", int(DefaultRevertWait.Seconds()))),
@@ -79,10 +80,10 @@ func requestedSteps(id uuid.UUID, link string, reviewOnly bool) []mcp.NextStep {
 // which no page can sign (no local pages, and no live Vault connection). A
 // wait cannot succeed: the agent ends its turn and, once status shows the
 // Vault connected again, reissues the link, which is then a short link.
-func reviewOnlyRevertSteps(id uuid.UUID, link string) []mcp.NextStep {
-	return []mcp.NextStep{
+func reviewOnlyRevertSteps(id uuid.UUID, link string) []toolresult.NextStep {
+	return []toolresult.NextStep{
 		openLink(link, "Open the link to review the rows. It cannot be signed yet."),
-		agentStep(mcp.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
+		agentStep(toolresult.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
 			"Once status shows the Vault connected, call this for a link the person can sign, and show it."),
 	}
@@ -100,11 +101,11 @@ const (
 // given (link is "" with local pages: the agent shows the short link it
 // still has; else the long link); the agent does not wait again, and gets
 // a fresh short link only when the person lost theirs.
-func waitEndedSteps(id uuid.UUID, link, open string) []mcp.NextStep {
-	return []mcp.NextStep{
+func waitEndedSteps(id uuid.UUID, link, open string) []toolresult.NextStep {
+	return []toolresult.NextStep{
 		openLink(link, open),
-		personStep(mcp.ActionTellAgent, "Tell the agent when you have signed, or that you lost the link."),
-		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
+		personStep(toolresult.ActionTellAgent, "Tell the agent when you have signed, or that you lost the link."),
+		agentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
@@ -120,11 +121,11 @@ const widenedMessage = "You changed the scope on the signing page; the agent can
 // waitEndedSteps, but the person signs on the page they widened on (the
 // agent holds no link to it), and a reissue resets the revert to the
 // agent's proposal (owner, Q8).
-func widenedWaitSteps(id uuid.UUID) []mcp.NextStep {
-	return []mcp.NextStep{
+func widenedWaitSteps(id uuid.UUID) []toolresult.NextStep {
+	return []toolresult.NextStep{
 		openLink("", "Sign with your passkey on the page where you changed the scope."),
-		personStep(mcp.ActionTellAgent, "Tell the agent when you have signed."),
-		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
+		personStep(toolresult.ActionTellAgent, "Tell the agent when you have signed."),
+		agentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
@@ -132,24 +133,24 @@ func widenedWaitSteps(id uuid.UUID) []mcp.NextStep {
 	}
 }
 
-func applyingSteps(id uuid.UUID) []mcp.NextStep {
-	return []mcp.NextStep{callTool(toolRevertPlan, map[string]any{argRevertID: id.String(), "pending": true, "limit": revert.MaxBatch},
+func applyingSteps(id uuid.UUID) []toolresult.NextStep {
+	return []toolresult.NextStep{callTool(toolRevertPlan, map[string]any{argRevertID: id.String(), "pending": true, "limit": revert.MaxBatch},
 		"Get the pending lines and apply them with apply_revert_batch, until pending is 0.")}
 }
 
-func appliedSteps() []mcp.NextStep {
-	return []mcp.NextStep{agentStep(mcp.ActionStop, "The revert is done; do not request it again.")}
+func appliedSteps() []toolresult.NextStep {
+	return []toolresult.NextStep{agentStep(toolresult.ActionStop, "The revert is done; do not request it again.")}
 }
 
 // rejectedSteps: the person rejected the revert on the signing page.
-func rejectedSteps() []mcp.NextStep {
-	return []mcp.NextStep{agentStep(mcp.ActionStop,
+func rejectedSteps() []toolresult.NextStep {
+	return []toolresult.NextStep{agentStep(toolresult.ActionStop,
 		"The person rejected the revert and nothing was reverted. Do not request it again on your own.")}
 }
 
 // rejectedMessage is the line for the person about a rejected revert, with
 // the note they wrote, if any.
-func rejectedMessage(r ledger.Revert) string {
+func rejectedMessage(r action.Revert) string {
 	msg := "The revert was rejected on the signing page. Nothing was reverted."
 	if r.RejectNote != "" {
 		msg += " Your note: " + r.RejectNote
@@ -157,9 +158,9 @@ func rejectedMessage(r ledger.Revert) string {
 	return msg
 }
 
-func expiredSteps(r ledger.Revert) []mcp.NextStep {
-	return []mcp.NextStep{
-		agentStep(mcp.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
+func expiredSteps(r action.Revert) []toolresult.NextStep {
+	return []toolresult.NextStep{
+		agentStep(toolresult.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
 		reviseRequestRevert(scopeArgs(proposalOf(r)),
 			"On yes, call request_revert for the same scope with the person's reason as intent."),
 	}
@@ -186,7 +187,7 @@ func scopeArgs(scope action.Scope) map[string]any {
 // proposalOf is the scope of revert r with the runs and tables of the
 // select its binding carries (the agent's proposal, or the person's
 // narrowing of it), so requesting r again keeps them.
-func proposalOf(r ledger.Revert) action.Scope {
+func proposalOf(r action.Revert) action.Scope {
 	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
 	// The agent's view hides a widened revert's binding (version 20): a new
 	// request then names only the revert's scope, a change, run or task of
@@ -231,7 +232,7 @@ func filterText(scope action.Scope) string {
 
 // longRevertLink is r's long link: it carries the whole request, so the
 // engine can give it again when the short link is gone.
-func (s *Service) longRevertLink(ctx context.Context, r ledger.Revert) (string, error) {
+func (s *Service) longRevertLink(ctx context.Context, r action.Revert) (string, error) {
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
 		return "", err
@@ -240,10 +241,10 @@ func (s *Service) longRevertLink(ctx context.Context, r ledger.Revert) (string, 
 }
 
 func revertNotFound(id uuid.UUID) error {
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf(
 			"no revert %s requested by this agent: request one with request_revert and a changeId or runId of yours", id),
-		NextSteps: []mcp.NextStep{agentStep(mcp.ActionAskPerson,
+		NextSteps: []toolresult.NextStep{agentStep(toolresult.ActionAskPerson,
 			"Ask the person which revert they mean; this agent prepared no revert with that id.")},
 	}
 }
@@ -257,7 +258,7 @@ func revertNotFound(id uuid.UUID) error {
 // whose request file the agent already sent; no requestFile again). A
 // widened revert has no link: its only one is the page the person widened
 // on (the agent cannot read its binding, RS-5).
-func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string) (mcp.NextStep, error) {
+func (s *Service) signingLink(ctx context.Context, r action.Revert, text string) (toolresult.NextStep, error) {
 	switch {
 	case r.Widened:
 		return openLink("", text), nil
@@ -266,7 +267,7 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 	}
 	pick, err := s.restatedRevertLink(ctx, r)
 	if err != nil {
-		return mcp.NextStep{}, err
+		return toolresult.NextStep{}, err
 	}
 	if pick.Kind == linkPage || pick.Kind == linkNone {
 		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
@@ -286,7 +287,7 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 // A request too large for a long link is restated as the page's address:
 // linkPage when a short link given earlier carries it, else linkNone
 // (CONTRACT.md, Large values, rule 3).
-func (s *Service) restatedRevertLink(ctx context.Context, r ledger.Revert) (handOver, error) {
+func (s *Service) restatedRevertLink(ctx context.Context, r action.Revert) (handOver, error) {
 	req := revertRequestOf(r)
 	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
 	if err != nil {
@@ -308,7 +309,7 @@ func (s *Service) restatedRevertLink(ctx context.Context, r ledger.Revert) (hand
 // revertTitle names revert r for the person, starting lowercase: its scope,
 // or for a widened revert no scope, since the agent relays the message and
 // the scope the person chose is theirs (RS-5).
-func revertTitle(r ledger.Revert) string {
+func revertTitle(r action.Revert) string {
 	if r.Widened {
 		return "the revert you widened on the signing page"
 	}
@@ -323,7 +324,7 @@ func sentence(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message string) error {
+func (s *Service) badSignature(ctx context.Context, r action.Revert, message string) error {
 	open, err := s.signingLink(ctx, r, signAgainText)
 	if err != nil {
 		return err
@@ -339,19 +340,19 @@ const (
 
 // badSignatureWith is REVERT_INVALID BAD_SIGNATURE with open, the step to
 // the revert page (signingLink).
-func (s *Service) badSignatureWith(open mcp.NextStep, r ledger.Revert, message string) error {
-	return &mcp.ToolError{
+func (s *Service) badSignatureWith(open toolresult.NextStep, r action.Revert, message string) error {
+	return &toolresult.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The signature for %s did not verify, so nothing was reverted. Sign again on "+
 			"the revert page.", revertTitle(r)),
-		NextSteps: []mcp.NextStep{
+		NextSteps: []toolresult.NextStep{
 			open,
-			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
+			agentStep(toolresult.ActionEndTurn, stepEndTurnPersonActsNext),
 		},
 	}
 }
 
-func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
+func (s *Service) passkeyRevoked(ctx context.Context, r action.Revert) error {
 	open, err := s.signingLink(ctx, r, signRevokedText)
 	if err != nil {
 		return err
@@ -365,28 +366,28 @@ const requestAgainText = "On yes, call request_revert with these arguments and t
 
 // passkeyRevokedWith is REVERT_INVALID PASSKEY_REVOKED with open, the step
 // to the revert page (signingLink).
-func (s *Service) passkeyRevokedWith(open mcp.NextStep, r ledger.Revert) error {
-	return &mcp.ToolError{
+func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) error {
+	return &toolresult.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
 		Message: "the revert was signed by a passkey this database does not know or that was revoked; nothing was reverted",
 		PersonMessage: fmt.Sprintf("%s was signed with a passkey this database does not accept (unknown or "+
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
 			sentence(revertTitle(r))),
-		NextSteps: []mcp.NextStep{
-			{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: passkeyInitText, Command: s.Commands.Init()},
+		NextSteps: []toolresult.NextStep{
+			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: passkeyInitText, Command: s.Commands.Init()},
 			open,
-			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
+			agentStep(toolresult.ActionEndTurn, stepEndTurnPersonActsNext),
 		},
 	}
 }
 
-func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
-	return &mcp.ToolError{
+func (s *Service) rowsChanged(r action.Revert, detail string) error {
+	return &toolresult.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonRowsChanged,
 		Message: "the database refused the revert, nothing was reverted: " + detail,
 		PersonMessage: fmt.Sprintf("Rows changed after the preview of %s%s, so nothing was reverted. The agent "+
 			"requests it again for you to sign the current rows.", revertTitle(r), filterText(proposalOf(r))),
-		NextSteps: []mcp.NextStep{reviseRequestRevert(scopeArgs(proposalOf(r)),
+		NextSteps: []toolresult.NextStep{reviseRequestRevert(scopeArgs(proposalOf(r)),
 			"Rows changed after the preview, so nothing was reverted; request it again so the person signs the current rows.")},
 	}
 }
@@ -394,12 +395,12 @@ func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
 // nothingSigned is apply_revert's NOTHING_TO_REVERT: the signed scope has
 // no row to restore. Its detail names the scope, so the answer is built
 // here, without it for a widened revert (RS-5).
-func nothingSigned(r ledger.Revert) error {
-	te := &mcp.ToolError{
+func nothingSigned(r action.Revert) error {
+	te := &toolresult.ToolError{
 		Code: CodeNothingToRevert, Reason: reasonReadsOnly,
 		Message:       fmt.Sprintf("revert %s has no row to restore in the scope that was signed; nothing was reverted", r.ID),
 		PersonMessage: sentence(revertTitle(r)) + " has no row to restore in the scope you signed, so nothing was reverted.",
-		NextSteps:     []mcp.NextStep{agentStep(mcp.ActionStop, "There is nothing to revert; do not retry.")},
+		NextSteps:     []toolresult.NextStep{agentStep(toolresult.ActionStop, "There is nothing to revert; do not retry.")},
 	}
 	if r.Skipped > 0 {
 		te.Reason = reasonAllChangedByPeople
@@ -409,31 +410,31 @@ func nothingSigned(r ledger.Revert) error {
 	return te
 }
 
-func alreadySigned(r ledger.Revert) error {
+func alreadySigned(r action.Revert) error {
 	msg := fmt.Sprintf("revert %s was already signed (status %s); nothing more was applied", r.ID, r.Status)
-	if r.Status == ledger.RevertRejected {
+	if r.Status == revertRejected {
 		msg = fmt.Sprintf("revert %s was rejected by the person on the revert page; nothing was reverted", r.ID)
 	}
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonPlanFinished, Message: msg,
-		NextSteps: []mcp.NextStep{
+		NextSteps: []toolresult.NextStep{
 			callTool(toolRequestRevert, map[string]any{argRevertID: r.ID.String(), argWaitForSignature: 0}, "See the revert's state."),
-			agentStep(mcp.ActionStop, "Do not ask the person to sign it again."),
+			agentStep(toolresult.ActionStop, "Do not ask the person to sign it again."),
 		},
 	}
 }
 
-func (s *Service) revertExpired(r ledger.Revert) error {
+func (s *Service) revertExpired(r action.Revert) error {
 	reason, window := reasonNotSigned, "was not signed within an hour"
 	if r.SignedAt != nil {
 		reason, window = reasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
 	}
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeRevertExpired, Reason: reason,
 		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, timeText(r.ExpiresAt)),
 		PersonMessage: fmt.Sprintf("%s %s, so it expired. To revert it still, ask the agent to prepare it again.", sentence(revertTitle(r)), window),
-		NextSteps: []mcp.NextStep{
-			agentStep(mcp.ActionAskPerson, "Ask the person whether to prepare it again."),
+		NextSteps: []toolresult.NextStep{
+			agentStep(toolresult.ActionAskPerson, "Ask the person whether to prepare it again."),
 			reviseRequestRevert(scopeArgs(proposalOf(r)), requestAgainText),
 		},
 	}
@@ -445,10 +446,10 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 // the limit the tool ran under: request_revert's prepare has the 100
 // seconds of an MCP call, preview_revert the agent's statement timeout.
 func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
-	te := &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
+	te := &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"A narrower revert, with runs or tables, may fit.",
-		strings.ToLower(string(scope.Kind)), scope.ID, int(guard.MCPPrepareTimeout.Seconds()))}
+		strings.ToLower(string(scope.Kind)), scope.ID, int(guardmodel.MCPPrepareTimeout.Seconds()))}
 	what := "prepare"
 	if tool == toolPreviewRevert {
 		what = "preview"
@@ -507,7 +508,7 @@ func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.
 func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope action.Scope, reason, detail string) error {
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
-	te := &mcp.ToolError{Code: CodeNothingToRevert, Reason: reason}
+	te := &toolresult.ToolError{Code: CodeNothingToRevert, Reason: reason}
 	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
 	if tool == toolRequestRevert {
 		te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared. preview_revert shows each row and why it is "+

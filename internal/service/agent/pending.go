@@ -6,10 +6,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -50,14 +52,14 @@ func (e PendingEntry) id() uuid.UUID {
 // its headline, its link (none for a widened or APPLYING revert), the
 // message and the next steps.
 type PendingRevert struct {
-	ledger.Revert
+	action.Revert
 	Headline  string
 	RevertURL string
 	// RequestFile is the request beside a hash link in RevertURL.
 	RequestFile   *links.RequestFile
 	PersonMessage string
-	Links         []mcp.Link
-	NextSteps     []mcp.NextStep
+	Links         []toolresult.Link
+	NextSteps     []toolresult.NextStep
 	// issued is set when this list_pending issued the revert a new link.
 	issued bool
 }
@@ -71,14 +73,14 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
 		return pagination.Page[PendingEntry]{}, err
 	}
-	sort, err := p.ParseSort(ledger.ApprovalSortSpec)
+	sort, err := p.ParseSort(theHost().ApprovalSortSpec)
 	if err != nil {
-		return pagination.Page[PendingEntry]{}, fmt.Errorf("%w: %w", ledger.ErrInvalidParams, err)
+		return pagination.Page[PendingEntry]{}, fmt.Errorf("%w: %w", theHost().ErrInvalidParams, err)
 	}
 	var entries []PendingEntry
 	more := false
-	if p.Kind != KindRevert && p.Status != ledger.RevertApplying {
-		page, err := s.Store.ListApprovals(ctx, ledger.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
+	if p.Kind != KindRevert && p.Status != revertApplying {
+		page, err := s.Store.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}
@@ -87,8 +89,8 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 		}
 		more = page.NextCursor != ""
 	}
-	if p.Kind != KindApproval && p.Status != ledger.ApprovalApproved && p.RunID == uuid.Nil {
-		page, err := s.Store.ListOpenReverts(ctx, ledger.RevertListParams{Params: p.Params, Status: p.Status})
+	if p.Kind != KindApproval && p.Status != approvalApproved && p.RunID == uuid.Nil {
+		page, err := s.Store.ListOpenReverts(ctx, action.RevertListParams{Params: p.Params, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}
@@ -147,7 +149,7 @@ func (s *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue b
 // link on reissue, at its long link otherwise, and on the page they
 // widened on for a widened revert.
 func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
-	if p.Status == ledger.RevertApplying {
+	if p.Status == revertApplying {
 		headline, err := revertHeadline(p.Revert)
 		if err != nil {
 			return err
@@ -209,7 +211,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 // pendingRevertTooLarge fills a pending revert whose request no link this
 // engine has can carry (REQUEST_TOO_LARGE): the page's address, no
 // request file, and the setup change as message and steps.
-func (s *Service) pendingRevertTooLarge(p *PendingRevert, r ledger.Revert, address string, cost int64) error {
+func (s *Service) pendingRevertTooLarge(p *PendingRevert, r action.Revert, address string, cost int64) error {
 	headline, err := revertHeadline(r)
 	if err != nil {
 		return err
@@ -226,8 +228,8 @@ func (s *Service) pendingRevertTooLarge(p *PendingRevert, r ledger.Revert, addre
 
 // pendingRevertSteps: the person signs (at link, or "" for the page they
 // widened on), then the agent reads the result once.
-func pendingRevertSteps(id uuid.UUID, link, open string) []mcp.NextStep {
-	return []mcp.NextStep{
+func pendingRevertSteps(id uuid.UUID, link, open string) []toolresult.NextStep {
+	return []toolresult.NextStep{
 		openLink(link, open),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call this once; it returns at once."),

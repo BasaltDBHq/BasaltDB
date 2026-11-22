@@ -193,7 +193,7 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 		d.Columns = store.NewColumnOrder(pool)
 		d.Commands, d.PagesOrigin, d.Poll, d.RLS, d.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
 	})).Svc
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
+	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {

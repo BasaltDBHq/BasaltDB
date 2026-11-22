@@ -104,7 +104,7 @@ func TestEveryToolRefusesEverySpellingOfAnAdminString(t *testing.T) {
 	d.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	d.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, tools...)
+	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...)
 	for _, tool := range tools {
 		for name, v := range spellings {
 			for _, args := range []map[string]any{{"sql": v}, {"intent": v}, {"params": []any{v}}} {
@@ -130,7 +130,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	d.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	d.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, tools...)
+	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...)
 	url := "postgres://admin:" + secret + "@db.example.com:5432/app"
 	entry, ok := catalogOf(t).ErrorEntry(CodeInvalidArgument, ReasonAdminCredential, "")
 	require.True(t, ok)
@@ -155,7 +155,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	// The engine-down tools (basalt mcp, engine not answering) refuse too.
 	down := EngineDown{Name: "bot", Log: d.Log, Now: d.Now}
 	downTools := down.Tools()
-	downSrv := mcp.NewServer(mcp.Info{Name: "basalt"}, downTools...)
+	downSrv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(downTools, WithMeta)...)
 	for _, tool := range downTools {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
 			body, isError := serveCall(t, downSrv, tool.Name, args)

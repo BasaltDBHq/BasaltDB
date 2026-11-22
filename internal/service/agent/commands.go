@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -113,7 +112,7 @@ func (c Commands) EngineStart() string {
 	if c.foreground {
 		return c.foregroundEngine()
 	}
-	return osservice.StartCommand(c.goos)
+	return theHost().StartCommand(c.goos)
 }
 
 // EngineRestart restarts the engine: the foreground command again, or the
@@ -122,7 +121,7 @@ func (c Commands) EngineRestart() string {
 	if c.foreground {
 		return c.foregroundEngine()
 	}
-	return "sudo " + strings.Join(osservice.RestartArgs(c.goos), " ")
+	return "sudo " + strings.Join(theHost().RestartArgs(c.goos), " ")
 }
 
 func (c Commands) foregroundEngine() string {

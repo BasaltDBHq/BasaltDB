@@ -7,12 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -35,7 +37,7 @@ type RevertPreview struct {
 	Page    pagination.Page[revert.Line]
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
-	NextSteps     []mcp.NextStep
+	NextSteps     []toolresult.NextStep
 }
 
 // PreviewRevert returns what reverting the scope would restore and skip.
@@ -96,27 +98,27 @@ func cursorHash(cursor string) (string, error) {
 
 // RevertPlanParams are revert_plan's validated arguments: a batched plan
 // and one page of its lines (only pending ones with Outcome PENDING).
-type RevertPlanParams = ledger.RevertLineParams
+type RevertPlanParams = action.RevertLineParams
 
 // RevertPlanLine is one line of a batched plan with its signed line
 // parsed. Plan is nil on a widened plan's line that names a change the
 // agent did not make: the agent's view leaves its text out (RS-5).
 type RevertPlanLine struct {
-	ledger.RevertLine
+	action.RevertLine
 	Plan *revert.Line
 }
 
 // RevertPlan is a batched plan's state and one page of its lines; while
 // the person has not signed it, the link to sign it and one line for them.
 type RevertPlan struct {
-	Revert    ledger.Revert
+	Revert    action.Revert
 	Page      pagination.Page[RevertPlanLine]
 	RevertURL string
 	// RequestFile is the request beside a hash link in RevertURL.
 	RequestFile   *links.RequestFile
 	PersonMessage string
-	NextSteps     []mcp.NextStep
-	Links         []mcp.Link
+	NextSteps     []toolresult.NextStep
+	Links         []toolresult.Link
 	// tooLarge is set on a PENDING plan whose request no link this engine
 	// has can carry (REQUEST_TOO_LARGE).
 	tooLarge bool
@@ -127,8 +129,8 @@ type RevertPlan struct {
 // once the person signed it.
 func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPlan, error) {
 	r, err := s.Store.FindRevert(ctx, p.RevertID)
-	if errors.Is(err, ledger.ErrRevertNotFound) {
-		return RevertPlan{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
+	if sentinel(err, theHost().ErrRevertNotFound) {
+		return RevertPlan{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
 		return RevertPlan{}, err
@@ -142,7 +144,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		return RevertPlan{}, err
 	}
 	out := RevertPlan{Revert: r, Page: pagination.Page[RevertPlanLine]{NextCursor: page.NextCursor}}
-	if r.Status == ledger.RevertPending && !r.Widened {
+	if r.Status == revertPending && !r.Widened {
 		// A widened plan issues no link: the person signs on the page they
 		// widened on (RS-5).
 		n, err := s.revertNotice(ctx, r)
@@ -199,7 +201,7 @@ func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams
 type AppliedBatch struct {
 	action.BatchResult
 	PersonMessage string
-	NextSteps     []mcp.NextStep
+	NextSteps     []toolresult.NextStep
 }
 
 // RequestRevertParams are request_revert's validated arguments in its
@@ -214,13 +216,13 @@ type RequestRevertParams struct {
 // agent_reverts shows it, the link when one was issued, the line for the
 // person and the agent's next steps (CONTRACT.md, Next steps).
 type RequestedRevert struct {
-	Revert    ledger.Revert
+	Revert    action.Revert
 	RevertURL string
 	// RequestFile is the request beside a hash link in RevertURL.
 	RequestFile   *links.RequestFile
 	PersonMessage string
-	Links         []mcp.Link
-	NextSteps     []mcp.NextStep
+	Links         []toolresult.Link
+	NextSteps     []toolresult.NextStep
 	// Receipt is the signed revert's receipt (APPLIED, APPLYING).
 	Receipt *Receipt
 	// tooLarge is the notice when no link can carry the request.
@@ -235,7 +237,7 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
 	}
-	prep, err := s.Store.PrepareRevert(ctx, p.Scope, p.Intent, guard.MCPPrepareTimeout)
+	prep, err := s.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
 	if err != nil {
 		return RequestedRevert{}, s.prepareError(ctx, toolRequestRevert, p.Scope, err)
 	}
@@ -249,7 +251,7 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	}
 	if out.tooLarge.tooLarge {
 		answer := s.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		if errors.As(answer, &te) {
 			// Prepared, with no link any page can open: a notice with none.
 			out.RevertURL = ""
@@ -266,7 +268,7 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 // link to the person's scope (owner, Q8); otherwise the person's scope the
 // engine still holds is retired (retirePersonScope). It returns the revert
 // as it now stands.
-func (s *Service) prepareReissue(ctx context.Context, r ledger.Revert) (ledger.Revert, error) {
+func (s *Service) prepareReissue(ctx context.Context, r action.Revert) (action.Revert, error) {
 	if r.Widened {
 		return s.resetToProposal(ctx, r)
 	}
@@ -276,7 +278,7 @@ func (s *Service) prepareReissue(ctx context.Context, r ledger.Revert) (ledger.R
 // revertWithLink issues r's link (revoking an earlier one) and returns it
 // with the message that carries it: the REQUESTED steps, the person signs
 // and the agent waits once.
-func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
+func (s *Service) revertWithLink(ctx context.Context, r action.Revert) (RequestedRevert, error) {
 	n, err := s.revertNotice(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
@@ -318,13 +320,13 @@ type AwaitRevertParams struct {
 // or Wait is over. It never signs: the person signs on the revert page.
 func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
 	r, err := s.Store.FindRevert(ctx, p.RevertID)
-	if errors.Is(err, ledger.ErrRevertNotFound) {
+	if sentinel(err, theHost().ErrRevertNotFound) {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	if p.Reissue && r.Status == ledger.RevertPending {
+	if p.Reissue && r.Status == revertPending {
 		r, err = s.prepareReissue(ctx, r)
 		if err != nil {
 			return RequestedRevert{}, err
@@ -335,10 +337,10 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 		}
 		return out, err
 	}
-	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {
+	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
-		next, err := s.Store.FindRevert(resultsize.With(ctx), r.ID)
+		next, err := s.Store.FindRevert(budget.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}
@@ -354,15 +356,15 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 // applyRevertError gives Postgres's refusal of a signature the revert page
 // relayed: expired meanwhile, rows changed since the preview, or a
 // signature that does not verify.
-func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
+func (s *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
 	code, ok := ledgerCode(err)
 	switch {
-	case ok && code == guard.CodeRevertExpired:
+	case ok && code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
-	case ok && code == guard.CodeNothingToRevert:
+	case ok && code == guardmodel.CodeNothingToRevert:
 		return nothingSigned(r)
 	}
-	if !ok || code != guard.CodeRevertInvalid {
+	if !ok || code != guardmodel.CodeRevertInvalid {
 		return err
 	}
 	// apply_revert's details (basalt_meta version 9) tell the cases apart.
@@ -381,7 +383,7 @@ func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err err
 // revertState is the answer for r without a new link: what happened, for
 // the person, and the agent's next steps. For a widened revert the person
 // is told the agent cannot see what they added (RS-5).
-func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
+func (s *Service) revertState(ctx context.Context, r action.Revert) (RequestedRevert, error) {
 	out, err := s.revertStateOf(ctx, r)
 	if err != nil {
 		return out, err
@@ -389,7 +391,7 @@ func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRe
 	if r.Widened {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
-	if r.Status != ledger.RevertApplied && r.Status != ledger.RevertApplying {
+	if r.Status != revertApplied && r.Status != revertApplying {
 		return out, nil
 	}
 	// A signed revert: its receipt, from Postgres's record, the line first
@@ -403,20 +405,20 @@ func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRe
 	return out, nil
 }
 
-func (s *Service) revertStateOf(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
+func (s *Service) revertStateOf(ctx context.Context, r action.Revert) (RequestedRevert, error) {
 	out := RequestedRevert{Revert: r}
 	switch r.Status {
-	case ledger.RevertApplied:
+	case revertApplied:
 		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = appliedSteps()
-	case ledger.RevertApplying:
+	case revertApplying:
 		// Nothing for the person yet: the agent restores the rest, and the
 		// last batch tells them (CONTRACT.md, Next steps, APPLYING).
 		out.NextSteps = applyingSteps(r.ID)
-	case ledger.RevertExpired:
+	case revertExpired:
 		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = expiredSteps(r)
-	case ledger.RevertRejected:
+	case revertRejected:
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:
@@ -463,7 +465,7 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 	return out, nil
 }
 
-func applyByText(r ledger.Revert) string {
+func applyByText(r action.Revert) string {
 	if r.ApplyBy == nil {
 		return "the deadline"
 	}
@@ -515,12 +517,12 @@ const taskWidenPointer = "You can include other agents' changes in this task on 
 // unknown one, on preview_revert and request_revert alike.
 func notOwnScope(scope action.Scope) error {
 	kind := strings.ToLower(string(scope.Kind))
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
 			"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
 				"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
 				"a person can revert any change, run or task on the revert page that agent's request opens", kind, scope.ID, kind),
-		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
+		NextSteps: []toolresult.NextStep{callTool(toolListRuns, map[string]any{},
 			"This id is not one of your runs or changes; list your runs.")},
 	}
 }
@@ -529,13 +531,13 @@ func notOwnScope(scope action.Scope) error {
 // TASK, the same answer whether or not other agents ran in it. The message
 // names no agent: this agent cannot see who ran in the task (N12-R1).
 func notOwnTask(scope action.Scope) error {
-	return &mcp.ToolError{
+	return &toolresult.ToolError{
 		Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
 			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
 				"check the task id in list_runs", scope.ID),
 		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, ask an agent that ran in it "+
 			"to request the revert: you can include the other agents' changes on its signing page.", scope.ID),
-		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
+		NextSteps: []toolresult.NextStep{callTool(toolListRuns, map[string]any{},
 			"This task has none of your runs; list your runs.")},
 	}
 }
@@ -551,13 +553,13 @@ func scopeRefused(scope action.Scope, err error) error {
 		return nil
 	}
 	switch detail {
-	case guard.ScopeNotOwnChange, guard.ScopeNotOwnRun:
+	case guardmodel.ScopeNotOwnChange, guardmodel.ScopeNotOwnRun:
 		return notOwnScope(scope)
-	case guard.ScopeNotOwnTask:
+	case guardmodel.ScopeNotOwnTask:
 		return notOwnTask(scope)
-	case guard.ScopeFilter:
+	case guardmodel.ScopeFilter:
 		return scopeFilterRefused(hint)
-	case guard.ScopeFilterCap:
+	case guardmodel.ScopeFilterCap:
 		return scopeFilterCapped()
 	}
 	return &ArgumentError{Message: "the revert scope was refused: " + hint}
@@ -588,7 +590,7 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope action.Sc
 	if errors.Is(err, action.ErrEmptyProposal) {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if code, ok := ledgerCode(err); ok && code == guard.CodeNothingToRevert {
+	if code, ok := ledgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
 	}
 	if ctx.Err() != nil {
@@ -608,7 +610,7 @@ type revertLink struct {
 	// File is the request beside a hash link in URL; nil otherwise.
 	File    *links.RequestFile
 	Message string
-	Links   []mcp.Link
+	Links   []toolresult.Link
 	// Headline is the revert in one line (revertHeadline); long and short
 	// are its two links, for the person's notification.
 	Headline    string
@@ -625,7 +627,7 @@ type revertLink struct {
 // the message to show the person verbatim: the scope, what it restores and
 // skips, why, the expiry, and for a large plan that they sign it once, then
 // the link.
-func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink, error) {
+func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink, error) {
 	req := revertRequestOf(r)
 	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
 	if err != nil {
@@ -670,7 +672,7 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 
 // bindingHeadline is the headline of a revert not widened, from its
 // binding: the scope and filters it covers and its totals.
-func bindingHeadline(b revert.Binding, r ledger.Revert) string {
+func bindingHeadline(b revert.Binding, r action.Revert) string {
 	filters := filterText(action.Scope{Runs: b.Select.Runs, Tables: b.Select.Tables})
 	return fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent).",
 		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped)
@@ -678,13 +680,13 @@ func bindingHeadline(b revert.Binding, r ledger.Revert) string {
 
 // widenedHeadline is the headline of a revert the person widened: totals
 // only, no scope (RS-5, LP-3).
-func widenedHeadline(r ledger.Revert) string {
+func widenedHeadline(r action.Revert) string {
 	return fmt.Sprintf("Revert widened by the person: %d rows to restore.", r.Rows)
 }
 
 // revertHeadline is r's headline for list_pending and the person's
 // notifications, built from what Postgres returned.
-func revertHeadline(r ledger.Revert) (string, error) {
+func revertHeadline(r action.Revert) (string, error) {
 	if r.Widened {
 		return widenedHeadline(r), nil
 	}
@@ -698,7 +700,7 @@ func revertHeadline(r ledger.Revert) (string, error) {
 // notifyRevert tells the person, through the Notifier, that r waits
 // for their signature (LP-2). A failed notice is logged; it never fails the
 // call.
-func (s *Service) notifyRevert(ctx context.Context, r ledger.Revert, n revertLink) {
+func (s *Service) notifyRevert(ctx context.Context, r action.Revert, n revertLink) {
 	sent := RevertNotice{RevertID: r.ID, Agent: s.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
 	if !r.Widened {
 		sent.Intent, sent.RevertURL, sent.ShortURL = r.Intent, n.long, n.short

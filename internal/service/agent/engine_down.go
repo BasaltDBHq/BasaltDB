@@ -3,14 +3,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"runtime"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
@@ -58,7 +57,7 @@ func (d EngineDown) gaveUpMessage() string {
 	if !ok {
 		return ""
 	}
-	if _, holding := laststop.StartHoldOffUntil(lastStopRecord(stop), d.ConfigPath, d.Now()); !holding {
+	if _, holding := theHost().StartHoldOffUntil(stop, d.ConfigPath, d.Now()); !holding {
 		return ""
 	}
 	return engineGaveUpMessage(stop, d.ConfigPath, d.Now())
@@ -66,12 +65,12 @@ func (d EngineDown) gaveUpMessage() string {
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
 // answering as above.
-func (d EngineDown) Tools() []mcp.Tool {
+func (d EngineDown) Tools() []Tool {
 	if d.Log == nil || d.Now == nil {
 		panic("agent: engine-down tools need a logger and a clock")
 	}
 	contracts := mcpcontract.MustLoad()
-	out := make([]mcp.Tool, 0, len(contracts))
+	out := make([]Tool, 0, len(contracts))
 	for _, c := range contracts {
 		if c.Status != mcpcontract.StatusImplemented && c.Name != toolStatus {
 			continue
@@ -80,7 +79,7 @@ func (d EngineDown) Tools() []mcp.Tool {
 		if c.Name == toolStatus {
 			call = d.status
 		}
-		out = append(out, mcp.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
+		out = append(out, Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
 	}
 	return out
 }
@@ -113,8 +112,8 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 // logged under its error id.
 // retry is the tool an agent-operated engine's agent calls again once it
 // started the engine; "" calls status.
-func (d EngineDown) unreachableError(tool, retry, message string) (*mcp.ToolError, error) {
-	te := &mcp.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
+func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.ToolError, error) {
+	te := &toolresult.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
 	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
 	b := NewSteps()
 	te.PersonMessage = engineUnreachableSteps(b, d.commands(), retry)
@@ -126,43 +125,20 @@ func (d EngineDown) unreachableError(tool, retry, message string) (*mcp.ToolErro
 	return te, nil
 }
 
-// EngineDownServer is what basalt mcp answers with itself: the engine-down
-// tools, and the answer to a request the engine took but closed the
-// connection without answering.
-type EngineDownServer struct {
-	*mcp.Server
-	down EngineDown
-}
-
-// Server is the engine-down tools served under info.
-func (d EngineDown) Server(info mcp.Info) EngineDownServer {
-	return EngineDownServer{Server: mcp.NewServer(info, d.Tools()...), down: d}
-}
-
-// Abandoned answers a request the engine took and never answered (it
-// closed the connection: it stopped, or it refused the peer), always with
-// an error and never by running the call again: a tools/call gets UNAVAILABLE
-// ENGINE_UNREACHABLE with its steps, any other request a JSON-RPC error. A
-// notification gets nothing.
-func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	req, ok := mcp.RequestOf(line)
-	if !ok {
-		return nil
-	}
+// Abandoned is the answer to a request the engine took and never answered
+// (it closed the connection: it stopped, or it refused the peer): a
+// tools/call gets UNAVAILABLE ENGINE_UNREACHABLE with its steps, and any
+// other request an error with only the message. It never runs the call
+// again. The error is nil only when the answer is the tool error; a nil
+// ToolError means the caller answers with the plain message.
+func (d EngineDown) Abandoned(tool string) (*toolresult.ToolError, string) {
 	const message = "the basalt engine closed the connection before answering, so the call may or may not have run; call status, and read before you write again"
-	if req.Method != "tools/call" {
-		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, message)
-	}
-	var p struct {
-		Name string `json:"name"`
-	}
-	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
 	// The call may have run: the agent checks status, never repeats it.
-	te, err := s.down.unreachableError(p.Name, "", message)
-	if err != nil {
-		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, message)
+	te, err := d.unreachableError(tool, "", message)
+	if err == nil {
+		return te, message
 	}
-	return mcp.WriteToolError(out, req.ID, te)
+	return nil, message
 }
 
 // commands are d's commands for the operatedBy of the config the shim
@@ -174,8 +150,8 @@ func (d EngineDown) commands() Commands {
 	return d.Commands.OperatedBy(d.Config.OperatedBy)
 }
 
-func (d EngineDown) invalidArgument(err error) *mcp.ToolError {
-	te := &mcp.ToolError{Code: CodeInvalidArgument, Message: err.Error()}
+func (d EngineDown) invalidArgument(err error) *toolresult.ToolError {
+	te := &toolresult.ToolError{Code: CodeInvalidArgument, Message: err.Error()}
 	b := NewSteps()
 	invalidArgumentSteps(b, te, failure{tool: toolStatus})
 	te.NextSteps, _ = b.Build() // one fixed step: it cannot fail

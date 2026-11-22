@@ -6,10 +6,11 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -97,14 +98,14 @@ func (a previewRevertArgs) scope() (action.Scope, error) {
 }
 
 type revertPreviewResult struct {
-	Scope         string          `json:"scope"`
-	ScopeID       string          `json:"scopeId"`
-	Rows          int             `json:"rows"`
-	Skipped       int             `json:"skipped"`
-	Items         []revertLineDTO `json:"items"`
-	NextCursor    string          `json:"nextCursor,omitempty"`
-	PersonMessage string          `json:"personMessage,omitempty"`
-	NextSteps     []mcp.NextStep  `json:"nextSteps,omitempty"`
+	Scope         string                `json:"scope"`
+	ScopeID       string                `json:"scopeId"`
+	Rows          int                   `json:"rows"`
+	Skipped       int                   `json:"skipped"`
+	Items         []revertLineDTO       `json:"items"`
+	NextCursor    string                `json:"nextCursor,omitempty"`
+	PersonMessage string                `json:"personMessage,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 }
 
 // revertLineDTO is one revert line as the tool returns it: the line's
@@ -227,28 +228,28 @@ func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
 }
 
 type requestRevertResult struct {
-	RevertID      string             `json:"revertId"`
-	Status        string             `json:"status"`
-	Scope         string             `json:"scope,omitempty"`
-	ScopeID       string             `json:"scopeId,omitempty"`
-	Widened       bool               `json:"widened,omitempty"`
-	Intent        string             `json:"intent"`
-	Batched       bool               `json:"batched"`
-	Rows          int                `json:"rows"`
-	Skipped       int                `json:"skipped"`
-	ExpiresAt     string             `json:"expiresAt"`
-	RevertURL     string             `json:"revertUrl,omitempty"`
-	RequestFile   *links.RequestFile `json:"requestFile,omitempty"`
-	PersonMessage string             `json:"personMessage"`
-	Links         []mcp.Link         `json:"links,omitempty"`
-	ChangeID      string             `json:"changeId,omitempty"`
-	ApplyBy       string             `json:"applyBy,omitempty"`
-	Progress      *revertProgressDTO `json:"progress,omitempty"`
-	RejectedAt    string             `json:"rejectedAt,omitempty"`
-	Note          string             `json:"note,omitempty"`
-	Receipt       string             `json:"receipt,omitempty"`
-	NoReceipt     string             `json:"noReceipt,omitempty"`
-	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
+	RevertID      string                `json:"revertId"`
+	Status        string                `json:"status"`
+	Scope         string                `json:"scope,omitempty"`
+	ScopeID       string                `json:"scopeId,omitempty"`
+	Widened       bool                  `json:"widened,omitempty"`
+	Intent        string                `json:"intent"`
+	Batched       bool                  `json:"batched"`
+	Rows          int                   `json:"rows"`
+	Skipped       int                   `json:"skipped"`
+	ExpiresAt     string                `json:"expiresAt"`
+	RevertURL     string                `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile    `json:"requestFile,omitempty"`
+	PersonMessage string                `json:"personMessage"`
+	Links         []toolresult.Link     `json:"links,omitempty"`
+	ChangeID      string                `json:"changeId,omitempty"`
+	ApplyBy       string                `json:"applyBy,omitempty"`
+	Progress      *revertProgressDTO    `json:"progress,omitempty"`
+	RejectedAt    string                `json:"rejectedAt,omitempty"`
+	Note          string                `json:"note,omitempty"`
+	Receipt       string                `json:"receipt,omitempty"`
+	NoReceipt     string                `json:"noReceipt,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 }
 
 type revertProgressDTO struct {
@@ -337,25 +338,25 @@ type revertPlanArgs struct {
 }
 
 type revertPlanResult struct {
-	RevertID      string              `json:"revertId"`
-	Status        string              `json:"status"`
-	Scope         string              `json:"scope,omitempty"`
-	ScopeID       string              `json:"scopeId,omitempty"`
-	Widened       bool                `json:"widened,omitempty"`
-	Lines         int                 `json:"lines"`
-	Restored      int                 `json:"restored"`
-	Skipped       int                 `json:"skipped"`
-	Pending       int                 `json:"pending"`
-	ExpiresAt     string              `json:"expiresAt"`
-	ApplyBy       string              `json:"applyBy,omitempty"`
-	MaxBatch      int                 `json:"maxBatch"`
-	RevertURL     string              `json:"revertUrl,omitempty"`
-	RequestFile   *links.RequestFile  `json:"requestFile,omitempty"`
-	PersonMessage string              `json:"personMessage,omitempty"`
-	Links         []mcp.Link          `json:"links,omitempty"`
-	Items         []revertPlanItemDTO `json:"items"`
-	NextCursor    string              `json:"nextCursor,omitempty"`
-	NextSteps     []mcp.NextStep      `json:"nextSteps,omitempty"`
+	RevertID      string                `json:"revertId"`
+	Status        string                `json:"status"`
+	Scope         string                `json:"scope,omitempty"`
+	ScopeID       string                `json:"scopeId,omitempty"`
+	Widened       bool                  `json:"widened,omitempty"`
+	Lines         int                   `json:"lines"`
+	Restored      int                   `json:"restored"`
+	Skipped       int                   `json:"skipped"`
+	Pending       int                   `json:"pending"`
+	ExpiresAt     string                `json:"expiresAt"`
+	ApplyBy       string                `json:"applyBy,omitempty"`
+	MaxBatch      int                   `json:"maxBatch"`
+	RevertURL     string                `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile    `json:"requestFile,omitempty"`
+	PersonMessage string                `json:"personMessage,omitempty"`
+	Links         []toolresult.Link     `json:"links,omitempty"`
+	Items         []revertPlanItemDTO   `json:"items"`
+	NextCursor    string                `json:"nextCursor,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 }
 
 // revertPlanItemDTO is one line of a batched plan: its number, what
@@ -406,7 +407,7 @@ func (h handlers) revertPlan(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	params := RevertPlanParams{Params: args.Params, RevertID: uuid.MustParse(args.RevertID)}
 	if args.Pending {
-		params.Outcome = ledger.OutcomePending
+		params.Outcome = guardmodel.OutcomePending
 	}
 	params.ApplyDefaultsAndClamp()
 	p, err := h.svc.RevertPlan(ctx, params)
@@ -426,15 +427,15 @@ type applyRevertBatchArgs struct {
 }
 
 type batchResultDTO struct {
-	RevertID      string             `json:"revertId"`
-	Batch         int                `json:"batch"`
-	Status        string             `json:"status"`
-	Restored      int                `json:"restored"`
-	Skipped       int                `json:"skipped"`
-	Pending       int                `json:"pending"`
-	Items         []action.BatchItem `json:"items"`
-	PersonMessage string             `json:"personMessage,omitempty"`
-	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
+	RevertID      string                `json:"revertId"`
+	Batch         int                   `json:"batch"`
+	Status        string                `json:"status"`
+	Restored      int                   `json:"restored"`
+	Skipped       int                   `json:"skipped"`
+	Pending       int                   `json:"pending"`
+	Items         []action.BatchItem    `json:"items"`
+	PersonMessage string                `json:"personMessage,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 }
 
 func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (any, error) {

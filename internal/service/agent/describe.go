@@ -15,9 +15,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -29,18 +30,18 @@ import (
 type Catalog interface {
 	// Relations lists the readable relations by schema and name, and counts
 	// the ones in user schemas the agent cannot read.
-	Relations(ctx context.Context) ([]pgcatalog.Relation, int, error)
+	Relations(ctx context.Context) ([]CatalogRelation, int, error)
 	// Find returns schema.name, or false when it is absent or unreadable.
-	Find(ctx context.Context, schema, name string) (pgcatalog.Relation, bool, error)
+	Find(ctx context.Context, schema, name string) (CatalogRelation, bool, error)
 	// Describe reads one relation Find or Relations returned.
-	Describe(ctx context.Context, oid uint32) (pgcatalog.Detail, error)
+	Describe(ctx context.Context, oid uint32) (CatalogDetail, error)
 	// Guarded reports whether basalt init guards the relation, so its
 	// writes run under the write policy; false where the guard predates
 	// the record of it.
 	Guarded(ctx context.Context, oid uint32) (bool, error)
 	// Search finds readable relations by name, column or comment; exclude
 	// lists columns never matched or named.
-	Search(ctx context.Context, q string, exclude []pgcatalog.ColumnKey, after *pgcatalog.SearchCursor, limit int) ([]pgcatalog.Match, error)
+	Search(ctx context.Context, q string, exclude []CatalogColumnKey, after *CatalogSearchCursor, limit int) ([]CatalogMatch, error)
 	// Structure is the sorted structure lines the catalog fingerprint hashes.
 	Structure(ctx context.Context) ([]string, error)
 	// Database is the database the credential connects to.
@@ -69,21 +70,21 @@ type noCatalog struct{}
 
 var errNoCatalog = errors.New("describe: no catalog configured")
 
-func (noCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
+func (noCatalog) Relations(context.Context) ([]CatalogRelation, int, error) {
 	return nil, 0, errNoCatalog
 }
 
-func (noCatalog) Find(context.Context, string, string) (pgcatalog.Relation, bool, error) {
-	return pgcatalog.Relation{}, false, errNoCatalog
+func (noCatalog) Find(context.Context, string, string) (CatalogRelation, bool, error) {
+	return CatalogRelation{}, false, errNoCatalog
 }
 
-func (noCatalog) Describe(context.Context, uint32) (pgcatalog.Detail, error) {
-	return pgcatalog.Detail{}, errNoCatalog
+func (noCatalog) Describe(context.Context, uint32) (CatalogDetail, error) {
+	return CatalogDetail{}, errNoCatalog
 }
 
 func (noCatalog) Guarded(context.Context, uint32) (bool, error) { return false, errNoCatalog }
 
-func (noCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatalog.SearchCursor, int) ([]pgcatalog.Match, error) {
+func (noCatalog) Search(context.Context, string, []CatalogColumnKey, *CatalogSearchCursor, int) ([]CatalogMatch, error) {
 	return nil, errNoCatalog
 }
 
@@ -189,16 +190,16 @@ type OtherSchemas struct {
 
 // Overview is describe's first form.
 type Overview struct {
-	Store         StoreInfo      `json:"store"`
-	Fingerprint   string         `json:"fingerprint"`
-	Counts        Counts         `json:"counts"`
-	Limits        OverviewLimits `json:"limits"`
-	Resources     []SearchItem   `json:"resources,omitzero"`
-	Schemas       []SchemaCount  `json:"schemas,omitzero"`
-	OtherSchemas  *OtherSchemas  `json:"otherSchemas,omitempty"`
-	PersonMessage string         `json:"personMessage,omitempty"`
-	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
-	Update        *UpdateInfo    `json:"update,omitempty"`
+	Store         StoreInfo             `json:"store"`
+	Fingerprint   string                `json:"fingerprint"`
+	Counts        Counts                `json:"counts"`
+	Limits        OverviewLimits        `json:"limits"`
+	Resources     []SearchItem          `json:"resources,omitzero"`
+	Schemas       []SchemaCount         `json:"schemas,omitzero"`
+	OtherSchemas  *OtherSchemas         `json:"otherSchemas,omitempty"`
+	PersonMessage string                `json:"personMessage,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
+	Update        *UpdateInfo           `json:"update,omitempty"`
 }
 
 // DescribeSearchParams are a search's validated arguments.
@@ -337,7 +338,7 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 }
 
 // schemaCounts counts the visible tables of each schema, by schema name.
-func schemaCounts(visible []pgcatalog.Relation) []SchemaCount {
+func schemaCounts(visible []CatalogRelation) []SchemaCount {
 	var out []SchemaCount
 	for _, r := range visible {
 		if n := len(out); n > 0 && out[n-1].Schema == r.Schema {
@@ -402,7 +403,7 @@ func plural(n int, one, many string) string {
 // describeNotFound is NOT_FOUND for a resource that does not exist and for
 // one the agent cannot read: the same answer, so names cannot be probed.
 func describeNotFound(resource string) error {
-	return &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
+	return &toolresult.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
 		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, maxTableChars))}
 }
 
@@ -436,7 +437,7 @@ func searchTerm(resource string) string {
 // DescribeSearch returns one page of the relations matching p.Query, never
 // matching or naming a SECRET column.
 func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (pagination.Page[SearchItem], error) {
-	var after *pgcatalog.SearchCursor
+	var after *CatalogSearchCursor
 	if p.Cursor != "" {
 		c, err := decodeSearchCursor(p.Cursor)
 		if err != nil {
@@ -448,9 +449,9 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
-	exclude := make([]pgcatalog.ColumnKey, 0, len(secrets))
+	exclude := make([]CatalogColumnKey, 0, len(secrets))
 	for _, r := range secrets {
-		exclude = append(exclude, pgcatalog.ColumnKey{OID: r.TableOID, Attnum: r.Attnum})
+		exclude = append(exclude, CatalogColumnKey{OID: r.TableOID, Attnum: r.Attnum})
 	}
 	matches, err := s.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
 	if err != nil {
@@ -460,16 +461,16 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 	if len(matches) > p.Limit {
 		matches = matches[:p.Limit]
 		last := matches[len(matches)-1]
-		page.NextCursor = encodeSearchCursor(pgcatalog.SearchCursor{Rank: last.Rank, Schema: last.Schema, Name: last.Name})
+		page.NextCursor = encodeSearchCursor(CatalogSearchCursor{Rank: last.Rank, Schema: last.Schema, Name: last.Name})
 	}
 	page.Items = make([]SearchItem, 0, len(matches))
 	for _, m := range matches {
-		page.Items = append(page.Items, searchItem(m.Relation, m.Matched))
+		page.Items = append(page.Items, searchItem(m.CatalogRelation, m.Matched))
 	}
 	return page, nil
 }
 
-func searchItem(r pgcatalog.Relation, matched string) SearchItem {
+func searchItem(r CatalogRelation, matched string) SearchItem {
 	access := r.Privileges
 	if access == nil {
 		access = []string{}
@@ -490,7 +491,7 @@ type searchCursorKey struct {
 // searchRanks is how many ranks Search has (exact table name to comment).
 const searchRanks = 6
 
-func encodeSearchCursor(c pgcatalog.SearchCursor) string {
+func encodeSearchCursor(c CatalogSearchCursor) string {
 	raw, err := json.Marshal(searchCursorKey(c))
 	if err != nil {
 		return ""
@@ -499,17 +500,17 @@ func encodeSearchCursor(c pgcatalog.SearchCursor) string {
 }
 
 // decodeSearchCursor reads a cursor describe returned for a search.
-func decodeSearchCursor(cursor string) (pgcatalog.SearchCursor, error) {
+func decodeSearchCursor(cursor string) (CatalogSearchCursor, error) {
 	stale := &ArgumentError{Message: "invalid arguments: the cursor is not one describe returned for a search", Reason: ReasonStaleCursor}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return pgcatalog.SearchCursor{}, stale
+		return CatalogSearchCursor{}, stale
 	}
 	var k searchCursorKey
 	if json.Unmarshal(raw, &k) != nil || k.Rank < 0 || k.Rank >= searchRanks || k.Schema == "" || k.Name == "" {
-		return pgcatalog.SearchCursor{}, stale
+		return CatalogSearchCursor{}, stale
 	}
-	return pgcatalog.SearchCursor(k), nil
+	return CatalogSearchCursor(k), nil
 }
 
 // DescribeResource returns one table as the agent may see it, or only its
@@ -573,12 +574,12 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 // and columns): a column the agent cannot SELECT or classed SECRET is not
 // listed, and every index, key and expression that touches one is left out
 // whole and counted. classes are the columns' classes, in column order.
-func hideColumns(d pgcatalog.Detail, classes []piidict.Class) ResourceDetail {
+func hideColumns(d CatalogDetail, classes []piidict.Class) ResourceDetail {
 	hidden := map[int16]bool{}
 	names := map[int16]string{}
 	for i, c := range d.Columns {
 		names[c.Attnum] = c.Name
-		if !c.Selectable || (i < len(classes) && classes[i].Class == guard.ClassSecret) {
+		if !c.Selectable || (i < len(classes) && classes[i].Class == guardmodel.ClassSecret) {
 			hidden[c.Attnum] = true
 		}
 	}
@@ -634,7 +635,7 @@ func classAt(classes []piidict.Class, i int) piidict.Class {
 	return piidict.Unclassified
 }
 
-func visibleField(c pgcatalog.Column, class piidict.Class, expressionHidden bool) Field {
+func visibleField(c CatalogColumn, class piidict.Class, expressionHidden bool) Field {
 	f := Field{
 		Name: c.Name, Type: c.Type, Nullable: c.Nullable, Generated: c.Generated,
 		Comment: trimComment(c.Comment, resourceCommentMax), PII: FieldPII{Class: class.Class, EntityType: class.EntityType},
@@ -649,7 +650,7 @@ func visibleField(c pgcatalog.Column, class piidict.Class, expressionHidden bool
 	return f
 }
 
-func foreignKey(k pgcatalog.Key, names map[int16]string) ForeignKeyInfo {
+func foreignKey(k CatalogKey, names map[int16]string) ForeignKeyInfo {
 	fk := ForeignKeyInfo{
 		Direction: "INCOMING", Columns: make([]string, 0, len(k.Attnums)), Table: printedName(k.OtherSchema, k.OtherTable),
 		OnDelete: fkAction(k.OnDelete), OnUpdate: fkAction(k.OnUpdate),
@@ -666,7 +667,7 @@ func foreignKey(k pgcatalog.Key, names map[int16]string) ForeignKeyInfo {
 // fkAction is a catalog action (SET NULL) as the contract spells it.
 func fkAction(a string) string { return strings.ReplaceAll(a, " ", "_") }
 
-func resourceStats(d pgcatalog.Detail) *ResourceStats {
+func resourceStats(d CatalogDetail) *ResourceStats {
 	st := &ResourceStats{
 		EstimatedRows: d.EstimatedRows, TableBytes: d.Stats.TableBytes, TotalBytes: d.Stats.TotalBytes,
 		SeqScans: d.Stats.SeqScans, IndexScans: d.Stats.IndexScans,

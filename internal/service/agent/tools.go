@@ -7,15 +7,27 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
+
+// Tool is one tool the agent serves: its listing and its handler. The
+// inbound adapter turns it into the protocol's own tool (its fields match,
+// so a conversion carries them over). InputSchema is the JSON Schema of the
+// arguments. Call returns a value rendered as JSON text, or an error; a
+// *toolresult.ToolError keeps its code on the wire.
+type Tool struct {
+	Name        string
+	Description string
+	InputSchema map[string]any
+	Call        func(ctx context.Context, args json.RawMessage) (any, error)
+}
 
 // StatusApplied is the status of an applied write.
 const StatusApplied = "APPLIED"
@@ -25,12 +37,12 @@ const StatusApplied = "APPLIED"
 // input schema, and query and write only for a store that speaks SQL
 // (CONTRACT.md, Stores). Handlers parse, validate, make one service call
 // and render.
-func Tools(svc *Service) []mcp.Tool {
+func Tools(svc *Service) []Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	h := handlers{svc: svc}
-	tools := []mcp.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
+	tools := []Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
 	if speaksSQL(svc.Store.Kind()) {
 		tools = append(tools,
 			contractTool("query", h.wrap("query", h.query)),
@@ -59,12 +71,12 @@ func speaksSQL(kind action.StoreKind) bool {
 
 // contractTool builds a tool from its contract. A missing contract is a
 // build defect: the contract test keeps served tools and contracts aligned.
-func contractTool(name string, call func(context.Context, json.RawMessage) (any, error)) mcp.Tool {
+func contractTool(name string, call func(context.Context, json.RawMessage) (any, error)) Tool {
 	c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 	if !ok {
 		panic("agent: no contract for tool " + name)
 	}
-	return mcp.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: call}
+	return Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: call}
 }
 
 type handlers struct {
@@ -164,11 +176,11 @@ type runStartArgs struct {
 }
 
 type runStartResult struct {
-	RunID     string        `json:"runId"`
-	TaskID    string        `json:"taskId"`
-	Intent    string        `json:"intent"`
-	StartedAt string        `json:"startedAt"`
-	Warnings  []mcp.Warning `json:"warnings,omitempty"`
+	RunID     string               `json:"runId"`
+	TaskID    string               `json:"taskId"`
+	Intent    string               `json:"intent"`
+	StartedAt string               `json:"startedAt"`
+	Warnings  []toolresult.Warning `json:"warnings,omitempty"`
 }
 
 func (h handlers) runStart(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -193,12 +205,12 @@ type queryArgs struct {
 }
 
 type queryResult struct {
-	ChangeID   string           `json:"changeId"`
-	Columns    []columnDTO      `json:"columns"`
-	Rows       []map[string]any `json:"rows"`
-	RowCount   int              `json:"rowCount"`
-	DurationMs int64            `json:"durationMs"`
-	Warnings   []mcp.Warning    `json:"warnings,omitempty"`
+	ChangeID   string               `json:"changeId"`
+	Columns    []columnDTO          `json:"columns"`
+	Rows       []map[string]any     `json:"rows"`
+	RowCount   int                  `json:"rowCount"`
+	DurationMs int64                `json:"durationMs"`
+	Warnings   []toolresult.Warning `json:"warnings,omitempty"`
 }
 
 type columnDTO struct {
@@ -252,14 +264,14 @@ type writeArgs struct {
 }
 
 type writeResult struct {
-	ChangeID   string           `json:"changeId"`
-	RunID      string           `json:"runId"`
-	Op         string           `json:"op"`
-	Rows       int              `json:"rows"`
-	DurationMs int64            `json:"durationMs"`
-	Status     string           `json:"status"`
-	Returning  []map[string]any `json:"returning,omitempty"`
-	Warnings   []mcp.Warning    `json:"warnings,omitempty"`
+	ChangeID   string               `json:"changeId"`
+	RunID      string               `json:"runId"`
+	Op         string               `json:"op"`
+	Rows       int                  `json:"rows"`
+	DurationMs int64                `json:"durationMs"`
+	Status     string               `json:"status"`
+	Returning  []map[string]any     `json:"returning,omitempty"`
+	Warnings   []toolresult.Warning `json:"warnings,omitempty"`
 	// PersonMessage, Receipt and NoReceipt: a held write's receipt
 	// (CONTRACT.md, Vault channel, Receipts).
 	PersonMessage string `json:"personMessage,omitempty"`
@@ -283,7 +295,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err := decodeArgs(raw, &args); err != nil {
 		// An empty or missing intent is the contract's INTENT_REQUIRED.
 		if intentMissing(raw) {
-			return nil, &mcp.ToolError{Code: CodeIntentRequired, Message: "write needs an intent: why this change is made"}
+			return nil, &toolresult.ToolError{Code: CodeIntentRequired, Message: "write needs an intent: why this change is made"}
 		}
 		return nil, err
 	}
@@ -339,17 +351,17 @@ func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, err
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	params := ledger.ChangeListParams{Params: args.Params, RunID: uuid.MustParse(args.RunID)}
+	params := action.ChangeListParams{Params: args.Params, RunID: uuid.MustParse(args.RunID)}
 	params.ApplyDefaultsAndClamp()
 	hist, err := h.svc.History(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]ledger.Record, 0, len(hist.Page.Items))
+	items := make([]any, 0, len(hist.Page.Items))
 	for _, ch := range hist.Page.Items {
-		items = append(items, ledger.RecordFromDomain(ch, hist.Rows[ch.ID]))
+		items = append(items, theHost().Record(ch, hist.Rows[ch.ID]))
 	}
-	return pagination.ToMCP(pagination.Page[ledger.Record]{Items: items, NextCursor: hist.Page.NextCursor}), nil
+	return pagination.ToMCP(pagination.Page[any]{Items: items, NextCursor: hist.Page.NextCursor}), nil
 }
 
 // paramValues converts JSON-decoded parameters for the store's driver: integral numbers

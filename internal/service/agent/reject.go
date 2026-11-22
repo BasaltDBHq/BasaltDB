@@ -6,12 +6,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
+	"github.com/google/uuid"
 )
 
 // The revert page's reject route (CONTRACT.md, Revert, Rescope, widen and
@@ -67,7 +67,7 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 }
 
 // rejectNote is the person's note as Postgres takes it ("" for none): 1 to
-// guard.MaxRejectNote characters of text. The agent reads it and may show
+// guardmodel.MaxRejectNote characters of text. The agent reads it and may show
 // it to the person, so no control character other than a newline or a tab,
 // and no bidirectional control that could make it read otherwise.
 func rejectNote(note *string) (string, error) {
@@ -75,7 +75,7 @@ func rejectNote(note *string) (string, error) {
 		return "", nil
 	}
 	n := utf8.RuneCountInString(*note)
-	if n == 0 || n > guard.MaxRejectNote || strings.IndexFunc(*note, refusedInNote) >= 0 {
+	if n == 0 || n > guardmodel.MaxRejectNote || strings.IndexFunc(*note, refusedInNote) >= 0 {
 		return "", &ArgumentError{Message: "note must be 1 to 500 characters of text, with no control characters other than newlines and tabs"}
 	}
 	return *note, nil
@@ -106,7 +106,7 @@ func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 			s.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
 		}
 	}
-	if vault.AfterAnswer(ctx, revoke) {
+	if theHost().AfterAnswer(ctx, revoke) {
 		return
 	}
 	revoke()
@@ -118,20 +118,20 @@ func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 // reject without a token is one fixed answer. A revert Postgres no longer
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
-func (s *Service) rejectError(r ledger.Revert, heldToken bool, err error) error {
+func (s *Service) rejectError(r action.Revert, heldToken bool, err error) error {
 	code, _ := ledgerCode(err)
 	detail := storeDetail(err)
 	switch {
-	case code == guard.CodeRevertInvalid && detail == guard.RevertWidenRefused && heldToken:
+	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused && heldToken:
 		return s.personScopeGone(r)
-	case code == guard.CodeRevertInvalid && detail == guard.RevertWidenRefused:
+	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused:
 		return rejectRefused()
-	case code == guard.CodeRevertInvalid && detail == revertNotFoundDetail:
+	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
-	case code == guard.CodeRevertExpired:
+	case code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
-	case code == guard.CodeRevertInvalid:
-		return &PageError{ToolError: &mcp.ToolError{
+	case code == guardmodel.CodeRevertInvalid:
+		return &PageError{ToolError: &toolresult.ToolError{
 			Code:          CodeRevertInvalid,
 			Message:       "the revert can no longer be rejected: it was signed or rejected meanwhile",
 			PersonMessage: "This revert can no longer be rejected: it was signed or rejected meanwhile.",
@@ -148,7 +148,7 @@ const revertNotFoundDetail = "no such revert"
 // widen only the page holding the rotated link can reject, and only while
 // the engine holds the token (it lives in memory).
 func rejectRefused() error {
-	return &PageError{ToolError: &mcp.ToolError{
+	return &PageError{ToolError: &toolresult.ToolError{
 		Code:    CodeRevertInvalid,
 		Message: "the reject was refused: after the person widened this revert, only the page that widened it can reject it; nothing changed",
 		PersonMessage: "This reject was refused, and nothing changed. The engine no longer holds the scope you chose (it restarted): " +

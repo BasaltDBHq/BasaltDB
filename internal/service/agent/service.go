@@ -15,11 +15,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -36,7 +35,7 @@ const (
 )
 
 // History is one page of a run's change records with the rows each wrote.
-type History = action.History[ledger.Change, ledger.RowChange]
+type History = action.History[action.Change, action.RowChange]
 
 // Deps are a Service's dependencies, all required.
 type Deps struct {
@@ -113,7 +112,7 @@ type Deps struct {
 	// Update gives the newer release the engine knows of, from its daily
 	// check (CONTRACT.md, Update notice); optional, nil or a nil result
 	// when none.
-	Update func() *updatecheck.Notice
+	Update func() *UpdateNotice
 	// Portal reports the engine's last daily portal check for status
 	// (problem PORTAL_MISMATCH); status says nothing about the portal when
 	// nil.
@@ -264,7 +263,7 @@ type RunInfo struct {
 	StartedAt time.Time
 	// Warnings are what the person should hear about the setup, with the
 	// steps for it (GUARD_UPGRADE_AVAILABLE).
-	Warnings []mcp.Warning
+	Warnings []toolresult.Warning
 }
 
 // StartRun starts a run with intent. taskID joins a task another agent
@@ -302,7 +301,7 @@ type QueryParams struct {
 type QueryOutcome struct {
 	action.ReadResult
 	ChangeID uuid.UUID
-	Warnings []mcp.Warning
+	Warnings []toolresult.Warning
 }
 
 // Query checks sql against the policy, runs it read-only within the limits
@@ -335,7 +334,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 		s.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
 		// An engine failure, not the agent's SQL: INTERNAL even when a
 		// Postgres error (a map reload) caused it. The cause is logged above.
-		return QueryOutcome{}, &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
+		return QueryOutcome{}, &toolresult.ToolError{Code: CodeInternal, Message: "internal engine error"}
 	}
 	change, err := s.Store.RecordRead(ctx, action.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
@@ -368,7 +367,7 @@ type WriteOutcome struct {
 	Op    action.Op
 	// ApprovalID is set when the write applied under an approval.
 	ApprovalID uuid.UUID
-	Warnings   []mcp.Warning
+	Warnings   []toolresult.Warning
 	// Receipt is the approval's receipt when the write applied under one.
 	Receipt *Receipt
 }
@@ -412,7 +411,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		// hold's own, which carries the link just issued.
 		p.ApprovalID, p.RunID = id, run.ID
 		out, waitErr := s.applyApproved(ctx, p)
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		if errors.As(waitErr, &te) && te.Code == CodeApprovalRequired {
 			return WriteOutcome{}, err
 		}
@@ -437,7 +436,7 @@ func (s *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, erro
 }
 
 // History returns one page of a run's change records.
-func (s *Service) History(ctx context.Context, p ledger.ChangeListParams) (History, error) {
+func (s *Service) History(ctx context.Context, p action.ChangeListParams) (History, error) {
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
 		return History{}, err
 	}
@@ -445,7 +444,7 @@ func (s *Service) History(ctx context.Context, p ledger.ChangeListParams) (Histo
 }
 
 // ListRuns returns one page of the agent's own runs with what each did.
-func (s *Service) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (s *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	return s.Store.ListRuns(ctx, p)
 }
 
@@ -456,7 +455,7 @@ func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error)
 	}
 	run, err := s.Store.FindRun(ctx, id)
 	if errors.Is(err, action.ErrRunNotFound) {
-		return action.Run{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
+		return action.Run{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}
 	return run, err
 }

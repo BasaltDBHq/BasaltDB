@@ -60,7 +60,10 @@ type fakeProbe struct {
 
 func (p *fakeProbe) LedgerBytes(context.Context) (int64, error) { return p.ledger, p.ledgerErr }
 
-func (p *fakeProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return p.reinstalls, nil }
+func (p *fakeProbe) ReinstallNotice(_ context.Context, limit int) (string, bool, error) {
+	msg, ok := ledger.ReinstallPersonMessage(p.reinstalls, limit)
+	return msg, ok, nil
+}
 
 func (p *fakeProbe) GuardStatus(context.Context) (guard.Status, error) { return p.st, p.err }
 
@@ -541,7 +544,7 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server,
 	d.Setup = setup
 	d.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
-	return mcp.NewServer(mcp.Info{Name: "basalt"}, tools...), tools
+	return mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...), mcp.ToolsFrom(tools, WithMeta)
 }
 
 func serveCall(t *testing.T, srv *mcp.Server, tool string, args map[string]any) (map[string]any, bool) {
@@ -699,7 +702,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	cmds, err := NewCommands("bot", "/srv/basalt/engine.json", "linux")
 	require.NoError(t, err)
 	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)
+	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
 
 	served := make([]string, 0, len(down.Tools()))
 	for _, tool := range down.Tools() {
@@ -747,7 +750,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)
+	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
 
 	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, CodeUnavailable, reasonEngineUnreachable, "")
 	require.True(t, ok)
@@ -818,9 +821,9 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 // engineID is the id the test engine reports.
 const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"
 
-func recordOf(revoked bool) func(context.Context, string) (*guard.RecordedEngine, error) {
-	return func(_ context.Context, id string) (*guard.RecordedEngine, error) {
-		e := &guard.RecordedEngine{ID: id, RecordedAt: statusNow.Add(-48 * time.Hour)}
+func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error) {
+	return func(_ context.Context, _ string) (*EngineRecord, error) {
+		e := &EngineRecord{RecordedAt: statusNow.Add(-48 * time.Hour)}
 		if revoked {
 			at := statusNow.Add(-time.Hour)
 			e.RevokedAt = &at
@@ -861,7 +864,7 @@ func TestStatusEngineRecord(t *testing.T) {
 		"recorded":     {read: recordOf(false), want: EngineRecordStatus{State: engineRecorded, RecordedAt: recorded}},
 		"revoked":      {read: recordOf(true), want: EngineRecordStatus{State: engineRevoked, RecordedAt: recorded, RevokedAt: revokedAt}, code: problemEngineRevoked},
 		"not recorded": {read: notRecorded, want: EngineRecordStatus{State: engineNotRecorded}},
-		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*guard.RecordedEngine, error) {
+		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*EngineRecord, error) {
 			return nil, errors.New("relation does not exist")
 		}, want: EngineRecordStatus{State: engineUnknown}},
 		"no reader": {want: EngineRecordStatus{State: engineUnknown}},
@@ -943,7 +946,7 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 }
 
 // notRecorded is a database that holds no row for the engine.
-func notRecorded(context.Context, string) (*guard.RecordedEngine, error) {
+func notRecorded(context.Context, string) (*EngineRecord, error) {
 	return nil, nil //nolint:nilnil // a missing row is the answer, not an error
 }
 
@@ -1098,7 +1101,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Equal(t, problemEngineUnreachable, r.Problems[1].Code, "the manual step stays")
 	require.False(t, r.Ready)
 
-	var query mcp.Tool
+	var query Tool
 	for _, tool := range down.Tools() {
 		if tool.Name == "query" {
 			query = tool

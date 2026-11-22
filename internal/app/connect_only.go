@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -183,7 +185,7 @@ func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos s
 	if a.Setup == nil || !a.Setup.ConnectOnly() || cfg.Service() || os.Geteuid() == 0 {
 		return handoff.State{}, errors.New("basalt status collects only for a waiting connect-only agent of a same-user engine, and never as root")
 	}
-	keys, err := channel.LoadKeys(filepath.Join(cfg.StateDirFor(goos), channel.KeyFileName))
+	keys, err := keyfile.LoadKeys(filepath.Join(cfg.StateDirFor(goos), channel.KeyFileName))
 	if err != nil {
 		return handoff.State{}, fmt.Errorf("the engine's key cannot be read, so the address cannot be collected: %w", err)
 	}

@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -547,7 +549,7 @@ func slicesContains(list []string, v string) bool {
 // engineKeysOf loads the engine key init made for cfg.
 func engineKeysOf(t *testing.T, cfg string) *channel.EngineKeys {
 	t.Helper()
-	k, err := channel.LoadKeys(filepath.Join(filepath.Dir(cfg), stateDirName, "channel.json"))
+	k, err := keyfile.LoadKeys(filepath.Join(filepath.Dir(cfg), stateDirName, "channel.json"))
 	require.NoError(t, err)
 	return k
 }

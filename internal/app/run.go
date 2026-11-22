@@ -18,6 +18,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/pinfile"
+
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
@@ -885,7 +889,7 @@ func statePins(dir string, log *slog.Logger) upkeep.Pins {
 		log.Error("no state directory; ledger chain heads are pinned in memory only", "dir", dir, "err", err)
 		return &chainpin.Memory{}
 	}
-	return chainpin.File{Dir: dir}
+	return pinfile.File{Dir: dir}
 }
 
 // KeptSetAside reads the pins agent set aside after reinstalls from its
@@ -937,7 +941,7 @@ func linkSecrets(dir, agent string, log *slog.Logger) *links.Secrets {
 		log.Error("no state directory; short links last until the engine stops", "dir", dir, "err", err)
 		return links.NewSecrets(time.Now, rand.Reader)
 	}
-	s, err := links.OpenSecrets(filepath.Join(dir, agent+linkSecretsSuffix), time.Now, rand.Reader)
+	s, err := secretfile.Open(filepath.Join(dir, agent+linkSecretsSuffix), time.Now, rand.Reader)
 	if err != nil {
 		log.Error("link secrets unreadable; earlier short links stop working", "err", err)
 	}

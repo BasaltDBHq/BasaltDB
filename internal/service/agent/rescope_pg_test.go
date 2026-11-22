@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -135,7 +137,7 @@ func newRescopeEnv(t *testing.T) *rescopeEnv {
 // their file, and nothing else kept. wrap, when set, wraps the store.
 func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStore) {
 	t.Helper()
-	secrets, err := links.OpenSecrets(e.linksPath, time.Now, rand.Reader)
+	secrets, err := secretfile.Open(e.linksPath, time.Now, rand.Reader)
 	require.NoError(t, err)
 	e.svc = pgService(t, e.bot.URL,
 		withPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),

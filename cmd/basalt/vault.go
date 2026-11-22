@@ -8,6 +8,8 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -142,7 +144,7 @@ func localVault(cfg config.Config, stateDir string) (report, identity *agent.Vau
 	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) || !ownedByMe(path) {
 		return nil, nil
 	}
-	keys, err := channel.LoadKeys(path)
+	keys, err := app.ReadEngineKeys(path)
 	if err != nil {
 		return &agent.VaultStatus{State: string(vault.StateKeyError)}, nil
 	}

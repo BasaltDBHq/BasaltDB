@@ -1,6 +1,6 @@
 //go:build unix
 
-package channel
+package keyfile
 
 import (
 	"errors"

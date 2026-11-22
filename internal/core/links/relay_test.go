@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -41,7 +43,7 @@ func TestIssueRelayKeepsTheDerivedTokenAndPSK(t *testing.T) {
 	now := time.Date(2026, 11, 12, 7, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
 	path := filepath.Join(t.TempDir(), "bot.links.json")
-	s, err := links.OpenSecrets(path, clock, rand.Reader)
+	s, err := secretfile.Open(path, clock, rand.Reader)
 	require.NoError(t, err)
 	id := uuid.Must(uuid.NewV7())
 
@@ -60,7 +62,7 @@ func TestIssueRelayKeepsTheDerivedTokenAndPSK(t *testing.T) {
 	require.NotContains(t, string(raw), secret, "never the secret")
 
 	// The engine restarts: the relay link is still live and registered again.
-	again, err := links.OpenSecrets(path, clock, rand.Reader)
+	again, err := secretfile.Open(path, clock, rand.Reader)
 	require.NoError(t, err)
 	require.True(t, again.Check(id, secret))
 	require.Equal(t, s.Relay(), again.Relay())
@@ -155,7 +157,7 @@ func TestOpenSecretsRefusesABadRelayEntry(t *testing.T) {
 		file := `{"links": [{"id": "` + uuid.Must(uuid.NewV7()).String() + `", "hash": "` + hash +
 			`", "expiresAt": "2026-11-12T08:00:00Z", ` + entry + `}]}`
 		require.NoError(t, os.WriteFile(path, []byte(file), 0o600))
-		s, err := links.OpenSecrets(path, clock, rand.Reader)
+		s, err := secretfile.Open(path, clock, rand.Reader)
 		require.Error(t, err, name)
 		require.Empty(t, s.Relay(), name)
 	}

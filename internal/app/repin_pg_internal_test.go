@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -74,7 +76,7 @@ func newRotationFixture(t *testing.T) rotationFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	cfg := filepath.Join(dir, "engine.json")
-	keys, err := channel.LoadOrCreateKeys(filepath.Join(dir, channel.KeyFileName), time.Now)
+	keys, err := keyfile.LoadOrCreateKeys(filepath.Join(dir, channel.KeyFileName), time.Now)
 	require.NoError(t, err)
 
 	oldCA, _ := trustprofiletest.Chain(t, repinHost)

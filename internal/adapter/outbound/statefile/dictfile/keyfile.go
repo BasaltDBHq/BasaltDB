@@ -1,4 +1,4 @@
-package pii
+package dictfile
 
 import (
 	"errors"
@@ -8,13 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
 // goosWindows is runtime.GOOS on Windows, where file modes are not checked.
 const goosWindows = "windows"
-
-// KeyFileName is k_master's file in the engine's stateDir (decision M51-1).
-const KeyFileName = "pii.key"
 
 const (
 	// keyFileMode: readable and writable by the engine's OS user only.
@@ -24,18 +23,19 @@ const (
 	keyFilePermMask os.FileMode = 0o077
 )
 
-// LoadKeys reads k_master from path and derives the keys. When the file is
-// missing it creates it first with MasterKeySize bytes from random, mode 0600,
+// LoadKeys reads k_master from path (pii.KeyFileName in the engine's
+// stateDir) and derives the keys. When the file is missing it creates it
+// first with pii.MasterKeySize bytes from random, mode 0600,
 // without ever replacing a file that exists. It refuses a key file that is not
 // a regular file, has the wrong size, or (outside Windows) a mode wider than
 // 0600. Errors name the path, never key bytes.
-func LoadKeys(path string, random io.Reader) (*Keys, error) {
+func LoadKeys(path string, random io.Reader) (*pii.Keys, error) {
 	master, err := readOrCreateMaster(path, random)
 	if err != nil {
 		return nil, err
 	}
 	defer clear(master)
-	return NewKeys(master)
+	return pii.NewKeys(master)
 }
 
 func readOrCreateMaster(path string, random io.Reader) ([]byte, error) {
@@ -51,7 +51,7 @@ func readOrCreateMaster(path string, random io.Reader) ([]byte, error) {
 // hard-links it into place, so the key appears whole or not at all and a key
 // another process created first is kept (the link then fails with exist).
 func createMaster(path string, random io.Reader) error {
-	master := make([]byte, MasterKeySize)
+	master := make([]byte, pii.MasterKeySize)
 	defer clear(master)
 	if _, err := io.ReadFull(random, master); err != nil {
 		return fmt.Errorf("pii key %s: read random bytes: %w", path, err)
@@ -128,10 +128,10 @@ func readMaster(path string) ([]byte, error) {
 	if runtime.GOOS != goosWindows && fi.Mode().Perm()&keyFilePermMask != 0 {
 		return nil, fmt.Errorf("pii key %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
 	}
-	if fi.Size() != MasterKeySize {
-		return nil, fmt.Errorf("pii key %s must hold %d bytes, found %d", path, MasterKeySize, fi.Size())
+	if fi.Size() != pii.MasterKeySize {
+		return nil, fmt.Errorf("pii key %s must hold %d bytes, found %d", path, pii.MasterKeySize, fi.Size())
 	}
-	master := make([]byte, MasterKeySize)
+	master := make([]byte, pii.MasterKeySize)
 	if _, err := io.ReadFull(f, master); err != nil {
 		clear(master)
 		return nil, fmt.Errorf("pii key %s: %w", path, err)

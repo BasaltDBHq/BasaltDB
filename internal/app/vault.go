@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -175,7 +177,19 @@ func loadEngineKeys(stateDir string, now func() time.Time) (*channel.EngineKeys,
 	if err := os.MkdirAll(stateDir, stateDirMode); err != nil {
 		return nil, err
 	}
-	return channel.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)
+	return keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)
+}
+
+// LoadOrCreateEngineKeys is keyfile.LoadOrCreateKeys, for the CLI, which
+// does not import the stores.
+func LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
+	return keyfile.LoadOrCreateKeys(path, now)
+}
+
+// ReadEngineKeys is keyfile.LoadKeys, for the CLI: it reads and checks an
+// existing key file and never writes.
+func ReadEngineKeys(path string) (*channel.EngineKeys, error) {
+	return keyfile.LoadKeys(path)
 }
 
 // VaultStatus is status.vault for every agent's status tool: OFF (with the

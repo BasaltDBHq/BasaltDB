@@ -339,8 +339,7 @@ func (s *Secrets) RevokeToken(token channel.LinkToken) (bool, error) {
 	return held, err
 }
 
-// RevokeRelay revokes every relay link, as when the engine's keys rotate
-// (VC-40): their psks sat next to the old key.
+// RevokeRelay revokes every relay link.
 func (s *Secrets) RevokeRelay() error {
 	return s.revokeWhere(func(_ uuid.UUID, e secretEntry) bool { return e.keys != nil }, true)
 }

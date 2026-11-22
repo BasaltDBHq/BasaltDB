@@ -60,6 +60,14 @@ test("a secret that is not 16 bytes is refused before any socket", async () => {
   }
 });
 
+test("message 1 is made only for the RELAY transport", async () => {
+  const keys = await linkKeys(load("handshake.json").cases[0].secret);
+  assert.equal((await startHandshake(RELAY, keys)).message.length, 99);
+  for (const t of ["DIRECT", "relay", "", undefined]) {
+    await assert.rejects(startHandshake(t, keys), /unknown transport/);
+  }
+});
+
 for (const c of cases("engine-id.json", "ENGINE_ID")) {
   test(`engine id: ${c.name}`, async () => {
     const key = await parseEngineKey(c.engineKey);

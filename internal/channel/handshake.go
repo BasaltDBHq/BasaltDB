@@ -60,9 +60,8 @@ func (r *handshakeResult) erase() {
 type HelloCheck struct {
 	// Transport is the socket the session came on.
 	Transport Transport
-	// SessionToken is SESSION_OPEN's linkToken, required on RELAY: message
-	// 1's token must equal it. Nil on DIRECT, where message 1 alone names
-	// the link.
+	// SessionToken is SESSION_OPEN's linkToken, required: message 1's
+	// token must equal it.
 	SessionToken *LinkToken
 	// Lookup returns the psk of the live link with this token: false for a
 	// token the engine does not hold, or whose link expired or was revoked.
@@ -95,8 +94,8 @@ func readHello(msg []byte, check HelloCheck, onCheck func(step string)) (*Respon
 	if !check.Transport.valid() || check.Lookup == nil {
 		return nil, errors.New("vault channel: a hello check needs a transport and a lookup")
 	}
-	if check.Transport == TransportRelay && check.SessionToken == nil {
-		return nil, errors.New("vault channel: a RELAY hello needs SESSION_OPEN's token")
+	if check.SessionToken == nil {
+		return nil, errors.New("vault channel: a hello check needs SESSION_OPEN's token")
 	}
 	onCheck("header")
 	if err := readHeader(msg, typeHello); err != nil {
@@ -111,7 +110,7 @@ func readHello(msg []byte, check HelloCheck, onCheck func(step string)) (*Respon
 	tag := rest[LinkTokenLen+PointLen:]
 
 	onCheck("token")
-	live := check.SessionToken == nil || subtle.ConstantTimeCompare(token[:], check.SessionToken[:]) == 1
+	live := subtle.ConstantTimeCompare(token[:], check.SessionToken[:]) == 1
 	held, ok := check.Lookup(token)
 	defer held.Zero()
 	// A token that is not live still goes through the tag check, under an

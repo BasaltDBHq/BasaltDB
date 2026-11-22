@@ -594,3 +594,9 @@ func (s *Server) RunRemove(ctx context.Context, r *connect.Request[connectv1.Run
 	}
 	return connect.NewResponse(&connectv1.RunRemoveResponse{Database: done.Database, Bots: done.Bots, Lines: done.Lines, Warnings: done.Warnings}), nil
 }
+
+// RevokePasskey is not served yet: the Update check builds it
+// (CONTRACT.md, Update on the connect page).
+func (s *Server) RevokePasskey(context.Context, *connect.Request[connectv1.RevokePasskeyRequest]) (*connect.Response[connectv1.RevokePasskeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("RevokePasskey is not served yet"))
+}

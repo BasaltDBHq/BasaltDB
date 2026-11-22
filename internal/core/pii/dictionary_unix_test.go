@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
@@ -26,7 +28,7 @@ func TestDictionaryRefusesUnsafeFiles(t *testing.T) {
 		return stateDir, filepath.Join(stateDir, "pii", "dictionary.bin")
 	}
 	open := func(stateDir string) error {
-		d, err := pii.OpenDictionary(stateDir, k, dictOptions())
+		d, err := dictfile.Open(stateDir, k, dictOptions())
 		if err == nil {
 			_ = d.Close()
 		}

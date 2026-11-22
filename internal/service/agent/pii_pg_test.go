@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -47,9 +49,9 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 		return guard.WriteClassification(context.Background(), tx, d.Names, guard.Classification{Columns: cols, At: time.Now()})
 	}))
 	dir := t.TempDir()
-	keys, err := pii.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)
+	keys, err := dictfile.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)
 	require.NoError(t, err)
-	dict, err := pii.OpenDictionary(dir, keys, pii.DefaultDictionaryOptions())
+	dict, err := dictfile.Open(dir, keys, pii.DefaultDictionaryOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
 	env := pgService(t, a.URL, withReturned(returned), withDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {

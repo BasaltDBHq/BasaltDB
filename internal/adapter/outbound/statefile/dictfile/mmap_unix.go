@@ -1,6 +1,6 @@
 //go:build unix
 
-package pii
+package dictfile
 
 import (
 	"os"

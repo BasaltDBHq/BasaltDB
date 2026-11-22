@@ -1,6 +1,6 @@
 //go:build unix
 
-package pii
+package dictfile
 
 import (
 	"crypto/rand"
@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
 func TestLoadKeysRefusesAFIFOWithoutBlocking(t *testing.T) {
-	path := filepath.Join(t.TempDir(), KeyFileName)
+	path := filepath.Join(t.TempDir(), pii.KeyFileName)
 	require.NoError(t, syscall.Mkfifo(path, 0o600))
 	done := make(chan error, 1)
 	go func() {
@@ -38,8 +40,8 @@ type statInfo struct {
 func (s statInfo) Sys() any { return s.st }
 
 func TestCheckOwnerRefusesAnotherUser(t *testing.T) {
-	path := filepath.Join(t.TempDir(), KeyFileName)
-	require.NoError(t, os.WriteFile(path, make([]byte, MasterKeySize), 0o600))
+	path := filepath.Join(t.TempDir(), pii.KeyFileName)
+	require.NoError(t, os.WriteFile(path, make([]byte, pii.MasterKeySize), 0o600))
 	fi, err := os.Stat(path)
 	require.NoError(t, err)
 	require.NoError(t, checkOwner(fi), "the file this process wrote is its own")

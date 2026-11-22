@@ -58,8 +58,8 @@ type Secrets struct {
 	rand io.Reader
 	// persist is where the hashes persist (nil keeps them in memory).
 	persist Persister
-	mu   sync.Mutex
-	live map[uuid.UUID]secretEntry
+	mu      sync.Mutex
+	live    map[uuid.UUID]secretEntry
 	// resets are the hashes of revert links an agent's reset revoked, kept
 	// until the revert expires so the page can tell the person
 	// (CONTRACT.md, Link secrets, LINK_RESET).

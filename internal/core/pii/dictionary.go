@@ -3,8 +3,7 @@ package pii
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -88,7 +87,7 @@ type DictionaryStatus struct {
 // filter (2^16 with the 16-bit fallback), which only tokenizes a harmless
 // phrase. Safe for concurrent use: lookups take no lock on the base.
 type FuseDictionary struct {
-	dir     string
+	files   DictionaryFiles
 	keys    *Keys
 	opts    DictionaryOptions
 	base    atomic.Pointer[baseFilter]
@@ -105,33 +104,32 @@ type FuseDictionary struct {
 
 var _ Dictionary = (*FuseDictionary)(nil)
 
-// OpenDictionary opens the dictionary in <stateDir>/pii, creating the
-// directory (0755) when missing. A missing dictionary file, or one that is
+// OpenDictionary opens the dictionary kept in files (statefile/dictfile's
+// Open: <stateDir>/pii). A missing dictionary file, or one that is
 // truncated, corrupt, of another format or built with other keys, gives an
-// empty base: NeedsBuild then reports true and Discarded why. A file or
-// directory that is a link, owned by another user or too open is an error.
-func OpenDictionary(stateDir string, keys *Keys, opts DictionaryOptions) (*FuseDictionary, error) {
+// empty base: NeedsBuild then reports true and Discarded why. Any other
+// error of files is an error.
+func OpenDictionary(files DictionaryFiles, keys *Keys, opts DictionaryOptions) (*FuseDictionary, error) {
 	if keys == nil {
 		panic("pii.OpenDictionary: keys required")
 	}
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
-	dir, err := ensureDictionaryDir(stateDir)
-	if err != nil {
+	if err := files.Prepare(); err != nil {
 		return nil, err
 	}
 	d := &FuseDictionary{
-		dir: dir, keys: keys, opts: opts,
+		files: files, keys: keys, opts: opts,
 		rebuild: make(chan struct{}, 1),
 		active:  newDelta(), frozen: newDelta(),
-		lastScan: readStatusFile(dir),
+		lastScan: files.ReadStatus(),
 	}
-	b, err := openBaseFile(d.path(), keys.dictionaryCheck())
+	b, found, err := d.openBase()
 	switch {
 	case err == nil:
 		d.base.Store(b)
-	case errors.Is(err, os.ErrNotExist):
+	case !found:
 		d.base.Store(emptyBase())
 	case errors.Is(err, errDictionaryInvalid):
 		d.base.Store(emptyBase())
@@ -142,7 +140,20 @@ func OpenDictionary(stateDir string, keys *Keys, opts DictionaryOptions) (*FuseD
 	return d, nil
 }
 
-func (d *FuseDictionary) path() string { return filepath.Join(d.dir, DictionaryFileName) }
+// openBase maps the dictionary file and parses it. found is false when
+// there is no file. Content that is unusable wraps errDictionaryInvalid.
+func (d *FuseDictionary) openBase() (*baseFilter, bool, error) {
+	data, unmap, found, err := d.files.MapBase()
+	if err != nil {
+		return nil, found, err
+	}
+	b, err := parseDictionary(data, d.keys.dictionaryCheck())
+	if err != nil {
+		_ = unmap()
+		return nil, true, fmt.Errorf("pii dictionary %s: %w", d.files.BasePath(), err)
+	}
+	return newMappedBase(b, unmap), true, nil
+}
 
 // NeedsBuild reports whether no base was loaded from disk at open (missing or
 // discarded) and no build has been committed since.
@@ -251,7 +262,7 @@ func (d *FuseDictionary) Status() DictionaryStatus {
 
 // WriteStatus writes <stateDir>/pii/status.json (0644) from Status.
 func (d *FuseDictionary) WriteStatus() error {
-	return writeStatusFile(d.dir, d.Status())
+	return d.files.WriteStatus(d.Status())
 }
 
 // Close releases the base mapping once no lookup holds it. Lookups after
@@ -332,7 +343,7 @@ func (b *DictionaryBuild) Commit(scan ScanStats) error {
 	}
 	// status.json is written before the swap, so an error here means the
 	// commit failed: the old base and every delta value stay.
-	if err := writeStatusFile(b.d.dir, b.d.statusAfterBuild(nb, scan)); err != nil {
+	if err := b.d.files.WriteStatus(b.d.statusAfterBuild(nb, scan)); err != nil {
 		nb.release()
 		b.d.endBuild(false, ScanStats{})
 		return fmt.Errorf("pii: write %s: %w", StatusFileName, err)
@@ -407,13 +418,14 @@ func (d *FuseDictionary) writeBase(keys [][]uint64, values uint64) (*baseFilter,
 	if err != nil {
 		return nil, err
 	}
-	err = writeAtomic(d.path(), dictionaryFileMode, func(f *os.File) error {
-		return writeDictionary(f, keys, fpBits, values, d.keys.dictionaryCheck())
+	err = d.files.WriteBase(func(w io.WriteSeeker) error {
+		return writeDictionary(w, keys, fpBits, values, d.keys.dictionaryCheck())
 	})
 	if err != nil {
-		return nil, fmt.Errorf("pii: write dictionary %s: %w", d.path(), err)
+		return nil, fmt.Errorf("pii: write dictionary %s: %w", d.files.BasePath(), err)
 	}
-	return openBaseFile(d.path(), d.keys.dictionaryCheck())
+	b, _, err := d.openBase()
+	return b, err
 }
 
 // chooseFingerprintBits is 32 when that file fits the budget, else 16 when

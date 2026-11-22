@@ -212,7 +212,13 @@ func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call 
 		return
 	}
 	ref := localsetup.AsRefusal(err)
-	st.log.Info("setup page: refused", "call", call, "code", ref.Code)
+	if c := ref.Cause; c != nil {
+		// The cause is redacted where it is made: no connection string or
+		// password (localsetup.Cause).
+		st.log.Warn("setup page: refused", "call", call, "code", ref.Code, "step", c.Step, "sqlstate", c.SQLState, "cause", c.Message)
+	} else {
+		st.log.Info("setup page: refused", "call", call, "code", ref.Code)
+	}
 	writeJSON(w, setupStatus(ref), setupErrorDTO{errorDTO: errorDTO{Code: ref.Code, Message: ref.Message}, TrustRoot: ref.TrustRoot, Pinned: ref.Pinned})
 }
 

@@ -466,6 +466,14 @@ func (s *Setup) readDatabase(ctx context.Context, q guard.Querier) (setupcode.Da
 	if db.Prefix, err = guard.InstalledPrefix(ctx, q); err != nil {
 		return db, state, err
 	}
+	if db.Prefix == s.Names.Prefix {
+		// Another prefix is PREFIX_MISMATCH, from the checks.
+		if err := guard.CheckUsable(ctx, q); errors.Is(err, guard.ErrUnusableInstall) {
+			return db, state, &RefusalError{Code: CodeSetupFailed, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + guard.RemoveOldInstallDoc + " says how. Nothing changed."}
+		} else if err != nil {
+			return db, state, err
+		}
+	}
 	if state.GuardVersion, err = guard.InstalledVersion(ctx, q); err != nil {
 		return db, state, err
 	}

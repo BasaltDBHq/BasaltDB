@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
 
@@ -31,53 +30,8 @@ type Querier interface {
 const (
 	// passwordBytes of randomness in a generated agent password (hex encoded).
 	passwordBytes = 32
-	// DefaultStatementTimeout is the agent role's query time limit.
-	DefaultStatementTimeout = 30 * time.Second
-	// AgentConnectionLimit is the agent role's CONNECTION LIMIT: the
-	// engine's pool (4), basalt status (1), the setup finisher (1), and 2
-	// spare for sessions a crashed engine leaves open until TCP keepalive
-	// closes them. Postgres enforces it at login, whatever the engine does.
-	// The value lives in setupcode, whose summary states it (setupcode
-	// cannot import guard).
-	AgentConnectionLimit = setupcode.AgentConnectionLimit
-	redacted             = "********"
+	redacted      = "********"
 )
-
-// ErrInvalidAgent is returned for an agent spec that cannot be installed.
-var ErrInvalidAgent = errors.New("invalid agent")
-
-// AgentSpec is one agent role and the tables it may use. Tables are
-// "schema.table" or "table" (schema public).
-type AgentSpec struct {
-	Name string
-	// Password is the hex password to set (NewPassword). Postgres gets only
-	// its SCRAM-SHA-256 verifier, never the password. Empty keeps the
-	// password of a role that exists (AE-12); see AgentRoleExists.
-	Password string
-	// Verifier is the password as a SCRAM-SHA-256 verifier (a setup code,
-	// checked by CheckVerifier), set in place of Password, which stays
-	// empty. The person reads it in the SQL. It is sensitive: with one
-	// observed SCRAM exchange of the role it lets its holder log in.
-	Verifier string
-	// CreateOnly creates the role with a plain CREATE ROLE, which Postgres
-	// refuses when the role exists (an INSTALL setup code). Without it a
-	// Verifier is set on the existing role with ALTER ROLE, which Postgres
-	// refuses when the role does not exist (an AGENT setup code). Needs
-	// Password or Verifier.
-	CreateOnly bool
-	// Change is an AGENT setup code: the role must already be a member of
-	// the agents group (a setup code never pulls another role in), and its
-	// table privileges are replaced by Read and Write, so tables no longer
-	// listed lose theirs (CONTRACT.md, The setup code, kinds).
-	Change bool
-	// KeepGrants, with Change, keeps the role's table privileges: an AGENT
-	// setup code that names no tables. The role must still be an agent of
-	// the group; nothing is revoked and Read and Write are empty.
-	KeepGrants       bool
-	Read             []string
-	Write            []string
-	StatementTimeout time.Duration
-}
 
 // InitOptions configures PlanInit. Agent is optional: an empty Name
 // installs or upgrades basalt_meta only.
@@ -182,7 +136,7 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 	if warning != "" {
 		s.Warnings = append(s.Warnings, warning)
 	}
-	add := func(sql string) { s.Statements = append(s.Statements, Statement{SQL: n.render(sql)}) }
+	add := func(sql string) { s.Statements = append(s.Statements, Statement{SQL: renderSQL(n, sql)}) }
 	add(installRoles)
 	add(installSchema)
 	for _, m := range migrations {
@@ -270,9 +224,9 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 	out := []Statement{adopt}
 	switch {
 	case spec.Change && spec.KeepGrants:
-		out = append(out, Statement{SQL: n.render(fmt.Sprintf(agentMemberSQL, role))})
+		out = append(out, Statement{SQL: renderSQL(n, fmt.Sprintf(agentMemberSQL, role))})
 	case spec.Change:
-		out = append(out, Statement{SQL: n.render(fmt.Sprintf(agentChangeSQL, role))})
+		out = append(out, Statement{SQL: renderSQL(n, fmt.Sprintf(agentChangeSQL, role))})
 	}
 	return append(append(out, st), grants...), nil
 }
@@ -344,7 +298,7 @@ func checkAgentPassword(spec AgentSpec) error {
 // verifier as is.
 func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (Statement, error) {
 	if spec.Password == "" && spec.Verifier == "" {
-		return Statement{SQL: n.render(fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, AgentConnectionLimit))}, nil
+		return Statement{SQL: renderSQL(n, fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, AgentConnectionLimit))}, nil
 	}
 	tmpl := agentRoleSQL
 	switch {
@@ -354,7 +308,7 @@ func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (
 		tmpl = agentAlterRoleSQL
 	}
 	render := func(verifier string) string {
-		return n.render(fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, AgentConnectionLimit))
+		return renderSQL(n, fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, AgentConnectionLimit))
 	}
 	if spec.Verifier != "" {
 		return Statement{SQL: render(spec.Verifier)}, nil
@@ -467,7 +421,7 @@ func agentAdoptStatement(n Names, role string, spec AgentSpec) (Statement, error
 		}
 		tables = append(tables, quoteLiteral(t.ident()))
 	}
-	return Statement{SQL: n.render(fmt.Sprintf(agentAdoptSQL, role, strings.Join(tables, ", ")))}, nil
+	return Statement{SQL: renderSQL(n, fmt.Sprintf(agentAdoptSQL, role, strings.Join(tables, ", ")))}, nil
 }
 
 // agentKeepRoleSQL updates an agent role that exists without touching its

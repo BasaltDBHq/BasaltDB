@@ -27,5 +27,5 @@ func TestBudgetIsSharedByTheCallAndStopsPastItsMax(t *testing.T) {
 	require.Nil(t, From(context.Background()), "no budget: the person's reads")
 	require.NoError(t, From(context.Background()).Charge(MaxBytes*2), "a nil budget charges nothing")
 	require.NotNil(t, From(Ensure(context.Background())))
-	require.Equal(t, int64(MaxBytes), From(With(context.Background())).max)
+	require.Equal(t, int64(MaxBytes), From(With(context.Background())).Max())
 }

@@ -29,7 +29,7 @@ func RepairScript(n Names, agent, password string, timeoutMs int64) (Script, err
 		return Script{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
 	}
 	render := func(v string) string {
-		return n.render(fmt.Sprintf(agentAlterRoleSQL, role, quoteLiteral(v), timeoutMs, AgentConnectionLimit))
+		return renderSQL(n, fmt.Sprintf(agentAlterRoleSQL, role, quoteLiteral(v), timeoutMs, AgentConnectionLimit))
 	}
 	return Script{Statements: []Statement{adopt, {SQL: render(verifier), Shown: render(redacted)}}}, nil
 }

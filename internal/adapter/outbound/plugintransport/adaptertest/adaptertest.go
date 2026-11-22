@@ -18,8 +18,8 @@ import (
 
 	"go.uber.org/goleak"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Behavior is how the peer answers calls.
@@ -48,7 +48,7 @@ const GarbageMarker = "SECRET-PEER-PAYLOAD"
 
 // New connects to a peer with the given behavior and returns the transport.
 // It registers its own cleanup with t.
-type New func(t *testing.T, b Behavior) pluginhost.Transport
+type New func(t *testing.T, b Behavior) pluginmodel.Transport
 
 const (
 	waitPrompt   = 3 * time.Second // "promptly": far below any peer timer
@@ -65,7 +65,7 @@ func Run(t *testing.T, newTransport New) {
 	t.Helper()
 	t.Run("TestEcho", func(t *testing.T) { testEcho(t, newTransport) })
 	t.Run("TestConcurrentCallsStayApart", func(t *testing.T) { testConcurrent(t, newTransport) })
-	t.Run("TestOversizedResponse", func(t *testing.T) { _ = testFails(t, newTransport, Oversized, pluginhost.ClassBadResponse) })
+	t.Run("TestOversizedResponse", func(t *testing.T) { _ = testFails(t, newTransport, Oversized, pluginmodel.ClassBadResponse) })
 	t.Run("TestGarbageResponse", func(t *testing.T) { testGarbage(t, newTransport) })
 	t.Run("TestChildExit", func(t *testing.T) { testChildExit(t, newTransport) })
 	t.Run("TestCancelledContextEndsCall", func(t *testing.T) { testCancel(t, newTransport) })
@@ -78,7 +78,7 @@ type payload struct {
 	S string `json:"s"`
 }
 
-func callEcho(ctx context.Context, tr pluginhost.Transport, n int) error {
+func callEcho(ctx context.Context, tr pluginmodel.Transport, n int) error {
 	in := payload{N: n, S: fmt.Sprintf("v%d", n)}
 	var out payload
 	if err := tr.Call(ctx, "echo", in, &out); err != nil {
@@ -90,8 +90,8 @@ func callEcho(ctx context.Context, tr pluginhost.Transport, n int) error {
 	return nil
 }
 
-func classOf(err error) pluginhost.FailureClass {
-	var c pluginhost.Classed
+func classOf(err error) pluginmodel.FailureClass {
+	var c pluginmodel.Classed
 	if errors.As(err, &c) {
 		return c.FailureClass()
 	}
@@ -131,7 +131,7 @@ func testConcurrent(t *testing.T, newTransport New) {
 	}
 }
 
-func testFails(t *testing.T, newTransport New, b Behavior, want pluginhost.FailureClass) error {
+func testFails(t *testing.T, newTransport New, b Behavior, want pluginmodel.FailureClass) error {
 	t.Helper()
 	tr := newTransport(t, b)
 	ctx, cancel := context.WithTimeout(context.Background(), waitPrompt*2)
@@ -148,14 +148,14 @@ func testFails(t *testing.T, newTransport New, b Behavior, want pluginhost.Failu
 }
 
 func testGarbage(t *testing.T, newTransport New) {
-	err := testFails(t, newTransport, Garbage, pluginhost.ClassBadResponse)
+	err := testFails(t, newTransport, Garbage, pluginmodel.ClassBadResponse)
 	if strings.Contains(err.Error(), GarbageMarker) {
 		t.Fatalf("the error carries the peer's bytes: %v", err)
 	}
 }
 
 func testChildExit(t *testing.T, newTransport New) {
-	_ = testFails(t, newTransport, ExitOnCall, pluginhost.ClassExited)
+	_ = testFails(t, newTransport, ExitOnCall, pluginmodel.ClassExited)
 }
 
 func testCancel(t *testing.T, newTransport New) {

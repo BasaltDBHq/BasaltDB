@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -36,7 +38,7 @@ type TrustStore struct {
 // engine.json is in configDir: TrustDir(mode, goos, configDir), with the
 // owner the path rule requires in that mode.
 func NewTrustStore(mode Mode, goos, configDir string) (TrustStore, error) {
-	owner, err := mode.owner()
+	owner, err := pluginpath.Owner(mode)
 	if err != nil {
 		return TrustStore{}, err
 	}

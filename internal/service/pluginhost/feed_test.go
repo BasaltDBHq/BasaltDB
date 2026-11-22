@@ -40,7 +40,7 @@ func TestCallOnRefusesAnotherRegistration(t *testing.T) {
 		t.Fatal("nothing was sent")
 	}
 	_ = f
-	if _, ok := h.Registration(EntryKey{"other", "default"}); ok {
+	if _, ok := h.Registration(EntryKey{Name: "other", Instance: "default"}); ok {
 		t.Fatal("an unknown entry has no registration")
 	}
 }

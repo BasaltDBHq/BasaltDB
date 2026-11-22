@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -378,6 +379,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	// with the listener handed on. Its admin connections are counted.
 	var dials atomic.Int32
 	jobs, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: configPath, Origin: origin, Users: agentUsers{}, Prefix: d.Names.Prefix, Configured: true,
 		Euid: func() int { return 4000 },
 		Dial: func(context.Context, string) (*pgx.Conn, error) {

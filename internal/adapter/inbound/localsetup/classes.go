@@ -14,7 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/classify"
 )
 
@@ -57,12 +57,12 @@ type ColumnClass struct {
 	Was         Label  `json:"was"`
 }
 
-func (c ColumnClass) label() guard.Label {
-	return guard.Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
+func (c ColumnClass) label() guardmodel.Label {
+	return guardmodel.Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
 }
 
-func (l Label) guard() guard.Label {
-	return guard.Label{Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion}
+func (l Label) guard() guardmodel.Label {
+	return guardmodel.Label{Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion}
 }
 
 // ColumnInfo is a column of a picked table. The suggestion fields come from
@@ -110,7 +110,7 @@ func checkClasses(req Request, picks []TablePick) error {
 			return bad("a column of a table the agent does not get")
 		case seen[key]:
 			return bad("a column given twice")
-		case !plainColumn(c.Column) || !guard.ValidLabel(c.label()) || !guard.ValidWas(c.Was.guard()):
+		case !plainColumn(c.Column) || !guardmodel.ValidLabel(c.label()) || !guardmodel.ValidWas(c.Was.guard()):
 			return bad("a class, entity type or phone region the page does not set")
 		}
 		seen[key] = true
@@ -156,20 +156,20 @@ func labelsSQL(req Request) string {
 // writeLabels writes the person's labels in the run's transaction, after
 // the grants: CLASSES_CHANGED, nothing changed, when a column's class is
 // not the one the person saw.
-func writeLabels(ctx context.Context, tx pgx.Tx, names guard.Names, picks []TablePick, req Request, now time.Time) (int, error) {
+func (s *Service) writeLabels(ctx context.Context, tx pgx.Tx, names guardmodel.Names, picks []TablePick, req Request, now time.Time) (int, error) {
 	if len(req.ColumnClasses) == 0 && !req.RestPublic {
 		return 0, nil
 	}
-	changes := make([]guard.LabelChange, len(req.ColumnClasses))
+	changes := make([]guardmodel.LabelChange, len(req.ColumnClasses))
 	for i, c := range req.ColumnClasses {
-		changes[i] = guard.LabelChange{Table: c.Table, Column: c.Column, Label: c.label(), Was: c.Was.guard()}
+		changes[i] = guardmodel.LabelChange{Table: c.Table, Column: c.Column, Label: c.label(), Was: c.Was.guard()}
 	}
 	tables := make([]string, len(picks))
 	for i, p := range picks {
 		tables[i] = p.Table
 	}
-	n, err := guard.WriteLabels(ctx, tx, names, tables, changes, req.RestPublic, now)
-	if errors.Is(err, guard.ErrClassesChanged) {
+	n, err := s.be.WriteLabels(ctx, tx, names, tables, changes, req.RestPublic, now)
+	if errors.Is(err, guardmodel.ErrClassesChanged) {
 		return 0, refuse(CodeClassesChanged, "A column's label changed since the page showed it (someone classified it, or the column is gone), so nothing changed. Read the labels again.")
 	}
 	if err != nil {
@@ -224,11 +224,11 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 	if more {
 		cols = cols[:maxColumns]
 	}
-	labels, err := guard.ReadLabels(ctx, conn, guard.Names{Prefix: s.opts.Prefix}, tables)
+	labels, err := s.be.ReadLabels(ctx, conn, guardmodel.Names{Prefix: s.opts.Prefix}, tables)
 	if err != nil {
 		return nil, false, err
 	}
-	stored := map[[2]string]guard.Label{}
+	stored := map[[2]string]guardmodel.Label{}
 	for _, l := range labels {
 		stored[[2]string{l.Table, l.Column}] = l.Label
 	}
@@ -237,7 +237,7 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 		out[i] = c.info
 		l, ok := stored[[2]string{c.info.Table, c.info.Column}]
 		if !ok {
-			l = guard.Label{Class: guard.ClassUnclassified}
+			l = guardmodel.Label{Class: guardmodel.ClassUnclassified}
 		}
 		out[i].Class, out[i].EntityType, out[i].PhoneRegion = l.Class, l.EntityType, l.PhoneRegion
 	}

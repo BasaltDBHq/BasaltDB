@@ -54,7 +54,7 @@ const configPollInterval = time.Second
 // error the listener is closed.
 func WaitForConfig(ctx context.Context, o WaitOptions) (net.Listener, error) {
 	addr, configPath, log := o.Addr, o.ConfigPath, o.Log
-	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix})
+	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: o.Origin, Dial: o.Dial, Users: o.Users, Prefix: o.Prefix})
 	if err != nil {
 		return nil, err
 	}

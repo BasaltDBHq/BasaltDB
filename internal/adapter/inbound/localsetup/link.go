@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Job is what a setup link carries (CONTRACT.md, The local setup page, The
@@ -40,7 +40,7 @@ func Link(origin string, job Job) (string, error) {
 
 // ValidAgentName reports whether name makes an agent role under the default
 // prefix.
-func ValidAgentName(name string) bool { return guard.ValidAgentName(name) }
+func ValidAgentName(name string) bool { return guardmodel.ValidAgentName(name) }
 
 // SetupCheckPath is the setup page's check route.
 const SetupCheckPath = "/api/v1/setup/check"

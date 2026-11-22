@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -20,6 +21,7 @@ func fixtureOn(t *testing.T, d *guardtest.DB) *fixture {
 	t.Helper()
 	f := &fixture{db: d, config: filepath.Join(t.TempDir(), "engine.json"), now: time.Now()}
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: d.Names.Prefix,
 		Now: func() time.Time { return f.now },
 	})

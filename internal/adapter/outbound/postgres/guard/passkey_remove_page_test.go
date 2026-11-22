@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -32,6 +33,7 @@ func pageEngine(t *testing.T, d *guardtest.DB, name string, a *guardtest.Agent) 
 	}, config.Agent{Name: name, OSUser: "alice", Store: config.PostgresStore(cred)})
 	require.NoError(t, err)
 	svc, err := localsetup.New(localsetup.Options{
+		Backend:    setupbackend.Backend{},
 		ConfigPath: cfgPath, Origin: "http://localhost:8787", Prefix: d.Names.Prefix, Configured: true,
 		Euid: func() int { return 4000 },
 	})

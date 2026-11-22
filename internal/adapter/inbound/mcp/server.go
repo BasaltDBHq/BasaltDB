@@ -15,7 +15,7 @@ import (
 	"io"
 	"runtime/debug"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 )
 
 const defaultProtocolVersion = "2025-03-26"
@@ -339,7 +339,7 @@ func (s *Server) call(ctx context.Context, tool Tool, args json.RawMessage) (out
 			out, err = nil, panicError(s.info.OnPanic(tool.Name, v, debug.Stack()))
 		}()
 	}
-	return tool.Call(resultsize.With(ctx), args)
+	return tool.Call(budget.With(ctx), args)
 }
 
 // panicError is the INTERNAL error a tool that panicked answers with.

@@ -107,7 +107,7 @@ func (e remoteEnv) cli(t *testing.T, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	code := runInitAdmin(c, takePathFlags(c, runInit, args))
+	code := runInit(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 

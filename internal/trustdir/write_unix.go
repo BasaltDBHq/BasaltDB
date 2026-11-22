@@ -278,14 +278,6 @@ func writePin(d *service.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]s
 	return replaced, err
 }
 
-// PinProfile is the pin profile Pin would write for host, built in memory
-// and written nowhere: basalt init verifies its admin connection with it
-// before the engine's trust.d is known.
-func PinProfile(host string, cert *x509.Certificate, caOnly bool) (*trustprofile.Profile, error) {
-	pf, err := trustprofile.NewPin(host, cert, caOnly)
-	return pf.Profile, err
-}
-
 // oldPin is the pin a Pin replaces: its roots files and the fingerprints of
 // their certificates.
 type oldPin struct {

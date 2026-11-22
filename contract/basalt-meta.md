@@ -101,7 +101,7 @@ N12-7 and N12-8, and owner decision "Agent RLS" (Nov 12).
 | Object | Purpose |
 |---|---|
 | Policy `<prefix>_guard` | `AS PERMISSIVE FOR ALL TO <prefix>_guard USING (true) WITH CHECK (true)` on every guarded table with RLS enabled, created by `attach` (every `basalt init`), dropped by the setup page's `REMOVE`. Agent roles keep `NOBYPASSRLS`; they get a policy only as in the next row |
-| Policy `<prefix>_agent_<name>` | `AS PERMISSIVE FOR SELECT TO <role> USING (true)` on a `--read` table, `FOR ALL ... USING (true) WITH CHECK (true)` on a `--write` table. Created by `basalt init` only on agent tables where RLS hid every row from the role and the person left it checked (or passed `--agent-rls=all-rows`, or listed it, or ran with `--yes` or `--dry-run` and the default `--agent-rls=ask`, which answers all); kept on re-init; dropped by the setup page's `REMOVE` |
+| Policy `<prefix>_agent_<name>` | `AS PERMISSIVE FOR SELECT TO <role> USING (true)` on a read-only table, `FOR ALL ... USING (true) WITH CHECK (true)` on a read-write table. Created by the setup page only on agent tables where RLS hid every row from the role and the person left it checked (or listed it on the page); kept on re-init; dropped by the setup page's `REMOVE` |
 | `record_agent_policy(agent name, table regclass, command text) returns bigint` | Admin only (init, after its `CREATE POLICY`): appends ledger kind `AGENT_POLICY_ADDED` for the agent (detail `policy`, `command` `SELECT` or `ALL`, `by`). Refuses a role that is not an agent or a table without that policy |
 | `uncovered_tables()` | Also returns guarded tables with RLS enabled and no guard policy, `why` = `RLS_WITHOUT_GUARD_POLICY` |
 | Revert lines | Redacted on RLS tables as in [Revert](revert.md#lines-binding-and-codes) |
@@ -136,7 +136,7 @@ The fingerprint stored in `pii_catalog` is never compared with the live one: eac
 
 ### Setup objects
 
-Planned, M4 ([Setup from your laptop](setup.md#setup), CO-13). Written only by the admin, inside the transaction of the setup the connect page runs.
+Planned, M4 ([Setup](setup.md#setup), CO-13). Written only by the admin, inside the transaction of the setup the connect page runs.
 
 | Object | Purpose |
 |---|---|
@@ -202,5 +202,5 @@ Raised by the guard with SQLSTATE class `BS`. The tool code each maps to is in [
 | `BS007` | `NOT_ALLOWED` | `TRUNCATE`, unknown `basalt.mode`, a run of another agent; a held write's preview lines over 64 MiB (detail `HOLD_TOO_LARGE`, the hint gives the size); from schema version 5 `open_plugin_approval` with detail `TOO_MANY_PENDING` or `UNKNOWN_AGENT` |
 | `BS008` | `LEDGER_INPUT_INVALID` | A ledger function got invalid input; from schema version 3 also a plugin event outside the contract (`record_plugin_event`: an unknown kind or detail key, a wrong shape, or a detail over 4 KiB); from schema version 5 a plugin approval detail or settings outside the contract (`open_plugin_approval`) |
 | `BS009` | `NOTHING_TO_REVERT`, `REVERT_CASCADE` | M3. A revert that cannot be prepared; `REVERT_CASCADE` is caught inside the revert and becomes a `CASCADE` conflict. |
-| `BS010` | `SETUP_REFUSED` | Planned. `record_setup` refused a setup code; detail `USED`, `SUPERSEDED`, `EXPIRED`, `SETUP_ID_IN_FUTURE` or `EXPIRY_TOO_FAR`. Raised to the admin's `basalt init --setup-code` only, never to an agent |
+| `BS010` | `SETUP_REFUSED` | Planned. `record_setup` refused a setup code; detail `USED`, `SUPERSEDED`, `EXPIRED`, `SETUP_ID_IN_FUTURE` or `EXPIRY_TOO_FAR`. Raised to the person on the connect page only, never to an agent |
 | `BS011` | `SCOPE_REFUSED` | A revert scope descriptor refused by `preview_revert`, `prepare_revert` or `rescope_revert`. Shape details, from the descriptor alone: `SHAPE` (`INVALID_ARGUMENT`), `STORE_RESERVED` (`INVALID_ARGUMENT`), `FILTER_CAP` (`INVALID_ARGUMENT` `SCOPE_FILTER_CAP`). In `preview_revert` and `prepare_revert` (the agent's own proposal): `NOT_OWN_CHANGE`, `NOT_OWN_RUN`, `NOT_OWN_TASK` (the engine maps them to `NOT_FOUND` reason `CHANGE`, `RUN`, `TASK`, unknown and other agents' ids alike) and `FILTER` (`INVALID_ARGUMENT` `SCOPE_FILTER`; the message names each refused entry with the fixed texts of [MCP tools](mcp-tools.md#mcp-tools)). In `rescope_revert` a select that is not provably own work, or any select after a widen, is never answered with `BS011` before the proof or token check: it fails as `BS005` `REVERT_INVALID` detail `WIDEN_REFUSED`, one message for every cause; only a proven or own-work select gets `FILTER` or `DESCRIPTOR` (`INVALID_ARGUMENT`) for an agent, run or table outside the scope ([check order](revert.md#rescope-widen-and-reject)) |

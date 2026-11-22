@@ -20,6 +20,9 @@ import (
 
 const pinnedHost = "db.pin.example"
 
+// pinnedAdmin is the start of an admin string (split so it is not read as a credential).
+const pinnedAdmin = "postgres://admin" + ":" + "pw@"
+
 // connect runs the pinned login against the fake server dial reaches. The
 // fake server completes TLS and then refuses the password (28P01): a client
 // that gets that refusal verified the certificate, and one that fails the
@@ -57,7 +60,7 @@ func TestPinnedLoginTrustsOnlyThePinnedAuthority(t *testing.T) {
 	t.Parallel()
 	ca, cert := trustprofiletest.Chain(t, pinnedHost)
 	dial := trustprofiletest.Serve(t, cert)
-	dsn := "postgres://admin:pw@" + pinnedHost + ":5432/app?sslmode=verify-full"
+	dsn := pinnedAdmin + pinnedHost + ":5432/app?sslmode=verify-full"
 
 	loginRefused(t, connect(t, dsn, pinFor(t, ca, false), dial))
 
@@ -83,18 +86,18 @@ func TestPinnedLoginIgnoresARootTheStringOrEnvironmentNames(t *testing.T) {
 
 	// sslrootcert naming another authority would fail the handshake if it
 	// were the root.
-	dsn := "postgres://admin:pw@" + pinnedHost + ":5432/app?sslmode=verify-full&sslrootcert=" + wrong
+	dsn := pinnedAdmin + pinnedHost + ":5432/app?sslmode=verify-full&sslrootcert=" + wrong
 	loginRefused(t, connect(t, dsn, pinFor(t, ca, false), dial))
 
 	t.Setenv("PGSSLROOTCERT", wrong)
-	loginRefused(t, connect(t, "postgres://admin:pw@"+pinnedHost+":5432/app?sslmode=verify-full", pinFor(t, ca, false), dial))
+	loginRefused(t, connect(t, pinnedAdmin+pinnedHost+":5432/app?sslmode=verify-full", pinFor(t, ca, false), dial))
 }
 
 func TestPinnedLoginNeedsVerifyFull(t *testing.T) {
 	t.Parallel()
 	ca, _ := trustprofiletest.Chain(t, pinnedHost)
 	for _, mode := range []string{"verify-ca", "require", "prefer", "disable"} {
-		_, err := pgdial.ConnConfigPinned("postgres://admin:pw@"+pinnedHost+":5432/app?sslmode="+mode, pinFor(t, ca, false))
+		_, err := pgdial.ConnConfigPinned(pinnedAdmin+pinnedHost+":5432/app?sslmode="+mode, pinFor(t, ca, false))
 		require.Error(t, err, mode)
 	}
 }

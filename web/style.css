@@ -325,6 +325,7 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .checks { list-style: none; margin: 0; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .check::before { content: ""; width: 14px; height: 14px; flex: none; }
+.check.gone::before { content: "✕"; color: var(--diff-del-fg); font-weight: 700; text-align: center; line-height: 14px; }
 .check.ok::before { content: "✓"; color: var(--diff-add-fg); font-weight: 700; text-align: center; line-height: 14px; }
 .check.wait::before { border: 2px solid var(--ui-focus); border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -450,3 +451,9 @@ button.widen { display: flex; gap: 12px; align-items: center; width: 100%; min-h
   .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: var(--radius-ui) var(--radius-ui) 0 0; max-height: 85vh; overflow-y: auto; }
   button.scope-done { display: block; width: 100%; }
 }
+
+/* The connect page's two tabs: Connect a bot and Remove BasaltDB. */
+.tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--ui-border); }
+.tabs [role="tab"] { min-height: 40px; padding: 0 14px; background: transparent; color: var(--ui-text-2); border: 0; border-bottom: 2px solid transparent; border-radius: 0; font-weight: 500; }
+.tabs [role="tab"][aria-selected="true"] { color: var(--ui-primary); border-bottom-color: var(--ui-primary); }
+pre.sql { white-space: pre-wrap; word-break: break-word; font-size: 0.85em; }

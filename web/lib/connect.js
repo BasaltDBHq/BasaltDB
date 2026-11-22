@@ -17,6 +17,7 @@ import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256,
 import { pairingCoordinates } from "./pairing.js";
 import { labelRow as sharedLabelRow } from "./pickviews.js";
 import { browserFetch } from "./transport.js";
+import { startTabs } from "./remove.js";
 import { ENTITY_WORDS, Labels, MAX_LABELS, answersFor, fingerprintText, hostOf, labelOf, restNote, tableName, trustRootFrom, trustText } from "./picks.js";
 
 // The pieces the local setup page shares with this one.
@@ -804,6 +805,9 @@ export function start(env) {
   const flow = new Flow(env);
   setText("host", PAGE_HOST);
   show("main");
+  // Two tabs: Connect a bot (the default) and Remove BasaltDB, which needs
+  // no setup code (#remove opens it).
+  startTabs(env, { removeOnly: location.hash === "#remove", rpc: { call, Refusal, notPostgres: NOT_POSTGRES } });
 
   // loop is the poll that runs now; a new one, Back and every way to
   // another screen cancel it.

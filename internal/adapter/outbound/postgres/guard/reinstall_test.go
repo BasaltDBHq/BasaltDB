@@ -85,7 +85,7 @@ func TestInstallsKeepsTheVaultUser(t *testing.T) {
 		if _, err := tx.Exec(ctx, `SELECT set_config('basalt.vault_user', 'alice@example.com', true)`); err != nil {
 			return err
 		}
-		return s.Apply(ctx, tx)
+		return guard.ApplyScript(ctx, tx, s)
 	}))
 	install, err := guard.InstallID(ctx, d.Admin)
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestUpgradeKeepsTheInstall(t *testing.T) {
 	apply := func(upTo int) {
 		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, UpTo: upTo})
 		require.NoError(t, err)
-		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 	}
 	apply(next - 1)
 	install, err := guard.InstallID(ctx, d.Admin)

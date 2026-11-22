@@ -6,7 +6,7 @@ Where code lives in this repo and which package may import which. The behaviour 
 
 ```
 cmd/basalt                     CLI: flags -> app or a service. No SQL, no rules.
-internal/app                   the only wiring: builds every adapter, hands it to the services
+internal/app                   the wiring: builds every adapter, hands it to the services (pkg/setup is the second root)
 internal/adapter/inbound       mcp, shim, pages, localsetup, httpserver: translate a request, call one service
 internal/service               use cases: the order of the steps; declares its ports; no SQL, HTTP or files
 internal/adapter/outbound      postgres/*, vault, plugintransport/*, osservice, trustdir, updatecheck, crash
@@ -19,7 +19,7 @@ pkg/                           public Go API: only what other repos import (setu
 api/                           the contract files: proto, schemas, vectors
 ```
 
-A service never talks to Postgres, the network or the disk itself. It declares the interface it needs (a port) and an outbound adapter implements it. `internal/app` builds the adapters and passes them in.
+A service never talks to Postgres, the network or the disk itself. It declares the interface it needs (a port) and an outbound adapter implements it. `internal/app` builds the adapters and passes them in. `pkg/setup` is the second composition root: another program calls it directly, with no `internal/app`, so it builds the adapters the setup service needs and passes them in. It is the only package under `pkg/` that may import an outbound adapter.
 
 ## Import rules
 
@@ -36,7 +36,7 @@ Each row lists what a package in that layer may import from this repo. Anything 
 | adapter/inbound | inbound, service, config, core, lib, pkg, api, web |
 | app | everything |
 | cmd | app, service, inbound, config, core, lib, pkg, api, web (not outbound) |
-| pkg | pkg, lib; `pkg/setup` also service and core |
+| pkg | pkg, lib; `pkg/setup` also service, core and outbound |
 
 Test files and the test helper packages (`guardtest`, `mcptest`, `passkeytest`, `pagetest`, `vaulttest`, `adaptertest`, `trustprofiletest`, `connecttest`, `archtest`) are exempt from the layer rules, core purity and the decision rule. The list is in the test.
 
@@ -57,7 +57,7 @@ Core stays pure. A package in `internal/core` does not import `os`, `io/fs`, `pa
 1. Does it run a use case, in steps (check, call a port, record, answer)? Put it in the service that needs it, in `internal/service/<name>`.
 2. Does it read or write Postgres, a file, the network or the OS? It is an outbound adapter. The service declares the port; the adapter in `internal/adapter/outbound/...` implements it.
 3. Does it turn a request from outside (an MCP call, an HTTP request, a page) into a call on one service? It is an inbound adapter in `internal/adapter/inbound/...`.
-4. Does it create adapters and connect them to services? That is `internal/app`, and nowhere else.
+4. Does it create adapters and connect them to services? That is `internal/app`, and `pkg/setup` for a program that calls it directly. Nowhere else.
 5. Is it a helper that knows nothing about BasaltDB (a browser opener, a time format)? `internal/lib`.
 6. Is it a fake or fixture shared by tests? `internal/testkit`.
 7. Is it needed by code in another repo? `pkg/`, and only that.

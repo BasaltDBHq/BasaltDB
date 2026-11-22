@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
 
@@ -17,16 +16,16 @@ type EngineState struct {
 	Key []byte
 	ID  string
 	// Recorded is the database's row for this engine, nil when none.
-	Recorded *guard.RecordedEngine
+	Recorded *RecordedEngine
 	// LastRevoked is the most recently revoked engine, nil when none.
-	LastRevoked *guard.RecordedEngine
+	LastRevoked *RecordedEngine
 }
 
 // readEngine reads the engines the database records when the code carries
 // one, and refuses a revoked engine (step 4, ENGINE_REVOKED). A guard
 // without the engines table records none yet: this setup's migrations add
 // it.
-func (s *Setup) readEngine(ctx context.Context, q guard.Querier) (EngineState, error) {
+func (s *Setup) readEngine(ctx context.Context, q Querier) (EngineState, error) {
 	if s.P.Engine == nil {
 		return EngineState{}, nil
 	}
@@ -35,7 +34,7 @@ func (s *Setup) readEngine(ctx context.Context, q guard.Querier) (EngineState, e
 		return EngineState{}, err
 	}
 	st := EngineState{Key: key, ID: channel.EngineIDOf(key)}
-	engines, err := guard.Engines(ctx, q, true)
+	engines, err := s.be.Engines(ctx, q, true)
 	if isUndefinedTable(err) {
 		return st, nil
 	}
@@ -83,11 +82,11 @@ func (p *Prepared) EngineLines() []string {
 // engineStatements are record_engine for the code's engine, run on a
 // guard at the installed version or the code's guard.to, whichever is
 // later; nothing when the code carries none.
-func (p *Prepared) engineStatements() []guard.Statement {
+func (p *Prepared) engineStatements() []Statement {
 	if p.Engine.Key == nil {
 		return nil
 	}
-	return []guard.Statement{guard.RecordEngineStatement(p.Engine.Key, max(p.State.GuardVersion, p.P.Guard.To))}
+	return []Statement{p.be.RecordEngineStatement(p.Engine.Key, max(p.State.GuardVersion, p.P.Guard.To))}
 }
 
 func UTCMinute(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }

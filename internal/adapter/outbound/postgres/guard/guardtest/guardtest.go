@@ -239,7 +239,7 @@ func (d *DB) TryInit(spec guard.AgentSpec) error {
 		if err != nil {
 			return err
 		}
-		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
 	})
 }
 

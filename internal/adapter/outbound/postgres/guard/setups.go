@@ -183,16 +183,6 @@ func SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]set
 	})
 }
 
-// RoleTimeouts is the statement_timeout a role has set, as Postgres stores
-// it ("30000", "30s"); "" for one it has not set.
-type RoleTimeouts struct {
-	// AllDatabases is ALTER ROLE ... SET, what basalt sets.
-	AllDatabases string
-	// ThisDatabase is ALTER ROLE ... IN DATABASE <the connected one> SET,
-	// which takes precedence over AllDatabases in that database.
-	ThisDatabase string
-}
-
 // RoleStatementTimeout is the statement_timeout role has set for every
 // database and for the connected database only.
 func RoleStatementTimeout(ctx context.Context, q Querier, role string) (RoleTimeouts, error) {

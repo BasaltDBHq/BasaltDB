@@ -56,7 +56,7 @@ func TestPlanInitAppliesOnlyMissingVersions(t *testing.T) {
 	apply := func(upTo int) guard.Script {
 		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, UpTo: upTo})
 		require.NoError(t, err)
-		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 		return s
 	}
 	versions := func() []int {

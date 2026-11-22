@@ -656,7 +656,7 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 			if err != nil {
 				return err
 			}
-			if err := s.Apply(ctx, tx); err != nil {
+			if err := guard.ApplyScript(ctx, tx, s); err != nil {
 				return err
 			}
 		}

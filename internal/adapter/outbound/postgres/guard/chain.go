@@ -29,12 +29,6 @@ const hashBytes = 32
 // full check.
 func Genesis() ChainHead { return ChainHead{Seq: 0, Hash: make([]byte, hashBytes)} }
 
-// Uncovered is an agent-writable table or cascade target without the guard.
-type Uncovered struct {
-	Table string
-	Why   string
-}
-
 // ErrNoInstall is InstallID's error when basalt_meta has no install row:
 // it was recreated outside the install, or the row deleted. basalt init
 // writes a new one, a new install.

@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
@@ -42,7 +41,7 @@ func VerifyRegistrationCode(code string, req passkey.RegistrationRequest, rp pas
 // HasPasskeyFor reports whether an active passkey of this database belongs
 // to origin. A passkey signs only on the origin it was registered on, so
 // one for the local pages does not count for the portal.
-func HasPasskeyFor(ctx context.Context, q guard.Querier, origin string) (bool, error) {
+func HasPasskeyFor(ctx context.Context, q Querier, origin string) (bool, error) {
 	var ok bool
 	// Plain SQL: a presence check on the admin connection.
 	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys WHERE origin = $1 AND revoked_at IS NULL)`, origin).Scan(&ok)
@@ -52,7 +51,7 @@ func HasPasskeyFor(ctx context.Context, q guard.Querier, origin string) (bool, e
 // PasskeyNeeded is whether the setup registers a portal passkey (step 7):
 // when no active one is registered, or add asks for another. Before the
 // setup ran, a database without the guard has none.
-func PasskeyNeeded(ctx context.Context, q guard.Querier, add bool) (bool, error) {
+func PasskeyNeeded(ctx context.Context, q Querier, add bool) (bool, error) {
 	if add {
 		return true, nil
 	}

@@ -9,11 +9,11 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // The sample database's names.
@@ -38,22 +38,7 @@ var leadsSQL string
 var notesSQL string
 
 // Plan is what seeding the sample schema will run.
-type Plan struct {
-	// SQL is what runs, in order; empty when the demo already exists.
-	SQL []string
-}
-
-// Shown is the SQL the person reads before confirming.
-func (p Plan) Shown() string {
-	var b strings.Builder
-	for _, s := range p.SQL {
-		b.WriteString(s + "\n")
-	}
-	return b.String()
-}
-
-// Exists: both sample tables are there, and nothing is seeded.
-func (p Plan) Exists() bool { return len(p.SQL) == 0 }
+type Plan = guardmodel.DemoPlan
 
 // Read reads what exists and plans only what is missing: the schema, and
 // each table with its rows. A table that exists is not touched (no row,
@@ -83,8 +68,8 @@ func Read(ctx context.Context, q guard.Querier) (Plan, error) {
 	return p, nil
 }
 
-// Apply runs the plan on tx.
-func (p Plan) Apply(ctx context.Context, tx pgx.Tx) error {
+// applyPlan runs the plan on tx.
+func applyPlan(ctx context.Context, tx pgx.Tx, p Plan) error {
 	for _, s := range p.SQL {
 		if _, err := tx.Exec(ctx, s); err != nil {
 			return fmt.Errorf("sample data: %w", err)
@@ -99,7 +84,7 @@ func Seed(ctx context.Context, tx pgx.Tx) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	return p, p.Apply(ctx, tx)
+	return p, applyPlan(ctx, tx, p)
 }
 
 // Counts is the row count of each sample table.

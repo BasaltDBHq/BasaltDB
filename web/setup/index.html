@@ -20,7 +20,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-Kh2pPJXCXtsPBtNlqMtDy2FMUX4rI9VFl8H0wtwlBZMbXrpUSIgpQgr7C1n+6mEz"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-Q1m3QQtbg+xk1uZb36uII5xh2Xzz/sqP3cyPw+rJsJM3Yd3l8/2QbDneJ9kkIJPG"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -40,6 +40,12 @@
   <main id="main" hidden>
     <h1 id="title">Set up BasaltDB for your agent</h1>
     <p><span id="intro"></span> <span id="job-demo" hidden>It uses the sample database.</span></p>
+
+    <section id="choice" class="panel" hidden>
+      <h2>What to do</h2>
+      <label><input id="choice-update" name="choice" type="radio" value="UPDATE"> Update the guard: add its missing migrations, and nothing else.</label>
+      <label><input id="choice-remove" name="choice" type="radio" value="REMOVE"> Remove BasaltDB from this database, with its ledger and roles.</label>
+    </section>
 
     <section class="panel">
       <h2>The agent's OS user</h2>

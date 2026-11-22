@@ -14,7 +14,19 @@ export const LINK_PREFIX = "1.";
 // JOBS are the jobs this page runs: INSTALL on an engine with no config,
 // UPDATE (the guard's missing migrations) and REMOVE (Basalt out of the
 // agent's database) on one that has it.
-export const JOBS = ["INSTALL", "UPDATE", "REMOVE"];
+export const JOBS = ["INSTALL", "UPDATE", "REMOVE", "CHANGE"];
+
+// CHOICES are the jobs a CHANGE link offers: basalt init's link for an
+// engine that is already set up. The page sends the one the person picks.
+export const CHOICES = ["UPDATE", "REMOVE"];
+
+// pickJob is the job the page runs for a link: the link's own, or for a
+// CHANGE link the person's pick (null until they pick).
+export function pickJob(link, picked) {
+  if (link.job !== "CHANGE") return link;
+  if (!CHOICES.includes(picked)) return null;
+  return { ...link, job: picked };
+}
 
 // JOB_TEXT is each job's fixed words on the page.
 export const JOB_TEXT = {
@@ -29,6 +41,12 @@ export const JOB_TEXT = {
     intro: (agent) => `Your agent ${agent} found that the guard in its database is older than BasaltDB on this computer. This page adds the guard's missing migrations, and nothing else.`,
     run: "Update the guard",
     done: (agent) => `The guard is updated. Tell the agent ${agent} to go on; it needs no restart.`,
+  },
+  CHANGE: {
+    title: "Change BasaltDB on this computer",
+    intro: (agent) => `BasaltDB is already set up for your agent ${agent}. Pick what to do: update the guard in its database, or remove BasaltDB.`,
+    run: "",
+    done: () => "",
   },
   REMOVE: {
     title: "Remove BasaltDB",
@@ -157,31 +175,46 @@ function showError(err) {
 }
 
 async function main() {
-  let job;
+  let link;
   try {
     localOrigin(window.location);
-    job = parseSetupLink(window.location.hash);
+    link = parseSetupLink(window.location.hash);
   } catch (err) {
     $("error-text").textContent = err.message;
     $("error").hidden = false;
     return;
   }
-  const text = JOB_TEXT[job.job];
-  document.title = text.title;
-  $("title").textContent = text.title;
-  $("intro").textContent = text.intro(job.agent);
-  $("job-os-user").textContent = job.osUser;
-  $("job-demo").hidden = !job.demo;
-  $("remove-confirm").hidden = job.job !== "REMOVE";
+  let job = pickJob(link, "");
+  let text = JOB_TEXT[link.job];
+  const showJob = () => {
+    text = JOB_TEXT[job ? job.job : link.job];
+    document.title = text.title;
+    $("title").textContent = text.title;
+    $("intro").textContent = JOB_TEXT[link.job].intro(link.agent);
+    $("remove-confirm").hidden = !job || job.job !== "REMOVE";
+  };
+  showJob();
+  $("job-os-user").textContent = link.osUser;
+  $("job-demo").hidden = !link.demo;
+  $("choice").hidden = link.job !== "CHANGE";
   $("main").hidden = false;
   const fetchFn = browserFetch;
   let databaseUrl = "";
   let checked = null;
-  const confirmed = () => $("confirm-os-user").checked && (job.job !== "REMOVE" || $("confirm-remove").checked);
+  const confirmed = () => job !== null && $("confirm-os-user").checked && (job.job !== "REMOVE" || $("confirm-remove").checked);
   const sync = () => {
     $("check").disabled = !confirmed() || $("database-url").value === "";
   };
   $("confirm-os-user").addEventListener("change", sync);
+  for (const name of CHOICES) {
+    $("choice-" + name.toLowerCase()).addEventListener("change", () => {
+      job = pickJob(link, name);
+      checked = null;
+      $("review").hidden = true;
+      showJob();
+      sync();
+    });
+  }
   $("confirm-remove").addEventListener("change", () => {
     if (checked) $("run").disabled = !confirmed();
   });

@@ -34,6 +34,10 @@ const (
 	JobInstall = "INSTALL"
 	JobUpdate  = "UPDATE"
 	JobRemove  = "REMOVE"
+	// JobChange is a link only: basalt init's link for an engine that is
+	// already set up. The page offers UPDATE and REMOVE and sends the one
+	// the person picks; no request carries CHANGE.
+	JobChange = "CHANGE"
 )
 
 // Fixed values the engine chooses itself for a first install.

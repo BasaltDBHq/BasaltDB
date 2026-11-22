@@ -89,6 +89,7 @@ func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
 		code string
 	}{
 		"an install":       {func(r *localsetup.Request) { r.Job = localsetup.JobInstall }, localsetup.CodeJobUnavailable},
+		"a change link":    {func(r *localsetup.Request) { r.Job = localsetup.JobChange }, localsetup.CodeInvalidArgument},
 		"no job":           {func(r *localsetup.Request) { r.Job = "" }, localsetup.CodeJobUnavailable},
 		"another agent":    {func(r *localsetup.Request) { r.Agent = "other_bot" }, localsetup.CodeInvalidArgument},
 		"another OS user":  {func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},

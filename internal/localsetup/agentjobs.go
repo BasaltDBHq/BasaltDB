@@ -53,6 +53,9 @@ type agentJob struct {
 // connect service compares a setup code's target (setuprun.SameDatabase),
 // before anything connects with it.
 func (s *Service) validateAgentJob(req Request) (agentJob, error) {
+	if req.Job == JobChange {
+		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
+	}
 	if req.Job != JobUpdate && req.Job != JobRemove {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
 	}

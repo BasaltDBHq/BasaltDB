@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 
 import { b64urlEncode, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { CHECK_PATH, JOB_TEXT, JOBS, localOrigin, parseSetupLink, postSetup, RUN_PATH, setupRequest } from "./setup.js";
+import { CHECK_PATH, CHOICES, JOB_TEXT, JOBS, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, setupRequest } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -81,7 +81,7 @@ test("a refusal comes back with its code and the engine's fixed message", async 
 });
 
 test("the link may name an update or a removal of the agent, never with the sample database", () => {
-  for (const name of ["UPDATE", "REMOVE"]) {
+  for (const name of ["UPDATE", "REMOVE", "CHANGE"]) {
     const j = { ...job, job: name, demo: false };
     assert.deepEqual(parseSetupLink(link(j)), j);
     assert.deepEqual(setupRequest(j, "postgres://u@h/d"), { ...j, databaseUrl: "postgres://u@h/d" });
@@ -89,11 +89,25 @@ test("the link may name an update or a removal of the agent, never with the samp
 });
 
 test("every job has its own fixed words, which name the agent", () => {
-  for (const name of JOBS) {
+  assert.match(JOB_TEXT.CHANGE.intro("demo_bot"), /demo_bot/);
+  for (const name of JOBS.filter((j) => j !== "CHANGE")) {
     const t = JOB_TEXT[name];
     assert.ok(t.title && t.run, name);
     assert.match(t.intro("demo_bot"), /demo_bot/, name);
     assert.match(t.done("demo_bot"), /demo_bot/, name);
   }
   assert.match(JOB_TEXT.REMOVE.intro("a"), /Nothing can undo it/);
+});
+
+test("a CHANGE link runs only the job the person picks, and never sends CHANGE", () => {
+  const change = parseSetupLink(link({ ...job, job: "CHANGE", demo: false }));
+  assert.equal(pickJob(change, ""), null, "nothing runs before a pick");
+  assert.equal(pickJob(change, "INSTALL"), null, "only UPDATE or REMOVE");
+  assert.deepEqual(CHOICES, ["UPDATE", "REMOVE"]);
+  for (const name of CHOICES) {
+    assert.deepEqual(setupRequest(pickJob(change, name), "postgres://u@h/d").job, name);
+  }
+  assert.throws(() => parseSetupLink(link({ ...job, job: "CHANGE", demo: true })));
+  const install = parseSetupLink(link(job));
+  assert.equal(pickJob(install, "REMOVE"), install, "an install link keeps its own job");
 });

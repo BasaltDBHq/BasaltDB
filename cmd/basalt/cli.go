@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 )
 
 // Environment variables the CLI reads.
@@ -176,12 +176,12 @@ func (c *cliIO) line() (string, error) {
 // connect opens one connection, usable through a transaction pooler
 // (pgdial).
 func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
-	conn, err := pgdial.Connect(ctx, dsn)
+	conn, err := app.Connect(ctx, dsn)
 	if err != nil {
 		if changed := rootChanged(ctx, dsn, err); changed != nil {
 			return nil, fmt.Errorf("connect: %w", changed)
 		}
-		return nil, fmt.Errorf("connect: %w", pgdial.WithCertificateHint(dsn, err))
+		return nil, fmt.Errorf("connect: %w", app.WithCertificateHint(dsn, err))
 	}
 	return conn, nil
 }

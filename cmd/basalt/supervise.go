@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -248,7 +247,7 @@ func childStarter(startedFrom, configPath, lockPath, stateDir string, io stdio, 
 }
 
 func writeLastStop(stateDir, reason, configPath string, at time.Time, log *slog.Logger) {
-	raw, err := json.Marshal(laststop.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: laststop.HashEngineJSON(configPath)})
+	raw, err := json.Marshal(app.LastStopRecord{Reason: reason, At: at.UTC(), EngineSHA256: app.LastStopHashEngineJSON(configPath)})
 	if err == nil {
 		err = os.MkdirAll(stateDir, privateDirMode)
 	}

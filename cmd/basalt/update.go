@@ -12,9 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
@@ -44,7 +45,7 @@ var noUpdateLine = []string{"engine", "mcp", "help", "-h", "--help"}
 // never overridden by a failed read; the engine's own notice reaches the
 // agent. No config at all means nobody opted out.
 func updateOff(getenv func(string) string, h host) bool {
-	if updatecheck.Disabled(getenv) || buildinfo.Version == updatecheck.DevVersion {
+	if app.UpdateDisabled(getenv) || buildinfo.Version == app.UpdateDevVersion {
 		return true
 	}
 	path, derr := discoverConfig(h, config.DefaultPath(runtime.GOOS))
@@ -62,15 +63,15 @@ func updateOff(getenv func(string) string, h host) bool {
 	return true
 }
 
-func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
-	if buildinfo.Version == updatecheck.DevVersion {
+func updateChecker(getenv func(string) string) (*app.UpdateChecker, error) {
+	if buildinfo.Version == app.UpdateDevVersion {
 		return nil, errDevBuild
 	}
-	dir, err := updatecheck.CacheDir(getenv(envCacheDir))
+	dir, err := app.UpdateCacheDir(getenv(envCacheDir))
 	if err != nil {
 		return nil, err
 	}
-	return &updatecheck.Checker{Dir: dir, Current: buildinfo.Version}, nil
+	return &app.UpdateChecker{Dir: dir, Current: buildinfo.Version}, nil
 }
 
 // errDevBuild means this build has no release number, so no check runs.
@@ -109,7 +110,7 @@ func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv fun
 
 // printUpdateLine writes n's line to w: yellow, or red for a security
 // release, only when w is a terminal and NO_COLOR is not set.
-func printUpdateLine(w io.Writer, getenv func(string) string, n *updatecheck.Notice, exe string) {
+func printUpdateLine(w io.Writer, getenv func(string) string, n *app.UpdateNotice, exe string) {
 	if n == nil {
 		return
 	}

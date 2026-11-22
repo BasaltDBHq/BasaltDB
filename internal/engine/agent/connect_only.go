@@ -121,8 +121,8 @@ func databaseRefusedSteps(b *Steps, cmds Commands) string {
 		"The agent gives you a new link to set it up again; paste your own database's connection string there."
 }
 
-// addressInvalidSteps: the address the page handed over was refused; a
-// recovery code with --forget.
+// addressInvalidSteps: the address the page handed over was refused; the
+// next basalt init --remote forgets the setup and makes a recovery code.
 func addressInvalidSteps(b *Steps, cmds Commands) string {
 	b.AskPerson("Tell the person the database address the connect page handed over was refused, so you did not use it.")
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")

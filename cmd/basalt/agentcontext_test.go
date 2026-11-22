@@ -107,8 +107,7 @@ func TestAgentContextNeedsAMarker(t *testing.T) {
 func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 	t.Parallel()
 	r := cliOn(t, newFakeHost(t), map[string]string{envAdminURL: leakedAdmin}, "",
-		"init", "--remote", "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://postgres@db.example.com:5432/app",
-		"--config", filepath.Join(t.TempDir(), "engine.json"))
+		"init", "--remote", "--agent", "bot", "--config", filepath.Join(t.TempDir(), "engine.json"))
 	require.Contains(t, r.stderr, remoteAdminEnvSet)
 	require.NotContains(t, r.stdout+r.stderr, "hunter2")
 }

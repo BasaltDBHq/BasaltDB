@@ -83,7 +83,7 @@ func newHandoffFixture(t *testing.T) handoffFixture {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	cfg := connectOnlyConfig(t)
-	install := remote(t, cfg, append(append([]string{}, connectOnlyArgs...), "--prefix", d.Names.Prefix)...)
+	install := connectOnlyWithPrefix(t, cfg, d.Names.Prefix)
 	require.True(t, install.res.ConnectOnly)
 	proxy := connecttest.StartProxy(t, dbHost, upstreamOf(t, d))
 	proxies := map[string]*connecttest.Proxy{dbHost: proxy}

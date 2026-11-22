@@ -71,6 +71,10 @@ func (f handoffFiles) RefuseSetup(id string) error {
 	return f.change(id, func(s *config.Setup) { s.AwaitingAddress, s.Refused = false, true })
 }
 
+func (f handoffFiles) MarkAddressInvalid(id string) error {
+	return f.change(id, func(s *config.Setup) { s.AddressInvalid = true })
+}
+
 // change edits the agent's pending setup id in engine.json; another setup
 // there is a refusal, and nothing is written.
 func (f handoffFiles) change(id string, edit func(*config.Setup)) error {

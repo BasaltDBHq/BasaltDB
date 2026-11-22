@@ -100,6 +100,9 @@ type Files interface {
 	ConfirmSetup(id string) error
 	// RefuseSetup replaces awaitingAddress with refused in pending setup id.
 	RefuseSetup(id string) error
+	// MarkAddressInvalid sets addressInvalid in pending setup id: the next
+	// basalt init --remote forgets it and makes a recovery code.
+	MarkAddressInvalid(id string) error
 }
 
 // State is what status reports about the connect-only setup.
@@ -379,6 +382,17 @@ func (p *Pending) step(ctx context.Context) {
 	switch {
 	case errors.Is(err, ErrAddressInvalid):
 		p.o.Log.Warn("the collected address is refused", "setupId", setup.SetupID)
+		if !setup.AddressInvalid {
+			if err := p.o.Files.MarkAddressInvalid(setup.SetupID); err != nil {
+				p.o.Log.Warn("record the refused address in engine.json", "setupId", setup.SetupID, "err", err)
+			} else {
+				p.mu.Lock()
+				if p.st.Setup.SetupID == setup.SetupID {
+					p.st.Setup.AddressInvalid = true
+				}
+				p.mu.Unlock()
+			}
+		}
 		p.waiting(ProblemAddressInvalid, nil)
 		return
 	case errors.Is(err, ErrTrustRootMismatch):

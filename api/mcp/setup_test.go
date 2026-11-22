@@ -109,7 +109,7 @@ func loadSetupFixtures(t *testing.T) setupFixtures {
 
 func TestSetupSchemas(t *testing.T) {
 	t.Parallel()
-	checkPayloadSchemas(t, "setup", []string{"remote-init-result.schema.json", "setup-code.schema.json"})
+	checkPayloadSchemas(t, "setup", []string{"setup-code.schema.json"})
 }
 
 // TestSetupCodeFixtures checks the golden setup codes against the codec
@@ -373,10 +373,18 @@ func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Ti
 	switch {
 	case kind == "INSTALL" && exists:
 		return "ROLE_EXISTS", ""
-	case kind == "AGENT" && !exists:
+	case kind == "AGENT" && !exists && !hasVerifier(p):
+		// An AGENT code with a verifier runs as an INSTALL instead.
 		return "ROLE_MISSING", ""
 	}
 	return "", laptopSummary(t, p, role)
+}
+
+// hasVerifier reports whether the payload's agent part carries a verifier.
+func hasVerifier(p map[string]any) bool {
+	a, ok := p["agent"].(map[string]any)
+	v, _ := a["verifier"].(string)
+	return ok && v != ""
 }
 
 func laptopSummary(t *testing.T, p map[string]any, role string) string {

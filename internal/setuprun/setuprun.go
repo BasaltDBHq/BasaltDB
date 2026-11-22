@@ -71,7 +71,7 @@ type Setup struct {
 	// tables are, for an agent.allTables code, what Prepare read from the
 	// database: the agent's write and read-only tables, and those left out.
 	tables guard.SchemaTables
-	// asInstall is a connect-only recovery AGENT code whose role does not
+	// asInstall is an AGENT code with a verifier whose role does not
 	// exist: it runs as an INSTALL (Prepare).
 	asInstall bool
 	// given: Include was called with the page's ticks (given), which
@@ -206,8 +206,8 @@ func (s *Setup) Spec() guard.AgentSpec {
 // agent gets and those left out; empty otherwise.
 func (s *Setup) Tables() guard.SchemaTables { return s.tables }
 
-// RunsAsInstall is whether Prepare found a connect-only recovery AGENT
-// code's role missing, so the setup creates it as an INSTALL does.
+// RunsAsInstall is whether Prepare found the role of an AGENT code with a
+// verifier missing, so the setup creates it as an INSTALL does.
 func (s *Setup) RunsAsInstall() bool { return s.asInstall }
 
 // Prepared is a setup checked against the database: what it found and the
@@ -248,9 +248,9 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := s.checkIncluded(); err != nil {
 		return nil, err
 	}
-	// CheckDatabase let a connect-only AGENT code through without its role:
-	// a recovery code, run as an INSTALL.
-	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.ConnectOnly() && len(db.Roles) == 0
+	// CheckDatabase let an AGENT code with a verifier through without its
+	// role: it runs as an INSTALL.
+	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.HasVerifier() && len(db.Roles) == 0
 	state.RunsAsInstall = s.asInstall
 	engine, err := s.readEngine(ctx, conn)
 	if err != nil {

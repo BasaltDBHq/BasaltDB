@@ -146,8 +146,7 @@ func newConnectFixture(t *testing.T) connectFixture {
 	t.Helper()
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
-	install := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--database-url", dbURL, "--operated-by", "agent")
+	install := codeFor(t, d, dbURL, cfg, "--write=public.leads")
 	srv, base := connecttest.Start(t)
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)

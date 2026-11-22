@@ -62,8 +62,7 @@ func CheckNotConnectOnly(p Payload) error {
 	if !p.ConnectOnly() {
 		return nil
 	}
-	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+
-		" sent, or ask it for a code for this command (basalt init --remote --database-url <the database, without password>).")
+	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+" sent.")
 }
 
 func futureMessage(agent string) string {
@@ -121,8 +120,7 @@ func CheckDatabase(p Payload, db Database) error {
 	exists := role != "" && slices.Contains(db.Roles, role)
 	switch {
 	case p.Kind == KindInstall && exists:
-		return refuseWith(RefusalRoleExists, role+" already exists. This code would replace its password: ask "+agent+
-			" for a new code, or run basalt init --remote --new-code for that agent if it is yours.")
+		return refuseWith(RefusalRoleExists, role+" already exists. This code would replace its password: ask "+agent+" for a new code.")
 	case p.Kind == KindAgent && !exists && !p.ConnectOnly():
 		// A connect-only recovery code whose role does not exist runs as
 		// an INSTALL instead (CONTRACT.md, Connect-only setup codes).

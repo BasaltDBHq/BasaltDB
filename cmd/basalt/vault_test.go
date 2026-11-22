@@ -148,65 +148,23 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 
 func TestInitRemoteWritesTheVault(t *testing.T) {
 	t.Parallel()
-	base := []string{"--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL}
-	for _, tc := range []struct {
-		name  string
-		args  []string
-		want  string
-		line  string
-		dials bool
-	}{
-		{
-			"person default", nil, config.VaultOff,
-			"basalt: vault: off (default for --operated-by=person; --vault=on to turn it on)\n", false,
-		},
-		{
-			"agent default",
-			[]string{"--operated-by", "agent"},
-			config.VaultOn,
-			"basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n", true,
-		},
-		{
-			"agent turns it off",
-			[]string{"--operated-by", "agent", "--vault=off"},
-			config.VaultOff,
-			"basalt: vault: off (--vault=off)\n", false,
-		},
-		{"person turns it on", []string{"--vault", "on"}, config.VaultOn, "basalt: vault: on (--vault=on)\n", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			cfg := tempConfig(t)
-			r := remote(t, cfg, append(append([]string{}, base...), tc.args...)...)
-			require.Equal(t, tc.want, r.cfg.Vault)
-			require.Equal(t, tc.dials, r.cfg.VaultEnabled(), "the portal's pages: the engine dials out exactly when vault is ON")
-			require.Contains(t, r.stderr, tc.line)
-			fi, err := os.Stat(cfg)
-			require.NoError(t, err)
-			require.Equal(t, os.FileMode(config.FileMode), fi.Mode().Perm())
-		})
-	}
+	cfg := withState(t, tempConfig(t))
+	r := remote(t, cfg, "--agent", "bot")
+	require.Equal(t, config.VaultOn, r.cfg.Vault, "a new engine is agent-operated with the Vault on")
+	require.True(t, r.cfg.VaultEnabled(), "the portal's pages: the engine dials out exactly when vault is ON")
+	require.Contains(t, r.stderr, "basalt: vault: on\n")
+	fi, err := os.Stat(cfg)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(config.FileMode), fi.Mode().Perm())
 
-	t.Run("a rerun keeps the person's choice", func(t *testing.T) {
-		t.Parallel()
-		cfg := tempConfig(t)
-		first := remote(t, cfg, append(append([]string{}, base...), "--operated-by", "agent", "--vault=off")...)
-		require.Equal(t, config.VaultOff, first.cfg.Vault)
-		again := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--operated-by", "agent")
-		require.Equal(t, config.VaultOff, again.cfg.Vault, "no --vault: the engine never starts dialing out on its own")
-		require.False(t, again.cfg.VaultEnabled())
-		require.Contains(t, again.stderr, "basalt: vault: off (kept from engine.json; --vault=on to change)\n")
-	})
-
-	t.Run("a new operatedBy takes its default", func(t *testing.T) {
-		t.Parallel()
-		cfg := tempConfig(t)
-		first := remote(t, cfg, base...)
-		require.Equal(t, config.VaultOff, first.cfg.Vault)
-		again := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--operated-by", "agent")
-		require.Equal(t, config.VaultOn, again.cfg.Vault, "person to agent: the agent default, printed")
-		require.Contains(t, again.stderr, "basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n")
-	})
+	// A rerun keeps the config's choice: the engine never starts dialing
+	// out on its own.
+	installedAgent(t, noDB(t), cfg, supabaseDSN(t))
+	editConfig(t, cfg, func(c *config.Config) { c.Vault = config.VaultOff })
+	again := remote(t, cfg, "--agent", "bot")
+	require.Equal(t, config.VaultOff, again.cfg.Vault)
+	require.False(t, again.cfg.VaultEnabled())
+	require.Contains(t, again.stderr, "basalt: vault: off (kept from engine.json)\n")
 }
 
 func TestConfigUpsertAppliesTheVaultDefaultOnlyWhenThereIsNone(t *testing.T) {

@@ -109,7 +109,7 @@ func loadSetupFixtures(t *testing.T) setupFixtures {
 
 func TestSetupSchemas(t *testing.T) {
 	t.Parallel()
-	checkPayloadSchemas(t, "setup", []string{"remote-init-result.schema.json", "setup-code.schema.json"})
+	checkPayloadSchemas(t, "setup", []string{"setup-code.schema.json"})
 }
 
 // TestSetupCodeFixtures checks the golden setup codes against the codec

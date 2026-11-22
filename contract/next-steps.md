@@ -222,7 +222,7 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | Entry | Code | Reason | Steps |
 |---|---|---|---|
 | error | `APPROVAL_REQUIRED` | `NO_PASSKEY` | A `RUN_COMMAND` (init --remote: an `AGENT` code with no change; the person's computer registers a portal passkey); +pm |
-| error | `UNAVAILABLE` | `CREDENTIAL_REJECTED` | A `RUN_COMMAND` (init --remote --new-code: an `AGENT` code with a new password); +pm |
+| error | `UNAVAILABLE` | `CREDENTIAL_REJECTED` | A `RUN_COMMAND` (init --remote: the database refuses the credential, so an `AGENT` code with a new password); +pm |
 | error | `UNAVAILABLE` | `GUARD_MISSING` | A `RUN_COMMAND` (init --remote: an `INSTALL` code); +pm |
 | error | `UNAVAILABLE` | `GUARD_OUTDATED` | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
 | error | `UNAVAILABLE` | `ENGINE_UNREACHABLE` | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (same call, `repeatCall`) |
@@ -230,7 +230,7 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | problem | `ENGINE_UNREACHABLE` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
 | problem | `ENGINE_START_FAILED` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
 | problem | `ENGINE_GAVE_UP` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
-| problem | `CREDENTIAL_REJECTED` | — | A `RUN_COMMAND` (init --remote --new-code: an `AGENT` code with a new password); +pm |
+| problem | `CREDENTIAL_REJECTED` | — | A `RUN_COMMAND` (init --remote: the database refuses the credential, so an `AGENT` code with a new password); +pm |
 | problem | `GUARD_MISSING` | — | A `RUN_COMMAND` (init --remote: an `INSTALL` code); +pm |
 | problem | `GUARD_OUTDATED` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
 

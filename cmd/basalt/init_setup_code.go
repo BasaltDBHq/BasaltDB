@@ -331,7 +331,7 @@ func checkSetupTarget(p setupcode.Payload, admin string) error {
 	if err := sameEffectiveTarget(admin, got); err != nil {
 		return err
 	}
-	return setuprun.CheckTarget(p, got, u)
+	return setuprun.CheckTarget(p, got)
 }
 
 // sameEffectiveTarget refuses an admin string that pgx would connect

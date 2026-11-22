@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
@@ -24,7 +24,8 @@ func TestInitSetupCodeRecordsTheEngine(t *testing.T) {
 	d, dbURL := remoteDB(t)
 	h := newFakeHost(t)
 	cfg := filepath.Join(h.configDir, "engine.json")
-	install := remoteAsUser(t, h, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--database-url", dbURL)
+	seedDB(t, remoteEnv{host: h}, cfg, d, dbURL, "0123abcd")
+	install := remoteAsUser(t, h, cfg)
 	require.NotNil(t, install.payload.Engine, "the code carries the engine key: %s", install.stderr)
 	key, err := install.payload.Engine.Key()
 	require.NoError(t, err)
@@ -44,7 +45,8 @@ func TestInitSetupCodeRecordsTheEngine(t *testing.T) {
 
 	// Another engine recorded in the database is left as it is.
 	other := recordTestEngine(t, d)
-	change := remoteAsUser(t, h, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	change := remoteAsUser(t, h, cfg)
+	require.NotEqual(t, install.res.SetupID, change.res.SetupID)
 	r = laptopRun(t, d.URL, "y\n", time.Time{}, "--setup-code", change.res.Code)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.NotContains(t, r.stderr, channel.FingerprintOf(other))
@@ -56,22 +58,18 @@ func TestInitSetupCodeRecordsTheEngine(t *testing.T) {
 	// warns before trusting a server again.
 	_, err = guard.RevokeEngine(context.Background(), d.Admin, id)
 	require.NoError(t, err)
-	again := remoteAsUser(t, h, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	again := remoteAsUser(t, h, cfg)
 	r = laptopRun(t, d.URL, "", time.Time{}, "--setup-code", again.res.Code, "--yes")
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "ENGINE_REVOKED: engine "+channel.FingerprintOf(id)+" was revoked in this database on ")
 	require.Contains(t, r.stderr, "set the engine up again from the start")
 }
 
-// remoteAsUser is basalt init --remote run by the engine's own OS user (not
-// root), who can make and read the engine's key file.
-func remoteAsUser(t *testing.T, h *fakeHost, cfg string, args ...string) remoteRun {
+// remoteAsUser is basalt init --remote for the bot run by the engine's own
+// OS user (not root), who can make and read the engine's key file.
+func remoteAsUser(t *testing.T, h *fakeHost, cfg string) remoteRun {
 	t.Helper()
-	run := func(t *testing.T, args ...string) result {
-		t.Helper()
-		return cliOn(t, h, map[string]string{envAdminURL: "postgres://admin:adminsecret@db.example.com/postgres"}, "", args...)
-	}
-	return remoteWith(t, run, cfg, args...)
+	return remoteWith(t, remoteEnv{host: h}, cfg, "--agent", "bot")
 }
 
 // As root, init reads or makes the engine's key file through the state
@@ -81,34 +79,42 @@ func remoteAsUser(t *testing.T, h *fakeHost, cfg string, args ...string) remoteR
 func TestInitRemoteAsRootCarriesTheEngineKey(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	args := []string{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app"}
-	// The service manager makes the state directory, not init.
-	noState := remote(t, cfg, args...)
-	require.Nil(t, noState.payload.Engine)
-	// A config outside the default place keeps its state next to it, which
-	// no service manager makes: init says how to make it.
-	require.Contains(t, noState.stderr, "does not exist yet; make it for the engine's user (sudo install -d -m 0700 -o ")
-	require.NoDirExists(t, noState.cfg.StateDirFor(runtime.GOOS))
-	require.NoError(t, os.Mkdir(noState.cfg.StateDirFor(runtime.GOOS), 0o700))
+	installedAgent(t, noDB(t), cfg, supabaseDSN(t))
+	loaded, err := config.Load(cfg)
+	require.NoError(t, err)
+	stateDir := loaded.StateDirFor(runtime.GOOS)
+	keyFile := filepath.Join(stateDir, channel.KeyFileName)
 
-	install := remote(t, cfg, append(args, "--new-code")...)
+	install := remote(t, cfg, "--agent", "bot")
+	require.NotNil(t, install.payload.Target, "a code for the credential's database")
 	require.NotNil(t, install.payload.Engine, install.stderr)
 	require.NotContains(t, install.stderr, "carries no engine key")
-	keyFile := filepath.Join(install.cfg.StateDirFor(runtime.GOOS), channel.KeyFileName)
 	keys, err := channel.LoadKeys(keyFile)
 	require.NoError(t, err, "the engine loads the key file root made")
 	require.Equal(t, base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI()), install.payload.Engine.PublicKey)
 
-	again := remote(t, cfg, append(args, "--new-code")...)
+	clearSetup(t, cfg)
+	again := remote(t, cfg, "--agent", "bot")
 	require.Equal(t, install.payload.Engine, again.payload.Engine)
 
 	// A key file the engine's user replaced with a symlink is refused, and
 	// the code carries no key.
+	clearSetup(t, cfg)
 	require.NoError(t, os.Rename(keyFile, keyFile+".moved"))
 	require.NoError(t, os.Symlink(keyFile+".moved", keyFile))
-	refused := remote(t, cfg, append(args, "--new-code")...)
+	refused := remote(t, cfg, "--agent", "bot")
 	require.Nil(t, refused.payload.Engine)
 	require.Contains(t, refused.stderr, "is a symlink, which is refused")
+
+	// The service manager makes the state directory, not init. A config
+	// outside the default place keeps its state next to it, which no
+	// service manager makes: init says how to make it.
+	clearSetup(t, cfg)
+	require.NoError(t, os.RemoveAll(stateDir))
+	noState := remote(t, cfg, "--agent", "bot")
+	require.Nil(t, noState.payload.Engine)
+	require.Contains(t, noState.stderr, "does not exist yet; make it for the engine's user (sudo install -d -m 0700 -o ")
+	require.NoDirExists(t, stateDir)
 }
 
 // The state directory comes from engine.json, which the config directory's
@@ -117,19 +123,11 @@ func TestInitRemoteAsRootCarriesTheEngineKey(t *testing.T) {
 func TestInitRemoteAsRootKeepsTheKeyToTheConfigOwnersStateDirectory(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	args := append(make([]string, 0, 8), "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
-	remote(t, cfg, args...)
-	raw, err := os.ReadFile(cfg)
-	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, json.Unmarshal(raw, &doc))
+	installedAgent(t, noDB(t), cfg, supabaseDSN(t))
 	missing := filepath.Join(t.TempDir(), "x", "y")
 	for _, stateDir := range []string{"/usr", missing} {
-		doc["stateDir"] = stateDir
-		out, err := json.MarshalIndent(doc, "", "  ")
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(cfg, out, 0o600))
-		r := remote(t, cfg, append(args, "--new-code")...)
+		editConfig(t, cfg, func(c *config.Config) { c.StateDir = stateDir; c.Agents[0].Setup = nil })
+		r := remote(t, cfg, "--agent", "bot")
 		require.Nil(t, r.payload.Engine, stateDir)
 		require.Contains(t, r.stderr, "the code carries no engine key", stateDir)
 	}

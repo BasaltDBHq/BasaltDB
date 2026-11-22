@@ -253,6 +253,10 @@ type Setup struct {
 	// database is not theirs (confirm_database NO): the next basalt init
 	// --remote makes a recovery code.
 	Refused bool `json:"refused,omitempty"`
+	// AddressInvalid is set next to AwaitingAddress once the engine refused
+	// the address the connect service handed over (ADDRESS_INVALID): the
+	// next basalt init --remote forgets the setup and makes a recovery code.
+	AddressInvalid bool `json:"addressInvalid,omitempty"`
 }
 
 // ConnectOnly reports whether s is a connect-only setup: its engine

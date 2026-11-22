@@ -46,9 +46,8 @@ func (c *cliIO) agentFacing() bool {
 
 // What an agent does instead of a command that needs the admin credential.
 const (
-	hintAgentInit = "To set up an agent, run basalt init --remote --agent NAME --write schema.table,... " +
-		"--database-url 'postgres://user@host:port/database' (the connection string WITHOUT the password) " +
-		"and give the person the setup code it prints: they run basalt init --setup-code on their own computer."
+	hintAgentInit = "To set up an agent, run basalt init --remote --agent NAME and show the person the link it prints: " +
+		"they finish the setup on that page."
 	hintAgentSetupCode = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads."
 	hintAgentPerson    = "Give the person this command instead of running it: they run it in a terminal of their own, which no agent reads. " +
 		"To set up or upgrade an agent, run basalt init --remote and give the person the setup code it prints."
@@ -146,16 +145,13 @@ const adminEnvLeaked = envAdminURL + " is set where an agent can read it; basalt
 // agentInitUsage is basalt init's help when an agent reads it: only the
 // agent-led setup, never init with the admin credential, which an agent
 // would have to ask the person for.
-const agentInitUsage = `usage: basalt init --remote --agent NAME [--write schema.table,...] [--read schema.table,...] --database-url URL [flags]
-         makes a setup code on this machine with no admin credential; URL is the
-         connection string WITHOUT the password (see basalt init --remote -h)
-       basalt init --setup-code CODE
-         the person runs this on their own computer, in a terminal no agent reads
+const agentInitUsage = `usage: basalt init --remote [--agent NAME]
+         sets up an agent on this machine with no admin credential and prints
+         the connect link the person opens
 
 An agent never asks for, accepts or types the database admin connection string
 or password. If the person pastes one, tell them to change that password now.
-Give the person the setup code, its fingerprint and the basalt init --setup-code
-command, then end your turn.
+Show the person the link and its fingerprint, then end your turn.
 
 ` + manyAgentsHelp + "\n"
 

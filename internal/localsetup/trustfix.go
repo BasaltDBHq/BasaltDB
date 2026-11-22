@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -37,6 +38,9 @@ type agentHost struct {
 // hostOf reads the agent's host and this engine's pin for it.
 func (s *Service) hostOf(a config.Agent) (agentHost, error) {
 	dsn, err := config.ReadCredential(a.Store.CredentialFile)
+	if err == nil {
+		err = pgdial.CheckForeignDSN(dsn)
+	}
 	if err != nil {
 		return agentHost{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
@@ -111,6 +115,9 @@ func (s *Service) readTrust(ctx context.Context, j agentJob) (trustCase, error) 
 			return trustCase{}, refuse(CodeAnswersInvalid, "The database presents the certificate BasaltDB trusts, so there is no new one to trust. Reload the page; nothing changed.")
 		}
 		return tc, nil
+	}
+	if j.req.Pinned != "" {
+		return trustCase{}, refuse(CodeAnswersInvalid, "A new certificate is trusted with its own fingerprint, not the one BasaltDB trusts now. Reload the page; nothing changed.")
 	}
 	if tc.seen.Public || !tc.seen.Pinnable() {
 		return trustCase{}, notVerified()
@@ -222,6 +229,10 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 		}
 		database, sha = plan.Database, tc.seen.SHA256
 		if !tc.changed {
+			// The pin the check showed must be the one recorded now.
+			if j.req.Pinned != plan.Pinned {
+				return refuse(CodeTrustRootMismatch, "The certificate BasaltDB trusts changed on this computer since the page checked it. Nothing was recorded; check it again.")
+			}
 			sha = plan.Pinned
 		}
 		if err := guard.RecordTrustPin(ctx, tx, tc.host, tc.port, sha); err != nil {

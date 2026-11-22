@@ -61,6 +61,8 @@ type agentJob struct {
 	// host is the admin string's host and port, lowercase: a PASSKEY_ADD
 	// challenge is bound to it.
 	host string
+	// missing: the agent's credential file is gone (a REPAIR only).
+	missing bool
 	// others are the other agents of this engine whose credential connects
 	// to the same database: a REMOVE drops their roles too, so it removes
 	// them from engine.json with the agent.
@@ -144,18 +146,26 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	if err != nil {
 		return agentJob{}, err
 	}
-	want, err := credentialTarget(a)
-	if err != nil {
-		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
-	}
 	got, err := adminTarget(req.DatabaseURL)
 	if err != nil {
 		return agentJob{}, err
 	}
+	want, err := credentialTarget(a)
+	missing := false
+	switch {
+	case err != nil && req.Job == JobRepair && errors.Is(err, os.ErrNotExist):
+		// The credential file is gone: REPAIR writes a new one for the
+		// database the admin string names, once that database holds this
+		// engine's guard and the agent's role (CONTRACT.md, The Update check,
+		// REPAIR).
+		want, missing = got, true
+	case err != nil:
+		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
+	}
 	if !setuprun.SameDatabase(want, got) {
 		return agentJob{}, refuse(CodeTargetMismatch, fmt.Sprintf("This admin connection string is for another database than the agent %s uses. Use the admin connection string of the agent's own database; nothing changed.", req.Agent))
 	}
-	j := agentJob{req: req, agent: a, role: role, names: guard.Names{Prefix: s.opts.Prefix}, target: want, host: host}
+	j := agentJob{req: req, agent: a, role: role, names: guard.Names{Prefix: s.opts.Prefix}, target: want, host: host, missing: missing}
 	if req.Job != JobRemove {
 		return j, nil
 	}
@@ -184,6 +194,7 @@ const (
 	fieldChallenge
 	fieldPasskey
 	fieldCredentialID
+	fieldPinned
 )
 
 // fieldsOf are the optional fields req carries.
@@ -198,6 +209,7 @@ func fieldsOf(req Request) int {
 		{req.Challenge != nil, fieldChallenge},
 		{req.Passkey != nil, fieldPasskey},
 		{req.CredentialID != "", fieldCredentialID},
+		{req.Pinned != "", fieldPinned},
 	} {
 		if set.on {
 			f |= set.bit
@@ -215,6 +227,9 @@ func allowedFields(job string, run bool) int {
 			return fieldLabels
 		}
 	case JobTrust:
+		if run {
+			return fieldTrustRoot | fieldPinned
+		}
 		return fieldTrustRoot
 	case JobPasskeyAdd:
 		if run {

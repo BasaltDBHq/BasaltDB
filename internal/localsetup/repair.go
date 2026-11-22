@@ -27,6 +27,9 @@ import (
 // the engine cannot try (the database unreachable, its certificate not
 // verified) is that refusal. A login the database refuses is repairable.
 func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
+	if j.missing {
+		return "", nil // no credential to try: the fix writes a new one
+	}
 	dsn, err := config.ReadCredential(j.agent.Store.CredentialFile)
 	if err != nil {
 		return "", refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
@@ -59,7 +62,11 @@ func (s *Service) repairPlan(j agentJob, password string) (guard.Script, []strin
 	if err != nil {
 		return guard.Script{}, nil, setupFailed()
 	}
-	return script, []string{fmt.Sprintf("This sets a new password for %s. Only this computer's BasaltDB knows it.", j.role)}, nil
+	lines := []string{fmt.Sprintf("This sets a new password for %s. Only this computer's BasaltDB knows it.", j.role)}
+	if j.missing {
+		lines = append(lines, fmt.Sprintf("This computer's BasaltDB has no credential for %s any more: it writes a new one for this database.", j.req.Agent))
+	}
+	return script, lines, nil
 }
 
 func (s *Service) checkRepair(ctx context.Context, j agentJob) (CheckAnswer, error) {
@@ -98,14 +105,16 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		return RunAnswer{}, err
 	}
 	password := guard.NewPassword()
-	next, err := s.withPassword(dsn, j.role, password)
+	next, err := s.newCredential(j, dsn, password)
 	if err != nil {
 		return RunAnswer{}, err
 	}
 	credFile := j.agent.Store.CredentialFile
-	old, err := os.ReadFile(credFile)
-	if err != nil {
-		return RunAnswer{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
+	var old []byte
+	if !j.missing {
+		if old, err = os.ReadFile(credFile); err != nil {
+			return RunAnswer{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
+		}
 	}
 	conn, err := s.connect(ctx, j.req.DatabaseURL)
 	if err != nil {
@@ -137,7 +146,10 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 			s.opts.CredentialChanged(j.req.Agent, password)
 			return RunAnswer{}, refuse(CodeSetupFailed, "The database did not confirm the setup. Run it again on this page: it finishes if the setup went through, and starts over if it did not.")
 		}
-		if wrote {
+		switch {
+		case wrote && j.missing:
+			_ = os.Remove(credFile) // the role keeps its old password
+		case wrote:
 			_ = config.WriteFile(credFile, old) // the role keeps its old password
 		}
 		return RunAnswer{}, timeLimit(ctx, AsRefusal(err))
@@ -149,17 +161,27 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 	}, nil
 }
 
-// withPassword is the agent's credential with password in place of its
-// old one, for role. Everything else stays, and on a host this engine pins
-// the credential uses sslmode=verify-full with no sslrootcert, so the pin
-// applies.
-func (s *Service) withPassword(dsn, role, password string) (string, error) {
-	u, err := url.Parse(dsn)
-	if err != nil || u.Host == "" {
-		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
+// newCredential is the agent's credential with password in place of its
+// old one: everything else stays, the user name too (a pooler's is
+// role.<ref>). With the file gone it is made from the admin string, as the
+// install makes it. On a host this engine pins the credential uses
+// sslmode=verify-full with no sslrootcert, so the pin applies.
+func (s *Service) newCredential(j agentJob, dsn, password string) (string, error) {
+	out := ""
+	if j.missing {
+		made, err := guard.AgentConnString(j.req.DatabaseURL, j.role, password)
+		if err != nil {
+			return "", refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
+		}
+		out = made
+	} else {
+		u, err := url.Parse(dsn)
+		if err != nil || u.Host == "" || u.User == nil || u.User.Username() == "" {
+			return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
+		}
+		u.User = url.UserPassword(u.User.Username(), password)
+		out = u.String()
 	}
-	u.User = url.UserPassword(role, password)
-	out := u.String()
 	if host, _, ok := hostPort(out); ok {
 		if p := s.opts.Profiles().For(host); p != nil && p.Name == trustprofile.PinName(host) {
 			out = withVerifyFull(out)

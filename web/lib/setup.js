@@ -1443,8 +1443,10 @@ export function startUpdate(link, env) {
     }
   });
   $("u-cert-cancel").addEventListener("click", cancel);
+  let mismatchPinned = "";
   const showMismatch = (a) => {
     if (!SHA256_HEX.test(String(a.pinned)) || !SHA256_HEX.test(String(a.recorded))) return failed(new SetupError(0, "", "The engine sent a check this page cannot show."), FIXES.TRUST);
+    mismatchPinned = a.pinned;
     setText("u-mm-pinned", fingerprintText(a.pinned));
     setText("u-mm-recorded", fingerprintText(a.recorded));
     problem("u-mm-error", "");
@@ -1453,7 +1455,7 @@ export function startUpdate(link, env) {
   $("u-mm-go").addEventListener("click", async () => {
     $("u-mm-go").disabled = true;
     try {
-      await fix.run("TRUST");
+      await fix.run("TRUST", { pinned: mismatchPinned });
       afterFix();
     } catch (err) {
       if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, FIXES.TRUST);

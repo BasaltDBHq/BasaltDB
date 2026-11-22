@@ -495,7 +495,22 @@ func TestTrustFixRecordsTheEnginesPinOnAMismatch(t *testing.T) {
 
 	before, err := os.ReadDir(filepath.Join(filepath.Dir(tf.config), "trust.d"))
 	require.NoError(t, err)
+	// The run carries the pin the check showed: none, or another, records
+	// nothing.
 	_, err = tf.svc.Run(ctx, tf.trust(""))
+	refusal(t, err, localsetup.CodeTrustRootMismatch)
+	stale := tf.trust("")
+	stale.Pinned = strings.Repeat("d", 64)
+	_, err = tf.svc.Run(ctx, stale)
+	refusal(t, err, localsetup.CodeTrustRootMismatch)
+	require.Equal(t, []string{other}, recordedPins(t, tf), "nothing recorded")
+	onCheck := tf.trust("")
+	onCheck.Pinned = oldSHA
+	_, err = tf.svc.Check(ctx, onCheck)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+	run := tf.trust("")
+	run.Pinned = checked.Pinned
+	_, err = tf.svc.Run(ctx, run)
 	require.NoError(t, err)
 	require.Equal(t, []string{other, oldSHA}, recordedPins(t, tf))
 	after, err := os.ReadDir(filepath.Join(filepath.Dir(tf.config), "trust.d"))
@@ -507,4 +522,63 @@ func TestTrustFixRecordsTheEnginesPinOnAMismatch(t *testing.T) {
 	got, err = tf.svc.Doctor(ctx, tf.doctor())
 	require.NoError(t, err)
 	require.Equal(t, localsetup.StateOK, got.Certificate.State)
+}
+
+// REPAIR with the credential file gone writes a new one for the database
+// the admin string names, after the agent's role checks; the other fixes
+// still need the credential.
+func TestRepairWritesANewCredentialWhenTheFileIsGone(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	require.NoError(t, os.Remove(f.credentialFile()))
+
+	_, err := svc.Check(ctx, f.fix(localsetup.JobLabels))
+	refusal(t, err, localsetup.CodeSetupFailed)
+	checked, err := svc.Check(ctx, f.fix(localsetup.JobRepair))
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(checked.Lines, " "), "has no credential for demo_bot any more")
+	_, statErr := os.Stat(f.credentialFile())
+	require.ErrorIs(t, statErr, os.ErrNotExist, "a check writes nothing")
+
+	_, err = svc.Run(ctx, f.fix(localsetup.JobRepair))
+	require.NoError(t, err)
+	dsn, err := config.ReadCredential(f.credentialFile())
+	require.NoError(t, err)
+	u, err := url.Parse(dsn)
+	require.NoError(t, err)
+	require.Equal(t, f.agentRole(t), u.User.Username())
+	got, err := svc.Doctor(ctx, f.doctor())
+	require.NoError(t, err)
+	require.Nil(t, got.Login, "the agent logs in with the new credential")
+}
+
+// The agent's own connection string is not an admin string: a passkey fix
+// made with it changes nothing.
+func TestPasskeyFixesRefuseTheAgentsOwnString(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	agentURL, err := config.ReadCredential(f.credentialFile())
+	require.NoError(t, err)
+	got, err := svc.Doctor(ctx, f.doctor())
+	require.NoError(t, err)
+	id := got.Passkeys.Items[0].CredentialID
+
+	remove := f.fix(localsetup.JobPasskeyRemove)
+	remove.DatabaseURL, remove.CredentialID = agentURL, id
+	_, err = svc.Check(ctx, remove)
+	require.Error(t, err)
+	_, err = svc.Run(ctx, remove)
+	require.Error(t, err)
+	add := f.fix(localsetup.JobPasskeyAdd)
+	add.DatabaseURL = agentURL
+	_, err = svc.Check(ctx, add)
+	require.Error(t, err)
+	for _, e := range []error{err} {
+		require.NotContains(t, e.Error(), mustPassword(t, agentURL))
+	}
+	keys, err := guard.ActivePasskeys(ctx, f.db.Admin)
+	require.NoError(t, err)
+	require.Len(t, keys, 1, "the passkey stays")
 }

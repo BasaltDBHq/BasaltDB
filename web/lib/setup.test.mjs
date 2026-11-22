@@ -858,3 +858,24 @@ test("Manage lists the passkeys, and removing the last one asks for a new one", 
   assert.deepEqual(shown(nodes), ["u-done"]);
   assert.equal(nodes["u-done-text"].textContent, "Add a passkey so your agents can be approved again.");
 });
+
+test("a ledger that names another certificate is recorded with the pin the check showed", async () => {
+  const nodes = fakePage();
+  const mismatch = { ...allGood, certificate: { state: "MISMATCH", host: "db.example.com", port: 5432, pinned: FP, recorded: NEW_FP } };
+  const e = updateEngine([mismatch, allGood], {
+    TRUST: (path) => (path === RUN_PATH ? { agent: "bot", lines: [] } : { database: "shop_db", lines: ["This records…"], sql: "SELECT …", pinned: FP, recorded: NEW_FP }),
+  });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date(), onPick: () => {} });
+  await settle();
+  find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Check").click();
+  nodes["paste-url"].value = ADMIN;
+  nodes["paste-next"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-mismatch"]);
+  assert.equal(nodes["u-mm-pinned"].textContent, "AB:".repeat(31) + "AB");
+  assert.equal(nodes["u-mm-recorded"].textContent, "CD:".repeat(31) + "CD");
+  await nodes["u-mm-go"].click();
+  const run = e.bodies.find((b) => b.path === RUN_PATH);
+  assert.equal(run.body.pinned, FP);
+  assert.equal(run.body.trustRoot, undefined);
+});

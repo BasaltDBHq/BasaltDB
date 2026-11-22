@@ -72,6 +72,10 @@ type Request struct {
 	// ConfirmName is the database name the person typed to confirm a
 	// REMOVE; only a REMOVE run carries it.
 	ConfirmName string `json:"confirmName,omitempty"`
+	// Pinned is the engine's pin a TRUST check showed for a ledger that
+	// names another, which its run records: a pin that changed since is
+	// TRUST_ROOT_MISMATCH.
+	Pinned string `json:"pinned,omitempty"`
 	// CredentialID is the passkey a PASSKEY_REMOVE removes, base64url.
 	CredentialID string     `json:"credentialId,omitempty"`
 	Answers      []Answer   `json:"answers,omitempty"`

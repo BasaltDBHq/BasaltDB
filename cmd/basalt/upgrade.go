@@ -127,8 +127,7 @@ func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	}
 	conn, err := connect(c.ctx, dsn)
 	if err != nil {
-		return agentGuard{}, fmt.Errorf("the agent's credential does not log in, so the guard cannot be checked (%w); basalt status %s says what to do",
-			err, statusFlags(f))
+		return agentGuard{}, fmt.Errorf("the agent's credential does not log in, so the guard cannot be checked (%w); the agent's status tool says what to do", err)
 	}
 	defer conn.Close(c.ctx)
 	if seen.guard, err = guard.AgentStatus(c.ctx, conn, guard.Migrations()); err != nil {
@@ -151,10 +150,6 @@ func configAgentOf(c *cliIO, agentName, configPath string) (engineConfig, config
 	return engineConfig{}, config.Agent{}, errAgentNotInConfig(agentName, configPath)
 }
 
-func statusFlags(f upgradeFlags) string {
-	return "--agent " + f.agent
-}
-
 // checkUpgradable refuses, before the admin connection string is asked
 // for, an upgrade that is not this command's to make. done is true when
 // the guard is already current: nothing to do.
@@ -173,11 +168,11 @@ func checkUpgradable(c *cliIO, agentName string, seen agentGuard) (done bool, er
 		return true, nil
 	case guard.GuardMissing:
 		return false, fmt.Errorf("the guard is not installed in %s's database, and basalt upgrade only adds migrations to an installed one; "+
-			"install it with basalt init (basalt status --agent %s shows the command)", agentName, agentName)
+			"install it with basalt init (the agent's status tool shows the command)", agentName)
 	case guard.GuardNewer:
 		return false, newerGuardError(st.Installed, st.Build)
 	case guard.GuardUnknown:
-		return false, fmt.Errorf("the engine cannot read the guard with %s's credential; basalt status --agent %s says why", agentName, agentName)
+		return false, fmt.Errorf("the engine cannot read the guard with %s's credential; the agent's status tool says why", agentName)
 	}
 	return false, nil
 }
@@ -229,7 +224,7 @@ func upgradeGuard(c *cliIO, conn *pgx.Conn, f upgradeFlags) error {
 	names := guard.Names{Prefix: prefix}
 	switch {
 	case installed == 0 || prefix == "":
-		return fmt.Errorf("this database has no guard; install it with basalt init (basalt status --agent %s shows the command)", f.agent)
+		return fmt.Errorf("this database has no guard; install it with basalt init (the agent's status tool shows the command)")
 	case installed > latest:
 		return newerGuardError(installed, latest)
 	case installed == latest:

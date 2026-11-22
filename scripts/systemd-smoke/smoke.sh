@@ -127,9 +127,12 @@ status_out() {
 		'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' |
 		sudo -u "$agent_user" timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
 }
+# unavailable: the status tool names PLUGIN_UNAVAILABLE, or gave no result
+# at all (a basalt mcp call that failed is never read as healthy).
 unavailable() {
 	local out
 	out=$(status_out)
+	grep -q '"id":2,"result"' <<<"$out" || return 0
 	grep -q "PLUGIN_UNAVAILABLE" <<<"$out"
 }
 connected() { run_has 'probe initialized' && ! unavailable; }

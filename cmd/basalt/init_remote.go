@@ -1413,7 +1413,7 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 }
 
 func keyRefused(err error) error {
-	return fmt.Errorf("the engine's key file is refused (%w); basalt status shows KEY_ERROR", err)
+	return fmt.Errorf("the engine's key file is refused (%w); the agent's status tool shows KEY_ERROR", err)
 }
 
 // printConnectOnly prints a connect-only code's result: the connect link

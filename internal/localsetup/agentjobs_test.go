@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -210,4 +211,77 @@ func TestRemoveKeepsASampleSchemaSomethingDependsOn(t *testing.T) {
 	require.Contains(t, done.Warnings, "the sample schema basalt_demo stays: another object depends on it")
 	require.True(t, exists(t, f.db, "basalt_demo"), "the person's view keeps the sample schema")
 	require.False(t, exists(t, f.db, "basalt_meta"), "the rest is removed")
+}
+
+func TestRemoveRefusesTheAdminStringOfAnotherRealDatabase(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	other := guardtest.New(t)
+	other.Exec(t, `CREATE SCHEMA keep_me`)
+	req := f.agentJob(localsetup.JobRemove)
+	req.DatabaseURL = other.URL
+	_, err := svc.Run(context.Background(), req)
+	refusal(t, err, localsetup.CodeTargetMismatch)
+	require.True(t, exists(t, other, "keep_me"), "the other database is as it was")
+	require.True(t, exists(t, f.db, "basalt_meta"), "and so is the agent's")
+	_, err = os.Stat(f.config)
+	require.NoError(t, err)
+}
+
+func TestRemoveLeavesASampleSchemaTheDemoDidNotMake(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	f.db.Exec(t, `COMMENT ON SCHEMA basalt_demo IS NULL`)
+	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.NotContains(t, checked.SQL, "basalt_demo")
+	_, err = svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.True(t, exists(t, f.db, "basalt_demo"), "a schema the demo did not make stays")
+	require.False(t, exists(t, f.db, "basalt_meta"))
+}
+
+func TestRemoveDropsAPolicyOnASampleTableBeforeTheTable(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	role, err := f.db.Names.Agent("demo_bot")
+	require.NoError(t, err)
+	ident := pgx.Identifier{role}.Sanitize()
+	f.db.Exec(t, `CREATE POLICY `+ident+` ON basalt_demo.leads AS PERMISSIVE FOR SELECT TO `+ident+` USING (true)`)
+	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.Less(t, strings.Index(checked.SQL, "DROP POLICY"), strings.Index(checked.SQL, "DROP TABLE basalt_demo.leads"))
+	_, err = svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.False(t, exists(t, f.db, "basalt_demo"))
+	require.False(t, exists(t, f.db, "basalt_meta"))
+}
+
+func TestRemoveForgetsEveryAgentOfTheSameDatabase(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	dir := filepath.Dir(f.config)
+	cred, err := config.ReadCredential(filepath.Join(dir, "agents", "demo_bot.url"))
+	require.NoError(t, err)
+	twinCred := filepath.Join(dir, "agents", "twin_bot.url")
+	require.NoError(t, config.WriteFile(twinCred, []byte(cred+"\n")))
+	cfg, err := config.Load(f.config)
+	require.NoError(t, err)
+	twin := cfg.Agents[0]
+	twin.Name, twin.Store = "twin_bot", config.PostgresStore(twinCred)
+	require.NoError(t, config.UpdateConfig(f.config, config.Change{Apply: func(c *config.Config) error {
+		c.Agents = append(c.Agents, twin)
+		return nil
+	}}))
+
+	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(checked.Lines, "\n"), "demo_bot, twin_bot")
+	done, err := svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	require.NoError(t, err)
+	require.Contains(t, done.Lines, "removed from this engine: demo_bot, twin_bot")
+	_, err = os.Stat(f.config)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(twinCred)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

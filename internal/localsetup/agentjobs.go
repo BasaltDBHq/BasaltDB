@@ -157,7 +157,7 @@ func (p agentPlan) sql(job string) string {
 		return p.script.SQL()
 	}
 	var b strings.Builder
-	for _, sql := range append(slices.Clone(p.demoDrops), p.drops...) {
+	for _, sql := range append(slices.Clone(p.drops), p.demoDrops...) {
 		b.WriteString(sql + ";\n")
 	}
 	return b.String()
@@ -215,8 +215,10 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, prefix,
 	}, nil
 }
 
-// planRemove plans the removal: the sample schema when the demo made it,
-// then the guard's policies, basalt_meta and the roles (guard.PlanUninstall).
+// planRemove plans the removal: the guard's policies, basalt_meta and the
+// roles (guard.PlanUninstall), then the sample schema when the demo made
+// it. The guard's drops run first, so a policy they drop on a sample table
+// is still there to drop.
 // A database Basalt is already gone from (a removal whose engine.json write
 // failed) plans only the IF EXISTS drop, and the run finishes the removal
 // on this engine.
@@ -313,13 +315,13 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 			}
 			return nil
 		}
-		if demoKept, err = demo.ApplyDrop(ctx, tx, p.demoDrops); err != nil {
-			return setupFailed()
-		}
 		for _, sql := range p.drops {
 			if _, err := tx.Exec(ctx, sql); err != nil {
 				return refuse(CodeSetupFailed, "Removing Basalt failed, for example because one of its roles still has privileges in another database; nothing changed.")
 			}
+		}
+		if demoKept, err = demo.ApplyDrop(ctx, tx, p.demoDrops); err != nil {
+			return setupFailed()
 		}
 		return nil
 	})

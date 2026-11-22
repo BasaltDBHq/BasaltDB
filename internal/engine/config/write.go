@@ -366,8 +366,8 @@ func addUIDs(have, add []uint32) []uint32 {
 	return have
 }
 
-// RemoveAgents removes the agents names from the config at path, under the
-// config's lock (lockConfig). When no agent is left, it removes the file
+// RemoveAgents removes the agents names from the config at path, and from
+// every plugin entry's agents, under the config's lock (lockConfig). When no agent is left, it removes the file
 // whole: a config needs one agent, and an engine with no config waits for
 // a first install. It returns whether it removed the file. A name the
 // config does not have is skipped.
@@ -383,6 +383,11 @@ func RemoveAgents(path string, names []string) (removedFile bool, err error) {
 		return false, err
 	}
 	c.Agents = slices.DeleteFunc(c.Agents, func(a Agent) bool { return slices.Contains(names, a.Name) })
+	// A plugin entry names the agents it serves; it keeps serving the
+	// others, and an empty list serves none.
+	for i := range c.Plugins {
+		c.Plugins[i].Agents = slices.DeleteFunc(slices.Clone(c.Plugins[i].Agents), func(a string) bool { return slices.Contains(names, a) })
+	}
 	if len(c.Agents) == 0 {
 		return true, os.Remove(path)
 	}

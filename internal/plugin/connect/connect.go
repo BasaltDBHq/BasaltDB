@@ -137,6 +137,20 @@ func newConn(tr *http.Transport, baseURL string, auth func(http.Header), opts op
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errRedirectStop },
 	}
 
+	// Every connection the transport dials is remembered, so Close can end
+	// each one. CloseIdleConnections alone misses a connection whose last
+	// stream is still being torn down, and that one would stay open (and its
+	// read loop running) until the idle timeout.
+	open := &openConns{conns: map[net.Conn]struct{}{}}
+	dial := tr.DialContext
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		nc, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return open.add(nc), nil
+	}
+
 	table := platformMethods()
 	for name, m := range opts.methods {
 		table[name] = m
@@ -157,7 +171,7 @@ func newConn(tr *http.Transport, baseURL string, auth func(http.Header), opts op
 		}
 	}
 
-	return &conn{transport: tr, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}
+	return &conn{transport: tr, open: open, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}
 }
 
 // probe makes one TLS connection to the endpoint and closes it, so a server
@@ -183,6 +197,45 @@ func probe(ctx context.Context, tgt target, netDialer *net.Dialer, tlsConfig *tl
 	return endpointError(tgt.host, ErrUnreachable)
 }
 
+// openConns is the set of connections a transport has dialed and not yet
+// closed.
+type openConns struct {
+	mu    sync.Mutex
+	conns map[net.Conn]struct{}
+}
+
+func (o *openConns) add(nc net.Conn) net.Conn {
+	tc := &trackedConn{Conn: nc, set: o}
+	o.mu.Lock()
+	o.conns[tc] = struct{}{}
+	o.mu.Unlock()
+	return tc
+}
+
+func (o *openConns) closeAll() {
+	o.mu.Lock()
+	all := make([]net.Conn, 0, len(o.conns))
+	for nc := range o.conns {
+		all = append(all, nc)
+	}
+	o.mu.Unlock()
+	for _, nc := range all {
+		_ = nc.Close()
+	}
+}
+
+type trackedConn struct {
+	net.Conn
+	set *openConns
+}
+
+func (t *trackedConn) Close() error {
+	t.set.mu.Lock()
+	delete(t.set.conns, t)
+	t.set.mu.Unlock()
+	return t.Conn.Close()
+}
+
 // call is one method's client.
 type call struct {
 	method method
@@ -194,6 +247,7 @@ type call struct {
 // transports, connections and credentials.
 type conn struct {
 	transport *http.Transport
+	open      *openConns
 	calls     map[string]*call
 	// auth sets the Authorization header; the token lives only in its
 	// closure, never in a field that could be printed.
@@ -345,6 +399,7 @@ func (c *conn) Close() error {
 		c.mu.Unlock()
 		c.inFlight.Wait()
 		c.transport.CloseIdleConnections()
+		c.open.closeAll()
 	})
 	return nil
 }

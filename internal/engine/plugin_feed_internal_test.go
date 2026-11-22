@@ -304,15 +304,15 @@ func (e *feedEnv) started(k plugin.EntryKey, agent string) feedCursor {
 	return c
 }
 
-// waitCursor waits until entry k's cursor for agent is written at seq.
-func (e *feedEnv) waitCursor(k plugin.EntryKey, agent string, seq int64) feedCursor {
+// waitCursor waits until entry k's cursor for product_a is written at seq.
+func (e *feedEnv) waitCursor(k plugin.EntryKey, seq int64) feedCursor {
 	e.t.Helper()
 	var c feedCursor
 	require.Eventually(e.t, func() bool {
 		var ok bool
-		c, ok = e.cursor(k, agent)
+		c, ok = e.cursor(k, "product_a")
 		return ok && c.Seq == seq
-	}, 10*time.Second, 10*time.Millisecond, "the cursor of %s for %s to reach %d", k, agent, seq)
+	}, 10*time.Second, 10*time.Millisecond, "the cursor of %s to reach %d", k, seq)
 	return c
 }
 
@@ -460,7 +460,8 @@ func TestFeedDeliversInOrder(t *testing.T) {
 	require.Len(t, calls, 3)
 	require.Len(t, calls[1].events, protocol.MaxFeedEvents)
 	require.Len(t, calls[2].events, 30)
-	c, _ := e.cursor(p.key, "product_a")
+	// The cursor is written after the plugin answers, so wait for it.
+	c := e.waitCursor(p.key, want[len(want)-1])
 	require.Equal(t, feedCursor{InstallID: install, Seq: want[len(want)-1]}, c)
 	settle()
 	require.Len(t, p.received(), 3, "nothing again")
@@ -554,7 +555,7 @@ func TestFeedSaysWhenItSkipped(t *testing.T) {
 	require.Equal(t, feedTypeSkipped, ev.Type)
 	require.Equal(t, fmt.Sprintf("%s:skipped:%d:%d", install, start.Seq, next-1), ev.ID)
 	require.Empty(t, ev.Time)
-	e.waitCursor(p.key, "product_a", next)
+	e.waitCursor(p.key, next)
 
 	// No row of the agent left after the cursor: the marker names the head.
 	e.stop()
@@ -693,7 +694,7 @@ func TestNewInstallStartsAtHead(t *testing.T) {
 	b := e.applied("product_a")
 	waitSeqs(t, p, "product_a", a, b)
 	waitSeqs(t, q, "product_a", b)
-	cp, _ := e.cursor(p.key, "product_a")
+	cp := e.waitCursor(p.key, b)
 	require.Equal(t, feedCursor{InstallID: e.installID(), Seq: b}, cp)
 	require.Less(t, enabled, head)
 }
@@ -999,7 +1000,7 @@ func TestFeedBacksOffWhenPluginDown(t *testing.T) {
 	e.applied("product_a")
 	settle()
 	require.Len(t, p.received(), before)
-	c, _ = e.cursor(p.key, "product_a")
+	c = e.waitCursor(p.key, b)
 	require.Equal(t, b, c.Seq)
 	require.Contains(t, e.logs.String(), "plugin feed paused")
 }

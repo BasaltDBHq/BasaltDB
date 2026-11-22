@@ -260,3 +260,16 @@ func TestSampleIsBounded(t *testing.T) {
 		require.LessOrEqual(t, len(v), 1024)
 	}
 }
+
+func TestSampleCutsEachValueToMaxChars(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.wide (v text); INSERT INTO public.wide SELECT repeat('é', 5000) FROM generate_series(1, 5)`)
+	s, err := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second, MaxChars: 256}.Sample(context.Background(),
+		classify.Column{Schema: "public", Table: "wide", Name: "v", DataType: "text"})
+	require.NoError(t, err)
+	require.Len(t, s.Values, 5)
+	for _, v := range s.Values {
+		require.Equal(t, 256, len([]rune(v)), "characters, not bytes")
+	}
+}

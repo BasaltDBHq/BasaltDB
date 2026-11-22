@@ -80,6 +80,9 @@ func KeyColumns(ctx context.Context, q guard.Querier) (map[KeyRef]KeyKind, error
 type Sampler struct {
 	Conn    *pgx.Conn
 	Timeout time.Duration
+	// MaxChars cuts each value to this many characters; 0 means
+	// maxValueChars.
+	MaxChars int
 }
 
 // Sample reads col's sample. A sample that times out or that the admin may
@@ -87,7 +90,11 @@ type Sampler struct {
 // error fails.
 func (s Sampler) Sample(ctx context.Context, col Column) (Sample, error) {
 	ident := pgx.Identifier{col.Name}.Sanitize()
-	query, args, err := psql.Select(fmt.Sprintf("left(%s::text, %d)", ident, maxValueChars)).
+	maxChars := s.MaxChars
+	if maxChars <= 0 {
+		maxChars = maxValueChars
+	}
+	query, args, err := psql.Select(fmt.Sprintf("left(%s::text, %d)", ident, maxChars)).
 		From(pgx.Identifier{col.Schema, col.Table}.Sanitize()).
 		Where(ident + " IS NOT NULL").
 		Limit(SampleRows).ToSql()

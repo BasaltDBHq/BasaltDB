@@ -2,6 +2,7 @@ package localsetup_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -633,4 +634,109 @@ func TestRunNeverFinishesWithACredentialForAnotherTarget(t *testing.T) {
 	checked, err := f.svc.Check(ctx, f.request())
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(checked.Lines, "\n"), "this finishes its setup")
+}
+
+func TestRealInstallRefusesBadLabelsBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	svc, err := localsetup.New(localsetup.Options{
+		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
+		Users: okUsers{}, Dial: func(context.Context, string) (*pgx.Conn, error) { return nil, errors.New("not here") },
+	})
+	require.NoError(t, err)
+	picked := []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessRead}}
+	label := func(table, column, class string) localsetup.ColumnClass {
+		return localsetup.ColumnClass{Table: table, Column: column, Class: class, Was: localsetup.Label{Class: "UNCLASSIFIED"}}
+	}
+	cases := map[string]localsetup.Request{
+		"labels without picks":     {ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "SECRET")}},
+		"restPublic without picks": {RestPublic: true},
+		"a table not picked":       {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.other", "email", "SECRET")}},
+		"a column twice":           {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "SECRET"), label("public.people", "email", "PUBLIC")}},
+		"UNCLASSIFIED set":         {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "UNCLASSIFIED")}},
+		"FREE_TEXT set":            {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "FREE_TEXT")}},
+		"identifier no entity":     {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "email", "IDENTIFIER")}},
+		"no column":                {Tables: picked, ColumnClasses: []localsetup.ColumnClass{label("public.people", "", "SECRET")}},
+	}
+	many := make([]localsetup.ColumnClass, 501)
+	for i := range many {
+		many[i] = label("public.people", "c"+strings.Repeat("x", i%7)+strings.Repeat("y", i/7), "SECRET")
+	}
+	cases["more than 500"] = localsetup.Request{Tables: picked, ColumnClasses: many}
+	cases["labels on the sample database"] = localsetup.Request{Demo: true, RestPublic: true}
+	for name, extra := range cases {
+		req := localsetup.Request{
+			Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL,
+			Demo: extra.Demo, Tables: extra.Tables, ColumnClasses: extra.ColumnClasses, RestPublic: extra.RestPublic,
+		}
+		_, err := svc.Check(context.Background(), req)
+		var r *localsetup.RefusalError
+		require.True(t, errors.As(err, &r), name)
+		require.Equal(t, localsetup.CodeAnswersInvalid, r.Code, name+": "+r.Message)
+	}
+}
+
+func TestRealInstallListsColumnsWithSuggestionsAndWritesTheLabels(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, nickname text);
+INSERT INTO public.people SELECT g, 'person' || g || '@example.com', 'n' || g FROM generate_series(1, 30) g`)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessWrite}}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, checked.Columns, 3)
+	by := map[string]localsetup.ColumnInfo{}
+	for _, c := range checked.Columns {
+		by[c.Column] = c
+		require.Equal(t, "UNCLASSIFIED", c.Class, "a database with no guard has no class")
+	}
+	require.Equal(t, "IDENTIFIER", by["email"].SuggestedClass)
+	require.Equal(t, "EMAIL", by["email"].SuggestedEntityType)
+	require.NotEmpty(t, by["email"].Reason)
+	raw, err := json.Marshal(checked)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "person1@example.com", "no sampled value reaches the answer")
+
+	// The labels go in the challenge: the passkey made for no labels does not
+	// fit labels, and a check with them issues its own.
+	req.ColumnClasses = []localsetup.ColumnClass{{Table: "public.people", Column: "email", Class: "IDENTIFIER", EntityType: "EMAIL", Was: localsetup.Label{Class: "UNCLASSIFIED"}}}
+	req.RestPublic = true
+	other := req
+	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, other)
+	refusal(t, err, localsetup.CodeChallengeInvalid)
+
+	labeled, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.Contains(t, labeled.SQL, "column labels")
+	changed := req
+	changed.RestPublic = false
+	changed.Challenge, changed.Passkey = labeled.Challenge, register(t, *labeled.Challenge)
+	_, err = f.svc.Run(ctx, changed)
+	refusal(t, err, localsetup.CodeChallengeInvalid)
+
+	// A column that is no longer unclassified when the page saw it: nothing changes.
+	stale := req
+	stale.ColumnClasses = []localsetup.ColumnClass{{Table: "public.people", Column: "email", Class: "SECRET", Was: localsetup.Label{Class: "PUBLIC"}}}
+	staleChecked, err := f.svc.Check(ctx, stale)
+	require.NoError(t, err)
+	stale.Challenge, stale.Passkey = staleChecked.Challenge, register(t, *staleChecked.Challenge)
+	_, err = f.svc.Run(ctx, stale)
+	refusal(t, err, localsetup.CodeClassesChanged)
+	require.False(t, exists(t, f.db, "basalt_meta"))
+
+	req.Challenge, req.Passkey = labeled.Challenge, register(t, *labeled.Challenge)
+	done, err := f.svc.Run(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"agent bot ready: 1 tables it can change, 0 it can read", "3 columns labeled"}, done.Lines)
+	rows, err := f.db.Admin.Query(ctx, `SELECT column_name::text, class::text, coalesce(entity_type::text, '') FROM basalt_meta.pii_columns
+		WHERE table_name = 'people' ORDER BY column_name`)
+	require.NoError(t, err)
+	got, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) ([3]string, error) {
+		var v [3]string
+		return v, r.Scan(&v[0], &v[1], &v[2])
+	})
+	require.NoError(t, err)
+	require.Equal(t, [][3]string{{"email", "IDENTIFIER", "EMAIL"}, {"id", "PUBLIC", ""}, {"nickname", "PUBLIC", ""}}, got)
 }

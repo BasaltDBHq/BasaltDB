@@ -57,11 +57,15 @@ type Request struct {
 	DatabaseURL string `json:"databaseUrl"`
 	// Schemas and Tables are for an install of a real database (Demo
 	// false). Tables nil on a check asks for the listing.
-	Schemas   []string    `json:"schemas,omitempty"`
-	Tables    []TablePick `json:"tables,omitempty"`
-	Answers   []Answer    `json:"answers,omitempty"`
-	Challenge *Challenge  `json:"challenge,omitempty"`
-	Passkey   *Passkey    `json:"passkey,omitempty"`
+	Schemas []string    `json:"schemas,omitempty"`
+	Tables  []TablePick `json:"tables,omitempty"`
+	// ColumnClasses and RestPublic are the labels the person set
+	// (CONTRACT.md, The install of a real database).
+	ColumnClasses []ColumnClass `json:"columnClasses,omitempty"`
+	RestPublic    bool          `json:"restPublic,omitempty"`
+	Answers       []Answer      `json:"answers,omitempty"`
+	Challenge     *Challenge    `json:"challenge,omitempty"`
+	Passkey       *Passkey      `json:"passkey,omitempty"`
 }
 
 // Answer answers one row-level security question.
@@ -100,6 +104,10 @@ type CheckAnswer struct {
 	Tables     []ListedTable   `json:"tables,omitempty"`
 	Excluded   []ExcludedTable `json:"excluded,omitempty"`
 	TablesMore bool            `json:"tablesMore,omitempty"`
+	// Columns are the columns of the picked tables with their class now
+	// and a suggestion; ColumnsMore says there are more than listed.
+	Columns     []ColumnInfo `json:"columns,omitempty"`
+	ColumnsMore bool         `json:"columnsMore,omitempty"`
 }
 
 // RegisteredPasskey is one passkey the run registered.
@@ -217,8 +225,8 @@ func (s *Service) validate(req Request) (job, error) {
 		return job{}, err
 	}
 	j := job{req: req, role: role, uid: uid}
-	if req.Demo && (req.Schemas != nil || req.Tables != nil) {
-		return job{}, refuse(CodeAnswersInvalid, "The sample database takes no schema or table to pick.")
+	if req.Demo && req.hasRealFields() {
+		return job{}, refuse(CodeAnswersInvalid, "The sample database takes no schema, table or label to set.")
 	}
 	if !req.Demo {
 		if j.schemas, err = checkSchemas(req.Schemas); err != nil {
@@ -231,6 +239,9 @@ func (s *Service) validate(req Request) (job, error) {
 			if j.picks, err = checkPicks(req.Tables, j.schemas); err != nil {
 				return job{}, err
 			}
+		}
+		if err = checkClasses(req, j.picks); err != nil {
+			return job{}, err
 		}
 	}
 	if j.host, err = checkAdminURL(req.DatabaseURL, role); err != nil {
@@ -314,6 +325,8 @@ type planned struct {
 	// answers are the answers the script was planned with.
 	answers []Answer
 	list    listing
+	// labeled is how many columns the run's labels write.
+	labeled int
 }
 
 // plan reads the database for j in tx: refusals, then the sample data or
@@ -456,15 +469,20 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if !req.Demo && j.picks == nil {
 		return listingAnswer(j, database, p, needed)
 	}
-	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers)})
+	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(p.answers), classes: classesKey(req)})
 	if err != nil {
 		return CheckAnswer{}, setupFailed()
 	}
 	if !req.Demo {
-		return CheckAnswer{
-			Database: database, Lines: realSummary(j, database, p.write, p.read, needed, p.keep), SQL: p.script.SQL(),
+		out := CheckAnswer{
+			Database: database, Lines: realSummary(j, database, p.write, p.read, needed, p.keep), SQL: p.script.SQL() + labelsSQL(req),
 			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch,
-		}, nil
+		}
+		// The tables are read; the transaction ends before the columns are
+		// read and sampled on the connection.
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+		out.Columns, out.ColumnsMore = s.columns(ctx, conn, j)
+		return out, nil
 	}
 	return CheckAnswer{
 		Database: database, Lines: summary(j, database, p.seeded, needed, p.keep), SQL: p.seeded.Shown() + p.script.SQL(),

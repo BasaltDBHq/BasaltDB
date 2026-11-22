@@ -1,3 +1,0 @@
-imports internal/adapter/outbound/postgres/demo
-imports internal/adapter/outbound/postgres/guard
-passkey.go calls passkey.RegistrationRequestFor

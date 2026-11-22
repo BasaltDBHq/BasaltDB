@@ -74,8 +74,10 @@ var allowed = map[string][]string{
 }
 
 // pkgExtra lists layers that one package may import on top of its layer's list.
+// pkg/setup is the second composition root: it builds the adapters for a
+// program that calls it directly.
 var pkgExtra = map[string][]string{
-	"pkg/setup": {lService, lCore},
+	"pkg/setup": {lService, lCore, lOutbound},
 }
 
 // storeSQLGuard is the one named exception to "only services call decisions":

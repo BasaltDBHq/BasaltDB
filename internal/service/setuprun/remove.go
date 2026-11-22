@@ -8,8 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -70,7 +69,7 @@ func (p RemovePlan) Lines() []string {
 		lines = append(lines, fmt.Sprintf("The bots that lose their access: %s. Nothing can undo this.", strings.Join(p.Agents, ", ")))
 	}
 	if len(p.DemoDrops) > 0 {
-		lines = append(lines, "It drops the sample schema "+demo.Schema+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")
+		lines = append(lines, "It drops the sample schema "+be().DemoSchema()+" with its rows, which the sample-database setup made. If another object depends on it, the schema stays.")
 	}
 	return lines
 }
@@ -79,12 +78,12 @@ func (p RemovePlan) Lines() []string {
 // changes nothing. prefix is the roles' prefix when no guard is installed
 // (guard.DefaultPrefix outside tests); a guard installed with another
 // prefix is refused PREFIX_MISMATCH.
-func PlanRemove(ctx context.Context, q guard.Querier, prefix string) (RemovePlan, error) {
+func PlanRemove(ctx context.Context, q Querier, prefix string) (RemovePlan, error) {
 	var database string
 	if err := q.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
 		return RemovePlan{}, err
 	}
-	installed, err := guard.InstalledPrefix(ctx, q)
+	installed, err := be().InstalledPrefix(ctx, q)
 	if err != nil {
 		return RemovePlan{}, err
 	}
@@ -92,8 +91,8 @@ func PlanRemove(ctx context.Context, q guard.Querier, prefix string) (RemovePlan
 		return RemovePlan{}, refuse(string(setupcode.RefusalPrefixMismatch),
 			fmt.Sprintf("This database's BasaltDB uses the prefix %s, not %s. Nothing changed.", installed, prefix))
 	}
-	names := guard.Names{Prefix: prefix}
-	roles, err := guard.AgentRoles(ctx, q, names)
+	names := guardmodel.Names{Prefix: prefix}
+	roles, err := be().AgentRoles(ctx, q, names)
 	if err != nil {
 		return RemovePlan{}, err
 	}
@@ -102,11 +101,11 @@ func PlanRemove(ctx context.Context, q guard.Querier, prefix string) (RemovePlan
 		agents = append(agents, strings.TrimPrefix(r, prefix+"_agent_"))
 	}
 	slices.Sort(agents)
-	drops, err := guard.PlanUninstall(ctx, q, names)
+	drops, err := be().PlanUninstall(ctx, q, names)
 	if err != nil {
 		return RemovePlan{}, err
 	}
-	demoDrops, err := demo.PlanDrop(ctx, q)
+	demoDrops, err := be().DemoPlanDrop(ctx, q)
 	if err != nil {
 		return RemovePlan{}, err
 	}
@@ -119,7 +118,7 @@ func PlanRemove(ctx context.Context, q guard.Querier, prefix string) (RemovePlan
 // that is not exactly <prefix>_guard with a valid prefix is refused
 // PREFIX_MISMATCH: that schema is not BasaltDB's, and its owner's name must
 // never pick the roles a removal drops.
-func InstalledRemovalPrefix(ctx context.Context, q guard.Querier, def string) (string, error) {
+func InstalledRemovalPrefix(ctx context.Context, q Querier, def string) (string, error) {
 	var owner string
 	if err := q.QueryRow(ctx, `SELECT coalesce((SELECT pg_catalog.pg_get_userbyid(n.nspowner)::text
 		FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'), '')`).Scan(&owner); err != nil {
@@ -129,7 +128,7 @@ func InstalledRemovalPrefix(ctx context.Context, q guard.Querier, def string) (s
 		return def, nil
 	}
 	prefix, ok := strings.CutSuffix(owner, "_guard")
-	if !ok || (guard.Names{Prefix: prefix}).Validate() != nil {
+	if !ok || (guardmodel.Names{Prefix: prefix}).Validate() != nil {
 		return "", refuse(string(setupcode.RefusalPrefixMismatch),
 			"The schema basalt_meta in this database is not owned by a BasaltDB guard role, so it is not BasaltDB's. Nothing changed.")
 	}
@@ -181,7 +180,7 @@ func RunRemove(ctx context.Context, tx pgx.Tx, prefix, confirmName string) (p Re
 			}
 		}
 	}
-	if demoKept, err = demo.ApplyDrop(ctx, tx, p.DemoDrops); err != nil {
+	if demoKept, err = be().DemoApplyDrop(ctx, tx, p.DemoDrops); err != nil {
 		return RemovePlan{}, false, err
 	}
 	return p, demoKept, nil

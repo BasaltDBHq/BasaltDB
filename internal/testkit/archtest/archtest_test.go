@@ -187,6 +187,8 @@ func TestRulesCatchViolations(t *testing.T) {
 		"cmd/tool/c.go":              "package main\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "func main() {}\n",
 		"pkg/facade/p.go":            "package facade\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"pkg/lib2/p.go":              "package lib2\n\n" + imp(m+"api/x"),
+		"pkg/setup/s.go":             "package setup\n\n" + imp(m+"internal/adapter/outbound/db"),
+		"pkg/other/o.go":             "package other\n\n" + imp(m+"internal/adapter/outbound/db"),
 		"api/x/x.go":                 "package x\n",
 		"internal/adapter/outbound/vault/vaulttest/h.go": "package vaulttest\n\n" + imp(m+"internal/service/svc"),
 		"internal/adapter/inbound/in2/i.go":              "package in2\n\n" + imp(m+"internal/adapter/outbound/vault/vaulttest"),
@@ -211,6 +213,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"cmd/tool":                        {"c.go calls sqlguard.Check"},
 		"pkg/facade":                      {"imports internal/core/sqlguard", "p.go calls sqlguard.Check"},
 		"pkg/lib2":                        {"imports api/x"},
+		"pkg/other":                       {"imports internal/adapter/outbound/db"},
 		"internal/oddball":                {"package is under internal/ but not in a layer"},
 		"internal/core/granted":           {"r.go imports crypto/rand (core must stay pure)"},
 		"internal/core/leaky": {

@@ -598,6 +598,12 @@ func fixSteps(b *Steps, cmds Commands, reason string) string {
 	if cmds.AgentOperated() {
 		return remoteSetupSteps(b, cmds, problem)
 	}
+	if reason == reasonGuardOutdated && cmds.updateLink != "" {
+		b.OpenLink(cmds.updateLink, "Show the person this link: its page updates the guard once they type the admin connection string there.")
+		b.TellAgent("Tell the agent when it is done.")
+		b.Stop("Do not retry until the person says it is fixed.")
+		return problem + " Open the link the agent gives you, follow the page, then tell the agent."
+	}
 	b.AgentRunCommand(cmds.Init(), initStepText)
 	b.TellAgent("Tell the agent when it is done.")
 	b.Stop("Do not retry until the person says it is fixed.")

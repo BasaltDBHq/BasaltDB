@@ -89,6 +89,7 @@ func TestAgentJobsRefuseWhatIsNotTheAgentsBeforeConnecting(t *testing.T) {
 		code string
 	}{
 		"an install":       {func(r *localsetup.Request) { r.Job = localsetup.JobInstall }, localsetup.CodeJobUnavailable},
+		"a change link":    {func(r *localsetup.Request) { r.Job = localsetup.JobChange }, localsetup.CodeInvalidArgument},
 		"no job":           {func(r *localsetup.Request) { r.Job = "" }, localsetup.CodeJobUnavailable},
 		"another agent":    {func(r *localsetup.Request) { r.Agent = "other_bot" }, localsetup.CodeInvalidArgument},
 		"another OS user":  {func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},
@@ -319,4 +320,18 @@ func TestRemoveAlsoDropsAnAgentWhoseCredentialCannotBeRead(t *testing.T) {
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot, lost_bot")
 	_, err = os.Stat(f.config)
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestAgentJobsCheckTheAgentBeforeTheAdminString(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	probe := f.agentJob(localsetup.JobUpdate)
+	probe.DatabaseURL = ""
+	_, err := svc.Check(ctx, probe)
+	refusal(t, err, localsetup.CodeConnectionStringRefused)
+	probe.Agent = "sales_bot"
+	_, err = svc.Check(ctx, probe)
+	refusal(t, err, localsetup.CodeInvalidArgument)
+	require.Contains(t, err.Error(), "basalt init --agent NAME")
 }

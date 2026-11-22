@@ -20,7 +20,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-Kh2pPJXCXtsPBtNlqMtDy2FMUX4rI9VFl8H0wtwlBZMbXrpUSIgpQgr7C1n+6mEz"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-6v9F7w2Uq5pKwpKFjfc3k58Az8ec89y1uA+gEObdieUGqB4AbFWWv99+RupmOf51"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -41,13 +41,19 @@
     <h1 id="title">Set up BasaltDB for your agent</h1>
     <p><span id="intro"></span> <span id="job-demo" hidden>It uses the sample database.</span></p>
 
+    <section id="choice" class="panel" hidden>
+      <h2>What to do</h2>
+      <label><input id="choice-update" name="choice" type="radio" value="UPDATE"> Update the guard: add its missing migrations, and nothing else.</label>
+      <label><input id="choice-remove" name="choice" type="radio" value="REMOVE"> Remove BasaltDB from this database, with its ledger and roles.</label>
+    </section>
+
     <section class="panel">
       <h2>The agent's OS user</h2>
       <p>The agent runs as the OS user <strong id="job-os-user"></strong>. Only that user can reach the agent's connection on this computer.</p>
       <label><input id="confirm-os-user" type="checkbox"> This is the OS user my agent runs as.</label>
     </section>
 
-    <section class="panel">
+    <section id="admin-panel" class="panel">
       <h2>Your database's admin connection string</h2>
       <p class="muted">Used once, on this computer, to set up the database. It is never stored, and the agent never sees it.</p>
       <input id="database-url" type="password" autocomplete="off" spellcheck="false" aria-label="Admin connection string" placeholder="postgres://… as your provider shows it">

@@ -68,10 +68,13 @@ type Request struct {
 	RestPublic    bool          `json:"restPublic,omitempty"`
 	// TrustRoot is the SHA-256 of the certificate authority the person
 	// trusted for the database's host.
-	TrustRoot string     `json:"trustRoot,omitempty"`
-	Answers   []Answer   `json:"answers,omitempty"`
-	Challenge *Challenge `json:"challenge,omitempty"`
-	Passkey   *Passkey   `json:"passkey,omitempty"`
+	TrustRoot string `json:"trustRoot,omitempty"`
+	// ConfirmName is the database name the person typed to confirm a
+	// REMOVE; only a REMOVE run carries it.
+	ConfirmName string     `json:"confirmName,omitempty"`
+	Answers     []Answer   `json:"answers,omitempty"`
+	Challenge   *Challenge `json:"challenge,omitempty"`
+	Passkey     *Passkey   `json:"passkey,omitempty"`
 }
 
 // Answer answers one row-level security question.
@@ -250,6 +253,9 @@ func (s *Service) validate(req Request) (job, error) {
 		return job{}, err
 	}
 	j := job{req: req, role: role, uid: uid}
+	if req.ConfirmName != "" {
+		return job{}, refuse(CodeAnswersInvalid, "Only a removal is confirmed with the database name.")
+	}
 	if req.Demo && req.hasRealFields() {
 		return job{}, refuse(CodeAnswersInvalid, "The sample database takes no schema, table or label to set.")
 	}

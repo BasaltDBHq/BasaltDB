@@ -1106,3 +1106,12 @@ CREATE CONSTRAINT TRIGGER refuse_at_commit AFTER INSERT ON basalt_meta.passkeys 
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(f.config), "agents", "bot.url"))
 	require.ErrorIs(t, statErr, os.ErrNotExist, "the credential of a role that was rolled back is removed")
 }
+
+func TestInstallRefusesADatabaseNameToConfirm(t *testing.T) {
+	t.Parallel()
+	svc, err := localsetup.New(localsetup.Options{ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin, Users: fakeUsers{}, Prefix: "basalt"})
+	require.NoError(t, err)
+	req := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice", Demo: true, DatabaseURL: unusedAdminURL, ConfirmName: "app"}
+	_, err = svc.Check(context.Background(), req)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+}

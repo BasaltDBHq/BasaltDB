@@ -264,12 +264,21 @@ func plural(n int, one, many string) string {
 	return many
 }
 
+// maxDatabaseName bounds the typed name: Postgres names are at most 63
+// bytes.
+const maxDatabaseName = 63
+
+const wrongName = "Type the database's name exactly as the page shows it to remove BasaltDB from it. Nothing changed."
+
 // checkAgentJob is the check of an UPDATE or REMOVE: it reads, in a
 // transaction it rolls back, and changes nothing.
 func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, error) {
 	j, err := s.validateAgentJob(req)
 	if err != nil {
 		return CheckAnswer{}, err
+	}
+	if req.ConfirmName != "" {
+		return CheckAnswer{}, refuse(CodeAnswersInvalid, "The database name confirms a removal's run, not its check.")
 	}
 	conn, err := s.connect(ctx, req.DatabaseURL)
 	if err != nil {
@@ -304,6 +313,12 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	if err != nil {
 		return RunAnswer{}, err
 	}
+	if req.Job == JobUpdate && req.ConfirmName != "" {
+		return RunAnswer{}, refuse(CodeAnswersInvalid, "An update is not confirmed with the database name.")
+	}
+	if req.Job == JobRemove && (req.ConfirmName == "" || len(req.ConfirmName) > maxDatabaseName) {
+		return RunAnswer{}, refuse(CodeAnswersInvalid, wrongName)
+	}
 	conn, err := s.connect(ctx, req.DatabaseURL)
 	if err != nil {
 		return RunAnswer{}, err
@@ -315,6 +330,11 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		if database, err = currentDatabase(ctx, tx); err != nil {
 			return err
+		}
+		// The name the person typed, read against the database itself
+		// before anything is planned or dropped.
+		if req.Job == JobRemove && req.ConfirmName != database {
+			return refuse(CodeAnswersInvalid, wrongName)
 		}
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err

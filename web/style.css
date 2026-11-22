@@ -337,6 +337,14 @@ button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; 
 .tick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 4px 0; font-size: 13px; }
 .tick input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--ui-primary); }
 .tick .muted { font-size: 12px; }
+/* The local setup page's tables: a wider cell for the Read / Read + change
+   switch of each ticked table. */
+.access-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.seg { display: inline-flex; border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); overflow: hidden; margin-left: auto; }
+.seg button { min-height: 28px; padding: 0 8px; font-size: 12px; font-weight: 500; border: 0; border-radius: 0; background: var(--ui-subtle); color: var(--ui-text-2); }
+.seg button + button { border-left: 1px solid var(--ui-border-strong); }
+.seg button[aria-pressed="true"] { background: var(--ui-primary); color: var(--ui-on-primary); }
+.seg button:disabled { opacity: 0.5; }
 .label-tables { display: flex; flex-direction: column; gap: 8px; }
 .label-table { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 8px 12px; }
 .label-table summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 4px; list-style: none; }

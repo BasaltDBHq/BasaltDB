@@ -42,6 +42,40 @@ func (f *fixture) agentJob(job string) localsetup.Request {
 	return localsetup.Request{Job: job, Agent: "demo_bot", OSUser: "alice", DatabaseURL: f.db.URL}
 }
 
+// removeRun is a REMOVE run with the database's name typed, as the page
+// sends it.
+func (f *fixture) removeRun(t *testing.T) localsetup.Request {
+	t.Helper()
+	req := f.agentJob(localsetup.JobRemove)
+	require.NoError(t, f.db.Admin.QueryRow(context.Background(), `SELECT pg_catalog.current_database()::text`).Scan(&req.ConfirmName))
+	return req
+}
+
+func TestRemoveRunsOnlyWithTheDatabaseNameTyped(t *testing.T) {
+	t.Parallel()
+	f, svc := installed(t)
+	ctx := context.Background()
+	right := f.removeRun(t)
+	for _, typed := range []string{"", "not_it", strings.ToUpper(right.ConfirmName), right.ConfirmName + " ", strings.Repeat("a", 64)} {
+		req := f.agentJob(localsetup.JobRemove)
+		req.ConfirmName = typed
+		_, err := svc.Run(ctx, req)
+		require.Error(t, err, "typed %q", typed)
+		refusal(t, err, localsetup.CodeAnswersInvalid)
+	}
+	require.True(t, exists(t, f.db, "basalt_meta"), "nothing was removed")
+	_, err := svc.Check(ctx, right)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+	update := f.agentJob(localsetup.JobUpdate)
+	update.ConfirmName = right.ConfirmName
+	_, err = svc.Run(ctx, update)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+
+	_, err = svc.Run(ctx, right)
+	require.NoError(t, err)
+	require.False(t, exists(t, f.db, "basalt_meta"))
+}
+
 func guardVersion(t *testing.T, d *guardtest.DB) int {
 	t.Helper()
 	v, err := guard.InstalledVersion(context.Background(), d.Admin)
@@ -144,7 +178,7 @@ func TestRemoveDropsBasaltAndForgetsTheAgent(t *testing.T) {
 	require.True(t, exists(t, f.db, "basalt_meta"), "check changes nothing")
 	require.True(t, exists(t, f.db, "basalt_demo"), "check changes nothing")
 
-	done, err := svc.Run(ctx, f.agentJob(localsetup.JobRemove))
+	done, err := svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot")
 	require.Empty(t, done.MCPCommand)
@@ -182,7 +216,7 @@ func TestRemoveKeepsOtherAgentsOfTheEngine(t *testing.T) {
 		return nil
 	}}))
 
-	_, err = svc.Run(ctx, f.agentJob(localsetup.JobRemove))
+	_, err = svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	cfg, err = config.Load(f.config)
 	require.NoError(t, err)
@@ -203,7 +237,7 @@ func TestRemoveFinishesOnADatabaseBasaltIsGoneFrom(t *testing.T) {
 	checked, err := svc.Check(ctx, f.agentJob(localsetup.JobRemove))
 	require.NoError(t, err)
 	require.Contains(t, checked.Lines[0], "Basalt is no longer in the database")
-	_, err = svc.Run(ctx, f.agentJob(localsetup.JobRemove))
+	_, err = svc.Run(ctx, f.removeRun(t))
 	require.NoError(t, err)
 	_, err = os.Stat(f.config)
 	require.ErrorIs(t, err, os.ErrNotExist)
@@ -213,7 +247,7 @@ func TestRemoveKeepsASampleSchemaSomethingDependsOn(t *testing.T) {
 	t.Parallel()
 	f, svc := installed(t)
 	f.db.Exec(t, `CREATE VIEW public.my_leads AS SELECT id FROM basalt_demo.leads`)
-	done, err := svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	done, err := svc.Run(context.Background(), f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Warnings, "the sample schema basalt_demo stays: another object depends on it")
 	require.True(t, exists(t, f.db, "basalt_demo"), "the person's view keeps the sample schema")
@@ -242,7 +276,7 @@ func TestRemoveLeavesASampleSchemaTheDemoDidNotMake(t *testing.T) {
 	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
 	require.NoError(t, err)
 	require.NotContains(t, checked.SQL, "basalt_demo")
-	_, err = svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	_, err = svc.Run(context.Background(), f.removeRun(t))
 	require.NoError(t, err)
 	require.True(t, exists(t, f.db, "basalt_demo"), "a schema the demo did not make stays")
 	require.False(t, exists(t, f.db, "basalt_meta"))
@@ -258,7 +292,7 @@ func TestRemoveDropsAPolicyOnASampleTableBeforeTheTable(t *testing.T) {
 	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
 	require.NoError(t, err)
 	require.Less(t, strings.Index(checked.SQL, "DROP POLICY"), strings.Index(checked.SQL, "DROP TABLE basalt_demo.leads"))
-	_, err = svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	_, err = svc.Run(context.Background(), f.removeRun(t))
 	require.NoError(t, err)
 	require.False(t, exists(t, f.db, "basalt_demo"))
 	require.False(t, exists(t, f.db, "basalt_meta"))
@@ -284,7 +318,7 @@ func TestRemoveForgetsEveryAgentOfTheSameDatabase(t *testing.T) {
 	checked, err := svc.Check(context.Background(), f.agentJob(localsetup.JobRemove))
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(checked.Lines, "\n"), "demo_bot, twin_bot")
-	done, err := svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	done, err := svc.Run(context.Background(), f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot, twin_bot")
 	_, err = os.Stat(f.config)
@@ -321,7 +355,7 @@ func TestRemoveAlsoDropsAnAgentWhoseCredentialCannotBeRead(t *testing.T) {
 		c.Agents = append(c.Agents, lost)
 		return nil
 	}}))
-	done, err := svc.Run(context.Background(), f.agentJob(localsetup.JobRemove))
+	done, err := svc.Run(context.Background(), f.removeRun(t))
 	require.NoError(t, err)
 	require.Contains(t, done.Lines, "removed from this engine: demo_bot, lost_bot")
 	_, err = os.Stat(f.config)

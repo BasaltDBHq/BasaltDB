@@ -8,6 +8,8 @@
 // Argument: the fake Vault's ws:// base URL. Then one JSON command per line
 // on stdin, one JSON answer per line on stdout:
 //
+// kind is approvals, reverts or plugins.
+//
 //   { op: "open", secret }                    the RELAY session for a short link
 //   { op: "read", kind, id, secret }          fetchRequest and the page's check;
 //                                             answers what the passkey signs
@@ -20,7 +22,7 @@
 // It never prints a secret.
 import { createInterface } from "node:readline";
 
-import { approvalResponseJSON, b64urlDecode, b64urlEncode, checkApprovalRequest, checkRevertRequest, revertResponseJSON } from "../../../web/lib/codec.js";
+import { approvalResponseJSON, b64urlDecode, b64urlEncode, checkApprovalRequest, checkPluginRequest, checkRevertRequest, pluginResponseJSON, revertResponseJSON } from "../../../web/lib/codec.js";
 import { fetchRequest, postResponse, relayPaths, revertPaths } from "../../../web/lib/local.js";
 import { receiptLine } from "../../../web/lib/page.js";
 import { RELAY_ORIGIN, relayTransport } from "../../../web/lib/relay.js";
@@ -46,6 +48,9 @@ const noWait = async () => {};
 const pages = {
   approvals: { check: checkApprovalRequest, json: approvalResponseJSON, idField: "approvalId", paths: (id) => relayPaths("approvals", id) },
   reverts: { check: checkRevertRequest, json: revertResponseJSON, idField: "revertId", paths: (id) => revertPaths(id) },
+  // A plugin approval answers with no receipt (CONTRACT.md, Plugin
+  // approval through the portal).
+  plugins: { check: checkPluginRequest, json: pluginResponseJSON, idField: "approvalId", paths: (id) => relayPaths("plugins", id), noReceipt: true },
 };
 
 async function run(c) {
@@ -70,6 +75,7 @@ async function run(c) {
         signature: b64urlDecode(a.signature),
       };
       const result = await postResponse(session, p.paths(c.id).relay, c.secret, p.json(response));
+      if (p.noReceipt) return { result };
       const expect = { kind: c.kind === "approvals" ? "APPROVAL" : "REVERT", itemId: c.id, rowsHash: read.get(c.id)?.binding.rowsHash };
       return { result, receiptLine: await receiptLine(result, session, expect) };
     }

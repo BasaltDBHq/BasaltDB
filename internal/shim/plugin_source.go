@@ -160,6 +160,11 @@ func (c *uploadConn) answer() (json.RawMessage, error) {
 		return resp.Result, nil
 	case mcp.IsMethodNotFound(resp.Error):
 		return nil, ErrNoUploads
+	case resp.Error.Data != nil && resp.Error.Data.Code == codePluginRefused && len(resp.Error.Data.NextSteps) > 0:
+		// The tool's own refusal (where request_plugin is not served, or
+		// cannot hand over a link), with the catalog's steps for its
+		// reason: the agent gets it as the call's answer.
+		return nil, resp.Error.Data
 	case resp.Error.Data != nil && resp.Error.Data.Code == codePluginRefused:
 		return nil, refusal(resp.Error.Data.Reason, resp.Error.Data.Message)
 	case resp.Error.Data != nil && resp.Error.Data.Code == "INVALID_ARGUMENT":

@@ -179,15 +179,16 @@ func TestPluginPageServed(t *testing.T) {
 	}
 }
 
-// A Vault session carries approvals and reverts only
-// (frame-message.schema.json): every plugin route answers as an unknown
-// id, even for the session's own item and secret.
-func TestNoPluginRoutesInASession(t *testing.T) {
+// A Vault session carries a plugin approval's routes for that approval's
+// own link (CONTRACT.md, Plugin approval through the portal): the read and
+// the relay answer as on loopback, with no receipt; the session's link
+// reaches no other kind's route, and another item's link no plugin route.
+func TestPluginRoutesInASession(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	const origin = links.Portal
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	a := &pluginAgent{plugin: id, at: time.Now()}
+	a := &pluginAgent{plugin: id, at: time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)}
 	a.secrets, a.origin = secrets, origin
 	srv := pages.New(origin, slog.New(slog.DiscardHandler))
 	srv.Add(a)
@@ -197,14 +198,43 @@ func TestNoPluginRoutesInASession(t *testing.T) {
 	require.NoError(t, err)
 	link := vault.SessionLink{Token: keys.Token, Item: id}
 	headers := map[string]string{links.SecretHeader: secret, "origin": origin}
-
 	post := map[string]string{links.SecretHeader: secret, "origin": origin, "content-type": "application/json"}
+
+	got := srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
+	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
+	var req approval.PluginRequest
+	require.NoError(t, json.Unmarshal(got.Body, &req))
+	require.Equal(t, approval.PluginRequest{ApprovalID: id, Binding: pluginBinding, Settings: pluginSettings}, req)
+
+	got = srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))})
+	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
+	var answer map[string]any
+	require.NoError(t, json.Unmarshal(got.Body, &answer))
+	require.Equal(t, map[string]any{"approvalId": id.String(), "status": "APPROVED", "approvedAt": "2026-11-22T10:00:00Z"}, answer, "no receipt")
+	require.Len(t, a.submitted, 1)
+
+	// The plugin link's session reaches no approval or revert route, and
+	// no route the allowlist does not name.
 	for _, req := range []vault.Request{
-		{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers},
-		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
+		{Method: http.MethodGet, Path: "/api/v1/approvals/" + id.String(), Headers: headers},
+		{Method: http.MethodPost, Path: "/api/v1/approvals/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
+		{Method: http.MethodGet, Path: "/api/v1/reverts/" + id.String(), Headers: headers},
+		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/apply", Headers: post, Body: []byte(pluginResponseBody(id))},
+		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/links", Headers: post, Body: []byte(`{}`)},
 	} {
 		got := srv.Dispatch(context.Background(), link, req)
 		require.Equal(t, http.StatusNotFound, got.Status, req.Path)
 	}
-	require.Empty(t, a.submitted)
+	// Another item's link reaches no plugin route.
+	other := uuid.Must(uuid.NewV7())
+	otherSecret, err := secrets.Issue(other, time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	otherKeys, err := channel.DeriveLink(otherSecret)
+	require.NoError(t, err)
+	otherLink := vault.SessionLink{Token: otherKeys.Token, Item: other}
+	for _, path := range []string{"/api/v1/plugins/" + id.String(), "/api/v1/plugins/" + other.String()} {
+		got := srv.Dispatch(context.Background(), otherLink, vault.Request{Method: http.MethodGet, Path: path, Headers: map[string]string{links.SecretHeader: otherSecret, "origin": origin}})
+		require.Equal(t, http.StatusNotFound, got.Status, path)
+	}
+	require.Len(t, a.submitted, 1)
 }

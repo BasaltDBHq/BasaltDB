@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- An agent on a computer the person cannot reach can now ask for a plugin with `request_plugin`. The person approves it with their passkey on the portal page the agent links to, which reaches the engine through the BasaltDB Vault, and the engine runs the plugin only once the database has verified the signature. On that computer the agent and BasaltDB run as one user, so the approval is consent, not containment: a plugin you approve can read what BasaltDB can, and the page says so. Without a connection to the Vault, `request_plugin` refuses (`NO_PORTAL_LINK`) and writes nothing.
+
 ### Changed
+
+- The plugin approval page names the plugin's fingerprint "Plugin fingerprint", apart from the engine's fingerprint a portal page shows.
 
 - The README, `llms.txt` and `docs/` describe the simplified product: the agent runs `basalt init`, the person finishes on the setup page, and no guide asks a person to type a `basalt` command or paste an admin connection string into a terminal. `docs/bot-setup.md` asks the person for nothing but the page they open. The same-user limit of the local setup is written down in the install guide and the README.
 - The MCP initialize instructions tell an agent on a computer the person cannot reach to run `basalt init --remote`.

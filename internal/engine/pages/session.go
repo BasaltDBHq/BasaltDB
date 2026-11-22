@@ -40,9 +40,10 @@ var sessionRoutes = []sessionRoute{
 	{http.MethodPost, revertsResource, "reject", revertParam, (*Server).postReject},
 	{http.MethodPost, approvalsResource, "reveal", approvalParam, (*Server).postApprovalReveal},
 	{http.MethodPost, revertsResource, "reveal", revertParam, (*Server).postRevertReveal},
-	// No plugin approval route: a session's paths are approvals and
-	// reverts only (frame-message.schema.json), and no command issues a
-	// session link for a plugin approval (CONTRACT.md, Plugin approval).
+	// A plugin approval of an agent-operated engine (CONTRACT.md, Plugin
+	// approval through the portal): read and relay, as for an approval.
+	{http.MethodGet, pluginsResource, "", approvalParam, (*Server).getPlugin},
+	{http.MethodPost, pluginsResource, "approve", approvalParam, (*Server).postPlugin},
 }
 
 // The resources of the pages API and the path parameters naming an
@@ -50,6 +51,7 @@ var sessionRoutes = []sessionRoute{
 const (
 	approvalsResource = "approvals"
 	revertsResource   = "reverts"
+	pluginsResource   = "plugins"
 	approvalParam     = "approvalId"
 	revertParam       = "revertId"
 )

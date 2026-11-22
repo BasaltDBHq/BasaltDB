@@ -24,8 +24,8 @@
         "method": { "type": "string", "enum": ["GET", "POST"] },
         "path": {
           "type": "string",
-          "pattern": "^/api/v1/(approvals|reverts|plugins)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/approve|/apply)?$",
-          "description": "A route of the allowlist (CONTRACT.md, Vault channel, Frames), for the session's own item. The plugins routes are planned: until they are served the engine answers them 404 NOT_FOUND, as anything else."
+          "pattern": "^/api/v1/(approvals/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/approve|/reveal)?|reverts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/apply|/scope|/reject|/reveal)?|plugins/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/approve)?)$",
+          "description": "A route of the allowlist (CONTRACT.md, Vault channel, Frames), for the session's own item. Anything else is answered 404 NOT_FOUND."
         },
         "headers": {
           "type": "object",

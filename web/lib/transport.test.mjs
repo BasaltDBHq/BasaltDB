@@ -100,8 +100,8 @@ test("only transport.js touches the browser's network globals", () => {
   }
 });
 
-test("the plugin approval page stays on the same origin, never the relay", () => {
+test("the plugin approval page picks its transport by its origin, as the approval page does", () => {
   const src = readFileSync(new URL("./plugin.js", import.meta.url), "utf8");
-  assert.doesNotMatch(src, /pageTransport|relay\.js/);
-  assert.match(src, /sameOriginTransport\(\)\.open/);
+  assert.match(src, /openSession\(pageTransport\(\), \{ page: "plugins", id, secret \}\)/);
+  assert.doesNotMatch(src, /sameOriginTransport|relayTransport/);
 });

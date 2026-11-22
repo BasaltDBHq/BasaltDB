@@ -216,7 +216,7 @@ func New(o Options) (*Service, error) {
 	if o.Backend == nil {
 		return nil, errors.New("localsetup: backend required")
 	}
-	rp, err := passkey.Local(o.Origin)
+	rp, err := setuprun.LocalRelying(o.Origin)
 	if err != nil {
 		return nil, err
 	}

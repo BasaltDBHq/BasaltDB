@@ -201,11 +201,11 @@ func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 	if !s.opts.Now().Before(c.ExpiresAt) {
 		return nil, refuse(CodeChallengeExpired, "This page waited more than 15 minutes. Check again, then create the passkey.")
 	}
-	rr, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+	rr, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return nil, refuse(CodeChallengeInvalid, "This passkey was made for another setup page. Reload the page and start again.")
 	}
-	cred, err := passkey.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
+	cred, err := setuprun.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
 	if err != nil {
 		return nil, refuse(CodePasskeyInvalid, "The passkey could not be checked. Create it again on this page.")
 	}

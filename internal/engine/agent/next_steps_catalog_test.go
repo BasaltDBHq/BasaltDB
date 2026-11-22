@@ -628,9 +628,6 @@ func requireCommand(t *testing.T, command, where string) {
 	if strings.HasPrefix(command, "basalt engine ") { // the foreground engine names its config itself
 		return
 	}
-	if command == "basalt portal verify" { // reads public pages only: no agent, no config
-		return
-	}
 	// A trust profile is the engine's, not one agent's: basalt trust takes
 	// no --agent.
 	if !strings.HasPrefix(command, "basalt trust ") {

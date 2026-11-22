@@ -6,13 +6,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,27 +70,4 @@ func TestPickAgentFindsTheOwner(t *testing.T) {
 	// A config that cannot be read: the usage error as before.
 	_, err = pickAgent(c, filepath.Join(t.TempDir(), "missing.json"), item, owner("bot"))
 	require.ErrorContains(t, err, "give --agent or "+envAgentURL)
-}
-
-// In service mode the agents are the sockets the person can list; with one
-// agent, a code or revert id needs no --agent.
-func TestServiceModeUsesTheOnlyAgent(t *testing.T) {
-	t.Parallel()
-	socket := personSocket(t, personUIDForTest)
-	ln, err := net.Listen("unix", filepath.Join(filepath.Dir(socket), "bot.sock"))
-	require.NoError(t, err)
-	t.Cleanup(func() { ln.Close() })
-
-	id := uuid.NewString()
-	r := serviceRun(t, socket, runRevert, "--status", id)
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "no revert "+id+" prepared with this agent's credential", "asked the engine as bot")
-
-	r = serviceRun(t, socket, runApprove, "--show", id)
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "approval "+id+" is not a held write of this agent")
-
-	// A code that does not parse is still a usage error about the code.
-	r = serviceRun(t, socket, runApprove, "not-a-code")
-	require.Equal(t, exitUsage, r.code, r.stderr)
 }

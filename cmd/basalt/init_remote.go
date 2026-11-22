@@ -469,9 +469,8 @@ func (r *remoteInit) paths() error {
 	}
 	asRoot := r.c.host.Euid() == 0
 	if asRoot {
-		// The user who ran sudo runs basalt status, log, approve and
-		// revert on this machine: the person socket of a service engine
-		// admits it (CONTRACT.md, Recording the person). Never root.
+		// The user who ran sudo is the person on this machine
+		// (CONTRACT.md, Recording the person). Never root.
 		person, err := invokingUID(r.c)
 		if err == nil && person != 0 {
 			r.settings.PersonUIDs = []uint32{person}
@@ -512,16 +511,14 @@ func (r *remoteInit) paths() error {
 		}
 		// A config directory another OS user owns (not root, not the user
 		// who ran sudo) is an engine user's, as basalt service install
-		// makes it: the engine runs as that user and serves the person
-		// socket, so the config is a service one. Only with a person to
-		// admit (SUDO_UID): without one, a service config's person socket
-		// would admit nobody.
+		// makes it: the engine runs as that user, so the config is a
+		// service one. Only with a person to record (SUDO_UID).
 		// writeConfig says so once engine.json is written, never on a run
 		// that refuses before writing it.
 		if trusted > 0 && len(r.settings.PersonUIDs) > 0 && uint32(trusted) != r.settings.PersonUIDs[0] {
 			r.settings.Mode = config.ModeService
 			r.serviceNote = fmt.Sprintf("basalt: %s belongs to uid %d, not root or you (uid %d): this config is a service one (mode %s). "+
-				"The engine runs as uid %d and admits you on its person socket; restart its service after this run\n",
+				"The engine runs as uid %d and records you as its person; restart its service after this run\n",
 				dir, trusted, r.settings.PersonUIDs[0], config.ModeService, trusted)
 		}
 		files, err := openRootCredFiles(filepath.Dir(r.credFile), trusted)

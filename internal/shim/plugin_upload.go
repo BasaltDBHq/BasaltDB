@@ -16,9 +16,8 @@ import (
 const toolRequestPlugin = "request_plugin"
 
 // PluginUploader reads the plugin folder source as this process's OS user
-// and uploads it over the engine's person socket. It returns ErrNoPersonSocket
-// when there is no person socket to upload to (a same-user engine, or one
-// not running), and a *mcp.ToolError for an answer the agent gets as it is.
+// and uploads it to the engine. It returns ErrNoUploads when the engine
+// takes none, and a *mcp.ToolError for an answer the agent gets as it is.
 type PluginUploader func(ctx context.Context, source string) (mcp.PluginUpload, error)
 
 // prepare is line as the engine gets it: for a request_plugin call, any
@@ -61,7 +60,7 @@ func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []
 			}
 			return nil, true
 		}
-		// Any other error (no person socket): forward without an upload,
+		// Any other error (the engine takes no uploads): forward without one,
 		// and the engine says why it cannot take the plugin.
 	}
 	if len(meta) == 0 {

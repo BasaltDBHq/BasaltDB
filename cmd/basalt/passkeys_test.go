@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -121,10 +120,6 @@ func TestPasskeyRemove(t *testing.T) {
 	require.Contains(t, r.stderr, "the passkey belongs to "+links.Portal)
 	require.Contains(t, r.stderr, "0 active passkeys remain")
 	require.Contains(t, r.stderr, "basalt init --add-passkey")
-
-	r = cli(t, nil, "", "log", "--credential-file", credFile)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "warning: no active passkey")
 }
 
 // A credential id can start with "-"; remove must read it as the id, not a
@@ -296,18 +291,6 @@ func TestPasskeyCheck(t *testing.T) {
 	r = cliRand(t, nil, tampered+"\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.Portal)
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "does not verify")
-}
-
-func TestLogWarnsAboutAnUnusedPasskey(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	credFile, laptop, _ := twoPasskeys(t, d)
-	d.Exec(t, `UPDATE basalt_meta.passkeys SET created_at = now() - interval '91 days' WHERE credential_id = $1`, laptop.ID)
-
-	r := cli(t, nil, "", "log", "--credential-file", credFile)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Regexp(t, regexp.QuoteMeta("warning: passkey \""+dbName(t, d)+" · bot · ")+`\d{4}-\d{2}-\d{2}`+regexp.QuoteMeta("\" ("+id(laptop)+") has not signed anything for 90 days or more"), r.stderr)
-	require.NotContains(t, r.stderr, "\"phone\"")
 }
 
 // A new passkey's default label tells it apart from the person's other

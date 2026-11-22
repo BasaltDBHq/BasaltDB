@@ -50,7 +50,8 @@ func TestAMismatchingPortalIsAWarningWithTheVerifyCommand(t *testing.T) {
 	require.True(t, r.Ready, "a warning does not stop the tools")
 	require.Contains(t, p.Message, "2 DIFFERS, 1 MISSING")
 	require.Len(t, p.NextSteps, 1)
-	require.Equal(t, "basalt portal verify", p.NextSteps[0].Command)
+	require.Equal(t, "ASK_PERSON", p.NextSteps[0].Action)
+	require.Contains(t, p.PersonMessage, "GitHub issues")
 }
 
 func TestNoPortalProblemWithoutAMismatch(t *testing.T) {

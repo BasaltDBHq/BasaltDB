@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 )
 
 // ErrReload is what Serve and Run return after they stopped to serve the
@@ -163,13 +161,6 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{
 		tools: co.Tools(),
-		info: person.AgentInfo{Status: func(ctx context.Context) (json.RawMessage, error) {
-			r, err := co.Status(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(r)
-		}},
 		run:   pending.Run,
 		close: func() {},
 	}, nil

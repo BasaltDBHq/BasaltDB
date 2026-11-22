@@ -171,28 +171,3 @@ func ownedByMe(path string) bool {
 	owner := fileOwner(path)
 	return owner != "" && (owner == me.Username || owner == me.Uid)
 }
-
-// vaultWords is status.vault's state for the person.
-func vaultWords(v agent.VaultStatus, stateDir string) string {
-	switch vault.State(v.State) {
-	case vault.StateOff:
-		return "OFF (approval links are the engine's own)"
-	case vault.StateConnecting:
-		return "CONNECTING (approvals use long links until it is connected)"
-	case vault.StateConnected:
-		return "CONNECTED (approvals use portal short links)"
-	case vault.StateUnreachable:
-		return "UNREACHABLE (approvals still work, through long links)"
-	case vault.StateKeyError:
-		return fmt.Sprintf("KEY_ERROR (the engine's key file %s is refused: the Vault stays off and approvals use long links; "+
-			"correct its owner, the engine's OS user, and its mode, 0600; the engine never replaces it)",
-			filepath.Join(stateDir, channel.KeyFileName))
-	}
-	return v.State
-}
-
-// engineIDWords is the engine id as people compare it: the fingerprint,
-// then the whole id.
-func engineIDWords(v agent.VaultStatus) string {
-	return fmt.Sprintf("%s (id %s)", v.Fingerprint, v.EngineID)
-}

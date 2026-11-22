@@ -69,9 +69,9 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 		require.NotContains(t, meta, mcp.MetaPluginUpload)
 		require.Contains(t, meta, "progressToken")
 	}
-	// No person socket: forwarded without an upload.
+	// An engine that takes no uploads: forwarded without one.
 	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcp.PluginUpload, error) {
-		return mcp.PluginUpload{}, ErrNoPersonSocket
+		return mcp.PluginUpload{}, ErrNoUploads
 	}}
 	out, answered := r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), []byte(pluginCall))
 	require.False(t, answered)

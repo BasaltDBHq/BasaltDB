@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
@@ -70,12 +69,7 @@ type cliIO struct {
 	// probe tries a login bound to fail, to confirm a credential's TLS
 	// protection (hardenedCredential); probeLogin outside tests.
 	probe func(ctx context.Context, dsn string) error
-	// handoff reaches the connect service and the collected database when
-	// basalt status collects while the engine is down; the zero value is
-	// the contract's, and tests give their own.
-	handoff engine.HandoffOptions
-	// engine tells service mode from same-user mode and finds the person
-	// socket (log, approve, revert); tests replace it.
+	// engine tells service mode from same-user mode; tests replace it.
 	engine engineAccess
 	// fetchChain reads the chain a database presents with the TLS
 	// handshake alone, before a pin is offered (fetchChain outside tests;

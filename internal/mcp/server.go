@@ -71,8 +71,30 @@ type Server struct {
 	info   Info
 	tools  []Tool
 	byName map[string]Tool
+	// methods are JSON-RPC methods beside MCP's own, for basalt mcp only
+	// (WithMethods).
+	methods map[string]MethodFunc
 
 	minShim int
+}
+
+// MethodFunc serves one JSON-RPC method beside MCP's own. An error that is
+// a *ToolError is answered as a server error carrying it as data; any other
+// error as a server error with its text.
+type MethodFunc func(ctx context.Context, params json.RawMessage) (any, error)
+
+// WithMethods adds JSON-RPC methods beside MCP's own: the ones basalt mcp
+// calls on a connection of its own (CONTRACT.md, MCP tools, request_plugin).
+// A name that is one of MCP's methods panics.
+func (s *Server) WithMethods(methods map[string]MethodFunc) *Server {
+	for name := range methods {
+		switch name {
+		case "initialize", "ping", "tools/list", "tools/call", HelloMethod:
+			panic("mcp: method " + name + " is MCP's own")
+		}
+	}
+	s.methods = methods
+	return s
 }
 
 // WithMinShimProtocol sets the oldest shim protocol Serve accepts; the
@@ -115,10 +137,12 @@ type Response struct {
 	Error   *RPCError `json:"error,omitempty"`
 }
 
-// RPCError is a JSON-RPC 2.0 error object.
+// RPCError is a JSON-RPC 2.0 error object. Data, on a server error of a
+// method beside MCP's own, is the *ToolError it answers with.
 type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int        `json:"code"`
+	Message string     `json:"message"`
+	Data    *ToolError `json:"data,omitempty"`
 }
 
 // Serve reads one JSON-RPC message per line from in and writes one response
@@ -223,9 +247,20 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 		return map[string]any{"tools": s.listTools()}, nil
 	case "tools/call":
 		return s.callTool(ctx, params, sess)
-	default:
+	}
+	m, ok := s.methods[method]
+	if !ok {
 		return nil, &RPCError{Code: rpcErrMethodNotFound, Message: "method not found: " + method}
 	}
+	out, err := m(ctx, params)
+	if err == nil {
+		return out, nil
+	}
+	var te *ToolError
+	if errors.As(err, &te) {
+		return nil, &RPCError{Code: ErrCodeServer, Message: te.Message, Data: te}
+	}
+	return nil, &RPCError{Code: ErrCodeServer, Message: err.Error()}
 }
 
 func (s *Server) initialize(params json.RawMessage) map[string]any {

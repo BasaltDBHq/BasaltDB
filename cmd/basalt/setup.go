@@ -621,7 +621,7 @@ func offerClaude(c *cliIO, f initFlags) error {
 // envSudoUID is the uid of the user who ran sudo.
 const envSudoUID = "SUDO_UID"
 
-// persons are the uids the engine's person socket admits (CONTRACT.md, CLI,
+// persons are the person uids init records (CONTRACT.md, CLI,
 // Recording the person): --person-uid, else the person running init (the
 // user who ran sudo when init runs as root). Never root: without a person
 // the service is not installed.
@@ -653,8 +653,8 @@ func invokingUID(c *cliIO) (uint32, error) {
 	return parseUID(sudo)
 }
 
-var errNoPerson = errors.New("no person to admit on the engine's person socket (init runs as root without SUDO_UID); " +
-	"give --person-uid N, the OS user id that runs basalt log, approve and revert")
+var errNoPerson = errors.New("no person to record (init runs as root without SUDO_UID); " +
+	"give --person-uid N, the person's OS user id")
 
 // checkPersons refuses no uid and root.
 func checkPersons(uids []uint32) error {
@@ -663,7 +663,7 @@ func checkPersons(uids []uint32) error {
 	}
 	for _, u := range uids {
 		if u == 0 {
-			return errors.New("--person-uid 0 is root; give the OS user id of the person who runs basalt log, approve and revert")
+			return errors.New("--person-uid 0 is root; give the person's OS user id")
 		}
 	}
 	return nil
@@ -680,7 +680,8 @@ func parseUID(v string) (uint32, error) {
 
 // warnAgentIsPerson says when the agent runs as a recorded person: the
 // engine cannot tell two processes of one OS user apart, so that agent can
-// reach the person socket too. Approve and revert still need the passkey.
+// read what the person can and ask for plugin changes (request_plugin).
+// Every approval still needs the passkey.
 func warnAgentIsPerson(c *cliIO, f initFlags) {
 	u, err := user.Lookup(f.osUser)
 	if err != nil {
@@ -688,9 +689,9 @@ func warnAgentIsPerson(c *cliIO, f initFlags) {
 	}
 	for _, uid := range f.personUIDs {
 		if strconv.FormatUint(uint64(uid), 10) == u.Uid {
-			fmt.Fprintf(c.stderr, "basalt: warning: the agent runs as OS user %s, which is also the person the engine admits on its person socket. "+
-				"While they share that user, basalt log, approve and revert over the socket see only this agent's ledger (the engine cannot tell you and the agent apart), "+
-				"and the agent can use them too (approve and revert still need your passkey). For full isolation, run the agent as its own OS user: basalt init --os-user <user>\n", f.osUser)
+			fmt.Fprintf(c.stderr, "basalt: warning: the agent runs as OS user %s, which is also the person this engine records. "+
+				"While they share that user, the engine cannot tell you and the agent apart: the agent can read what you can and ask for plugin changes "+
+				"(every approval still needs your passkey). For full isolation, run the agent as its own OS user: basalt init --os-user <user>\n", f.osUser)
 			return
 		}
 	}

@@ -183,7 +183,7 @@
     { "code": "TRUST_ROOT_CHANGED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "TRUST_PIN_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
     { "code": "TRUST_PROFILE_REFUSED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
-    { "code": "PORTAL_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "PORTAL_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_UNAVAILABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "PLUGIN_NOT_TRUSTED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "PLUGIN_AWAITING_APPROVAL", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },

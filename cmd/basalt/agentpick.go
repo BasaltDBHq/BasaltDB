@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -27,7 +26,7 @@ func (c *cliIO) needsAgent(agent, credFile string) bool {
 // engine config.
 func (c *cliIO) configuredAgents(configPath string) ([]string, error) {
 	if configPath == c.systemConfig() && c.engine.unitInstalled() {
-		entries, err := os.ReadDir(filepath.Dir(c.engine.personSocket))
+		entries, err := os.ReadDir(config.DefaultSocketDir(c.goos))
 		if err != nil {
 			return nil, err
 		}
@@ -97,29 +96,13 @@ func pickAgent(c *cliIO, configPath, item string, owns func(agent string) (bool,
 // ownsApproval reports whether agent's ledger holds approval id.
 func ownsApproval(c *cliIO, configPath string, id uuid.UUID) func(string) (bool, error) {
 	return func(agent string) (bool, error) {
-		l, err := openLedger(c, agent, "", configPath)
+		l, err := openLedger(c, agent, configPath)
 		if err != nil {
 			return false, err
 		}
 		defer l.close()
 		_, err = l.FindApproval(c.ctx, id)
 		if errors.Is(err, ledger.ErrApprovalNotFound) {
-			return false, nil
-		}
-		return err == nil, err
-	}
-}
-
-// ownsRevert reports whether agent prepared revert id.
-func ownsRevert(c *cliIO, configPath string, id uuid.UUID) func(string) (bool, error) {
-	return func(agent string) (bool, error) {
-		l, err := openLedger(c, agent, "", configPath)
-		if err != nil {
-			return false, err
-		}
-		defer l.close()
-		_, err = l.FindRevert(c.ctx, id)
-		if errors.Is(err, ledger.ErrRevertNotFound) {
 			return false, nil
 		}
 		return err == nil, err

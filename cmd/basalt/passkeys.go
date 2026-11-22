@@ -55,10 +55,10 @@ func addAgentFlags(c *cliIO, name string) (*flag.FlagSet, agentFlags) {
 	}
 }
 
-// passkeys lists the active passkeys with the agent the flags name: over
-// the person socket in service mode, else with the agent's credential.
+// passkeys lists the active passkeys with the credential of the agent the
+// flags name.
 func (f agentFlags) passkeys(c *cliIO) ([]ledger.Passkey, error) {
-	l, err := openLedger(c, *f.agent, "", f.configPath)
+	l, err := openLedger(c, *f.agent, f.configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func passkeyCheck(c *cliIO, args []string) int {
 	if af.configPath, err = c.findConfig(); err != nil {
 		return c.fail(err)
 	}
-	l, err := openLedger(c, *af.agent, "", af.configPath)
+	l, err := openLedger(c, *af.agent, af.configPath)
 	if err != nil {
 		return c.fail(err)
 	}

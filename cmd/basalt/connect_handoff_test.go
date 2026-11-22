@@ -11,7 +11,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +24,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -797,57 +795,6 @@ func TestConnectPageTicksAndLabels(t *testing.T) {
 			require.Equal(t, "PUBLIC", l.Class, l.Column)
 		}
 	}
-}
-
-// cliStatus is basalt status --json for the fixture's agent with the
-// engine down, collecting through o.
-func (f handoffFixture) cliStatus(o engine.HandoffOptions) map[string]any {
-	f.t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
-	c.handoff = o
-	code := runStatus(c, []string{"--agent", "bot", "--config", f.cfg, "--json"})
-	require.Equal(f.t, exitOK, code, stderr.String())
-	var out map[string]any
-	require.NoError(f.t, json.Unmarshal(stdout.Bytes(), &out), stdout.String())
-	return out
-}
-
-// basalt status while a same-user engine is down collects as the engine
-// would: a preview is reported and shows nothing, and a SET_UP address that
-// passed the probe is named, waiting for the engine to ask. It never reads
-// .secret and sends no real password.
-func TestStatusCollectsWhileTheEngineIsDown(t *testing.T) {
-	t.Parallel()
-	f := newHandoffFixture(t)
-	sameUserConfig(t, f.cfg)
-	o := f.engineOptions(publicDB)
-	pasted := pastedFor(t, f.d, dbHost)
-
-	chk := f.checkOnPage(pasted)
-	out := f.cliStatus(o)
-	require.Equal(t, "PENDING", setupOf(t, out)["state"])
-	require.Contains(t, problemCodes(out), "ENGINE_UNREACHABLE")
-	require.Contains(t, problemCodes(out), "SETUP_NOT_RUN")
-	require.NotContains(t, fmtJSON(t, out), dbHost, "nothing of a preview address is shown")
-	var hs connectv1.HandoffStatusResponse
-	f.page.ok("HandoffStatus", map[string]any{"ticket": chk.GetTicket()}, &hs)
-	require.Equal(t, "REACHABLE", hs.GetReach().GetResult(), "the CLI reported for the engine")
-	probed := f.roleLogins()
-	require.NotZero(t, probed)
-	f.cliStatus(o)
-	f.cliStatus(o)
-	require.Equal(t, probed, f.roleLogins(), "a reached preview is probed once, however often status runs")
-
-	f.runOnPage(pasted)
-	out = f.cliStatus(o)
-	require.Equal(t, probed, f.roleLogins(), "the SET_UP address reuses the preview's probe")
-	require.Equal(t, "CONFIRM_DATABASE", setupOf(t, out)["state"])
-	require.Equal(t, dbHost, setupOf(t, out)["database"].(map[string]any)["host"])
-	require.Contains(t, problemCodes(out), "ENGINE_UNREACHABLE", "only the engine asks and confirms")
-	require.FileExists(t, secretPathOf(f.cfg))
-	require.NoFileExists(t, f.install.credFile)
-	require.Zero(t, f.carried())
 }
 
 // The shape rules of the page's table list, then the re-run of the same

@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
@@ -29,8 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
-	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
@@ -41,7 +36,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/server"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
@@ -196,10 +190,8 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if portal != nil {
 		env.portal = portal
 	}
-	updateCheck := "ON"
 	if !cfg.UpdateCheckOn() || updatecheck.Disabled(os.Getenv) {
 		log.Info("update check is off")
-		updateCheck = "OFF"
 	} else if uc := (&updatecheck.Checker{Dir: env.stateDir, Current: buildinfo.Version}); uc.Current != updatecheck.DevVersion {
 		env.update = uc
 	}
@@ -256,7 +248,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err != nil {
 		return err
 	}
-	agents, ledgers, upkeeps := srv.agents, srv.ledgers, srv.upkeeps
+	agents, upkeeps := srv.agents, srv.upkeeps
 	for _, svc := range srv.services {
 		if site != nil {
 			site.pages.Add(svc)
@@ -316,26 +308,11 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
-		o := person.Options{
-			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
-			Engine: engineInfo(cfg.SocketDir, env.stateDir),
-			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
-			Gate:   gate,
-		}
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
-			o.Plugins = kept
 			env.requests.kept.Store(kept)
 			// Ends a disable could not write are tried again now.
 			wg.Go(func() { kept.endDisabled(ctx) })
 		}
-		srv, ln, err := listenPerson(cfg, o, log)
-		if err == nil && restart.PersonPeerUID != nil {
-			srv = person.NewServer(withPeerUID(o, cfg, restart.PersonPeerUID, log))
-		}
-		if err != nil {
-			return err
-		}
-		wg.Go(func() { srv.Serve(ctx, ln) })
 	}
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
@@ -404,8 +381,6 @@ type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *sl
 // startedAgents are the agents the engine serves and what it closes.
 type startedAgents struct {
 	agents   []Agent
-	ledgers  map[string]person.Ledger
-	infos    map[string]person.AgentInfo
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
 	scans    []piidict.ScanSource
@@ -424,8 +399,6 @@ type startedAgents struct {
 // user is in uids, which the person socket scopes by.
 func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
 	out := startedAgents{
-		ledgers:       make(map[string]person.Ledger, len(cfg.Agents)),
-		infos:         make(map[string]person.AgentInfo, len(cfg.Agents)),
 		pluginLedgers: make(map[string]pluginLedger, len(cfg.Agents)),
 		kept:          make(map[string]keptAgent, len(cfg.Agents)),
 	}
@@ -435,7 +408,6 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			return out, fmt.Errorf("agent %s: %w", a.Name, err)
 		}
 		out.closers = append(out.closers, rt.close)
-		out.infos[a.Name] = rt.info
 		if rt.run != nil {
 			out.runs = append(out.runs, rt.run)
 		}
@@ -448,7 +420,6 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			})
 			continue
 		}
-		out.ledgers[a.Name] = rt.ledger
 		if rt.db != nil {
 			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
 		}
@@ -464,7 +435,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), agent.Tools(rt.svc)...),
+			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), agent.Tools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed)),
 		})
 	}
 	return out, nil
@@ -483,36 +454,6 @@ func (env agentEnv) serverInfo(notice func() string) mcp.Info {
 		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic,
 		OperatedBy: operatedBy, PagesOrigin: env.pagesOrigin,
 	}
-}
-
-// listenPerson opens the person socket of a service-mode engine (CONTRACT.md,
-// The person socket): mode 0666 like the agent sockets, admitting only the
-// recorded person uids.
-func listenPerson(cfg config.Config, o person.Options, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
-	path := config.PersonSocketPath(cfg.SocketDir)
-	ln, err := listenSocket(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("person socket: %w", err)
-	}
-	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
-	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peercred.UID, log.With("component", "person")
-	return person.NewServer(o), ln, nil
-}
-
-// withPeerUID is o as listenPerson completes it, with peerUID (tests).
-func withPeerUID(o person.Options, cfg config.Config, peerUID func(*net.UnixConn) (uint32, error), log *slog.Logger) person.Options {
-	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peerUID, log.With("component", "person")
-	return o
-}
-
-// engineInfo is what the person socket's STATUS says about this engine:
-// its pid and OS user, and its socket and state directories.
-func engineInfo(socketDir, stateDir string) person.EngineInfo {
-	name := strconv.Itoa(os.Getuid())
-	if u, err := user.Current(); err == nil {
-		name = u.Username
-	}
-	return person.EngineInfo{Engine: person.EngineDTO{PID: os.Getpid(), OSUser: name}, SocketDir: socketDir, StateDir: stateDir}
 }
 
 // pagesSite is the bound local pages listener (CONTRACT.md, Local pages).
@@ -571,10 +512,6 @@ const agentPoolConns = 4
 type agentRuntime struct {
 	svc    *agent.Service
 	upkeep *upkeep.Upkeep
-	// ledger serves the person socket on the agent's credential.
-	ledger person.Ledger
-	// info answers the person socket's STATUS and TARGET.
-	info person.AgentInfo
 	// scan is what the engine's PII scan reads for this agent.
 	scan piidict.ScanSource
 	// db is the agent's own connection pool, outside any tool call.
@@ -762,10 +699,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
-		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
-		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
-		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
-		db:     pool,
+		scan: piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
+		db:   pool,
 		kept: keptAgent{
 			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,
 			database: pool.Config().ConnConfig.Database, role: pool.Config().ConnConfig.User,
@@ -785,22 +720,6 @@ func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 		return pathFiles{configPath: env.configPath, credFile: a.Store.CredentialFile}, nil
 	}
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
-}
-
-// agentInfo answers the person socket's STATUS with the agent's status tool
-// and TARGET with the database its credential connects to.
-func agentInfo(svc *agent.Service, conn pgconn.Config) person.AgentInfo {
-	t := setupcode.ConnTarget(conn.Host, int(conn.Port), conn.Database, conn.User)
-	return person.AgentInfo{
-		Status: func(ctx context.Context) (json.RawMessage, error) {
-			r, err := svc.Status(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(r)
-		},
-		Target: person.TargetDTO(t),
-	}
 }
 
 // logGuard logs the agent's guard as the engine starts serving it. A guard

@@ -50,7 +50,7 @@ func runApprove(c *cliIO, args []string) int {
 			return c.fail(err)
 		}
 	}
-	l, err := openLedger(c, *agent, "", configPath)
+	l, err := openLedger(c, *agent, configPath)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -141,7 +141,7 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 	}
 	ref := linkRef{setting: "pagesUrl", item: "approval " + id.String(), again: "basalt approve --show " + id.String()}
 	long := link
-	link = pages.short(c, "approvals", a.ID, a.BindingText, long)
+	link = pages.short(c, a.ID, a.BindingText, long)
 	if link == long {
 		// No short link was issued, so the page cannot relay: paste it.
 		pages.local = ""

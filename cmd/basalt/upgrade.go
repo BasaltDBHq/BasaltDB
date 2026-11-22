@@ -9,9 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
@@ -101,11 +99,11 @@ func exitCode(c *cliIO, err error) int {
 	return exitOK
 }
 
-// readAgentGuard asks the engine over the person socket in service mode,
-// else reads the config and logs in with the agent's credential.
+// readAgentGuard reads the config and logs in with the agent's credential;
+// a person (not root) on a service engine is told to use sudo.
 func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	if c.serviceMode(f.agent, "", f.configPath) {
-		return personAgentGuard(c, f.agent)
+		return agentGuard{}, errServiceFiles()
 	}
 	cfg, a, err := configAgentOf(c, f.agent, f.configPath)
 	if err != nil {
@@ -137,32 +135,6 @@ func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 		return agentGuard{}, err
 	}
 	return seen, nil
-}
-
-// personAgentGuard is readAgentGuard through the engine: its status tool
-// and the database the agent's credential names (TARGET).
-func personAgentGuard(c *cliIO, agentName string) (agentGuard, error) {
-	client := person.Client{Path: c.engine.personSocket}
-	target, err := client.Target(c.ctx, agentName)
-	if err != nil {
-		return agentGuard{}, personError(c, agentName, err)
-	}
-	report, _, err := personStatus(c, agentName)
-	if err != nil {
-		return agentGuard{}, err
-	}
-	return agentGuard{target: setupcode.Target(target), guard: thisBuildsVerdict(report.Guard), operatedBy: report.OperatedBy}, nil
-}
-
-// thisBuildsVerdict judges the installed version the engine read against
-// this basalt's migrations, not the engine's: a person who installed a
-// newer basalt while the old engine runs still gets the new migrations.
-// What the engine could not read (UNKNOWN, MISSING) stays as it said.
-func thisBuildsVerdict(g agent.GuardStatus) guard.Status {
-	if g.Installed == nil || g.State == guard.GuardUnknown || g.State == guard.GuardMissing {
-		return guard.Status{State: g.State, Build: guard.LatestVersion()}
-	}
-	return guard.StatusAt(*g.Installed, guard.Migrations())
 }
 
 // configAgentOf loads the config and finds agent in it.

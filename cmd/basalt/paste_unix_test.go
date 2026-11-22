@@ -201,7 +201,7 @@ func TestApprovePromptTakesALongCode(t *testing.T) {
 // local page, a pasted code over the terminal's line limit is still read.
 func TestApproveOpenTakesALongCode(t *testing.T) {
 	t.Parallel()
-	d, person, cred, _ := revertSetup(t)
+	d, person, cred := revertSetup(t)
 	held := holdDelete(t, cred)
 	id := held.ApprovalID.String()
 	as, err := person.Sign(approval.Challenge(bindingOf(t, cred, held.ApprovalID)), passkeytest.FlagsUPUV, nil)
@@ -326,34 +326,4 @@ func TestPasskeyCheckPromptTakesALongCode(t *testing.T) {
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the page showed: ")
 	require.Contains(t, stdout.String(), "found on this device")
-}
-
-func TestRevertPromptTakesALongCode(t *testing.T) {
-	t.Parallel()
-	d, person, cred, run := revertSetup(t)
-	term := newTerminal(t)
-	var stdout bytes.Buffer
-	stderr := &lockedBuffer{}
-	c := ptyIO(term, &stdout, stderr)
-	go func() {
-		var frag string
-		deadline := time.Now().Add(30 * time.Second)
-		for frag == "" && time.Now().Before(deadline) {
-			if m := revertLink.FindStringSubmatch(stderr.String()); m != nil {
-				frag = m[1]
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if frag == "" {
-			t.Error("basalt revert printed no link")
-			return
-		}
-		term.typeIn(strings.Repeat(" ", overLineLimit) + signRevertLink(t, person, frag) + "\n")
-	}()
-	exit, _ := inTime(t, func() (int, error) {
-		return runRevert(c, []string{"--run", run.String(), "--credential-file", cred}), nil
-	})
-	require.Equal(t, exitOK, exit, stderr.String())
-	require.Contains(t, stderr.String(), "Paste the code the revert page showed: ")
-	require.Equal(t, "open", leadStatusOf(t, d, 40))
 }

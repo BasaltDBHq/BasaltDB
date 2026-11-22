@@ -167,5 +167,9 @@ portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pa
 	@cp web/index.html web/404.html web/style.css web/_headers web/_redirects web/_routes.json "$(PORTAL_DIR)/"
 	@if find "$(PORTAL_DIR)" \( -name '*.test.mjs' -o -name '*.go' \) | grep -q .; then echo 'portal-build: test or Go files in output' >&2; exit 1; fi
 
+.PHONY: portal-verify
+portal-verify: ## Compare the hosted portal with the pages this build embeds and web/portal.sha256 (the release workflow runs it)
+	@go run ./scripts/portal-verify --manifest web/portal.sha256
+
 .PHONY: ci
 ci: lint vet shard-check install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job

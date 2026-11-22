@@ -47,7 +47,7 @@ func (a *approvalsAt) FindApproval(context.Context, uuid.UUID) (ledger.Approval,
 // and the approval id.
 func heldWrite(t *testing.T) (string, string) {
 	t.Helper()
-	d, _, cred, _ := revertSetup(t)
+	d, _, cred := revertSetup(t)
 	_ = d
 	return cred, holdDelete(t, cred).ApprovalID.String()
 }
@@ -110,7 +110,7 @@ func TestAwaitApprovalEnds(t *testing.T) {
 
 func TestAwaitApprovalTakesAPastedCode(t *testing.T) {
 	t.Parallel()
-	d, person, cred, _ := revertSetup(t)
+	d, person, cred := revertSetup(t)
 	held := holdDelete(t, cred)
 	id := held.ApprovalID.String()
 	as, err := person.Sign(approval.Challenge(bindingOf(t, cred, held.ApprovalID)), passkeytest.FlagsUPUV, nil)

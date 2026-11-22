@@ -1,15 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,12 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // testPagesOrigin is the local approval page origin of localConfig.
@@ -43,7 +36,7 @@ func localConfig(t *testing.T, cred string) string {
 
 func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	t.Parallel()
-	d, _, cred, _ := revertSetup(t)
+	d, _, cred := revertSetup(t)
 	held := holdDelete(t, cred)
 	cfg := localConfig(t, cred)
 	id := held.ApprovalID.String()
@@ -86,8 +79,6 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	require.Equal(t, 1, count(t, d, `SELECT count(approval_id)::int FROM basalt_meta.approvals WHERE approved_at IS NULL`), "showing approves nothing")
 }
 
-var shortRevertLink = regexp.MustCompile(regexp.QuoteMeta(testPagesOrigin) + `/reverts/([0-9a-f-]{36})#s=` + fakeSecret)
-
 // bindingOf is a held write's binding text, read with the agent's credential.
 func bindingOf(t *testing.T, cred string, id uuid.UUID) string {
 	t.Helper()
@@ -100,76 +91,4 @@ func bindingOf(t *testing.T, cred string, id uuid.UUID) string {
 	a, err := ledger.FindApproval(ctx, conn, id)
 	require.NoError(t, err)
 	return a.BindingText
-}
-
-// pageRelay is stderr for basalt revert with the engine's pages: when the
-// short link appears, it does what the page and the engine's relay do,
-// signing the revert and applying it with the agent's credential.
-type pageRelay struct {
-	t      *testing.T
-	person *passkeytest.Authenticator
-	dsn    string
-	mu     sync.Mutex
-	buf    bytes.Buffer
-	done   bool
-	err    chan error
-}
-
-func (p *pageRelay) Write(b []byte) (int, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.buf.Write(b)
-	if m := shortRevertLink.FindStringSubmatch(p.buf.String()); m != nil && !p.done {
-		p.done = true
-		go func() { p.err <- p.relay(uuid.MustParse(m[1])) }()
-	}
-	return len(b), nil
-}
-
-func (p *pageRelay) String() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.buf.String()
-}
-
-func (p *pageRelay) relay(id uuid.UUID) error {
-	ctx := context.Background()
-	conn, err := pgdial.Connect(ctx, p.dsn)
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
-	r, err := ledger.FindRevert(ctx, conn, id)
-	if err != nil {
-		return err
-	}
-	as, err := p.person.Sign(revert.Challenge(r.BindingText), passkeytest.FlagsUPUV, nil)
-	if err != nil {
-		return err
-	}
-	_, err = guard.ApplyRevert(ctx, conn, id, as)
-	return err
-}
-
-func TestRevertWaitsForThePageRelay(t *testing.T) {
-	t.Parallel()
-	d, person, cred, run := revertSetup(t)
-	cfg := localConfig(t, cred)
-	dsn, err := config.ReadCredential(cred)
-	require.NoError(t, err)
-
-	h := newFakeHost(t)
-	h.pagesUp = true
-	stdin, _ := io.Pipe() // the person types nothing
-	var stdout bytes.Buffer
-	stderr := &pageRelay{t: t, person: person, dsn: dsn, err: make(chan error, 1)}
-	c := newIO(context.Background(), stdio{in: stdin, out: &stdout, err: stderr}, func(string) string { return "" })
-	c.host = h
-	code := runRevert(c, []string{"--run", run.String(), "--agent", "bot", "--config", cfg})
-	require.Equal(t, exitOK, code, stderr.String())
-	require.NoError(t, <-stderr.err)
-	require.Contains(t, stderr.String(), "waiting for your signature on the revert page")
-	require.Contains(t, stderr.String(), "basalt: reverted: 6 rows restored, 0 left as they are\n")
-	require.Equal(t, "open", leadStatusOf(t, d, 40))
-	require.Empty(t, h.opened, "printed, not opened, without --open")
 }

@@ -51,7 +51,7 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 	dir := t.TempDir()
 	keys, err := dictfile.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)
 	require.NoError(t, err)
-	dict, err := dictfile.Open(dir, keys, pii.DefaultDictionaryOptions())
+	dict, err := dictfile.Open(dir, keys, pii.DefaultDictionaryOptions(time.Now))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
 	env := pgService(t, a.URL, withReturned(returned), withDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {

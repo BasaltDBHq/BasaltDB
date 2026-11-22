@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
 
@@ -35,7 +36,7 @@ func openPII(stateDir string, p config.PII, log *slog.Logger) (*pii.FuseDictiona
 	if err != nil {
 		return nil, err
 	}
-	opts := pii.DefaultDictionaryOptions()
+	opts := pii.DefaultDictionaryOptions(time.Now)
 	opts.MaxMemoryBytes = p.MaxMemoryBytes()
 	dict, err := dictfile.Open(stateDir, keys, opts)
 	if err != nil {

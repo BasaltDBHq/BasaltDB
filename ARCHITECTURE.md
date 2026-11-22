@@ -13,6 +13,7 @@ internal/adapter/outbound      postgres/*, vault, plugintransport/*, osservice, 
 internal/config                the engine config file
 internal/core                  types, decisions, codecs; no I/O
 internal/lib                   helpers with no BasaltDB knowledge
+web/                           route data and embedded pages
 internal/testkit               shared test fakes
 pkg/                           public Go API: only what other repos import (setup, trustprofile, trustpin)
 api/                           the contract files: proto, schemas, vectors
@@ -27,9 +28,10 @@ Each row lists what a package in that layer may import from this repo. Anything 
 | Layer | May import |
 |---|---|
 | lib | lib |
+| web | core, lib |
 | core | core, lib, api |
 | config | core, lib, api |
-| service | service, config, core, lib, pkg, api |
+| service | service, config, core, lib, pkg, api, web |
 | adapter/outbound | outbound, config, core, lib, pkg, api, web |
 | adapter/inbound | inbound, service, config, core, lib, pkg, api, web |
 | app | everything |
@@ -44,7 +46,7 @@ Every package under `internal/` sits in one of the layers above. A new top-level
 
 `internal/core` holds code that is pure: it does no I/O. It has three kinds of package.
 
-- **decision**: a safety decision (what SQL is allowed, whether an approval or revert code is valid, whether a passkey signature verifies). Services, core, `internal/config` and `internal/app` (which wires everything) call a decision's functions; adapters, `cmd` and `pkg` do not. The test checks package-level functions only; methods on a decision's types are left to review. The one exception: the Postgres store calls `sqlguard.Check`, `sqlguard.CheckRepeatable` and `sqlguard.WithRowVersions` right before it runs SQL. Any package may use a decision's types and constants.
+- **decision**: a safety decision (what SQL is allowed, whether an approval or revert code is valid, whether a passkey signature verifies). Services, core, `internal/config` and `internal/app` (which wires everything) call a decision's functions; adapters, `cmd` and `pkg` do not. The test checks package-level functions only; methods on a decision's types are left to review. The one exception: the Postgres store calls `sqlguard.Check`, `sqlguard.CheckRepeatable` and `sqlguard.WithRowVersions` right before it runs SQL. Any package may use a decision's types and constants, and call the functions the register lists as codec functions.
 - **types**: a type that a port is written in, or a rule used by two or more callers. Anyone may import it.
 - **codec**: the code for a format written down in `api/`. Anyone may import it.
 
@@ -70,27 +72,29 @@ A new core package adds a row to the register below, and the test fails until it
 
 ## Core register
 
-Every package directly under `internal/core` has one row: its area, its kind, the rule above that admitted it (1, 2 or 3) and the standard-library packages beyond the pure set that it may import.
+Every package directly under `internal/core` has one row: its area, its kind, the rule above that admitted it (1, 2 or 3), the standard-library packages beyond the pure set that it may import, and its codec functions.
 
-| Package | Area | Kind | Admitted by | Extra imports |
-|---|---|---|---|---|
-| `sqlguard` | SQL policy | decision | 1 | - |
-| `approval` | approvals | decision | 1 | - |
-| `revert` | reverts | decision | 1 | - |
-| `passkey` | approvals and reverts | decision | 1 | - |
-| `pii` | PII handling | decision | 1 | - |
-| `chainpin` | ledger | decision | 1 | - |
-| `action` | ledger | types | 2 | - |
-| `budget` | SQL | types | 2 | - |
-| `guardmodel` | ledger | types | 2 | - |
-| `pluginmodel` | plugin | types | 2 | - |
-| `supabase` | setup | types | 2 | - |
-| `channel` | Vault channel | codec | 3 | `crypto/rand` |
-| `links` | links | codec | 3 | - |
-| `linkcodec` | links | codec | 3 | - |
-| `setupcode` | setup | codec | 3 | `crypto/rand` |
-| `pluginproto` | plugins | codec | 3 | - |
-| `largevalue` | large values | codec | 3 | - |
+A codec function is a function of a decision package that only decodes, parses or checks the format of its input. Any layer may call it, because it decides nothing. List a function only if it is that: one that decides allowed, held, refused, valid, a scope or a plan stays a decision. Only a decision package has the column filled. The test fails if a listed function does not exist.
+
+| Package | Area | Kind | Admitted by | Extra imports | Codec functions |
+|---|---|---|---|---|---|
+| `sqlguard` | SQL policy | decision | 1 | - | - |
+| `approval` | approvals | decision | 1 | - | `DecodeResponse`, `DecodePluginResponse` |
+| `revert` | reverts | decision | 1 | - | `ParseBinding`, `DecodeResponse` |
+| `passkey` | approvals and reverts | decision | 1 | - | `PublicKeyFromXY` |
+| `pii` | PII handling | decision | 1 | - | `CheckDictionarySize`, `OpenDictionary`, `NewKeys` |
+| `chainpin` | ledger | decision | 1 | - | `CheckName` |
+| `action` | ledger | types | 2 | - | - |
+| `budget` | SQL | types | 2 | - | - |
+| `guardmodel` | ledger | types | 2 | - | - |
+| `pluginmodel` | plugin | types | 2 | - | - |
+| `supabase` | setup | types | 2 | - | - |
+| `channel` | Vault channel | codec | 3 | `crypto/rand` | - |
+| `links` | links | codec | 3 | - | - |
+| `linkcodec` | links | codec | 3 | - | - |
+| `setupcode` | setup | codec | 3 | `crypto/rand` | - |
+| `pluginproto` | plugins | codec | 3 | - | - |
+| `largevalue` | large values | codec | 3 | - | - |
 
 ## Known violations
 

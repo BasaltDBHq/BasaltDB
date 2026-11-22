@@ -111,6 +111,8 @@ type bound struct {
 	picks string
 	// answers is the row-level security answers, sorted (answersKey).
 	answers string
+	// classes is the labels the person set (classesKey).
+	classes string
 }
 
 // challenge makes a fresh challenge for req's job on b.
@@ -144,7 +146,7 @@ func (s *Service) mac(req Request, b bound, c Challenge) []byte {
 	}
 	for _, part := range [][]byte{
 		c.Challenge, c.UserID, []byte(c.UserName), []byte(c.DisplayName), []byte(c.ExpiresAt.UTC().Format(time.RFC3339)),
-		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks), []byte(b.answers),
+		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks), []byte(b.answers), []byte(b.classes),
 	} {
 		var n [8]byte
 		binary.BigEndian.PutUint64(n[:], uint64(len(part)))
@@ -245,7 +247,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			return err
 		}
 		if cred != nil || !req.Demo {
-			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(req.Answers)}); err != nil {
+			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(req.Answers), classes: classesKey(req)}); err != nil {
 				return err
 			}
 		}
@@ -264,6 +266,13 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		if err := setuprun.ApplyInitTx(ctx, tx, script); err != nil {
 			return setupFailed()
 		}
+		if !req.Demo {
+			n, err := writeLabels(ctx, tx, guard.Names{Prefix: s.opts.Prefix}, j.picks, req, s.opts.Now())
+			if err != nil {
+				return err
+			}
+			p.labeled = n
+		}
 		if cred != nil {
 			if err := guard.RegisterPasskey(ctx, tx, *cred, req.Passkey.Label); err != nil {
 				return setupFailed()
@@ -278,6 +287,9 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
 		} else {
 			lines = []string{fmt.Sprintf("agent %s ready: %d tables it can change, %d it can read", req.Agent, len(p.write), len(p.read))}
+			if p.labeled > 0 {
+				lines = append(lines, fmt.Sprintf("%d columns labeled", p.labeled))
+			}
 		}
 		if keep {
 			return nil // the credential of the role this engine already holds stays

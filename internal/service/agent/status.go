@@ -18,14 +18,13 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/laststop"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -90,7 +89,7 @@ const engineRecordTimeout = 5 * time.Second
 // EngineRecordReader reads this engine's row in the agent's database
 // (guard.EngineRecord): nil when it is not recorded, an error when the
 // guard is older than version 33 or the database cannot be read.
-type EngineRecordReader func(ctx context.Context, engineID string) (*guard.RecordedEngine, error)
+type EngineRecordReader func(ctx context.Context, engineID string) (*EngineRecord, error)
 
 // Retention of the ledger (CONTRACT.md, Configuration and status): the
 // guard prunes values after 30 days and deletes records after 365.
@@ -122,27 +121,27 @@ const (
 // database and what decides whether a tool call is served. The default
 // reports a current guard and no setups.
 type Probe interface {
-	GuardStatus(ctx context.Context) (guard.Status, error)
+	GuardStatus(ctx context.Context) (guardmodel.Status, error)
 	SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error)
-	LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error)
+	LatestSetup(ctx context.Context) (guardmodel.AgentSetup, bool, error)
 	// LedgerBytes is the size of basalt_meta (status.ledger).
 	LedgerBytes(ctx context.Context) (int64, error)
 	// Reinstalls are the reinstalls the ledger and the engine's kept copy
 	// record (problem LEDGER_REINSTALLED).
-	Reinstalls(ctx context.Context) (guard.Reinstalls, error)
+	ReinstallNotice(ctx context.Context, limit int) (message string, ok bool, err error)
 }
 
 type noProbe struct{}
 
-func (noProbe) GuardStatus(context.Context) (guard.Status, error) {
-	v := guard.LatestVersion()
-	return guard.Status{State: guard.GuardOK, Installed: v, Build: v}, nil
+func (noProbe) GuardStatus(context.Context) (guardmodel.Status, error) {
+	v := theHost().LatestGuardVersion()
+	return guardmodel.Status{State: guardmodel.GuardOK, Installed: v, Build: v}, nil
 }
 
 func (noProbe) SetupRecorded(context.Context, uuid.UUID) (bool, error) { return false, nil }
 
-func (noProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error) {
-	return guard.AgentSetup{}, false, nil
+func (noProbe) LatestSetup(context.Context) (guardmodel.AgentSetup, bool, error) {
+	return guardmodel.AgentSetup{}, false, nil
 }
 
 // errNoProbe: without a real probe there is no size to report, and status
@@ -151,7 +150,7 @@ var errNoProbe = errors.New("no probe reads the ledger size")
 
 func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProbe }
 
-func (noProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return guard.Reinstalls{}, nil }
+func (noProbe) ReinstallNotice(context.Context, int) (string, bool, error) { return "", false, nil }
 
 // VaultReporter says how the engine's connection to the hosted Vault stands
 // (status.vault, CONTRACT.md, Vault channel, Configuration and status).
@@ -251,8 +250,8 @@ func (s *Service) updateInfo() *UpdateInfo {
 
 // NewUpdateInfo is the update field for notice n, with the message for
 // the binary at exe.
-func NewUpdateInfo(n updatecheck.Notice, exe string) UpdateInfo {
-	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: n.AgentMessage(exe)}
+func NewUpdateInfo(n UpdateNotice, exe string) UpdateInfo {
+	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: theHost().UpdateMessage(n, exe)}
 }
 
 // UpdateNotice is the text the MCP server appends to a connection's first
@@ -357,8 +356,8 @@ type Problem struct {
 	PersonMessage string `json:"personMessage,omitempty"`
 	// Links are the URLs of PersonMessage, with labels (present exactly when
 	// it holds a URL).
-	Links     []mcp.Link `json:"links,omitempty"`
-	NextSteps []NextStep `json:"nextSteps"`
+	Links     []toolresult.Link `json:"links,omitempty"`
+	NextSteps []NextStep        `json:"nextSteps"`
 }
 
 // Status is the status tool: whether the agent is served and each problem
@@ -526,7 +525,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
 	switch {
 	case err != nil:
-		r.Guard = GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()}
+		r.Guard = GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()}
 		if !explained {
 			s.addUnreachable(ctx, &ps, err, trust)
 		}
@@ -536,17 +535,17 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 			addGuardProblem(&ps, st)
 		}
 	}
-	if err == nil && st.State != guard.GuardMissing {
+	if err == nil && st.State != guardmodel.GuardMissing {
 		r.Passkeys = s.countPasskeys(ctx, &ps, setup.status.State == setupDone)
 	}
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
 	}
 	r.Crash, r.Plugins = s.crashStatus(), s.pluginHealth()
-	if err == nil && st.State != guard.GuardMissing {
+	if err == nil && st.State != guardmodel.GuardMissing {
 		r.Access = s.accessStatus(ctx)
 	}
-	readable := err == nil && st.State != guard.GuardMissing
+	readable := err == nil && st.State != guardmodel.GuardMissing
 	if readable {
 		s.addReinstalled(ctx, &ps)
 	}
@@ -581,7 +580,7 @@ func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, 
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
-		Guard:  GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()},
+		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: theHost().LatestGuardVersion()},
 		Setup:  SetupStatus{State: setupNone},
 		Pages:  PagesStatus{URL: links.DefaultLocal},
 	}
@@ -659,9 +658,9 @@ func ready(list []Problem) bool {
 	return true
 }
 
-func guardStatusDTO(st guard.Status) GuardStatus {
+func guardStatusDTO(st guardmodel.Status) GuardStatus {
 	out := GuardStatus{State: st.State, Build: st.Build, MissingBreaking: st.MissingBreaking, MissingNonBreaking: st.MissingNonBreaking}
-	if st.State != guard.GuardMissing {
+	if st.State != guardmodel.GuardMissing {
 		installed := st.Installed
 		out.Installed = &installed
 	}
@@ -671,8 +670,8 @@ func guardStatusDTO(st guard.Status) GuardStatus {
 // ledgerStatus is the ledger's size and retention. A missing guard has no
 // ledger, and a size that cannot be read is logged and left out: it is
 // never a problem.
-func (s statusDeps) ledgerStatus(ctx context.Context, st guard.Status) *LedgerStatus {
-	if st.State == guard.GuardMissing {
+func (s statusDeps) ledgerStatus(ctx context.Context, st guardmodel.Status) *LedgerStatus {
+	if st.State == guardmodel.GuardMissing {
 		return nil
 	}
 	n, err := s.probe.LedgerBytes(ctx)
@@ -691,12 +690,11 @@ const reinstalledAsk = "Show the person this notice and ask whether someone on t
 // copy records a reinstall. A guard older than version 36 records none; a
 // read that fails is logged and adds nothing.
 func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
-	rs, err := s.probe.Reinstalls(ctx)
+	msg, ok, err := s.probe.ReinstallNotice(ctx, MaxPersonMessageLength)
 	if err != nil {
 		s.log.Error("status: read the reinstalls", "err", err)
 		return
 	}
-	msg, ok := ledger.ReinstallPersonMessage(rs, MaxPersonMessageLength)
 	if !ok {
 		return
 	}
@@ -847,15 +845,15 @@ func (s statusDeps) addUnreachable(ctx context.Context, ps *problems, err error,
 	}
 }
 
-func addGuardProblem(ps *problems, st guard.Status) {
+func addGuardProblem(ps *problems, st guardmodel.Status) {
 	switch st.State {
-	case guard.GuardMissing:
+	case guardmodel.GuardMissing:
 		ps.add(problemGuardMissing, "the guard is not installed in this database; no tool but status works",
 			func(b *Steps) string { return fixSteps(b, ps.cmds, reasonGuardMissing) })
-	case guard.GuardOutdated:
+	case guardmodel.GuardOutdated:
 		ps.add(problemGuardOutdated, fmt.Sprintf("the guard misses breaking migrations %s; no tool but status works until it is upgraded", versions(st.MissingBreaking)),
 			func(b *Steps) string { return fixSteps(b, ps.cmds, reasonGuardOutdated) })
-	case guard.GuardUpgradeAvailable:
+	case guardmodel.GuardUpgradeAvailable:
 		ps.add(problemUpgradeAvailable, fmt.Sprintf("the guard misses non-breaking migrations %s; every tool works", versions(st.MissingNonBreaking)),
 			func(b *Steps) string { return upgradeSteps(b, ps.cmds) })
 	}
@@ -889,7 +887,7 @@ type setupView struct {
 // guard and the agent's role are not there yet, so the setup problem is
 // the one to fix and the guard and database problems it causes are left out.
 func (v setupView) explainsGuard() bool {
-	return !v.confirmed && v.status.Kind == guard.SetupInstall && (v.status.State == setupPending || v.status.State == setupExpired)
+	return !v.confirmed && v.status.Kind == guardmodel.SetupInstall && (v.status.State == setupPending || v.status.State == setupExpired)
 }
 
 // blocks reports whether the pending setup holds every tool but status: an
@@ -910,20 +908,20 @@ func (v setupView) addProblem(ps *problems) {
 	case v.status.State != setupPending:
 	case v.awaiting:
 		ps.addLinked(problemSetupNotRun, connectOnlyWaitingMessage(v.code),
-			func(b *Steps) (string, []mcp.Link) {
+			func(b *Steps) (string, []toolresult.Link) {
 				return connectOnlySteps(b, v.code, v.fingerprint, ps.connectBudget)
 			})
 	case v.confirmed:
 		ps.add(problemSetupNotFound, "the database the person confirmed does not record this setup: "+v.database,
 			func(b *Steps) string { return setupNotFoundSteps(b, ps.cmds, v.database) })
-	case v.status.Kind == guard.SetupInstall:
+	case v.status.Kind == guardmodel.SetupInstall:
 		ps.addLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
-			func(b *Steps) (string, []mcp.Link) {
+			func(b *Steps) (string, []toolresult.Link) {
 				return setupPendingSteps(b, ps.cmds, v.code, v.fingerprint, true, ps.connectBudget)
 			})
 	default:
 		ps.addLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
-			func(b *Steps) (string, []mcp.Link) {
+			func(b *Steps) (string, []toolresult.Link) {
 				return setupPendingSteps(b, ps.cmds, v.code, v.fingerprint, false, ps.connectBudget)
 			})
 	}
@@ -984,7 +982,7 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if expired && hold {
 		expired = false
 	}
-	if expired && p.Kind != guard.SetupInstall && !p.AwaitingAddress {
+	if expired && p.Kind != guardmodel.SetupInstall && !p.AwaitingAddress {
 		return setupView{status: SetupStatus{State: setupNone}}
 	}
 	v := setupView{
@@ -1020,11 +1018,11 @@ type problems struct {
 // add builds the problem code with the steps steps returns along with the
 // person's message.
 func (ps *problems) add(code, message string, steps func(*Steps) string) {
-	ps.addLinked(code, message, func(b *Steps) (string, []mcp.Link) { return steps(b), nil })
+	ps.addLinked(code, message, func(b *Steps) (string, []toolresult.Link) { return steps(b), nil })
 }
 
 // addLinked is add for a message that carries links.
-func (ps *problems) addLinked(code, message string, steps func(*Steps) (string, []mcp.Link)) {
+func (ps *problems) addLinked(code, message string, steps func(*Steps) (string, []toolresult.Link)) {
 	entry, ok := problemEntry(code)
 	if !ok {
 		ps.fail(fmt.Errorf("no catalog entry for status problem %s", code))
@@ -1105,12 +1103,12 @@ func (s *Service) Admit(ctx context.Context) error {
 		return err
 	}
 	switch st.State {
-	case guard.GuardOutdated:
-		return &mcp.ToolError{Code: CodeUnavailable, Reason: reasonGuardOutdated, Message: fmt.Sprintf(
+	case guardmodel.GuardOutdated:
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: reasonGuardOutdated, Message: fmt.Sprintf(
 			"the guard in this database misses breaking migrations %s of this engine; only status works until the person upgrades it",
 			versions(st.MissingBreaking))}
-	case guard.GuardMissing:
-		return &mcp.ToolError{
+	case guardmodel.GuardMissing:
+		return &toolresult.ToolError{
 			Code: CodeUnavailable, Reason: reasonGuardMissing,
 			Message: "the guard is not installed in this database; only status works until the person installs it",
 		}
@@ -1122,7 +1120,7 @@ func (s *Service) Admit(ctx context.Context) error {
 // INSTALL code, so an agent without one reads nothing more. known is false
 // when the database cannot tell whether the code was used.
 func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
-	if s.setup == nil || (s.setup.Kind != guard.SetupInstall && !connectOnlyCode(s.setup.Code)) {
+	if s.setup == nil || (s.setup.Kind != guardmodel.SetupInstall && !connectOnlyCode(s.setup.Code)) {
 		return setupView{status: SetupStatus{State: setupNone}}, true
 	}
 	now := s.now()
@@ -1148,7 +1146,7 @@ func (s statusDeps) pendingRecorded(ctx context.Context) (recorded, known bool) 
 	switch {
 	case err == nil:
 		return recorded, true
-	case notInstalledYet(guard.Status{}, err):
+	case notInstalledYet(guardmodel.Status{}, err):
 		return false, true
 	}
 	s.log.Error("read the pending setup", "err", err)
@@ -1158,9 +1156,9 @@ func (s statusDeps) pendingRecorded(ctx context.Context) (recorded, known bool) 
 // notInstalledYet reports whether a guard read (st, or the error it failed
 // with) shows what a pending INSTALL code explains: the agent's role cannot
 // log in yet, or the guard is not there yet.
-func notInstalledYet(st guard.Status, err error) bool {
+func notInstalledYet(st guardmodel.Status, err error) bool {
 	if err == nil {
-		return st.State == guard.GuardMissing
+		return st.State == guardmodel.GuardMissing
 	}
 	reason := ToolError(err).Reason
 	return reason == reasonCredentialRejected || reason == reasonGuardMissing
@@ -1174,7 +1172,7 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return st.State == guard.GuardUpgradeAvailable, nil
+	return st.State == guardmodel.GuardUpgradeAvailable, nil
 }
 
 // engineRecordStatus reads this engine's record for status and adds its
@@ -1246,7 +1244,7 @@ func ReadLastStop(dir string) (LastStop, bool) {
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return LastStop{}, false
 	}
-	var rec laststop.LastStopFileRecord
+	var rec lastStopJSON
 	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&rec); err != nil || rec.Reason == "" {
 		return LastStop{}, false
 	}
@@ -1266,12 +1264,16 @@ func ReadLastStop(dir string) (LastStop, bool) {
 // reason, and when the next try happens during the hold-off.
 func engineGaveUpMessage(stop LastStop, configPath string, now time.Time) string {
 	msg := "the engine stopped and was not restarted: " + stop.Reason
-	if until, ok := laststop.StartHoldOffUntil(lastStopRecord(stop), configPath, now); ok {
+	if until, ok := theHost().StartHoldOffUntil(stop, configPath, now); ok {
 		msg += ". The next try is at " + until.UTC().Format(time.RFC3339) + "."
 	}
 	return msg
 }
 
-func lastStopRecord(stop LastStop) laststop.LastStopFileRecord {
-	return laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}
+// lastStopJSON is last-stop.json: why the supervisor gave up, when, and the
+// SHA-256 of engine.json at that moment.
+type lastStopJSON struct {
+	Reason       string    `json:"reason"`
+	At           time.Time `json:"at"`
+	EngineSHA256 string    `json:"engineSha256,omitempty"`
 }

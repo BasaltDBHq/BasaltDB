@@ -20,12 +20,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -271,7 +269,7 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 		opts.Start, failure = engineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
-	if err := shim.ServeWith(ctx, path, down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: app.Instructions}), io.in, io.out, opts); err != nil {
+	if err := shim.ServeWith(ctx, path, app.NewEngineDownServer(down), io.in, io.out, opts); err != nil {
 		return fail(io.err, "mcp", err)
 	}
 	return exitOK
@@ -303,12 +301,12 @@ func shimAgent(name, socket string) string {
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.
-func engineDownServer(name, configPath string, log *slog.Logger) (agent.EngineDownServer, error) {
+func engineDownServer(name, configPath string, log *slog.Logger) (app.EngineDownServer, error) {
 	down, err := engineDown(name, configPath, log)
 	if err != nil {
-		return agent.EngineDownServer{}, err
+		return app.EngineDownServer{}, err
 	}
-	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: app.Instructions}), nil
+	return app.NewEngineDownServer(down), nil
 }
 
 // engineDown is what basalt mcp answers with while the engine is down, with

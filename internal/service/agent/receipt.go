@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -60,8 +61,8 @@ func (s *Service) approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, e
 	return s.approvalReceiptOf(a)
 }
 
-func (s *Service) approvalReceiptOf(a ledger.Approval) (Receipt, error) {
-	if a.Status != ledger.ApprovalApproved && a.Status != ledger.ApprovalApplied {
+func (s *Service) approvalReceiptOf(a action.Approval) (Receipt, error) {
+	if a.Status != approvalApproved && a.Status != approvalApplied {
 		return Receipt{}, fmt.Errorf("approval %s is %s, not signed", a.ID, a.Status)
 	}
 	b, err := approval.ParseBinding(a.BindingText)
@@ -84,8 +85,8 @@ func (s *Service) approvalReceiptOf(a ledger.Approval) (Receipt, error) {
 // revertReceipt is the receipt of r as Postgres shows it after the
 // person's signature: APPLIED or APPLYING. A widened revert has none: the
 // agent role's view holds no binding of it (RS-5).
-func (s *Service) revertReceipt(r ledger.Revert) (Receipt, error) {
-	if r.Status != ledger.RevertApplied && r.Status != ledger.RevertApplying {
+func (s *Service) revertReceipt(r action.Revert) (Receipt, error) {
+	if r.Status != revertApplied && r.Status != revertApplying {
 		return Receipt{}, fmt.Errorf("revert %s is %s, not signed", r.ID, r.Status)
 	}
 	if r.Widened {
@@ -148,9 +149,9 @@ func withReceiptLine(line, message string) string {
 // widenedReceiptLine is the line of a widened revert, which has no
 // receipt (provisional, CONTRACT.md, Receipts): the totals the agent may
 // see, and what to do if the person did not widen it.
-func widenedReceiptLine(r ledger.Revert) string {
+func widenedReceiptLine(r action.Revert) string {
 	what := fmt.Sprintf("%d rows restored", r.Rows)
-	if r.Status == ledger.RevertApplying {
+	if r.Status == revertApplying {
 		what = fmt.Sprintf("%d rows to restore in batches", r.Rows)
 	}
 	return "No receipt: the revert's scope was changed on the signing page (" + what + "). If you did not change it, tell the agent at once."

@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -145,7 +146,7 @@ type heldRun struct {
 // heldWrite reads the held write from approval a's binding: the statement,
 // its parameters (numbers kept exact, as the write tool decodes them), and
 // the run it belongs to.
-func heldWrite(a ledger.Approval, check statementChecker) (heldRun, error) {
+func heldWrite(a action.Approval, check statementChecker) (heldRun, error) {
 	b, err := approval.ParseBinding(a.BindingText)
 	if err != nil {
 		return heldRun{}, err
@@ -176,14 +177,14 @@ func (s *Service) revealApprovalError(err error, link string) error {
 	code, _ := ledgerCode(err)
 	detail := storeDetail(err)
 	switch {
-	case code == guard.CodeApprovalInvalid && detail == guard.RevealRefused:
+	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRefused:
 		return revealRefused(CodeApprovalInvalid, link)
-	case code == guard.CodeApprovalInvalid && detail == guard.RevealRowsChanged:
+	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRowsChanged:
 		return revealRowsChanged(CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
-	case code == guard.CodeApprovalInvalid && detail == approvalNotFoundDetail:
+	case code == guardmodel.CodeApprovalInvalid && detail == approvalNotFoundDetail:
 		return ErrNotThisAgent
-	case code == guard.CodeApprovalInvalid:
-		return &PageError{ToolError: &mcp.ToolError{
+	case code == guardmodel.CodeApprovalInvalid:
+		return &PageError{ToolError: &toolresult.ToolError{
 			Code:          CodeApprovalInvalid,
 			Message:       "the hidden rows cannot be shown: the approval was signed or used meanwhile",
 			PersonMessage: "This approval was signed or used meanwhile, so its hidden rows can no longer be shown.",
@@ -194,18 +195,18 @@ func (s *Service) revealApprovalError(err error, link string) error {
 
 // revealRevertError is the page's answer to a revert reveal Postgres
 // refused.
-func (s *Service) revealRevertError(r ledger.Revert, err error, link string) error {
+func (s *Service) revealRevertError(r action.Revert, err error, link string) error {
 	code, _ := ledgerCode(err)
 	detail := storeDetail(err)
 	switch {
-	case code == guard.CodeRevertInvalid && detail == guard.RevealRefused:
+	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevealRefused:
 		return revealRefused(CodeRevertInvalid, link)
-	case code == guard.CodeRevertInvalid && detail == revertNotFoundDetail:
+	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
-	case code == guard.CodeRevertExpired:
+	case code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
-	case code == guard.CodeRevertInvalid:
-		return &PageError{ToolError: &mcp.ToolError{
+	case code == guardmodel.CodeRevertInvalid:
+		return &PageError{ToolError: &toolresult.ToolError{
 			Code:          CodeRevertInvalid,
 			Message:       "the hidden rows cannot be shown: the revert was signed or rejected meanwhile",
 			PersonMessage: "This revert was signed or rejected meanwhile, so its hidden rows can no longer be shown.",
@@ -223,8 +224,8 @@ const approvalNotFoundDetail = "no such approval"
 // step opens the page again (link, with the page's own secret: the answer
 // goes back to that page only) to press Show values with passkey once more.
 func revealRefused(code, link string) error {
-	te := &mcp.ToolError{
-		Code: code, Reason: guard.RevealRefused,
+	te := &toolresult.ToolError{
+		Code: code, Reason: guardmodel.RevealRefused,
 		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Your passkey didn't confirm. Nothing was shown; try again.",
 	}
@@ -244,7 +245,7 @@ func (s *Service) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, se
 // revealRowsChanged is a reveal whose hidden rows changed since the agent
 // asked: nothing is shown, and the item can no longer apply as signed.
 func revealRowsChanged(code, what, then string) error {
-	return &PageError{ToolError: &mcp.ToolError{
+	return &PageError{ToolError: &toolresult.ToolError{
 		Code: code, Reason: reasonRowsChanged,
 		Message:       fmt.Sprintf("the hidden rows of this %s changed since it was prepared; nothing was shown", what),
 		PersonMessage: "These rows changed since the agent asked. " + then + ".",

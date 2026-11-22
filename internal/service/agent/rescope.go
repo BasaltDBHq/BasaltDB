@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -29,7 +29,7 @@ import (
 
 // RescopeTimeout caps one rescope or reset (N12-R9): past it Postgres
 // cancels it and nothing changes.
-const RescopeTimeout = guard.MCPPrepareTimeout
+const RescopeTimeout = guardmodel.MCPPrepareTimeout
 
 // ScopeRequest is the body of POST …/scope (revert-scope-request.schema.json).
 // Proof and NewSecret come together: a widen.
@@ -256,7 +256,7 @@ func (s *Service) rotateLink(ctx context.Context, id uuid.UUID, secret string, e
 	if !rot.Relay {
 		return nil
 	}
-	vault.RotateSession(ctx, rot.Token)
+	theHost().RotateSession(ctx, rot.Token)
 	s.registerRelay(ctx, id, rot.Token, expires)
 	return nil
 }
@@ -289,7 +289,7 @@ func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel
 // the scope once proven, is INVALID_ARGUMENT; every proof or token
 // failure is one REVERT_INVALID whatever its cause; a rescope past
 // RescopeTimeout is QUERY_TIMEOUT TIME_LIMIT.
-func (s *Service) rescopeError(ctx context.Context, r ledger.Revert, err error) error {
+func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) error {
 	if _, hint, ok := scopeRefusal(err); ok {
 		return &ArgumentError{Message: "the scope was refused: " + hint}
 	}
@@ -299,9 +299,9 @@ func (s *Service) rescopeError(ctx context.Context, r ledger.Revert, err error) 
 	}
 	code, _ := ledgerCode(err)
 	switch {
-	case code == guard.CodeRevertInvalid && se.Detail == guard.RevertWidenRefused:
+	case code == guardmodel.CodeRevertInvalid && se.Detail == guardmodel.RevertWidenRefused:
 		return widenRefused()
-	case code == guard.CodeRevertExpired:
+	case code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
 	case timedOut(err) && ctx.Err() == nil:
 		return rescopeTimeout()
@@ -314,7 +314,7 @@ func (s *Service) rescopeError(ctx context.Context, r ledger.Revert, err error) 
 // RescopeNonce, when set, goes in the page's error body: the nonce of the
 // widen the page asks the person for.
 type PageError struct {
-	*mcp.ToolError
+	*toolresult.ToolError
 	RescopeNonce passkey.Bytes
 }
 
@@ -324,7 +324,7 @@ func (e *PageError) Unwrap() error { return e.ToolError }
 // order 3): one fixed answer, so the agent holding the link learns nothing
 // about other agents' runs or tables from it.
 func widenRefused() error {
-	return &PageError{ToolError: &mcp.ToolError{
+	return &PageError{ToolError: &toolresult.ToolError{
 		Code:    CodeRevertInvalid,
 		Message: "the scope change was refused: it needs the person's passkey proof, or the page that proved one; nothing changed",
 		PersonMessage: "This scope change was refused, and nothing changed. To include other agents' changes, choose them " +
@@ -334,7 +334,7 @@ func widenRefused() error {
 
 // rescopeTimeout is a rescope that ran past RescopeTimeout (N12-R9).
 func rescopeTimeout() error {
-	return &PageError{ToolError: &mcp.ToolError{
+	return &PageError{ToolError: &toolresult.ToolError{
 		Code: CodeQueryTimeout, Reason: ReasonTimeLimit,
 		Message: "the scope change took longer than 100 seconds and was stopped; nothing changed",
 		PersonMessage: "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. " +
@@ -346,7 +346,7 @@ func rescopeTimeout() error {
 // it restarted since the person widened it (owner, Q13). The answer
 // carries the nonce the person's new widen proof signs.
 func widenAgain(nonce []byte) error {
-	return &PageError{RescopeNonce: nonce, ToolError: &mcp.ToolError{
+	return &PageError{RescopeNonce: nonce, ToolError: &toolresult.ToolError{
 		Code:    CodeRevertInvalid,
 		Message: "the engine restarted since the person widened this revert, and holds its lines in memory only",
 		PersonMessage: "The scope you chose on this page is no longer held by the engine (it restarted). Include other " +
@@ -361,7 +361,7 @@ func widenAgain(nonce []byte) error {
 // other than the one held) is dropped, the person's link is revoked as by a
 // reset, and the answer is NOT_FOUND LINK_RESET. The caller holds the
 // revert's lock.
-func (s *Service) heldState(r ledger.Revert, secret string) (rescoped, bool, error) {
+func (s *Service) heldState(r action.Revert, secret string) (rescoped, bool, error) {
 	st, held := s.rescopes.get(r.ID, secret, s.Now())
 	if !held || r.Widened || st.request.Binding == r.BindingText {
 		return st, held, nil
@@ -377,7 +377,7 @@ func (s *Service) heldState(r ledger.Revert, secret string) (rescoped, bool, err
 // person's link as a reset does, once Postgres shows the person's scope is
 // gone (the agent role reset it directly): the answer is NOT_FOUND
 // LINK_RESET, and the page says the agent reset the revert.
-func (s *Service) personScopeGone(r ledger.Revert) error {
+func (s *Service) personScopeGone(r action.Revert) error {
 	s.rescopes.drop(r.ID)
 	if err := s.Links.Reset(r.ID, r.ExpiresAt); err != nil {
 		return err
@@ -394,19 +394,19 @@ func (s *Service) personScopeGone(r ledger.Revert) error {
 // records REVERT_RESET, the person's link is revoked and kept so the page
 // can say the agent reset it (LINK_RESET), and the lines held in memory
 // go. The caller issues the new link.
-func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.Revert, error) {
+func (s *Service) resetToProposal(ctx context.Context, r action.Revert) (action.Revert, error) {
 	release, err := s.rescopes.lock(ctx, r.ID)
 	if err != nil {
-		return ledger.Revert{}, err
+		return action.Revert{}, err
 	}
 	defer release()
 	out, err := s.Store.ResetRevert(ctx, r.ID, RescopeTimeout)
 	if err != nil {
-		return ledger.Revert{}, err
+		return action.Revert{}, err
 	}
 	s.rescopes.drop(r.ID)
 	if err := s.Links.Reset(r.ID, out.ExpiresAt); err != nil {
-		return ledger.Revert{}, err
+		return action.Revert{}, err
 	}
 	return s.Store.FindRevert(ctx, r.ID)
 }
@@ -416,7 +416,7 @@ func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.
 // agent reset it in Postgres directly): the person's link is revoked as by
 // a reset, so their page says LINK_RESET, and what the engine held goes.
 // The caller then issues the agent's new link.
-func (s *Service) retirePersonScope(ctx context.Context, r ledger.Revert) error {
+func (s *Service) retirePersonScope(ctx context.Context, r action.Revert) error {
 	release, err := s.rescopes.lock(ctx, r.ID)
 	if err != nil {
 		return err

@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -34,8 +33,8 @@ type Ledger interface {
 	// transaction, so it may write.
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
-	History(ctx context.Context, p ledger.ChangeListParams) (History, error)
-	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error)
+	History(ctx context.Context, p action.ChangeListParams) (History, error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
 }
 
 // Approvals holds writes for the person's approval and relays their
@@ -49,8 +48,8 @@ type Approvals interface {
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 	TableColumns(ctx context.Context, table string) ([]string, error)
 	SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error)
-	FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error)
-	ListApprovals(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error)
+	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
+	ListApprovals(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error)
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
 	// RevealNonce is the reveal nonce of an approval or revert the role
 	// holds (approval.KindApprove or approval.KindRevert).
@@ -81,8 +80,8 @@ type Reverts interface {
 	HasChange(ctx context.Context, id uuid.UUID) (bool, error)
 	// HasTaskRun reports whether the agent has a run with this task id.
 	HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error)
-	FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error)
-	RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error)
+	FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error)
+	RevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error)
 	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error)
 	ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error)
 	// RescopeRevert and ResetRevert change a pending revert's scope for the
@@ -97,7 +96,7 @@ type Reverts interface {
 	RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error)
 	// ListOpenReverts lists the role's PENDING and APPLYING reverts, keyset
 	// on the revert id (list_pending, LP-1).
-	ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error)
+	ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error)
 	// RevealNonce is the reveal nonce of a revert the role prepared
 	// (approval.KindRevert); RevealRevertRows returns the values of its
 	// redacted lines for the person's reveal proof.

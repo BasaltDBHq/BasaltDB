@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -43,11 +42,11 @@ func runSummaryFromDomain(r action.RunSummary) runSummaryDTO {
 	return out
 }
 
-// listRuns serves list_runs. Its arguments are ledger.RunListParams itself
+// listRuns serves list_runs. Its arguments are action.RunListParams itself
 // (pagination.Params plus the time range), decoded strictly and validated
 // by its tags.
 func (h handlers) listRuns(ctx context.Context, raw json.RawMessage) (any, error) {
-	var params ledger.RunListParams
+	var params action.RunListParams
 	if err := decodeArgs(raw, &params); err != nil {
 		return nil, err
 	}

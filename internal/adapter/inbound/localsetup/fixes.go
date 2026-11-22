@@ -41,7 +41,7 @@ func nothingToFix() *RefusalError { return refuse(CodeNothingToFix, "There is no
 // a guard of this engine's prefix and the agent's role. It returns the
 // database the server names.
 func (s *Service) fixDatabase(ctx context.Context, tx pgx.Tx, j agentJob) (string, error) {
-	database, err := currentDatabase(ctx, tx)
+	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return "", err
 	}

@@ -588,7 +588,7 @@ func (s *Service) check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	database, err := currentDatabase(ctx, tx)
+	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -669,9 +669,9 @@ func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer,
 
 // currentDatabase is the name of the database the connection reached, as
 // the server says it: never a name read from the admin string.
-func currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
-	var name string
-	if err := tx.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&name); err != nil {
+func (s *Service) currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
+	name, err := s.be.CurrentDatabase(ctx, tx)
+	if err != nil {
 		return "", setupFailed("read the database name", err)
 	}
 	return name, nil

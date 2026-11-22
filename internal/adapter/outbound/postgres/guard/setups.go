@@ -141,9 +141,7 @@ func LatestAgentSetup(ctx context.Context, q Querier) (s guardmodel.AgentSetup, 
 // owner that is not a guard role is returned whole, so it never matches a
 // code's prefix.
 func InstalledPrefix(ctx context.Context, q Querier) (string, error) {
-	var owner string
-	err := q.QueryRow(ctx, `SELECT coalesce((SELECT pg_catalog.pg_get_userbyid(n.nspowner)::text
-		FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'), '')`).Scan(&owner)
+	owner, err := MetaOwner(ctx, q)
 	if err != nil {
 		return "", err
 	}
@@ -201,7 +199,8 @@ func RoleStatementTimeout(ctx context.Context, q Querier, role string) (guardmod
 }
 
 // HasPasskeyFor reports whether an active passkey of this database belongs
-// to origin.
+// to origin. A passkey signs only on the origin it was registered on, so one
+// for the local pages does not count for the portal.
 func HasPasskeyFor(ctx context.Context, q Querier, origin string) (bool, error) {
 	var ok bool
 	// Plain SQL: a presence check on the admin connection.

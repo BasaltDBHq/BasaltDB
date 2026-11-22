@@ -449,7 +449,7 @@ func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, 
 		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	database, err := currentDatabase(ctx, tx)
+	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -490,7 +490,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	var database string
 	demoKept := false
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		if database, err = currentDatabase(ctx, tx); err != nil {
+		if database, err = s.currentDatabase(ctx, tx); err != nil {
 			return err
 		}
 		if req.Job == JobRemove {

@@ -40,8 +40,8 @@ type pin struct {
 	profile *trustprofile.Profile
 }
 
-// pinnedDial opens the admin connection with the pin's certificate as the
-// only root for its host (pgdial.ConnConfigTrusting).
+// pinnedDial returns the dial that opens the admin connection with the
+// pin's certificate as the only root for its host (Backend.ConnConfigPinned).
 func pinnedDial(be Backend) func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
 	return func(ctx context.Context, dsn string, p *trustprofile.Profile) (*pgx.Conn, error) {
 		return dialPinned(ctx, be, dsn, p)

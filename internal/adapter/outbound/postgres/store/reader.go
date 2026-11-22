@@ -30,7 +30,7 @@ import (
 )
 
 // maxMessageBytes bounds one message from Postgres on an agent connection
-// (pgx MaxProtocolMessageBodyLen): a row of MaxResultBytes of values plus
+// (pgx MaxProtocolMessageBodyLen): a row of budget.MaxBytes of values plus
 // its framing (a length per column). pgx refuses a longer message before it
 // reads its body, so a row too large for a result is never buffered.
 const maxMessageBytes = budget.MaxBytes + messageSlack

@@ -72,7 +72,7 @@ const sizeLimitHint = "; select fewer or shorter columns (for example left(col, 
 const rowTooLargeHint = "; select fewer columns, a size (length(col), octet_length(col)) or a slice (substr(col, 1, 100000))"
 
 // sizeLimitError is QUERY_TIMEOUT SIZE_LIMIT: a result over
-// resultsize.MaxBytes.
+// budget.MaxBytes.
 func sizeLimitError() *toolresult.ToolError {
 	return &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: budget.ErrSizeLimit.Error() + sizeLimitHint}
 }

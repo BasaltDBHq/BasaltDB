@@ -18,6 +18,11 @@ import (
 // sample schema), the connection and its trust, and the engine's trust
 // files. The engine wires it (internal/app); each method is the call it
 // is named after, unchanged.
+// Backend is what the local setup needs from its adapters, beyond what
+// setuprun.Backend gives the shared run: the admin connection and its trust,
+// the credential files, and the guard's reads and writes of one install.
+// ReadCredential is not a plain read: it refuses a connection string that
+// makes the driver read a file (passfile, sslrootcert).
 type Backend interface {
 	setuprun.Backend
 	// Connections and their trust.
@@ -39,8 +44,6 @@ type Backend interface {
 	// The guard's install.
 	AgentStatus(ctx context.Context, q setuprun.Querier, migs []guardmodel.Migration) (guardmodel.Status, error)
 	RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (guardmodel.Script, error)
-	// UnusableInstall reports whether err is CheckUsable's refusal of an
-	// older or partial install.
 	NewPassword() string
 	AgentConnString(adminURL, role, password string) (string, error)
 

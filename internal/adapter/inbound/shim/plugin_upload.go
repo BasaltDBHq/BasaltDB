@@ -18,7 +18,7 @@ const toolRequestPlugin = "request_plugin"
 
 // PluginUploader reads the plugin folder source as this process's OS user
 // and uploads it to the engine. It returns ErrNoUploads when the engine
-// takes none, and a *mcp.ToolError for an answer the agent gets as it is.
+// takes none, and a *toolresult.ToolError for an answer the agent gets as it is.
 type PluginUploader func(ctx context.Context, source string) (mcp.PluginUpload, error)
 
 // prepare is line as the engine gets it: for a request_plugin call, any

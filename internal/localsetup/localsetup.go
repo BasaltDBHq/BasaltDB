@@ -89,7 +89,10 @@ type RegisteredPasskey struct {
 
 // RunAnswer is the run route's answer.
 type RunAnswer struct {
-	Agent      string              `json:"agent"`
+	Agent string `json:"agent"`
+	// Lines are what the install did, in fixed words (the sample data's
+	// counts).
+	Lines      []string            `json:"lines"`
 	Warnings   []string            `json:"warnings"`
 	Passkeys   []RegisteredPasskey `json:"passkeys"`
 	MCPCommand string              `json:"mcpCommand"`
@@ -333,7 +336,7 @@ func summary(j job, database string, seeded demo.Plan, passkeyNeeded bool) []str
 func notes(seeded demo.Plan, script guard.Script) []string {
 	out := []string{}
 	if seeded.Exists() {
-		out = append(out, "The sample schema "+demo.Schema+" already exists; its rows are left as they are.")
+		out = append(out, "sample schema "+demo.Schema+" already exists; its rows are left as they are")
 	}
 	return append(out, script.Warnings...)
 }

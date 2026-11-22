@@ -15,10 +15,12 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/demo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -199,7 +201,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		return RunAnswer{}, refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 	}
 	files := s.files(req.Agent)
-	var warnings []string
+	var warnings, lines []string
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		_, script, err := s.plan(ctx, tx, j, password)
 		if err != nil {
@@ -221,6 +223,11 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			}
 		}
 		warnings = script.Warnings
+		leads, notes, err := demo.Counts(ctx, tx)
+		if err != nil {
+			return setupFailed()
+		}
+		lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
 		// The credential goes to disk before the commit: a write that fails
 		// rolls the database back with it, so no role is left without it.
 		return files.writeCredential(dsn)
@@ -235,7 +242,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		r.Status = http.StatusInternalServerError
 		return RunAnswer{}, r
 	}
-	answer := RunAnswer{Agent: req.Agent, Warnings: append([]string{}, warnings...), Passkeys: []RegisteredPasskey{}, MCPCommand: "basalt mcp --agent " + req.Agent}
+	answer := RunAnswer{Agent: req.Agent, Lines: lines, Warnings: append([]string{}, warnings...), Passkeys: []RegisteredPasskey{}, MCPCommand: "basalt mcp --agent " + req.Agent}
 	if cred != nil {
 		code, _ := cred.CheckCode()
 		answer.Passkeys = append(answer.Passkeys, RegisteredPasskey{CredentialID: cred.ID, Label: req.Passkey.Label, CheckCode: code})
@@ -300,6 +307,9 @@ func checkOSUser(users Users, name string) (uint32, error) {
 	if name == "" {
 		return 0, refuse(CodeInvalidArgument, "This setup link names no OS user for the agent. Ask the agent for a new link.")
 	}
+	if strings.HasPrefix(name, "basalt-plugin-") || strings.HasPrefix(name, "_basalt-plugin-") {
+		return 0, bad("Basalt keeps that name for a plugin")
+	}
 	u, err := users.Lookup(name)
 	if err != nil {
 		return 0, bad("no such user")
@@ -322,7 +332,7 @@ func checkOSUser(users Users, name string) (uint32, error) {
 	if err != nil {
 		return 0, bad("its groups cannot be read")
 	}
-	if slices.Contains(groups, self.Gid) {
+	if slices.Contains(append(groups, u.Gid), self.Gid) {
 		return 0, bad("it is in this engine's group")
 	}
 	return uint32(uid), nil

@@ -39,6 +39,10 @@ func (f fakeUsers) Lookup(name string) (*user.User, error) {
 		return &user.User{Username: "root", Uid: "0", Gid: "0"}, nil
 	case "engine":
 		return &user.User{Username: "engine", Uid: "4000", Gid: "4000"}, nil
+	case "carol": // the engine's group is her primary group
+		return &user.User{Username: "carol", Uid: "4343", Gid: "4000"}, nil
+	case "basalt-plugin-acme":
+		return &user.User{Username: "basalt-plugin-acme", Uid: "4444", Gid: "4444"}, nil
 	}
 	return nil, user.UnknownUserError(name)
 }
@@ -135,6 +139,7 @@ func TestInstallChecksThenRunsOnceAndWritesTheEnginesFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "demo_bot", done.Agent)
 	require.Equal(t, "basalt mcp --agent demo_bot", done.MCPCommand)
+	require.Equal(t, []string{"demo ready: leads 30, lead_notes 20"}, done.Lines)
 	require.Len(t, done.Passkeys, 1)
 	require.Regexp(t, `^[0-9a-f]{4}( [0-9a-f]{4}){4}$`, done.Passkeys[0].CheckCode)
 	require.True(t, exists(t, f.db, "basalt_meta"))
@@ -251,6 +256,8 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 		{func(r *localsetup.Request) { r.OSUser = "nobody-here" }, localsetup.CodeInvalidArgument},
 		{func(r *localsetup.Request) { r.OSUser = "root" }, localsetup.CodeInvalidArgument},
 		{func(r *localsetup.Request) { r.OSUser = "engine" }, localsetup.CodeInvalidArgument},
+		{func(r *localsetup.Request) { r.OSUser = "carol" }, localsetup.CodeInvalidArgument},
+		{func(r *localsetup.Request) { r.OSUser = "basalt-plugin-acme" }, localsetup.CodeInvalidArgument},
 		{func(r *localsetup.Request) { r.OSUser = "alice" }, localsetup.CodeInvalidArgument}, // in the engine's group
 		{func(r *localsetup.Request) { r.OSUser = "alice"; r.Demo = false }, localsetup.CodeInvalidArgument},
 	} {

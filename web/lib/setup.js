@@ -208,6 +208,7 @@ function showDone(done) {
   $("done").hidden = false;
   $("done-agent").textContent = done.agent;
   $("mcp-command").textContent = done.mcpCommand;
+  list("done-lines", done.lines || []);
   list("warnings", done.warnings || []);
   const codes = (done.passkeys || []).map((p) => `${p.label || "Passkey"}: ${p.checkCode}`);
   list("check-codes", codes);

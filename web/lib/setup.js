@@ -734,7 +734,7 @@ export function startReal(link, env) {
   };
 
   // ---- 1: the agent's OS user ----
-  setText("user-intro", JOB_TEXT.INSTALL.intro(agent));
+  setText("user-intro", "Your agent asked to connect to a database. This page sets it up on this computer.");
   setText("user-name", link.osUser);
   $("user-next").disabled = !$("user-confirm").checked;
   $("user-confirm").addEventListener("change", () => {

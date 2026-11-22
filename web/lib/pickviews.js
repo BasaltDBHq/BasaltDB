@@ -73,25 +73,30 @@ export function labelRow(c, labels, onChange, suggestion = null) {
   pick.addEventListener("change", update);
   region.addEventListener("input", update);
   region.hidden = pick.value !== "IDENTIFIER:PHONE";
+  // The picker sits at the row's right edge in a column of one width, with
+  // the country box and the suggestion under it; a class the picker does
+  // not offer shows there as a fixed label with "change".
+  const box = el("span", "label-pick");
   if (fixed) {
+    const line = el("span", "label-fixed-line");
     const label = el("span", "label-fixed", FIXED_WORDS[was.class]);
     const change = el("button", "link", "change");
     change.type = "button";
     change.setAttribute("aria-label", `Change the label of ${name}`);
     const changed = now.class !== was.class;
     pick.hidden = !changed;
-    label.hidden = changed;
-    change.hidden = changed;
+    line.hidden = changed;
     change.addEventListener("click", () => {
-      label.hidden = true;
-      change.hidden = true;
+      line.hidden = true;
       pick.hidden = false;
     });
-    row.appendChild(label);
-    row.appendChild(change);
+    line.appendChild(label);
+    line.appendChild(change);
+    box.appendChild(line);
   }
-  row.appendChild(pick);
-  row.appendChild(region);
-  if (suggestion) row.appendChild(el("span", "muted small", `Suggested: ${suggestion.words}`));
+  box.appendChild(pick);
+  box.appendChild(region);
+  if (suggestion) box.appendChild(el("span", "label-suggested", `Suggested: ${suggestion.words}`));
+  row.appendChild(box);
   return row;
 }

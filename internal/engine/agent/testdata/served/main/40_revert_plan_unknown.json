@@ -7,7 +7,7 @@
       {
         "action": "ASK_PERSON",
         "actor": "AGENT",
-        "text": "Ask the person for the revert id that basalt revert printed; this agent prepared no revert with that id."
+        "text": "Ask the person which revert they mean; this agent prepared no revert with that id."
       }
     ],
     "reason": "REVERT"

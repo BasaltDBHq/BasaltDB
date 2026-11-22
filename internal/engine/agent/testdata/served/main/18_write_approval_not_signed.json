@@ -13,7 +13,6 @@
       {
         "action": "OPEN_LINK",
         "actor": "PERSON",
-        "command": "basalt approve --agent bot --open <id-5>",
         "text": "Open the link and approve with your passkey: the write is not approved yet.",
         "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
       },
@@ -23,7 +22,7 @@
         "text": "End your turn: the person acts next."
       }
     ],
-    "personMessage": "The held write was not approved yet, so nothing was applied.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --open <id-5>",
+    "personMessage": "The held write was not approved yet, so nothing was applied.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>",
     "reason": "NOT_SIGNED",
     "sqlState": "BS005"
   },

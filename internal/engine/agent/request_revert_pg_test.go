@@ -166,7 +166,8 @@ func TestRevertOfAnotherAgentsWorkIsNotFound(t *testing.T) {
 			_, unknownText := call(uuid.Must(uuid.NewV7()))
 			require.Equal(t, unknownText, theirsText, "%s: another agent's %s and an unknown one read alike", tool, tc.arg)
 			if tc.reason == "TASK" {
-				require.Contains(t, str(t, theirs["personMessage"]), "basalt revert --agent <agent> --task "+in.TaskID.String()+" --open")
+				require.Contains(t, str(t, theirs["personMessage"]), "ask an agent that ran in it to request the revert")
+				require.NotContains(t, str(t, theirs["personMessage"]), "basalt ")
 				continue
 			}
 			require.Contains(t, str(t, theirs["message"]), "ask that agent", "%v", theirs)
@@ -241,9 +242,9 @@ func TestRequestRevertOfOwnTaskWithNothingToRevert(t *testing.T) {
 	taskID := str(t, run["taskId"])
 	body, isError := env.h.call(t, "request_revert", map[string]any{"taskId": taskID, "intent": "Undo"})
 	steps := requireScopedErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "READS_ONLY", "TASK")
-	require.Contains(t, steps[1]["command"], "--task "+taskID)
-	require.Contains(t, str(t, body["personMessage"]), "To include other agents' changes in this task, run "+
-		"basalt revert --agent bot --task "+taskID+" --open")
+	require.Len(t, steps, 1)
+	require.Contains(t, str(t, body["personMessage"]), "you can include the others' changes on its signing page")
+	require.NotContains(t, str(t, body["personMessage"]), "basalt ")
 	var n int
 	require.NoError(t, env.d.Admin.QueryRow(context.Background(), `SELECT count(revert_id)::int FROM basalt_meta.reverts`).Scan(&n))
 	require.Zero(t, n, "the empty proposal is rolled back")

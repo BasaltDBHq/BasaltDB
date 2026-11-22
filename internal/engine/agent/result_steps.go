@@ -27,8 +27,6 @@ func (s *Service) previewGuidance(p RevertPreview) (string, []mcp.NextStep, erro
 	}
 	if filters := filterText(p.Scope); filters != "" {
 		what += filters
-		pointer += fmt.Sprintf(" Run by hand, basalt revert opens the page on all of the agent's work in the %s, without "+
-			"these filters.", strings.ToLower(string(p.Scope.Kind)))
 	}
 	steps, err := NewSteps().
 		AskPerson("Show the person what the revert would do and ask whether to go on, and why they want it.").
@@ -61,7 +59,7 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []mcp.NextStep, error) 
 		return plan.PersonMessage, steps, err
 	case r.Status == ledger.RevertPending:
 		b.SendRequest(plan.RequestFile).
-			OpenLink(plan.RevertURL, "", "Open the link, review the plan and sign it once with your passkey.").
+			OpenLink(plan.RevertURL, "Open the link, review the plan and sign it once with your passkey.").
 			TellAgent("Tell the agent when you have signed.").
 			EndTurn("End your turn: apply the lines only after the person says they signed.")
 		steps, err := b.Build()
@@ -76,9 +74,8 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []mcp.NextStep, error) 
 		steps, err := b.Stop("The person rejected the revert and nothing was reverted. Do not request it again on your own.").Build()
 		return rejectedMessage(r), steps, err
 	}
-	command := s.Commands.Revert(proposalOf(r))
 	steps, err := b.AskPerson("Tell the person the revert expired and ask whether to prepare it again.").
-		RunCommand(command, "Prepare it again and sign within an hour; rows already restored are skipped.").Build()
+		ReviseCall(toolRequestRevert, scopeArgs(proposalOf(r)), requestAgainText).Build()
 	return outcomeMessage(r), steps, err
 }
 
@@ -156,10 +153,10 @@ func (s *Service) itemGuidance(p PendingItem) (string, []mcp.Link, []mcp.NextSte
 // list_pending restates the link while the engine serves the pages.
 func openItemLink(b *Steps, p PendingItem) {
 	if p.Restated {
-		b.OpenGivenLink(p.Notice.ApproveCommand, "Open the link the agent gave you earlier, review the rows and approve with your passkey.")
+		b.OpenGivenLink("Open the link the agent gave you earlier, review the rows and approve with your passkey.")
 		return
 	}
-	b.OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand, "Open the link, review the rows and approve with your passkey.")
+	b.OpenLink(p.Notice.ApprovalURL, "Open the link, review the rows and approve with your passkey.")
 }
 
 // openHeldLink adds the person's OPEN_LINK step after a wait that ran out:
@@ -168,10 +165,10 @@ func openItemLink(b *Steps, p PendingItem) {
 // blocks), else at the link the hold handed over.
 func (s *Service) openHeldLink(b *Steps, n *mcp.ApprovalNotice, text string) {
 	if s.PagesOrigin != "" || isPageAddress(n.ApprovalURL) {
-		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier and approve with your passkey.")
+		b.OpenGivenLink("Open the short link the agent gave you earlier and approve with your passkey.")
 		return
 	}
-	b.OpenLink(n.ApprovalURL, n.ApproveCommand, text)
+	b.OpenLink(n.ApprovalURL, text)
 }
 
 // expired reports whether a held write ran out before it was approved.

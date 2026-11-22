@@ -20,6 +20,34 @@ import (
 func requirePersonMessage(t *testing.T, message string, links []mcp.Link) {
 	t.Helper()
 	mcptest.Require(t, message, links)
+	require.Empty(t, removedCommand.FindString(message), "a personMessage names no removed command (CONTRACT.md, Next steps): %q", message)
+}
+
+// removedCommand is a basalt command or init flag the person no longer runs
+// ([Removed](contract/cli.md#removed)). --json and --forget count only on
+// basalt init: the plugin steps, which the plugin epic replaces, still take
+// --json.
+var removedCommand = regexp.MustCompile(`basalt (approve|revert|upgrade|passkey|trust|access|status|portal|crash|service|log|classify|uninstall|tunnel)\b|--setup-code|--add-passkey|--rotate-password|--agent-rls|--new-code|rotate-key|basalt init\b[^\n]*?--(forget|json)`)
+
+// TestRemovedCommandCatchesEveryRemovedForm: the check the catalog tests
+// run on every step and personMessage catches each removed command and
+// init flag, and lets the agent's basalt init and plain words through.
+func TestRemovedCommandCatchesEveryRemovedForm(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{
+		"Run: basalt upgrade --agent bot", "basalt approve --open x", "basalt revert --run x --open", "basalt passkey list",
+		"basalt trust pin --host h", "basalt access --agent bot", "basalt portal verify", "basalt init --setup-code c",
+		"basalt init --agent bot --add-passkey", "basalt init --remote --new-code", "basalt init --remote --forget",
+		"basalt init --remote --json", "basalt log", "basalt engine rotate-key",
+	} {
+		require.NotEmpty(t, removedCommand.FindString(bad), bad)
+	}
+	for _, ok := range []string{
+		"basalt init --agent bot", "basalt init --agent bot --remote", "sudo systemctl start basalt-engine.service",
+		"Basalt's status reports KEY_ERROR", "Tell the agent when it is done.", "the revert page",
+	} {
+		require.Empty(t, removedCommand.FindString(ok), ok)
+	}
 }
 
 func TestMessageLimitMatchesTheContract(t *testing.T) {
@@ -34,11 +62,11 @@ func TestMessageBuilder(t *testing.T) {
 	msg, links := newMessage().
 		Text("Held for you.").Text("Approve here:").
 		Link("Approve the held write", first).
-		Text("Or run: basalt approve.").Text("Expires soon.").
+		Text("Approve with your passkey.").Text("Expires soon.").
 		Link("Review and sign the revert", second).
 		Build()
 
-	require.Equal(t, "Held for you.\nApprove here:\n\n"+first+"\n\nOr run: basalt approve.\nExpires soon.\n\n"+second, msg)
+	require.Equal(t, "Held for you.\nApprove here:\n\n"+first+"\n\nApprove with your passkey.\nExpires soon.\n\n"+second, msg)
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: first}, {Label: "Review and sign the revert", URL: second}}, links)
 	requirePersonMessage(t, msg, links)
 
@@ -134,7 +162,7 @@ func TestRevertStateMessagesObeyTheContract(t *testing.T) {
 // sets, word for word as CONTRACT.md has it.
 func TestTooManyConnectionsMessageWords(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("lead_bot", "", "linux", nil)
+	cmds, err := NewCommands("lead_bot", "", "linux")
 	require.NoError(t, err)
 	require.Equal(t, "The agent lead_bot has used all 8 database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+

@@ -58,12 +58,8 @@ func (s *Service) holdTooLargeSteps(b *Steps, te *mcp.ToolError) string {
 	if strings.Contains(te.Message, olderGuardNote) {
 		b.AskPerson("Tell the person this database's guard is too old to hold a write with rows this large and needs an upgrade; " +
 			"send the write again once they say they upgraded it.")
-		upgrade := "upgrade it"
-		if !s.Commands.AgentOperated() {
-			upgrade = "upgrade it with: " + s.Commands.Upgrade()
-		}
 		return "The agent's write is too large to hold for your approval on this database's guard, which holds rows of at most 64 KiB. " +
-			"To hold it, " + upgrade + ", then tell the agent."
+			"To hold it, update the guard: the agent gives you a link. Then tell the agent."
 	}
 	b.AskPerson("Tell the person the write is too large to hold for their approval, and ask whether they make the change themselves " +
 		"or want you to change fewer rows per write, each held for their approval.")

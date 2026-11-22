@@ -128,7 +128,7 @@ func TestRLSHidesRowsWarning(t *testing.T) {
 	require.NotEmpty(t, w["message"])
 	require.Contains(t, str(t, w["personMessage"]), "public·vault", "a bare host's dot shows as a middle dot")
 	steps := requireSteps(t, w, catalogWarning(t, "RLS_HIDES_ROWS").Steps, true)
-	require.Equal(t, "basalt init --agent bot --agent-rls=all-rows", steps[1]["command"])
+	require.Equal(t, "basalt init --agent bot", steps[1]["command"], "the setup page asks the row-level security question")
 
 	require.Empty(t, warnings(query("SELECT id FROM public.leads WHERE id = -1")), "no rows, but RLS hides nothing there")
 	require.NotEmpty(t, query("SELECT id FROM public.leads")["rows"])

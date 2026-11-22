@@ -26,14 +26,13 @@ func ConnectLink(code string, budget int) string {
 }
 
 // ConnectMessage is the personMessage that hands the person the connect
-// link first and the laptop command second. lead says what is pending; it
-// names the Basalt Vault, a hosted service, as what the link uses. The
-// command stays in the PERSON step the agent shows, in full.
+// link. lead says what is pending; it names the Basalt Vault, a hosted
+// service, as what the link uses.
 func ConnectMessage(lead, url, fingerprint string) (string, []mcp.Link) {
 	return newMessage().
 		Text(lead+" Open this link and follow the page, and check that it shows the setup fingerprint "+fingerprint+". The link uses Basalt Vault, a hosted service, to run the setup once:").
 		Link(LabelConnect, url).
-		Text("Or, to use no hosted service, run the basalt init --setup-code command the agent shows you on your own computer. Then tell the agent it is done. Never paste your database password into this chat.").
+		Text("Then tell the agent it is done. Never paste your database password into this chat.").
 		Build()
 }
 

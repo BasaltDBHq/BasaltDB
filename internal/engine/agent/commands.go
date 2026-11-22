@@ -1,70 +1,38 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
-
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Commands builds the commands the person runs, for one agent: complete and
-// copy-pasteable, never carrying a credential value (AE-3). A command never
-// names the engine config: the CLI finds it by itself.
+// Commands builds the commands a step names for one agent. A person never
+// runs a basalt command (CONTRACT.md, Next steps): a person's step is a link
+// to a page, and the one basalt command a step names is the agent's own
+// `basalt init`, which prints that link. What is left is the engine's start
+// and restart on the engine's machine.
 type Commands struct {
 	agent      string
-	flags      string // --agent NAME
 	configPath string
 	goos       string
-	initArgs   []string
 	foreground bool
 	// agentOperated: engine.json operatedBy is AGENT, so machine steps are
-	// the agent's and admin steps run on the person's own computer.
+	// the agent's and setup goes through the connect page.
 	agentOperated bool
 }
 
-const (
-	flagAgent         = "agent"
-	flagWrite         = "write"
-	flagRead          = "read"
-	flagPasskeyOrigin = "passkey-origin"
-	// cmdBasalt is the CLI every command runs.
-	cmdBasalt = "basalt"
-)
-
-// savedInitFlags are the init flags a saved plan may carry (CONTRACT.md,
-// Planned: init saves its flags). --credential-file is a path, not a secret
-// (AE-15). Anything else is refused.
-var savedInitFlags = map[string]bool{
-	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
-	"os-user": true, "engine-user": true,
-	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true,
-	flagAllTables: true,
-}
-
-// flagAllTables is init --remote's --all-tables: every table in public, read
-// again by each new code, in place of --write and --read.
-const flagAllTables = "all-tables"
-
-// flagDevLocalPages is init's development exception (CONTRACT.md, Page
-// origins); InitPortal leaves it out.
-const flagDevLocalPages = "dev-local-pages"
+// cmdBasalt is the CLI every command runs.
+const cmdBasalt = "basalt"
 
 // NewCommands returns the commands for agent. configPath is the absolute
 // path the engine was started with ("" when the default); goos picks the
-// default path and the service manager (runtime.GOOS when empty); initArgs
-// are the flags the agent's `basalt init` was run with, saved by init.
-func NewCommands(agent, configPath, goos string, initArgs []string) (Commands, error) {
+// default path and the service manager (runtime.GOOS when empty).
+func NewCommands(agent, configPath, goos string) (Commands, error) {
 	if !config.ValidAgentName(agent) {
 		return Commands{}, fmt.Errorf("%q is not a valid agent name", agent)
 	}
@@ -74,65 +42,7 @@ func NewCommands(agent, configPath, goos string, initArgs []string) (Commands, e
 	if configPath != "" && !filepath.IsAbs(configPath) {
 		return Commands{}, fmt.Errorf("config path %q must be absolute", configPath)
 	}
-	if err := checkInitArgs(agent, initArgs); err != nil {
-		return Commands{}, err
-	}
-	c := Commands{agent: agent, goos: goos, configPath: configPath, initArgs: append([]string(nil), initArgs...)}
-	c.flags = "--agent " + agent
-	return c, nil
-}
-
-// checkInitArgs allows only the flags init saves, in `-flag` or `--flag`
-// form, with the value after `=` or as the next argument, and refuses
-// anything that looks like a connection string.
-func checkInitArgs(agent string, args []string) error {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if !strings.HasPrefix(a, "-") {
-			return fmt.Errorf("saved init argument %q is not a flag", a)
-		}
-		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		if !savedInitFlags[name] {
-			return fmt.Errorf("saved init flag %q is not one init saves", a)
-		}
-		if !hasValue {
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("saved init flag %q has no value", a)
-			}
-			value = args[i]
-		}
-		if looksLikeConnectionString(name, value) {
-			return fmt.Errorf("saved init argument %q looks like a connection string", value)
-		}
-		if name == flagAgent && value != agent {
-			return fmt.Errorf("saved init arguments name agent %q, not %q", value, agent)
-		}
-	}
-	return nil
-}
-
-// looksLikeConnectionString is a value with a URL scheme or a password
-// keyword. The one URL init saves is --passkey-origin, an origin without
-// user info.
-func looksLikeConnectionString(flag, value string) bool {
-	if strings.Contains(strings.ToLower(value), "password=") {
-		return true
-	}
-	if !strings.Contains(value, "://") {
-		return false
-	}
-	return flag != flagPasskeyOrigin || strings.Contains(value, "@")
-}
-
-// hasAgentFlag reports whether the saved init arguments name the agent.
-func (c Commands) hasAgentFlag() bool {
-	for _, a := range c.initArgs {
-		if name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "="); name == flagAgent && strings.HasPrefix(a, "-") {
-			return true
-		}
-	}
-	return false
+	return Commands{agent: agent, goos: goos, configPath: configPath}, nil
 }
 
 // Foreground returns c for an engine that runs in the foreground as the
@@ -155,192 +65,18 @@ func (c Commands) OperatedBy(operatedBy string) Commands {
 // AgentOperated reports whether the engine's operatedBy is AGENT.
 func (c Commands) AgentOperated() bool { return c.agentOperated }
 
-// Flags are "--agent NAME", to put after a basalt verb.
-func (c Commands) Flags() string { return c.flags }
-
-// Approve opens a held write's approval page.
-func (c Commands) Approve(id uuid.UUID) string {
-	return c.verb("approve", "--open", id.String())
-}
-
-// Revert opens the revert page for scope.
-func (c Commands) Revert(scope action.Scope) string {
-	return c.verb("revert", "--"+strings.ToLower(string(scope.Kind)), scope.ID.String(), "--open")
-}
-
-// RevertStatus shows a revert's progress.
-func (c Commands) RevertStatus(id uuid.UUID) string {
-	return c.verb("revert", "--status", id.String())
-}
-
-// PasskeyList lists the passkeys the database accepts.
-func (c Commands) PasskeyList() string { return c.verb("passkey list") }
-
-// Access lists the tables the agent can read and write and the ones it
-// cannot read (CONTRACT.md, CLI, basalt access): the person's command, never
-// the agent's, since it names tables describe only counts.
-func (c Commands) Access() string { return c.verb("access") }
-
-// Upgrade upgrades the guard in the person's database.
-func (c Commands) Upgrade() string { return c.verb("upgrade") }
-
-// Init runs init again with the agent's saved flags plus one change (for
-// example "--add-passkey"). The saved flags already name the agent.
-func (c Commands) Init(change string) string {
-	parts := []string{cmdBasalt, "init"}
-	if !c.hasAgentFlag() {
-		parts = append(parts, "--agent", c.agent)
-	}
-	for _, a := range c.initArgs {
-		parts = append(parts, shellQuote(a))
-	}
-	if change != "" {
-		parts = append(parts, change)
-	}
-	return strings.Join(parts, " ")
-}
-
-// InitPortal is Init with the saved flags minus --dev-local-pages and
-// --passkey-origin, so the engine moves to the portal's pages, plus
-// --add-passkey: a passkey made on development pages cannot sign there.
-func (c Commands) InitPortal() string {
-	args := make([]string, 0, len(c.initArgs))
-	for i := 0; i < len(c.initArgs); i++ {
-		a := c.initArgs[i]
-		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		drop := name == flagDevLocalPages || name == flagPasskeyOrigin
-		if !drop {
-			args = append(args, a)
-		}
-		if !hasValue && i+1 < len(c.initArgs) {
-			i++ // the flag's value is the next argument
-			if !drop {
-				args = append(args, c.initArgs[i])
-			}
-		}
-	}
-	c.initArgs = args
-	return c.Init("--add-passkey")
-}
-
-// ErrBadTable is a table name Grant refuses: not a plain schema.table, so it
-// could add a second table to the list or break the command's quoting.
-var ErrBadTable = errors.New("not a plain schema.table name")
-
-var plainTable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*\.[A-Za-z_][A-Za-z0-9_$]*$`)
-
-// Grant is init with the saved flags and table added to the agent's access
-// list: flag is "read" or "write". A saved list is extended, never replaced
-// (init takes the last value of a flag). Two Grants do not stack: each is
-// the saved flags plus its one table. The table must be a plain,
-// schema-qualified name: a list separator or a quote could add another table.
-func (c Commands) Grant(flag, table string) (string, error) {
-	g, err := c.granted(flag, table)
-	if err != nil {
-		return "", err
-	}
-	return g.Init(""), nil
-}
-
-// RemoteGrant is InitRemote with table added to the agent's access list,
-// as Grant adds it.
-func (c Commands) RemoteGrant(flag, table string) (string, error) {
-	g, err := c.granted(flag, table)
-	if err != nil {
-		return "", err
-	}
-	return g.InitRemote(""), nil
-}
-
-// granted is c with table added to the saved flag's list. With
-// --all-tables saved it is c as it is: a new code reads every table of
-// public again, the new one included, and --write next to it is refused.
-func (c Commands) granted(flag, table string) (Commands, error) {
-	if !plainTable.MatchString(table) {
-		return Commands{}, fmt.Errorf("%w: %q", ErrBadTable, table)
-	}
-	if c.savedAllTables() {
-		return c, nil
-	}
-	args := append([]string(nil), c.initArgs...)
-	merged := false
-	for i := 0; i < len(args) && !merged; i++ {
-		name, value, hasValue := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
-		switch {
-		case name != flag:
-		case hasValue:
-			args[i], merged = "--"+flag+"="+value+","+table, true
-		case i+1 < len(args):
-			args[i+1], merged = args[i+1]+","+table, true
-		}
-	}
-	if !merged {
-		args = append(args, "--"+flag+"="+table)
-	}
-	c.initArgs = args
-	return c, nil
-}
-
-// remoteInitFlags are the saved init flags basalt init --remote takes; the
-// others (--os-user, --socket-dir and the like) are init's own and
-// --remote refuses them.
-var remoteInitFlags = map[string]bool{
-	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true, "operated-by": true,
-	flagAllTables: true,
-}
-
-// savedAllTables reports whether the saved flags ask for every table.
-func (c Commands) savedAllTables() bool {
-	for _, a := range c.initArgs {
-		if name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "="); name == flagAllTables {
-			return true
-		}
-	}
-	return false
-}
-
-// InitRemote is basalt init --remote on the engine's machine with the saved
-// flags it takes plus change (for example "--new-code"). It makes a setup
-// code and never asks for the admin connection string (CO-9). On an
-// agent-operated engine it ends with --json: the agent follows the
-// personMessage and nextSteps it prints (CONTRACT.md, Setup code steps).
-func (c Commands) InitRemote(change string) string {
-	parts := []string{cmdBasalt, "init", "--remote"}
-	if !c.hasAgentFlag() {
-		parts = append(parts, "--agent", c.agent)
-	}
-	for i := 0; i < len(c.initArgs); i++ {
-		a := c.initArgs[i]
-		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		keep := remoteInitFlags[name]
-		if keep {
-			parts = append(parts, shellQuote(a))
-		}
-		if !hasValue && i+1 < len(c.initArgs) {
-			i++ // the flag's value is the next argument
-			if keep {
-				parts = append(parts, shellQuote(c.initArgs[i]))
-			}
-		}
-	}
-	if change != "" {
-		parts = append(parts, change)
-	}
+// Init is the agent's `basalt init` for this agent: it starts the one setup
+// flow (setup, guard update, repair, passkeys, tables) and prints the one
+// link the person opens (CONTRACT.md, basalt init). It names --agent, so it
+// is right however many agents the engine serves, and --remote on an
+// agent-operated engine, whose setup runs on the connect page. It never
+// carries saved flags, --config or a secret.
+func (c Commands) Init() string {
+	parts := []string{cmdBasalt, "init", "--agent", c.agent}
 	if c.agentOperated {
-		parts = append(parts, "--json")
+		parts = append(parts, "--remote")
 	}
 	return strings.Join(parts, " ")
-}
-
-// SetupCode is what the person runs on their own computer to apply a setup
-// code: basalt init --setup-code takes no --agent or --config, since it
-// writes no engine config (CONTRACT.md, basalt init --setup-code).
-func SetupCode(code string) string { return "basalt init --setup-code " + code }
-
-// RevertDryRun is the person's command that prepares the revert of scope
-// without signing it and prints what it would do.
-func (c Commands) RevertDryRun(scope action.Scope) string {
-	return c.verb("revert", "--"+strings.ToLower(string(scope.Kind)), scope.ID.String(), "--dry-run")
 }
 
 // EngineStart starts the engine: the foreground command, or the service
@@ -369,12 +105,6 @@ func (c Commands) foregroundEngine() string {
 	return "basalt engine --config " + shellQuote(path)
 }
 
-// verb is `basalt <verb> <flags> <args...>`; verb may be a verb and its
-// subcommand ("passkey list").
-func (c Commands) verb(verb string, args ...string) string {
-	return strings.Join(append([]string{cmdBasalt, verb, c.flags}, args...), " ")
-}
-
 // shellQuote quotes s for a POSIX shell when it needs it. A leading = is
 // quoted too: zsh expands =cmd to a path.
 func shellQuote(s string) string {
@@ -383,34 +113,4 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// trust is `basalt trust <sub> <args...>`, with sudo for a
-// service engine, whose trust.d belongs to its own user.
-func (c Commands) trust(sub string, args ...string) string {
-	parts := []string{cmdBasalt, "trust", sub}
-	if !c.foreground {
-		parts = append([]string{"sudo"}, parts...)
-	}
-	parts = append(parts, args...)
-	return strings.Join(parts, " ")
-}
-
-// TrustPin is basalt trust pin for host and port: the person sees the
-// certificate authority the server presents now and decides.
-func (c Commands) TrustPin(host string, port uint16) string {
-	return c.trust("pin", "--host", shellQuote(trustprofile.NormalizeHost(host)), "--port", strconv.Itoa(int(port)))
-}
-
-// TrustList is basalt trust list.
-func (c Commands) TrustList() string { return c.trust("list") }
-
-// TrustCAFile is the CA file TrustAdd names: the person saves their
-// provider's CA certificate there, or puts its path in its place.
-const TrustCAFile = "./ca.pem"
-
-// TrustAdd is basalt trust add for host alone (=host), the profile named
-// after the host, its CA read from TrustCAFile.
-func (c Commands) TrustAdd(host string) string {
-	return c.trust("add", "--name", trustprofile.NameFor(host), "--match", shellQuote("="+trustprofile.NormalizeHost(host)), "--ca", TrustCAFile)
 }

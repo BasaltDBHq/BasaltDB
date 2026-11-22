@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -88,7 +91,7 @@ func TestApprovalNoticeHandsOverTheShortLinkFirst(t *testing.T) {
 	require.Contains(t, n.PersonMessage, "\n\n"+n.shortURL+"\n\n")
 	require.NotContains(t, n.PersonMessage, "#2.", "the long link stays out of the message")
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.shortURL}}, n.Links)
-	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "long", "no warning with a short link")
 }
 
@@ -101,7 +104,7 @@ func TestApprovalNoticeHandsOverALongLinkWithinTheBudget(t *testing.T) {
 	require.Equal(t, n.longURL, n.ApprovalURL)
 	require.Contains(t, n.PersonMessage, "\n\n"+n.longURL+"\n\n")
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.longURL}}, n.Links)
-	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "may arrive", "no warning within the budget")
 }
 
@@ -121,7 +124,7 @@ func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
 	require.NotContains(t, n.PersonMessage, "#2.", "no result hands over a long link over the budget")
 	require.Contains(t, n.PersonMessage, "open the request file the agent sends you (or paste its text blocks)")
 	require.Contains(t, n.PersonMessage, "\n\n"+n.ApprovalURL+"\n\n")
-	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.ApprovalURL}}, n.Links)
 }
 
@@ -140,12 +143,13 @@ func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
 	require.Empty(t, n.shortURL, "the engine keeps only the hash of the link it gave")
 	require.NotContains(t, n.PersonMessage, "http", "the person has the link the agent gave them")
 	require.Empty(t, n.Links)
-	require.Contains(t, n.PersonMessage, n.ApproveCommand)
+	require.Contains(t, n.PersonMessage, "Approve with the link you were given.")
+	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 }
 
 func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin", nil)
+	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin")
 	require.NoError(t, err)
 	lines := make([]string, 0, 40)
 	for i := range 40 { // many cascaded tables with long names make a long headline
@@ -249,6 +253,47 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 			require.NoError(t, err)
 			requirePersonMessage(t, n.Message, n.Links)
 		}
+	}
+}
+
+// TestPersonMessagesNameNoCommandWithALongConfigPath builds the
+// personMessages that once offered a command named after --config, with a
+// 252-character path: each stays within the limit and names no basalt
+// command, since the person acts on a link (CONTRACT.md, Next steps).
+func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
+	t.Parallel()
+	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
+	cmds, err := NewCommands("pbot", long, "linux")
+	require.NoError(t, err)
+	s := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
+	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
+
+	messages := map[string]string{}
+	for _, tool := range []string{toolPreviewRevert, toolRequestRevert} {
+		err := s.prepareTimeout(tool, scope, "57014")
+		var te *mcp.ToolError
+		require.ErrorAs(t, err, &te)
+		messages["timeout "+tool] = te.PersonMessage
+	}
+	err = s.nothingToRevertError(context.Background(), toolPreviewRevert, scope, reasonReadsOnly, "changed no rows")
+	var te *mcp.ToolError
+	require.ErrorAs(t, err, &te)
+	messages["nothing to revert, task"] = te.PersonMessage
+	for _, st := range te.NextSteps {
+		require.Empty(t, st.Command, "no command for other agents' changes in the task")
+	}
+	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
+	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
+	rls := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
+	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
+	require.NoError(t, err)
+	messages["rls warning"] = w.PersonMessage
+	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", time.Now().Add(time.Hour))
+
+	for name, m := range messages {
+		require.NoError(t, CheckPersonMessage(m), "%s: %s", name, m)
+		require.NotContains(t, m, long, name)
+		require.NotContains(t, m, "basalt ", "%s: the person runs no command", name)
 	}
 }
 

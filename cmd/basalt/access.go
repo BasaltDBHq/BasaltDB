@@ -4,18 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 )
 
 // runAccess: basalt access (CONTRACT.md, CLI). Lists the tables the agent
-// can read, can write and is not granted, with the command that would grant
-// each. It prints names the describe tool only counts, so it is the person's
+// can read, can write and is not granted. It prints names the describe tool only counts, so it is the person's
 // command and no MCP tool.
 func runAccess(c *cliIO, args []string) int {
 	fs := c.flags("access")
@@ -47,8 +44,7 @@ func runAccess(c *cliIO, args []string) int {
 			NotGranted []string `json:"notGranted"`
 		}{orEmpty(access.Read), orEmpty(access.Write), orEmpty(access.NotGranted)}))
 	}
-	cmds, known := accessCommands(c, *name, *configPath)
-	printAccess(c.stdout, access, cmds, known)
+	printAccess(c.stdout, access)
 	return exitOK
 }
 
@@ -59,37 +55,9 @@ func orEmpty(s []string) []string {
 	return s
 }
 
-// accessCommands are the agent's commands built from its saved init flags,
-// and whether those flags were read. In service mode the person usually
-// cannot read engine.json; a command built without them would reset the
-// agent's saved flags, so the caller then prints only the flag to add.
-func accessCommands(c *cliIO, name, configPath string) (cmds agent.Commands, known bool) {
-	abs, err := filepath.Abs(configPath)
-	if err != nil {
-		return agent.Commands{}, false
-	}
-	// As root, the hardened read (loadEngineConfig): no link followed, no
-	// FIFO opened.
-	cfg, err := loadEngineConfig(c, abs)
-	if err != nil {
-		return agent.Commands{}, false
-	}
-	for _, a := range cfg.Agents {
-		if a.Name != name {
-			continue
-		}
-		cmds, err := agent.NewCommands(name, abs, c.goos, a.InitArgs)
-		if err != nil {
-			return agent.Commands{}, false
-		}
-		return cmds.OperatedBy(cfg.OperatedBy), true
-	}
-	return agent.Commands{}, false
-}
-
-func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known bool) {
+func printAccess(w io.Writer, a pgcatalog.Access) {
 	several := schemaCount(a) > 1
-	section := func(title string, tables []string, suffix func(string) string) {
+	section := func(title string, tables []string) {
 		fmt.Fprintln(w, title)
 		if len(tables) == 0 {
 			fmt.Fprintln(w, "  none")
@@ -106,46 +74,24 @@ func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known boo
 			if several {
 				indent = "    "
 			}
-			printLine(w, indent+t+suffix(t))
+			printLine(w, indent+t)
 		}
 	}
-	none := func(string) string { return "" }
-	section("Can read", a.Read, none)
+	section("Can read", a.Read)
 	fmt.Fprintln(w)
-	section("Can write", a.Write, none)
+	section("Can write", a.Write)
 	fmt.Fprintln(w)
-	runnable := false
-	section("Not granted", a.NotGranted, func(t string) string {
-		grant := cmds.Grant
-		if cmds.AgentOperated() {
-			grant = cmds.RemoteGrant
-		}
-		if !known {
-			grant = func(flag, table string) (string, error) {
-				if _, err := (agent.Commands{}).Grant(flag, table); err != nil {
-					return "", err
-				}
-				return "--" + flag + "=" + table, nil
-			}
-		}
-		cmd, err := grant("read", t)
-		if err != nil { // agent.ErrBadTable: not a plain schema.table
-			return "  grant by hand"
-		}
-		runnable = runnable || known
-		return "  " + cmd
-	})
-	if runnable {
-		// Each command is the saved flags plus one table, so a second one
-		// run after the first drops the first table again.
-		fmt.Fprintln(w, "Each command adds one table to the saved setup as it is now; to grant several, list them comma-separated in one command, or run basalt access again after each grant.")
-	}
-	if !known && len(a.NotGranted) > 0 {
-		fmt.Fprintln(w, "Add each table to this agent's existing --read list (comma-separated) in the basalt init command you set it up with; init keeps only the last --read.")
+	section("Not granted", a.NotGranted)
+	if len(a.NotGranted) > 0 {
+		fmt.Fprintln(w, accessGrantHint)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "These names are not shown to the agent.")
 }
+
+// accessGrantHint says how a table is granted: on the setup page the
+// agent's basalt init links to, never with a command the person runs.
+const accessGrantHint = "To give the agent one of these tables, ask the agent: it gives you a link where you pick the tables."
 
 func schemaCount(a pgcatalog.Access) int {
 	seen := map[string]bool{}

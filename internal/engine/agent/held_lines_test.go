@@ -48,17 +48,14 @@ func TestHoldTooLargeTellsThePerson(t *testing.T) {
 	older := holdTooLarge([]string{strings.Repeat("x", guard.MaxHeldLineBytesBefore37+1)}, postgres.MapError(&pgconn.PgError{Code: "BS008"}))
 	over := holdTooLarge([]string{strings.Repeat("x", guard.MaxHeldLinesBytes+1)}, nil)
 	for _, operatedBy := range []string{"", mcpcontract.OperatedByAgent} {
-		s := operatedService(t, "linux", "", []string{"--agent=bot", "--write=public.leads"}, operatedBy)
+		s := operatedService(t, "linux", "", operatedBy)
 
 		b := NewSteps()
 		msg := s.holdTooLargeSteps(b, older)
 		require.NoError(t, CheckPersonMessage(msg))
 		require.Contains(t, msg, "64 KiB")
-		if operatedBy == "" {
-			require.Contains(t, msg, s.Commands.Upgrade())
-		} else {
-			require.NotContains(t, msg, "basalt upgrade", "an agent-operated engine's guard is not the person's command to run")
-		}
+		require.NotContains(t, msg, "basalt ", "the person runs no command: the agent gives a link")
+		require.Contains(t, msg, "update the guard")
 
 		b = NewSteps()
 		msg = s.holdTooLargeSteps(b, over)

@@ -74,10 +74,9 @@ func warnPersonMessages(v any) {
 }
 
 // devLocalPagesSteps: move the engine to the portal's pages with a passkey
-// for them. The step is the person's even on an agent-operated engine: the
-// exception exists only on the owner's own laptop.
+// for them, through basalt init's link.
 func devLocalPagesSteps(b *Steps, cmds Commands) string {
-	cmd := cmds.InitPortal()
-	b.RunCommand(cmd, "Run this to move the engine to the portal's pages and register a passkey there.")
-	return "This engine uses development pages on the agent's machine instead of the portal. To move to the portal, run: " + cmd
+	b.AskPerson("Tell the person this engine uses development pages, and ask whether to move to the portal's pages.")
+	b.AgentRunCommand(cmds.Init(), "On the person's yes, run this and show them the link it prints, where they register a passkey there.")
+	return "This engine uses development pages on the agent's machine instead of the portal. To move to the portal, tell the agent: it gives you a link."
 }

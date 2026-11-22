@@ -18,9 +18,9 @@ func TestStepBuilderOneConstructorPerAction(t *testing.T) {
 		AskPerson("Ask the person.").
 		EndTurn("End your turn.").
 		Stop("Do not retry.").
-		OpenLink("http://localhost:7878/approvals/x#1.s", "", "Open it.").
-		OpenLink("http://localhost:7878/approvals/x#1.s", "basalt approve --agent bot --open x", "Open it.").
-		RunCommand("basalt upgrade --agent bot", "Run this.").
+		OpenLink("http://localhost:7878/approvals/x#1.s", "Open it.").
+		OpenGivenLink("Open the link you were given.").
+		RunCommand("sudo systemctl start basalt.service", "Run this.").
 		TellAgent("Say go.").
 		Build()
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ func TestStepBuilderOneConstructorPerAction(t *testing.T) {
 	require.Equal(t, map[string]any{"verbose": true}, steps[0].Arguments)
 	require.Equal(t, 50, steps[2].MaxRows)
 	require.Empty(t, steps[6].Command)
-	require.Equal(t, "basalt approve --agent bot --open x", steps[7].Command)
+	require.Empty(t, steps[7].URL, "the short link the agent gave earlier")
 }
 
 func TestStepBuilderRepeatCallAndWait(t *testing.T) {
@@ -82,7 +82,7 @@ func TestStepBuilderRefusesBadFields(t *testing.T) {
 	require.Error(t, err, "a tool is required")
 	_, err = NewSteps().RunCommand("", "x").Build()
 	require.Error(t, err, "a command is required")
-	_, err = NewSteps().OpenLink("", "", "x").Build()
+	_, err = NewSteps().OpenLink("", "x").Build()
 	require.Error(t, err, "a url is required")
 	_, err = NewSteps().RetrySmallerBatches(0, "x").Build()
 	require.Error(t, err)

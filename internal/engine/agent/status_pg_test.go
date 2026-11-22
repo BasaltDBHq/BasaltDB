@@ -59,7 +59,7 @@ func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 		requireToolError(t, body, isError, agent.CodeUnavailable, "GUARD_OUTDATED", "")
 		steps := body["nextSteps"].([]any)
 		require.Len(t, steps, 3, tool.name)
-		require.Equal(t, "basalt upgrade --agent bot", steps[0].(map[string]any)["command"], tool.name)
+		require.Equal(t, "basalt init --agent bot", steps[0].(map[string]any)["command"], tool.name)
 	}
 	body, isError := h.call(t, "status", map[string]any{})
 	require.False(t, isError, "%v", body)

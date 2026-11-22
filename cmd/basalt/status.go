@@ -221,7 +221,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if err != nil {
 		return statusOut{}, c.needAgentName(err)
 	}
-	cmds, err := agent.NewCommands(a.Name, abs, c.goos, a.InitArgs)
+	cmds, err := agent.NewCommands(a.Name, abs, c.goos)
 	if err != nil {
 		return statusOut{}, err
 	}

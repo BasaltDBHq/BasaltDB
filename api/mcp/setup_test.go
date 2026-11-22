@@ -449,9 +449,9 @@ func hmacSHA256(key []byte, msg string) []byte {
 }
 
 // TestAgentOperatedSteps checks the catalog's agent-operated rules
-// (CONTRACT.md, Next steps): AGENT RUN_COMMAND appears only in variants,
-// OPERATOR only in the entries both modes share, and every variant replaces
-// an existing entry and is listed in CONTRACT.md.
+// (CONTRACT.md, Next steps): every variant replaces an existing entry, names
+// AGENT or PERSON only, and is listed in CONTRACT.md. An AGENT RUN_COMMAND,
+// the agent's basalt init, may stand in any entry.
 func TestAgentOperatedSteps(t *testing.T) {
 	t.Parallel()
 	c, err := mcpcontract.LoadNextSteps()
@@ -470,13 +470,6 @@ func TestAgentOperatedSteps(t *testing.T) {
 	for _, r := range c.Results {
 		shared["RESULT:"+r.Tool+"/"+r.Case] = r.Steps
 	}
-	for key, steps := range shared {
-		for _, s := range steps {
-			agentCommand := s.Actor == mcpcontract.ActorAgent && s.Action == mcpcontract.ActionRunCommand
-			require.False(t, agentCommand, "%s: AGENT RUN_COMMAND only in agentOperated variants", key)
-		}
-	}
-
 	variants := map[string]bool{}
 	for _, v := range c.AgentOperated {
 		key := v.Kind + ":" + v.Code + "/" + v.Reason + "/" + v.Tool
@@ -497,9 +490,9 @@ func TestAgentOperatedSteps(t *testing.T) {
 
 // TestConnectLinkSteps checks the catalog's connect-link variants (CONTRACT.md,
 // Next steps with the connect link): each replaces an entry that hands the
-// person a pending setup code, puts the person's OPEN_LINK before that
-// entry's steps on an agent-operated engine, keeps the rest unchanged, and is
-// listed in CONTRACT.md.
+// person a pending setup, puts the person's OPEN_LINK in place of that
+// entry's first step (the agent's basalt init), keeps the rest unchanged, and
+// is listed in CONTRACT.md.
 func TestConnectLinkSteps(t *testing.T) {
 	t.Parallel()
 	c, err := mcpcontract.LoadNextSteps()
@@ -523,9 +516,11 @@ func TestConnectLinkSteps(t *testing.T) {
 		require.False(t, agentVariant, "%s: an entry with an agent-operated variant cannot take a connect-link one", key)
 		require.True(t, v.PersonMessage, "%s: the link is in the personMessage", key)
 		requireSteps(t, key, v.Steps)
-		want := append([]mcpcontract.StepKind{{Actor: mcpcontract.ActorPerson, Action: "OPEN_LINK"}},
-			mcpcontract.Resolve(steps, mcpcontract.OperatedByAgent)...)
-		require.Equal(t, want, v.Steps, "%s: the link first, then the entry's own steps", key)
+		resolved := mcpcontract.Resolve(steps, mcpcontract.OperatedByAgent)
+		require.Equal(t, mcpcontract.StepKind{Actor: mcpcontract.ActorAgent, Action: mcpcontract.ActionRunCommand}, resolved[0],
+			"%s: the entry starts with the agent's basalt init", key)
+		want := append([]mcpcontract.StepKind{{Actor: mcpcontract.ActorPerson, Action: "OPEN_LINK"}}, resolved[1:]...)
+		require.Equal(t, want, v.Steps, "%s: the link in place of basalt init, then the entry's other steps", key)
 		got, ok := c.ConnectLinkEntry(v.Kind, v.Code, v.Reason, v.Tool)
 		require.True(t, ok, key)
 		require.Equal(t, v, got)
@@ -605,11 +600,12 @@ func contractConnectLink(t *testing.T) map[string]bool {
 
 func TestResolveOperatorSteps(t *testing.T) {
 	t.Parallel()
-	c, err := mcpcontract.LoadNextSteps()
-	require.NoError(t, err)
-	e, ok := c.ErrorEntry("UNAVAILABLE", "SETUP_EXPIRED", "write")
-	require.True(t, ok)
-	require.Equal(t, mcpcontract.ActorOperator, e.Steps[0].Actor)
+	// No catalog entry has an OPERATOR step since the person runs no
+	// command; Resolve still turns one into the operator's actor.
+	e := mcpcontract.ErrorSteps{Steps: []mcpcontract.StepKind{
+		{Actor: mcpcontract.ActorAgent, Action: "ASK_PERSON"},
+		{Actor: mcpcontract.ActorOperator, Action: mcpcontract.ActionRunCommand},
+	}}
 
 	for operatedBy, actor := range map[string]string{
 		mcpcontract.OperatedByAgent:  mcpcontract.ActorAgent,
@@ -617,11 +613,11 @@ func TestResolveOperatorSteps(t *testing.T) {
 		"":                           mcpcontract.ActorPerson, // config unreadable: the safe default
 	} {
 		got := mcpcontract.Resolve(e.Steps, operatedBy)
-		require.Equal(t, actor, got[0].Actor, operatedBy)
-		require.Equal(t, mcpcontract.ActionRunCommand, got[0].Action)
-		require.Equal(t, e.Steps[1:], got[1:], "only OPERATOR steps change")
+		require.Equal(t, actor, got[1].Actor, operatedBy)
+		require.Equal(t, mcpcontract.ActionRunCommand, got[1].Action)
+		require.Equal(t, e.Steps[:1], got[:1], "only OPERATOR steps change")
 	}
-	require.Equal(t, mcpcontract.ActorOperator, e.Steps[0].Actor, "Resolve does not change the catalog")
+	require.Equal(t, mcpcontract.ActorOperator, e.Steps[1].Actor, "Resolve does not change the catalog")
 }
 
 var agentOperatedRow = regexp.MustCompile("^\\| (error|warning|problem) \\| `([A-Z][A-Z0-9_]*)` \\| (?:`([A-Z][A-Z0-9_]*)`|—) \\|")

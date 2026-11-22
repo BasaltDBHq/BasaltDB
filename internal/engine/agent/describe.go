@@ -381,17 +381,15 @@ func overviewLargeSteps(b *Steps, schemas []SchemaCount) {
 		"Find tables with describe and a query: a word of a table, column or schema name. These arguments list the largest schema.")
 }
 
-// notGrantedSteps (NOT_GRANTED): the person may look at what the agent
-// cannot read, with basalt access, always a PERSON step: its output names
-// the tables the agent must not read (D-1, D-7). No ASK_PERSON: platform
+// notGrantedSteps (NOT_GRANTED): the person tells the agent when it needs
+// one of the tables; the setup page that basalt init links to lists them, so
+// the agent never sees their names (D-1, D-7). No ASK_PERSON: platform
 // schemas are ungranted on every Supabase project.
 func (s *Service) notGrantedSteps(b *Steps, notGranted int) string {
-	command := s.Commands.Access()
-	b.RunCommand(command, "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each.")
-	b.TellAgent("Tell the agent when you grant it a table it needs.")
-	return fitMessage(fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
-		"To list the tables the agent cannot read, run: %s",
-		notGranted, plural(notGranted, "table", "tables"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"), command), command)
+	b.TellAgent("Tell the agent when it needs one of these tables: it gives you a link where you pick them.")
+	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
+		"To give it one, tell the agent: it gives you a link where you pick the tables.",
+		notGranted, plural(notGranted, "table", "tables"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"))
 }
 
 func plural(n int, one, many string) string {
@@ -409,17 +407,17 @@ func describeNotFound(resource string) error {
 }
 
 // describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
-// every answer: search, ask, and the person's basalt access.
+// every answer: search, ask, and basalt init, whose link opens the page
+// where the person grants a table.
 func (s *Service) describeNotFoundSteps(b *Steps, f failure) string {
 	b.CallTool(toolDescribe, map[string]any{argQuery: searchTerm(f.arg(argResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")
-	command := s.Commands.Access()
-	b.RunCommand(command, "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each.")
-	b.TellAgent("Tell the agent when it has the access, or which table to use instead.")
-	return fitMessage("The agent asked for a table it cannot see: it does not exist, or the agent may not read it. "+
-		"An agent uses one database; a table in another database needs its own agent, added with basalt init --remote --agent NAME. "+
-		"To list the tables the agent cannot read, run: "+command, command)
+	b.TellAgent("Tell the agent to add the table once you decide it should have it, or which table to use instead.")
+	b.AgentRunCommand(s.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the table.")
+	return "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. " +
+		"An agent uses one database; a table in another database needs its own agent. " +
+		"To give the agent a table, tell it: it gives you a link where you pick the tables."
 }
 
 // searchTerm is the search for a resource not found: its table name.

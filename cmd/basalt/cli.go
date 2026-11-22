@@ -47,6 +47,9 @@ type cliIO struct {
 	// interactive is true when a person answers at a terminal: init asks
 	// its setup questions only then.
 	interactive bool
+	// strictInit makes agentInitError refuse a plain init with no
+	// terminal even in the test binary (pipedAdminInitAllowed).
+	strictInit bool
 	// tty overrides the terminal check of printLink; tests set it.
 	tty func(io.Writer) bool
 	// width is the terminal's width in columns, 0 when stdout is no
@@ -188,6 +191,12 @@ func (c *cliIO) adminURL() (string, error) {
 	if v := c.getenv(envAdminURL); v != "" {
 		return v, nil
 	}
+	return c.promptAdminURL()
+}
+
+// promptAdminURL asks for the admin connection string with a hidden
+// prompt; it never reads the environment.
+func (c *cliIO) promptAdminURL() (string, error) {
 	fmt.Fprint(c.stderr, "Admin connection string (used once, never stored): ")
 	if c.terminal != nil {
 		b, err := term.ReadPassword(int(c.terminal.Fd()))

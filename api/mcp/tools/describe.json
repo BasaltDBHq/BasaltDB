@@ -460,7 +460,7 @@
       },
       "personMessage": {
         "type": "string",
-        "description": "OVERVIEW with notGranted above 0: the count and the basalt access command, for the agent to show the person."
+        "description": "OVERVIEW with notGranted above 0: the count, and that the person grants a table on the page basalt init links to, for the agent to show the person."
       },
       "links": {
         "type": "array",
@@ -475,7 +475,7 @@
         "items": {
           "$ref": "../errors/next-step.schema.json"
         },
-        "description": "Steps to follow, in order (CONTRACT.md, Next steps): OVERVIEW above 50 tables (search), OVERVIEW with tables not granted (the person's basalt access)."
+        "description": "Steps to follow, in order (CONTRACT.md, Next steps): OVERVIEW above 50 tables (search), OVERVIEW with tables not granted (the person tells you when you need one)."
       }
     },
     "$defs": {

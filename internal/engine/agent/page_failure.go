@@ -81,9 +81,10 @@ func (s *Service) pageSignatureFailure(te *mcp.ToolError) bool {
 		te.PersonMessage = fmt.Sprintf("The %s code did not verify, so nothing was applied. %s", what, again)
 		return true
 	case reasonPasskeyRevoked:
+		// The page has no agent to run basalt init: the person asks it for
+		// the link that registers the passkey they use.
 		steps, err := NewSteps().
-			RunCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts.").
-			RunCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else.").
+			TellAgent(askAgentForRegisterLinkText).
 			Build()
 		if err != nil {
 			s.Log.Error("cannot build the page's passkey steps", "err", err)
@@ -91,7 +92,7 @@ func (s *Service) pageSignatureFailure(te *mcp.ToolError) bool {
 		}
 		te.NextSteps = steps
 		te.PersonMessage = fmt.Sprintf("The %s was signed with a passkey this database does not accept (unknown or revoked), "+
-			"so nothing was applied. Check your passkeys, register one if needed, then try again on this page.", what)
+			"so nothing was applied. Ask the agent for a link to register the passkey you use, then try again on this page.", what)
 		return true
 	}
 	return false

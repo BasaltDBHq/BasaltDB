@@ -213,8 +213,9 @@ type Agent struct {
 	// Stores).
 	Store Store `json:"store"`
 	// InitArgs are the flags basalt init was run with for this agent (never
-	// the admin connection string, a password or a one-shot flag), so a
-	// step can name the init command again. See agent.NewCommands.
+	// the admin connection string, a password or a one-shot flag). init
+	// reads them back on a re-run; no step names them (CONTRACT.md, Next
+	// steps), and they go with the CLI cut.
 	InitArgs []string `json:"initArgs,omitempty"`
 	// Setup is the pending setup code basalt init --remote made for this
 	// agent; nil when none is pending.

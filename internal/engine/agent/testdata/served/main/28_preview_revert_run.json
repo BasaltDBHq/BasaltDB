@@ -1,6 +1,5 @@
 {
   "body": {
-    "command": "basalt revert --agent bot --run <id-1> --open",
     "items": [
       {
         "action": "RESTORE",

@@ -145,21 +145,30 @@ func CheckDatabaseName(confirmName string) error {
 	return nil
 }
 
+// CheckTypedName refuses, in tx, a confirmName that is not
+// current_database(): the first thing a removal's transaction reads.
+func CheckTypedName(ctx context.Context, tx pgx.Tx, confirmName string) error {
+	if err := CheckDatabaseName(confirmName); err != nil {
+		return err
+	}
+	var database string
+	if err := tx.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
+		return err
+	}
+	if confirmName != database {
+		return refuse(CodeAnswersInvalid, WrongDatabaseName)
+	}
+	return nil
+}
+
 // RunRemove removes BasaltDB in tx: it refuses a confirmName that is not
 // current_database() before it plans or drops anything, plans again and
 // runs the drops. demoKept reports a sample schema another object depends
 // on, which stays. A failed drop refuses SETUP_FAILED; the caller rolls
 // tx back.
 func RunRemove(ctx context.Context, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
-	if err := CheckDatabaseName(confirmName); err != nil {
+	if err := CheckTypedName(ctx, tx, confirmName); err != nil {
 		return RemovePlan{}, false, err
-	}
-	var database string
-	if err := tx.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&database); err != nil {
-		return RemovePlan{}, false, err
-	}
-	if confirmName != database {
-		return RemovePlan{}, false, refuse(CodeAnswersInvalid, WrongDatabaseName)
 	}
 	if p, err = PlanRemove(ctx, tx, prefix); err != nil {
 		return RemovePlan{}, false, err

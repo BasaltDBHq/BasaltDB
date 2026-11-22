@@ -159,6 +159,8 @@ func TestRemoveRefusesABasaltMetaNotOwnedByAGuard(t *testing.T) {
 
 	_, err := setup.CheckRemove(ctx, d.Admin)
 	require.Equal(t, "PREFIX_MISMATCH", removeCode(t, err))
+	_, err = setup.RunRemove(ctx, d.Admin, database+"x")
+	require.Equal(t, setup.CodeAnswersInvalid, removeCode(t, err), "the typed name is checked before the guard's owner")
 	_, err = setup.RunRemove(ctx, d.Admin, database)
 	require.Equal(t, "PREFIX_MISMATCH", removeCode(t, err))
 	require.True(t, schemaExists(t, d, "basalt_meta"), "nothing dropped")

@@ -86,6 +86,10 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 	}
 	var out Removed
 	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		// The typed name first: a wrong one learns nothing of the guard.
+		if err := setuprun.CheckTypedName(ctx, tx, confirmName); err != nil {
+			return err
+		}
 		prefix, err := removalPrefix(ctx, tx)
 		if err != nil {
 			return err

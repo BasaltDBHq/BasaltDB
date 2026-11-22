@@ -86,7 +86,7 @@ func cliNoDBEnv(t *testing.T, probe func(context.Context, string) error, env map
 	c.probe = probe
 	c.fetchChain = nil // no network: the example hosts are never dialed
 	c.host = systemSocketHost(t)
-	code := runInit(c, takePathFlags(c, runInit, args[1:]))
+	code := runInitAdmin(c, takePathFlags(c, runInit, args[1:]))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -871,7 +871,7 @@ func TestInitRemoteKeepsARootlessSocketDirNextToTheConfig(t *testing.T) {
 		})
 	c.host = h
 	c.agentLogin = refusedLogin
-	code := runInit(c, takePathFlags(c, runInit, []string{
+	code := runInitAdmin(c, takePathFlags(c, runInit, []string{
 		"--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
 		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
 	}))

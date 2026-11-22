@@ -26,6 +26,8 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 		{"linux", service.SystemdUnitPath, "systemctl enable --now " + service.SystemdUnitName, []string{
 			"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
 			"make_dir /etc/basalt 0750 basalt basalt",
+			"make_root_dir /opt/basalt 0755",
+			"make_root_dir /opt/basalt/run 0755",
 			"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json --supervise\n",
 		}},
 		{"darwin", service.LaunchdPlist, "launchctl bootstrap system " + service.LaunchdPlist, []string{
@@ -34,6 +36,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 			"make_dir '/Library/Application Support/Basalt/run' 0755 _basalt _basalt",
 			"make_dir '/Library/Application Support/Basalt/state' 0750 _basalt _basalt",
 			"make_dir /Library/Logs/Basalt 0755 0 0",
+			"make_root_dir /Library/Basalt 0755",
 			"<string>/usr/local/bin/basalt</string>\n\t\t<string>engine</string>\n\t\t<string>--config</string>\n\t\t<string>/Library/Application Support/Basalt/engine.json</string>\n\t\t<string>--supervise</string>",
 		}},
 	} {
@@ -99,6 +102,21 @@ func shellWord(s string) string {
 		return "'" + s + "'"
 	}
 	return s
+}
+
+// The script makes the plugin base the service install makes.
+func TestInstallScriptMakesThePluginBase(t *testing.T) {
+	t.Parallel()
+	for _, goos := range []string{"linux", "darwin"} {
+		base, err := service.PluginBase(goos)
+		require.NoError(t, err)
+		run, err := service.PluginRunDir(goos)
+		require.NoError(t, err)
+		script, err := service.InstallScript(goos, dialogBinary)
+		require.NoError(t, err)
+		require.Contains(t, script, "make_root_dir "+base+" 0755", goos)
+		require.Contains(t, script, "make_root_dir "+run+" 0755", goos)
+	}
 }
 
 func TestInstallScriptRefusesAnUnsafeBinaryPath(t *testing.T) {

@@ -69,14 +69,34 @@ type initFlags struct {
 	vault     vaultChoice
 }
 
-// runInit: basalt init. Prints a short summary of the setup SQL (the
+// runInit: basalt init. --remote makes a connect-only setup code for an
+// agent-operated engine and --setup-code is the laptop half (both removed
+// with the CLI cut); without them, init starts the local setup
+// (runInitLocal), which never reads the admin connection string.
+func runInit(c *cliIO, args []string) int {
+	if isRemote(args) {
+		return runInitRemote(c, args)
+	}
+	if isSetupCode(args) {
+		return runInitSetupCode(c, args)
+	}
+	return runInitLocal(c, args)
+}
+
+// runInitAdmin is the terminal setup with the admin connection string that
+// the local setup page replaced. No command reaches it any more: the tests
+// of the commands still to be removed (upgrade, uninstall, classify, the
+// passkey and engine subcommands) set their databases up with it until the
+// CLI cut removes them and it.
+//
+// It prints a short summary of the setup SQL (the
 // full SQL, passwords redacted, with --show-sql), installs or upgrades
 // basalt_meta with the admin connection string, creates or rotates the
 // agent role, writes the agent's own connection string to a 0600
 // credential file and adds the agent to the engine config, then installs
 // the engine service with one sudo (or prints the foreground command; see
 // setupEngine). The admin connection string is never stored.
-func runInit(c *cliIO, args []string) int {
+func runInitAdmin(c *cliIO, args []string) int {
 	if isRemote(args) {
 		return runInitRemote(c, args)
 	}

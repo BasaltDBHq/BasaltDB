@@ -100,7 +100,7 @@ func TestInitRefusesAnUnusableAdminStringBeforeConnecting(t *testing.T) {
 			t.Errorf("init connected with %q", admin)
 			return nil, context.Canceled
 		}
-		code := runInit(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--yes", "--no-service", "--config", t.TempDir() + "/engine.json"}))
+		code := runInitAdmin(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--yes", "--no-service", "--config", t.TempDir() + "/engine.json"}))
 		require.Equal(t, exitError, code, stderr.String())
 		require.Contains(t, stderr.String(), want.Error())
 		require.NotContains(t, stderr.String(), "ADMINSECRET")

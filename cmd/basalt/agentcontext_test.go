@@ -335,7 +335,7 @@ func TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal(t *testing.T
 			c.host = newFakeHost(t)
 			c.interactive = tc.interactive
 			c.strictInit = true
-			code := runInit(c, []string{"--agent", "bot", "--write", "public.leads", "--yes"})
+			code := runInitAdmin(c, []string{"--agent", "bot", "--write", "public.leads", "--yes"})
 			require.Equal(t, exitError, code, stderr.String())
 			require.Contains(t, stderr.String(), tc.want)
 			require.Contains(t, stderr.String(), "change that database password now", "the person is told to change the leaked password")

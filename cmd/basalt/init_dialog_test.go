@@ -29,7 +29,7 @@ func dialogInit(t *testing.T, h *fakeHost, goos string, extra ...string) result 
 	}
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, getenv)
 	c.goos, c.host = goos, h
-	code := runInit(c, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes"}, extra...))
+	code := runInitAdmin(c, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes"}, extra...))
 	return result{code, stdout.String(), stderr.String()}
 }
 

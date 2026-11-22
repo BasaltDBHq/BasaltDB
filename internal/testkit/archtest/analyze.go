@@ -64,13 +64,13 @@ var allowed = map[string][]string{
 	lLib:      {lLib},
 	lCore:     {lCore, lLib, lApi},
 	lConfig:   {lConfig, lCore, lLib, lApi},
-	lService:  {lService, lConfig, lCore, lLib, lPkg, lApi},
+	lService:  {lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lOutbound: {lOutbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lInbound:  {lInbound, lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lCmd:      {lCmd, lApp, lService, lInbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lPkg:      {lPkg, lLib},
 	lApi:      {lApi},
-	lWeb:      {},
+	lWeb:      {lCore, lLib},
 }
 
 // pkgExtra lists layers that one package may import on top of its layer's list.
@@ -129,10 +129,11 @@ type register struct {
 type regRow struct {
 	area, kind, row string
 	extras          []string // standard-library packages the row allows, e.g. crypto/rand
+	codecs          []string // functions of a decision package that decode, parse or validate a format; any layer may call them
 }
 
 // regCells is the number of columns in a register row.
-const regCells = 5
+const regCells = 6
 
 var regLine = regexp.MustCompile("^\\|\\s*`([a-z0-9]+)`\\s*\\|")
 
@@ -152,7 +153,7 @@ func parseRegister(file string) (*register, error) {
 		}
 		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
 		if len(cells) < regCells {
-			return nil, fmt.Errorf("register row for %s needs 5 cells (package, area, kind, admitted by, extras): %q", m[1], line)
+			return nil, fmt.Errorf("register row for %s needs 6 cells (package, area, kind, admitted by, extras, codec functions): %q", m[1], line)
 		}
 		for i := range cells {
 			cells[i] = strings.TrimSpace(cells[i])
@@ -161,6 +162,11 @@ func parseRegister(file string) (*register, error) {
 		for _, e := range strings.Split(cells[4], ",") {
 			if e = strings.Trim(strings.TrimSpace(e), "`"); e != "" && e != "-" {
 				row.extras = append(row.extras, e)
+			}
+		}
+		for _, c := range strings.Split(cells[5], ",") {
+			if c = strings.Trim(strings.TrimSpace(c), "`"); c != "" && c != "-" {
+				row.codecs = append(row.codecs, c)
 			}
 		}
 		if _, dup := r.rows[m[1]]; dup {
@@ -282,7 +288,11 @@ func analyze(root string, reg *register) (violations, error) {
 	decisions := map[string][]string{} // decision package name -> exported funcs
 	for name, row := range reg.rows {
 		if row.kind == kindDecision {
-			decisions[name] = exportedFuncs(pkgs["internal/core/"+name])
+			for _, fn := range exportedFuncs(pkgs["internal/core/"+name]) {
+				if !in(row.codecs, fn) {
+					decisions[name] = append(decisions[name], fn)
+				}
+			}
 		}
 	}
 	for rel, pk := range pkgs {
@@ -302,7 +312,7 @@ func analyze(root string, reg *register) (violations, error) {
 				target := strings.TrimPrefix(ip, modulePath+"/")
 				checkLayer(v, rel, layer, target)
 			}
-			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg {
+			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg || layer == lWeb {
 				checkDecisionCalls(v, rel, f, decisions)
 			}
 		}
@@ -454,6 +464,15 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 		for _, e := range row.extras {
 			if e != "crypto/rand" || (name != "channel" && name != "setupcode") {
 				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode)", name, e))
+			}
+		}
+		if len(row.codecs) > 0 && row.kind != kindDecision {
+			problems = append(problems, fmt.Sprintf("register row %s: codec functions are listed only for a decision package", name))
+		}
+		have := exportedFuncs(pkgs["internal/core/"+name])
+		for _, c := range row.codecs {
+			if !in(have, c) {
+				problems = append(problems, fmt.Sprintf("register row %s: codec function %q is not an exported function of internal/core/%s", name, c, name))
 			}
 		}
 		if row.area == "" {

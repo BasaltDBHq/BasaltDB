@@ -1,1 +1,0 @@
-dictionary.go calls time.Now (core must stay pure)

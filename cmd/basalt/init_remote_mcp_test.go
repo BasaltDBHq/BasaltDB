@@ -74,7 +74,7 @@ func remoteNoDBOn(t *testing.T, h *fakeHost, jsonOut bool, args ...string) resul
 	if jsonOut {
 		args = append(args, "--json")
 	}
-	code := runInit(c, takePathFlags(c, runInit, args))
+	code := runInitAdmin(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -157,7 +157,7 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
 		func(string) string { return "" })
 	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
-	code := runInit(c, []string{
+	code := runInitAdmin(c, []string{
 		"--remote", "--agent", "bot", "--write", "public.leads",
 		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
 	})
@@ -188,7 +188,7 @@ func TestInitRefusesAForegroundSetupBesideTheSystemConfig(t *testing.T) {
 				return ""
 			})
 		c.host, c.systemConfigPath = h, system
-		code := runInit(c, append([]string{"--no-service", "--yes", "--skip-passkey"}, extra...))
+		code := runInitAdmin(c, append([]string{"--no-service", "--yes", "--skip-passkey"}, extra...))
 		require.Equal(t, exitError, code, "%v: %s", extra, stderr.String())
 		require.Contains(t, stderr.String(), system)
 		_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))

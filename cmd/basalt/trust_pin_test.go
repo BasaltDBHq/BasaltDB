@@ -195,7 +195,7 @@ func TestInitRemotePins(t *testing.T) {
 			"--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads",
 			"--database-url", "postgres://postgres@" + host + ":5432/postgres?sslmode=require",
 		}, extra...)
-		code := runInit(c, takePathFlags(c, runInit, args))
+		code := runInitAdmin(c, takePathFlags(c, runInit, args))
 		return result{code, stdout.String(), stderr.String()}
 	}
 	pinFile := func(cfg string) string {
@@ -247,7 +247,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		var out, errb bytes.Buffer
 		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
 		c.agentLogin, c.probe, c.host, c.fetchChain = refusedLogin, noNetworkProbe, systemSocketHost(t), nil
-		return runInit(c, takePathFlags(c, runInit, base))
+		return runInitAdmin(c, takePathFlags(c, runInit, base))
 	}
 	require.Equal(t, exitOK, first())
 	var events []string
@@ -262,7 +262,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		events = append(events, "handshake")
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
-	code := runInit(c, takePathFlags(c, runInit, append(base, "--trust-root", trustprofile.DERSHA256(s.ca))))
+	code := runInitAdmin(c, takePathFlags(c, runInit, append(base, "--trust-root", trustprofile.DERSHA256(s.ca))))
 	require.Equal(t, exitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)

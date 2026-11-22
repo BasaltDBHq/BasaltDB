@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/demo"
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
@@ -219,10 +220,35 @@ func checkAdminURL(raw, role string) (string, error) {
 	if pw, ok := u.User.Password(); !ok || pw == "" {
 		return "", bad
 	}
+	// The host, port and database come from the URL itself: a parameter
+	// that names another one would make the connection and the target
+	// checks disagree.
+	for key := range u.Query() {
+		switch strings.ToLower(key) {
+		case "host", "hostaddr", "port", "dbname", "service", "servicefile":
+			return "", bad
+		}
+	}
 	if _, err := guard.AgentConnString(raw, role, ""); err != nil {
 		return "", bad
 	}
 	return strings.ToLower(u.Host), nil
+}
+
+// sameTarget: two connection strings, as the driver parses them (query
+// parameters included), name the same host and port (the host compared in
+// lowercase) and the same database.
+func sameTarget(a, b string) bool {
+	ca, err := pgconn.ParseConfig(a)
+	if err != nil {
+		return false
+	}
+	cb, err := pgconn.ParseConfig(b)
+	if err != nil {
+		return false
+	}
+	return ca.Host != "" && strings.EqualFold(ca.Host, cb.Host) && ca.Port == cb.Port &&
+		ca.Database != "" && ca.Database == cb.Database
 }
 
 // connect opens the admin connection; a failure is a fixed refusal.
@@ -244,36 +270,74 @@ func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) 
 }
 
 // plan reads the database for j in tx: refusals, then the sample data and
-// the install script. The caller rolls tx back (check) or commits (run).
-func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password string) (demo.Plan, guard.Script, error) {
+// the install script. keep is a role that exists and is this engine's own
+// (finishing an install whose engine.json was never written): its password
+// stays. The caller rolls tx back (check) or commits (run).
+func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database string) (seeded demo.Plan, script guard.Script, keep bool, err error) {
 	prefix := s.opts.Prefix
 	names := guard.Names{Prefix: prefix}
 	installed, err := guard.InstalledPrefix(ctx, tx)
 	if err != nil {
-		return demo.Plan{}, guard.Script{}, setupFailed()
+		return demo.Plan{}, guard.Script{}, false, setupFailed()
 	}
 	if installed != "" && installed != prefix {
-		return demo.Plan{}, guard.Script{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
+		return demo.Plan{}, guard.Script{}, false, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
 	}
 	exists, err := guard.AgentRoleExists(ctx, tx, names, j.req.Agent)
 	if err != nil {
-		return demo.Plan{}, guard.Script{}, setupFailed()
+		return demo.Plan{}, guard.Script{}, false, setupFailed()
 	}
 	if exists {
-		return demo.Plan{}, guard.Script{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
+		if !s.ownRole(ctx, j, database) {
+			return demo.Plan{}, guard.Script{}, false, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
+		}
+		keep, password = true, ""
 	}
-	seeded, err := demo.Seed(ctx, tx)
+	seeded, err = demo.Seed(ctx, tx)
 	if err != nil {
-		return demo.Plan{}, guard.Script{}, setupFailed()
+		return demo.Plan{}, guard.Script{}, false, setupFailed()
 	}
-	script, err := guard.PlanInit(ctx, tx, guard.InitOptions{
+	script, err = guard.PlanInit(ctx, tx, guard.InitOptions{
 		Names: names,
-		Agent: guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: true, Write: demo.Tables, StatementTimeout: statementTimeout},
+		Agent: guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !keep, Write: demo.Tables, StatementTimeout: statementTimeout},
 	})
 	if err != nil {
-		return demo.Plan{}, guard.Script{}, setupFailed()
+		return demo.Plan{}, guard.Script{}, false, setupFailed()
 	}
-	return seeded, script, nil
+	return seeded, script, keep, nil
+}
+
+// ownRole: the agent's role exists and this engine holds its password. The
+// credential an earlier run wrote, in this engine's own folder, logs in as
+// that role on the database the admin string reached. Only then does an
+// install finish with that role (its engine.json write had failed);
+// anything else is another role of the same name, never taken over.
+func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
+	dsn, err := config.ReadCredential(s.files(j.req.Agent).credential)
+	if err != nil {
+		return false
+	}
+	// Only a string that makes the driver read no file: the folder is the
+	// engine's own, but a credential is never trusted to be well-formed.
+	if pgdial.CheckForeignDSN(dsn) != nil {
+		return false
+	}
+	// The kept credential must be for the server and database this run's
+	// admin string names, before it is tried at all: a role of the same
+	// name on another server is never taken over.
+	if !sameTarget(dsn, j.req.DatabaseURL) {
+		return false
+	}
+	conn, err := s.opts.Dial(ctx, dsn)
+	if err != nil {
+		return false
+	}
+	defer conn.Close(context.WithoutCancel(ctx))
+	var user, db string
+	if err := conn.QueryRow(ctx, `SELECT current_user::text, pg_catalog.current_database()::text`).Scan(&user, &db); err != nil {
+		return false
+	}
+	return user == j.role && db == database
 }
 
 func setupFailed() *RefusalError {
@@ -306,7 +370,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
-	seeded, script, err := s.plan(ctx, tx, j, guard.NewPassword())
+	seeded, script, keep, err := s.plan(ctx, tx, j, guard.NewPassword(), database)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -319,7 +383,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, setupFailed()
 	}
 	return CheckAnswer{
-		Database: database, Lines: summary(j, database, seeded, needed), SQL: seeded.Shown() + script.SQL(),
+		Database: database, Lines: summary(j, database, seeded, needed, keep), SQL: seeded.Shown() + script.SQL(),
 		Questions: []Question{}, Notes: notes(seeded, script), PasskeyNeeded: needed, Challenge: &ch,
 	}, nil
 }
@@ -352,10 +416,12 @@ func passkeyNeeded(ctx context.Context, tx pgx.Tx, origin string) (bool, error) 
 }
 
 // summary is the fixed account of the install the person reads.
-func summary(j job, database string, seeded demo.Plan, passkeyNeeded bool) []string {
-	lines := []string{
-		fmt.Sprintf("This sets up Basalt in the database %s.", database),
-		fmt.Sprintf("It creates the agent %s (role %s), which runs as the OS user %s. Its password is made by this engine and kept on this computer only.", j.req.Agent, j.role, j.req.OSUser),
+func summary(j job, database string, seeded demo.Plan, passkeyNeeded, keep bool) []string {
+	lines := []string{fmt.Sprintf("This sets up Basalt in the database %s.", database)}
+	if keep {
+		lines = append(lines, fmt.Sprintf("The agent %s (role %s) is already in the database, and this engine holds its password: this finishes its setup, which stopped before the engine wrote its config. Its password stays.", j.req.Agent, j.role))
+	} else {
+		lines = append(lines, fmt.Sprintf("It creates the agent %s (role %s), which runs as the OS user %s. Its password is made by this engine and kept on this computer only.", j.req.Agent, j.role, j.req.OSUser))
 	}
 	if !seeded.Exists() {
 		lines = append(lines, "It creates the sample schema "+demo.Schema+" with its tables leads and lead_notes.")

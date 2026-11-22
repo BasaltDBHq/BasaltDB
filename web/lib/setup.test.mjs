@@ -4,6 +4,7 @@
 // string only to the engine's own setup routes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { b64urlEncode, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
@@ -22,6 +23,16 @@ test("the page asks for nothing outside the engine's own local origin", () => {
   ]) {
     assert.throws(() => localOrigin(loc), /runs only on this computer's own engine/, JSON.stringify(loc));
   }
+});
+
+// The link basalt init prints (internal/localsetup.Link) parses to its job.
+const vector = JSON.parse(readFileSync(new URL("../../internal/localsetup/testdata/link.json", import.meta.url), "utf8"));
+
+test("the page reads the link basalt init prints", () => {
+  const url = new URL(vector.link);
+  assert.equal(url.origin, vector.origin);
+  assert.equal(url.pathname, "/setup/");
+  assert.deepEqual(parseSetupLink(url.hash), vector.job);
 });
 
 test("the link carries the job, the agent, its OS user and demo, and nothing else", () => {

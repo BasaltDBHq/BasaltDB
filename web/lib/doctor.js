@@ -17,6 +17,39 @@ export function columnName(name) {
   return String(name).startsWith("public.") ? String(name).slice("public.".length) : String(name);
 }
 
+// The words both pages' check screens share (the local page's rows here,
+// the connect page's in connectupdate.js).
+
+// needTitle is the check screen's title when n rows need the person.
+export const needTitle = (n) => (n === 1 ? "1 thing needs you" : `${n} things need you`);
+
+// ALL_GOOD is the check screen with nothing to fix: its title, the line
+// under it and its ✓ rows before Passkeys.
+export const ALL_GOOD = {
+  title: "All good",
+  sub: "BasaltDB is running and your agents can connect.",
+  rows: ["Every column has a label", "Database certificate checked"],
+};
+
+// devicesText is the Passkeys row's line for n devices.
+export const devicesText = (n) => plural(n, "device can approve", "devices can approve");
+
+// unlabeledRow is the row for count unlabeled columns, names the first
+// MAX_NAMED of them as the page shows them.
+export function unlabeledRow(count, names) {
+  const listed = names.slice(0, MAX_NAMED).join(", ");
+  return { title: count === 1 ? "1 new column has no label" : `${count} new columns have no label`, text: count > MAX_NAMED ? `${listed}, …` : listed };
+}
+
+// NO_PASSKEY is the row for no passkey that can approve on the page's site.
+export const NO_PASSKEY = { title: "No passkey can approve", text: "Your agents' larger writes wait until you add one." };
+
+// certificateRow is the row for a new certificate on the database (doctor's
+// CHANGED): the confirm step is its fix.
+export function certificateRow(database) {
+  return { title: `${database || "Your database"} renewed its security certificate`, text: "Your agents are paused until you confirm." };
+}
+
 // FIX_JOBS are the fixes a row's action starts, in the order "Fix these"
 // walks them. UPDATE is the guard update, which opens its own job.
 export const FIX_ORDER = ["TRUST", "UPDATE", "LABELS", "PASSKEY_ADD", "REPAIR"];
@@ -36,32 +69,30 @@ export function checkView(d, origin) {
   const unknown = d.labels?.state === "UNKNOWN" && d.passkeys?.state === "UNKNOWN";
   const need = (job, title, text, action) => rows.push({ job, mark: "!", title, text, action });
   const cert = d.certificate?.state;
-  if (cert === "CHANGED") need("TRUST", "Your database has a new certificate", "BasaltDB stopped connecting until you check it.", "Check");
+  if (cert === "CHANGED") {
+    const r = certificateRow(d.certificate.database || d.database);
+    need("TRUST", r.title, r.text, "Check");
+  }
   if (cert === "MISMATCH") need("TRUST", "The certificate BasaltDB trusts doesn't match its records", "Check it before BasaltDB connects again.", "Check");
   if (d.guard?.state === "OUTDATED") {
     need("UPDATE", "BasaltDB needs an update in your database", `A newer BasaltDB is running than the one installed in ${d.database ?? "your database"}.`, "Update");
   }
   if (d.labels?.state === "UNLABELED") {
-    const n = Number(d.labels.count) || 0;
-    const names = (d.labels.columns ?? []).map(columnName).join(", ") + (n > MAX_NAMED ? ", …" : "");
-    need("LABELS", n === 1 ? "1 new column has no label" : `${n} new columns have no label`, names, "Label");
+    const r = unlabeledRow(Number(d.labels.count) || 0, (d.labels.columns ?? []).map(columnName));
+    need("LABELS", r.title, r.text, "Label");
   }
-  if (d.passkeys?.state === "NONE") need("PASSKEY_ADD", "No passkey can approve", "Your agents' larger writes wait until you add one.", "Add");
+  if (d.passkeys?.state === "NONE") need("PASSKEY_ADD", NO_PASSKEY.title, NO_PASSKEY.text, "Add");
   if (d.login?.code === "CREDENTIAL_REJECTED") need("REPAIR", "Your agent can't log in", "Its database password was changed or removed.", "Fix");
   else if (d.login) need(null, "Your agent can't connect", String(d.login.message ?? ""), "");
   const count = rows.length;
   const devices = localPasskeys(d.passkeys, origin);
-  const passkeysRow = { job: "MANAGE", mark: "✓", title: "Passkeys", text: plural(devices, "device can approve", "devices can approve"), action: "Manage" };
+  const passkeysRow = { job: "MANAGE", mark: "✓", title: "Passkeys", text: devicesText(devices), action: "Manage" };
   const later = (title) => ({ job: null, mark: "·", title, text: "Checked once BasaltDB can connect.", action: "" });
   if (count === 0) {
     return {
-      title: "All good",
-      sub: "BasaltDB is running and your agents can connect.",
-      rows: [
-        { job: null, mark: "✓", title: "Every column has a label", text: "", action: "" },
-        { job: null, mark: "✓", title: "Database certificate checked", text: "", action: "" },
-        passkeysRow,
-      ],
+      title: ALL_GOOD.title,
+      sub: ALL_GOOD.sub,
+      rows: [...ALL_GOOD.rows.map((title) => ({ job: null, mark: "✓", title, text: "", action: "" })), passkeysRow],
       need: 0,
     };
   }
@@ -69,7 +100,7 @@ export function checkView(d, origin) {
   if (d.passkeys?.state === "UNKNOWN") rows.push(later("Passkeys"));
   if (d.passkeys?.state === "OK") rows.push(passkeysRow);
   return {
-    title: count === 1 ? "1 thing needs you" : `${count} things need you`,
+    title: needTitle(count),
     sub: unknown ? "The rest is checked once BasaltDB can connect." : "Everything else is working.",
     rows,
     need: count,

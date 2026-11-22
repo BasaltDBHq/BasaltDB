@@ -314,10 +314,17 @@ async function toPaste(nodes, e) {
   return out;
 }
 
+// paste sends the string, then answers Yes on the confirm step when the
+// service signed in (a step that also trusts a certificate, with its
+// fingerprint under Details, is left for the test to answer).
 async function paste(nodes, value = MARKER) {
   nodes["database-url"].value = value;
   await nodes.check.click();
+  if (shown(nodes) === "s-confirm" && nodes["confirm-details"].hidden) await nodes["confirm-go"].click();
 }
+
+// facts are the confirm step's rows, as "label: value".
+const facts = (nodes) => nodes["confirm-facts"].children.map((r) => r.children.map((c) => c.textContent).join(": "));
 
 // ---- Units ----
 
@@ -1138,7 +1145,9 @@ test("a poll answer that arrives after Back neither brings its ticket back nor o
   });
   const { flow } = await toPaste(nodes, env(fetchFn));
   nodes["database-url"].value = MARKER;
-  const checking = nodes.check.click();
+  await nodes.check.click();
+  assert.equal(shown(nodes), "s-confirm");
+  const checking = nodes["confirm-go"].click();
   for (let i = 0; i < 20 && !methods().includes("HandoffStatus"); i++) await new Promise((r) => setTimeout(r, 1));
   assert.equal(shown(nodes), "s-checking");
   await nodes.back.click();
@@ -1191,21 +1200,27 @@ function trustService(first = ROOT) {
   });
 }
 
-test("an unknown certificate authority: the question with its subject, SHA-256 and expiry, then Trust and continue", async () => {
+test("the provider's own certificate authority: one confirm step that also trusts it, its fingerprint under Details", async () => {
   guardStorage();
   const nodes = fakeDocument();
   const { calls, fetchFn, methods } = trustService();
   const { flow } = await toPaste(nodes, env(fetchFn));
   await paste(nodes, BY_IP);
-  assert.equal(shown(nodes), "s-trust");
-  assert.equal(nodes["trust-text"].textContent,
-    `34.120.1.2 presents a certificate authority Basalt does not know: ${ROOT.subject}, SHA-256 ${fingerprintText(ROOT.sha256)}, valid until 2035-01-31. Check it against your provider's console. Trust it for this host only?`);
+  assert.equal(shown(nodes), "s-confirm");
+  assert.equal(nodes["confirm-title"].textContent, "Is this your database?");
+  assert.equal(nodes["confirm-sub"].textContent,
+    "Check these, then continue. Your provider signs its own security certificate, so confirming also trusts it for this database only.");
+  assert.deepEqual(facts(nodes), ["Database: app", "Host: 34.120.1.2:5432", "Signed in as: admin", "Certificate: Google Cloud SQL Server CA"]);
+  assert.equal(nodes["confirm-details"].hidden, false);
+  assert.equal(nodes["confirm-fp"].textContent, `SHA-256: ${fingerprintText(ROOT.sha256)}`);
+  assert.equal(nodes["confirm-go"].textContent, "Yes, this is it");
+  assert.equal(nodes["confirm-back"].textContent, "No, go back");
   assert.equal(calls.filter((c) => c.method === "CheckSetup").length, 1, "nothing more is sent before the answer");
   assert.equal(calls[1].body.trustRoot, undefined);
   assert.equal(flow.holdsConnectionString, true, "kept while the page asks");
   assert.doesNotMatch(everything(nodes), /Marker-7f3a9c/);
 
-  await nodes["trust-go"].click();
+  await nodes["confirm-go"].click();
   assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
   assert.equal(shown(nodes), "s-tables");
   await nodes["tables-next"].click();
@@ -1218,15 +1233,16 @@ test("an unknown certificate authority: the question with its subject, SHA-256 a
   assert.ok(!methods().includes("HandoffStatus"));
 });
 
-test("Cancel drops the string and sends nothing", async () => {
+test("No, go back drops the string and sends nothing: no trustRoot without the click", async () => {
   const nodes = fakeDocument();
   const { calls, fetchFn } = trustService();
   const { flow } = await toPaste(nodes, env(fetchFn));
   await paste(nodes, BY_IP);
   const sent = calls.length;
-  await nodes["trust-cancel"].click();
+  await nodes["confirm-back"].click();
   assert.equal(shown(nodes), "s-paste");
   assert.equal(calls.length, sent);
+  assert.ok(calls.every((c) => c.body.trustRoot === undefined), "nothing was trusted");
   assert.equal(flow.holdsConnectionString, false);
   assert.equal(flow.step, "paste");
 });
@@ -1237,9 +1253,10 @@ test("a subject the server chose is shown as text only", async () => {
   const { fetchFn } = trustService(evil);
   await toPaste(nodes, env(fetchFn));
   await paste(nodes, BY_IP);
-  assert.equal(shown(nodes), "s-trust");
-  assert.match(nodes["trust-text"].textContent, /<img src=x onerror="alert\(1\)">/);
-  assert.equal(nodes["trust-text"].children.length, 0);
+  assert.equal(shown(nodes), "s-confirm");
+  const cert = nodes["confirm-facts"].children[3].children[1];
+  assert.equal(cert.textContent, '<img src=x onerror="alert(1)">');
+  assert.equal(cert.children.length, 0);
 });
 
 test("a certificate authority that changed: asked again with the refusal's message; a refusal without one goes back to paste", async () => {
@@ -1257,11 +1274,11 @@ test("a certificate authority that changed: asked again with the refusal's messa
   });
   const { flow } = await toPaste(nodes, env(fetchFn));
   await paste(nodes, BY_IP);
-  await nodes["trust-go"].click();
-  assert.equal(shown(nodes), "s-trust");
-  assert.equal(nodes["trust-error"].textContent, "It changed.");
-  assert.match(nodes["trust-text"].textContent, /CD:CD/);
-  await nodes["trust-go"].click();
+  await nodes["confirm-go"].click();
+  assert.equal(shown(nodes), "s-confirm", "asked again");
+  assert.equal(nodes["confirm-error"].textContent, "It changed.");
+  assert.match(nodes["confirm-fp"].textContent, /CD:CD/);
+  await nodes["confirm-go"].click();
   assert.equal(shown(nodes), "s-paste");
   assert.equal(flow.holdsConnectionString, false);
 });
@@ -1640,7 +1657,7 @@ function pinService(trustPin) {
   });
 }
 
-test("the bot's pin matches: one click, the same trustRoot sent", async () => {
+test("the bot's pin matches: the confirm step says so, and still waits for the click", async () => {
   const nodes = fakeDocument();
   const { calls, fetchFn } = pinService(ROOT.sha256);
   const { ready } = start(env(fetchFn));
@@ -1648,10 +1665,13 @@ test("the bot's pin matches: one click, the same trustRoot sent", async () => {
   await nodes["same-code"].click();
   nodes["passkey-skip"].click();
   await paste(nodes);
-  assert.equal(shown(nodes), "s-pinned");
-  assert.equal(nodes["pinned-title"].textContent, "This matches the certificate familite-bot trusts.");
-  assert.equal(nodes["pinned-fp"].textContent, fingerprintText(ROOT.sha256));
-  await nodes["pinned-go"].click();
+  assert.equal(shown(nodes), "s-confirm");
+  assert.equal(nodes["confirm-title"].textContent, "Is this your database?");
+  assert.equal(nodes["confirm-sub"].textContent, "Check these, then continue.");
+  assert.equal(nodes["confirm-ok"].textContent, "✓ Matches what familite-bot trusts");
+  assert.equal(nodes["confirm-ok"].hidden, false);
+  assert.equal(calls.at(-1).body.trustRoot, undefined, "no trust before the click");
+  await nodes["confirm-go"].click();
   assert.equal(shown(nodes), "s-doctor");
   assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
   await nodes["doc-go"].click();
@@ -1660,7 +1680,7 @@ test("the bot's pin matches: one click, the same trustRoot sent", async () => {
   assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
 });
 
-test("the bot's pin differs: the new certificate with the pinned one as Was; Cancel drops the string", async () => {
+test("the bot's pin differs: the cautious words, the weaker button, and Stop here drops the string", async () => {
   const nodes = fakeDocument();
   const was = "cd".repeat(32);
   const { calls, fetchFn } = pinService(was);
@@ -1669,15 +1689,19 @@ test("the bot's pin differs: the new certificate with the pinned one as Was; Can
   await nodes["same-code"].click();
   nodes["passkey-skip"].click();
   await paste(nodes);
-  assert.equal(shown(nodes), "s-newcert");
-  assert.equal(nodes["newcert-now"].textContent, fingerprintText(ROOT.sha256));
-  assert.equal(nodes["newcert-was"].textContent, fingerprintText(was));
-  assert.match(nodes["newcert-detail"].textContent, /Google Cloud SQL Server CA.*valid until 2035-01-31/);
-  await nodes["newcert-cancel"].click();
+  assert.equal(shown(nodes), "s-confirm");
+  assert.equal(nodes["confirm-title"].textContent, "Is this still your database?");
+  assert.equal(nodes["confirm-sub"].textContent, "The certificate now comes from someone new. Check with your provider first. Your agents stay paused.");
+  assert.equal(nodes["confirm-before"].textContent, `Before: SHA-256 ${fingerprintText(was)}`, "the code carries the pin, not its issuer");
+  assert.equal(nodes["confirm-ok"].hidden, true, "never \"Same issuer\" without the old issuer");
+  assert.equal(nodes["confirm-go"].textContent, "Trust it anyway");
+  assert.equal(nodes["confirm-go"].className, "secondary");
+  assert.equal(nodes["confirm-back"].textContent, "Stop here");
+  await nodes["confirm-back"].click();
   assert.equal(shown(nodes), "s-paste");
   assert.equal(flow.holdsConnectionString, false);
   await paste(nodes);
-  await nodes["newcert-go"].click();
+  await nodes["confirm-go"].click();
   assert.equal(shown(nodes), "s-doctor");
   assert.equal(calls.at(-1).body.trustRoot, ROOT.sha256);
 });
@@ -1690,5 +1714,7 @@ test("a code without a readable pin asks the plain question", async () => {
   await nodes["same-code"].click();
   nodes["passkey-skip"].click();
   await paste(nodes);
-  assert.equal(shown(nodes), "s-trust");
+  assert.equal(shown(nodes), "s-confirm");
+  assert.equal(nodes["confirm-ok"].hidden, true);
+  assert.match(nodes["confirm-sub"].textContent, /Your provider signs its own security certificate/);
 });

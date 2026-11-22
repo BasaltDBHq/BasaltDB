@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, SetupError, setupRequest, startReal, suggestionOf, trustView } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -148,6 +148,10 @@ const challenge = { challenge: "Y2g", userId: "dQ", userName: "bot", displayName
 
 const listing = {
   database: "app",
+  host: "db.example.com",
+  port: 5432,
+  sessionUser: "admin",
+  certificate: { kind: "PUBLIC", issuer: "ISRG Root X1" },
   lines: [],
   tables: [{ table: "public.orders", canWrite: true }, { table: "public.logs", canWrite: false }, { table: "sales.leads", canWrite: true }],
   excluded: [{ table: "public.Mixed", owner: "unsupported name" }],
@@ -356,13 +360,8 @@ test("a certificate no authority signs: the page shows the fingerprint, and trus
   const i = new Install(e.fetchFn, real);
   await assert.rejects(i.list(ADMIN), (err) => err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED");
   assert.deepEqual(i.asking, refusal.trustRoot);
-  assert.deepEqual(trustView(i.hostHint, i.asking), {
-    host: "db.example.com",
-    fingerprint: "AB:".repeat(31) + "AB",
-    subject: "CN=Acme Root",
-    expires: "2031-05-01",
-    question: "Trust it for this host only?",
-  });
+  assert.deepEqual(i.stringFacts, { database: "app", host: "db.example.com", port: 5432, user: "admin" }, "what the string names, never its password");
+  assert.equal(e.bodies.length, 1, "nothing is trusted until the person says yes");
   await i.trust();
   assert.equal(e.bodies[1].body.trustRoot, FP, "lowercase, as received");
   await i.check();
@@ -515,8 +514,42 @@ async function toTables(nodes, e) {
   nodes["paste-url"].value = ADMIN;
   await nodes["paste-next"].click();
   assert.equal(nodes["paste-url"].value, "", "the box is emptied once read");
+  // The confirm step, when the engine signed in: Yes goes on to the tables.
+  if (screenOf(nodes) === "s-confirm" && nodes["confirm-details"].hidden) await nodes["confirm-go"].click();
   return install;
 }
+
+// facts are the confirm step's rows, as "label: value".
+const facts = (nodes) => nodes["confirm-facts"].children.map((r) => r.children.map((c) => c.textContent).join(": "));
+
+test("after the string, one confirm step: database, host, who it signs in as and the certificate", async () => {
+  const nodes = fakePage();
+  const e = fakeEngine();
+  startReal(real, { fetchFn: e.fetchFn, makePasskey: async () => ({}) });
+  nodes["user-confirm"].checked = true;
+  nodes["user-confirm"].fire("change");
+  nodes["user-next"].click();
+  nodes["paste-url"].value = ADMIN;
+  await nodes["paste-next"].click();
+  assert.equal(screenOf(nodes), "s-confirm");
+  assert.equal(nodes["confirm-title"].textContent, "Is this your database?");
+  assert.equal(nodes["confirm-sub"].textContent, "Check these, then continue.");
+  assert.deepEqual(facts(nodes), ["Database: app", "Host: db.example.com:5432", "Signed in as: admin", "Certificate: ✓ Verified by ISRG Root X1"]);
+  assert.equal(nodes["confirm-details"].hidden, true, "no fingerprint to check for a public authority");
+  assert.equal(nodes["confirm-go"].textContent, "Yes, this is it");
+  assert.equal(nodes["confirm-back"].textContent, "No, go back");
+  assert.ok(!JSON.stringify(facts(nodes)).includes("pw"), "never the password");
+  assert.equal(e.bodies.length, 1);
+
+  await nodes["confirm-back"].click();
+  assert.equal(screenOf(nodes), "s-paste", "No, go back drops the string");
+  assert.equal(e.bodies.length, 1, "and sends nothing");
+  nodes["paste-url"].value = ADMIN;
+  await nodes["paste-next"].click();
+  await nodes["confirm-go"].click();
+  assert.equal(screenOf(nodes), "s-tables");
+  assert.ok(e.bodies.every((b) => b.body.trustRoot === undefined), "a public authority is never trusted by the page");
+});
 
 test("the setup page walks the connect page's steps: OS user, string, tables with access, labels, approve", async () => {
   const nodes = fakePage();
@@ -585,23 +618,27 @@ test("Back to the tables and a new access: the approval shows and runs the new c
   assert.deepEqual(e.bodies.at(-1).body.tables, [{ table: "public.orders", access: "READ" }, { table: "public.logs", access: "READ" }]);
 });
 
-test("the certificate step shows the fingerprint; Cancel drops the string and sends nothing more", async () => {
+test("the provider's own certificate: the same confirm step trusts it on Yes, the fingerprint under Details; No sends nothing", async () => {
   const nodes = fakePage();
-  const refusal = { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: { subject: "CN=Acme Root", sha256: FP, expiresAt: "2031-05-01T00:00:00Z" } };
+  const refusal = { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: { subject: "CN=Acme Root,O=Acme", sha256: FP, expiresAt: "2031-05-01T00:00:00Z" } };
   const e = fakeEngine({ answer: (path, body) => body.trustRoot ? null : new Response(JSON.stringify(refusal), { status: 409 }) });
   await toTables(nodes, e);
-  assert.equal(screenOf(nodes), "s-trust");
-  assert.equal(nodes["trust-fp"].textContent, "AB:".repeat(31) + "AB");
-  assert.equal(nodes["trust-subject"].textContent, "CN=Acme Root");
-  assert.match(nodes["trust-host"].textContent, /^db\.example\.com /);
-  nodes["trust-cancel"].click();
+  assert.equal(screenOf(nodes), "s-confirm");
+  assert.equal(nodes["confirm-title"].textContent, "Is this your database?");
+  assert.equal(nodes["confirm-sub"].textContent, "Check these, then continue. Your provider signs its own security certificate, so confirming also trusts it for this database only.");
+  assert.deepEqual(facts(nodes), ["Database: app", "Host: db.example.com:5432", "Signed in as: admin", "Certificate: Acme Root"], "read from the string before any login");
+  assert.equal(nodes["confirm-details"].hidden, false);
+  assert.equal(nodes["confirm-fp"].textContent, `SHA-256: ${"AB:".repeat(31)}AB`);
+  nodes["confirm-back"].click();
   assert.equal(screenOf(nodes), "s-paste");
   assert.equal(e.bodies.length, 1);
+  assert.equal(e.bodies[0].body.trustRoot, undefined);
 
   nodes["paste-url"].value = ADMIN;
   await nodes["paste-next"].click();
-  await nodes["trust-go"].click();
-  assert.equal(screenOf(nodes), "s-tables");
+  assert.equal(e.bodies.at(-1).body.trustRoot, undefined, "nothing trusted before the click");
+  await nodes["confirm-go"].click();
+  assert.equal(screenOf(nodes), "s-tables", "no second confirm once the person confirmed and trusted");
   assert.equal(e.bodies.at(-1).body.trustRoot, FP);
 });
 
@@ -726,7 +763,7 @@ const allGood = {
 };
 const needs = {
   ...allGood,
-  certificate: { state: "CHANGED", host: "db.example.com", port: 5432, pinned: FP, presented: ROOT },
+  certificate: { state: "CHANGED", host: "db.example.com", port: 5432, pinned: FP, presented: ROOT, pinnedSubject: "CN=Provider Root,O=Provider", database: "shop_db" },
   labels: { state: "UNKNOWN", count: 0, columns: [] }, passkeys: { state: "UNKNOWN", items: [] },
 };
 
@@ -795,7 +832,7 @@ test("the Update check shows what needs the person, then Fix these walks the fix
   assert.deepEqual(shown(nodes), ["u-check"]);
   assert.equal(nodes["u-title"].textContent, "1 thing needs you");
   assert.equal(nodes["u-sub"].textContent, "The rest is checked once BasaltDB can connect.");
-  assert.match(nodes["u-rows"].textContent, /Your database has a new certificate.*BasaltDB stopped connecting until you check it\.Check/);
+  assert.match(nodes["u-rows"].textContent, /shop_db renewed its security certificate.*Your agents are paused until you confirm\.Check/);
   assert.match(nodes["u-rows"].textContent, /Checked once BasaltDB can connect\./);
   assert.equal(nodes["u-fix"].hidden, false);
   assert.ok(e.bodies.every((b) => !("databaseUrl" in b.body)), "nothing asks for the string to show the check");
@@ -805,15 +842,24 @@ test("the Update check shows what needs the person, then Fix these walks the fix
   nodes["paste-url"].value = ADMIN;
   nodes["paste-next"].click();
   await settle();
-  assert.deepEqual(shown(nodes), ["u-cert"]);
-  assert.equal(nodes["u-cert-new"].textContent, "CD:".repeat(31) + "CD");
-  assert.equal(nodes["u-cert-was"].textContent, "AB:".repeat(31) + "AB");
-  assert.equal(nodes["u-cert-subject"].textContent, "CN=Provider Root");
+  assert.deepEqual(shown(nodes), ["s-confirm"]);
+  assert.equal(nodes["confirm-title"].textContent, "Is this still your database?");
+  assert.equal(nodes["confirm-sub"].textContent, "Providers renew certificates about once a year.");
+  assert.deepEqual(facts(nodes), ["Database: shop_db", "Host: db.example.com:5432", "Signed in as: admin", "Certificate: Provider Root"]);
+  assert.equal(nodes["confirm-ok"].textContent, "✓ Same issuer as before");
+  assert.equal(nodes["confirm-go"].textContent, "Yes, trust the new certificate");
+  assert.equal(nodes["confirm-back"].textContent, "Not expecting this? Stop here");
+  assert.equal(nodes["confirm-fp"].textContent, `SHA-256: ${"CD:".repeat(31)}CD`);
+  assert.equal(e.bodies.filter((b) => b.body.trustRoot).length, 0, "nothing trusted before the click");
 
-  await nodes["u-cert-go"].click();
+  await nodes["confirm-go"].click();
   await settle();
   const trusted = e.bodies.filter((b) => b.body.job === "TRUST" && b.body.trustRoot === NEW_FP).map((b) => b.path);
   assert.deepEqual(trusted, [CHECK_PATH, RUN_PATH]);
+  assert.deepEqual(shown(nodes), ["u-done"]);
+  assert.equal(nodes["u-done-title"].textContent, "Security certificate trusted");
+  assert.equal(nodes["u-done-text"].textContent, "Your agents reconnect.");
+  nodes["u-done-next"].click();
   // Doctor again: the labels now read, and Fix these goes on with them.
   await settle();
   await settle();
@@ -825,6 +871,33 @@ test("the Update check shows what needs the person, then Fix these walks the fix
   assert.equal(e.bodies.filter((b) => b.path === RUN_PATH && b.body.job === "LABELS").length, 0, "leaving them unlabeled sends no run");
   assert.deepEqual(shown(nodes), ["u-check"]);
   assert.equal(nodes["u-title"].textContent, "All good");
+});
+
+test("a certificate from a new issuer: the cautious words, Trust it anyway the weaker button, Stop here trusts nothing", async () => {
+  const nodes = fakePage();
+  const other = { ...needs, certificate: { ...needs.certificate, pinnedSubject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc" } };
+  const e = updateEngine([other, allGood], {
+    TRUST: (path, body) => (body.trustRoot ? { database: "shop_db", lines: [], sql: "" } : { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: ROOT, pinned: FP }),
+  });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date(), onPick: () => {} });
+  await settle();
+  find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Check").click();
+  nodes["paste-url"].value = ADMIN;
+  nodes["paste-next"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["s-confirm"]);
+  assert.equal(nodes["confirm-title"].textContent, "Is this still your database?");
+  assert.equal(nodes["confirm-sub"].textContent, "The certificate now comes from someone new. Check with your provider first. Your agents stay paused.");
+  assert.equal(nodes["confirm-before"].textContent, "Before: Google Cloud SQL Server CA");
+  assert.equal(nodes["confirm-ok"].hidden, true);
+  assert.equal(nodes["confirm-go"].textContent, "Trust it anyway");
+  assert.equal(nodes["confirm-go"].className, "secondary");
+  assert.equal(nodes["confirm-back"].textContent, "Stop here");
+  await nodes["confirm-back"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-check"]);
+  assert.equal(e.bodies.filter((b) => b.body.trustRoot).length, 0, "Stop here trusts nothing");
+  assert.ok(e.bodies.every((b) => b.path !== RUN_PATH));
 });
 
 test("Manage lists the passkeys, and removing the last one asks for a new one", async () => {

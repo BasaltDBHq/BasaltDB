@@ -5,8 +5,9 @@
 // storage, never in the URL, and cleared after the run.
 import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./codec.js";
 import { $, el, webauthnError } from "./page.js";
-import { answersFor, ENTITY_WORDS, fingerprintText, hostOf, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
+import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
+import { confirmView, paintConfirm, stringFacts } from "./confirm.js";
 import { checkView, fixQueue, passkeyItems, PASSKEYS_NOTE, signalRemoved } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
@@ -227,18 +228,6 @@ export function suggestionOf(c) {
   return { label, reason, words: labelWords(label) };
 }
 
-// trustView is what the certificate step shows for trustRoot on host, the
-// fingerprint first: the person checks it against the provider's console.
-export function trustView(host, trustRoot) {
-  return {
-    host,
-    fingerprint: fingerprintText(trustRoot.sha256),
-    subject: trustRoot.subject,
-    expires: trustRoot.expiresAt.slice(0, 10),
-    question: "Trust it for this host only?",
-  };
-}
-
 const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
 const isRestEntry = (e) => e.class === "PUBLIC" && e.was?.class === "UNCLASSIFIED";
 
@@ -269,10 +258,10 @@ export class Install {
     this.checked = null; // { request, answer } of the last full check
   }
 
-  // hostHint is the host the admin string names, for the certificate
-  // question: the host alone, never the string.
-  get hostHint() {
-    return hostOf(this.#databaseUrl);
+  // stringFacts are what the admin string names (database, host, port,
+  // user), for the confirm step before any login: never the password.
+  get stringFacts() {
+    return stringFacts(this.#databaseUrl);
   }
 
   // trustRoot is the SHA-256 the person trusted, "" when none.
@@ -313,6 +302,14 @@ export class Install {
       tablesMore: answer.tablesMore === true,
       notes: strings(answer.notes),
       lines: strings(answer.lines),
+      // The confirm step's facts, as the engine read them on its login.
+      facts: {
+        database: String(answer.database ?? ""),
+        host: String(answer.host ?? ""),
+        port: Number.isInteger(answer.port) ? answer.port : 0,
+        user: String(answer.sessionUser ?? ""),
+      },
+      certificate: answer.certificate && typeof answer.certificate === "object" ? answer.certificate : null,
     };
     // As on the connect page, every table starts ticked, with write access
     // when it can have it.
@@ -320,8 +317,9 @@ export class Install {
     return this.listing;
   }
 
-  // trust answers yes to the certificate asked about: the listing is sent
-  // again with its SHA-256.
+  // trust answers yes to the certificate asked about, the person's click on
+  // the confirm step: the listing is sent again with its SHA-256, and only
+  // this sends a trustRoot.
   async trust() {
     if (!this.asking) throw new Error("no certificate to trust");
     this.#stale();
@@ -721,8 +719,8 @@ async function startJob(link, preset) {
 
 // ---- The real install's screens: the connect page's steps, on this page ----
 
-const SCREENS = ["s-user", "s-paste", "s-trust", "s-checking", "s-tables", "s-labels", "s-approve"];
-const PROGRESS = { "s-user": 1, "s-paste": 2, "s-trust": 2, "s-checking": 2, "s-tables": 3, "s-labels": 4, "s-approve": 5 };
+const SCREENS = ["s-user", "s-paste", "s-confirm", "s-checking", "s-tables", "s-labels", "s-approve"];
+const PROGRESS = { "s-user": 1, "s-paste": 2, "s-confirm": 2, "s-checking": 2, "s-tables": 3, "s-labels": 4, "s-approve": 5 };
 
 function show(id, on = true) {
   $(id).hidden = !on;
@@ -792,12 +790,15 @@ export function startReal(link, env) {
     setText("chk-login", "Signing in to the database");
     go("s-checking");
   };
-  const listed = (answer) => {
+  // listed goes on once the listing answered: to the confirm step, or, once
+  // the person confirmed and trusted the certificate, to the tables.
+  const listed = (answer, confirmed = true) => {
     if (answer === null) return;
-    showTables();
+    if (confirmed) showTables();
+    else showConfirm();
   };
   const listFailed = (err) => {
-    if (install.asking) showTrust("");
+    if (install.asking) showConfirm();
     else {
       install.forget();
       showPaste(err.message);
@@ -817,21 +818,23 @@ export function startReal(link, env) {
       listFailed(err);
       return;
     }
-    listed(answer);
+    listed(answer, false);
   });
 
-  // The fingerprint first and large, the subject the server sent as text.
-  const showTrust = (problem) => {
-    const v = trustView(install.hostHint, install.asking);
-    setText("trust-host", `${v.host} presents a certificate authority Basalt does not know.`);
-    setText("trust-fp", v.fingerprint);
-    setText("trust-subject", v.subject);
-    setText("trust-expires", v.expires);
-    setText("trust-error", problem);
-    show("trust-error", problem !== "");
-    go("s-trust");
+  // ---- 2b: Is this your database? One action: the database, its host,
+  // who the string signs in as and the certificate. For a certificate
+  // authority the provider runs itself, Yes is also the trust in it. ----
+  const showConfirm = () => {
+    const view = install.asking
+      ? confirmView({ facts: install.stringFacts, asking: install.asking })
+      : confirmView({ facts: install.listing.facts, certificate: install.listing.certificate });
+    paintConfirm(document, view);
+    show("confirm-error", false);
+    go("s-confirm");
   };
-  $("trust-go").addEventListener("click", async () => {
+  $("confirm-go").addEventListener("click", async () => {
+    if (screen !== "s-confirm") return;
+    if (!install.asking) return showTables();
     checking();
     let answer;
     try {
@@ -843,7 +846,8 @@ export function startReal(link, env) {
     }
     listed(answer);
   });
-  $("trust-cancel").addEventListener("click", () => {
+  $("confirm-back").addEventListener("click", () => {
+    if (screen !== "s-confirm") return;
     install.cancelTrust();
     showPaste("");
   });
@@ -1086,7 +1090,7 @@ export function startReal(link, env) {
   $("back").addEventListener("click", () => {
     if (busy) return;
     if (screen === "s-paste") go("s-user");
-    else if (screen === "s-trust" || screen === "s-tables") {
+    else if (screen === "s-confirm" || screen === "s-tables") {
       install.forget();
       showPaste("");
     } else if (screen === "s-labels") showTables();
@@ -1139,6 +1143,12 @@ export class UpdateCheck {
 
   setString(databaseUrl) {
     this.#databaseUrl = String(databaseUrl);
+  }
+
+  // stringFacts are what the admin string names, for the confirm step of a
+  // new certificate, which comes before any login: never the password.
+  get stringFacts() {
+    return stringFacts(this.#databaseUrl);
   }
 
   // forget drops the admin string.
@@ -1202,7 +1212,7 @@ export function labelRest(labels, more) {
   return { rest, suggested, restPublic };
 }
 
-const UPDATE_SCREENS = ["u-check", "u-passkeys", "u-cert", "u-mismatch", "u-confirm", "u-done", "s-paste", "s-labels", "s-checking"];
+const UPDATE_SCREENS = ["u-check", "u-passkeys", "s-confirm", "u-mismatch", "u-confirm", "u-done", "s-paste", "s-labels", "s-checking"];
 
 // startUpdate runs the Update check for a CHANGE link. env has fetchFn,
 // origin (this page's), makePasskey (a challenge to a registration), pkc
@@ -1370,7 +1380,7 @@ export function startUpdate(link, env) {
         const a = await fix.check("TRUST");
         showMismatch(a);
       } catch (err) {
-        if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && err.trustRoot && err.pinned) return showCert(err.trustRoot, err.pinned);
+        if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && err.trustRoot && err.pinned) return showRenewal(err.trustRoot, err.pinned);
         failed(err, FIXES.TRUST);
       }
     },
@@ -1415,34 +1425,46 @@ export function startUpdate(link, env) {
     },
   };
 
-  // ---- the certificate ----
+  // ---- the certificate: the confirm step, "Is this still your
+  // database?" The database and host are the agent's, the user the admin
+  // string's; Yes is the person's trust in the new certificate. ----
   let trusting = null;
-  const showCert = (trustRoot, pinned) => {
+  const showRenewal = (trustRoot, pinned) => {
     trusting = trustRoot;
-    setText("u-cert-new", fingerprintText(trustRoot.sha256));
-    setText("u-cert-subject", trustRoot.subject);
-    setText("u-cert-expires", trustRoot.expiresAt.slice(0, 10));
-    setText("u-cert-was", fingerprintText(pinned));
-    problem("u-cert-error", "");
-    go("u-cert");
+    const cert = fix.answer?.certificate ?? {};
+    const named = fix.stringFacts ?? {};
+    const facts = {
+      database: String(cert.database || named.database || ""),
+      host: String(cert.host || named.host || ""),
+      port: Number.isInteger(cert.port) ? cert.port : named.port,
+      user: String(named.user ?? ""),
+    };
+    const pinnedSubject = typeof cert.pinnedSubject === "string" ? cert.pinnedSubject : "";
+    paintConfirm(document, confirmView({ facts, asking: trustRoot, renewal: { pinnedSubject }, trustPin: pinned }));
+    problem("confirm-error", "");
+    go("s-confirm");
   };
-  $("u-cert-go").addEventListener("click", async () => {
-    if (!trusting) return;
+  $("confirm-go").addEventListener("click", async () => {
+    if (screen !== "s-confirm" || !trusting) return;
     const trustRoot = trusting.sha256;
-    $("u-cert-go").disabled = true;
+    $("confirm-go").disabled = true;
     try {
       await fix.check("TRUST", { trustRoot });
       await fix.run("TRUST", { trustRoot });
       trusting = null;
-      afterFix();
+      showDone("Security certificate trusted", "Your agents reconnect.", [], afterFix);
     } catch (err) {
       if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, FIXES.TRUST);
-      problem("u-cert-error", err.message);
+      problem("confirm-error", err.message);
     } finally {
-      $("u-cert-go").disabled = false;
+      $("confirm-go").disabled = false;
     }
   });
-  $("u-cert-cancel").addEventListener("click", cancel);
+  $("confirm-back").addEventListener("click", () => {
+    if (screen !== "s-confirm") return;
+    trusting = null;
+    cancel();
+  });
   let mismatchPinned = "";
   const showMismatch = (a) => {
     if (!SHA256_HEX.test(String(a.pinned)) || !SHA256_HEX.test(String(a.recorded))) return failed(new SetupError(0, "", "The engine sent a check this page cannot show."), FIXES.TRUST);

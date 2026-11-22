@@ -23,7 +23,7 @@ func TestNameIsTheShortNameOfAnAuthority(t *testing.T) {
 	require.Equal(t, "Google Cloud SQL Server CA", trustpin.Name(pkix.Name{CommonName: "Google Cloud SQL Server CA", Organization: []string{"Google, Inc"}}))
 	require.Equal(t, "Acme Corp", trustpin.Name(pkix.Name{Organization: []string{"Acme Corp"}}))
 	require.Equal(t, "C=US", trustpin.Name(pkix.Name{Country: []string{"US"}}))
-	require.Equal(t, "evil", trustpin.Name(pkix.Name{CommonName: "e‮v\x00il"}), "controls and bidi controls are removed")
+	require.Equal(t, "evil", trustpin.Name(pkix.Name{CommonName: "e\u202ev\x00il"}), "controls and bidi controls are removed")
 	require.Len(t, []rune(trustpin.Name(pkix.Name{CommonName: strings.Repeat("é", 300)})), 128)
 }
 
@@ -41,7 +41,7 @@ func handshake(t *testing.T, chain []*x509.Certificate, key *ecdsa.PrivateKey, r
 		s := tls.Server(server, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
 		_ = s.Handshake()
 	}()
-	cfg := &tls.Config{ServerName: "db.example", RootCAs: roots, InsecureSkipVerify: roots == nil, MinVersion: tls.VersionTLS12} //nolint:gosec // the unverified case is the test
+	cfg := &tls.Config{ServerName: "db.example", RootCAs: roots, InsecureSkipVerify: roots == nil, MinVersion: tls.VersionTLS12}
 	c := tls.Client(client, cfg)
 	require.NoError(t, c.Handshake())
 	return c.ConnectionState()

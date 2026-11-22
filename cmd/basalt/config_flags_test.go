@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 )
 
 // The engine config, the credential file and the sockets are found by
@@ -53,4 +56,24 @@ func TestEngineStillTakesConfig(t *testing.T) {
 	code := run(context.Background(), []string{"engine", "--config"}, stdio{in: strings.NewReader(""), out: &out, err: &errw})
 	require.Equal(t, exitUsage, code)
 	require.Contains(t, errw.String(), "flag needs an argument: -config")
+}
+
+// basalt service install always installs the engine on the system config
+// path, the one the removal script checks for engine.json before it
+// removes anything: it takes no --config.
+func TestServiceInstallIsPinnedToTheConfigTheRemovalChecks(t *testing.T) {
+	t.Parallel()
+	var out, errw bytes.Buffer
+	code := run(context.Background(), []string{"service", "install", "--config", "/elsewhere/engine.json", "--dry-run"}, stdio{in: strings.NewReader(""), out: &out, err: &errw})
+	require.Equal(t, exitUsage, code)
+	require.Contains(t, errw.String(), "flag provided but not defined: -config")
+	for _, goos := range []string{"linux", "darwin"} {
+		script, err := service.RemoveScript(goos)
+		require.NoError(t, err)
+		path := config.DefaultPath(goos)
+		if strings.Contains(path, " ") {
+			path = "'" + path + "'"
+		}
+		require.Contains(t, script, "[ ! -e "+path+" ]", goos)
+	}
 }

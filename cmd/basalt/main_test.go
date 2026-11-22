@@ -36,7 +36,7 @@ func TestRun(t *testing.T) {
 		{args: []string{"mcp", "--agent", "nobody_runs_this"}, code: exitOK},
 		{args: []string{"engine", "--config", filepath.Join(t.TempDir(), "none.json")}, code: exitError, stderrPart: "basalt engine:"},
 		{args: []string{"engine", "extra"}, code: exitUsage},
-		{args: []string{"service"}, code: exitUsage, stderrPart: "want install or uninstall"},
+		{args: []string{"service"}, code: exitUsage, stderrPart: "want install"},
 		{args: []string{"service", "restart"}, code: exitUsage},
 	}
 	for _, tc := range cases {

@@ -113,6 +113,29 @@ func PlanRemove(ctx context.Context, q guard.Querier, prefix string) (RemovePlan
 	return RemovePlan{Database: database, Prefix: prefix, Installed: installed != "", Agents: agents, Drops: drops, DemoDrops: demoDrops}, nil
 }
 
+// InstalledRemovalPrefix is the role prefix a removal with no prefix of
+// its own (the connect page's) uses: the installed guard's, read from the
+// owner of basalt_meta, or def when no basalt_meta is installed. An owner
+// that is not exactly <prefix>_guard with a valid prefix is refused
+// PREFIX_MISMATCH: that schema is not BasaltDB's, and its owner's name must
+// never pick the roles a removal drops.
+func InstalledRemovalPrefix(ctx context.Context, q guard.Querier, def string) (string, error) {
+	var owner string
+	if err := q.QueryRow(ctx, `SELECT coalesce((SELECT pg_catalog.pg_get_userbyid(n.nspowner)::text
+		FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'), '')`).Scan(&owner); err != nil {
+		return "", err
+	}
+	if owner == "" {
+		return def, nil
+	}
+	prefix, ok := strings.CutSuffix(owner, "_guard")
+	if !ok || (guard.Names{Prefix: prefix}).Validate() != nil {
+		return "", refuse(string(setupcode.RefusalPrefixMismatch),
+			"The schema basalt_meta in this database is not owned by a BasaltDB guard role, so it is not BasaltDB's. Nothing changed.")
+	}
+	return prefix, nil
+}
+
 // CheckDatabaseName refuses a typed name that cannot be a database's, before
 // any connection is used.
 func CheckDatabaseName(confirmName string) error {

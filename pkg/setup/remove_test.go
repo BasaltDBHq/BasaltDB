@@ -135,3 +135,33 @@ func TestRemovePlanRefusesAnotherPrefix(t *testing.T) {
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, "PREFIX_MISMATCH", r.Code)
 }
+
+// A basalt_meta owned by a role that is not a guard role is not BasaltDB's:
+// its owner's name never picks the roles a removal drops.
+func TestRemoveRefusesABasaltMetaNotOwnedByAGuard(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	ctx := context.Background()
+	app := d.Names.Prefix + "app"
+	d.Exec(t, "CREATE ROLE "+app+" NOLOGIN")
+	d.Exec(t, "CREATE ROLE "+app+"_guard NOLOGIN")
+	d.Exec(t, "CREATE ROLE "+app+"_agents NOLOGIN")
+	t.Cleanup(func() {
+		for _, r := range []string{app + "_agents", app + "_guard", app} {
+			_, _ = d.Admin.Exec(context.Background(), "DROP OWNED BY "+r)
+			_, _ = d.Admin.Exec(context.Background(), "DROP ROLE IF EXISTS "+r)
+		}
+	})
+	d.Exec(t, "CREATE SCHEMA basalt_meta AUTHORIZATION "+app)
+	var database string
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT current_database()`).Scan(&database))
+
+	_, err := setup.CheckRemove(ctx, d.Admin)
+	require.Equal(t, "PREFIX_MISMATCH", removeCode(t, err))
+	_, err = setup.RunRemove(ctx, d.Admin, database)
+	require.Equal(t, "PREFIX_MISMATCH", removeCode(t, err))
+	require.True(t, schemaExists(t, d, "basalt_meta"), "nothing dropped")
+	var roles int
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(*)::int FROM pg_catalog.pg_roles WHERE starts_with(rolname, $1)`, app).Scan(&roles))
+	require.Equal(t, 3, roles, "no role of the owner's name is dropped")
+}

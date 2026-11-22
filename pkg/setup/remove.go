@@ -52,7 +52,8 @@ type Removed struct {
 
 // CheckRemove reads, in a transaction it rolls back, what removing
 // BasaltDB from conn's database drops, and changes nothing. Errors are
-// *Error with CodeSetupFailed.
+// *Error: PREFIX_MISMATCH for a basalt_meta not owned by a guard role
+// (<prefix>_guard), else SETUP_FAILED.
 func CheckRemove(ctx context.Context, conn *pgx.Conn) (Removal, error) {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
@@ -106,11 +107,8 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 	return out, nil
 }
 
-// removalPrefix is the installed guard's prefix, or the default.
+// removalPrefix is the installed guard's prefix, or the default; a
+// basalt_meta whose owner is not a guard role is refused PREFIX_MISMATCH.
 func removalPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	prefix, err := guard.InstalledPrefix(ctx, tx)
-	if err != nil || prefix != "" {
-		return prefix, err
-	}
-	return guard.DefaultPrefix, nil
+	return setuprun.InstalledRemovalPrefix(ctx, tx, guard.DefaultPrefix)
 }

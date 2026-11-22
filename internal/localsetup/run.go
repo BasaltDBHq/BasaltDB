@@ -106,6 +106,9 @@ func newKey() ([]byte, error) {
 // server named and the admin string's host.
 type bound struct {
 	database, host string
+	// picks is the picked tables with their access (picksKey), empty for
+	// the sample database.
+	picks string
 }
 
 // challenge makes a fresh challenge for req's job on b.
@@ -139,7 +142,7 @@ func (s *Service) mac(req Request, b bound, c Challenge) []byte {
 	}
 	for _, part := range [][]byte{
 		c.Challenge, c.UserID, []byte(c.UserName), []byte(c.DisplayName), []byte(c.ExpiresAt.UTC().Format(time.RFC3339)),
-		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host),
+		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks),
 	} {
 		var n [8]byte
 		binary.BigEndian.PutUint64(n[:], uint64(len(part)))
@@ -199,8 +202,11 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	if err != nil {
 		return RunAnswer{}, err
 	}
-	if len(req.Answers) > 0 {
+	if req.Demo && len(req.Answers) > 0 {
 		return RunAnswer{}, refuse(CodeAnswersInvalid, "This setup asks no question, so it takes no answer.")
+	}
+	if !req.Demo && j.picks == nil {
+		return RunAnswer{}, refuse(CodeNoTables, "There is no table to give the agent. Pick at least one table; nothing changed.")
 	}
 	var cred *passkey.Credential
 	if req.Passkey != nil {
@@ -227,14 +233,15 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			return err
 		}
 		if cred != nil {
-			if err := s.checkBinding(req, bound{database: database, host: j.host}); err != nil {
+			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks)}); err != nil {
 				return err
 			}
 		}
-		_, script, keep, err := s.plan(ctx, tx, j, password, database)
+		p, err := s.plan(ctx, tx, j, password, database, answersOf(req))
 		if err != nil {
 			return err
 		}
+		script, keep := p.script, p.keep
 		needed, err := passkeyNeeded(ctx, tx, s.opts.Origin)
 		if err != nil {
 			return setupFailed()
@@ -251,11 +258,15 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			}
 		}
 		warnings = script.Warnings
-		leads, notes, err := demo.Counts(ctx, tx)
-		if err != nil {
-			return setupFailed()
+		if req.Demo {
+			leads, notes, err := demo.Counts(ctx, tx)
+			if err != nil {
+				return setupFailed()
+			}
+			lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
+		} else {
+			lines = []string{fmt.Sprintf("agent %s ready: %d tables it can change, %d it can read", req.Agent, len(p.write), len(p.read))}
 		}
-		lines = []string{fmt.Sprintf("demo ready: leads %d, lead_notes %d", leads, notes)}
 		if keep {
 			return nil // the credential of the role this engine already holds stays
 		}
@@ -371,4 +382,13 @@ func checkOSUser(users Users, name string) (uint32, error) {
 		return 0, bad("it is in this engine's group")
 	}
 	return uint32(uid), nil
+}
+
+// answersOf are the run's answers, never nil: plan reads nil as a check,
+// which assumes every question answered ALL_ROWS.
+func answersOf(req Request) []Answer {
+	if req.Answers == nil {
+		return []Answer{}
+	}
+	return req.Answers
 }

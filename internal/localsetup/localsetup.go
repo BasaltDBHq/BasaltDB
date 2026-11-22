@@ -50,14 +50,18 @@ const (
 
 // Request is the body of the check and run routes.
 type Request struct {
-	Job         string     `json:"job"`
-	Agent       string     `json:"agent"`
-	OSUser      string     `json:"osUser"`
-	Demo        bool       `json:"demo"`
-	DatabaseURL string     `json:"databaseUrl"`
-	Answers     []Answer   `json:"answers,omitempty"`
-	Challenge   *Challenge `json:"challenge,omitempty"`
-	Passkey     *Passkey   `json:"passkey,omitempty"`
+	Job         string `json:"job"`
+	Agent       string `json:"agent"`
+	OSUser      string `json:"osUser"`
+	Demo        bool   `json:"demo"`
+	DatabaseURL string `json:"databaseUrl"`
+	// Schemas and Tables are for an install of a real database (Demo
+	// false). Tables nil on a check asks for the listing.
+	Schemas   []string    `json:"schemas,omitempty"`
+	Tables    []TablePick `json:"tables,omitempty"`
+	Answers   []Answer    `json:"answers,omitempty"`
+	Challenge *Challenge  `json:"challenge,omitempty"`
+	Passkey   *Passkey    `json:"passkey,omitempty"`
 }
 
 // Answer answers one row-level security question.
@@ -91,6 +95,11 @@ type CheckAnswer struct {
 	// Challenge is the passkey challenge of an INSTALL; an UPDATE and a
 	// REMOVE register no passkey and have none.
 	Challenge *Challenge `json:"challenge,omitempty"`
+	// Tables, Excluded and TablesMore are the listing call's answer for
+	// an install of a real database.
+	Tables     []ListedTable   `json:"tables,omitempty"`
+	Excluded   []ExcludedTable `json:"excluded,omitempty"`
+	TablesMore bool            `json:"tablesMore,omitempty"`
 }
 
 // RegisteredPasskey is one passkey the run registered.
@@ -183,6 +192,9 @@ type job struct {
 	// host is the admin string's host and port, lowercase: the challenge
 	// is bound to it.
 	host string
+	// schemas and picks are for a real install; picks nil is the listing.
+	schemas []string
+	picks   []TablePick
 }
 
 // validate checks everything that needs no database, in order.
@@ -204,14 +216,27 @@ func (s *Service) validate(req Request) (job, error) {
 	if err != nil {
 		return job{}, err
 	}
-	if !req.Demo {
-		return job{}, refuse(CodeNoTables, "Picking tables on this page is not available yet; set up the sample database with basalt init --demo.")
+	j := job{req: req, role: role, uid: uid}
+	if req.Demo && (req.Schemas != nil || req.Tables != nil) {
+		return job{}, refuse(CodeAnswersInvalid, "The sample database takes no schema or table to pick.")
 	}
-	host, err := checkAdminURL(req.DatabaseURL, role)
-	if err != nil {
+	if !req.Demo {
+		if j.schemas, err = checkSchemas(req.Schemas); err != nil {
+			return job{}, err
+		}
+		if req.Tables != nil {
+			if len(req.Tables) == 0 {
+				return job{}, refuse(CodeNoTables, "There is no table to give the agent. Pick at least one table; nothing changed.")
+			}
+			if j.picks, err = checkPicks(req.Tables, j.schemas); err != nil {
+				return job{}, err
+			}
+		}
+	}
+	if j.host, err = checkAdminURL(req.DatabaseURL, role); err != nil {
 		return job{}, err
 	}
-	return job{req: req, role: role, uid: uid, host: host}, nil
+	return j, nil
 }
 
 // checkAdminURL accepts a postgres:// or postgresql:// URL with a user and
@@ -278,42 +303,79 @@ func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) 
 	return nil, refuse(CodeDatabaseUnreachable, "The database could not be reached. Check the host and port in the admin connection string.")
 }
 
-// plan reads the database for j in tx: refusals, then the sample data and
-// the install script. keep is a role that exists and is this engine's own
-// (finishing an install whose engine.json was never written): its password
-// stays. The caller rolls tx back (check) or commits (run).
-func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database string) (seeded demo.Plan, script guard.Script, keep bool, err error) {
+// planned is what plan found and built.
+type planned struct {
+	seeded    demo.Plan
+	script    guard.Script
+	keep      bool
+	write     []string
+	read      []string
+	questions []Question
+	list      listing
+}
+
+// plan reads the database for j in tx: refusals, then the sample data or
+// the tables, and the install script. keep is a role that exists and is
+// this engine's own (finishing an install whose engine.json was never
+// written): its password stays. answers nil (a check) shows the SQL as if
+// every row-level security question were answered ALL_ROWS, the page's
+// answer; a run passes the person's. The caller rolls tx back (check) or
+// commits (run).
+func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database string, answers []Answer) (planned, error) {
 	prefix := s.opts.Prefix
 	names := guard.Names{Prefix: prefix}
 	installed, err := guard.InstalledPrefix(ctx, tx)
 	if err != nil {
-		return demo.Plan{}, guard.Script{}, false, setupFailed()
+		return planned{}, setupFailed()
 	}
 	if installed != "" && installed != prefix {
-		return demo.Plan{}, guard.Script{}, false, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
+		return planned{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+installed+", not "+prefix+".")
 	}
 	exists, err := guard.AgentRoleExists(ctx, tx, names, j.req.Agent)
 	if err != nil {
-		return demo.Plan{}, guard.Script{}, false, setupFailed()
+		return planned{}, setupFailed()
 	}
+	var p planned
 	if exists {
 		if !s.ownRole(ctx, j, database) {
-			return demo.Plan{}, guard.Script{}, false, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
+			return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
 		}
-		keep, password = true, ""
+		p.keep, password = true, ""
 	}
-	seeded, err = demo.Seed(ctx, tx)
-	if err != nil {
-		return demo.Plan{}, guard.Script{}, false, setupFailed()
+	spec := guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep, StatementTimeout: statementTimeout}
+	opts := guard.InitOptions{Names: names}
+	if j.req.Demo {
+		if p.seeded, err = demo.Seed(ctx, tx); err != nil {
+			return planned{}, setupFailed()
+		}
+		spec.Write = demo.Tables
+	} else {
+		if p.list, err = readListing(ctx, tx, j.schemas); err != nil {
+			return planned{}, setupFailed()
+		}
+		if j.picks == nil {
+			return p, nil // the listing call
+		}
+		if p.write, p.read, err = p.list.access(j.picks); err != nil {
+			return planned{}, err
+		}
+		spec.Write, spec.Read = p.write, p.read
+		blind, err := guard.AgentBlindTables(ctx, tx, names, spec)
+		if err != nil {
+			return planned{}, setupFailed()
+		}
+		p.questions = questions(blind, j.req.Agent)
+		if answers == nil {
+			opts.AgentPolicies = blind
+		} else if opts.AgentPolicies, err = policies(blind, answers); err != nil {
+			return planned{}, err
+		}
 	}
-	script, err = guard.PlanInit(ctx, tx, guard.InitOptions{
-		Names: names,
-		Agent: guard.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !keep, Write: demo.Tables, StatementTimeout: statementTimeout},
-	})
-	if err != nil {
-		return demo.Plan{}, guard.Script{}, false, setupFailed()
+	opts.Agent = spec
+	if p.script, err = guard.PlanInit(ctx, tx, opts); err != nil {
+		return planned{}, setupFailed()
 	}
-	return seeded, script, keep, nil
+	return p, nil
 }
 
 // ownRole: the agent's role exists and this engine holds its password. The
@@ -379,7 +441,7 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
 	// A throwaway password: the shown SQL redacts it, and nothing commits.
-	seeded, script, keep, err := s.plan(ctx, tx, j, guard.NewPassword(), database)
+	p, err := s.plan(ctx, tx, j, guard.NewPassword(), database, nil)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -387,13 +449,36 @@ func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, setupFailed())
 	}
-	ch, err := s.challenge(req, bound{database: database, host: j.host})
+	if !req.Demo && j.picks == nil {
+		return listingAnswer(j, database, p, needed)
+	}
+	ch, err := s.challenge(req, bound{database: database, host: j.host, picks: picksKey(j.picks)})
 	if err != nil {
 		return CheckAnswer{}, setupFailed()
 	}
+	if !req.Demo {
+		return CheckAnswer{
+			Database: database, Lines: realSummary(j, database, p.write, p.read, needed, p.keep), SQL: p.script.SQL(),
+			Questions: p.questions, Notes: append([]string{}, p.script.Warnings...), PasskeyNeeded: needed, Challenge: &ch,
+		}, nil
+	}
 	return CheckAnswer{
-		Database: database, Lines: summary(j, database, seeded, needed, keep), SQL: seeded.Shown() + script.SQL(),
-		Questions: []Question{}, Notes: notes(seeded, script), PasskeyNeeded: needed, Challenge: &ch,
+		Database: database, Lines: summary(j, database, p.seeded, needed, p.keep), SQL: p.seeded.Shown() + p.script.SQL(),
+		Questions: []Question{}, Notes: notes(p.seeded, p.script), PasskeyNeeded: needed, Challenge: &ch,
+	}, nil
+}
+
+// listingAnswer is the answer of a check with no picks: the tables the
+// person may pick, and nothing that depends on a pick (CONTRACT.md, The
+// install of a real database, The listing call).
+func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer, error) {
+	if len(p.list.tables) == 0 {
+		return CheckAnswer{}, refuse(CodeNoTables, "The database has no table the admin can give the agent in the listed schemas. Create the tables first; nothing changed.")
+	}
+	return CheckAnswer{
+		Database: database, Lines: []string{fmt.Sprintf("This sets up Basalt in the database %s. Pick the tables the agent %s gets.", database, j.req.Agent)},
+		Questions: []Question{}, Notes: []string{}, PasskeyNeeded: needed,
+		Tables: p.list.tables, Excluded: p.list.excluded, TablesMore: p.list.more,
 	}, nil
 }
 

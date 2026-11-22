@@ -301,15 +301,179 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 	require.NotContains(t, err.Error(), "db.example")
 }
 
-func TestInstallWithoutTheSampleDatabaseIsNotOfferedYet(t *testing.T) {
+func TestRealInstallRefusesBadSchemasAndPicksBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	svc, err := localsetup.New(localsetup.Options{
 		ConfigPath: filepath.Join(t.TempDir(), "engine.json"), Origin: origin,
 		Users: okUsers{}, Dial: func(context.Context, string) (*pgx.Conn, error) { return nil, errors.New("not here") },
 	})
 	require.NoError(t, err)
-	_, err = svc.Check(context.Background(), localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL})
+	base := localsetup.Request{Job: localsetup.JobInstall, Agent: "bot", OSUser: "alice", DatabaseURL: unusedAdminURL}
+	pick := func(table, access string) []localsetup.TablePick {
+		return []localsetup.TablePick{{Table: table, Access: access}}
+	}
+	cases := map[string]struct {
+		mutate func(*localsetup.Request)
+		code   string
+	}{
+		"demo with tables":     {func(r *localsetup.Request) { r.Demo = true; r.Tables = pick("public.a", "READ") }, localsetup.CodeAnswersInvalid},
+		"demo with schemas":    {func(r *localsetup.Request) { r.Demo = true; r.Schemas = []string{"public"} }, localsetup.CodeAnswersInvalid},
+		"no schema":            {func(r *localsetup.Request) { r.Schemas = []string{} }, localsetup.CodeAnswersInvalid},
+		"six schemas":          {func(r *localsetup.Request) { r.Schemas = []string{"a", "b", "c", "d", "e", "f"} }, localsetup.CodeAnswersInvalid},
+		"a system schema":      {func(r *localsetup.Request) { r.Schemas = []string{"basalt_meta"} }, localsetup.CodeAnswersInvalid},
+		"a pg_ schema":         {func(r *localsetup.Request) { r.Schemas = []string{"pg_toast"} }, localsetup.CodeAnswersInvalid},
+		"a schema twice":       {func(r *localsetup.Request) { r.Schemas = []string{"a", "a"} }, localsetup.CodeAnswersInvalid},
+		"a capital schema":     {func(r *localsetup.Request) { r.Schemas = []string{"Public"} }, localsetup.CodeAnswersInvalid},
+		"an empty pick list":   {func(r *localsetup.Request) { r.Tables = []localsetup.TablePick{} }, localsetup.CodeNoTables},
+		"a capital table":      {func(r *localsetup.Request) { r.Tables = pick("public.Users", "READ") }, localsetup.CodeAnswersInvalid},
+		"no schema in a pick":  {func(r *localsetup.Request) { r.Tables = pick("users", "READ") }, localsetup.CodeAnswersInvalid},
+		"a pick outside":       {func(r *localsetup.Request) { r.Tables = pick("other.users", "READ") }, localsetup.CodeAnswersInvalid},
+		"a bad access":         {func(r *localsetup.Request) { r.Tables = pick("public.users", "ALL") }, localsetup.CodeAnswersInvalid},
+		"a table picked twice": {func(r *localsetup.Request) { r.Tables = append(pick("public.a", "READ"), pick("public.a", "WRITE")...) }, localsetup.CodeAnswersInvalid},
+	}
+	for name, c := range cases {
+		req := base
+		c.mutate(&req)
+		_, err := svc.Check(context.Background(), req)
+		require.Error(t, err, name)
+		var r *localsetup.RefusalError
+		require.True(t, errors.As(err, &r), name)
+		require.Equal(t, c.code, r.Code, name+": "+r.Message)
+	}
+	many := make([]localsetup.TablePick, 501)
+	for i := range many {
+		many[i] = localsetup.TablePick{Table: "public.t" + strings.Repeat("a", i%5), Access: "READ"}
+	}
+	req := base
+	req.Tables = many
+	_, err = svc.Check(context.Background(), req)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+	// Run without a pick is NO_TABLES, before it connects.
+	_, err = svc.Run(context.Background(), base)
 	refusal(t, err, localsetup.CodeNoTables)
+}
+
+func (f *fixture) real() localsetup.Request {
+	r := f.request()
+	r.Demo = false
+	r.Agent = "bot"
+	return r
+}
+
+func TestRealInstallListsThenGrantsOnlyThePickedTables(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY, note text);
+CREATE TABLE public.logs (line text);
+CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text);
+CREATE TABLE public."Mixed" (id bigint PRIMARY KEY)`)
+
+	listing, err := f.svc.Check(ctx, f.real())
+	require.NoError(t, err)
+	require.Nil(t, listing.Challenge, "nothing depends on a pick yet")
+	require.Empty(t, listing.SQL)
+	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.orders", CanWrite: true})
+	require.Contains(t, listing.Tables, localsetup.ListedTable{Table: "public.logs", CanWrite: false})
+	require.Contains(t, listing.Excluded, localsetup.ExcludedTable{Table: "public.Mixed", Owner: "unsupported name"})
+	require.False(t, exists(t, f.db, "basalt_demo"), "a real install never makes the sample schema")
+
+	// Write on a table with no primary key: the listing says it cannot.
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.logs", Access: localsetup.AccessWrite}}
+	_, err = f.svc.Check(ctx, req)
+	refusal(t, err, localsetup.CodeTablesChanged)
+	// A table that is not there.
+	req.Tables = []localsetup.TablePick{{Table: "public.nothing", Access: localsetup.AccessRead}}
+	_, err = f.svc.Check(ctx, req)
+	refusal(t, err, localsetup.CodeTablesChanged)
+
+	req.Tables = []localsetup.TablePick{
+		{Table: "public.orders", Access: localsetup.AccessWrite},
+		{Table: "public.logs", Access: localsetup.AccessRead},
+	}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, checked.Challenge)
+	require.Contains(t, checked.SQL, "orders")
+	require.NotContains(t, checked.SQL, "public.secrets")
+	require.Empty(t, checked.Questions)
+
+	// A passkey made for these picks does not fit others.
+	other := req
+	other.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	other.Challenge, other.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, other)
+	refusal(t, err, localsetup.CodeChallengeInvalid)
+
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	done, err := f.svc.Run(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"agent bot ready: 1 tables it can change, 1 it can read"}, done.Lines)
+
+	cred := filepath.Join(filepath.Dir(f.config), "agents", "bot.url")
+	dsn, err := config.ReadCredential(cred)
+	require.NoError(t, err)
+	conn, err := pgdial.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close(ctx) }()
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `SELECT count(id)::int FROM public.orders`).Scan(&n))
+	_, err = conn.Exec(ctx, `SELECT 1 FROM public.logs`)
+	require.NoError(t, err, "a READ table can be read")
+	_, err = conn.Exec(ctx, `SELECT 1 FROM public.secrets`)
+	require.Error(t, err, "an unpicked table is never granted")
+}
+
+func TestRealInstallAsksTheRowLevelSecurityQuestionAndRunNeedsItsAnswer(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.vault (id bigint PRIMARY KEY, v text);
+INSERT INTO public.vault VALUES (1, 'a');
+ALTER TABLE public.vault ENABLE ROW LEVEL SECURITY`)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.vault", Access: localsetup.AccessRead}}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, checked.Questions, 1)
+	q := checked.Questions[0]
+	require.Equal(t, "ROW_LEVEL_SECURITY", q.Kind)
+	require.Equal(t, "public.vault", q.Table)
+	require.Equal(t, []string{"ALL_ROWS", "NONE"}, q.Choices)
+	require.Contains(t, checked.SQL, "POLICY", "the check shows the page's answer, ALL_ROWS")
+
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, req)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "MAYBE"}}
+	_, err = f.svc.Run(ctx, req)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}, {Table: "public.other", Choice: "NONE"}}
+	_, err = f.svc.Run(ctx, req)
+	refusal(t, err, localsetup.CodeAnswersInvalid)
+	require.False(t, exists(t, f.db, "basalt_demo"))
+
+	req.Answers = []localsetup.Answer{{Table: "public.vault", Choice: "ALL_ROWS"}}
+	_, err = f.svc.Run(ctx, req)
+	require.NoError(t, err)
+}
+
+func TestRealInstallRunRefusesTablesThatChangedSinceTheCheck(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessWrite}}
+	checked, err := f.svc.Check(ctx, req)
+	require.NoError(t, err)
+	f.db.Exec(t, `DROP TABLE public.orders`)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = f.svc.Run(ctx, req)
+	refusal(t, err, localsetup.CodeTablesChanged)
+	_, statErr := os.Stat(f.config)
+	require.ErrorIs(t, statErr, os.ErrNotExist, "nothing changed")
 }
 
 // okUsers admits alice.

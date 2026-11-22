@@ -11,7 +11,7 @@ Agents use MCP, people use pages, and the CLI only starts things. The CLI has fo
 
 The six flags are `--agent`, `--remote`, `--demo`, `--config`, `--supervise` and `--started-by`. Anything else is a usage error. `--agent NAME` is needed only when the engine serves more than one agent. Exit codes: `0` ok, `1` error, `2` usage. No command has `--json`: an agent reads state through MCP.
 
-**The surface budget** (planned: the file and its test come with the CLI cut). `contract/surface.json` lists every command, flag, MCP tool, environment variable and page path. A test builds the real surface from the binary and the page tree and fails on any difference. Changing the file needs a maintainer's sign-off.
+**The surface budget.** `contract/surface.json` lists every command, flag, MCP tool, environment variable and page path. A test builds the real surface from the binary and the page tree and fails on any difference. Changing the file needs a maintainer's sign-off.
 
 ### Config discovery
 

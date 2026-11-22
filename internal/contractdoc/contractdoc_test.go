@@ -174,3 +174,65 @@ func TestApprovingGuideLongLinksAreReviewOnly(t *testing.T) {
 	require.Contains(t, s, "review only")
 	require.Contains(t, s, "reissueLink")
 }
+
+var indexFile = regexp.MustCompile(`\(contract/([a-z0-9-]+\.md)\)`)
+
+var toolReference = regexp.MustCompile(`\(CONTRACT\.md, ([^)]+)\)`)
+
+// TestToolSchemaReferencesResolve: the tool schemas agents read cite the
+// contract as (CONTRACT.md, Section, Subsection). Each name must be a heading
+// of one file under contract/, and each later name a heading of that same file.
+func TestToolSchemaReferencesResolve(t *testing.T) {
+	t.Parallel()
+	root, err := contractdoc.Root()
+	require.NoError(t, err)
+	clean := func(s string) string { return strings.TrimSpace(strings.ReplaceAll(s, "`", "")) }
+	byFile := map[string]map[string]bool{}
+	entries, err := os.ReadDir(filepath.Join(root, contractdoc.Dir))
+	require.NoError(t, err)
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) != ".md" {
+			continue
+		}
+		heads := map[string]bool{}
+		fence := false
+		for line := range strings.SplitSeq(readFile(t, filepath.Join(root, contractdoc.Dir, e.Name())), "\n") {
+			if strings.HasPrefix(line, "```") {
+				fence = !fence
+			}
+			if m := heading.FindStringSubmatch(line); m != nil && !fence {
+				heads[clean(m[2])] = true
+			}
+		}
+		byFile[e.Name()] = heads
+	}
+	// The index names each file's section (its "Section" column); a
+	// reference may start with it instead of a heading.
+	index := readFile(t, filepath.Join(root, contractdoc.Index))
+	for line := range strings.SplitSeq(index, "\n") {
+		cols := strings.Split(line, " | ")
+		if len(cols) < 3 || !strings.HasPrefix(cols[0], "| [`") {
+			continue
+		}
+		if m := indexFile.FindStringSubmatch(cols[0]); len(m) > 1 && byFile[m[1]] != nil {
+			byFile[m[1]][clean(strings.TrimSuffix(cols[1], " (continued)"))] = true
+		}
+	}
+	tools, err := filepath.Glob(filepath.Join(root, "api", "mcp", "tools", "*.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, tools)
+	for _, path := range tools {
+		for _, m := range toolReference.FindAllStringSubmatch(readFile(t, path), -1) {
+			names := strings.Split(m[1], ", ")
+			ok := false
+			for _, heads := range byFile {
+				found := true
+				for _, n := range names {
+					found = found && heads[clean(n)]
+				}
+				ok = ok || found
+			}
+			require.True(t, ok, "%s cites (CONTRACT.md, %s), which is no chain of headings in one file under contract/", filepath.Base(path), m[1])
+		}
+	}
+}

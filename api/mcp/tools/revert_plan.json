@@ -203,7 +203,7 @@
       "revertLine": {
         "type": "object",
         "additionalProperties": false,
-        "description": "The signed revert line as an object (CONTRACT.md, Revert; same fields as preview_revert items).",
+        "description": "The signed revert line as an object (CONTRACT.md, Revert); the fields are those of preview_revert items.",
         "required": [
           "action",
           "op",

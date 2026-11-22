@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
@@ -62,7 +62,7 @@ func SuggestAll(ctx context.Context, cols []Column, sample SampleFunc, opts Opti
 // phoneLike is a column whose region inference may run: named as a phone,
 // or holding mostly phone-shaped values, bare runs of digits included.
 func phoneLike(col Column, values []string) bool {
-	if hit, ok := matchName(col.Name, kindOf(col.SampleType())); ok && hit.entity == guard.EntityPhone {
+	if hit, ok := matchName(col.Name, kindOf(col.SampleType())); ok && hit.entity == guardmodel.EntityPhone {
 		return true
 	}
 	c := 0

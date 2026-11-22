@@ -25,41 +25,57 @@ const (
 	kindCodec    = "codec"
 )
 
+const (
+	lInbound  = "inbound"
+	lOutbound = "outbound"
+	lService  = "service"
+	lCore     = "core"
+	lLib      = "lib"
+	lConfig   = "config"
+	lApp      = "app"
+	lTestkit  = "testkit"
+	lCmd      = "cmd"
+	lPkg      = "pkg"
+	lApi      = "api"
+	lWeb      = "web"
+	lScripts  = "scripts"
+)
+
 // layerOrder lists the path prefixes of the layers; the first match wins.
 var layerOrder = []struct{ prefix, name string }{
-	{"internal/adapter/inbound", "inbound"},
-	{"internal/adapter/outbound", "outbound"},
-	{"internal/service", "service"},
-	{"internal/core", "core"},
-	{"internal/lib", "lib"},
-	{"internal/config", "config"},
-	{"internal/app", "app"},
-	{"internal/testkit", "testkit"},
-	{"cmd", "cmd"},
-	{"pkg", "pkg"},
-	{"api", "api"},
-	{"web", "web"},
-	{"scripts", "scripts"},
+	{"internal/adapter/inbound", lInbound},
+	{"internal/adapter/outbound", lOutbound},
+	{"internal/service", lService},
+	{"internal/core", lCore},
+	{"internal/lib", lLib},
+	{"internal/config", lConfig},
+	{"internal/app", lApp},
+	{"internal/testkit", lTestkit},
+	{lCmd, lCmd},
+	{lPkg, lPkg},
+	{lApi, lApi},
+	{lWeb, lWeb},
+	{lScripts, lScripts},
 }
 
 // allowed lists, per importing layer, the layers it may import. A layer that
 // is not listed (app, testkit, scripts) may import anything.
 var allowed = map[string][]string{
-	"lib":      {"lib"},
-	"core":     {"core", "lib", "api"},
-	"config":   {"config", "core", "lib", "api"},
-	"service":  {"service", "config", "core", "lib", "pkg", "api"},
-	"outbound": {"outbound", "config", "core", "lib", "pkg", "api", "web"},
-	"inbound":  {"inbound", "service", "config", "core", "lib", "pkg", "api", "web"},
-	"cmd":      {"cmd", "app", "service", "inbound", "config", "core", "lib", "pkg", "api", "web"},
-	"pkg":      {"pkg", "lib", "api"},
-	"api":      {"api"},
-	"web":      {},
+	lLib:      {lLib},
+	lCore:     {lCore, lLib, lApi},
+	lConfig:   {lConfig, lCore, lLib, lApi},
+	lService:  {lService, lConfig, lCore, lLib, lPkg, lApi},
+	lOutbound: {lOutbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
+	lInbound:  {lInbound, lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
+	lCmd:      {lCmd, lApp, lService, lInbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
+	lPkg:      {lPkg, lLib, lApi},
+	lApi:      {lApi},
+	lWeb:      {},
 }
 
 // pkgExtra lists layers that one package may import on top of its layer's list.
 var pkgExtra = map[string][]string{
-	"pkg/setup": {"service", "core"},
+	"pkg/setup": {lService, lCore},
 }
 
 // storeSQLGuard is the one named exception to "only services call decisions":
@@ -248,7 +264,7 @@ func analyze(root string, reg *register) (violations, error) {
 	for rel, pk := range pkgs {
 		layer := layerOf(rel)
 		for _, f := range pk.files {
-			if layer == "core" {
+			if layer == lCore {
 				checkPurity(v, reg, rel, f)
 			}
 			if isTestHelper(rel) || strings.Contains(rel, "/testdata") {
@@ -262,7 +278,7 @@ func analyze(root string, reg *register) (violations, error) {
 				target := strings.TrimPrefix(ip, modulePath+"/")
 				checkLayer(v, rel, layer, target)
 			}
-			if layer != "core" && layer != "service" && layer != "testkit" && layer != "scripts" {
+			if layer != lCore && layer != lService && layer != lTestkit && layer != lScripts {
 				checkDecisionCalls(v, rel, f, decisions)
 			}
 		}

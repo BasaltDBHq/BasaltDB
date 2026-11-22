@@ -57,7 +57,10 @@ func postJSON(t *testing.T, base, origin, path string, body any) (int, []byte) {
 	require.NoError(t, err)
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	// No keep-alives: a second server may take the first one's port, and a kept
+	// connection to the first would answer EOF.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	var out bytes.Buffer

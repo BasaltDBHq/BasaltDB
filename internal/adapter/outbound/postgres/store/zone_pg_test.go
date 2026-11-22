@@ -114,10 +114,10 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			scope := action.Scope{Kind: revert.ScopeRun, ID: run}
 
 			engine := postgres.NewStore(zonedPool(t, a.URL, zones[1]), limits, time.Now)
-			pv, err := engine.PreviewRevert(ctx, action.Scope(scope), "", 10)
+			pv, err := engine.PreviewRevert(ctx, scope, "", 10)
 			require.NoError(t, err)
 			requireNoSkip(t, previewTexts(pv))
-			prep, err := engine.PrepareRevert(ctx, action.Scope(scope), "Undo", time.Minute)
+			prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 			require.NoError(t, err)
 			requireNoSkip(t, prep.Lines)
 
@@ -127,7 +127,7 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			requireNoSkip(t, lines)
 			personPrep, err := cli.PrepareRevert(ctx, scope, "Undo")
 			require.NoError(t, err)
-			prep = action.PreparedRevert(personPrep)
+			prep = personPrep
 			requireNoSkip(t, prep.Lines)
 
 			// Signed, and applied from the writer's zone: Postgres
@@ -272,10 +272,10 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 
 	// The engine reverts the direct write without a false conflict.
 	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
-	pv, err := engine.PreviewRevert(ctx, action.Scope(scope), "", 10)
+	pv, err := engine.PreviewRevert(ctx, scope, "", 10)
 	require.NoError(t, err)
 	requireNoSkip(t, previewTexts(pv))
-	prep, err := engine.PrepareRevert(ctx, action.Scope(scope), "Undo", time.Minute)
+	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
 	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
@@ -360,7 +360,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	require.Contains(t, strings.Join(got, "\n"), `"body": "\\x00ff41"`)
 
 	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
-	prep, err := engine.PrepareRevert(ctx, action.Scope(scope), "Undo", time.Minute)
+	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)
 	as, err := signer.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)

@@ -37,41 +37,6 @@ func guardRefusal(r action.Refusal) guard.Refusal {
 	}
 }
 
-func previewPageOf(p action.PreviewPage) action.PreviewPage {
-	return action.PreviewPage{
-		Lines: p.Lines, Restore: p.Restore, AllAlreadyReverted: p.AllAlreadyReverted, CursorFound: p.CursorFound,
-		Page: mapSlice(p.Page, func(l action.PreviewLine) action.PreviewLine { return action.PreviewLine(l) }),
-		More: p.More,
-	}
-}
-
-func batchResultOf(b action.BatchResult) action.BatchResult {
-	return action.BatchResult{
-		RevertID: b.RevertID, Batch: b.Batch, Status: b.Status,
-		Restored: b.Restored, Skipped: b.Skipped, Pending: b.Pending,
-		Items: mapSlice(b.Items, func(it action.BatchItem) action.BatchItem { return action.BatchItem(it) }),
-	}
-}
-
-func rescopedOf(r action.RescopedRevert) action.RescopedRevert {
-	return action.RescopedRevert{
-		RevertID: r.RevertID, BindingText: r.BindingText, ExpiresAt: r.ExpiresAt, Lines: r.Lines,
-		RescopeNonce: r.RescopeNonce, Catalog: catalogOf(r.Catalog), ScopeToken: r.ScopeToken,
-	}
-}
-
-func catalogOf(c *action.RevertCatalog) *action.RevertCatalog {
-	if c == nil {
-		return nil
-	}
-	return &action.RevertCatalog{
-		Agents:       mapSlice(c.Agents, func(a action.CatalogAgent) action.CatalogAgent { return action.CatalogAgent(a) }),
-		Runs:         mapSlice(c.Runs, func(r action.CatalogRun) action.CatalogRun { return action.CatalogRun(r) }),
-		Tables:       mapSlice(c.Tables, func(t action.CatalogTable) action.CatalogTable { return action.CatalogTable(t) }),
-		ChangeAgents: c.ChangeAgents,
-	}
-}
-
 // mapSlice maps each element of in with f, keeping a nil slice nil (JSON
 // null, not []).
 func mapSlice[T, U any](in []T, f func(T) U) []U {

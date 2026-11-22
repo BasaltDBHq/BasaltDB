@@ -1,6 +1,6 @@
 # The Vault: what it sees and how to turn it off
 
-The Vault is a hosted relay at `relay.basaltvault.app`. It exists for one case: an engine that has no inbound port, such as one on a server or in a container, and a person who wants to approve a held write or a revert from a browser anywhere. The engine dials out to the Vault. The portal page (`https://portal.basaltvault.app`) dials in. The Vault pairs the two sockets and passes bytes between them. It is optional: on by default when an agent operates the engine (`--operated-by=agent`), off otherwise, and you can turn it off with `--vault=off`. Approvals work without it: when it is off or down, the engine hands over long links instead ([approving.md](approving.md)).
+The Vault is a hosted relay at `relay.basaltvault.app`. It exists for one case: an engine that has no inbound port, such as one on a server or in a container, and a person who wants to approve a held write or a revert from a browser anywhere. The engine dials out to the Vault. The portal page (`https://portal.basaltvault.app`) dials in. The Vault pairs the two sockets and passes bytes between them. It is optional: on by default when an agent operates the engine, off otherwise, and you can turn it off in `engine.json`. Approvals work without it: when it is off or down, the engine hands over long links instead ([approving.md](approving.md)).
 
 The protocol is in [CONTRACT.md, Vault channel](../contract/vault-channel.md#vault-channel). The Vault service itself is closed source and is not in this repository, so this page describes what the engine does and what the protocol allows the Vault to see. It cannot show what the service does with what it sees.
 
@@ -15,7 +15,7 @@ Built on `master`:
 - The engine dials out to the Vault and keeps one connection. It signs in with a key of its own, made on its first start (below).
 - The engine registers the short links it hands out, and answers the page's sessions with the same checks as its local pages.
 - If the Vault does not register a link within 5 seconds, or is not reachable, the engine hands over the long link instead.
-- `basalt init --vault=on|off` and the `vault` setting in `engine.json`. `basalt status` shows the Vault state and the engine id.
+- The `vault` setting in `engine.json`. The agent's `status` tool shows the Vault state and the engine id.
 
 Not built yet:
 
@@ -49,27 +49,19 @@ The contract asks the service to keep connection metadata for 7 days at most and
 
 The Vault is treated as untrusted. It never holds a key that opens a session. A Vault that drops, delays, repeats, reorders or alters messages can make a session fail. It cannot make the engine or the page accept anything.
 
-It can refuse service, so that the page cannot reach the engine. It can also try to route a link to a different engine, which would put a wrong fingerprint on the page. A relayed signature is checked by Postgres against the rows you were shown, so the Vault cannot turn it into approval of another write. On the relay the page cannot pin the engine's key, so the check against that is yours: compare the engine id that `basalt status` prints with the one the page shows, once the page shows it.
+It can refuse service, so that the page cannot reach the engine. It can also try to route a link to a different engine, which would put a wrong fingerprint on the page. A relayed signature is checked by Postgres against the rows you were shown, so the Vault cannot turn it into approval of another write. On the relay the page cannot pin the engine's key, so the check against that is yours: compare the engine id that the agent's `status` tool prints with the one the page shows, once the page shows it.
 
 ## Turn it on or off
 
-The setting is `vault` in `engine.json`: `ON` or `OFF`. If the value is missing from the file, the Vault is off; `basalt init` writes it, with the defaults below.
+The setting is `vault` in `engine.json`: `ON` or `OFF`. If the value is missing from the file, the Vault is off. There is no flag for it.
 
-```sh
-basalt init --agent NAME --vault=off
-```
-
-- `--vault=on|off` sets it. Init prints the value it wrote and why, for example `basalt: vault: off (--vault=off)`.
-- **A rerun keeps your choice.** `basalt init` with no `--vault` leaves the value in `engine.json` as it is and prints `kept from engine.json`. The default only applies when the file has no value yet, or when a rerun changes `--operated-by`.
-- **Defaults.** `basalt init` for a person-operated engine defaults to off. `basalt init --remote` turns it on for a new engine; a rerun keeps the value in `engine.json`.
-- **`--vault=on` needs the portal's pages.** The Vault carries portal links, and a passkey registered for `localhost` cannot sign on the portal, so the engine uses the Vault only when `pagesUrl` is `https://portal.basaltvault.app`. `--vault=on` with anything else is a usage error (exit code 2). Plain `basalt init` takes only a local origin or the hosted console for `--passkey-origin`, so it cannot turn the Vault on: use `basalt init --remote`.
-- **Restart the engine after a change.** The engine reads `vault` when it starts. After you turn it off, the engine closes its socket when it restarts, and the Vault drops any token it still holds when that token expires. Links already handed out through the Vault stop working.
-
-You can also edit `engine.json` by hand: set `"vault": "OFF"` and restart the engine. Both ways give the same result.
+- **Defaults.** `basalt init --remote` turns it on for a new, agent-operated engine and keeps the value in `engine.json` on a rerun. An engine a person operates on their own computer has it off.
+- **It needs the portal's pages.** The Vault carries portal links, and a passkey registered for `localhost` cannot sign on the portal, so the engine uses the Vault only when `pagesUrl` is `https://portal.basaltvault.app`.
+- **Turn it off by hand.** Set `"vault": "OFF"` in `engine.json` and restart the engine. The engine reads `vault` when it starts. After a restart it closes its socket, and the Vault drops any token it still holds when that token expires. Links already handed out through the Vault stop working.
 
 ## Check the state
 
-`basalt status --agent NAME` prints the Vault state and the engine id:
+The agent's `status` tool reports the Vault state and the engine id, in this form:
 
 ```
 Vault:        CONNECTED (approvals use portal short links)
@@ -84,17 +76,15 @@ Engine id:    AbCd EfGh IjKl MnOp (id AbCdEfGhIjKlMnOpQrStUv)
 | `UNREACHABLE` | No answer from the Vault for 30 seconds. Approvals still work, through long links, and the engine keeps retrying. |
 | `KEY_ERROR` | The key file is refused. The Vault stays off and approvals use long links. |
 
-The engine id is a fingerprint of the engine's public key. Compare it across `basalt status`, the agent's `status` tool and, later, the portal page.
-
-For an engine that runs as a service, `basalt status` asks the engine, so it prints the live state. For an engine you start by hand, `basalt status` reads `engine.json` and the key file instead. It prints `OFF` or `KEY_ERROR` as above. When the setting is `ON`, it prints `Vault:        ON in the config; only the running engine knows whether it is connected (the agent's status tool reports it)` with the engine id, and the live state comes from the agent's `status` tool. No Vault state is reported as a problem: approvals work in all of them.
+The engine id is a fingerprint of the engine's public key. Compare the one the agent's `status` tool shows with the portal page, later.
 
 ## Check the portal
 
-The pages you sign on come from the portal's static host. `basalt portal verify` fetches every page file from `https://portal.basaltvault.app` and compares it with the copy embedded in your `basalt` binary, fetches the routes you open pages at, and checks the response's content security policy. It prints `OK`, `DIFFERS`, `MISSING`, `HEADER`, `UNEXPECTED` or `ERROR` for each file and exits `1` when anything is not `OK`. It needs no database and no engine.
+The pages you sign on come from the portal's static host. The release workflow's `portal-check` job runs `make portal-verify` after every release. It fetches every file embedded in the release's `basalt` binary from `https://portal.basaltvault.app`, compares the bytes with `web/portal.sha256`, and fails on any file that differs, is missing or unexpected. A maintainer or anyone with a checkout can run the same: `make portal-verify` (`go run ./scripts/portal-verify`, which also takes `--portal-url`). The engine's own daily check reports `PORTAL_MISMATCH` in `status`.
 
-It catches a portal that was changed for everyone. It cannot catch a page served to you alone, or one that treats a command-line client differently from your browser, since it sees only what the host serves it, and it trusts the binary it runs in. Run it from a machine and network other than the ones you sign on, and use a binary you downloaded from the release. See [Deploy the portal](deploy-portal.md#6-verify). The engine runs the same check once a day against the portal in its config (at start, then every 24 hours), and only when the config names the portal; with local pages it checks nothing. When it finds `DIFFERS`, `MISSING`, `HEADER` or `UNEXPECTED`, `basalt status` and the agent's `status` tool show the warning `PORTAL_MISMATCH` with the command `basalt portal verify`, which lists the files. A check that could not reach the portal (`ERROR`) is only logged. The check is the engine's own, so it shares the limits above; running it yourself from another machine is still the stronger test.
+It catches a portal that was changed for everyone. It cannot catch a page served to you alone, or one that treats a command-line client differently from your browser, since it sees only what the host serves it. Run it from a machine and network other than the ones you sign on. See [Deploy the portal](deploy-portal.md).
 
-Each release carries `portal.sha256` next to the binaries, the manifest of the pages that release was built from (the release page on GitHub lists it among the assets). Download it and run `basalt portal verify --manifest portal.sha256` to compare the pages in your binary, and so the portal, against the release's own copy.
+Each release carries `portal.sha256` next to the binaries, the manifest of the pages that release was built from (the release page on GitHub lists it among the assets).
 
 ## The engine's key file
 

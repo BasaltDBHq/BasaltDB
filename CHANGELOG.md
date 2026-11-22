@@ -6,8 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The README, `llms.txt` and `docs/` describe the simplified product: the agent runs `basalt init`, the person finishes on the setup page, and no guide asks a person to type a `basalt` command or paste an admin connection string into a terminal. `docs/bot-setup.md` asks the person for nothing but the page they open. The same-user limit of the local setup is written down in the install guide and the README.
+- The MCP initialize instructions tell an agent on a computer the person cannot reach to run `basalt init --remote`.
+- `basalt --help` and the error for an agent missing from the config tell an agent to run `basalt init` on the person's own computer and `basalt init --remote` on one the person cannot reach, and to show the person the link it prints, instead of a setup code.
+
 ### Removed
 
+- `docs/setup-from-laptop.md` and `docs/crash-reports.md`, with the commands and flags they described.
 - `basalt upgrade` and `basalt uninstall`, with their flags. The guard update and the removal of BasaltDB run on the engine's local setup page: the page shows the SQL, you type the admin connection string there, and it runs in one transaction. A removal also drops the agents of that database from the engine's config and deletes their credentials.
 - `basalt log`, `basalt status`, `basalt access`, `basalt crash` (`list`, `show`, `report`) and `basalt portal verify`, with their flags and the `portal-verify-result` JSON schema. The agent's `status` tool reports what `basalt status` did, names the newest crash report with its GitHub link, and lists what the agent can read and write. `basalt revert` stays until the relay carries every revert. The portal check runs in the release workflow (`make portal-verify` runs it by hand). A panic in a command now prints where its report was saved.
 - The person socket (`person.sock`). On a service engine, `basalt approve`, `basalt revert`, `basalt passkey` and `basalt upgrade` run by a person who is not root now say to run them with `sudo`, and the update notice no longer asks the engine whether its update check is on. `request_plugin` uploads the plugin's files over a second connection to the agent's own socket; `--person-uid` and `personUids` now only say which OS users may change plugins.

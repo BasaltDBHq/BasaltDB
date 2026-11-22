@@ -1,14 +1,14 @@
-# Instructions for the bot: set up Basalt for a person who is not at this server
+# Instructions for the bot: set up BasaltDB for a person who is not at this server
 
-You are an AI agent. A person wants Basalt between you and their Postgres. They cannot log in to this server. Follow these steps in order.
+You are an AI agent. A person wants BasaltDB between you and their Postgres. They cannot log in to this server. Follow these steps in order.
 
 ## Rules
 
-- Never ask for the admin connection string or the database password. Never accept one. If the person pastes one, tell them to change the password now. You do not need it.
+- Never ask for the admin connection string or the database password. Never accept one. If the person pastes one, tell them to change the password now. You do not need it: they type it on a page.
 - Never send the person an install command of your own. Send only the official release link: https://github.com/BasaltDBHq/BasaltDB/releases
 - Show the person any `personMessage` word for word. Show every link on its own line, unchanged.
 - You never approve a write and you never sign a revert. Only the person's passkey can.
-- Never run `basalt init` without `--remote`, and never run `basalt init --setup-code` yourself. Both read the admin connection string. Under an agent, `basalt` refuses them and tells you to send the person the setup step instead.
+- Run `basalt init --remote` on this server, never plain `basalt init`: the person is not here to answer a dialog or open a local page.
 - Never ask the person for the database's address or its tables: the connect page asks for them.
 
 ## 1. Install
@@ -28,12 +28,12 @@ basalt init --remote --agent NAME
 ```
 
 - `--agent NAME` is the only flag. Without it, init sets up the one agent the config has, or `demo_bot` on a new engine.
-- On a new engine, init makes it agent-operated with the Vault on: the person sets up on `portal.basaltvault.app/connect`.
-- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
+- On a new engine, init marks it agent-operated: the person sets up on `portal.basaltvault.app/connect`. Afterwards the config says so and `--remote` changes nothing.
+- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS).
 
 The command prints a connect link, a setup fingerprint, a message for the person, and the `basalt mcp` command to register in your agent app. It does not install or start the engine. The command is `basalt mcp --agent NAME`: `basalt mcp` finds the config, and the socket directory in it, by itself.
 
-If the link is still valid, the same command prints it again. When it expired, when the person said the database is not theirs, or when the engine refused the address the page handed over, the same command makes a new link by itself. There is no flag for that.
+Every recovery is the same command. If the link is still valid, `basalt init --remote` prints it again. When it expired, when the person said the database is not theirs, or when the engine refused the address the page handed over, the same command makes a new link by itself. There is no flag for that.
 
 ## 3. Send it to the person
 
@@ -41,50 +41,13 @@ Show the person the message init printed, word for word, with the link on its ow
 
 ## 4. Start the engine
 
-Start the engine on this server while you wait. The engine runs as you here. Use the config path from step 2:
+Register the `basalt mcp` command init printed in your agent app. When a tool call finds the engine down, `basalt mcp` starts it in the background and waits up to 15 seconds for it. You do not start it yourself. Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`. The engine picks up the database's address from the page by itself; `status` then asks you to confirm the database with the person (`confirm_database`).
 
-```sh
-basalt engine --config <path to engine.json>
-```
-
-Keep it running in the background: use a supervisor, `tmux` or whatever this server uses, or install it as a system service (see below). On a bot computer with no service manager, do not start it at all: see "Bot computers with no service manager" below. Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`. The engine picks up the database's address from the page by itself; `status` then asks you to confirm the database with the person (`confirm_database`).
-
-### Run it as a system service (Linux)
-
-To keep the engine up across reboots on a Linux server with systemd, install it as a service instead of starting it yourself. The service runs as its own OS user, `basalt`. Do these in order, as the same user each time (the one you work as), with `sudo`:
-
-1. Install the service before making the setup link:
-
-   ```sh
-   sudo basalt service install
-   ```
-
-   This makes the `basalt` user, the config directory `/etc/basalt` (owned by `basalt`) and the `basalt-engine` unit, and starts it. Starting it makes the engine's state directory, where step 2 puts the engine's key. It has no config yet, so it fails and systemd retries it until its start limit, then leaves it failed (`systemctl status basalt-engine` shows `failed`). That is expected: step 3's `restart` starts it again.
-
-2. Make the setup link as step 2 says, with `sudo` and without `--config`:
-
-   ```sh
-   sudo basalt init --remote --agent NAME
-   ```
-
-   As root, init writes `/etc/basalt/engine.json` and the files in `/etc/basalt/agents/` owned by `basalt`, so the service can read them. It puts the engine's key in the setup code, and it records you (the user who ran `sudo`) as the person who may run `basalt status`, `log`, `approve` and `revert` here. Send the link to the person as step 3 says.
-
-3. Start the engine with its new config:
-
-   ```sh
-   sudo systemctl restart basalt-engine
-   basalt status --agent NAME
-   ```
-
-   `basalt status --agent NAME` needs no `sudo`. Point your MCP client at the `basalt mcp` command init printed (`basalt mcp --agent NAME` with the default paths).
-
-Run `sudo basalt init --remote --agent NAME` again when you need a new link, then restart the service as in step 3, so the engine reads the new config.
-
-Without systemd, skip this. On a bot computer that keeps only some folders through a reboot, follow "Bot computers with no service manager" below. For a container, see "Containers without systemd" in [install.md](install.md); make the setup link with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there.
+`basalt mcp` starts only an engine that runs as you, from a config you own. That is the case here, because init ran as you.
 
 ### Bot computers with no service manager
 
-Some bot computers have no systemd, no cron and no Docker, and start nothing at boot. A reboot or "Update Bot's Computer" wipes every process and every folder except the ones the host keeps (on the computers we have seen, `/workspace` and `/home`). Basalt copes with that: the first Basalt tool call after a restart starts the engine, with nothing for you or the person to do. Set it up like this, as your own user (not root):
+Some bot computers have no systemd, no cron and no Docker, and start nothing at boot. A reboot or "Update Bot's Computer" wipes every process and every folder except the ones the host keeps (on the computers we have seen, `/workspace` and `/home`). BasaltDB copes with that: the first tool call after a restart starts the engine, with nothing for you or the person to do. Set it up like this, as your own user (not root):
 
 1. Pick one folder that survives, for example `/workspace/basalt`. Put the `basalt` binary there too, so it survives with everything else:
 
@@ -93,24 +56,24 @@ Some bot computers have no systemd, no cron and no Docker, and start nothing at 
    cp "$(command -v basalt)" /workspace/basalt/bin/basalt
    ```
 
-2. Make the setup link as step 2 says. The config goes in your user config directory, which these computers keep (it is under `/home`):
+2. Make the setup link from that copy, as step 2 says:
 
    ```sh
    /workspace/basalt/bin/basalt init --remote --agent NAME
    ```
 
-   The config, the engine's key and the state go under your user config directory: `engine.json`, `state/` and, for the sockets, `run/`. Send the link to the person as step 3 says. Init also prints the `basalt mcp` command.
+   The config, the engine's key and the state go under your user config directory, which these computers keep (it is under `/home`): `engine.json`, `state/` and, for the sockets, `run/`. Send the link to the person as step 3 says.
 
-3. Register that printed `basalt mcp` command in your agent app. The printed command starts with the full path of the binary init ran from, so the app needs no `PATH` entry for it; run init from the copy in the surviving folder. `basalt mcp` finds the config by itself, so that it can start the engine when it is down.
+3. Register the printed `basalt mcp` command in your agent app. It starts with the full path of the binary init ran from, so the app needs no `PATH` entry for it.
 
 What happens from then on:
 
-- You do not start the engine yourself. When a tool call finds the engine down (after a reboot, after an update, or after the engine stopped), `basalt mcp` starts it in the background and waits up to 15 seconds for it. The first call after a restart is a few seconds slower. The engine then stays up until the next restart, and a crash is restarted by a small parent process, so you notice at most a short retry.
-- It only does this for an engine that runs as you, from a config you own. If it cannot start the engine it answers at once with the reason and the engine's log, `/workspace/basalt/state/engine.log`, and `status` shows the problem `ENGINE_START_FAILED`. Show the person its `personMessage`.
+- When a tool call finds the engine down (after a reboot, after an update, or after the engine stopped), `basalt mcp` starts it and waits up to 15 seconds. The first call after a restart is a few seconds slower. A crash is restarted by a small parent process, so you notice at most a short retry.
+- If it cannot start the engine it answers at once with the reason and the engine's log, `/workspace/basalt/state/engine.log`, and `status` shows the problem `ENGINE_START_FAILED`. Show the person its `personMessage`.
 - `status` says why the engine is running: `engine.startedBy` is `HAND` (someone ran it), `MCP` (the first call after a restart started it) or `CRASH` (it was restarted after a crash). When the restarts kept failing, `status` shows the problem `ENGINE_GAVE_UP` and `engine.lastStop` says why and when.
-- If your database runs on this computer too, it is gone after a restart as well, and Basalt does not start it. The engine waits for it and reconnects when it is back.
+- If your database runs on this computer too, it is gone after a restart as well, and BasaltDB does not start it. The engine waits for it and reconnects when it is back.
 
-The limit: nothing runs between a restart and your next session. The engine starts only when you make a Basalt call. A person who approves a held write from their phone in that time finds the page waiting, and the approval takes effect when your next session starts the engine. Tell the person that before they rely on it.
+The limit: nothing runs between a restart and your next session. The engine starts only when you make a tool call. A person who approves a held write from their phone in that time finds the page waiting, and the approval takes effect when your next session starts the engine. Tell the person that before they rely on it.
 
 ## 5. Check the setup
 
@@ -118,15 +81,15 @@ When the person says it is done, call the `status` tool. Do what its `nextSteps`
 
 Call `status` at the start of every session. Call it again when the person says they fixed something, and when a call fails with `UNAVAILABLE`.
 
-`status` tells you who operates the engine. Here it says `operatedBy: AGENT`. You start the engine yourself when `status` or `ENGINE_UNREACHABLE` says so. In a `PERSON` setup you must never start, stop, restart or upgrade anything.
+`status` tells you who operates the engine. Here it says `operatedBy: AGENT`. In a `PERSON` setup you must never start, stop, restart or upgrade anything.
 
 ## 6. Work
 
 - Start a run with `run_start` and an intent. Read with `query`. Change data with `write` and an intent.
-- A write of 11 to 50 rows, or any `DELETE`, is held. Show the person `approval.personMessage` unchanged. The link goes to `portal.basaltvault.app`. Then end your turn. The page shows the person a code that starts with `basalt-approval.1.`.
+- A write of 11 to 50 rows, or any `DELETE`, is held. Show the person `approval.personMessage` unchanged. The link goes to `portal.basaltvault.app`. Then end your turn. Until the relay is live, the page shows the person a code that starts with `basalt-approval.1.`.
 - When the person pastes the code, repeat the write with `approvalId` and the code as `approval`. If the person says they approved and you have no code, call `list_pending` with `reissueLink: true` for a new link.
 - Never split a write to avoid a hold. Never retry a refusal in a loop.
-- To undo your own work: find the run with `list_runs`, check it with `preview_revert` and `query`, tell the person what you suggest, then call `request_revert`. Show its `personMessage`. The person signs and pastes a code that starts with `basalt-revert.1.`. Call `request_revert` again with `revertId` and the code as `signature`.
+- To undo your own work: find the run with `list_runs`, check it with `preview_revert` and `query`, tell the person what you suggest, then call `request_revert`. Show its `personMessage`. Until the relay is live, the person signs and pastes a code that starts with `basalt-revert.1.`. Call `request_revert` again with `revertId` and the code as `signature`.
 
 ## 7. Upgrade
 
@@ -156,9 +119,7 @@ If the person pastes an admin connection string or a password, or you find one i
 2. Tell the person to change that database password now. On Supabase: Settings, Database, reset the database password.
 3. Make a setup link as in step 2 and send it as in step 3.
 
-When `BASALT_ADMIN_DATABASE_URL` is set where you run commands, `basalt` does not use it and says so. Ask the person to remove it.
-
-`basalt` knows it runs under an agent from an environment variable: its own `BASALT_AGENT_CONTEXT`, or one that a known coding agent sets in its shell (`CLAUDECODE`, `CODEX_SANDBOX`, `CODEX_SANDBOX_NETWORK_DISABLED`, `GEMINI_CLI`, `CURSOR_AGENT`, `OPENCODE`). A person who runs a bot can set `BASALT_AGENT_CONTEXT=1` in the bot's environment. This check stops mistakes. It does not stop an agent that unsets the variable, and `sudo` clears it by default. What keeps the password safe is that it is typed only on the person's own computer, and that the engine and the agent run as OS users who cannot read it.
+Every MCP tool also refuses an argument that holds a `postgres://` URL with a password (`INVALID_ARGUMENT`, reason `ADMIN_CREDENTIAL`). That check stops mistakes. The boundary is that the password is typed only on a page, and that the engine and the agent run as OS users who cannot read each other's files.
 
 ## Where to read more
 

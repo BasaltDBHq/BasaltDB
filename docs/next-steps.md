@@ -7,11 +7,11 @@ Every error and every result the agent has to act on tells it what to do next an
 An error or a result that needs action carries:
 
 - **`nextSteps`**, an ordered list. Each step names who acts (`AGENT` or `PERSON`) and what to do. The agent does its own steps in order. A `CALL_TOOL` step comes with its arguments filled in, so the agent does not guess them.
-- **`personMessage`**, set whenever you must know or do something. The agent shows it to you word for word. It holds the plain explanation, the command to run or the link to open, and any deadline.
+- **`personMessage`**, set whenever you must know or do something. The agent shows it to you word for word. It holds the plain explanation, the link to open, and any deadline.
 
 The steps never tell the agent to get around a limit. It does not split a write below the hold threshold to avoid an approval, and it does not retry a refusal in a loop. `STOP` means the agent does not retry or work around the refusal. `END_TURN` means it ends its turn and waits for you. Over 50 rows the agent stops and asks you.
 
-Commands in a `personMessage` are complete and can be pasted: they name `--agent` and the ids, and `--config` when your config is not at the default path. They never contain a secret. A command that needs the admin connection string asks you for it itself.
+A step for you is a link to a page, never a command to type. Nothing in a `personMessage` is a secret, and no page link carries one in a place a server sees (the secret sits after the `#`).
 
 When the engine is person-operated, which is the default, the agent never starts, stops, restarts or upgrades anything on the engine's machine. Those steps are addressed to you.
 
@@ -44,15 +44,9 @@ Two situations leave the agent with `status` and nothing else.
 
 If the guard is behind only by non-breaking migrations, nothing is degraded. `run_start` carries a `GUARD_UPGRADE_AVAILABLE` warning and `status` lists it as a warning. Upgrade when it suits you.
 
-## `basalt status`
+## Checking by hand
 
-`basalt status` shows the same picture without the agent:
-
-```sh
-basalt status --agent NAME
-```
-
-It prints where the config, sockets and state directory are, whether the engine is running and its build, the pages origin, who operates the engine, the Vault state and engine id (see [vault.md](vault.md)), and then, for the agent, whether the guard is current, whether a passkey is registered, and each problem with the command to fix it. `--json` prints the `status` tool's result plus where the engine runs. Add `--config PATH` for a config that is not at the default path. Without root, when nothing is installed at the default path, `basalt status` (and `basalt log`, `approve`, `revert`, `access`, `passkey list`, `passkey check`, `basalt mcp` and `basalt engine`) read the per-user `engine.json` that `basalt init --remote` left in your user config directory, so a bot needs no `--config`. For an engine that runs as a service, give `--agent NAME`, because the engine's files belong to its own OS user.
+You read the setup through the agent: ask it to call `status`. The result says where the engine runs, whether it is reachable and its build, who operates it, the Vault state and engine id (see [vault.md](vault.md)), and, for the agent, whether the guard is current, whether a passkey is registered, and each problem with its next step. The agent's `status` names only its own database. There is no `basalt status` command.
 
 ## Updating the guard
 
@@ -66,6 +60,6 @@ After it succeeds, the engine serves the agent again without a restart.
 
 ## After pulling a new build
 
-Rebuild `basalt`, update the guard from the setup page when `status` asks for it, restart the engine, and start a new agent session so it loads the new tool descriptions and instructions. You do not run `basalt init` again to upgrade.
+Rebuild `basalt`, update the guard from the setup page when `status` asks for it, restart the engine, and start a new agent session so it loads the new tool descriptions and instructions. You do not run `basalt init` again to upgrade the binary. A guard update goes through the setup page, as above.
 
-If something fails, read the agent's `personMessage` first, then run `basalt status --agent NAME`.
+If something fails, read the agent's `personMessage` first, then ask the agent to call `status`.

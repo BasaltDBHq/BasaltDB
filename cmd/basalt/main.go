@@ -116,4 +116,4 @@ func fail(w io.Writer, name string, err error) int {
 // agentsHelp is the top-level help's line for an agent reading it
 // (CONTRACT.md, Agents and the admin credential).
 const agentsHelp = "Agents: never ask for or accept the database admin connection string or password.\n" +
-	"To set up, run basalt init --remote and give the person the setup code it prints."
+	"To set up, run basalt init on the person's own computer, or basalt init --remote on one the person cannot reach, and show the person the link it prints."

@@ -159,10 +159,11 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	var site *pagesSite
 	var jobs pages.SetupJobs
+	rotated := newRotations()
 	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
 	handed = nil
 	if pagesCfg.Addr != "" {
-		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log)
+		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.changed)
 		site, err = listenPages(pagesCfg, pagesLn, jobs, log)
 		if err != nil {
 			return err
@@ -173,7 +174,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, startedBy: startedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
+	env := agentEnv{cfg: cfg, startedBy: startedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), rotated: rotated}
 	// Plugins are verified now and started below, once the agents serve: a
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
@@ -535,11 +536,11 @@ func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log
 // local setup page), or nil: an agent-operated engine never takes the
 // admin connection string, nor does an engine run as root, which reads
 // its agents' files by other rules.
-func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger) pages.SetupJobs {
+func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string)) pages.SetupJobs {
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != SetupOrigin {
 		return nil
 	}
-	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true})
+	jobs, err := localsetup.New(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
 	if err != nil {
 		log.Warn("the setup page cannot update or remove agents", "err", err)
 		return nil
@@ -615,6 +616,9 @@ type agentEnv struct {
 	setupOrigin string
 	stateDir    string
 	pins        upkeep.Pins
+	// rotated takes each agent's password setter, for the setup page's
+	// REPAIR.
+	rotated *rotations
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
 	// portal reports the daily portal check in every agent's status; nil
@@ -721,6 +725,12 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		files.close()
 		return agentRuntime{}, err
+	}
+	if env.rotated != nil {
+		env.rotated.add(a.Name, func(pw string) {
+			password.Set(pw)
+			pool.Reset()
+		})
 	}
 	finisher := &setupFinisher{
 		configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile, files: files,

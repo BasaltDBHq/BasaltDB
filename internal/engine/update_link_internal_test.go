@@ -31,10 +31,10 @@ func TestSetupJobsRunOnlyOnAPersonOperatedEngineAtTheSetupOrigin(t *testing.T) {
 	t.Parallel()
 	path := t.TempDir() + "/engine.json"
 	log := slog.New(slog.DiscardHandler)
-	require.Nil(t, setupJobs(config.Config{OperatedBy: "AGENT"}, path, SetupOrigin, log))
-	require.Nil(t, setupJobs(config.Config{}, path, "http://localhost:9999", log))
+	require.Nil(t, setupJobs(config.Config{OperatedBy: "AGENT"}, path, SetupOrigin, log, nil))
+	require.Nil(t, setupJobs(config.Config{}, path, "http://localhost:9999", log, nil))
 	if os.Geteuid() == 0 {
 		t.Skip("as root, setupJobs serves nothing")
 	}
-	require.NotNil(t, setupJobs(config.Config{}, path, SetupOrigin, log))
+	require.NotNil(t, setupJobs(config.Config{}, path, SetupOrigin, log, nil))
 }

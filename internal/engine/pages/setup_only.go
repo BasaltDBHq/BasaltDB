@@ -20,13 +20,16 @@ const (
 	SetupPagePath  = "/setup/"
 	SetupCheckPath = "/api/v1/setup/check"
 	SetupRunPath   = "/api/v1/setup/run"
-	setupPageFile  = "setup/index.html"
+	// SetupDoctorPath is the Update check: no admin string.
+	SetupDoctorPath = "/api/v1/setup/doctor"
+	setupPageFile   = "setup/index.html"
 )
 
 // SetupJobs runs the setup page's jobs (localsetup.Service).
 type SetupJobs interface {
 	Check(ctx context.Context, req localsetup.Request) (localsetup.CheckAnswer, error)
 	Run(ctx context.Context, req localsetup.Request) (localsetup.RunAnswer, error)
+	Doctor(ctx context.Context, req localsetup.DoctorRequest) (localsetup.DoctorAnswer, error)
 }
 
 // SetupOnlyHandler is what an engine with no config serves: GET /healthz,
@@ -50,6 +53,7 @@ func SetupOnlyHandler(origin string, jobs SetupJobs, log *slog.Logger) http.Hand
 	st := setupRoutes{origin: origin, jobs: jobs, log: log}
 	mux.HandleFunc("POST "+SetupCheckPath, st.check)
 	mux.HandleFunc("POST "+SetupRunPath, st.run)
+	mux.HandleFunc("POST "+SetupDoctorPath, st.doctor)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "This engine has no config yet: it serves only its setup page.")
 	})
@@ -90,37 +94,71 @@ func (st setupRoutes) run(w http.ResponseWriter, r *http.Request) {
 
 // request checks the Origin before it reads anything, then the content
 // type, the size and the body's fields. The body is never logged.
+// doctor is the Update check: the agent and its OS user, and never the
+// admin string, which every route but check and run refuses.
+func (st setupRoutes) doctor(w http.ResponseWriter, r *http.Request) {
+	raw, ok := st.body(w, r)
+	if !ok {
+		return
+	}
+	if holdsDatabaseURL(raw) {
+		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "This route never takes the admin connection string.")
+		return
+	}
+	var req localsetup.DoctorRequest
+	if !decodeStrict(raw, &req) {
+		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body is not a setup request.")
+		return
+	}
+	answer, err := st.jobs.Doctor(r.Context(), req)
+	st.answer(w, answer, err, "doctor")
+}
+
+// decodeStrict decodes raw into v, refusing unknown fields and trailing
+// data.
+func decodeStrict(raw []byte, v any) bool {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v) == nil && !dec.More()
+}
+
 func (st setupRoutes) request(w http.ResponseWriter, r *http.Request) (localsetup.Request, bool) {
-	if r.Header.Get("Origin") != st.origin {
-		writeError(w, http.StatusForbidden, localsetup.CodeInvalidArgument, "The request does not come from the setup page.")
-		return localsetup.Request{}, false
-	}
-	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-		writeError(w, http.StatusUnsupportedMediaType, localsetup.CodeInvalidArgument, "The body must be application/json.")
-		return localsetup.Request{}, false
-	}
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, setupMaxBody))
-	var tooLarge *http.MaxBytesError
-	switch {
-	case errors.As(err, &tooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "The body is over 256 KiB.")
-		return localsetup.Request{}, false
-	case err != nil:
-		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body cannot be read.")
+	raw, ok := st.body(w, r)
+	if !ok {
 		return localsetup.Request{}, false
 	}
 	var req localsetup.Request
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || dec.More() {
+	if !decodeStrict(raw, &req) {
 		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body is not a setup request.")
 		return localsetup.Request{}, false
 	}
 	return req, true
 }
 
-// answer writes the job's answer, or its fixed refusal. Only the refusal's
-// code is logged.
+// body checks the Origin and the content type, then reads the body up to
+// the setup routes' limit.
+func (st setupRoutes) body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	if r.Header.Get("Origin") != st.origin {
+		writeError(w, http.StatusForbidden, localsetup.CodeInvalidArgument, "The request does not come from the setup page.")
+		return nil, false
+	}
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, localsetup.CodeInvalidArgument, "The body must be application/json.")
+		return nil, false
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, setupMaxBody))
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "The body is over 256 KiB.")
+		return nil, false
+	case err != nil:
+		writeError(w, http.StatusBadRequest, localsetup.CodeInvalidArgument, "The body cannot be read.")
+		return nil, false
+	}
+	return raw, true
+}
+
 func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call string) {
 	if err == nil {
 		writeJSON(w, http.StatusOK, answer)
@@ -128,7 +166,7 @@ func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call 
 	}
 	ref := localsetup.AsRefusal(err)
 	st.log.Info("setup page: refused", "call", call, "code", ref.Code)
-	writeJSON(w, setupStatus(ref), setupErrorDTO{errorDTO: errorDTO{Code: ref.Code, Message: ref.Message}, TrustRoot: ref.TrustRoot})
+	writeJSON(w, setupStatus(ref), setupErrorDTO{errorDTO: errorDTO{Code: ref.Code, Message: ref.Message}, TrustRoot: ref.TrustRoot, Pinned: ref.Pinned})
 }
 
 // setupErrorDTO is a setup refusal's body: the code and message, and on
@@ -136,6 +174,9 @@ func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call 
 type setupErrorDTO struct {
 	errorDTO
 	TrustRoot *localsetup.TrustRoot `json:"trustRoot,omitempty"`
+	// Pinned is the SHA-256 pinned now, on a TRUST check's refusal of a
+	// changed certificate.
+	Pinned string `json:"pinned,omitempty"`
 }
 
 // setupStatus maps a refusal to its HTTP status (CONTRACT.md, The local

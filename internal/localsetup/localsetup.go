@@ -71,10 +71,12 @@ type Request struct {
 	TrustRoot string `json:"trustRoot,omitempty"`
 	// ConfirmName is the database name the person typed to confirm a
 	// REMOVE; only a REMOVE run carries it.
-	ConfirmName string     `json:"confirmName,omitempty"`
-	Answers     []Answer   `json:"answers,omitempty"`
-	Challenge   *Challenge `json:"challenge,omitempty"`
-	Passkey     *Passkey   `json:"passkey,omitempty"`
+	ConfirmName string `json:"confirmName,omitempty"`
+	// CredentialID is the passkey a PASSKEY_REMOVE removes, base64url.
+	CredentialID string     `json:"credentialId,omitempty"`
+	Answers      []Answer   `json:"answers,omitempty"`
+	Challenge    *Challenge `json:"challenge,omitempty"`
+	Passkey      *Passkey   `json:"passkey,omitempty"`
 }
 
 // Answer answers one row-level security question.
@@ -117,6 +119,10 @@ type CheckAnswer struct {
 	// and a suggestion; ColumnsMore says there are more than listed.
 	Columns     []ColumnInfo `json:"columns,omitempty"`
 	ColumnsMore bool         `json:"columnsMore,omitempty"`
+	// Pinned and Recorded are a TRUST check's for a ledger that names
+	// another pin: the engine's SHA-256 and the ledger's.
+	Pinned   string `json:"pinned,omitempty"`
+	Recorded string `json:"recorded,omitempty"`
 }
 
 // RegisteredPasskey is one passkey the run registered.
@@ -138,6 +144,9 @@ type RunAnswer struct {
 	// EngineRemoved: a REMOVE removed this engine's last agent and deleted
 	// engine.json; basalt init removes the engine service next.
 	EngineRemoved bool `json:"engineRemoved"`
+	// Remaining is a PASSKEY_REMOVE's: the active passkeys of this page's
+	// origin left.
+	Remaining *int `json:"remaining,omitempty"`
 }
 
 // Options are what the engine gives the setup.
@@ -173,6 +182,9 @@ type Options struct {
 	SampleColumn func(ctx context.Context, conn *pgx.Conn, col classify.Column) (classify.Sample, error)
 	// Euid is this process's effective user id (os.Geteuid outside tests).
 	Euid func() int
+	// CredentialChanged tells the running engine an agent's new password,
+	// after a REPAIR wrote it (a no-op when nothing listens).
+	CredentialChanged func(agent, password string)
 }
 
 // Service runs the setup jobs. One runs at a time.
@@ -216,6 +228,9 @@ func New(o Options) (*Service, error) {
 	if o.Euid == nil {
 		o.Euid = os.Geteuid
 	}
+	if o.CredentialChanged == nil {
+		o.CredentialChanged = func(string, string) {}
+	}
 	key, err := newKey()
 	if err != nil {
 		return nil, err
@@ -241,8 +256,8 @@ func (s *Service) validate(req Request) (job, error) {
 	if _, err := os.Lstat(s.opts.ConfigPath); !errors.Is(err, os.ErrNotExist) {
 		return job{}, refuse(CodeJobUnavailable, "This engine is already set up. An install never changes an engine that has a config; ask the agent for the setup link of the change you want.")
 	}
-	if req.Job == JobUpdate || req.Job == JobRemove {
-		return job{}, refuse(CodeJobUnavailable, "This engine has no config yet, so it has no agent to update or remove. Ask the agent for a new link.")
+	if isAgentJob(req.Job) {
+		return job{}, refuse(CodeJobUnavailable, "This engine has no config yet, so it has no agent to update, remove or fix. Ask the agent for a new link.")
 	}
 	if req.Job != JobInstall {
 		return job{}, refuse(CodeInvalidArgument, "This setup link names a job this engine does not run.")
@@ -258,6 +273,9 @@ func (s *Service) validate(req Request) (job, error) {
 	j := job{req: req, role: role, uid: uid}
 	if req.ConfirmName != "" {
 		return job{}, refuse(CodeAnswersInvalid, "Only a removal is confirmed with the database name.")
+	}
+	if req.CredentialID != "" {
+		return job{}, refuse(CodeAnswersInvalid, "An install removes no passkey.")
 	}
 	if req.Demo && req.hasRealFields() {
 		return job{}, refuse(CodeAnswersInvalid, "The sample database takes no schema, table or label to set.")

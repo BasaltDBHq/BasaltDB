@@ -64,6 +64,9 @@ type RefusalError struct {
 	// TrustRoot is set on a CERTIFICATE_NOT_VERIFIED the person can answer
 	// by trusting the chain's top for the host.
 	TrustRoot *TrustRoot
+	// Pinned is the SHA-256 pinned now, on a TRUST check's refusal of a
+	// changed certificate.
+	Pinned string
 }
 
 // TrustRoot is the chain top a database presents, as the page shows it for

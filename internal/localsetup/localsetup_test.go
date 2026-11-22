@@ -283,8 +283,10 @@ func TestRequestsTheEngineRefusesBeforeConnecting(t *testing.T) {
 		edit func(*localsetup.Request)
 		code string
 	}{
-		{func(r *localsetup.Request) { r.Job = "REPAIR" }, localsetup.CodeInvalidArgument},
+		{func(r *localsetup.Request) { r.Job = "MIGRATE" }, localsetup.CodeInvalidArgument},
 		{func(r *localsetup.Request) { r.Job = localsetup.JobRemove }, localsetup.CodeJobUnavailable},
+		{func(r *localsetup.Request) { r.Job = localsetup.JobRepair }, localsetup.CodeJobUnavailable},
+		{func(r *localsetup.Request) { r.Job = localsetup.JobPasskeyRemove }, localsetup.CodeJobUnavailable},
 		{func(r *localsetup.Request) { r.Agent = "Bad-Name" }, localsetup.CodeInvalidArgument},
 		{func(r *localsetup.Request) { r.OSUser = "" }, localsetup.CodeInvalidArgument},
 		{func(r *localsetup.Request) { r.OSUser = "nobody-here" }, localsetup.CodeInvalidArgument},

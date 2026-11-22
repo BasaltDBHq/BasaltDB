@@ -60,7 +60,7 @@ type initFlags struct {
 	rotated bool
 	// initArgs are the flags saved to engine.json (savedArgs).
 	initArgs []string
-	// personUIDs are the OS users the engine's person socket admits
+	// personUIDs are the person's OS users the engine records
 	// (--person-uid; else the person running init, see persons).
 	personUIDs []uint32
 	// vaultFlag is --vault as given ("" when not); vault is what init
@@ -453,7 +453,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.devLocalPages, flagDevLocalPages, false,
 		"development only, with --operated-by=agent: use local pages (--passkey-origin http://localhost:<port>) instead of the portal; never with a bot you do not control")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
-	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
+	fs.Func(flagPersonUID, "service: an OS user id of the person; an agent may change plugins (request_plugin) only while it runs as one (repeatable; default: you)", func(v string) error {
 		uid, err := parseUID(v)
 		if err != nil {
 			return err

@@ -229,6 +229,10 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 	return s.pluginOpened(ctx, opened)
 }
 
+// PluginUploadsServed refuses the plugin upload where request_plugin's
+// install would be refused (pluginsServed), before anything is written.
+func (s *Service) PluginUploadsServed() error { return s.pluginsServed(true) }
+
 // pluginsServed refuses request_plugin where it is not served: an
 // agent-operated engine, a same-user engine, and, for a call that opens an
 // approval, an engine that serves no local pages.

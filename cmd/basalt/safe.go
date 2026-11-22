@@ -110,13 +110,6 @@ func hiddenRune(r rune) bool {
 		unicode.Other_Default_Ignorable_Code_Point, unicode.Variation_Selector, mongolianSelectors)
 }
 
-// printLine prints one line of text from the database or an agent, with
-// everything visibleText escapes escaped (a line feed too, so the text
-// cannot start a line of its own).
-func printLine(w io.Writer, line string) {
-	fmt.Fprintln(w, visibleText(line))
-}
-
 // fprintSafef is fmt.Fprintf with the result escaped by terminalText, for
 // messages that carry text from the database or an agent.
 func fprintSafef(w io.Writer, format string, args ...any) {

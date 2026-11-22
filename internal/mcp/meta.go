@@ -36,3 +36,15 @@ type PluginUpload struct {
 	Name        string   `json:"name"`
 	Executables []string `json:"executables,omitempty"`
 }
+
+// The JSON-RPC methods basalt mcp calls on a second connection to the
+// agent's own socket to hand the engine a plugin's files (CONTRACT.md, MCP
+// tools, request_plugin): begin an upload, then send its parts.
+const (
+	MethodPluginUploadBegin = "dev.basaltdb/pluginUploadBegin"
+	MethodPluginUploadPart  = "dev.basaltdb/pluginUploadPart"
+)
+
+// IsMethodNotFound reports whether e is the answer of a server that does
+// not serve the method.
+func IsMethodNotFound(e *RPCError) bool { return e != nil && e.Code == rpcErrMethodNotFound }

@@ -137,3 +137,25 @@ jobs:
           VERSION: ${{ github.ref_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: sh scripts/mcp-registry-publish.sh
+
+  # The hosted portal must serve exactly the pages this release embeds, and
+  # its manifest web/portal.sha256 must match them (CONTRACT.md, CLI, Portal
+  # check). Read-only: public pages over HTTPS. A mismatch fails this job,
+  # after the release, so the maintainers deploy the portal or find out why.
+  portal-check:
+    name: Portal check
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Compare the portal with this release's pages
+        run: make portal-verify

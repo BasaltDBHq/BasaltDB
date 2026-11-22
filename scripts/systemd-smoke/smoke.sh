@@ -24,7 +24,7 @@
 # Not covered here since basalt plugin is gone: removing a config entry's
 # unit, user and socket directory (there is no command for it), and an agent
 # adding a plugin through request_plugin, which this setup's agent cannot do
-# (it has its own OS user, which the person socket refuses); the engine's
+# (it has its own OS user, which is not the person's); the engine's
 # tests cover that path.
 #
 # It changes the machine as root (users, units, /opt/basalt, /etc/basalt), so
@@ -119,10 +119,20 @@ run_has() {
 	grep -qx "$1" <<<"$log"
 }
 
-status_out() { "$basalt" status --agent "$agent" 2>&1 || true; }
+# status_out is the agent's status tool, called as the agent's OS user
+# through basalt mcp (basalt status is removed).
+status_out() {
+	printf '%s\n%s\n' \
+		'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+		'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' |
+		sudo -u "$agent_user" timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
+}
+# unavailable: the status tool names PLUGIN_UNAVAILABLE, or gave no result
+# at all (a basalt mcp call that failed is never read as healthy).
 unavailable() {
 	local out
 	out=$(status_out)
+	grep -q '"id":2,"result"' <<<"$out" || return 0
 	grep -q "PLUGIN_UNAVAILABLE" <<<"$out"
 }
 connected() { run_has 'probe initialized' && ! unavailable; }
@@ -323,10 +333,15 @@ echo "basalt: $got"
 
 step "the engine connects and records network ENFORCED"
 wait_for "the engine to initialize the plugin" connected
-plugins=$("$basalt" log --agent "$agent" 2>&1 >/dev/null | grep '^Plugins:' || true)
+# The agent's ledger records the plugin served (basalt log is removed: the
+# admin reads the ledger table itself).
+plugins=$(psql "$BASALT_ADMIN_DATABASE_URL" -XAtq -v ON_ERROR_STOP=1 -c \
+	"SELECT concat_ws(' ', detail->>'name', detail->>'version', detail->>'signerKeyId', detail->'endpoint'->>'kind',
+	        detail->'isolation'->>'files', detail->'isolation'->>'network')
+	   FROM basalt_meta.ledger WHERE kind = 'PLUGIN_ENABLED' AND detail->>'name' = '$name' ORDER BY seq DESC LIMIT 1" || true)
 echo "$plugins"
-grep -qF "$name/default 0.1.0 (signer $key_id, LOCAL, files OS_USER, network ENFORCED)" <<<"$plugins" ||
-	fail "basalt log does not record the plugin served with network ENFORCED"
+[ "$plugins" = "$name 0.1.0 $key_id LOCAL OS_USER ENFORCED" ] ||
+	fail "the ledger does not record the plugin served with network ENFORCED"
 
 step "Fedora's stock drop-in: systemd applies it and the engine still connects"
 sudo mkdir -p "$(dirname "$fedora_dropin")"

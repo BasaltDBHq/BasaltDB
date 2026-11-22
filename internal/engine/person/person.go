@@ -1,22 +1,12 @@
-// Package person is the person socket (CONTRACT.md, The person socket;
-// owner decisions SM-1 to SM-3). In service mode the engine runs as its own
-// OS user and the person's basalt log, approve and revert cannot read its
-// config or the agent's credential, so they ask the running engine over
-// <socket dir>/person.sock. The engine admits only the person uids recorded
-// at basalt init, checked on every connection before a byte is read, and
-// runs each request with the agent's own credential. It serves only what
-// those commands need, never the MCP tools, and never returns the
-// credential or the config.
-//
-// The same Ledger interface backs the CLI in both modes: DBLedger over a
-// direct connection (same-user mode) and AgentClient over the socket
-// (service mode).
+// Package person holds what the person's commands read and relay with the
+// agent's credential (Ledger, over a direct connection: DBLedger), and the
+// engine-kept plugin entries' request and result types with their errors.
+// The person socket that once served them in service mode is removed
+// (CONTRACT.md, CLI, Removed).
 package person
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,35 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-// ProtocolVersion is the greeting's version.
-const ProtocolVersion = 1
-
-// Method names a person socket request.
-type Method string
-
-// Methods (CONTRACT.md, The person socket).
-const (
-	MethodPages           Method = "PAGES"
-	MethodCheckHealth     Method = "CHECK_HEALTH"
-	MethodListChanges     Method = "LIST_CHANGES"
-	MethodListAccess      Method = "LIST_ACCESS"
-	MethodRowChanges      Method = "ROW_CHANGES"
-	MethodListPasskeys    Method = "LIST_PASSKEYS"
-	MethodFindApproval    Method = "FIND_APPROVAL"
-	MethodSubmitApproval  Method = "SUBMIT_APPROVAL"
-	MethodFindRevert      Method = "FIND_REVERT"
-	MethodPreviewRevert   Method = "PREVIEW_REVERT"
-	MethodPrepareRevert   Method = "PREPARE_REVERT"
-	MethodApplyRevert     Method = "APPLY_REVERT"
-	MethodListRevertLines Method = "LIST_REVERT_LINES"
-	MethodRescopeRevert   Method = "RESCOPE_REVERT"
-	MethodRejectRevert    Method = "REJECT_REVERT"
-	MethodStatus          Method = "STATUS"
-	MethodTarget          Method = "TARGET"
-	MethodAgents          Method = "AGENTS"
-)
-
-// Code is an error code of the person socket.
+// Code is an error code of an engine-kept plugin change.
 type Code string
 
 // Error codes.
@@ -73,59 +35,8 @@ const (
 	CodeInternal        Code = "INTERNAL"
 )
 
-// Limits and timeouts of the protocol.
-const (
-	// MaxRequestBytes bounds one request line.
-	MaxRequestBytes = 256 << 10
-	// maxResponseBytes bounds one response line the client reads: a page
-	// of 200 changes with their rows, or a prepared revert's lines.
-	maxResponseBytes = 64 << 20
-	// RequestTimeout is how long the engine waits for the request after
-	// the greeting, and how long the client waits for the greeting.
-	RequestTimeout = 10 * time.Second
-	// callTimeout bounds every method but PREPARE_REVERT.
-	callTimeout = 2 * time.Minute
-	// writeTimeout bounds writing one response.
-	writeTimeout = 30 * time.Second
-	// MaxConns is how many person connections the engine serves at once.
-	MaxConns = 16
-)
-
-// methodTimeout is how long the engine gives method: preparing a revert
-// may take guard.CLIPrepareTimeout, as for the same-user CLI.
-func methodTimeout(m Method) time.Duration {
-	if m == MethodPrepareRevert {
-		return guard.CLIPrepareTimeout + callTimeout
-	}
-	if pluginMethod(m) {
-		return pluginTimeout
-	}
-	return callTimeout
-}
-
-// Greeting is the engine's first line on a connection.
-type Greeting struct {
-	OK      bool   `json:"ok"`
-	Version int    `json:"version"`
-	Error   *Error `json:"error,omitempty"`
-}
-
-// Request is one call.
-type Request struct {
-	Method Method          `json:"method"`
-	Agent  string          `json:"agent,omitempty"`
-	Params json.RawMessage `json:"params"`
-	// agentSet: the request line holds an agent key, even empty.
-	agentSet bool
-}
-
-// Response is the engine's answer: Result or Error.
-type Response struct {
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *Error          `json:"error,omitempty"`
-}
-
-// Error is a person socket error.
+// Error is a refusal of an engine-kept plugin change, or another error of
+// one, with its code.
 type Error struct {
 	Code Code `json:"code"`
 	// Reason is set with CodePluginRefused only.
@@ -135,13 +46,6 @@ type Error struct {
 
 // Error is the message, as the same-user CLI prints the same failure.
 func (e *Error) Error() string { return e.Message }
-
-// ErrNotRunning is a socket that is missing or refuses the connection:
-// the engine is not running.
-var ErrNotRunning = errors.New("the engine is not running")
-
-// ErrUIDNotAllowed is the engine refusing this OS user on its person socket.
-var ErrUIDNotAllowed = errors.New("the engine does not admit this OS user on its person socket")
 
 // Ledger is what the person's log, approve and revert read and relay with
 // the agent's credential. DBLedger runs it on a connection; AgentClient asks

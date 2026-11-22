@@ -122,7 +122,7 @@ type Deps struct {
 	// that do not serve it (problems PLUGIN_UNAVAILABLE and
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
-	// CrashDirs are the directories basalt crash list read, for
+	// CrashDirs are the directories crash reports are saved in, for
 	// status.crash; Access
 	// lists the agent role's tables, for status.access. Each is left out of
 	// status when nil or empty.

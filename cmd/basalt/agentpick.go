@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -27,7 +26,7 @@ func (c *cliIO) needsAgent(agent, credFile string) bool {
 // engine config.
 func (c *cliIO) configuredAgents(configPath string) ([]string, error) {
 	if configPath == c.systemConfig() && c.engine.unitInstalled() {
-		entries, err := os.ReadDir(filepath.Dir(c.engine.personSocket))
+		entries, err := os.ReadDir(config.DefaultSocketDir(c.goos))
 		if err != nil {
 			return nil, err
 		}

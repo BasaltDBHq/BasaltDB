@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
+	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
 
 // keptWait bounds a wait on the running engine: a cold start of the test
@@ -88,7 +89,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*pluginOptions))
 
 // runSource is a local plugin acme-ner whose command is this test binary,
 // started as the test plugin that reports to report.
-func runSource(t *testing.T, report, hooks string) ([]person.PluginFile, []string) {
+func runSource(t *testing.T, report, hooks string) ([]shim.PluginFile, []string) {
 	t.Helper()
 	exe, err := os.ReadFile(os.Args[0])
 	require.NoError(t, err)
@@ -103,7 +104,7 @@ func runSource(t *testing.T, report, hooks string) ([]person.PluginFile, []strin
   "network": { "egress": [] }
 }
 `, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
-	return []person.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
+	return []shim.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.

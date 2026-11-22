@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
@@ -277,4 +280,70 @@ func requestError(err error, upload bool) error {
 	case person.CodeUIDNotAllowed, person.CodeUnknownAgent, person.CodeUnknownMethod, person.CodeRefused, person.CodeInternal:
 	}
 	return err
+}
+
+// uploadMethods are the methods basalt mcp calls on a second connection to
+// caller's own socket to upload a plugin's files (CONTRACT.md, MCP tools,
+// request_plugin). The agent's socket admits only its own OS user, the
+// upload belongs to that user, and the caller is refused as request_plugin
+// refuses an install (served, then reach) before anything is written.
+func (p *pluginRequests) uploadMethods(caller string, served func() error) map[string]mcp.MethodFunc {
+	if p == nil {
+		return nil
+	}
+	admit := func() (*keptPlugins, uint32, error) {
+		if err := served(); err != nil {
+			return nil, 0, err
+		}
+		k, uid, _, err := p.reach(caller)
+		return k, uid, err
+	}
+	return map[string]mcp.MethodFunc{
+		mcp.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {
+			k, uid, err := admit()
+			if err != nil {
+				return nil, uploadError(err)
+			}
+			out, err := k.UploadBegin(ctx, uid)
+			if err != nil {
+				return nil, uploadError(requestError(err, false))
+			}
+			return out, nil
+		},
+		mcp.MethodPluginUploadPart: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			k, uid, err := admit()
+			if err != nil {
+				return nil, uploadError(err)
+			}
+			var in person.PluginUploadPartParams
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if dec.Decode(&in) != nil || in.UploadID == uuid.Nil || in.Path == "" {
+				return nil, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "a part needs uploadId, path, offset and data, and nothing else"}
+			}
+			out, err := k.UploadPart(ctx, uid, in)
+			if err != nil {
+				return nil, uploadError(requestError(err, false))
+			}
+			return out, nil
+		},
+	}
+}
+
+// uploadError is the upload methods' answer for err.
+func uploadError(err error) *mcp.ToolError {
+	var te *mcp.ToolError
+	var r *agent.PluginRefusedError
+	var ae *agent.ArgumentError
+	switch {
+	case errors.As(err, &te):
+		return te
+	case errors.As(err, &r):
+		return &mcp.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
+	case errors.As(err, &ae):
+		return &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: ae.Message}
+	case errors.Is(err, agent.ErrPluginNotFound):
+		return &mcp.ToolError{Code: agent.CodeNotFound, Message: "the upload is unknown, expired or used"}
+	}
+	return &mcp.ToolError{Code: agent.CodeInternal, Message: "the engine could not take the plugin's files"}
 }

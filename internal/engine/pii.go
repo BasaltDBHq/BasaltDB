@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"crypto/rand"
 	"fmt"
 	"log/slog"
@@ -10,8 +9,6 @@ import (
 	"runtime/debug"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/person"
-	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
@@ -62,28 +59,4 @@ func setMemoryLimit(p config.PII, log *slog.Logger) {
 	limit := p.MaxMemoryBytes() * memLimitFactor
 	debug.SetMemoryLimit(limit)
 	log.Info("pii: memory limit set", "goMemLimitBytes", limit, "maxMemoryMB", p.MaxMemoryMB)
-}
-
-// piiLedger answers CHECK_HEALTH with the engine's dictionary counts, which
-// the person's basalt log cannot read from the engine's state directory in
-// service mode.
-type piiLedger struct {
-	person.Ledger
-	dict *pii.FuseDictionary
-}
-
-// CheckHealth adds the dictionary's counts to the PII line.
-func (l piiLedger) CheckHealth(ctx context.Context, opts ledger.HealthOptions) (ledger.Health, error) {
-	h, err := l.Ledger.CheckHealth(ctx, opts)
-	if err != nil || h.PII == nil {
-		return h, err
-	}
-	h.PII.Dictionary = dictionaryHealth(l.dict.Status())
-	return h, nil
-}
-
-// dictionaryHealth is the dictionary part of the PII line: the values of
-// the base and the delta, and the last scan.
-func dictionaryHealth(st pii.DictionaryStatus) *ledger.DictionaryHealth {
-	return &ledger.DictionaryHealth{Values: st.DictionaryValues + uint64(st.DeltaValues), LastScanAt: st.LastScanAt}
 }

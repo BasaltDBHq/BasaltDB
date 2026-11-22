@@ -228,19 +228,6 @@ func TestUpgradeServesTheRunningEngineAgainWithoutARestart(t *testing.T) {
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "the guard still records the agent's writes")
 	require.Equal(t, guard.CodeIntentRequired, code)
-
-	// basalt status shows the running engine and nothing to fix.
-	s := g.status(t, "--json")
-	require.Equal(t, exitOK, s.code, s.stderr)
-	var out map[string]any
-	require.NoError(t, json.Unmarshal([]byte(s.stdout), &out))
-	eng := out["engine"].(map[string]any)
-	require.Equal(t, true, eng["reachable"])
-	require.InDelta(t, os.Getpid(), eng["pid"], 0)
-	me, err := user.Current()
-	require.NoError(t, err)
-	require.Equal(t, me.Username, eng["osUser"])
-	require.Equal(t, guard.GuardOK, out["guard"].(map[string]any)["state"])
 }
 
 func TestUpgradeIsANoOpOnACurrentGuard(t *testing.T) {

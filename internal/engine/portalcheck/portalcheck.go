@@ -172,7 +172,7 @@ func (c *Checker) Check(ctx context.Context) Result {
 	c.mu.Unlock()
 	switch {
 	case res.Mismatch():
-		c.log.Warn("the portal serves pages that differ from this build; run basalt portal verify for the files",
+		c.log.Warn("the portal serves pages that differ from this build",
 			"portal", res.PortalURL, "paths", res.Summary())
 	case res.Error != "":
 		c.log.Warn("the portal could not be checked", "portal", res.PortalURL, "err", res.Error)

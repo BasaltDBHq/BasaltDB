@@ -110,10 +110,10 @@ func TestRevertSignsAndApplies(t *testing.T) {
 	require.Equal(t, "open", leadStatusOf(t, d, 40))
 	require.Equal(t, "person", leadStatusOf(t, d, 43), "people win")
 
-	r := cli(t, nil, "", "log", "--credential-file", cred)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, "REVERT")
-	require.Contains(t, r.stdout, "The bulk update was wrong")
+	var reverts int
+	require.NoError(t, d.Admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM basalt_meta.changes WHERE op = 'REVERT' AND intent LIKE '%The bulk update was wrong%'`).Scan(&reverts))
+	require.Positive(t, reverts, "the ledger records the revert with its intent")
 }
 
 func TestRevertApplyLater(t *testing.T) {

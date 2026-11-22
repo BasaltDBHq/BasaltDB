@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 )
 
-// The person socket's limits the plugin methods live within.
+// The limits the plugin methods live within.
 const (
 	personRequestBytes = 256 << 10
 	maxPartBytes       = 64 << 10
@@ -71,13 +70,9 @@ type personSchema struct {
 	} `json:"$defs"`
 }
 
-// personTableRow is a row of the person socket's method table.
-var personTableRow = regexp.MustCompile("(?m)^\\| `(PLUGIN_[A-Z_]+)` \\| `\\{[^|]*\\(no `agent`\\) \\|")
-
-// TestPluginServiceMethods checks the person socket's plugin methods
-// (CONTRACT.md, Plugin approval in service mode) against their schema: every
-// method has its row in the person socket's table and a valid request
-// example; the part and upload limits in the schema are the contract's and a
+// TestPluginServiceMethods checks the engine-kept plugin methods
+// (CONTRACT.md, Plugin approval in service mode) against their schema: the
+// section names every method and each has a valid request example; the part and upload limits in the schema are the contract's and a
 // largest part fits one request line; every refusal reason is in the
 // contract; and a binding an engine-kept local entry opens is a level 3 page.
 func TestPluginServiceMethods(t *testing.T) {
@@ -96,12 +91,6 @@ func TestPluginServiceMethods(t *testing.T) {
 	section := contract[start : start+end]
 
 	methods := ps.Defs.Request.Properties.Method.Enum
-	found := personTableRow.FindAllStringSubmatch(contract, -1)
-	rows := make([]string, 0, len(found))
-	for _, m := range found {
-		rows = append(rows, m[1])
-	}
-	require.ElementsMatch(t, methods, rows, "the person socket's table lists exactly the schema's plugin methods")
 	for _, m := range methods {
 		require.Contains(t, section, "`"+m+"`", "the section names %s", m)
 	}

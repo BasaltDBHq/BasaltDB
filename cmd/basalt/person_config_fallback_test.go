@@ -43,6 +43,20 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 		require.Contains(t, got.stderr, tc.want, "%v did not reach the per-user engine", tc.args)
 		require.NotContains(t, got.stderr, config.DefaultPath(runtime.GOOS), "%v read the system path", tc.args)
 	}
+	pk := cliOn(t, h, nil, "", "passkey", "list", "--agent", "bot")
+	require.Equal(t, exitOK, pk.code, pk.stderr)
+	require.Contains(t, pk.stderr, "no active passkey")
+	require.NotContains(t, pk.stderr, config.DefaultPath(runtime.GOOS))
+	// passkey check also reaches the per-user ledger: init skipped the
+	// passkey, so it answers that none is registered.
+	chk := cliOn(t, h, nil, "", "passkey", "check", "--agent", "bot")
+	require.Equal(t, exitError, chk.code, chk.stderr)
+	require.Contains(t, chk.stderr, "no active passkey; register one")
+	require.NotContains(t, chk.stderr, config.DefaultPath(runtime.GOOS))
+
+	// The same commands do not fall back when root runs them.
+	root := cliOn(t, systemSocketHost(t), nil, "", "passkey", "list", "--agent", "bot")
+	require.NotEqual(t, exitOK, root.code)
 }
 
 // The engine finds the same per-user config when it is started without

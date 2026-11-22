@@ -255,3 +255,10 @@ func commonestRegion(ccs map[int32]int, db map[int32]int) string {
 	}
 	return r
 }
+
+// ValidRegion reports whether region (upper case) is an ISO 3166-1 alpha-2
+// region libphonenumber has numbers for.
+func ValidRegion(region string) bool {
+	_, ok := phonenumbers.GetSupportedRegions()[region]
+	return ok
+}

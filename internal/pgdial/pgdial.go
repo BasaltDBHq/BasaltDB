@@ -193,8 +193,8 @@ func WithCertificateHint(dsn string, err error) error {
 			"name its CA with sslrootcert=<CA file> in the connection string", err, a.Host)
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
-	return fmt.Errorf("%w; the certificate of %s does not verify: trust its CA on the connect page, "+
-		"or name it with sslrootcert=<CA file> in the connection string", err, a.Host)
+	return fmt.Errorf("%w; the certificate of %s does not verify: add its CA with basalt trust add --name NAME --match '=%s' --ca <CA file>, "+
+		"or name it with sslrootcert=<CA file> in the connection string", err, a.Host, a.Host)
 }
 
 // apply sets DefaultMode unless dsn names a mode itself (pgx has already

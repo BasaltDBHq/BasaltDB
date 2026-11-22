@@ -576,6 +576,11 @@ func (r *remoteInit) connection() error {
 			r.password = c.password()
 		}
 	}
+	// Before any login sends a startup message: offer to pin a chain no
+	// authority here verifies.
+	if err := r.pin(); err != nil {
+		return err
+	}
 	return r.login(pending, cred)
 }
 
@@ -1226,6 +1231,21 @@ func (r *remoteInit) writeCredential(p plan) error {
 		path += pendingSuffix
 	}
 	return r.files.write(path, []byte(dsn+"\n"))
+}
+
+// pin offers to pin the database's chain (initPin) and writes the pin to
+// the engine's trust.d on yes.
+func (r *remoteInit) pin() error {
+	if r.base == nil {
+		return nil
+	}
+	// The agent runs init --remote: it never pins a certificate, and says
+	// the person's basalt trust pin command instead.
+	choice, ok, err := r.c.initPin(r.base.String(), "", r.f.configPath, true)
+	if err != nil || !ok {
+		return err
+	}
+	return r.c.writePin(choice, r.f.configPath)
 }
 
 // writeConfig upserts the agent and prints the vault value it wrote.

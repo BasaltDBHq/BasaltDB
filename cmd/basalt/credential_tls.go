@@ -198,11 +198,12 @@ func (p protection) line() string {
 		return prefix + "database certificate checked against its CA (sslmode=verify-ca as given; host name not checked, channel binding could not be confirmed)\n"
 	case p.binding:
 		return prefix + "encrypted with channel binding, but the database's certificate did not verify, so its identity is not checked " +
-			"(to check it, add sslrootcert=<CA file> for the provider's CA to the connection string)\n"
+			"(to check it, add the provider's CA with basalt trust add --name NAME --match '=<host>' --ca <CA file>, or add sslrootcert=<CA file> to the connection string)\n"
 	}
 	return fmt.Sprintf("basalt: connection not protected further: TLS with a verified certificate or channel binding could not be confirmed "+
 		"(no TLS, the certificate did not verify and no channel binding, or the database could not be reached; sslmode=%s kept; "+
-		"for a certificate from the provider's own CA, add sslrootcert=<CA file> to the connection string)\n", p.mode)
+		"for a certificate from the provider's own CA, add that CA with basalt trust add --name NAME --match '=<host>' --ca <CA file>, "+
+		"or add sslrootcert=<CA file> to the connection string)\n", p.mode)
 }
 
 // probeLogin tries a login with dsn and closes it: the error says how far

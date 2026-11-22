@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -70,6 +71,10 @@ type cliIO struct {
 	probe func(ctx context.Context, dsn string) error
 	// engine tells service mode from same-user mode; tests replace it.
 	engine engineAccess
+	// fetchChain reads the chain a database presents with the TLS
+	// handshake alone, before a pin is offered (fetchChain outside tests;
+	// nil offers no pin).
+	fetchChain func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 }
 
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
@@ -79,6 +84,7 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		agentLogin: loginAsAgent,
 		dial:       connect,
 		engine:     osEngineAccess(runtime.GOOS),
+		fetchChain: fetchChain,
 		width:      func() int { return terminalWidth(std.out) },
 	}
 	c.probe = probeLogin(c)
@@ -166,11 +172,49 @@ func (c *cliIO) line() (string, error) {
 	return strings.TrimSpace(s), nil
 }
 
+// adminURL takes the admin connection string from the environment or a
+// hidden prompt. It is used for this command only and never written. Under
+// an agent it reads neither and refuses (agentContextError).
+func (c *cliIO) adminURL() (string, error) {
+	if err := c.agentContextError("This basalt command", hintAgentPerson); err != nil {
+		return "", err
+	}
+	if v := c.getenv(envAdminURL); v != "" {
+		return v, nil
+	}
+	return c.promptAdminURL()
+}
+
+// promptAdminURL asks for the admin connection string with a hidden
+// prompt; it never reads the environment.
+func (c *cliIO) promptAdminURL() (string, error) {
+	fmt.Fprint(c.stderr, "Admin connection string (used once, never stored): ")
+	if c.terminal != nil {
+		b, err := term.ReadPassword(int(c.terminal.Fd()))
+		fmt.Fprintln(c.stderr)
+		return strings.TrimSpace(string(b)), err
+	}
+	return c.line()
+}
+
+// confirm asks a yes/no question on stderr.
+func (c *cliIO) confirm(question string) (bool, error) {
+	fmt.Fprintf(c.stderr, "%s [y/N] ", question)
+	answer, err := c.line()
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
+}
+
 // connect opens one connection, usable through a transaction pooler
 // (pgdial).
 func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	conn, err := pgdial.Connect(ctx, dsn)
 	if err != nil {
+		if changed := rootChanged(ctx, dsn, err); changed != nil {
+			return nil, fmt.Errorf("connect: %w", changed)
+		}
 		return nil, fmt.Errorf("connect: %w", pgdial.WithCertificateHint(dsn, err))
 	}
 	return conn, nil

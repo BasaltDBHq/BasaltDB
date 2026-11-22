@@ -64,11 +64,11 @@ func (w *Watch) Tick(ctx context.Context) error {
 	}
 	if len(unclassified) > 0 {
 		w.log.Warn(fmt.Sprintf("pii: %d columns unclassified: %s", len(unclassified), nameList(unclassified)),
-			"agent", w.agent, "fix", "label the columns on the setup page (basalt init)")
+			"agent", w.agent, "fix", "run basalt classify")
 	}
 	if len(changed) > 0 {
-		w.log.Warn(fmt.Sprintf("pii: %d columns changed type since they were labeled: %s", len(changed), nameList(changed)),
-			"agent", w.agent, "fix", "review them on the setup page (basalt init)")
+		w.log.Warn(fmt.Sprintf("pii: %d columns changed type since basalt classify: %s", len(changed), nameList(changed)),
+			"agent", w.agent, "fix", "run basalt classify to review them")
 	}
 	return errors.Join(errs...)
 }

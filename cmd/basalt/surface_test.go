@@ -103,7 +103,7 @@ func probeFlags(t *testing.T, run func(context.Context, []string, stdio) int, ar
 }
 
 // extraProbes are the command lines, beside "<command> -h", that reach flag
-// sets the command's summary does not name: init has one per setup mode (local, remote), and
+// sets the command's summary does not name: init has one per setup mode, and
 // plugin approve is missing from the plugin summary.
 var extraProbes = map[string][][]string{
 	"init":   {{"--remote"}},

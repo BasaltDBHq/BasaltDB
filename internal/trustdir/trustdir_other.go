@@ -24,6 +24,11 @@ func Disable(string, string) error { return errUnsupported }
 // Remove: see errUnsupported.
 func Remove(string, string) error { return errUnsupported }
 
+// Pin: see errUnsupported.
+func Pin(string, string, *x509.Certificate, bool) (*trustprofile.Profile, []string, error) {
+	return nil, nil, errUnsupported
+}
+
 // PinNew: see errUnsupported.
 func PinNew(string, string, *x509.Certificate, bool) (bool, error) { return false, errUnsupported }
 

@@ -1,7 +1,7 @@
 // Package setuprun runs a setup code as the database's admin: the checks,
 // the questions, the one transaction and record_setup (CONTRACT.md, Setup
-// from your laptop). basalt init --setup-code and the public package
-// pkg/setup share it, so the setup has one implementation; pkg/setup is
+// from your laptop). the connect service, through the public package
+// pkg/setup, uses it, so the setup has one implementation; pkg/setup is
 // its API for other modules, without this module's internal types.
 //
 // It takes a connection its caller opened and reads no environment

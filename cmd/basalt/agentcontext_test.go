@@ -22,6 +22,77 @@ import (
 // a committed credential.
 var leakedAdmin = "postgres://postgres" + ":" + "hunter2-admin" + "@" + "db.example.com:5432/app"
 
+// TestAgentContextRefusesTheAdminCredential: under an agent, every command
+// that takes the admin connection string refuses before reading it, from
+// the environment or stdin, and never echoes it.
+func TestAgentContextRefusesTheAdminCredential(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"passkey remove", []string{"passkey", "remove", "abcd"}, "Give the person this command instead of running it"},
+	}
+	for _, marker := range agentMarkers {
+		for _, tc := range cases {
+			t.Run(marker+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+				r := cliOn(t, newFakeHost(t), map[string]string{marker: "1"}, leakedAdmin+"\n", tc.args...)
+				require.Equal(t, exitError, r.code, r.stderr)
+				require.Contains(t, r.stderr, "it is running under an agent ("+marker+" is set)")
+				require.Contains(t, r.stderr, "An agent never asks for, accepts or types the admin connection string or password.")
+				require.Contains(t, r.stderr, tc.want)
+				require.NotContains(t, r.stderr, "Admin connection string (used once", "no prompt under an agent")
+				require.NotContains(t, r.stderr, "change that database password", "nothing leaked through the environment")
+				require.NotContains(t, r.stdout+r.stderr, "hunter2")
+			})
+		}
+	}
+}
+
+// TestAgentContextAdminEnvSaysRotate: an admin connection string in the
+// agent's environment is not used, and the person is told to change it.
+func TestAgentContextAdminEnvSaysRotate(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"passkey", "remove", "abcd"},
+	} {
+		t.Run(args[0]+" "+args[1], func(t *testing.T) {
+			t.Parallel()
+			r := cliOn(t, newFakeHost(t), map[string]string{"CLAUDECODE": "1", envAdminURL: leakedAdmin}, "", args...)
+			require.Equal(t, exitError, r.code, r.stderr)
+			require.NotContains(t, r.stdout+r.stderr, "hunter2")
+			require.Contains(t, r.stderr, adminEnvLeaked)
+		})
+	}
+}
+
+// TestAgentContextNeedsAMarker: without a marker, a person's command reads
+// the admin credential as before (here from the environment, then fails to
+// connect to a database that is not there).
+func TestAgentContextNeedsAMarker(t *testing.T) {
+	t.Parallel()
+	c := &cliIO{getenv: func(k string) string {
+		if k == envAdminURL {
+			return leakedAdmin
+		}
+		return ""
+	}}
+	require.Empty(t, c.agentMarker())
+	got, err := c.adminURL()
+	require.NoError(t, err)
+	require.Equal(t, leakedAdmin, got)
+
+	c.getenv = func(k string) string {
+		if k == "CLAUDECODE" {
+			return "  "
+		}
+		return ""
+	}
+	require.Empty(t, c.agentMarker(), "a blank value is not a marker")
+}
+
 // TestInitRemoteWarnsAboutAnAdminEnv: init --remote never uses
 // BASALT_ADMIN_DATABASE_URL and says to change that password.
 func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
@@ -48,14 +119,15 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 }
 
 // manualInits are the names in text of the ways to hand the admin connection
-// string to basalt outside a setup page: the --database-url flag and the BASALT_ADMIN_DATABASE_URL= assignment. An agent told to use
+// string to basalt outside a setup page: the --setup-code and --database-url
+// flags and the BASALT_ADMIN_DATABASE_URL= assignment. An agent told to use
 // one has to ask the person for the admin password. Plain basalt init (the
 // person's own computer) and basalt init --remote (one the person cannot
 // reach) are what an agent runs, and are fine. It is a plain substring check,
 // so a flag on the next line or after "with" is caught too.
 func manualInits(text string) []string {
 	var out []string
-	for _, bad := range []string{"--database-url", envAdminURL + "="} {
+	for _, bad := range []string{"--setup-code", "--database-url", envAdminURL + "="} {
 		if strings.Contains(text, bad) {
 			out = append(out, bad)
 		}
@@ -75,8 +147,9 @@ func requireAgentLed(t *testing.T, where, text string) {
 func TestManualInitsCatchesTheManualCommand(t *testing.T) {
 	t.Parallel()
 	for _, text := range []string{
+		"run basalt init --setup-code basalt-setup.1.x.y",
 		"or run basalt init --agent bot --database-url postgres://h/db",
-		"Run `basalt init` with --database-url now.",
+		"Run `basalt init` with --setup-code now.",
 		"basalt init \\\n  --database-url postgres://h/db",
 		"export BASALT_ADMIN_DATABASE_URL=postgres://h/db and run basalt init",
 	} {
@@ -101,7 +174,9 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", engine.Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp": agentsHelp, "remoteAdminEnvSet": remoteAdminEnvSet,
+		"agentsHelp":      agentsHelp,
+		"hintAgentPerson": hintAgentPerson,
+		"adminEnvLeaked":  adminEnvLeaked, "remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)
 	}

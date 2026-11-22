@@ -262,7 +262,7 @@ func TestInitRemoteConnectOnlyNotAsRoot(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	cfg := filepath.Join(dir, "engine.json")
-	e := remoteEnv{host: newFakeHost(t), login: refusedLogin, probe: noNetworkProbe}
+	e := remoteEnv{host: newFakeHost(t), login: refusedLogin, probe: noNetworkProbe, noNetwork: true}
 	r := remoteWith(t, e, cfg, connectOnlyArgs...)
 	require.True(t, r.res.ConnectOnly)
 	require.NotNil(t, r.payload.Engine)

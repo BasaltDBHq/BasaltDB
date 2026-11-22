@@ -59,17 +59,18 @@ type remoteRun struct {
 // agent's login and the TLS probe of a new credential. A nil login or
 // probe is the real one.
 type remoteEnv struct {
-	host  *fakeHost
-	env   map[string]string
-	login func(context.Context, string) (agentConn, error)
-	probe func(context.Context, string) error
+	host      *fakeHost
+	env       map[string]string
+	login     func(context.Context, string) (agentConn, error)
+	probe     func(context.Context, string) error
+	noNetwork bool
 }
 
 // noDB is a run as root (the system socket directory keeps socket paths
 // short) where every agent login is refused and no host is dialed.
 func noDB(t *testing.T) remoteEnv {
 	t.Helper()
-	return remoteEnv{host: systemSocketHost(t), login: refusedLogin, probe: noNetworkProbe}
+	return remoteEnv{host: systemSocketHost(t), login: refusedLogin, probe: noNetworkProbe, noNetwork: true}
 }
 
 // withDB is a run as root against a real database.
@@ -93,6 +94,9 @@ func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cliIO {
 	}
 	if e.probe != nil {
 		c.probe = e.probe
+	}
+	if e.noNetwork {
+		c.fetchChain = nil
 	}
 	return c
 }
@@ -882,7 +886,7 @@ func TestInitRemoteKeepsARootlessSocketDirNextToTheConfig(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
 	cfg := filepath.Join(h.configDir, "bot", "engine.json")
-	r := remoteWith(t, remoteEnv{host: h, login: refusedLogin, probe: noNetworkProbe}, cfg, "--agent", "bot")
+	r := remoteWith(t, remoteEnv{host: h, login: refusedLogin, probe: noNetworkProbe, noNetwork: true}, cfg, "--agent", "bot")
 	require.Equal(t, filepath.Join(filepath.Dir(cfg), "run"), r.cfg.SocketDir)
 }
 

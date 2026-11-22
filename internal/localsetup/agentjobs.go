@@ -19,6 +19,22 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
+// The fixes of the Update check (CONTRACT.md, The Update check): setup
+// jobs for an agent of an engine with a config, each on check and run with
+// the admin connection string.
+const (
+	JobLabels        = "LABELS"
+	JobTrust         = "TRUST"
+	JobRepair        = "REPAIR"
+	JobPasskeyAdd    = "PASSKEY_ADD"
+	JobPasskeyRemove = "PASSKEY_REMOVE"
+)
+
+// FixJobs are the Update check's fixes.
+var FixJobs = []string{JobLabels, JobTrust, JobRepair, JobPasskeyAdd, JobPasskeyRemove}
+
+func isFix(job string) bool { return slices.Contains(FixJobs, job) }
+
 // The refusals of UPDATE and REMOVE (CONTRACT.md, The local setup page,
 // Errors). TARGET_MISMATCH and ROLE_MISSING mean what the connect service's
 // do; the GUARD_ codes are this page's own.
@@ -34,96 +50,211 @@ const (
 // know, on an engine that has a config.
 const alreadySetUp = "This engine is already set up. An install never changes an engine that has a config; ask the agent for the setup link of the change you want."
 
-// agentJob is a validated UPDATE or REMOVE: the agent as engine.json has
-// it, and the database its credential connects to.
+// agentJob is a validated UPDATE, REMOVE or fix: the agent as engine.json
+// has it, and the database its credential connects to.
 type agentJob struct {
 	req    Request
 	agent  config.Agent
 	role   string
 	names  guard.Names
 	target setupcode.Target
+	// host is the admin string's host and port, lowercase: a PASSKEY_ADD
+	// challenge is bound to it.
+	host string
+	// missing: the agent's credential file is gone (a REPAIR only).
+	missing bool
 	// others are the other agents of this engine whose credential connects
 	// to the same database: a REMOVE drops their roles too, so it removes
 	// them from engine.json with the agent.
 	others []string
 }
 
-// validateAgentJob checks everything about an UPDATE or REMOVE that needs
-// no database, in order. The admin connection string must name the
-// database the agent's own credential connects to, compared as the
-// connect service compares a setup code's target (setuprun.SameDatabase),
-// before anything connects with it.
-func (s *Service) validateAgentJob(req Request) (agentJob, error) {
-	// A REMOVE deleted engine.json with the engine's last agent: the
-	// engine serves no agent any more, and basalt init removes its service.
+// isAgentJob: job is one an engine with a config runs for its agents.
+func isAgentJob(job string) bool {
+	return job == JobUpdate || job == JobRemove || slices.Contains(FixJobs, job)
+}
+
+// configuredAgent checks the agent and its OS user against engine.json, as
+// every request of an engine with a config does (the jobs and doctor),
+// before anything else: the agent must be this engine's, run as that OS
+// user, on a person-operated engine that does not run as root.
+func (s *Service) configuredAgent(agent, osUser string) (config.Agent, string, error) {
+	if s.opts.Euid() == 0 {
+		// A root engine reads its agents' files by other rules; it never
+		// serves these jobs (engine.setupJobs), and this holds it here too.
+		return config.Agent{}, "", refuse(CodeJobUnavailable, "An engine running as root never takes the admin connection string on this page.")
+	}
+	role, err := (guard.Names{Prefix: s.opts.Prefix}).Agent(agent)
+	if err != nil {
+		return config.Agent{}, "", refuse(CodeInvalidArgument, "This setup link names an agent whose name cannot be used. Ask the agent for a new link.")
+	}
+	cfg, err := config.Load(s.opts.ConfigPath)
+	if err != nil {
+		return config.Agent{}, "", refuse(CodeSetupFailed, "This engine cannot read its config; nothing changed.")
+	}
+	if cfg.AgentOperated() {
+		return config.Agent{}, "", refuse(CodeJobUnavailable, "This engine is operated by its agent, so the admin connection string never goes on this computer.")
+	}
+	i := slices.IndexFunc(cfg.Agents, func(a config.Agent) bool { return a.Name == agent })
+	if i < 0 {
+		return config.Agent{}, "", refuse(CodeInvalidArgument, fmt.Sprintf("This engine has no agent %s. Ask the agent to run basalt init --agent NAME with the name of the agent it uses.", agent))
+	}
+	a := cfg.Agents[i]
+	if osUser == "" || osUser != a.OSUser {
+		return config.Agent{}, "", refuse(CodeInvalidArgument, fmt.Sprintf("This link names another OS user than the one the agent %s runs as on this engine. Ask the agent for a new link.", agent))
+	}
+	return a, role, nil
+}
+
+// engineRemoved: a REMOVE deleted engine.json with the engine's last
+// agent. The engine serves no agent any more, and basalt init removes its
+// service.
+func (s *Service) engineRemoved() error {
 	if _, err := os.Lstat(s.opts.ConfigPath); errors.Is(err, os.ErrNotExist) {
-		return agentJob{}, refuse(CodeEngineRemoved, "BasaltDB is removed from this engine: it serves no agent any more. Your computer asks for your password next, to remove the engine service.")
+		return refuse(CodeEngineRemoved, "BasaltDB is removed from this engine: it serves no agent any more. Your computer asks for your password next, to remove the engine service.")
+	}
+	return nil
+}
+
+// validateAgentJob checks everything about an UPDATE, a REMOVE or a fix
+// that needs no database, in order. The admin connection string must name
+// the database the agent's own credential connects to, compared as the
+// connect service compares a setup code's target (setuprun.SameDatabase),
+// before anything connects with it. run is a run's request, which may carry
+// what its check does not.
+func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
+	if err := s.engineRemoved(); err != nil {
+		return agentJob{}, err
 	}
 	if req.Job == JobChange {
 		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
 	}
-	if req.Job != JobUpdate && req.Job != JobRemove {
+	if !isAgentJob(req.Job) {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
 	}
-	if s.opts.Euid() == 0 {
-		// A root engine reads its agents' files by other rules; it never
-		// serves these jobs (engine.setupJobs), and this holds it here too.
-		return agentJob{}, refuse(CodeJobUnavailable, "An engine running as root never takes the admin connection string on this page.")
-	}
-	names := guard.Names{Prefix: s.opts.Prefix}
-	role, err := names.Agent(req.Agent)
+	a, role, err := s.configuredAgent(req.Agent, req.OSUser)
 	if err != nil {
-		return agentJob{}, refuse(CodeInvalidArgument, "This setup link names an agent whose name cannot be used. Ask the agent for a new link.")
-	}
-	cfg, err := config.Load(s.opts.ConfigPath)
-	if err != nil {
-		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read its config; nothing changed.")
-	}
-	if cfg.AgentOperated() {
-		return agentJob{}, refuse(CodeJobUnavailable, "This engine is operated by its agent, so the admin connection string never goes on this computer.")
-	}
-	i := slices.IndexFunc(cfg.Agents, func(a config.Agent) bool { return a.Name == req.Agent })
-	if i < 0 {
-		return agentJob{}, refuse(CodeInvalidArgument, fmt.Sprintf("This engine has no agent %s. Ask the agent to run basalt init --agent NAME with the name of the agent it uses.", req.Agent))
-	}
-	a := cfg.Agents[i]
-	if req.OSUser == "" || req.OSUser != a.OSUser {
-		return agentJob{}, refuse(CodeInvalidArgument, fmt.Sprintf("This link names another OS user than the one the agent %s runs as on this engine. Ask the agent for a new link.", req.Agent))
-	}
-	if req.Demo {
-		return agentJob{}, refuse(CodeInvalidArgument, "An update or a removal never sets up the sample database. Ask the agent for a new link.")
-	}
-	if len(req.Answers) > 0 || req.Challenge != nil || req.Passkey != nil || req.hasRealFields() {
-		return agentJob{}, refuse(CodeAnswersInvalid, "An update or a removal asks no question and registers no passkey.")
-	}
-	if _, err := checkAdminURL(req.DatabaseURL, role); err != nil {
 		return agentJob{}, err
 	}
-	want, err := credentialTarget(a)
+	if req.Demo {
+		return agentJob{}, refuse(CodeInvalidArgument, "An update, a removal or a fix never sets up the sample database. Ask the agent for a new link.")
+	}
+	if err := checkFields(req, run); err != nil {
+		return agentJob{}, err
+	}
+	host, err := checkAdminURL(req.DatabaseURL, role)
 	if err != nil {
-		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
+		return agentJob{}, err
 	}
 	got, err := adminTarget(req.DatabaseURL)
 	if err != nil {
 		return agentJob{}, err
 	}
+	want, err := credentialTarget(a)
+	missing := false
+	switch {
+	case err != nil && req.Job == JobRepair && errors.Is(err, os.ErrNotExist):
+		// The credential file is gone: REPAIR writes a new one for the
+		// database the admin string names, once that database holds this
+		// engine's guard and the agent's role (CONTRACT.md, The Update check,
+		// REPAIR).
+		want, missing = got, true
+	case err != nil:
+		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
+	}
 	if !setuprun.SameDatabase(want, got) {
 		return agentJob{}, refuse(CodeTargetMismatch, fmt.Sprintf("This admin connection string is for another database than the agent %s uses. Use the admin connection string of the agent's own database; nothing changed.", req.Agent))
 	}
-	j := agentJob{req: req, agent: a, role: role, names: names, target: want}
-	if req.Job == JobRemove {
-		for _, o := range cfg.Agents {
-			if o.Name == a.Name {
-				continue
-			}
-			// An agent whose credential cannot be read cannot be served
-			// either: it goes with the removal rather than stay behind.
-			if t, err := credentialTarget(o); err != nil || setuprun.SameDatabase(want, t) {
-				j.others = append(j.others, o.Name)
-			}
+	j := agentJob{req: req, agent: a, role: role, names: guard.Names{Prefix: s.opts.Prefix}, target: want, host: host, missing: missing}
+	if req.Job != JobRemove {
+		return j, nil
+	}
+	cfg, err := config.Load(s.opts.ConfigPath)
+	if err != nil {
+		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read its config; nothing changed.")
+	}
+	for _, o := range cfg.Agents {
+		if o.Name == a.Name {
+			continue
+		}
+		// An agent whose credential cannot be read cannot be served
+		// either: it goes with the removal rather than stay behind.
+		if t, err := credentialTarget(o); err != nil || setuprun.SameDatabase(want, t) {
+			j.others = append(j.others, o.Name)
 		}
 	}
 	return j, nil
+}
+
+// The fields a request may carry besides the job, the agent, its OS user
+// and the admin string.
+const (
+	fieldLabels = 1 << iota
+	fieldTrustRoot
+	fieldChallenge
+	fieldPasskey
+	fieldCredentialID
+	fieldPinned
+)
+
+// fieldsOf are the optional fields req carries.
+func fieldsOf(req Request) int {
+	f := 0
+	for _, set := range []struct {
+		on  bool
+		bit int
+	}{
+		{req.ColumnClasses != nil || req.RestPublic, fieldLabels},
+		{req.TrustRoot != "", fieldTrustRoot},
+		{req.Challenge != nil, fieldChallenge},
+		{req.Passkey != nil, fieldPasskey},
+		{req.CredentialID != "", fieldCredentialID},
+		{req.Pinned != "", fieldPinned},
+	} {
+		if set.on {
+			f |= set.bit
+		}
+	}
+	return f
+}
+
+// allowedFields are the optional fields job's check (or run) carries
+// (CONTRACT.md, The Update check).
+func allowedFields(job string, run bool) int {
+	switch job {
+	case JobLabels:
+		if run {
+			return fieldLabels
+		}
+	case JobTrust:
+		if run {
+			return fieldTrustRoot | fieldPinned
+		}
+		return fieldTrustRoot
+	case JobPasskeyAdd:
+		if run {
+			return fieldChallenge | fieldPasskey
+		}
+	case JobPasskeyRemove:
+		return fieldCredentialID
+	}
+	return 0
+}
+
+// checkFields refuses a field the job does not take: an UPDATE and a
+// REMOVE carry none, and a fix only the fields its screen gives it.
+func checkFields(req Request, run bool) error {
+	extra := fieldsOf(req) &^ allowedFields(req.Job, run)
+	if req.Job == JobUpdate || req.Job == JobRemove {
+		if extra != 0 || len(req.Answers) > 0 || req.Schemas != nil || req.Tables != nil {
+			return refuse(CodeAnswersInvalid, "An update or a removal asks no question and registers no passkey.")
+		}
+		return nil
+	}
+	if extra != 0 || len(req.Answers) > 0 || req.Schemas != nil || req.Tables != nil || req.ConfirmName != "" {
+		return refuse(CodeAnswersInvalid, "This fix does not take what the page sent. Reload the page and start again; nothing changed.")
+	}
+	return nil
 }
 
 // credentialTarget is the database the agent's credential connects to.
@@ -178,41 +309,75 @@ func (p agentPlan) sql(job string) string {
 // planAgentJob reads the database for j in tx and changes nothing: the
 // refusals, then what the job runs.
 func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, database string) (agentPlan, error) {
-	prefix, err := guard.InstalledPrefix(ctx, tx)
-	if err != nil {
-		return agentPlan{}, setupFailed()
-	}
-	if prefix != "" && prefix != s.opts.Prefix {
-		return agentPlan{}, refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+prefix+", not "+s.opts.Prefix+".")
-	}
 	if j.req.Job == JobUpdate {
-		return s.planUpdate(ctx, tx, j, prefix, database)
+		return s.planUpdate(ctx, tx, j, database)
+	}
+	if _, err := s.installedPrefix(ctx, tx); err != nil {
+		return agentPlan{}, err
 	}
 	return s.planRemove(ctx, tx, j)
 }
 
-// planUpdate plans the basalt_meta migrations the build has and the
-// database lacks, and nothing else: no password, grant, policy or passkey.
-func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, prefix, database string) (agentPlan, error) {
+// installedPrefix is the prefix of the guard in the database, "" when it
+// has none; another prefix than this engine's is PREFIX_MISMATCH.
+func (s *Service) installedPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
+	prefix, err := guard.InstalledPrefix(ctx, tx)
+	if err != nil {
+		return "", setupFailed()
+	}
+	if prefix != "" && prefix != s.opts.Prefix {
+		return "", refuse(CodePrefixMismatch, "This database's Basalt uses the prefix "+prefix+", not "+s.opts.Prefix+".")
+	}
+	return prefix, nil
+}
+
+// installedGuard is the version of this engine's guard in the database:
+// another prefix is PREFIX_MISMATCH, no guard GUARD_MISSING (what names
+// the job in the message, as "to update").
+func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what string) (int, error) {
+	prefix, err := s.installedPrefix(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
 	installed, err := guard.InstalledVersion(ctx, tx)
 	if err != nil {
-		return agentPlan{}, setupFailed()
+		return 0, setupFailed()
+	}
+	if prefix == "" || installed == 0 {
+		return 0, refuse(CodeGuardMissing, fmt.Sprintf("The database %s has no Basalt guard %s. Nothing changed.", database, what))
+	}
+	return installed, nil
+}
+
+// agentRole refuses a database without the agent's role: it is not the
+// agent's database.
+func agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database string) error {
+	exists, err := guard.AgentRoleExists(ctx, tx, j.names, j.req.Agent)
+	if err != nil {
+		return setupFailed()
+	}
+	if !exists {
+		return refuse(CodeRoleMissing, fmt.Sprintf("The database %s has no role %s, so it is not the agent's database. Nothing changed.", database, j.role))
+	}
+	return nil
+}
+
+// planUpdate plans the basalt_meta migrations the build has and the
+// database lacks, and nothing else: no password, grant, policy or passkey.
+func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, database string) (agentPlan, error) {
+	installed, err := s.installedGuard(ctx, tx, database, "to update")
+	if err != nil {
+		return agentPlan{}, err
 	}
 	latest := guard.LatestVersion()
 	switch {
-	case prefix == "" || installed == 0:
-		return agentPlan{}, refuse(CodeGuardMissing, fmt.Sprintf("The database %s has no Basalt guard to update. Nothing changed.", database))
 	case installed > latest:
 		return agentPlan{}, refuse(CodeGuardNewer, fmt.Sprintf("The guard in the database %s (version %d) is newer than this engine (version %d): update BasaltDB on this computer instead. Nothing changed.", database, installed, latest))
 	case installed == latest:
 		return agentPlan{}, refuse(CodeGuardCurrent, fmt.Sprintf("The guard in the database %s is up to date (version %d); there is nothing to update.", database, installed))
 	}
-	exists, err := guard.AgentRoleExists(ctx, tx, j.names, j.req.Agent)
-	if err != nil {
-		return agentPlan{}, setupFailed()
-	}
-	if !exists {
-		return agentPlan{}, refuse(CodeRoleMissing, fmt.Sprintf("The database %s has no role %s, so it is not the agent's database. Nothing changed.", database, j.role))
+	if err := agentRole(ctx, tx, j, database); err != nil {
+		return agentPlan{}, err
 	}
 	script, err := guard.PlanInit(ctx, tx, guard.InitOptions{Names: j.names})
 	if err != nil {
@@ -258,9 +423,12 @@ func plural(n int, one, many string) string {
 // checkAgentJob is the check of an UPDATE or REMOVE: it reads, in a
 // transaction it rolls back, and changes nothing.
 func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, error) {
-	j, err := s.validateAgentJob(req)
+	j, err := s.validateAgentJob(req, false)
 	if err != nil {
 		return CheckAnswer{}, err
+	}
+	if isFix(req.Job) {
+		return s.checkFix(ctx, j)
 	}
 	if req.ConfirmName != "" {
 		return CheckAnswer{}, refuse(CodeAnswersInvalid, "The database name confirms a removal's run, not its check.")
@@ -294,9 +462,12 @@ func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, 
 // removes the agents it dropped from engine.json and deletes their
 // credentials.
 func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, error) {
-	j, err := s.validateAgentJob(req)
+	j, err := s.validateAgentJob(req, true)
 	if err != nil {
 		return RunAnswer{}, err
+	}
+	if isFix(req.Job) {
+		return s.runFix(ctx, j)
 	}
 	if req.Job == JobUpdate && req.ConfirmName != "" {
 		return RunAnswer{}, refuse(CodeAnswersInvalid, "An update is not confirmed with the database name.")

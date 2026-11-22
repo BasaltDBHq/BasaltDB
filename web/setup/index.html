@@ -13,6 +13,7 @@
   <link rel="modulepreload" href="../lib/codec.js" integrity="sha384-UX6eutCsjzfx9tq6BEWC+noLCmXqmmWFjytVp6Oadrl866Nypno7fmHhdJaPXx/n">
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
+  <link rel="modulepreload" href="../lib/doctor.js" integrity="sha384-XTHCzHgQbPbODOIPF5eNxJIBj8HAvvWx2pyW0PrmlZ04yB7FxKHMHsArqTPbTwHa">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-hdqElFsnaTlCN9HGy5Qnv7DsFnQ++ZQUS8JN2hK06TrvY0UXn9snJ6QiExIIAU4j">
   <link rel="modulepreload" href="../lib/page.js" integrity="sha384-E/H4T4P2W+oxfTMlNHl3QIE2Ai4hDnUpqkAylUF5IdAc1D5/MVj6jQM76WPfTKzO">
   <link rel="modulepreload" href="../lib/picks.js" integrity="sha384-Lr3kak9YvctWHYkskK/VnVjXzLrCqxE5t70AaJoCNULfOQnRfYwDLG86owrkBa+j">
@@ -22,7 +23,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-fmaF1B7m6aioKcEJxQqfEJUIzbf/1AkZfuiiV/jhdK47t9PoulK6uwbz6ho2AYws">
-  <script type="module" src="../lib/setup.js" integrity="sha384-8lyUd+MIehgfPz/sOhhEQ4MThAw4875crGc/4Goy6SUzQVpn5XZvE4JRx7oQdPV3"></script>
+  <script type="module" src="../lib/setup.js" integrity="sha384-+MrX4eXuqrHADX5o6BBrpojaNgNzDbhMD/UTyzqvM09oLGEdFsTRddjTpWXOU2tI"></script>
   <!-- sri:end -->
 </head>
 <body>
@@ -181,6 +182,71 @@
       <button id="approve" type="button">Set up with passkey</button>
       <p id="approve-status" class="muted" role="status"></p>
       <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
+    </section>
+
+    <section id="u-check" class="screen" hidden>
+      <h1 id="u-title"></h1>
+      <p id="u-sub" class="muted"></p>
+      <ul id="u-rows" class="rows"></ul>
+      <p id="u-error" class="strip bad" role="alert" hidden></p>
+      <button id="u-fix" type="button" hidden>Fix these</button>
+      <button id="u-pick" type="button" class="secondary">Update or remove BasaltDB</button>
+    </section>
+
+    <section id="u-passkeys" class="screen" hidden>
+      <h1>Passkeys</h1>
+      <p class="muted">These devices can approve your agents' writes and undos. Remove one you lost.</p>
+      <ul id="u-keys" class="rows"></ul>
+      <p id="u-keys-error" class="strip bad" role="alert" hidden></p>
+      <button id="u-add" type="button" class="secondary">Add a passkey on this device</button>
+      <p id="u-keys-note" class="muted small"></p>
+    </section>
+
+    <section id="u-cert" class="screen" hidden>
+      <h1>Your database has a new certificate</h1>
+      <p class="muted">Check that this matches what your provider shows, then trust it.</p>
+      <div class="box">
+        <p class="muted small">New</p>
+        <p><output id="u-cert-new" class="fp" aria-label="New certificate fingerprint"></output></p>
+        <p class="muted small"><span id="u-cert-subject" class="mono"></span>, valid until <span id="u-cert-expires"></span></p>
+        <p class="muted small">Was: <span id="u-cert-was" class="mono"></span></p>
+      </div>
+      <p id="u-cert-error" class="strip bad" role="alert" hidden></p>
+      <button id="u-cert-go" type="button">Trust the new certificate</button>
+      <button id="u-cert-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="u-mismatch" class="screen" hidden>
+      <h1>The certificate BasaltDB trusts doesn't match its records</h1>
+      <div class="box">
+        <p class="muted small">BasaltDB trusts</p>
+        <p><output id="u-mm-pinned" class="fp" aria-label="Fingerprint BasaltDB trusts"></output></p>
+        <p class="muted small">Your database's ledger names</p>
+        <p><span id="u-mm-recorded" class="mono"></span></p>
+      </div>
+      <p class="muted">If you replaced the certificate yourself, record the one BasaltDB trusts.</p>
+      <p id="u-mm-error" class="strip bad" role="alert" hidden></p>
+      <button id="u-mm-go" type="button">Record it</button>
+      <button id="u-mm-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="u-confirm" class="screen" hidden>
+      <h1 id="u-confirm-title"></h1>
+      <ul id="u-confirm-lines"></ul>
+      <details class="more">
+        <summary>The SQL it runs</summary>
+        <pre id="u-confirm-sql"></pre>
+      </details>
+      <p id="u-confirm-error" class="strip bad" role="alert" hidden></p>
+      <button id="u-confirm-go" type="button"></button>
+      <button id="u-confirm-cancel" type="button" class="secondary">Cancel</button>
+    </section>
+
+    <section id="u-done" class="screen" hidden>
+      <h1 id="u-done-title"></h1>
+      <p id="u-done-text"></p>
+      <ul id="u-done-codes" class="rows" hidden></ul>
+      <button id="u-done-next" type="button">Continue</button>
     </section>
   </main>
 

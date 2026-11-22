@@ -47,3 +47,6 @@ const SetupCheckPath = "/api/v1/setup/check"
 
 // SetupRunPath is the setup page's run route.
 const SetupRunPath = "/api/v1/setup/run"
+
+// SetupDoctorPath is the setup page's Update check route.
+const SetupDoctorPath = "/api/v1/setup/doctor"

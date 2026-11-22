@@ -30,7 +30,13 @@ var adminString = "postgres://admin" + ":" + adminSecret + "@db.example:5432/app
 // set.
 type fakeJobs struct {
 	got     []localsetup.Request
+	doctors []localsetup.DoctorRequest
 	refusal error
+}
+
+func (f *fakeJobs) Doctor(_ context.Context, req localsetup.DoctorRequest) (localsetup.DoctorAnswer, error) {
+	f.doctors = append(f.doctors, req)
+	return localsetup.DoctorAnswer{Database: "app"}, f.refusal
 }
 
 func (f *fakeJobs) Check(_ context.Context, req localsetup.Request) (localsetup.CheckAnswer, error) {
@@ -228,4 +234,46 @@ func TestConfiguredPagesRunTheSetupJobsTheyAreGiven(t *testing.T) {
 	// Every other route still refuses the admin string.
 	w := setupCall{path: "/api/v1/approvals/" + uuid.NewString() + "/approve", origin: setupOrigin, body: body}.do(h)
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// The Update check takes the agent and its OS user, never the admin
+// string, on both handlers; an engine with no setup jobs refuses it.
+func TestDoctorRouteTakesNoAdminString(t *testing.T) {
+	t.Parallel()
+	jobs := &fakeJobs{}
+	srv := pages.New(setupOrigin, slog.New(slog.DiscardHandler))
+	srv.SetSetup(jobs)
+	for _, h := range []http.Handler{srv.Handler(), pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
+		w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), `"database":"app"`)
+		for _, body := range []string{`{"agent":"demo_bot","osUser":"alice","databaseUrl":"` + adminString + `"}`, `{"agent":"a","osUser":"b","extra":1}`} {
+			w = setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: body}.do(h)
+			require.Equal(t, http.StatusBadRequest, w.Code, body)
+			require.NotContains(t, w.Body.String(), adminSecret)
+		}
+		w = setupCall{path: pages.SetupDoctorPath, origin: "http://localhost:9999", body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
+		require.Equal(t, http.StatusForbidden, w.Code)
+	}
+	require.Len(t, jobs.doctors, 2)
+	require.Equal(t, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}, jobs.doctors[0])
+
+	h := pages.New(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
+	w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
+	require.Equal(t, http.StatusConflict, w.Code)
+	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
+}
+
+// A TRUST check's refusal of a changed certificate carries the pin.
+func TestSetupRefusalCarriesThePinnedCertificate(t *testing.T) {
+	t.Parallel()
+	jobs := &fakeJobs{refusal: &localsetup.RefusalError{
+		Code: localsetup.CodeCertificateNotVerified, Message: "m", Pinned: strings.Repeat("b", 64),
+		TrustRoot: &localsetup.TrustRoot{Subject: "CN=x", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
+	}}
+	h := pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
+	w := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	require.Equal(t, http.StatusConflict, w.Code)
+	require.Contains(t, w.Body.String(), `"pinned":"`+strings.Repeat("b", 64)+`"`)
+	require.Contains(t, w.Body.String(), `"sha256":"`+strings.Repeat("a", 64)+`"`)
 }

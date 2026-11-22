@@ -45,3 +45,14 @@ func RecordedTrustPin(ctx context.Context, q Querier, host string, port int) (st
 	}
 	return sha, true, nil
 }
+
+// RecordedTrustPinTx is RecordedTrustPin read in tx with the admin
+// connection, as the guard role: the admin may not read agent_trust_pins.
+func RecordedTrustPinTx(ctx context.Context, tx pgx.Tx, n Names, host string, port int) (sha string, ok bool, err error) {
+	err = asGuard(ctx, tx, n, func() error {
+		var err error
+		sha, ok, err = RecordedTrustPin(ctx, tx, host, port)
+		return err
+	})
+	return sha, ok, err
+}

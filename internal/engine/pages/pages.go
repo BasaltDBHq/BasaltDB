@@ -189,9 +189,11 @@ func (s *Server) Handler() http.Handler {
 		st := setupRoutes{origin: s.origin, jobs: s.setup, log: s.log.With("component", "setup")}
 		mux.HandleFunc("POST "+SetupCheckPath, st.check)
 		mux.HandleFunc("POST "+SetupRunPath, st.run)
+		mux.HandleFunc("POST "+SetupDoctorPath, st.doctor)
 	} else {
 		mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
 		mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
+		mux.HandleFunc("POST "+SetupDoctorPath, s.configuredSetup)
 	}
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)

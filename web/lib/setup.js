@@ -7,10 +7,12 @@ import { ALG_ES256, b64urlDecode, CodeError, registrationResponseJson } from "./
 import { $, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, hostOf, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
+import { checkView, fixQueue, passkeyItems, PASSKEYS_NOTE, signalRemoved } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
 export const CHECK_PATH = "/api/v1/setup/check";
 export const RUN_PATH = "/api/v1/setup/run";
+export const DOCTOR_PATH = "/api/v1/setup/doctor";
 export const LINK_PREFIX = "1.";
 
 // JOBS are the jobs this page runs: INSTALL on an engine with no config,
@@ -136,13 +138,18 @@ export function setupRequest(job, databaseUrl, extra = {}) {
 // fixed message, and on a CERTIFICATE_NOT_VERIFIED the certificate
 // authority the person may trust (checked by trustRootFrom), else null.
 export class SetupError extends Error {
-  constructor(status, code, message, trustRoot = null) {
+  constructor(status, code, message, trustRoot = null, pinned = "") {
     super(message);
     this.status = status;
     this.code = code;
     this.trustRoot = trustRoot;
+    // pinned is the SHA-256 pinned now, on a TRUST check's refusal of a
+    // changed certificate ("" otherwise).
+    this.pinned = pinned;
   }
 }
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 // postSetup posts body to the engine's own setup route.
 export async function postSetup(fetchFn, path, body) {
@@ -167,7 +174,8 @@ export async function postSetup(fetchFn, path, body) {
   }
   if (!resp.ok) {
     const code = String(payload.code || "");
-    throw new SetupError(resp.status, code, String(payload.message || `The engine answered ${resp.status}.`), trustRootFrom(code, payload.trustRoot));
+    const pinned = typeof payload.pinned === "string" && SHA256_HEX.test(payload.pinned) ? payload.pinned : "";
+    throw new SetupError(resp.status, code, String(payload.message || `The engine answered ${resp.status}.`), trustRootFrom(code, payload.trustRoot), pinned);
   }
   return payload;
 }
@@ -553,7 +561,7 @@ function showError(err) {
   $("status").textContent = err.message;
 }
 
-async function main() {
+function main() {
   let link;
   try {
     localOrigin(window.location);
@@ -567,7 +575,26 @@ async function main() {
     startReal(link, { fetchFn: browserFetch, makePasskey: (c) => createPasskey(c, "localhost") });
     return;
   }
-  let job = pickJob(link, "");
+  if (link.job === "CHANGE") {
+    startUpdate(link, {
+      fetchFn: browserFetch,
+      origin: localOrigin(window.location),
+      makePasskey: (c) => createPasskey(c, "localhost"),
+      pkc: globalThis.PublicKeyCredential,
+      now: () => new Date(),
+      onPick: (picked) => startJob(link, picked),
+    });
+    return;
+  }
+  startJob(link, "");
+}
+
+// startJob is the page of an UPDATE, REMOVE or demo INSTALL link, and the
+// pick of Update the guard and Remove BasaltDB that the Update check opens
+// for a CHANGE link (preset picks one).
+async function startJob(link, preset) {
+  $("flow").hidden = true;
+  let job = pickJob(link, preset);
   let text = JOB_TEXT[link.job];
   const showJob = () => {
     text = JOB_TEXT[job ? job.job : link.job];
@@ -580,6 +607,7 @@ async function main() {
   $("job-os-user").textContent = link.osUser;
   $("job-demo").hidden = !link.demo;
   $("choice").hidden = link.job !== "CHANGE";
+  if (job && link.job === "CHANGE") $("choice-" + job.job.toLowerCase()).checked = true;
   $("main").hidden = false;
   const fetchFn = browserFetch;
   $("admin-panel").hidden = true;
@@ -1072,6 +1100,520 @@ export function startReal(link, env) {
   show("flow");
   go("s-user");
   return install;
+}
+
+// ---- The Update check (CONTRACT.md, The Update check) ----
+//
+// A CHANGE link opens on the check: doctor reads what needs the person
+// with the agent's own credential, and each fix is a setup job on check
+// and run with the admin connection string. The page asks for the string
+// at the first fix, keeps it in a private field for the fixes that follow,
+// and drops it on Cancel, after a refusal of the string, and when the page
+// closes.
+
+// STRING_REFUSED are the refusals of the admin string itself: the person
+// types it again.
+const STRING_REFUSED = new Set(["CONNECTION_STRING_REFUSED", "LOGIN_FAILED", "TARGET_MISMATCH"]);
+
+// UpdateCheck is the state of one Update check: the link's agent, the last
+// doctor answer and the admin string, held only here.
+export class UpdateCheck {
+  #databaseUrl = "";
+
+  constructor(fetchFn, link) {
+    if (link.job !== "CHANGE") throw new Error("UpdateCheck runs only a CHANGE link");
+    this.fetchFn = fetchFn;
+    this.link = link;
+    this.answer = null;
+  }
+
+  // doctor sends the check: the agent and its OS user, never the string.
+  async doctor() {
+    this.answer = await postSetup(this.fetchFn, DOCTOR_PATH, { agent: this.link.agent, osUser: this.link.osUser });
+    return this.answer;
+  }
+
+  get hasString() {
+    return this.#databaseUrl !== "";
+  }
+
+  setString(databaseUrl) {
+    this.#databaseUrl = String(databaseUrl);
+  }
+
+  // forget drops the admin string.
+  forget() {
+    this.#databaseUrl = "";
+  }
+
+  // request is a fix's body: the job, the link's agent, the string and the
+  // fix's own fields.
+  request(job, extra = {}) {
+    return setupRequest({ job, agent: this.link.agent, osUser: this.link.osUser, demo: false }, this.#databaseUrl, extra);
+  }
+
+  async #post(path, job, extra) {
+    if (!this.hasString) throw new SetupError(0, "", "Paste the admin connection string first.");
+    try {
+      return await postSetup(this.fetchFn, path, this.request(job, extra));
+    } catch (err) {
+      if (err instanceof SetupError && STRING_REFUSED.has(err.code)) this.forget();
+      throw err;
+    }
+  }
+
+  check(job, extra = {}) {
+    return this.#post(CHECK_PATH, job, extra);
+  }
+
+  run(job, extra = {}) {
+    return this.#post(RUN_PATH, job, extra);
+  }
+}
+
+// labelFields is what a LABELS run carries for the labels set on labels:
+// nothing when the person left every column, the changes, and with "Mark
+// them as not personal" the rest that does not look personal (all of it
+// as restPublic when the entries would not fit, or columns are not
+// listed).
+export function labelFields(labels, more, mark) {
+  const tables = [...new Set(labels.columns.map((c) => c.table))];
+  const changes = labels.changes(tables);
+  if (!mark) return changes.length > 0 ? { columnClasses: changes } : {};
+  const plan = labelRest(labels, more);
+  if (plan.restPublic) return { ...(changes.length > 0 ? { columnClasses: changes } : {}), restPublic: true };
+  const rest = plan.rest.map((c) => ({ table: c.table, column: c.column, class: "PUBLIC", was: { class: "UNCLASSIFIED" } }));
+  const all = [...changes, ...rest];
+  return all.length > 0 ? { columnClasses: all } : {};
+}
+
+// labelRest is what "Mark them as not personal" marks on the labels fix,
+// as on the install: every unlabeled column but those the classifier
+// suggests are personal or secret, unless they must go as restPublic.
+export function labelRest(labels, more) {
+  const tables = [...new Set(labels.columns.map((c) => c.table))];
+  const unlabeled = labels.unlabeled(tables);
+  const suggested = unlabeled.filter((c) => {
+    const s = suggestionOf(c);
+    return s !== null && (s.label.class === "IDENTIFIER" || s.label.class === "SECRET");
+  });
+  const rest = unlabeled.filter((c) => !suggested.includes(c));
+  const restPublic = more || labels.changes(tables).length + rest.length > MAX_LABELS;
+  return { rest, suggested, restPublic };
+}
+
+const UPDATE_SCREENS = ["u-check", "u-passkeys", "u-cert", "u-mismatch", "u-confirm", "u-done", "s-paste", "s-labels", "s-checking"];
+
+// startUpdate runs the Update check for a CHANGE link. env has fetchFn,
+// origin (this page's), makePasskey (a challenge to a registration), pkc
+// (the browser's PublicKeyCredential, for the hint after a removal), now
+// and onPick (the job the person picked under Update or remove BasaltDB,
+// or one a row opens). It returns the UpdateCheck, for the tests.
+export function startUpdate(link, env) {
+  const fix = new UpdateCheck(env.fetchFn, link);
+  let screen = "s-checking";
+  let queue = null; // the fixes "Fix these" has left, or null
+  let pending = null; // the fix that waits for the admin string
+  let labels = null;
+  let columnsMore = false;
+  let confirmGo = null;
+  let doneNext = null;
+
+  const go = (name) => {
+    screen = name;
+    for (const id of UPDATE_SCREENS) show(id, id === name);
+    show("progress", false);
+    show("back", !["u-check", "s-checking", "u-done"].includes(name));
+    globalThis.window?.scrollTo?.(0, 0);
+  };
+  const problem = (id, text) => {
+    setText(id, text);
+    show(id, text !== "");
+  };
+  const checking = (text) => {
+    $("chk-login").className = "check wait";
+    setText("chk-login", text);
+    go("s-checking");
+  };
+
+  // ---- the check ----
+  const refresh = async () => {
+    checking("Checking BasaltDB and your database");
+    let d;
+    try {
+      d = await fix.doctor();
+    } catch (err) {
+      $("flow").hidden = true;
+      setText("error-text", err.message);
+      show("error");
+      return;
+    }
+    showCheck(d);
+  };
+  const showCheck = (d) => {
+    const crumb = document.querySelector?.(".crumb-page");
+    if (crumb) crumb.textContent = d.database ? `Setup · ${d.database}` : "Setup";
+    const v = checkView(d, env.origin);
+    setText("u-title", v.title);
+    setText("u-sub", v.sub);
+    const list = $("u-rows");
+    list.replaceChildren(...v.rows.map(checkRow));
+    show("u-fix", fixQueue(d, env.origin).length > 0);
+    problem("u-error", "");
+    go("u-check");
+  };
+  const checkRow = (r) => {
+    const tone = r.mark === "!" ? "need" : r.mark === "✓" ? "good" : "later";
+    const li = el("li", `check-row ${tone}`);
+    li.appendChild(el("span", "mark", r.mark));
+    const words = el("div", "words");
+    words.appendChild(el("strong", "", r.title));
+    if (r.text) words.appendChild(el("span", "", r.text));
+    li.appendChild(words);
+    if (r.action) {
+      const b = el("button", "", r.action);
+      b.type = "button";
+      b.addEventListener("click", () => {
+        queue = null;
+        act(r.job);
+      });
+      li.appendChild(b);
+    }
+    return li;
+  };
+  const act = (job) => {
+    if (job === "MANAGE") return showPasskeys("");
+    if (job === "UPDATE") return pick("UPDATE");
+    return startFix(job);
+  };
+  const pick = (job) => {
+    fix.forget();
+    show("flow", false);
+    env.onPick(job);
+  };
+  let walked = new Set(); // the fixes "Fix these" started
+  $("u-fix").addEventListener("click", () => {
+    walked = new Set();
+    queue = fixQueue(fix.answer, env.origin);
+    next();
+  });
+  $("u-pick").addEventListener("click", () => pick(""));
+  // next starts the next fix of "Fix these". Once the list is walked,
+  // doctor is sent again: a row it could not read before (the labels and
+  // passkeys behind a new certificate) joins the walk.
+  const next = async () => {
+    if (queue && queue.length === 0) {
+      await refresh();
+      const more = fix.answer ? fixQueue(fix.answer, env.origin).filter((j) => !walked.has(j)) : [];
+      queue = more.length > 0 && screen === "u-check" ? more : null;
+    }
+    if (!queue) return;
+    const job = queue.shift();
+    walked.add(job);
+    act(job);
+  };
+  // afterFix sends doctor again and goes on with "Fix these", if walking.
+  const afterFix = () => (queue ? next() : refresh());
+  const cancel = () => {
+    fix.forget();
+    queue = null;
+    refresh();
+  };
+
+  // ---- the admin string, asked at the first fix ----
+  const withString = (run) => {
+    if (fix.hasString) return run();
+    pending = run;
+    showPaste("");
+  };
+  const showPaste = (text) => {
+    $("paste-url").type = "password";
+    problem("paste-error", text);
+    go("s-paste");
+  };
+  $("paste-next").addEventListener("click", () => {
+    const typed = $("paste-url").value;
+    if (typed.trim() === "" || !pending) return;
+    $("paste-url").value = "";
+    fix.setString(typed);
+    const run = pending;
+    pending = null;
+    run();
+  });
+  $("reveal").addEventListener("click", () => {
+    const shown = $("paste-url").type === "password";
+    $("paste-url").type = shown ? "text" : "password";
+    $("reveal").setAttribute("aria-pressed", shown ? "true" : "false");
+  });
+  // failed shows a refusal: of the string, on the paste screen with the
+  // same fix waiting; there is nothing to fix, the next one; else on the
+  // screen at hand (errorId), or the check screen.
+  const failed = (err, retry, errorId = "u-error") => {
+    if (err instanceof SetupError && err.code === "NOTHING_TO_FIX") return afterFix();
+    if (err instanceof SetupError && STRING_REFUSED.has(err.code)) {
+      pending = retry;
+      return showPaste(err.message);
+    }
+    const message = err instanceof SetupError ? err.message : webauthnError(err);
+    if (errorId === "u-error" && screen !== "u-check") {
+      showCheck(fix.answer);
+    }
+    problem(errorId, message);
+  };
+
+  // ---- the fixes ----
+  const startFix = (job) => withString(() => FIXES[job]());
+  const FIXES = {
+    TRUST: async () => {
+      checking("Checking the database's certificate");
+      try {
+        const a = await fix.check("TRUST");
+        showMismatch(a);
+      } catch (err) {
+        if (err instanceof SetupError && err.code === "CERTIFICATE_NOT_VERIFIED" && err.trustRoot && err.pinned) return showCert(err.trustRoot, err.pinned);
+        failed(err, FIXES.TRUST);
+      }
+    },
+    LABELS: async () => {
+      checking("Reading the columns without a label");
+      let a;
+      try {
+        a = await fix.check("LABELS");
+      } catch (err) {
+        return failed(err, FIXES.LABELS);
+      }
+      labels = new Labels(a.columns);
+      columnsMore = a.columnsMore === true;
+      if (labels.columns.length === 0 && !columnsMore) return afterFix();
+      showLabels();
+    },
+    PASSKEY_ADD: async () => {
+      checking("Getting the passkey ready");
+      try {
+        const a = await fix.check("PASSKEY_ADD");
+        setText("chk-login", "Create the passkey in your browser's prompt.");
+        const passkey = await env.makePasskey(a.challenge);
+        checking("Adding the passkey");
+        const done = await fix.run("PASSKEY_ADD", { challenge: a.challenge, passkey });
+        const codes = (done.passkeys || []).map((p) => `${p.label || "Passkey"}: ${p.checkCode}`);
+        showDone("Passkey added", "This device can now approve your agents' writes and undos. Its check code; the agent's status names the same code:", codes, afterFix);
+      } catch (err) {
+        failed(err, FIXES.PASSKEY_ADD);
+      }
+    },
+    REPAIR: async () => {
+      checking("Checking the agent's login");
+      try {
+        const a = await fix.check("REPAIR");
+        showConfirm("Set a new password for your agent", a, "Fix", async () => {
+          await fix.run("REPAIR");
+          afterFix();
+        });
+      } catch (err) {
+        failed(err, FIXES.REPAIR);
+      }
+    },
+  };
+
+  // ---- the certificate ----
+  let trusting = null;
+  const showCert = (trustRoot, pinned) => {
+    trusting = trustRoot;
+    setText("u-cert-new", fingerprintText(trustRoot.sha256));
+    setText("u-cert-subject", trustRoot.subject);
+    setText("u-cert-expires", trustRoot.expiresAt.slice(0, 10));
+    setText("u-cert-was", fingerprintText(pinned));
+    problem("u-cert-error", "");
+    go("u-cert");
+  };
+  $("u-cert-go").addEventListener("click", async () => {
+    if (!trusting) return;
+    const trustRoot = trusting.sha256;
+    $("u-cert-go").disabled = true;
+    try {
+      await fix.check("TRUST", { trustRoot });
+      await fix.run("TRUST", { trustRoot });
+      trusting = null;
+      afterFix();
+    } catch (err) {
+      if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, FIXES.TRUST);
+      problem("u-cert-error", err.message);
+    } finally {
+      $("u-cert-go").disabled = false;
+    }
+  });
+  $("u-cert-cancel").addEventListener("click", cancel);
+  let mismatchPinned = "";
+  const showMismatch = (a) => {
+    if (!SHA256_HEX.test(String(a.pinned)) || !SHA256_HEX.test(String(a.recorded))) return failed(new SetupError(0, "", "The engine sent a check this page cannot show."), FIXES.TRUST);
+    mismatchPinned = a.pinned;
+    setText("u-mm-pinned", fingerprintText(a.pinned));
+    setText("u-mm-recorded", fingerprintText(a.recorded));
+    problem("u-mm-error", "");
+    go("u-mismatch");
+  };
+  $("u-mm-go").addEventListener("click", async () => {
+    $("u-mm-go").disabled = true;
+    try {
+      await fix.run("TRUST", { pinned: mismatchPinned });
+      afterFix();
+    } catch (err) {
+      if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, FIXES.TRUST);
+      problem("u-mm-error", err.message);
+    } finally {
+      $("u-mm-go").disabled = false;
+    }
+  });
+  $("u-mm-cancel").addEventListener("click", cancel);
+
+  // ---- the labels: the install's screen, only the unlabeled columns ----
+  const choices = {
+    current: (c) => labels.current(c),
+    set: (table, column, label) => labels.set(table, column, label),
+  };
+  const showLabels = () => {
+    const box = $("label-tables");
+    box.replaceChildren();
+    const byTable = new Map();
+    for (const c of labels.columns) {
+      if (!byTable.has(c.table)) byTable.set(c.table, []);
+      byTable.get(c.table).push(c);
+    }
+    let first = true;
+    for (const [table, cols] of byTable) {
+      const d = el("details", "label-table");
+      d.open = first;
+      first = false;
+      const head = el("summary");
+      head.appendChild(el("span", "mono", tableName(table)));
+      head.appendChild(el("span", "muted", ` ${cols.length} ${cols.length === 1 ? "column" : "columns"}`));
+      d.appendChild(head);
+      for (const c of cols) d.appendChild(labelRow(c, choices, restCount, suggestionOf(c)));
+      box.appendChild(d);
+    }
+    setText("unlabeled-warn", `Columns without a label aren't masked: ${link.agent} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
+    problem("labels-error", "");
+    $("rest-leave").checked = true;
+    $("rest-mark").checked = false;
+    restCount();
+    go("s-labels");
+  };
+  const restCount = () => {
+    const p = labelRest(labels, columnsMore);
+    show("rest-choice", p.rest.length > 0 || p.restPublic);
+    const personal = p.suggested.map((c) => `${tableName(c.table)}.${c.column}`);
+    const count = p.restPublic ? p.rest.length + p.suggested.length : p.rest.length;
+    showNote("rest-note", $("rest-mark").checked ? restNote({ count, forced: p.restPublic, more: columnsMore, personal }) : []);
+  };
+  for (const id of ["rest-leave", "rest-mark"]) $(id).addEventListener("change", restCount);
+  $("labels-next").addEventListener("click", async () => {
+    const tables = [...new Set(labels.columns.map((c) => c.table))];
+    const stop = labels.problem(tables);
+    if (stop) return problem("labels-error", stop);
+    const fields = labelFields(labels, columnsMore, !$("rest-choice").hidden && $("rest-mark").checked);
+    if (!fields.columnClasses && !fields.restPublic) return afterFix(); // left unlabeled for now: no run
+    $("labels-next").disabled = true;
+    try {
+      await fix.run("LABELS", fields);
+      afterFix();
+    } catch (err) {
+      if (err instanceof SetupError && err.code === "CLASSES_CHANGED") return FIXES.LABELS();
+      failed(err, FIXES.LABELS, "labels-error");
+    } finally {
+      $("labels-next").disabled = false;
+    }
+  });
+
+  // ---- passkeys: the list, Remove and Add ----
+  const showPasskeys = (text) => {
+    const items = passkeyItems(fix.answer?.passkeys, env.origin, env.now());
+    $("u-keys").replaceChildren(...items.map(keyRow));
+    setText("u-keys-note", PASSKEYS_NOTE);
+    problem("u-keys-error", text);
+    go("u-passkeys");
+  };
+  const keyRow = (k) => {
+    const li = el("li", "check-row");
+    const words = el("div", "words");
+    words.appendChild(el("strong", "", k.label));
+    words.appendChild(el("span", "", k.line));
+    li.appendChild(words);
+    const b = el("button", "remove", "Remove");
+    b.type = "button";
+    b.setAttribute("aria-label", `Remove ${k.label}`);
+    b.addEventListener("click", () => withString(() => removeKey(k)));
+    li.appendChild(b);
+    return li;
+  };
+  const removeKey = async (k) => {
+    checking("Reading the passkey");
+    let a;
+    try {
+      a = await fix.check("PASSKEY_REMOVE", { credentialId: k.credentialId });
+    } catch (err) {
+      if (err instanceof SetupError && STRING_REFUSED.has(err.code)) return failed(err, () => removeKey(k));
+      return showPasskeys(err.message);
+    }
+    showConfirm("Remove this passkey?", a, "Remove passkey", async () => {
+      const done = await fix.run("PASSKEY_REMOVE", { credentialId: k.credentialId });
+      if (k.rpId === "localhost") await signalRemoved(env.pkc, k.rpId, k.credentialId);
+      if (done.remaining === 0) {
+        return showDone("Passkey removed", "Add a passkey so your agents can be approved again.", [], () => startFix("PASSKEY_ADD"), "Add a passkey");
+      }
+      await fix.doctor();
+      showPasskeys("");
+    });
+  };
+  $("u-add").addEventListener("click", () => startFix("PASSKEY_ADD"));
+
+  // ---- the confirmation and the done screen ----
+  const showConfirm = (title, answer, action, run) => {
+    setText("u-confirm-title", title);
+    list2("u-confirm-lines", strings(answer.lines));
+    setText("u-confirm-sql", String(answer.sql ?? ""));
+    setText("u-confirm-go", action);
+    problem("u-confirm-error", "");
+    confirmGo = run;
+    go("u-confirm");
+  };
+  $("u-confirm-go").addEventListener("click", async () => {
+    if (!confirmGo) return;
+    $("u-confirm-go").disabled = true;
+    try {
+      await confirmGo();
+    } catch (err) {
+      if (err instanceof SetupError && STRING_REFUSED.has(err.code)) {
+        pending = confirmGo;
+        return showPaste(err.message);
+      }
+      problem("u-confirm-error", err.message);
+    } finally {
+      $("u-confirm-go").disabled = false;
+    }
+  });
+  $("u-confirm-cancel").addEventListener("click", cancel);
+  const showDone = (title, text, codes, then, action = "Continue") => {
+    setText("u-done-title", title);
+    setText("u-done-text", text);
+    $("u-done-codes").replaceChildren(...codes.map((c) => el("li", "row mono", c)));
+    show("u-done-codes", codes.length > 0);
+    setText("u-done-next", action);
+    doneNext = then;
+    go("u-done");
+  };
+  $("u-done-next").addEventListener("click", () => doneNext?.());
+
+  // ---- Back: to the check, or to the list ----
+  $("back").addEventListener("click", () => {
+    if (screen === "u-confirm" && $("u-confirm-go").textContent === "Remove passkey") return showPasskeys("");
+    cancel();
+  });
+  globalThis.window?.addEventListener?.("pagehide", () => fix.forget());
+
+  document.body.classList.add("connect-page");
+  show("flow");
+  refresh();
+  return fix;
 }
 
 // showNote fills a note with one line each, hidden when it has none.

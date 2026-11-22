@@ -7,9 +7,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { b64urlEncode, utf8 } from "./codec.js";
-import { restNote } from "./picks.js";
+import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, doneText, Install, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, SetupError, setupRequest, startReal, suggestionOf, trustView } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, SetupError, setupRequest, startReal, suggestionOf, trustView } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -710,4 +710,172 @@ test("a removal that removed the engine's last agent ends with the last step", (
   assert.ok(doneText(job, { agent: "demo_bot", engineRemoved: true }).endsWith(REMOVE_LAST_STEP));
   assert.ok(!doneText(job, { agent: "demo_bot", engineRemoved: false }).includes("Last step"));
   assert.ok(!doneText({ job: "UPDATE", agent: "demo_bot" }, { engineRemoved: true }).includes("Last step"));
+});
+
+// ---- The Update check: a CHANGE link opens on doctor ----
+
+const change = { job: "CHANGE", agent: "bot", osUser: "alice", demo: false };
+const ORIGIN = "http://localhost:8787";
+const NEW_FP = "cd".repeat(32);
+const ROOT = { subject: "CN=Provider Root", sha256: NEW_FP, expiresAt: "2031-05-01T00:00:00Z" };
+const keyLocal = { credentialId: "a2V5MQ", label: "MacBook Pro", rpId: "localhost", origin: ORIGIN, createdAt: "2026-11-03T12:00:00Z", lastUsedAt: "2026-11-22T09:00:00Z" };
+const keyPortal = { credentialId: "a2V5Mg", label: "iPhone", rpId: "basaltvault.app", origin: "https://portal.basaltvault.app", createdAt: "2026-11-03T12:00:00Z" };
+const allGood = {
+  database: "shop_db", guard: { state: "CURRENT" }, certificate: { state: "OK" },
+  labels: { state: "OK", count: 0, columns: [] }, passkeys: { state: "OK", items: [keyLocal, keyPortal] },
+};
+const needs = {
+  ...allGood,
+  certificate: { state: "CHANGED", host: "db.example.com", port: 5432, pinned: FP, presented: ROOT },
+  labels: { state: "UNKNOWN", count: 0, columns: [] }, passkeys: { state: "UNKNOWN", items: [] },
+};
+
+// updateEngine answers doctor from doctors (one per call, the last kept),
+// and each check or run from answers[job] (a function of the body).
+function updateEngine(doctors, answers) {
+  const bodies = [];
+  const fetchFn = async (path, init) => {
+    const body = JSON.parse(init.body);
+    bodies.push({ path, body });
+    let out;
+    if (path === DOCTOR_PATH) out = doctors.length > 1 ? doctors.shift() : doctors[0];
+    else out = answers[body.job](path, body);
+    if (out.code) return new Response(JSON.stringify(out), { status: 409 });
+    return new Response(JSON.stringify(out), { status: 200 });
+  };
+  return { bodies, fetchFn };
+}
+
+const shown = (nodes) => [...FLOW.keys()].filter((id) => /^(u|s)-/.test(id) && FLOW.get(id).tag === "section" && !nodes[id].hidden);
+
+test("a refusal of a changed certificate keeps the pin it names", async () => {
+  const body = { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: ROOT, pinned: FP };
+  await assert.rejects(postSetup(async () => new Response(JSON.stringify(body), { status: 409 }), CHECK_PATH, {}), (err) => err.pinned === FP && err.trustRoot.sha256 === NEW_FP);
+  const bad = { ...body, pinned: "AB" };
+  await assert.rejects(postSetup(async () => new Response(JSON.stringify(bad), { status: 409 }), CHECK_PATH, {}), (err) => err.pinned === "");
+});
+
+test("doctor sends no admin string, and a refusal of the string drops it", async () => {
+  const e = updateEngine([allGood], { REPAIR: () => ({ code: "LOGIN_FAILED", message: "The database refused the login." }) });
+  const u = new UpdateCheck(e.fetchFn, change);
+  await u.doctor();
+  assert.deepEqual(e.bodies[0], { path: DOCTOR_PATH, body: { agent: "bot", osUser: "alice" } });
+  await assert.rejects(u.check("REPAIR"), /Paste the admin connection string first/);
+  u.setString(ADMIN);
+  assert.equal(u.request("REPAIR").databaseUrl, ADMIN);
+  await assert.rejects(u.check("REPAIR"), (err) => err.code === "LOGIN_FAILED");
+  assert.equal(u.hasString, false, "the person types it again");
+  assert.throws(() => new UpdateCheck(e.fetchFn, real));
+});
+
+test("the labels fix sends what the install sends, for the unlabeled columns only", () => {
+  const cols = [
+    { table: "public.orders", column: "phone", class: "UNCLASSIFIED", suggestedClass: "IDENTIFIER", suggestedEntityType: "PHONE" },
+    { table: "public.orders", column: "note", class: "UNCLASSIFIED" },
+  ];
+  const l = new Labels(cols);
+  assert.deepEqual(labelFields(l, false, false), {}, "left unlabeled: no run");
+  assert.deepEqual(labelFields(l, false, true).columnClasses.map((c) => c.column), ["note"], "the suggested personal column is left out");
+  assert.deepEqual(labelFields(l, true, true), { restPublic: true });
+  l.set("public.orders", "phone", { class: "SECRET" });
+  assert.deepEqual(labelFields(l, false, false), { columnClasses: [{ table: "public.orders", column: "phone", class: "SECRET", was: { class: "UNCLASSIFIED" } }] });
+});
+
+test("the Update check shows what needs the person, then Fix these walks the fixes", async () => {
+  const nodes = fakePage();
+  const e = updateEngine([needs, { ...allGood, labels: { state: "UNLABELED", count: 1, columns: ["public.orders.phone"] } }, allGood], {
+    TRUST: (path, body) => {
+      if (!body.trustRoot) return { code: "CERTIFICATE_NOT_VERIFIED", message: "x", trustRoot: ROOT, pinned: FP };
+      return path === RUN_PATH ? { agent: "bot", lines: ["done"] } : { database: "shop_db", lines: ["This replaces…"], sql: "SELECT …" };
+    },
+    LABELS: () => ({ database: "shop_db", lines: [], sql: "", columns: [{ table: "public.orders", column: "phone", class: "UNCLASSIFIED", dataType: "text" }] }),
+  });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date("2026-11-22T12:00:00Z"), onPick: () => {} });
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-check"]);
+  assert.equal(nodes["u-title"].textContent, "1 thing needs you");
+  assert.equal(nodes["u-sub"].textContent, "The rest is checked once BasaltDB can connect.");
+  assert.match(nodes["u-rows"].textContent, /Your database has a new certificate.*BasaltDB stopped connecting until you check it\.Check/);
+  assert.match(nodes["u-rows"].textContent, /Checked once BasaltDB can connect\./);
+  assert.equal(nodes["u-fix"].hidden, false);
+  assert.ok(e.bodies.every((b) => !("databaseUrl" in b.body)), "nothing asks for the string to show the check");
+
+  await nodes["u-fix"].click();
+  assert.deepEqual(shown(nodes), ["s-paste"], "the string is asked at the first fix");
+  nodes["paste-url"].value = ADMIN;
+  nodes["paste-next"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-cert"]);
+  assert.equal(nodes["u-cert-new"].textContent, "CD:".repeat(31) + "CD");
+  assert.equal(nodes["u-cert-was"].textContent, "AB:".repeat(31) + "AB");
+  assert.equal(nodes["u-cert-subject"].textContent, "CN=Provider Root");
+
+  await nodes["u-cert-go"].click();
+  await settle();
+  const trusted = e.bodies.filter((b) => b.body.job === "TRUST" && b.body.trustRoot === NEW_FP).map((b) => b.path);
+  assert.deepEqual(trusted, [CHECK_PATH, RUN_PATH]);
+  // Doctor again: the labels now read, and Fix these goes on with them.
+  await settle();
+  await settle();
+  assert.deepEqual(shown(nodes), ["s-labels"]);
+  assert.equal(e.bodies.filter((b) => b.body.job === "LABELS").at(-1).body.databaseUrl, ADMIN, "the string is kept for the fixes that follow");
+  await nodes["labels-next"].click();
+  await settle();
+  await settle();
+  assert.equal(e.bodies.filter((b) => b.path === RUN_PATH && b.body.job === "LABELS").length, 0, "leaving them unlabeled sends no run");
+  assert.deepEqual(shown(nodes), ["u-check"]);
+  assert.equal(nodes["u-title"].textContent, "All good");
+});
+
+test("Manage lists the passkeys, and removing the last one asks for a new one", async () => {
+  const nodes = fakePage();
+  const signals = [];
+  const pkc = { signalUnknownCredential: async (o) => signals.push(o) };
+  const e = updateEngine([allGood], {
+    PASSKEY_REMOVE: (path) => (path === RUN_PATH ? { agent: "bot", lines: [], remaining: 0 } : { database: "shop_db", lines: ["This removes the passkey MacBook Pro, added 3 Nov 2026."], sql: "SELECT basalt_meta.revoke_passkey('\\x6b6579'::bytea, true);" }),
+  });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc, now: () => new Date("2026-11-22T12:00:00Z"), onPick: () => {} });
+  await settle();
+  assert.equal(nodes["u-title"].textContent, "All good");
+  assert.match(nodes["u-rows"].textContent, /Every column has a label/);
+  assert.match(nodes["u-rows"].textContent, /Passkeys1 device can approveManage/);
+  const manage = find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Manage");
+  manage.click();
+  assert.deepEqual(shown(nodes), ["u-passkeys"]);
+  assert.match(nodes["u-keys"].textContent, /MacBook ProAdded 3 Nov · used today/);
+  assert.match(nodes["u-keys"].textContent, /iPhoneAdded 3 Nov on portal\.basaltvault\.app · used never/);
+  const remove = find(nodes["u-keys"], (n) => n.attrs["aria-label"] === "Remove MacBook Pro");
+  remove.click();
+  assert.deepEqual(shown(nodes), ["s-paste"]);
+  nodes["paste-url"].value = ADMIN;
+  nodes["paste-next"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-confirm"]);
+  assert.equal(nodes["u-confirm-go"].textContent, "Remove passkey");
+  assert.equal(e.bodies.at(-1).body.credentialId, "a2V5MQ");
+  await nodes["u-confirm-go"].click();
+  assert.deepEqual(signals, [{ rpId: "localhost", credentialId: "a2V5MQ" }], "the browser is told the passkey is gone");
+  assert.deepEqual(shown(nodes), ["u-done"]);
+  assert.equal(nodes["u-done-text"].textContent, "Add a passkey so your agents can be approved again.");
+});
+
+test("a ledger that names another certificate is recorded with the pin the check showed", async () => {
+  const nodes = fakePage();
+  const mismatch = { ...allGood, certificate: { state: "MISMATCH", host: "db.example.com", port: 5432, pinned: FP, recorded: NEW_FP } };
+  const e = updateEngine([mismatch, allGood], {
+    TRUST: (path) => (path === RUN_PATH ? { agent: "bot", lines: [] } : { database: "shop_db", lines: ["This records…"], sql: "SELECT …", pinned: FP, recorded: NEW_FP }),
+  });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date(), onPick: () => {} });
+  await settle();
+  find(nodes["u-rows"], (n) => n.tagName === "BUTTON" && n.textContent === "Check").click();
+  nodes["paste-url"].value = ADMIN;
+  nodes["paste-next"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-mismatch"]);
+  assert.equal(nodes["u-mm-pinned"].textContent, "AB:".repeat(31) + "AB");
+  assert.equal(nodes["u-mm-recorded"].textContent, "CD:".repeat(31) + "CD");
+  await nodes["u-mm-go"].click();
+  const run = e.bodies.find((b) => b.path === RUN_PATH);
+  assert.equal(run.body.pinned, FP);
+  assert.equal(run.body.trustRoot, undefined);
 });

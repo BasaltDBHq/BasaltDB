@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -266,13 +265,8 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 				return err
 			}
 		}
-		catalog := psql.Insert("basalt_meta.pii_catalog").
-			Columns("id", "fingerprint", "classified_at", "classified_by").
-			Values(true, sq.Expr("basalt_meta.pii_fingerprint()"), at, sq.Expr("session_user")).
-			Suffix(`ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
-				classified_at = EXCLUDED.classified_at, classified_by = EXCLUDED.classified_by`)
-		if err := execBuilt(ctx, tx, catalog); err != nil {
-			return fmt.Errorf("set the classification catalog: %w", err)
+		if err := setPIICatalog(ctx, tx, at); err != nil {
+			return err
 		}
 		written = len(out)
 		return nil

@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { b64urlEncode, utf8 } from "./codec.js";
 import { Labels, restNote } from "./picks.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, DOCTOR_PATH, doneText, Install, labelFields, startUpdate, UpdateCheck, JOB_TEXT, JOBS, labelWords, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, removeConfirmed, REMOVE_LAST_STEP, ENGINE_PATH, NOT_MINE_PATH, SetupError, setupRequest, startReal, suggestionOf } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -791,6 +791,7 @@ function updateEngine(doctors, answers) {
     bodies.push({ path, body });
     let out;
     if (path === DOCTOR_PATH) out = doctors.length > 1 ? doctors.shift() : doctors[0];
+    else if (path === ENGINE_PATH || path === NOT_MINE_PATH) out = answers[path](path, body);
     else out = answers[body.job](path, body);
     if (out.code) return new Response(JSON.stringify(out), { status: 409 });
     return new Response(JSON.stringify(out), { status: 200 });
@@ -966,4 +967,50 @@ test("a ledger that names another certificate is recorded with the pin the check
   const run = e.bodies.find((b) => b.path === RUN_PATH);
   assert.equal(run.body.pinned, FP);
   assert.equal(run.body.trustRoot, undefined);
+});
+
+const engineDb = { agents: ["bot"], databases: [{ database: "shop_db", host: "db.example.com", port: 5432 }] };
+
+test("before the check the page asks whose database the engine serves; Yes shows the check", async () => {
+  const nodes = fakePage();
+  const e = updateEngine([allGood], { [ENGINE_PATH]: () => engineDb, [NOT_MINE_PATH]: () => assert.fail("no No") });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date(), onPick: () => {} });
+  await settle();
+  assert.deepEqual(shown(nodes), ["s-confirm"]);
+  assert.deepEqual(e.bodies, [{ path: ENGINE_PATH, body: {} }], "the question names no agent and no string");
+  assert.equal(nodes["confirm-title"].textContent, "Is this your database?");
+  assert.deepEqual(facts(nodes), ["Database: shop_db", "Host: db.example.com:5432"]);
+  assert.equal(nodes["confirm-go"].textContent, "Yes, this is it");
+  assert.equal(nodes["confirm-back"].textContent, "No, this isn't mine");
+  assert.equal(nodes.back.hidden, true);
+  await nodes["confirm-go"].click();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-check"]);
+  assert.equal(nodes["u-title"].textContent, "All good");
+  assert.deepEqual(e.bodies.map((b) => b.path), [ENGINE_PATH, DOCTOR_PATH]);
+});
+
+test("No, this isn't mine: the page only tells the engine and says the password dialog comes next; it resets nothing", async () => {
+  const nodes = fakePage();
+  const theirs = { agents: ["other_bot"], databases: [{ database: "agent_db", host: "10.0.0.9", port: 6543 }] };
+  const e = updateEngine([{ code: "INVALID_ARGUMENT", message: "This engine has no agent bot." }], { [ENGINE_PATH]: () => theirs, [NOT_MINE_PATH]: () => ({}) });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date(), onPick: () => {} });
+  await settle();
+  assert.deepEqual(facts(nodes), ["Database: agent_db", "Host: 10.0.0.9:6543"]);
+  await nodes["confirm-back"].click();
+  await settle();
+  assert.deepEqual(e.bodies, [{ path: ENGINE_PATH, body: {} }, { path: NOT_MINE_PATH, body: {} }]);
+  assert.deepEqual(shown(nodes), ["u-done"]);
+  assert.equal(nodes["u-done-title"].textContent, "Your computer asks for your password next");
+  assert.match(nodes["u-done-text"].textContent, /administrator password in the system dialog that opens\. It deletes BasaltDB's setup on this computer and touches no database\./);
+  assert.equal(nodes["u-done-next"].hidden, true);
+});
+
+test("a refused engine check goes straight to the check", async () => {
+  const nodes = fakePage();
+  const e = updateEngine([allGood], { [ENGINE_PATH]: () => ({ code: "JOB_UNAVAILABLE", message: "x" }) });
+  startUpdate(change, { fetchFn: e.fetchFn, origin: ORIGIN, makePasskey: async () => ({}), pkc: null, now: () => new Date(), onPick: () => {} });
+  await settle();
+  await settle();
+  assert.deepEqual(shown(nodes), ["u-check"]);
 });

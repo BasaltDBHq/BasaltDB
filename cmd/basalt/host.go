@@ -41,9 +41,10 @@ type host interface {
 	// shown here, or nil when it can (service.ErrNoDialog wrapped).
 	DialogAvailable(goos string) error
 	// AdminDialog asks the person, through the system's administrator
-	// dialog, to run script as root (service.DialogCommand), with a fixed
-	// environment and / as its directory.
-	AdminDialog(ctx context.Context, goos, script string, out io.Writer) error
+	// dialog showing prompt (one of service's fixed prompts), to run script
+	// as root (service.DialogCommand), with a fixed environment and / as its
+	// directory.
+	AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error
 	// SetupState posts an empty request to the engine's setup check route
 	// at origin and returns the refusal code it answers: JOB_UNAVAILABLE
 	// from an engine that has a config, another code from one waiting for
@@ -115,8 +116,8 @@ func (osHost) DialogAvailable(goos string) error {
 // caller's reaches the script.
 var dialogEnv = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
 
-func (osHost) AdminDialog(ctx context.Context, goos, script string, out io.Writer) error {
-	argv, err := service.DialogCommand(goos, script)
+func (osHost) AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error {
+	argv, err := service.DialogCommand(goos, prompt, script)
 	if err != nil {
 		return err
 	}

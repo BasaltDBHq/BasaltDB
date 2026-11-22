@@ -20,7 +20,9 @@ const recordReadTimeout = 5 * time.Second
 // revocation is what each agent's database says of this engine's key, as
 // the relay acts on it (CONTRACT.md, Vault channel, Engine revocation).
 // The engine reads its record at start, at every heartbeat and at each
-// relay session. Once an agent's database revoked the key, the engine
+// relay session; a session is answered from the last read, and its read
+// runs in the background, never on the Vault socket's read loop. Once an
+// agent's database revoked the key, the engine
 // hands that agent no relay short link, revokes its live ones (their
 // tokens are unregistered at the Vault and their sessions closed with
 // ENGINE_REVOKED) and refuses its sessions; when every agent's database
@@ -31,9 +33,12 @@ type revocation struct {
 	engineID string
 	mu       sync.Mutex
 	agents   map[string]*agentRecord
-	// leave ends the engine's socket to the Vault; nil when it has none.
+	// leave ends the engine's socket to the Vault; nil until every agent
+	// is added (onLeave), so a revocation found at start waits for it.
 	leave func()
 	left  bool
+	// reading marks the agents whose session-time read is running.
+	reading map[string]bool
 }
 
 // agentRecord is one agent's read of the record, its links, and what the
@@ -45,7 +50,7 @@ type agentRecord struct {
 }
 
 func newRevocation(engineID string, log *slog.Logger) *revocation {
-	return &revocation{log: log, engineID: engineID, agents: map[string]*agentRecord{}}
+	return &revocation{log: log, engineID: engineID, agents: map[string]*agentRecord{}, reading: map[string]bool{}}
 }
 
 // add watches name's record, read with read; its relay links are secrets.
@@ -56,11 +61,32 @@ func (r *revocation) add(name string, read agent.EngineRecordReader, secrets *li
 }
 
 // onLeave sets what ends the engine's socket once every agent's database
-// revoked the key.
+// revoked the key. The engine calls it once every agent is added; when
+// every one was already found revoked (at start), the engine leaves now.
 func (r *revocation) onLeave(leave func()) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.leave = leave
+	now := r.leaveNow()
+	r.mu.Unlock()
+	if now != nil {
+		r.log.Warn("every agent's database revoked this engine's key: leaving the Vault")
+		now()
+	}
+}
+
+// leaveNow is the leave to run when every agent is revoked and the engine
+// has not left yet; nil otherwise. r.mu is held.
+func (r *revocation) leaveNow() func() {
+	if r.leave == nil || r.left || len(r.agents) == 0 {
+		return nil
+	}
+	for _, a := range r.agents {
+		if !a.revoked {
+			return nil
+		}
+	}
+	r.left = true
+	return r.leave
 }
 
 // isRevoked reports what name's last read said.
@@ -111,16 +137,7 @@ func (r *revocation) check(ctx context.Context, name string) bool {
 		return true
 	}
 	a.revoked = true
-	every := true
-	for _, other := range r.agents {
-		every = every && other.revoked
-	}
-	leave := r.leave
-	if every && !r.left {
-		r.left = true
-	} else {
-		leave = nil
-	}
+	leave := r.leaveNow()
 	r.mu.Unlock()
 
 	r.log.Warn("the agent's database revoked this engine's key: its relay links are revoked and its sessions refused", "agent", name)
@@ -138,6 +155,31 @@ func (r *revocation) check(ctx context.Context, name string) bool {
 // open sessions with ENGINE_REVOKED. Like Unregister it waits for nothing.
 func endRevoked(c *vault.Client) func(channel.LinkToken) {
 	return func(token channel.LinkToken) { c.UnregisterWith(token, channel.ErrEngineRevoked) }
+}
+
+// refresh reads name's record in the background, at most one read per
+// agent at a time: what each relay session asks for, without holding up
+// the Vault socket's read loop. ctx is the engine's lifetime.
+func (r *revocation) refresh(ctx context.Context, name string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	a := r.agents[name]
+	if a == nil || a.revoked || r.reading[name] {
+		r.mu.Unlock()
+		return
+	}
+	r.reading[name] = true
+	r.mu.Unlock()
+	go func() {
+		defer func() {
+			r.mu.Lock()
+			delete(r.reading, name)
+			r.mu.Unlock()
+		}()
+		r.check(ctx, name)
+	}()
 }
 
 // gate is the heartbeat's gate with the record read first.

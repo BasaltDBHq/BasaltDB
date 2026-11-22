@@ -248,7 +248,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		// What each agent's database says of this engine's key, which the
 		// relay acts on (CONTRACT.md, Engine revocation).
 		env.revocation = newRevocation(ev.keys.EngineID(), log.With("component", "vault"))
-		relay.watch(env.revocation, endRevoked(ev.client)) //nolint:contextcheck // runs when a link is dropped, after the call that set it up; like Unregister it waits for nothing
+		relay.watch(ctx, env.revocation, endRevoked(ev.client)) //nolint:contextcheck // runs when a link is dropped, after the call that set it up; like Unregister it waits for nothing
 	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)

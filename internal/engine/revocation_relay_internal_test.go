@@ -90,7 +90,7 @@ func TestRevokedEngineEndsItsRelaySessions(t *testing.T) {
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, stateDir, time.Now, quietLog(), live, site)
 	require.NotNil(t, ev.client)
-	live.watch(rev, endRevoked(ev.client))
+	live.watch(ctx, rev, endRevoked(ev.client))
 	rev.add("bot", read, secrets)
 	live.add("bot", secrets, ev.client.Unregister)
 	require.False(t, rev.check(ctx, "bot"), "the record is not revoked at start")

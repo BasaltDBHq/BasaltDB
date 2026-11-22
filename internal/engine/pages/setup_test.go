@@ -112,6 +112,20 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, localsetup.CodeLoginFailed, body["code"])
+	// A certificate the person may trust travels in the refusal's body.
+	jobs.refusal = &localsetup.RefusalError{
+		Code: localsetup.CodeCertificateNotVerified, Message: "not verified",
+		TrustRoot: &localsetup.TrustRoot{Subject: "CN=Root", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
+	}
+	w = setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	var withRoot struct {
+		Code      string
+		TrustRoot localsetup.TrustRoot
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &withRoot))
+	require.Equal(t, localsetup.CodeCertificateNotVerified, withRoot.Code)
+	require.Equal(t, "CN=Root", withRoot.TrustRoot.Subject)
+	require.Equal(t, strings.Repeat("a", 64), withRoot.TrustRoot.SHA256)
 	require.NotContains(t, logs.String(), adminSecret, "the body is never logged")
 	require.NotContains(t, logs.String(), "db.example")
 }

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/demo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -57,6 +58,18 @@ type RefusalError struct {
 	Code    string
 	Message string
 	Status  int
+	// TrustRoot is set on a CERTIFICATE_NOT_VERIFIED the person can answer
+	// by trusting the chain's top for the host.
+	TrustRoot *TrustRoot
+}
+
+// TrustRoot is the chain top a database presents, as the page shows it for
+// the person to trust (CONTRACT.md, The install of a real database, The
+// database certificate). Subject is text the server supplied.
+type TrustRoot struct {
+	Subject   string `json:"subject"`
+	SHA256    string `json:"sha256"`
+	ExpiresAt string `json:"expiresAt"`
 }
 
 func (r *RefusalError) Error() string { return r.Message }
@@ -113,6 +126,8 @@ type bound struct {
 	answers string
 	// classes is the labels the person set (classesKey).
 	classes string
+	// trustRoot is the certificate authority the person trusted.
+	trustRoot string
 }
 
 // challenge makes a fresh challenge for req's job on b.
@@ -146,7 +161,7 @@ func (s *Service) mac(req Request, b bound, c Challenge) []byte {
 	}
 	for _, part := range [][]byte{
 		c.Challenge, c.UserID, []byte(c.UserName), []byte(c.DisplayName), []byte(c.ExpiresAt.UTC().Format(time.RFC3339)),
-		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks), []byte(b.answers), []byte(b.classes),
+		[]byte(req.Job), []byte(req.Agent), []byte(req.OSUser), []byte(demoFlag), []byte(b.database), []byte(b.host), []byte(b.picks), []byte(b.answers), []byte(b.classes), []byte(b.trustRoot),
 	} {
 		var n [8]byte
 		binary.BigEndian.PutUint64(n[:], uint64(len(part)))
@@ -228,7 +243,7 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 			return RunAnswer{}, err
 		}
 	}
-	conn, err := s.connect(ctx, req.DatabaseURL)
+	conn, pinned, err := s.open(ctx, req)
 	if err != nil {
 		return RunAnswer{}, err
 	}
@@ -238,16 +253,19 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 	if err != nil {
 		return RunAnswer{}, refuse(CodeConnectionStringRefused, "The admin connection string must be a postgres:// URL with the admin's user and password, the host and the database, as your provider shows it.")
 	}
+	if pinned != nil {
+		dsn = withVerifyFull(dsn) // the pin applies with verify-full only
+	}
 	files := s.files(req.Agent)
 	var warnings, lines []string
 	wrote := false
-	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+	err = inTx(ctx, conn, func(tx pgx.Tx) error {
 		database, err := currentDatabase(ctx, tx)
 		if err != nil {
 			return err
 		}
 		if cred != nil || !req.Demo {
-			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(req.Answers), classes: classesKey(req)}); err != nil {
+			if err := s.checkBinding(req, bound{database: database, host: j.host, picks: picksKey(j.picks), answers: answersKey(req.Answers), classes: classesKey(req), trustRoot: req.TrustRoot}); err != nil {
 				return err
 			}
 		}
@@ -291,6 +309,13 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 				lines = append(lines, fmt.Sprintf("%d columns labeled", p.labeled))
 			}
 		}
+		if pinned != nil {
+			// Before the commit, once the SQL succeeded: a pin that stays after
+			// a failed commit was approved and checked.
+			if err := pinned.write(ctx, tx, s.opts.ConfigPath); err != nil {
+				return err
+			}
+		}
 		if keep {
 			return nil // the credential of the role this engine already holds stays
 		}
@@ -300,6 +325,14 @@ func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
 		return files.writeCredential(dsn)
 	})
 	if err != nil {
+		var unknown *unknownOutcomeError
+		if errors.As(err, &unknown) {
+			// The commit's answer was lost: the role may exist, and this
+			// credential is its only password. It stays: a run again finds the
+			// role and finishes with it (ownRole), or overwrites it when the
+			// role was never made.
+			return RunAnswer{}, refuse(CodeSetupFailed, "The database did not confirm the setup. Run it again on this page: it finishes if the setup went through, and starts over if it did not.")
+		}
 		if wrote {
 			files.removeCredential() // its role was rolled back
 		}
@@ -415,4 +448,38 @@ func answersOf(req Request) []Answer {
 		return []Answer{}
 	}
 	return req.Answers
+}
+
+// unknownOutcomeError is a COMMIT whose answer was lost: whether it took effect is
+// not known.
+type unknownOutcomeError struct{ err error }
+
+func (u *unknownOutcomeError) Error() string {
+	return "the commit's outcome is unknown: " + u.err.Error()
+}
+
+func (u *unknownOutcomeError) Unwrap() error { return u.err }
+
+// inTx runs fn in a transaction on conn. It is pgx.BeginFunc, except that a
+// commit that fails without the server's answer is an unknownOutcomeError; one the
+// server answered (an error of its own, or a commit that became a rollback)
+// is a known failure, and so is fn's.
+func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+		return err
+	}
+	err = tx.Commit(ctx)
+	var pg *pgconn.PgError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback):
+		return err
+	}
+	return &unknownOutcomeError{err: err}
 }

@@ -128,7 +128,14 @@ func (st setupRoutes) answer(w http.ResponseWriter, answer any, err error, call 
 	}
 	ref := localsetup.AsRefusal(err)
 	st.log.Info("setup page: refused", "call", call, "code", ref.Code)
-	writeError(w, setupStatus(ref), ref.Code, ref.Message)
+	writeJSON(w, setupStatus(ref), setupErrorDTO{errorDTO: errorDTO{Code: ref.Code, Message: ref.Message}, TrustRoot: ref.TrustRoot})
+}
+
+// setupErrorDTO is a setup refusal's body: the code and message, and on
+// CERTIFICATE_NOT_VERIFIED the chain top the person may trust.
+type setupErrorDTO struct {
+	errorDTO
+	TrustRoot *localsetup.TrustRoot `json:"trustRoot,omitempty"`
 }
 
 // setupStatus maps a refusal to its HTTP status (CONTRACT.md, The local

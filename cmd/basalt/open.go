@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
 // localPages is the origin of the pages the engine serves for the agent's

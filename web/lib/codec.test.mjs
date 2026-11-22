@@ -1,5 +1,5 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). Reads the
-// fixtures the Go tests write, so the page and internal/approval agree.
+// fixtures the Go tests write, so the page and internal/core/approval agree.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,7 +29,7 @@ import {
 } from "./codec.js";
 
 const fixtures = JSON.parse(
-  readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 
 function requestFragment(obj) {
@@ -205,9 +205,9 @@ test("registration response carries prfSupported only when true", () => {
   assert.equal("prfSupported" in json(encodeRegistrationResponse(fields)), false);
 });
 
-// Rows hidden from the agent: the same vectors internal/approval checks.
+// Rows hidden from the agent: the same vectors internal/core/approval checks.
 const reveal = JSON.parse(
-  readFileSync(new URL("../../internal/approval/testdata/reveal.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/approval/testdata/reveal.json", import.meta.url), "utf8"),
 );
 
 test("the reveal key and challenge match Go's for the shared vectors", async () => {

@@ -8,8 +8,8 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
 // OSC 8 hyperlink escapes (CONTRACT.md, Terminal hyperlinks). The URL rule

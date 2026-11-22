@@ -2,7 +2,7 @@
 
 This document describes the end-to-end encrypted channel between a BasaltDB engine and the portal page a person approves on, carried by a relay the person does not have to trust. It is written to be read alone: every byte layout, derivation and check is stated here, so you can review the design without reading the rest of the repository. Links point to evidence (the contract section, a schema, a test vector), never to something you need in order to understand a step.
 
-It describes the protocol as it is built. Where an older design differs, the [contract](../../contract/vault-channel.md) and the code win, and this document follows them. Two machine-checked guards keep it honest: `TestChannelSpecMatchesContract` (in `internal/channel`) compares the constants in the blocks marked `constants` below with the code, and the shared test vectors (section 9) pin every byte layout and every refusal.
+It describes the protocol as it is built. Where an older design differs, the [contract](../../contract/vault-channel.md) and the code win, and this document follows them. Two machine-checked guards keep it honest: `TestChannelSpecMatchesContract` (in `internal/core/channel`) compares the constants in the blocks marked `constants` below with the code, and the shared test vectors (section 9) pin every byte layout and every refusal.
 
 How to report a problem: [SECURITY.md](../../SECURITY.md).
 
@@ -389,11 +389,11 @@ The vectors are shared by the Go engine and the page's JavaScript: both read the
 **Run them.**
 
 ```
-go test -count=1 ./api/mcp/vault/ ./internal/channel/
+go test -count=1 ./api/mcp/vault/ ./internal/core/channel/
 node --test web/lib/channel.test.mjs
 ```
 
-The first command runs the vectors against a test-only Go reference (`api/mcp/vault`) and the engine's own implementation (`internal/channel`); the second runs them against the page's WebCrypto code. To regenerate the files: `go test ./api/mcp/vault -run TestGenerateVaultVectors -update-vectors`. Two tests look at this document: `TestChannelSpecMatchesContract` checks the `constants` blocks above against the code, and that each vector file is named here.
+The first command runs the vectors against a test-only Go reference (`api/mcp/vault`) and the engine's own implementation (`internal/core/channel`); the second runs them against the page's WebCrypto code. To regenerate the files: `go test ./api/mcp/vault -run TestGenerateVaultVectors -update-vectors`. Two tests look at this document: `TestChannelSpecMatchesContract` checks the `constants` blocks above against the code, and that each vector file is named here.
 
 ## 10. Out of scope
 

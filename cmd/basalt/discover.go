@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // discoverConfig is the engine.json a command finds by itself

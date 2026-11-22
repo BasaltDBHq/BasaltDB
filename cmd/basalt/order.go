@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
 // Display groups of revert lines (CONTRACT.md, CLI, Revert line order):

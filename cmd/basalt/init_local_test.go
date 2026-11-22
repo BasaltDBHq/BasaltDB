@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
+	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 // localInit runs basalt init on the person's machine with the fake host.

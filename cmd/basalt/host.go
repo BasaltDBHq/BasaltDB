@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/browser"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
+	service "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
 )
 
 // host is what basalt init does on the machine beyond Postgres: elevate

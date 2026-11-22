@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 // The newer-release notice (CONTRACT.md, Update notice): every command but

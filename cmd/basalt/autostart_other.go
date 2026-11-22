@@ -6,7 +6,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // engineStarter: the engine runs on Linux and macOS only, so nothing starts.

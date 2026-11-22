@@ -3,7 +3,7 @@ package main
 // These tests drive a setup the way the connect page does (CONTRACT.md,
 // Connect): basalt init --remote makes a code and a connect link, the page's
 // three JSON calls go to a test server built on the public setup package
-// (internal/connecttest) with a real Postgres behind it, and an engine in
+// (internal/testkit/connecttest) with a real Postgres behind it, and an engine in
 // this process picks the recorded setup up.
 
 import (
@@ -29,14 +29,14 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	connectv1 "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1"
-	"github.com/basaltdbhq/basaltdb/internal/connecttest"
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/connecttest"
 )
 
 var b64url = base64.RawURLEncoding

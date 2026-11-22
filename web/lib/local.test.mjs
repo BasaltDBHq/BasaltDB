@@ -11,7 +11,7 @@ import { sameOriginSession } from "./transport.js";
 import { linkFailure, personText, APPROVE_REOPEN } from "./page.js";
 
 const fixtures = JSON.parse(
-  readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 const id = fixtures.request.approvalId;
 

@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/supabase"
+	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )

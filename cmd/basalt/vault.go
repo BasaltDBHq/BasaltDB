@@ -8,11 +8,11 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/vault"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The Vault in basalt init and basalt status (CONTRACT.md, Vault channel,

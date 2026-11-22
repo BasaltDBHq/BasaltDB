@@ -1,5 +1,5 @@
 {
-  "description": "Shared cases for CONTRACT.md, Approvals, Format 2. valid: fragment decodes to payload (the inflated JSON) and rebuilds to binding and lines exactly; kind is the binding's kind (APPROVE for the approval page, REVERT for the revert page). invalid: the page of that kind refuses the fragment, by the format's rules or by the checks every request gets (rowsHash, kind). Go's internal/linkcodec tests write this file (go test ./internal/linkcodec -update) and run it; the pages' tests run it too.",
+  "description": "Shared cases for CONTRACT.md, Approvals, Format 2. valid: fragment decodes to payload (the inflated JSON) and rebuilds to binding and lines exactly; kind is the binding's kind (APPROVE for the approval page, REVERT for the revert page). invalid: the page of that kind refuses the fragment, by the format's rules or by the checks every request gets (rowsHash, kind). Go's internal/core/linkcodec tests write this file (go test ./internal/core/linkcodec -update) and run it; the pages' tests run it too.",
   "valid": [
     {
       "name": "an approval: the pages' fixture",

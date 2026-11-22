@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	plugincontract "github.com/basaltdbhq/basaltdb/api/plugin"
-	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 )
 
 // sdkModule is the Go plugin SDK. It lives in its own repository and holds
@@ -68,7 +68,7 @@ func TestSDKModuleMatchesTheContract(t *testing.T) {
 	})
 
 	t.Run("protocol types", func(t *testing.T) {
-		engine := filepath.Join("..", "..", "internal", "plugin", "protocol")
+		engine := filepath.Join("..", "..", "internal", "core", "pluginproto")
 		names := func(dir string) []string {
 			all, err := filepath.Glob(filepath.Join(dir, "*.go"))
 			require.NoError(t, err)
@@ -84,7 +84,7 @@ func TestSDKModuleMatchesTheContract(t *testing.T) {
 		require.Equal(t, names(engine), names(filepath.Join(sdk, "protocol")), "the protocol package's files")
 		for _, name := range names(engine) {
 			require.Equal(t, goCode(t, filepath.Join(engine, name)), goCode(t, filepath.Join(sdk, "protocol", name)),
-				"internal/plugin/protocol/%s differs from the SDK module's, comments aside", name)
+				"internal/core/pluginproto/%s differs from the SDK module's, comments aside", name)
 		}
 	})
 

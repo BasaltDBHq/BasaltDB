@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/binwatch"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
-	"github.com/basaltdbhq/basaltdb/internal/server"
+	server "github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
+	engine "github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
+	"github.com/basaltdbhq/basaltdb/internal/app/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // The values of --started-by: who started this engine.

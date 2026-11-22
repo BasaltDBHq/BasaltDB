@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const configImport = "github.com/basaltdbhq/basaltdb/internal/engine/config"
+const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 
 // configLoaders are the config package's functions that read the engine
 // config from a path.

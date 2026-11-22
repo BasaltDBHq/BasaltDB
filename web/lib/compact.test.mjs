@@ -1,6 +1,6 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). Runs format
 // 2's shared vectors (api/mcp/links/compact-request.json), which Go's
-// internal/linkcodec writes and runs too, through the pages' decoders.
+// internal/core/linkcodec writes and runs too, through the pages' decoders.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

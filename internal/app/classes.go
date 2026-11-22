@@ -1,0 +1,30 @@
+package engine
+
+import (
+	"context"
+
+	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
+)
+
+// storeClasses is the agent's PII classification read on its credential
+// (piidict.BoundMap), with its errors mapped like the store's
+// (postgres.MapError), so the service sees contract errors.
+type storeClasses struct {
+	piidict.BoundMap
+}
+
+func (m storeClasses) Resolve(ctx context.Context, refs []piidict.ColumnRef) ([]piidict.Class, error) {
+	c, err := m.BoundMap.Resolve(ctx, refs)
+	return c, postgres.MapError(err)
+}
+
+func (m storeClasses) Secrets(ctx context.Context) ([]piidict.ColumnRef, error) {
+	s, err := m.BoundMap.Secrets(ctx)
+	return s, postgres.MapError(err)
+}
+
+func (m storeClasses) CatalogFingerprint(ctx context.Context) (string, error) {
+	f, err := m.BoundMap.CatalogFingerprint(ctx)
+	return f, postgres.MapError(err)
+}

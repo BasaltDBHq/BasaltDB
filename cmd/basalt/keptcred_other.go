@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // errRemoteUnsupported: basalt init --remote runs on linux and darwin only.

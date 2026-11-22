@@ -237,7 +237,7 @@ type compactVectors struct {
 // rebuild: every valid fragment is 2. and the base64url of the deflate-raw
 // of its payload, [shapes, texts] (with the credential ids third when it
 // names any), and its lines hash to its
-// binding's rowsHash. The codec's own tests (internal/linkcodec and the
+// binding's rowsHash. The codec's own tests (internal/core/linkcodec and the
 // pages) rebuild every vector.
 func TestCompactRequestVectors(t *testing.T) {
 	t.Parallel()

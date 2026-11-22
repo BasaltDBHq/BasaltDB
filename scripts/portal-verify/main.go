@@ -14,9 +14,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/portalverify"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
+	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
 )
 
 func main() {

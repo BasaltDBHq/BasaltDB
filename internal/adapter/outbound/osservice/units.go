@@ -1,0 +1,278 @@
+// Package service installs the engine as a system service under its own OS
+// user: a systemd unit on Linux, a launchd daemon on macOS, set up with
+// one sudo prompt at basalt init. Install and uninstall are
+// plans of steps, printed before they run, so a person sees every command
+// that needs root.
+package service
+
+import (
+	"bytes"
+	"encoding/xml"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/config"
+)
+
+// Service names and unit locations.
+const (
+	goosLinux  = "linux"
+	goosDarwin = "darwin"
+
+	SystemdUnitName = "basalt-engine.service"
+	SystemdUnitPath = "/etc/systemd/system/" + SystemdUnitName
+	LaunchdLabel    = "dev.basaltdb.engine"
+	LaunchdPlist    = "/Library/LaunchDaemons/" + LaunchdLabel + ".plist"
+
+	linuxUser     = "basalt"
+	darwinUser    = "_basalt" // macOS system accounts start with '_'
+	darwinLogDir  = "/Library/Logs/Basalt"
+	darwinLogFile = darwinLogDir + "/engine.log"
+	launchdUmask  = 0o077
+
+	// runtimeDirMode is the socket directory's mode: open, so an agent's
+	// OS user reaches its socket (the socket itself is 0666 and checks the
+	// peer's uid). stateDirMode is the Linux state directory's, the
+	// engine's alone; darwinStateDirMode is the macOS install's.
+	runtimeDirMode     = 0o755
+	stateDirMode       = 0o700
+	darwinStateDirMode = configDirMode
+)
+
+// Spec is what the unit runs.
+type Spec struct {
+	// GOOS is linux or darwin.
+	GOOS string
+	// Binary is the absolute path of the basalt binary.
+	Binary string
+	// ConfigPath is the engine config file.
+	ConfigPath string
+	// User is the OS user the engine runs as.
+	User string
+	// Files are written mode 0600, owned by User, before the service
+	// starts: the engine config and an agent's credential from basalt init.
+	Files []File
+	// MemoryMB is the engine's pii.maxMemoryMB; 0 is the default. The unit
+	// limits the engine's memory from it, so pressure throttles or stops
+	// only the engine's own OS user (M5.1 plan, section 5).
+	MemoryMB int
+	// Plugins are the config's local plugin entries: install makes each
+	// one's OS user, socket directory and unit, uninstall removes them.
+	Plugins []PluginEntry
+	// StateDir and SocketDir are the engine's, from its config (the
+	// defaults when empty), and CredentialFiles every agent's and plugin's
+	// credential file: a plugin's unit makes them inaccessible.
+	StateDir, SocketDir string
+	CredentialFiles     []string
+}
+
+// pluginHost is what s's plugin units hide and who reaches their sockets.
+// It is HostFor's, from the fields withPluginUnits copied out of it.
+func (s Spec) pluginHost() PluginHost {
+	h := PluginHost{
+		GOOS: s.GOOS, EngineUser: s.User, ConfigDir: filepath.Dir(s.ConfigPath),
+		StateDir: s.StateDir, SocketDir: s.SocketDir, CredentialFiles: s.CredentialFiles,
+	}
+	if h.StateDir == "" {
+		h.StateDir = config.DefaultStateDir(s.GOOS)
+	}
+	if h.SocketDir == "" {
+		h.SocketDir = config.DefaultSocketDir(s.GOOS)
+	}
+	return h
+}
+
+// PluginHost is s's plugin host: the engine's user and the paths its
+// plugin units hide.
+func (s Spec) PluginHost() PluginHost { return s.pluginHost() }
+
+// The unit's memory limits, as multiples of pii.maxMemoryMB: the Go heap
+// is soft-limited to twice the budget (GOMEMLIMIT, a dictionary build and
+// the rest of the engine), and the mapped dictionary file takes up to the
+// budget again. MemoryHigh throttles past that; MemoryMax stops the engine.
+// The limits are written at install time: after raising pii.maxMemoryMB,
+// basalt service install must run again to rewrite them. On macOS the
+// plist's ResidentSetSize limits are written for the record only: current
+// macOS does not enforce them, so GOMEMLIMIT is the only limit there.
+const (
+	memoryHighFactor = 3
+	memoryMaxFactor  = 4
+	bytesPerMB       = 1 << 20
+)
+
+// memoryLimitsMB are the soft and hard limits for s, in MiB.
+func (s Spec) memoryLimitsMB() (high, hard int) {
+	mb := s.MemoryMB
+	if mb <= 0 {
+		mb = config.DefaultPIIMaxMemoryMB
+	}
+	return mb * memoryHighFactor, mb * memoryMaxFactor
+}
+
+// File is one file the install writes for the engine.
+type File struct {
+	Path    string
+	Content []byte
+}
+
+// DefaultUser is the engine's OS user on goos.
+func DefaultUser(goos string) string {
+	if goos == goosDarwin {
+		return darwinUser
+	}
+	return linuxUser
+}
+
+// StartCommand is the command that starts the installed engine on goos,
+// whether or not its service is loaded yet. On macOS an unloaded job needs
+// bootstrap first; when it is already loaded, bootstrap fails harmlessly
+// and kickstart starts (or restarts) it.
+func StartCommand(goos string) string {
+	if goos == goosDarwin {
+		return "sudo launchctl bootstrap system " + LaunchdPlist + "; sudo launchctl kickstart -k system/" + LaunchdLabel
+	}
+	return "sudo systemctl start " + SystemdUnitName
+}
+
+// RestartArgs is the command that restarts the installed engine on goos,
+// so it picks up a changed config.
+func RestartArgs(goos string) []string {
+	if goos == goosDarwin {
+		return []string{"launchctl", "kickstart", "-k", "system/" + LaunchdLabel}
+	}
+	return []string{"systemctl", "restart", SystemdUnitName}
+}
+
+// Dir is a directory the engine's OS user owns, with its mode.
+type Dir struct {
+	Path string
+	Mode os.FileMode
+}
+
+// EngineDirs are the engine's socket and state directories on goos, with the
+// modes its service gives them: the systemd unit's RuntimeDirectory and
+// StateDirectory on Linux, the launchd install's directories on macOS.
+// The install and the unit are tested against one list.
+func EngineDirs(goos string) []Dir {
+	state := os.FileMode(stateDirMode)
+	if goos == goosDarwin {
+		state = darwinStateDirMode
+	}
+	return []Dir{
+		{Path: config.DefaultSocketDir(goos), Mode: runtimeDirMode},
+		{Path: config.DefaultStateDir(goos), Mode: state},
+	}
+}
+
+func (s Spec) args() []string {
+	return []string{s.Binary, "engine", "--config", s.ConfigPath, "--supervise"}
+}
+
+// SystemdUnit renders the Linux unit. The engine gets /run/basalt for its
+// sockets and lock, its state directory, its config directory (where it
+// takes an agent's lock, promotes a .pending credential and clears a
+// finished setup from engine.json), and a read-only view of everything
+// else.
+func SystemdUnit(s Spec) string {
+	quoted := make([]string, 0, len(s.args()))
+	for _, a := range s.args() {
+		quoted = append(quoted, systemdQuote(a))
+	}
+	high, hard := s.memoryLimitsMB()
+	return fmt.Sprintf(`[Unit]
+Description=BasaltDB engine
+Documentation=https://github.com/BasaltDBHq/BasaltDB
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%[1]s
+Group=%[1]s
+ExecStart=%[2]s
+Restart=on-failure
+RestartSec=2s
+RuntimeDirectory=basalt
+RuntimeDirectoryMode=%04[3]o
+StateDirectory=basalt
+StateDirectoryMode=%04[6]o
+UMask=0077
+MemoryHigh=%[4]dM
+MemoryMax=%[5]dM
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=%[7]s
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
+`, s.User, strings.Join(quoted, " "), runtimeDirMode, high, hard, stateDirMode, systemdQuote(filepath.Dir(s.ConfigPath)))
+}
+
+// systemdQuote quotes an ExecStart word when it has spaces, quotes or
+// backslashes.
+func systemdQuote(s string) string {
+	if !strings.ContainsAny(s, " \t\"'\\") {
+		return s
+	}
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	return `"` + r.Replace(s) + `"`
+}
+
+// LaunchdDaemon renders the macOS launch daemon.
+func LaunchdDaemon(s Spec) string {
+	high, hard := s.memoryLimitsMB()
+	var args strings.Builder
+	for _, a := range s.args() {
+		args.WriteString("\n\t\t<string>" + xmlEscape(a) + "</string>")
+	}
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>%[1]s</string>
+	<key>ProgramArguments</key>
+	<array>%[2]s
+	</array>
+	<key>UserName</key>
+	<string>%[3]s</string>
+	<key>GroupName</key>
+	<string>%[3]s</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Umask</key>
+	<integer>%[4]d</integer>
+	<key>StandardErrorPath</key>
+	<string>%[5]s</string>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>ResidentSetSize</key>
+		<integer>%[6]d</integer>
+	</dict>
+	<key>HardResourceLimits</key>
+	<dict>
+		<key>ResidentSetSize</key>
+		<integer>%[7]d</integer>
+	</dict>
+</dict>
+</plist>
+`, LaunchdLabel, args.String(), xmlEscape(s.User), launchdUmask, darwinLogFile, int64(high)*bytesPerMB, int64(hard)*bytesPerMB)
+}
+
+func xmlEscape(s string) string {
+	var b bytes.Buffer
+	// EscapeText only fails when the writer fails; a bytes.Buffer does not.
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
+}

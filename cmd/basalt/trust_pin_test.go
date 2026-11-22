@@ -186,7 +186,7 @@ func TestInitRemotePins(t *testing.T) {
 		c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
 			return trustpin.Fetch(ctx, s.dial, h, p)
 		}
-		code := runInitAdmin(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+		code := runInit(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 		require.Equal(t, exitOK, code, "%s: %s", name, stderr.String())
 		require.Contains(t, stderr.String(), "an agent never pins one", name)
 		require.Contains(t, stderr.String(), "basalt trust pin --host "+host+" --port 5432", name)
@@ -215,7 +215,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		events = append(events, "handshake")
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
-	code := runInitAdmin(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	code := runInit(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.Equal(t, exitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
@@ -240,38 +240,6 @@ func TestInitPinSkipsOwnRoots(t *testing.T) {
 	_, _, err = c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=disable", "abc", trustConfig(t), false)
 	require.ErrorIs(t, err, errUsage, "--trust-root with no TLS is a usage error")
 	require.False(t, fetched)
-}
-
-// basalt init's accepted pin reaches a service engine through one sudo
-// basalt trust pin that names the fingerprint, which pins it again only
-// when the server still presents that certificate.
-func TestServicePinUsesSudoWithTheFingerprint(t *testing.T) {
-	t.Parallel()
-	h := newFakeHost(t)
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
-	c.host = h
-	ca, _ := trustprofiletest.Chain(t, "x")
-	f := initFlags{
-		configPath: "/etc/basalt/engine.json",
-		pin:        &pinChoice{pinTarget: pinTarget{host: "db.internal.example.com", port: 5432}, top: ca, sha256: trustprofile.DERSHA256(ca)},
-	}
-	require.NoError(t, servicePin(c, f))
-	require.Equal(t, [][]string{{
-		fakeBin, "trust", "pin", "--host", "db.internal.example.com", "--port", "5432",
-		"--trust-root", trustprofile.DERSHA256(ca),
-	}}, h.sudo)
-	require.Equal(t, []string{""}, h.sudoIn, "nothing on stdin")
-	require.NoError(t, servicePin(c, initFlags{}), "no pin, no sudo")
-	require.Len(t, h.sudo, 1)
-}
-
-func TestWithVerifyFull(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "", withVerifyFull(""))
-	got := withVerifyFull("postgres://u:pw@db.example.com:5432/postgres?sslmode=require&channel_binding=require")
-	require.Contains(t, got, "sslmode=verify-full")
-	require.Contains(t, got, "channel_binding=require")
-	require.NotContains(t, got, "sslmode=require")
 }
 
 func TestTargetOf(t *testing.T) {

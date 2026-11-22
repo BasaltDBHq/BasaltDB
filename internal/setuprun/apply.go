@@ -12,17 +12,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
-// ApplyInit runs the script in one transaction and refuses to commit while
-// any agent-writable table or cascade target is left unguarded. The after
-// statements run last, once that check passed (a setup code's
-// record_setup). basalt init, init --setup-code and upgrade all apply
-// through it.
-func ApplyInit(ctx context.Context, conn *pgx.Conn, script guard.Script, after ...guard.Statement) error {
-	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return ApplyInitTx(ctx, tx, script, after...) })
-	return WithGuardDetail(err)
-}
-
-// ApplyInitTx is ApplyInit on a transaction the caller commits.
+// ApplyInitTx runs the script in the caller's transaction and refuses to
+// commit while any agent-writable table or cascade target is left
+// unguarded. The after statements run last, once that check passed (a
+// setup code's record_setup).
 func ApplyInitTx(ctx context.Context, tx pgx.Tx, script guard.Script, after ...guard.Statement) error {
 	if err := script.Apply(ctx, tx); err != nil {
 		return err

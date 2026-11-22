@@ -46,9 +46,6 @@ type cliIO struct {
 	// interactive is true when a person answers at a terminal: init asks
 	// its setup questions only then.
 	interactive bool
-	// strictInit makes agentInitError refuse a plain init with no
-	// terminal even in the test binary (pipedAdminInitAllowed).
-	strictInit bool
 	// tty overrides the terminal check of printLink; tests set it.
 	tty func(io.Writer) bool
 	// width is the terminal's width in columns, 0 when stdout is no
@@ -208,16 +205,6 @@ func (c *cliIO) confirm(question string) (bool, error) {
 		return false, err
 	}
 	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
-}
-
-// confirmYes asks a yes/no question whose default (an empty answer) is yes.
-func (c *cliIO) confirmYes(question string) (bool, error) {
-	fmt.Fprintf(c.stderr, "%s [Y/n] ", question)
-	answer, err := c.line()
-	if err != nil {
-		return false, err
-	}
-	return answer == "" || strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
 }
 
 // connect opens one connection, usable through a transaction pooler

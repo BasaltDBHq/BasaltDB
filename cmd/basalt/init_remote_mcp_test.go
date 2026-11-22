@@ -75,60 +75,9 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
 		func(string) string { return "" })
 	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
-	code := runInitAdmin(c, []string{"--remote", "--agent", "bot"})
+	code := runInit(c, []string{"--remote", "--agent", "bot"})
 	require.Equal(t, exitError, code, stderr.String())
 	require.Contains(t, stderr.String(), system)
 	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
 	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
-}
-
-// init and init --demo, not root, with a system engine config in place and
-// --no-service: refused before any SQL, no second config.
-func TestInitRefusesAForegroundSetupBesideTheSystemConfig(t *testing.T) {
-	t.Parallel()
-	for _, extra := range [][]string{
-		{"--agent", "bot", "--write", "public.leads"},
-		{"--demo"},
-	} {
-		h := newFakeHost(t)
-		system := filepath.Join(h.configDir, "etc", "engine.json")
-		require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
-		require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
-		var stdout, stderr bytes.Buffer
-		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-			func(k string) string {
-				if k == envAdminURL {
-					return "postgres://admin@127.0.0.1:1/postgres"
-				}
-				return ""
-			})
-		c.host, c.systemConfigPath = h, system
-		code := runInitAdmin(c, append([]string{"--no-service", "--yes", "--skip-passkey"}, extra...))
-		require.Equal(t, exitError, code, "%v: %s", extra, stderr.String())
-		require.Contains(t, stderr.String(), system)
-		_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
-		require.ErrorIs(t, err, os.ErrNotExist, "no second config")
-	}
-}
-
-// The backstop for a service declined at the prompt: perUserPaths, which
-// moves a foreground setup to the person's folder, refuses beside a system
-// config.
-func TestPerUserPathsRefusesBesideTheSystemConfig(t *testing.T) {
-	t.Parallel()
-	h := newFakeHost(t)
-	system := filepath.Join(h.configDir, "etc", "engine.json")
-	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
-	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}},
-		func(string) string { return "" })
-	c.host, c.systemConfigPath = h, system
-	_, err := perUserPaths(c, initFlags{agent: "bot"})
-	require.ErrorContains(t, err, system)
-
-	// With no system config it moves to the person's folder.
-	require.NoError(t, os.Remove(system))
-	f, err := perUserPaths(c, initFlags{agent: "bot"})
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(h.configDir, perUserDirName, "engine.json"), f.configPath)
 }

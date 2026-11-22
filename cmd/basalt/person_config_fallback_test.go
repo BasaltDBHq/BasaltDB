@@ -27,10 +27,7 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	h := newFakeHost(t)
 	cfg := filepath.Join(h.configDir, perUserDirName, "engine.json")
-	r := cliOn(t, h, map[string]string{envAdminURL: d.URL}, "",
-		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", cfg, "--os-user", "tester", "--yes", "--skip-passkey")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	initAgent(t, d, cfg)
 
 	id := uuid.NewString()
 	// Each of these answers from the agent's own ledger, which only the

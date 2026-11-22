@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"flag"
 	"fmt"
 	"net"
 	"net/url"
@@ -239,12 +238,6 @@ func withoutProfile(set *trustprofile.Set, name string) *trustprofile.Set {
 	return set.Replacing(name, nil)
 }
 
-// trustRootFlag adds --trust-root to fs.
-func trustRootFlag(fs *flag.FlagSet) *string {
-	return fs.String("trust-root", "", "without a terminal: the SHA-256 of the certificate authority to pin for a database whose certificate "+
-		"verifies against no authority this machine trusts; it must match what the server presents")
-}
-
 // initPin is the pin an init offers for dsn's host before anything else
 // reaches the server: the choice and true, or false when none is needed,
 // it is declined, or it cannot be made (an agent runs init, the chain
@@ -341,18 +334,4 @@ func namesOwnRoots(dsn string) bool {
 		return false
 	}
 	return cfg.TLSConfig == nil || cfg.TLSConfig.RootCAs != nil
-}
-
-// trustInMemory makes this process's connections trust choice for its
-// host, without writing it, and returns admin with sslmode=verify-full: the
-// admin connection then verifies against the certificate the person just
-// accepted before it sends the admin's login (verify: ca, the chain only,
-// for a name-only pin).
-func (c *cliIO) trustInMemory(choice pinChoice, admin, configPath string) (string, error) {
-	p, err := trustdir.PinProfile(choice.host, choice.top, choice.caOnly)
-	if err != nil {
-		return "", err
-	}
-	pgdial.SetTrust(func() *trustprofile.Set { return trustdir.Set(configPath).Replacing(p.Name, p) })
-	return withVerifyFull(admin), nil
 }

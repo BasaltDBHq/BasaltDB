@@ -354,7 +354,7 @@ func servePagesFor(c *cliIO, base string) (stop func()) {
 	if base == links.Portal || c.host.PagesUp(c.ctx, base) {
 		return func() {}
 	}
-	stop, served := serveLocalPages(base, nil)
+	stop, served := serveLocalPages(base)
 	if !served {
 		fmt.Fprint(c.stderr, serveHint(base))
 	}

@@ -374,3 +374,38 @@ func TestRunNeverTakesOverAForeignRole(t *testing.T) {
 	refusal(t, err, localsetup.CodeRoleExists)
 	require.False(t, exists(t, f.db, "basalt_meta"), "nothing changed")
 }
+
+// A kept credential for another server or database is never tried, even
+// when it would log in as a role of that name: the engine's agent would
+// point at the other database.
+func TestRunNeverFinishesWithACredentialForAnotherTarget(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	role := f.db.Names.Prefix + "_agent_demo_bot"
+	f.db.Exec(t, `CREATE ROLE `+role+` LOGIN PASSWORD 'kept-elsewhere'`)
+	u, err := url.Parse(f.db.URL)
+	require.NoError(t, err)
+	kept := *u
+	kept.User = url.UserPassword(role, "kept-elsewhere")
+	cred := filepath.Join(filepath.Dir(f.config), "agents", "demo_bot.url")
+
+	// The same role and password, but the credential names another host
+	// or another database than this run's admin string.
+	host := *u
+	host.Host = "localhost.example:" + u.Port()
+	db := kept
+	db.Path = "/another_db"
+	for _, other := range []url.URL{host, db} {
+		other.User = kept.User
+		require.NoError(t, config.WriteFile(cred, []byte(other.String()+"\n")))
+		_, err = f.svc.Check(ctx, f.request())
+		refusal(t, err, localsetup.CodeRoleExists)
+	}
+
+	// Pointing at this run's server and database, it is the engine's own.
+	require.NoError(t, config.WriteFile(cred, []byte(kept.String()+"\n")))
+	checked, err := f.svc.Check(ctx, f.request())
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(checked.Lines, "\n"), "this finishes its setup")
+}

@@ -211,6 +211,21 @@ func checkAdminURL(raw, role string) (string, error) {
 	return strings.ToLower(u.Host), nil
 }
 
+// sameTarget: two postgres URLs name the same host and port (compared in
+// lowercase) and the same database.
+func sameTarget(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	return ua.Host != "" && strings.EqualFold(ua.Host, ub.Host) && strings.TrimPrefix(ua.Path, "/") == strings.TrimPrefix(ub.Path, "/") &&
+		strings.TrimPrefix(ua.Path, "/") != ""
+}
+
 // connect opens the admin connection; a failure is a fixed refusal.
 func (s *Service) connect(ctx context.Context, admin string) (*pgx.Conn, error) {
 	conn, err := s.opts.Dial(ctx, admin)
@@ -280,6 +295,12 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 	// Only a string that makes the driver read no file: the folder is the
 	// engine's own, but a credential is never trusted to be well-formed.
 	if pgdial.CheckForeignDSN(dsn) != nil {
+		return false
+	}
+	// The kept credential must be for the server and database this run's
+	// admin string names, before it is tried at all: a role of the same
+	// name on another server is never taken over.
+	if !sameTarget(dsn, j.req.DatabaseURL) {
 		return false
 	}
 	conn, err := s.opts.Dial(ctx, dsn)

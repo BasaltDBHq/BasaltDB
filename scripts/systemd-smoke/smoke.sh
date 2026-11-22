@@ -119,13 +119,14 @@ run_has() {
 	grep -qx "$1" <<<"$log"
 }
 
-# status_out is the agent's status tool, called as the agent's OS user
-# through basalt mcp (basalt status is removed).
+# status_out is the agent's status tool through basalt mcp (basalt status is
+# removed), called as the OS user basalt init named for the agent: the
+# person running this script, as on a person's own computer.
 status_out() {
 	printf '%s\n%s\n' \
 		'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
 		'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' |
-		sudo -u "$agent_user" timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
+		timeout 30 "$basalt" mcp --agent "$agent" 2>&1 || true
 }
 # unavailable: the status tool names PLUGIN_UNAVAILABLE, or gave no result
 # at all (a basalt mcp call that failed is never read as healthy).
@@ -215,6 +216,11 @@ CGO_ENABLED=0 go build -trimpath -o "$work/setup" ./scripts/systemd-smoke/setup
 printf '%s\n' "$BASALT_ADMIN_DATABASE_URL" | "$work/setup" "$link" >"$work/setup.out" || fail "the setup page's install"
 [ "$(cat "$work/setup.out")" = "$agent" ] || fail "the setup set up $(cat "$work/setup.out"), not $agent"
 wait_for "the engine's agent socket" sudo test -S "/run/basalt/$agent.sock"
+# The engine wrote its own files, as its own user, for no one else to read.
+for f in /etc/basalt/engine.json "/etc/basalt/agents/$agent.url"; do
+	got=$(sudo stat -c '%U %a' "$f") || fail "the setup did not write $f"
+	[ "$got" = "basalt 600" ] || fail "$f is $got, not basalt 600"
+done
 # The steps below restart the engine several times within seconds: clear
 # systemd's start-rate count so its default limit (5 starts in 10s)
 # measures the steps, not the install.

@@ -105,17 +105,26 @@ func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
 	require.Equal(t, "sales_bot", linkJob(t, strings.SplitN(r.stdout, "\n", 2)[0]).Agent)
 }
 
-func TestInitOnASetUpEngineGivesNoInstallLink(t *testing.T) {
+func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 	t.Parallel()
-	h := newFakeHost(t)
-	h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
-	h.setupCodes = []string{localsetup.CodeJobUnavailable}
-	r, _ := localInit(t, h, "--demo")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Empty(t, r.stdout, "no link")
-	require.Empty(t, h.opened)
-	require.Contains(t, r.stderr, "already set up")
-	require.Contains(t, r.stderr, "basalt mcp --agent demo_bot")
+	for _, args := range [][]string{nil, {"--demo"}, {"--agent", "sales_bot"}} {
+		h := newFakeHost(t)
+		h.sys.existing = map[string]bool{service.UnitPath("linux"): true}
+		h.setupCodes = []string{localsetup.CodeJobUnavailable}
+		r, read := localInit(t, h, args...)
+		require.Equal(t, exitOK, r.code, "%v: %s", args, r.stderr)
+		require.Empty(t, h.dialogs, "no password: the service is there")
+		lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
+		require.Len(t, lines, 1, "stdout is the link only: the agent is registered already")
+		agent := "demo_bot"
+		if len(args) == 2 {
+			agent = args[1]
+		}
+		require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
+		require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
+		require.Contains(t, r.stderr, "update the guard or remove BasaltDB")
+		require.NotContains(t, read, envAdminURL)
+	}
 }
 
 func TestInitStopsBeforeTheDialog(t *testing.T) {

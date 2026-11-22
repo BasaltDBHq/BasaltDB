@@ -108,7 +108,7 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `UNAVAILABLE` | `TOO_MANY_CONNECTIONS` | — | SQLSTATE `53300` on a new connection: the agent role is at its `CONNECTION LIMIT` of 8. A `CALL_TOOL` (same call), A `ASK_PERSON`; +pm: "The agent <name> has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes." |
 | `UNAVAILABLE` | `CREDENTIAL_REJECTED` | — | A `RUN_COMMAND` (`basalt init`: its page sets a new password), P `TELL_AGENT`, A `STOP`; +pm |
 | `UNAVAILABLE` | `GUARD_MISSING` | — | A `RUN_COMMAND` (`basalt init`: its page installs the guard again), P `TELL_AGENT`, A `STOP`; +pm |
-| `UNAVAILABLE` | `GUARD_OUTDATED` | — | A `RUN_COMMAND` (`basalt init`: its page updates the guard), P `TELL_AGENT`, A `STOP`; +pm |
+| `UNAVAILABLE` | `GUARD_OUTDATED` | — | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard), P `TELL_AGENT`, A `STOP`; +pm |
 | `UNAVAILABLE` | `ENGINE_UNREACHABLE` | — | P `RUN_COMMAND` (start the engine), P `TELL_AGENT`, A `STOP`; +pm |
 | `UNAVAILABLE` | `PAGES_OFF` | — | A `CALL_TOOL` (`list_pending`, hand over each item's `approvalUrl`) |
 | `UNAVAILABLE` | `SETUP_PENDING` | — | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending setup), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`); +pm |
@@ -170,7 +170,7 @@ Results and warnings:
 | `confirm_database` | `CONFIRMED` | For a connect-only code. A `CALL_TOOL` (`status`) |
 | `confirm_database` | `REFUSED` | For a connect-only code. A `RUN_COMMAND` (`basalt init`: a new link), A `END_TURN`; +pm: the database was not theirs, the bot never logged in there, and it will give them a new link |
 | `RLS_HIDES_ROWS` | — | A `ASK_PERSON`, A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page asks the row-level security question), P `TELL_AGENT`; +pm |
-| `GUARD_UPGRADE_AVAILABLE` | — | A `ASK_PERSON` (whether to update the guard now), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page updates the guard); +pm |
+| `GUARD_UPGRADE_AVAILABLE` | — | A `ASK_PERSON` (whether to update the guard now), then on the person's yes P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard); +pm |
 
 Status problems (`status` tool, every one +pm):
 
@@ -183,8 +183,8 @@ Status problems (`status` tool, every one +pm):
 | `TOO_MANY_CONNECTIONS` | `ERROR` | A `ASK_PERSON` (stop a second engine for the agent, or wait for stale sessions to close; the error's person message) |
 | `CREDENTIAL_REJECTED` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page sets a new password), P `TELL_AGENT`, A `STOP` |
 | `GUARD_MISSING` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page installs the guard again), P `TELL_AGENT`, A `STOP` |
-| `GUARD_OUTDATED` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page updates the guard), P `TELL_AGENT`, A `STOP` |
-| `GUARD_UPGRADE_AVAILABLE` | `WARNING` | A `ASK_PERSON` (whether to update the guard now), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page updates the guard) |
+| `GUARD_OUTDATED` | `ERROR` | P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard), P `TELL_AGENT`, A `STOP` |
+| `GUARD_UPGRADE_AVAILABLE` | `WARNING` | A `ASK_PERSON` (whether to update the guard now), then on the person's yes P `OPEN_LINK` (the setup page's `UPDATE` link, when the engine serves it; else A `RUN_COMMAND` `basalt init`, whose page updates the guard) |
 | `NO_PASSKEY` | `WARNING` | A `RUN_COMMAND` (`basalt init`: its page registers a passkey) |
 | `SETUP_NOT_RUN` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending setup), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`) |
 | `SETUP_EXPIRED` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints a new link), A `END_TURN` |

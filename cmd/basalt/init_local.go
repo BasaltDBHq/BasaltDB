@@ -39,8 +39,8 @@ func runInitLocal(c *cliIO, args []string) int {
 	if c.host.Euid() == 0 {
 		return c.fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", errUsage))
 	}
-	if !job.Demo {
-		return c.fail(fmt.Errorf("%w: the setup page offers only the sample database for now: run basalt init --demo", errUsage))
+	if !job.Demo && !c.host.System(io.Discard, io.Discard).Exists(service.UnitPath(c.goos)) {
+		return c.fail(errOnlyDemo)
 	}
 	me, err := user.Current()
 	if err != nil {
@@ -55,8 +55,10 @@ func runInitLocal(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	if state == engineSetUp {
-		fmt.Fprintf(c.stderr, "basalt: the engine on this computer is already set up; changing it from the setup page is not available yet. The agent connects with:\n  basalt mcp --agent %s\n", job.Agent)
-		return exitOK
+		return changeLink(c, job)
+	}
+	if !job.Demo {
+		return c.fail(errOnlyDemo)
 	}
 	link, err := localsetup.Link(engine.SetupOrigin, job)
 	if err != nil {
@@ -68,6 +70,28 @@ func runInitLocal(c *cliIO, args []string) int {
 		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
 	}
 	fmt.Fprintln(c.stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
+	return exitOK
+}
+
+// errOnlyDemo refuses a first install without --demo: the page offers only
+// the sample database for now.
+var errOnlyDemo = fmt.Errorf("%w: the setup page offers only the sample database for now: run basalt init --demo", errUsage)
+
+// changeLink is basalt init on an engine that is already set up: it prints
+// and opens the setup page's CHANGE link for the agent, where the person
+// picks Update or Remove (CONTRACT.md, The local setup page). It prints no
+// basalt mcp line: the agent is registered already.
+func changeLink(c *cliIO, job localsetup.Job) int {
+	job.Job, job.Demo = localsetup.JobChange, false
+	link, err := localsetup.Link(engine.SetupOrigin, job)
+	if err != nil {
+		return c.fail(err)
+	}
+	fmt.Fprintln(c.stdout, link)
+	if err := c.host.OpenURL(c.ctx, link); err != nil {
+		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
+	}
+	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
 	return exitOK
 }
 

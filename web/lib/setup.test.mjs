@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 
 import { b64urlEncode, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { CHECK_PATH, JOB_TEXT, JOBS, localOrigin, parseSetupLink, postSetup, RUN_PATH, setupRequest } from "./setup.js";
+import { agentProbe, answerFits, CHECK_PATH, CHOICES, JOB_TEXT, JOBS, localOrigin, parseSetupLink, pickJob, postSetup, RUN_PATH, setupRequest } from "./setup.js";
 
 const link = (job) => "#1." + b64urlEncode(utf8(JSON.stringify(job)));
 const job = { job: "INSTALL", agent: "demo_bot", osUser: "alice", demo: true };
@@ -81,7 +81,7 @@ test("a refusal comes back with its code and the engine's fixed message", async 
 });
 
 test("the link may name an update or a removal of the agent, never with the sample database", () => {
-  for (const name of ["UPDATE", "REMOVE"]) {
+  for (const name of ["UPDATE", "REMOVE", "CHANGE"]) {
     const j = { ...job, job: name, demo: false };
     assert.deepEqual(parseSetupLink(link(j)), j);
     assert.deepEqual(setupRequest(j, "postgres://u@h/d"), { ...j, databaseUrl: "postgres://u@h/d" });
@@ -89,11 +89,50 @@ test("the link may name an update or a removal of the agent, never with the samp
 });
 
 test("every job has its own fixed words, which name the agent", () => {
-  for (const name of JOBS) {
+  assert.match(JOB_TEXT.CHANGE.intro("demo_bot"), /demo_bot/);
+  for (const name of JOBS.filter((j) => j !== "CHANGE")) {
     const t = JOB_TEXT[name];
     assert.ok(t.title && t.run, name);
     assert.match(t.intro("demo_bot"), /demo_bot/, name);
     assert.match(t.done("demo_bot"), /demo_bot/, name);
   }
   assert.match(JOB_TEXT.REMOVE.intro("a"), /Nothing can undo it/);
+});
+
+test("a CHANGE link runs only the job the person picks, and never sends CHANGE", () => {
+  const change = parseSetupLink(link({ ...job, job: "CHANGE", demo: false }));
+  assert.equal(pickJob(change, ""), null, "nothing runs before a pick");
+  assert.equal(pickJob(change, "INSTALL"), null, "only UPDATE or REMOVE");
+  assert.deepEqual(CHOICES, ["UPDATE", "REMOVE"]);
+  for (const name of CHOICES) {
+    assert.deepEqual(setupRequest(pickJob(change, name), "postgres://u@h/d").job, name);
+  }
+  assert.throws(() => parseSetupLink(link({ ...job, job: "CHANGE", demo: true })));
+  const install = parseSetupLink(link(job));
+  assert.equal(pickJob(install, "REMOVE"), install, "an install link keeps its own job");
+});
+
+test("a check answer for an earlier pick is dropped", () => {
+  const change = parseSetupLink(link({ ...job, job: "CHANGE", demo: false }));
+  const update = pickJob(change, "UPDATE");
+  const remove = pickJob(change, "REMOVE");
+  assert.ok(answerFits(update, update));
+  assert.ok(!answerFits(update, remove), "the person switched to Remove while Update was checked");
+  assert.ok(!answerFits(null, update));
+});
+
+test("the agent is checked before the admin string is asked for", async () => {
+  const calls = [];
+  const answering = (code, message) => async (path, init) => {
+    calls.push({ path, body: JSON.parse(init.body) });
+    return { ok: false, status: code === "CONNECTION_STRING_REFUSED" ? 400 : 400, json: async () => ({ code, message }) };
+  };
+  const change = parseSetupLink(link({ ...job, job: "CHANGE", demo: false }));
+  assert.equal(await agentProbe(answering("CONNECTION_STRING_REFUSED", "x"), change), null);
+  assert.deepEqual(calls[0], { path: CHECK_PATH, body: { ...change, job: "UPDATE", databaseUrl: "" } }, "a CHANGE link probes as UPDATE, with no admin string");
+  const msg = await agentProbe(answering("INVALID_ARGUMENT", "This engine has no agent demo_bot. Ask the agent to run basalt init --agent NAME"), change);
+  assert.match(msg, /basalt init --agent NAME/);
+  calls.length = 0;
+  assert.equal(await agentProbe(answering("INVALID_ARGUMENT", "x"), job), null, "an install link needs no probe");
+  assert.equal(calls.length, 0);
 });

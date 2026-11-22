@@ -157,10 +157,12 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
 	}
 	var site *pagesSite
+	var jobs pages.SetupJobs
 	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
 	handed = nil
 	if pagesCfg.Addr != "" {
-		site, err = listenPages(pagesCfg, pagesLn, setupJobs(cfg, configPath, pagesCfg.Origin, log), log)
+		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log)
+		site, err = listenPages(pagesCfg, pagesLn, jobs, log)
 		if err != nil {
 			return err
 		}
@@ -218,6 +220,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	env.dict = dict
 	if site != nil {
 		env.pagesOrigin = site.origin
+		if jobs != nil {
+			env.setupOrigin = site.origin
+		}
 	}
 	relay := newRelayLinks(log.With("component", "vault"))
 	// Link sessions through the Vault are answered by the pages API on the
@@ -590,6 +595,9 @@ type agentEnv struct {
 	configPath  string
 	pagesBase   string
 	pagesOrigin string
+	// setupOrigin is the setup page's origin when the engine serves its
+	// UPDATE and REMOVE (setupJobs), else empty.
+	setupOrigin string
 	stateDir    string
 	pins        upkeep.Pins
 	// vault reports the Vault connection in every agent's status.
@@ -632,17 +640,33 @@ type agentEnv struct {
 	reload func()
 }
 
+// commands are agent a's next-step commands: a foreground engine's when it
+// is no service, and the setup page's UPDATE link for a when the engine
+// serves the setup jobs (setupOrigin).
+func (env agentEnv) commands(a config.Agent) (agent.Commands, error) {
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
+	if err != nil {
+		return agent.Commands{}, err
+	}
+	if !env.cfg.Service() {
+		cmds = cmds.Foreground()
+	}
+	if env.setupOrigin != "" {
+		if link, err := localsetup.Link(env.setupOrigin, localsetup.Job{Job: localsetup.JobUpdate, Agent: a.Name, OSUser: a.OSUser}); err == nil {
+			cmds = cmds.UpdateLink(link)
+		}
+	}
+	return cmds, nil
+}
+
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
 	limits, err := sqlLimits(env.cfg.Limits)
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
+	cmds, err := env.commands(a)
 	if err != nil {
 		return agentRuntime{}, err
-	}
-	if !env.cfg.Service() {
-		cmds = cmds.Foreground()
 	}
 	// One store per agent (CONTRACT.md, Stores); the config refuses any
 	// kind but POSTGRES, the only adapter there is.

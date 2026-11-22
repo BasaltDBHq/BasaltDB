@@ -24,6 +24,9 @@ type Commands struct {
 	// agentOperated: engine.json operatedBy is AGENT, so machine steps are
 	// the agent's and setup goes through the connect page.
 	agentOperated bool
+	// updateLink is the setup page's UPDATE link for this agent, when the
+	// engine serves the setup page (UpdateLink).
+	updateLink string
 }
 
 // cmdBasalt is the CLI every command runs.
@@ -61,6 +64,17 @@ func (c Commands) OperatedBy(operatedBy string) Commands {
 	c.agentOperated = operatedBy == mcpcontract.OperatedByAgent
 	return c
 }
+
+// UpdateLink returns c with the setup page's UPDATE link for this agent
+// (CONTRACT.md, The local setup page): a guard update's steps hand it to
+// the person instead of running basalt init. Empty keeps basalt init.
+func (c Commands) UpdateLink(link string) Commands {
+	c.updateLink = link
+	return c
+}
+
+// UpdateLinkURL is the setup page's UPDATE link UpdateLink set, or "".
+func (c Commands) UpdateLinkURL() string { return c.updateLink }
 
 // AgentOperated reports whether the engine's operatedBy is AGENT.
 func (c Commands) AgentOperated() bool { return c.agentOperated }

@@ -53,6 +53,9 @@ type agentJob struct {
 // connect service compares a setup code's target (setuprun.SameDatabase),
 // before anything connects with it.
 func (s *Service) validateAgentJob(req Request) (agentJob, error) {
+	if req.Job == JobChange {
+		return agentJob{}, refuse(CodeInvalidArgument, "Pick Update or Remove on the page first.")
+	}
 	if req.Job != JobUpdate && req.Job != JobRemove {
 		return agentJob{}, refuse(CodeJobUnavailable, alreadySetUp)
 	}
@@ -75,7 +78,7 @@ func (s *Service) validateAgentJob(req Request) (agentJob, error) {
 	}
 	i := slices.IndexFunc(cfg.Agents, func(a config.Agent) bool { return a.Name == req.Agent })
 	if i < 0 {
-		return agentJob{}, refuse(CodeInvalidArgument, fmt.Sprintf("This engine has no agent %s. Ask the agent for a new link.", req.Agent))
+		return agentJob{}, refuse(CodeInvalidArgument, fmt.Sprintf("This engine has no agent %s. Ask the agent to run basalt init --agent NAME with the name of the agent it uses.", req.Agent))
 	}
 	a := cfg.Agents[i]
 	if req.OSUser == "" || req.OSUser != a.OSUser {

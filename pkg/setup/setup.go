@@ -205,7 +205,7 @@ type Checked struct {
 	Tables   []string
 	ReadOnly []string
 	Excluded []ExcludedTable
-	// RunsAsInstall is a connect-only recovery AGENT code whose role does
+	// RunsAsInstall is an AGENT code with a verifier whose role does
 	// not exist: Run creates the role as an INSTALL code does.
 	RunsAsInstall bool
 	// Columns are every ordinary column of the tables the agent will get

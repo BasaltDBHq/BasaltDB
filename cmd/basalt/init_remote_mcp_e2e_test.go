@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 )
 
@@ -45,12 +46,26 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	skipIfSystemConfig(t)
 	d, dbURL := remoteDB(t)
 	h := newFakeHost(t)
-	res := initRemoteJSON(t, h, d.URL, []string{
-		"--remote", "--json",
-		"--operated-by", "agent", "--vault", "off",
-		"--agent", "bot", "--write", "public.leads",
-		"--prefix", d.Names.Prefix, "--database-url", dbURL,
+	e := remoteEnv{host: h}
+
+	// The person confirmed the database on the connect page: the engine
+	// wrote the credential, and the database does not record the setup
+	// yet. The Vault is off so the engine reaches no portal here.
+	first := remoteWith(t, e, "", "--agent", "bot")
+	cfg := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	loaded, err := config.Load(cfg)
+	require.NoError(t, err)
+	credFile := loaded.Agents[0].Store.CredentialFile
+	require.NoError(t, config.WriteFile(credFile, []byte(agentDSN(t, dbURL, d.Names.Prefix, "bot", "0123abcd")+"\n")))
+	require.NoError(t, os.Remove(config.SecretPath(credFile, "bot")))
+	editConfig(t, cfg, func(c *config.Config) {
+		c.Vault = config.VaultOff
+		c.Agents[0].Setup.AwaitingAddress = false
+		c.Agents[0].InitArgs = []string{"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix}
 	})
+
+	res := remoteWith(t, e, "", "--agent", "bot").res
+	require.NotEqual(t, first.res.SetupID, res.SetupID)
 	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
 	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, res.MCPCommand)
 
@@ -61,22 +76,6 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	// osHost with the same UserConfigDir init used, so basalt mcp finds the
 	// per-user config and auto-start sees the real file owner.
 	requireMCPCommandReachesEngine(t, res.MCPCommand, userConfigHost{dir: h.configDir}, socketDir)
-}
-
-func initRemoteJSON(t *testing.T, h *fakeHost, adminURL string, args []string) RemoteInitResult {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(k string) string {
-			if k == envAdminURL {
-				return adminURL
-			}
-			return ""
-		})
-	c.host = h
-	code := runInitAdmin(c, takePathFlags(c, runInit, args))
-	require.Equal(t, exitOK, code, stderr.String())
-	return decodeRemoteResult(t, stdout.String())
 }
 
 // requireMCPCommandReachesEngine runs the printed mcpCommand (argv after

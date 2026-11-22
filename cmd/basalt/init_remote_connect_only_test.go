@@ -1,9 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,24 +13,23 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
-// connectOnlyArgs make a connect-only code: an agent-operated engine (the
-// Vault on by default), no --database-url.
-var connectOnlyArgs = []string{"--agent", "bot", "--all-tables", "--operated-by", "agent"}
+// connectOnlyArgs make a connect-only code: a new engine is
+// agent-operated with the Vault on.
+var connectOnlyArgs = []string{"--agent", "bot"}
 
 // connectOnlyConfig is a config path whose state directory exists: the
 // tests' host runs init as root, which never makes it, and a connect-only
 // code needs the engine's key there.
 func connectOnlyConfig(t *testing.T) string {
 	t.Helper()
-	cfg := tempConfig(t)
-	require.NoError(t, os.MkdirAll(filepath.Join(filepath.Dir(cfg), stateDirName), 0o700))
-	return cfg
+	return withState(t, tempConfig(t))
 }
 
 // secretOf reads the agent's .secret next to the config and checks its mode.
@@ -55,17 +51,29 @@ func secretPathOf(cfg string) string {
 // editSetup changes the agent's pending setup in engine.json.
 func editSetup(t *testing.T, cfg string, edit func(s *config.Setup)) {
 	t.Helper()
-	c, err := config.Load(cfg)
-	require.NoError(t, err)
-	edit(c.Agents[0].Setup)
-	raw, err := json.Marshal(c)
-	require.NoError(t, err)
-	require.NoError(t, config.WriteFile(cfg, raw))
+	editConfig(t, cfg, func(c *config.Config) { edit(c.Agents[0].Setup) })
 }
 
-// Without --database-url, an agent-operated engine with the Vault on makes
-// a connect-only code: no target, the engine's key, the password in
-// .secret and nowhere else, and only the connect link handed over.
+// connectOnlyWithPrefix is a fresh connect-only INSTALL code for the bot
+// whose saved flags name the role prefix, so tests sharing a database
+// server keep their roles apart.
+func connectOnlyWithPrefix(t *testing.T, cfg, prefix string) remoteRun {
+	t.Helper()
+	remote(t, cfg, connectOnlyArgs...)
+	require.NoError(t, os.Remove(secretPathOf(cfg)))
+	editConfig(t, cfg, func(c *config.Config) {
+		c.Agents[0].Setup = nil
+		c.Agents[0].InitArgs = []string{"--agent=bot", "--" + flagAllTables + "=true", "--prefix=" + prefix}
+	})
+	r := remote(t, cfg, connectOnlyArgs...)
+	require.Equal(t, prefix, r.payload.Prefix)
+	require.Equal(t, string(setupcode.KindInstall), r.res.Kind)
+	return r
+}
+
+// A new engine's first run makes a connect-only code: no target, the
+// engine's key, every table in public, the password in .secret and nowhere
+// else, and only the connect link handed over.
 func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
@@ -78,50 +86,36 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.NotNil(t, r.payload.Engine, "the engine collects the address with its key")
 	require.Equal(t, &setupcode.AllTables{Schemas: []string{"public"}}, r.payload.Agent.AllTables)
 	require.Nil(t, r.payload.Agent.Write)
+	require.Equal(t, guard.DefaultPrefix, r.payload.Prefix)
 
 	password := secretOf(t, cfg)
 	requireVerifierOf(t, r.payload.Agent.Verifier, password)
 	requireNoSecret(t, r, cfg, password)
 	require.NoFileExists(t, r.credFile, "no address, so no credential file")
+	require.Equal(t, mcpcontract.OperatedByAgent, r.cfg.OperatedBy, "--remote makes a new engine agent-operated")
+	require.Equal(t, config.VaultOn, r.cfg.Vault)
 	s := r.cfg.Agents[0].Setup
 	require.True(t, s.AwaitingAddress)
 	require.False(t, s.Refused)
 	require.Contains(t, r.cfg.Agents[0].InitArgs, "--"+flagAllTables+"=true")
 
-	// The link, the fingerprint, no laptop command: the catalog's
-	// connect-only steps of SETUP_NOT_RUN.
+	// The link and the fingerprint, no laptop command.
 	require.Equal(t, links.Portal+"/connect#"+r.res.Code, r.res.ConnectURL)
-	require.Equal(t, []mcp.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}}, r.res.Links)
 	pm := r.res.PersonMessage
 	require.Contains(t, pm, r.res.Fingerprint)
 	require.Contains(t, pm, "connection string")
 	require.NotContains(t, pm, "--setup-code")
 	require.NoError(t, agent.CheckPersonMessage(pm), pm)
-	mcptest.Require(t, pm, r.res.Links)
-	catalog, err := mcpcontract.LoadNextSteps()
-	require.NoError(t, err)
-	v, ok := catalog.ConnectOnlyEntry(mcpcontract.VariantProblem, "SETUP_NOT_RUN", "", "")
-	require.True(t, ok)
-	got := make([]mcpcontract.StepKind, 0, len(r.res.NextSteps))
-	for _, st := range r.res.NextSteps {
-		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-		require.NotContains(t, st.Command, "--setup-code")
-	}
-	require.Equal(t, v.Steps, got, "P OPEN_LINK, A END_TURN, A CALL_TOOL status")
-	require.Equal(t, r.res.ConnectURL, r.res.NextSteps[0].URL)
-	require.Equal(t, toolStatus, r.res.NextSteps[2].Tool)
+	mcptest.Require(t, pm, []mcp.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}})
 
 	// Text: the link and the fingerprint, no laptop command.
-	txt := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
-	require.Equal(t, exitOK, txt.code, txt.stderr)
-	require.Contains(t, txt.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
-	require.Contains(t, txt.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
-	require.NotContains(t, txt.stdout, "--setup-code")
+	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
+	require.Contains(t, r.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
+	require.NotContains(t, r.stdout, "--setup-code")
 }
 
-// While the code waits and has not expired, the same request prints it
-// again; a change of tables or --new-code is refused with nothing changed,
-// so .secret is never replaced while its code may already have run.
+// While the code waits and has not expired, a re-run prints it again, so
+// .secret is never replaced while its code may already have run.
 func TestInitRemoteConnectOnlyWhileWaiting(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
@@ -132,55 +126,37 @@ func TestInitRemoteConnectOnlyWhileWaiting(t *testing.T) {
 	require.True(t, again.res.Reused)
 	require.Equal(t, first.res.Code, again.res.Code)
 	require.True(t, again.res.ConnectOnly)
-
-	for name, args := range map[string][]string{
-		"other tables": {"--agent", "bot", "--write", "public.leads", "--operated-by", "agent"},
-		"--new-code":   append(append([]string{}, connectOnlyArgs...), "--new-code"),
-	} {
-		r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, args...)...)
-		require.Equal(t, exitError, r.code, name)
-		require.Contains(t, r.stderr, "finish the pending setup on the connect page first, or wait until it expires at ", name)
-	}
 	require.Equal(t, password, secretOf(t, cfg), "nothing changed")
-	c, err := config.Load(cfg)
-	require.NoError(t, err)
-	require.Equal(t, first.res.SetupID, c.Agents[0].Setup.SetupID)
 }
 
-// After the code expired, after the person refused the database, after
-// --forget or with .secret gone, the next code is a recovery code: AGENT,
-// a new password and its verifier, still connect-only.
+// The recoveries need no flag (DATABASE_REFUSED, SETUP_EXPIRED,
+// ADDRESS_INVALID, a lost .secret): the next run forgets the pending setup
+// and makes a recovery code, AGENT with a new password and its verifier,
+// still connect-only.
 func TestInitRemoteConnectOnlyRecoveryCodes(t *testing.T) {
 	t.Parallel()
-	for name, tc := range map[string]struct {
-		edit  func(t *testing.T, cfg string)
-		extra []string
-	}{
-		"expired": {edit: func(t *testing.T, cfg string) {
+	for name, edit := range map[string]func(t *testing.T, cfg string){
+		"expired": func(t *testing.T, cfg string) {
 			t.Helper()
 			editSetup(t, cfg, func(s *config.Setup) { s.ExpiresAt = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339) })
-		}},
-		"refused": {edit: func(t *testing.T, cfg string) {
+		},
+		"refused": func(t *testing.T, cfg string) {
 			t.Helper()
 			editSetup(t, cfg, func(s *config.Setup) { s.AwaitingAddress, s.Refused = false, true })
-		}},
-		"forget":      {extra: []string{"--forget"}},
-		"secret gone": {edit: func(t *testing.T, cfg string) { t.Helper(); require.NoError(t, os.Remove(secretPathOf(cfg))) }},
+		},
+		"address invalid": func(t *testing.T, cfg string) {
+			t.Helper()
+			editSetup(t, cfg, func(s *config.Setup) { s.AddressInvalid = true })
+		},
+		"secret gone": func(t *testing.T, cfg string) { t.Helper(); require.NoError(t, os.Remove(secretPathOf(cfg))) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cfg := connectOnlyConfig(t)
 			first := remote(t, cfg, connectOnlyArgs...)
 			old := secretOf(t, cfg)
-			if tc.edit != nil {
-				tc.edit(t, cfg)
-			}
-			args := connectOnlyArgs
-			if tc.extra != nil {
-				// --forget keeps the tables the agent's saved flags ask for.
-				args = append([]string{"--agent", "bot", "--operated-by", "agent"}, tc.extra...)
-			}
-			again := remote(t, cfg, args...)
+			edit(t, cfg)
+			again := remote(t, cfg, connectOnlyArgs...)
 			require.False(t, again.res.Reused)
 			require.NotEqual(t, first.res.SetupID, again.res.SetupID)
 			require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
@@ -192,66 +168,31 @@ func TestInitRemoteConnectOnlyRecoveryCodes(t *testing.T) {
 			s := again.cfg.Agents[0].Setup
 			require.True(t, s.AwaitingAddress)
 			require.False(t, s.Refused)
-			require.NotContains(t, again.cfg.Agents[0].InitArgs, "--forget", "one-shot, never saved")
+			require.False(t, s.AddressInvalid)
 		})
 	}
 }
 
-// --forget is refused, with nothing changed, without a pending connect-only
-// setup or with a credential file.
-func TestInitRemoteForgetRefused(t *testing.T) {
+// A connect-only code needs an agent-operated engine with the Vault on:
+// a config another init made otherwise is refused, nothing written.
+func TestInitRemoteConnectOnlyNeedsTheConnectPath(t *testing.T) {
 	t.Parallel()
-	cfg := connectOnlyConfig(t)
-	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--forget", "--operated-by", "agent")
-	require.Equal(t, exitError, r.code, r.stderr)
-	require.Contains(t, r.stderr, "there is no pending setup from the connect page to forget for bot")
-	require.NoFileExists(t, cfg)
-
-	withURL := tempConfig(t)
-	remote(t, withURL, "--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL)
-	r = cliNoDB(t, "init", "--remote", "--config", withURL, "--agent", "bot", "--forget")
-	require.Equal(t, exitError, r.code, r.stderr)
-	require.Contains(t, r.stderr, "there is no pending setup from the connect page to forget for bot")
-}
-
-// A run with --database-url drops a waiting connect-only code's .secret and
-// goes on as a first run with that address.
-func TestInitRemoteDatabaseURLReplacesAConnectOnlyCode(t *testing.T) {
-	t.Parallel()
-	cfg := connectOnlyConfig(t)
-	remote(t, cfg, connectOnlyArgs...)
-	require.FileExists(t, secretPathOf(cfg))
-
-	r := remote(t, cfg, "--agent", "bot", "--all-tables", "--operated-by", "agent", "--database-url", supabaseURL)
-	require.False(t, r.res.ConnectOnly)
-	require.NotNil(t, r.payload.Target)
-	require.NotNil(t, r.payload.Agent.AllTables, "--all-tables with an address keeps allTables")
-	require.Equal(t, string(setupcode.KindInstall), r.res.Kind)
-	require.NoFileExists(t, secretPathOf(cfg))
-	require.FileExists(t, r.credFile)
-	require.False(t, r.cfg.Agents[0].Setup.AwaitingAddress)
-	requireVerifierOf(t, r.payload.Agent.Verifier, credentialPassword(t, r.credFile))
-}
-
-// Without the connect path's conditions --database-url stays required,
-// and the message names them; the flags' own usage errors come first.
-func TestInitRemoteConnectOnlyUsage(t *testing.T) {
-	t.Parallel()
-	for name, args := range map[string][]string{
-		"person-operated":            {"--agent", "bot", "--all-tables"},
-		"vault off":                  {"--agent", "bot", "--all-tables", "--operated-by", "agent", "--vault", "off"},
-		"all tables next to write":   {"--agent", "bot", "--all-tables", "--write", "public.leads", "--operated-by", "agent"},
-		"forget with a database url": {"--agent", "bot", "--forget", "--database-url", supabaseURL},
+	for name, tc := range map[string]struct {
+		edit func(c *config.Config)
+		want string
+	}{
+		"person-operated": {func(c *config.Config) { c.OperatedBy = "PERSON"; c.Vault = "" }, "this engine is person-operated"},
+		"vault off":       {func(c *config.Config) { c.Vault = config.VaultOff }, "this engine has the Vault off"},
 	} {
 		cfg := connectOnlyConfig(t)
-		r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, args...)...)
-		require.Equal(t, exitUsage, r.code, "%s: %s", name, r.stderr)
-		require.NoFileExists(t, cfg, name)
+		remote(t, cfg, connectOnlyArgs...)
+		editConfig(t, cfg, tc.edit)
+		old := secretOf(t, cfg)
+		r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
+		require.Equal(t, exitError, r.code, "%s: %s", name, r.stderr)
+		require.Contains(t, r.stderr, tc.want, name)
+		require.Equal(t, old, secretOf(t, cfg), name)
 	}
-	cfg := connectOnlyConfig(t)
-	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--all-tables")
-	require.Contains(t, r.stderr, "--database-url is required on the agent's first run")
-	require.Contains(t, r.stderr, "makes a code for the connect page, which needs an agent-operated engine")
 }
 
 // A connect-only code needs the engine's key: without it init refuses,
@@ -260,64 +201,55 @@ func TestInitRemoteConnectOnlyNeedsTheEngineKey(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
 	state := filepath.Join(filepath.Dir(cfg), stateDirName)
-	require.NoError(t, os.MkdirAll(state, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(state, channel.KeyFileName), []byte("not a key"), 0o600))
 
 	r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
 	require.Equal(t, exitError, r.code, r.stderr)
 	require.Contains(t, r.stderr, "a setup code for the connect page needs the engine's key, and basalt cannot read or make it as this user")
-	require.Contains(t, r.stderr, "or give --database-url <the database, without password>")
+	require.Contains(t, r.stderr, "Run basalt init --remote as the engine's OS user")
 	require.NoFileExists(t, cfg)
 	require.NoFileExists(t, secretPathOf(cfg))
 }
 
-// --forget as the contract spells it, with only --agent: the recovery code
-// asks for what the saved flags ask for (tables, prefix, timeout) on the
-// agent-operated engine they name.
-func TestInitRemoteForgetKeepsTheSavedRequest(t *testing.T) {
+// A recovery code asks for what the agent's saved flags ask for (tables,
+// prefix, timeout).
+func TestInitRemoteRecoveryKeepsTheSavedRequest(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
-	first := remote(t, cfg, "--agent", "bot", "--all-tables", "--operated-by", "agent", "--prefix", "acme", "--statement-timeout", "45s")
-	again := remote(t, cfg, "--agent", "bot", "--forget")
+	first := remote(t, cfg, connectOnlyArgs...)
+	editConfig(t, cfg, func(c *config.Config) {
+		c.Agents[0].InitArgs = []string{"--agent=bot", "--" + flagAllTables + "=true", "--prefix=acme", "--statement-timeout=45s"}
+		c.Agents[0].Setup.Refused = true
+	})
+	saved, err := config.Load(cfg)
+	require.NoError(t, err)
+	again := remote(t, cfg, connectOnlyArgs...)
 	require.NotEqual(t, first.res.SetupID, again.res.SetupID)
 	require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
 	require.Equal(t, "acme", again.payload.Prefix)
 	require.Equal(t, int64(45000), again.payload.Agent.StatementTimeoutMs)
 	require.NotNil(t, again.payload.Agent.AllTables)
 	require.Equal(t, mcpcontract.OperatedByAgent, again.cfg.OperatedBy)
-	require.Equal(t, first.cfg.Agents[0].InitArgs, again.cfg.Agents[0].InitArgs)
+	require.Subset(t, again.cfg.Agents[0].InitArgs, saved.Agents[0].InitArgs)
 }
 
 // A connect link over the engine's linkBudget is left out: the message
-// names the connect page without a URL, and the step opens it.
+// names the connect page without a URL.
 func TestInitRemoteConnectOnlyOverTheBudget(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
 	remote(t, cfg, connectOnlyArgs...)
-	raw, err := os.ReadFile(cfg)
-	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, json.Unmarshal(raw, &doc))
-	doc["linkBudget"] = 100
-	raw, err = json.Marshal(doc)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(cfg, raw, 0o600))
+	editConfig(t, cfg, func(c *config.Config) { b := 100; c.LinkBudget = &b })
 
 	r := remote(t, cfg, connectOnlyArgs...)
 	require.True(t, r.res.ConnectOnly)
 	require.Empty(t, r.res.ConnectURL)
-	require.Empty(t, r.res.Links)
 	require.NotContains(t, r.res.PersonMessage, "https://")
 	require.Contains(t, r.res.PersonMessage, "portal.basaltvault.app/connect")
 	require.NoError(t, agent.CheckPersonMessage(r.res.PersonMessage), r.res.PersonMessage)
-	mcptest.Require(t, r.res.PersonMessage, r.res.Links)
-	require.Equal(t, "OPEN_LINK", r.res.NextSteps[0].Action)
-	require.Equal(t, links.Portal+links.ConnectPath, r.res.NextSteps[0].URL)
-
-	txt := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
-	require.Equal(t, exitOK, txt.code, txt.stderr)
-	require.Contains(t, txt.stdout, "\n\n"+r.res.Code+"\n\n")
-	require.NotContains(t, txt.stdout, "--setup-code")
+	mcptest.Require(t, r.res.PersonMessage, nil)
+	require.Contains(t, r.stdout, "\n\n"+r.res.Code+"\n\n")
+	require.NotContains(t, r.stdout, "--setup-code")
 }
 
 // Not as root, the path a bot's engine user takes: init makes the engine's
@@ -330,23 +262,15 @@ func TestInitRemoteConnectOnlyNotAsRoot(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	cfg := filepath.Join(dir, "engine.json")
-	run := func(t *testing.T, args ...string) result {
-		t.Helper()
-		var stdout, stderr bytes.Buffer
-		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
-		c.agentLogin = refusedLogin
-		c.probe = noNetworkProbe
-		c.host = newFakeHost(t)
-		code := runInitAdmin(c, takePathFlags(c, runInit, args[1:]))
-		return result{code, stdout.String(), stderr.String()}
-	}
-	r := remoteWith(t, run, cfg, connectOnlyArgs...)
+	e := remoteEnv{host: newFakeHost(t), login: refusedLogin, probe: noNetworkProbe, noNetwork: true}
+	r := remoteWith(t, e, cfg, connectOnlyArgs...)
 	require.True(t, r.res.ConnectOnly)
 	require.NotNil(t, r.payload.Engine)
 	requireVerifierOf(t, r.payload.Agent.Verifier, secretOf(t, cfg))
 	require.FileExists(t, filepath.Join(filepath.Dir(cfg), stateDirName, channel.KeyFileName))
 
-	again := remoteWith(t, run, cfg, "--agent", "bot", "--forget")
+	editSetup(t, cfg, func(s *config.Setup) { s.Refused = true })
+	again := remoteWith(t, e, cfg, connectOnlyArgs...)
 	require.NotEqual(t, r.res.SetupID, again.res.SetupID)
 	requireVerifierOf(t, again.payload.Agent.Verifier, secretOf(t, cfg))
 }

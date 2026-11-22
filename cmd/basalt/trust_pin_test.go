@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -166,90 +167,42 @@ func TestTrustPinReplaces(t *testing.T) {
 	require.Len(t, entries, 2, "one profile and one PEM file")
 }
 
-// init --remote reads the chain before any probe and, with --trust-root,
-// pins it for the database's host; without a terminal and without the
-// flag it stops with the usage error naming it; under an agent marker it
-// pins nothing, says the person's command and goes on.
+// init --remote reads the chain of the credential's database before any
+// probe. The agent runs it, so it never pins: it says the person's command
+// and goes on, with or without an agent marker.
 func TestInitRemotePins(t *testing.T) {
 	t.Parallel()
 	const host = "db.internal.example.com"
 	s := newPinServer(t, host)
-	run := func(env map[string]string, cfg string, extra ...string) result {
-		t.Helper()
+	dsn := agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guard.DefaultPrefix, "bot", "0123abcd")
+	for name, env := range map[string]map[string]string{"no marker": nil, "agent marker": {"CLAUDECODE": "1"}} {
+		cfg := tempConfig(t)
+		installedAgent(t, noDB(t), cfg, dsn)
+		e := noDB(t)
+		e.env = env
+		e.noNetwork = false
 		var stdout, stderr bytes.Buffer
-		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(k string) string { return env[k] })
-		c.agentLogin = refusedLogin
-		c.probe = noNetworkProbe
-		c.host = systemSocketHost(t)
+		c := e.io(&stdout, &stderr)
 		c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
 			return trustpin.Fetch(ctx, s.dial, h, p)
 		}
-		for i := 0; i+1 < len(extra); i++ {
-			if extra[i] == "--fetch" && extra[i+1] == "off" {
-				c.fetchChain = nil
-				extra = append(extra[:i], extra[i+2:]...)
-				break
-			}
-		}
-		args := append([]string{
-			"--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads",
-			"--database-url", "postgres://postgres@" + host + ":5432/postgres?sslmode=require",
-		}, extra...)
-		code := runInitAdmin(c, takePathFlags(c, runInit, args))
-		return result{code, stdout.String(), stderr.String()}
+		code := runInitAdmin(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+		require.Equal(t, exitOK, code, "%s: %s", name, stderr.String())
+		require.Contains(t, stderr.String(), "an agent never pins one", name)
+		require.Contains(t, stderr.String(), "basalt trust pin --host "+host+" --port 5432", name)
+		require.NotContains(t, stderr.String(), "--trust-root", "the agent is not handed the flag")
+		require.NoFileExists(t, filepath.Join(trustdir.Path(cfg), trustprofile.FileName(trustprofile.PinName(host))), name)
 	}
-	pinFile := func(cfg string) string {
-		return filepath.Join(trustdir.Path(cfg), trustprofile.FileName(trustprofile.PinName(host)))
-	}
-
-	cfg := tempConfig(t)
-	r := run(nil, cfg)
-	require.Equal(t, exitUsage, r.code, r.stderr)
-	require.Contains(t, r.stderr, "--trust-root "+trustprofile.DERSHA256(s.ca))
-
-	cfg = tempConfig(t)
-	r = run(nil, cfg, "--trust-root", trustprofile.DERSHA256(s.ca))
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.FileExists(t, pinFile(cfg))
-
-	cfg = tempConfig(t)
-	r = run(map[string]string{"CLAUDECODE": "1"}, cfg)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "an agent never pins one")
-	require.Contains(t, r.stderr, "basalt trust pin --host "+host+" --port 5432")
-	require.NotContains(t, r.stderr, "--trust-root", "the agent is not handed the flag")
-	require.NoFileExists(t, pinFile(cfg))
-	r = run(map[string]string{"CLAUDECODE": "1"}, tempConfig(t), "--trust-root", trustprofile.DERSHA256(s.ca))
-	require.Equal(t, exitUsage, r.code, "--trust-root is refused under an agent")
-	require.Contains(t, r.stderr, "an agent never pins")
-
-	cfg = tempConfig(t)
-	r = run(nil, cfg, "--operated-by", "agent", "--trust-root", trustprofile.DERSHA256(s.ca))
-	require.Equal(t, exitUsage, r.code, "--operated-by=agent never pins: %s", r.stderr)
-	require.NoFileExists(t, pinFile(cfg))
-	r = run(nil, cfg, "--operated-by", "agent")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "an agent never pins one")
-	require.NoFileExists(t, pinFile(cfg))
 }
 
-// init --remote offers the pin before it logs in with a credential it
+// init --remote reads the chain before it logs in with a credential it
 // already holds: nothing but the handshake reaches the server first.
 func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	t.Parallel()
 	const host = "db.internal.example.com"
 	s := newPinServer(t, host)
 	cfg := tempConfig(t)
-	dbURL := "postgres://postgres@" + host + ":5432/postgres?sslmode=require"
-	base := make([]string, 0, 11)
-	base = append(base, "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads", "--database-url", dbURL)
-	first := func() int {
-		var out, errb bytes.Buffer
-		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
-		c.agentLogin, c.probe, c.host, c.fetchChain = refusedLogin, noNetworkProbe, systemSocketHost(t), nil
-		return runInitAdmin(c, takePathFlags(c, runInit, base))
-	}
-	require.Equal(t, exitOK, first())
+	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guard.DefaultPrefix, "bot", "0123abcd"))
 	var events []string
 	var out, errb bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
@@ -262,7 +215,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		events = append(events, "handshake")
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
-	code := runInitAdmin(c, takePathFlags(c, runInit, append(base, "--trust-root", trustprofile.DERSHA256(s.ca))))
+	code := runInitAdmin(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.Equal(t, exitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)

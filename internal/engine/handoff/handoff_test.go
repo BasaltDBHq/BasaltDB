@@ -192,6 +192,12 @@ func (f *fakeFiles) ConfirmSetup(string) error {
 	return nil
 }
 
+func (f *fakeFiles) MarkAddressInvalid(string) error {
+	f.ops = append(f.ops, "mark address invalid")
+	f.setup.AddressInvalid = true
+	return nil
+}
+
 func (f *fakeFiles) RefuseSetup(string) error {
 	f.ops = append(f.ops, "refuse setup")
 	f.setup.AwaitingAddress, f.setup.Refused = false, true
@@ -427,6 +433,17 @@ func TestStepCollectsChecksAndProbes(t *testing.T) {
 	st = h.p.State()
 	require.Equal(t, ProblemAddressInvalid, st.Problem)
 	require.Nil(t, st.Database, "nothing of a refused address is kept to show")
+	require.True(t, h.files.setup.AddressInvalid, "engine.json records it, so the next basalt init --remote makes a new code")
+	h.clock.advance(fastEvery)
+	h.p.Step(ctx)
+	require.Equal(t, ProblemAddressInvalid, h.p.State().Problem)
+	marks := 0
+	for _, op := range h.files.ops {
+		if op == "mark address invalid" {
+			marks++
+		}
+	}
+	require.Equal(t, 1, marks, "recorded once, not at every collect")
 
 	h.col.addr, h.prober.err = db, ErrUnreachable
 	h.clock.advance(fastEvery)

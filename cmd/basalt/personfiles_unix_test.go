@@ -264,13 +264,12 @@ func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			cfg := tempConfig(t)
-			remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+			cfg := withState(t, tempConfig(t))
+			remote(t, cfg, "--agent", testAgentKey)
 			planted := filepath.Join(t.TempDir(), "planted.url")
 			plant(t, cfg, planted)
 
-			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey, "--write", "public.leads",
-				"--database-url", supabaseURL)
+			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey)
 			require.Equal(t, exitError, r.code, r.stdout)
 			_, err := os.Lstat(planted)
 			require.ErrorIs(t, err, os.ErrNotExist, "the credential file the config names is never written")

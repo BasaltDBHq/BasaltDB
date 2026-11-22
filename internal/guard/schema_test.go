@@ -58,3 +58,14 @@ func TestSchemaFilesRefuseAMalformedDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"\nSELECT 1;\n" + recordInstallRow}, files)
 }
+
+// TestSchemaNamesNoRemovedCommand: basalt approve and basalt revert are
+// removed. A guard error the agent sees must not tell it to run one, and a
+// comment must not say one calls the guard.
+func TestSchemaNamesNoRemovedCommand(t *testing.T) {
+	for i, sql := range schema {
+		for _, cmd := range []string{"basalt approve", "basalt revert"} {
+			require.NotContains(t, sql, cmd, "schema file %d", i)
+		}
+	}
+}

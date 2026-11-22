@@ -2,7 +2,7 @@
   "body": {
     "code": "REVERT_INVALID",
     "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
-    "message": "REVERT_INVALID: the person has not signed this revert yet (basalt revert)",
+    "message": "REVERT_INVALID: the person has not signed this revert yet: they sign it on the revert page",
     "nextSteps": [
       {
         "action": "CALL_TOOL",

@@ -9,7 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -106,12 +107,12 @@ type agentInstall struct {
 // the service's own directories: the engine config (the existing one with
 // the agent upserted) and the credential, both owned by the engine's user.
 // For a plan that is only printed, contents are left out.
-func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, printOnly bool) (osservice.Spec, error) {
-	spec := osservice.Spec{GOOS: goos, Binary: bin, ConfigPath: configPath, User: engineUser}
+func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, printOnly bool) (app.OSSpec, error) {
+	spec := app.OSSpec{GOOS: goos, Binary: bin, ConfigPath: configPath, User: engineUser}
 	cred := filepath.Join(filepath.Dir(configPath), "agents", a.name+".url")
-	spec.Files = []osservice.File{{Path: configPath}}
+	spec.Files = []app.OSFile{{Path: configPath}}
 	if !a.keepCredential {
-		spec.Files = append(spec.Files, osservice.File{Path: cred})
+		spec.Files = append(spec.Files, app.OSFile{Path: cred})
 	}
 	if printOnly {
 		return spec, nil
@@ -166,7 +167,7 @@ func dialogScript(c *cliIO) (bin, script string, err error) {
 	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
 		return "", "", err
 	}
-	script, err = osservice.InstallScript(c.goos, bin)
+	script, err = app.OSInstallScript(c.goos, bin)
 	return bin, script, err
 }
 
@@ -190,7 +191,7 @@ func engineLogHint(goos string) string {
 	if goos == "darwin" {
 		return darwinEngineLog
 	}
-	return "journalctl -u " + osservice.SystemdUnitName
+	return "journalctl -u " + app.OSUnitName
 }
 
 // envSudoUID is the uid of the user who ran sudo.

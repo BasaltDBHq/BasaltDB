@@ -91,6 +91,7 @@ Every package directly under `internal/core` has one row: its area, its kind, th
 | `setupcode` | setup | codec | 3 | `crypto/rand` |
 | `pluginproto` | plugins | codec | 3 | - |
 | `largevalue` | large values | codec | 3 | - |
+| `toolresult` | agent | types | 2 | - |
 
 ## Known violations
 

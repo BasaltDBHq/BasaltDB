@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +66,9 @@ type host interface {
 	OpenURL(ctx context.Context, link string) error
 	// PagesUp reports whether the engine serves its local pages at origin.
 	PagesUp(ctx context.Context, origin string) bool
+	// ServiceRuns reads from the service manager how many times the engine
+	// service started and its last exit code (-1 when it never exited).
+	ServiceRuns(ctx context.Context, goos string) (runs, lastExit int, err error)
 }
 
 // osHost is the real machine.
@@ -155,6 +159,72 @@ func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
 		return "", fmt.Errorf("engine answered %d", resp.StatusCode)
 	}
 	return out.Code, nil
+}
+
+func (osHost) ServiceRuns(ctx context.Context, goos string) (int, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
+	defer cancel()
+	if goos == "darwin" {
+		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/"+service.LaunchdLabel).Output()
+		if err != nil {
+			return 0, 0, err
+		}
+		return parseLaunchdRuns(string(out))
+	}
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "NRestarts", "-p", "ExecMainStatus", service.SystemdUnitName).Output()
+	if err != nil {
+		return 0, 0, err
+	}
+	return parseSystemdRuns(string(out))
+}
+
+// parseLaunchdRuns reads "runs = N" and "last exit code = N" (a code may
+// carry its name after a colon, or be "(never exited)") from launchctl
+// print.
+func parseLaunchdRuns(out string) (runs, lastExit int, err error) {
+	runs, lastExit = -1, -1
+	for line := range strings.SplitSeq(out, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), " = ")
+		if !ok {
+			continue
+		}
+		switch {
+		case k == "runs" && runs < 0:
+			if runs, err = strconv.Atoi(v); err != nil {
+				return 0, 0, fmt.Errorf("launchctl print: runs %q", v)
+			}
+		case k == "last exit code" && lastExit < 0:
+			// "1", "78: EX_CONFIG" or "(never exited)".
+			code, _, _ := strings.Cut(v, ":")
+			if n, err := strconv.Atoi(strings.TrimSpace(code)); err == nil {
+				lastExit = n
+			}
+		}
+	}
+	if runs < 0 {
+		return 0, 0, errors.New("launchctl print names no runs")
+	}
+	return runs, lastExit, nil
+}
+
+// parseSystemdRuns reads NRestarts and ExecMainStatus from systemctl show:
+// the service started once more than it restarted.
+func parseSystemdRuns(out string) (runs, lastExit int, err error) {
+	restarts, status := -1, -1
+	for line := range strings.SplitSeq(out, "\n") {
+		k, v, _ := strings.Cut(strings.TrimSpace(line), "=")
+		n, err := strconv.Atoi(v)
+		switch {
+		case k == "NRestarts" && err == nil:
+			restarts = n
+		case k == "ExecMainStatus" && err == nil:
+			status = n
+		}
+	}
+	if restarts < 0 {
+		return 0, 0, errors.New("systemctl show names no NRestarts")
+	}
+	return restarts + 1, status, nil
 }
 
 // maxLinkAnswer bounds the engine's answer to a pages API request.

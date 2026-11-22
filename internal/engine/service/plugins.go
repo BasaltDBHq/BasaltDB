@@ -886,7 +886,7 @@ func pluginUninstallSteps(sys System, goos string, entries []PluginEntry) ([]Ste
 	if !sys.Exists(base) {
 		return steps, nil
 	}
-	note := "left in place: it still holds installed plugins or trusted keys (basalt plugin remove deletes a plugin)"
+	note := "left in place: it still holds installed plugins or trusted keys (remove the plugin entries from engine.json first)"
 	return append(steps,
 		Step{Kind: StepRemove, Path: filepath.Join(base, pluginRunDirName), Note: note},
 		Step{Kind: StepRemove, Path: base, Note: note},

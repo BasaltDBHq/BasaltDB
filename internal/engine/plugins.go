@@ -462,7 +462,7 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 			out = append(out, agent.PluginProblem{
 				Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
 				Message: "the engine-kept plugin " + k.String() + " is not served: engine.json holds an entry of the same name and instance, " +
-					"added with sudo, and that one is served; remove one of them (basalt plugin remove " + k.Name + " --instance " + k.Instance + ")",
+					"added by hand, and that one is served; remove one of them (the agent removes the engine-kept one with request_plugin, or the person edits engine.json)",
 			})
 		}
 	}

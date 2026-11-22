@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"errors"
-	"io/fs"
 	"os/user"
 	"strings"
 	"testing"
@@ -115,29 +112,6 @@ func TestPluginUnitEntries(t *testing.T) {
 	var warn strings.Builder
 	require.Empty(t, serviceUnitEntries(cfg, "linux", "/etc/basalt/engine.json", &warn))
 	require.Contains(t, warn.String(), "plugin acme-ner/default: its service unit is left as it is")
-}
-
-func TestGroupWritableDirectoryIsRefusedLikeAnyPath(t *testing.T) {
-	t.Parallel()
-	// No special case for a group-writable directory above the base: it is
-	// refused as any other path the rule refuses (UNSAFE_PATH), and no chmod
-	// is offered.
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
-	c.goos = "linux"
-	e := &pluginEnv{c: c, configPath: config.DefaultPath("linux"), mode: plugin.ModeService}
-	err := e.verifyRefusal(&plugin.VerifyError{
-		Reason: plugin.RefusedNotTrusted, File: "/opt", Why: plugin.WhyGroupWritable,
-		Path: &plugin.PathFault{Kind: plugin.PathWritable, Mode: fs.ModeDir | fs.ModeSetgid | 0o775, GID: 4242424, Owners: []uint32{0}},
-	}, "basalt plugin add /src --agents a")
-	var r *pluginRefusedError
-	require.ErrorAs(t, err, &r)
-	require.Equal(t, reasonUnsafePath, r.reason)
-	require.Contains(t, r.message, "/opt")
-	require.Contains(t, r.person, "/opt can be written by members of group gid 4242424 (owner root, group gid 4242424, mode 2775); only its owner may write it")
-	require.NotContains(t, r.person, "chmod")
-	for _, s := range r.steps {
-		require.NotContains(t, s.Command, "chmod")
-	}
 }
 
 // agentOSUser is an OS user that exists and is neither the test's user nor

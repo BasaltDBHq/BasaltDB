@@ -189,6 +189,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.plugins = plugins
 		env.deliverer = plugins.DeliverLinks
 	}
+	if cfg.Service() {
+		env.requests = &pluginRequests{uids: agentUIDs, admitted: cfg.PersonUIDs}
+	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
 		env.portal = portal
@@ -321,6 +324,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		}
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
 			o.Plugins = kept
+			env.requests.kept.Store(kept)
 			// Ends a disable could not write are tried again now.
 			wg.Go(func() { kept.endDisabled(ctx) })
 		}
@@ -604,6 +608,9 @@ type agentEnv struct {
 	// deliverer gives each agent where its approval notices go, for the
 	// approval.deliver plugins; nil when the engine keeps no plugins.
 	deliverer func(name string) agent.LinkDeliverer
+	// requests serve request_plugin on a service engine, once its
+	// engine-kept plugins are open; nil on a same-user engine.
+	requests *pluginRequests
 	// update is the daily newer-release check; nil when it is off.
 	update *updatecheck.Checker
 	// receipts signs the receipt of every relayed signature; nil when the
@@ -703,32 +710,37 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.deliverer != nil {
 		deliverer = env.deliverer(a.Name)
 	}
+	var requests agent.PluginRequests
+	if env.requests != nil {
+		requests = env.requests
+	}
 	svc := agent.NewService(agent.Deps{
-		Name:          a.Name,
-		Deliverer:     deliverer,
-		Store:         store,
-		PagesBase:     env.pagesBase,
-		LinkBudget:    env.cfg.LinkBudgetOrDefault(),
-		Commands:      cmds,
-		PagesOrigin:   env.pagesOrigin,
-		Links:         secrets,
-		Relay:         relay,
-		RLS:           blind,
-		Log:           log,
-		Now:           time.Now,
-		OperatedBy:    env.cfg.OperatedBy,
-		DevLocalPages: env.cfg.DevLocalPages,
-		ConnectBudget: env.cfg.ConnectLinkBudget(),
-		SameUser:      !env.cfg.Service(),
-		StartedBy:     env.startedBy,
-		Setup:         a.Setup,
-		Probe:         probe,
-		Vault:         env.vault,
-		Portal:        env.portal,
-		Plugins:       env.plugins,
-		CrashDirs:     crashDirs(env.stateDir),
-		Access:        func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
-		Update:        env.updateNotice(),
+		PluginRequests: requests,
+		Name:           a.Name,
+		Deliverer:      deliverer,
+		Store:          store,
+		PagesBase:      env.pagesBase,
+		LinkBudget:     env.cfg.LinkBudgetOrDefault(),
+		Commands:       cmds,
+		PagesOrigin:    env.pagesOrigin,
+		Links:          secrets,
+		Relay:          relay,
+		RLS:            blind,
+		Log:            log,
+		Now:            time.Now,
+		OperatedBy:     env.cfg.OperatedBy,
+		DevLocalPages:  env.cfg.DevLocalPages,
+		ConnectBudget:  env.cfg.ConnectLinkBudget(),
+		SameUser:       !env.cfg.Service(),
+		StartedBy:      env.startedBy,
+		Setup:          a.Setup,
+		Probe:          probe,
+		Vault:          env.vault,
+		Portal:         env.portal,
+		Plugins:        env.plugins,
+		CrashDirs:      crashDirs(env.stateDir),
+		Access:         func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
+		Update:         env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			r, err := guard.EngineRecord(ctx, pool, id)
 			return r, postgres.MapError(err)

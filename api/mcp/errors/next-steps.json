@@ -99,6 +99,7 @@
     { "code": "PLUGIN_REFUSED", "reason": "AGENT_OPERATED", "tool": "request_plugin", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_REFUSED", "reason": "SAME_USER_MODE", "tool": "request_plugin", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_REFUSED", "reason": "NO_LOCAL_PAGES", "tool": "request_plugin", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "NO_PORTAL_LINK", "tool": "request_plugin", "planned": true, "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "PLUGIN_REFUSED", "reason": "AGENT_NOT_ALLOWED", "tool": "request_plugin", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_REFUSED", "reason": "BAD_MANIFEST", "tool": "request_plugin", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "code": "PLUGIN_REFUSED", "reason": "NOT_TRUSTED", "tool": "request_plugin", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },

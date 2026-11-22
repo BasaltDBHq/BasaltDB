@@ -37,20 +37,10 @@ type Backend interface {
 	PinFileNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool, error)
 
 	// The guard's install.
-	InstalledPrefix(ctx context.Context, q setuprun.Querier) (string, error)
-	InstalledVersion(ctx context.Context, q setuprun.Querier) (int, error)
-	LatestVersion() int
-	Migrations() []guardmodel.Migration
 	AgentStatus(ctx context.Context, q setuprun.Querier, migs []guardmodel.Migration) (guardmodel.Status, error)
-	AgentRoleExists(ctx context.Context, q setuprun.Querier, n guardmodel.Names, agent string) (bool, error)
-	AgentBlindTables(ctx context.Context, q setuprun.Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]setuprun.BlindTable, error)
-	PlanInit(ctx context.Context, q setuprun.Querier, opts setuprun.InitOptions) (setuprun.Script, error)
 	RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (setuprun.Script, error)
-	CheckUsable(ctx context.Context, q setuprun.Querier) error
 	// UnusableInstall reports whether err is CheckUsable's refusal of an
 	// older or partial install.
-	UnusableInstall(err error) bool
-	RemoveOldInstallDoc() string
 	NewPassword() string
 	AgentConnString(adminURL, role, password string) (string, error)
 
@@ -74,7 +64,6 @@ type Backend interface {
 	ListPasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.ActivePasskey, error)
 
 	// The sample schema.
-	DemoSchema() string
 	DemoTables() []string
 	SeedDemo(ctx context.Context, tx pgx.Tx) (setuprun.DemoPlan, error)
 	DemoCounts(ctx context.Context, q setuprun.Querier) (leads, notes int, err error)

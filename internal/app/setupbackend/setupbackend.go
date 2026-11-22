@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Backend implements the setup's Backend with the engine's adapters.
 // Backend implements localsetup's Backend: the setup store (which is also
 // setuprun's backend) and the connection, trust and passkey calls localsetup
 // makes itself.

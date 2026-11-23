@@ -43,8 +43,8 @@ func newTrustServer(t *testing.T, certHost string, operator ...*trustprofile.Pro
 			}
 			return dial(ctx, network, addr)
 		},
-		Profiles:   trustprofiletest.Set(t, nil, operator...),
-		ConnConfig: pgdial.ConnConfigTrusting,
+		Profiles: trustprofiletest.Set(t, nil, operator...),
+		Login:    pgdial.Login,
 	}
 	return s
 }

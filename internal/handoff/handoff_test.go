@@ -780,7 +780,7 @@ func TestProbeCacheAcrossProcesses(t *testing.T) {
 func probeAt(t *testing.T, a setupcode.Address, certHost string) error {
 	t.Helper()
 	ca, cert := trustprofiletest.Chain(t, certHost)
-	p := Prober{ConnConfig: pgdial.ConnConfigTrusting, Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
+	p := Prober{Login: pgdial.Login, Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
 	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole, Pin{})
 	return err
 }

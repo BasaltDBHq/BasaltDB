@@ -21,7 +21,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -33,6 +32,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -48,7 +48,7 @@ const relayPoll = 50 * time.Millisecond
 type relayEnv struct {
 	d      *guardtest.DB
 	person *passkeytest.Authenticator
-	server *mcp.Server
+	server *mcpserver.Server
 	svc    *agent.Service
 	v      *vaulttest.Vault
 	keys   *channel.EngineKeys
@@ -103,7 +103,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	})
 	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
 	relay.c.Store(ev.client)
-	return &relayEnv{d: d, person: person, server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...), svc: svc, v: v, keys: keys, relay: relay}
+	return &relayEnv{d: d, person: person, server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...), svc: svc, v: v, keys: keys, relay: relay}
 }
 
 // call runs one tools/call as the agent would and returns its body and

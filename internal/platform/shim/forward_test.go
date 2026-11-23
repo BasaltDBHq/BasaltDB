@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -35,8 +35,8 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 	t.Cleanup(func() { _ = ln.Close() })
 
 	var oldWrites atomic.Int32
-	build := func(name string) *mcp.Server {
-		return mcp.NewServer(mcp.Info{Name: "basalt", Version: name}, mcp.Tool{
+	build := func(name string) *mcpserver.Server {
+		return mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: name}, mcpserver.Tool{
 			Name: "write",
 			Call: func(context.Context, json.RawMessage) (any, error) {
 				if name == "old" {

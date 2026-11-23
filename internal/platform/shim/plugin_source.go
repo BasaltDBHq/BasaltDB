@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
@@ -49,18 +49,18 @@ const uploadWait = 2 * time.Minute
 // connection to the agent's own socket at socketPath, as this process's OS
 // user (the agent's), which the socket admits and the upload belongs to.
 func NewPluginUploader(socketPath string) PluginUploader {
-	return func(ctx context.Context, source string) (mcp.PluginUpload, error) {
+	return func(ctx context.Context, source string) (mcpserver.PluginUpload, error) {
 		src, err := ReadPluginSource(source)
 		if err != nil {
-			return mcp.PluginUpload{}, err
+			return mcpserver.PluginUpload{}, err
 		}
 		ctx, cancel := context.WithTimeout(ctx, uploadWait)
 		defer cancel()
 		id, err := upload(ctx, socketPath, src.Files)
 		if err != nil {
-			return mcp.PluginUpload{}, err
+			return mcpserver.PluginUpload{}, err
 		}
-		return mcp.PluginUpload{UploadID: id, Name: src.Manifest.Name, Executables: src.Executables}, nil
+		return mcpserver.PluginUpload{UploadID: id, Name: src.Manifest.Name, Executables: src.Executables}, nil
 	}
 }
 
@@ -84,7 +84,7 @@ func upload(ctx context.Context, socketPath string, files []PluginFile) (string,
 		_ = conn.SetDeadline(dl)
 	}
 	c := &uploadConn{conn: conn, in: bufio.NewReaderSize(conn, scannerInitSize)}
-	if _, err := conn.Write(append(mcp.HelloLine(buildinfo.Version), '\n')); err != nil {
+	if _, err := conn.Write(append(mcpserver.HelloLine(buildinfo.Version), '\n')); err != nil {
 		return "", uploadFailed(err)
 	}
 	if _, err := c.answer(); err != nil {
@@ -94,7 +94,7 @@ func upload(ctx context.Context, socketPath string, files []PluginFile) (string,
 		UploadID     string `json:"uploadId"`
 		MaxPartBytes int    `json:"maxPartBytes"`
 	}
-	if err := c.call(mcp.MethodPluginUploadBegin, struct{}{}, &begun); err != nil {
+	if err := c.call(mcpserver.MethodPluginUploadBegin, struct{}{}, &begun); err != nil {
 		return "", err
 	}
 	part := begun.MaxPartBytes
@@ -102,7 +102,7 @@ func upload(ctx context.Context, socketPath string, files []PluginFile) (string,
 		return "", uploadFailed(fmt.Errorf("the engine offers parts of %d bytes", part))
 	}
 	send := func(path string, off int, chunk []byte) error {
-		return c.call(mcp.MethodPluginUploadPart, map[string]any{
+		return c.call(mcpserver.MethodPluginUploadPart, map[string]any{
 			"uploadId": begun.UploadID, "path": path, "offset": off, "data": base64.RawURLEncoding.EncodeToString(chunk),
 		}, nil)
 	}
@@ -151,8 +151,8 @@ func (c *uploadConn) answer() (json.RawMessage, error) {
 		return nil, uploadFailed(err)
 	}
 	var resp struct {
-		Result json.RawMessage `json:"result"`
-		Error  *mcp.RPCError   `json:"error"`
+		Result json.RawMessage     `json:"result"`
+		Error  *mcpserver.RPCError `json:"error"`
 	}
 	if err := json.Unmarshal(line, &resp); err != nil {
 		return nil, uploadFailed(err)
@@ -160,7 +160,7 @@ func (c *uploadConn) answer() (json.RawMessage, error) {
 	switch {
 	case resp.Error == nil:
 		return resp.Result, nil
-	case mcp.IsMethodNotFound(resp.Error):
+	case mcpserver.IsMethodNotFound(resp.Error):
 		return nil, ErrNoUploads
 	case resp.Error.Data != nil && resp.Error.Data.Code == codePluginRefused && len(resp.Error.Data.NextSteps) > 0:
 		// The tool's own refusal (where request_plugin is not served, or

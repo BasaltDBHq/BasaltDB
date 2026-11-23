@@ -1,4 +1,4 @@
-package mcp_test
+package mcpserver_test
 
 import (
 	"bytes"
@@ -9,16 +9,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 func TestNoticeOncePerConnectionAndNotOnErrors(t *testing.T) {
 	t.Parallel()
 	notice := "WARNING: x"
-	srv := mcp.NewServer(mcp.Info{Name: "t", Notice: func() string { return notice }},
-		mcp.Tool{Name: "ok", Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"a": "b"}, nil }},
-		mcp.Tool{Name: "bad", Call: func(context.Context, json.RawMessage) (any, error) {
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "t", Notice: func() string { return notice }},
+		mcpserver.Tool{Name: "ok", Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"a": "b"}, nil }},
+		mcpserver.Tool{Name: "bad", Call: func(context.Context, json.RawMessage) (any, error) {
 			return nil, &toolresult.ToolError{Code: "X", Message: "m"}
 		}},
 	)

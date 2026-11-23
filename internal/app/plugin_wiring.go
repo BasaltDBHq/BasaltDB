@@ -10,13 +10,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -165,19 +165,19 @@ func newPluginRequests(uids map[string]uint32, admitted []uint32) *pluginRequest
 // uploadMethods are the methods basalt mcp calls on a second connection to
 // caller's own socket to upload a plugin's files (CONTRACT.md, MCP tools,
 // request_plugin).
-func (p *pluginRequests) uploadMethods(caller string, served func() error) map[string]mcp.MethodFunc {
+func (p *pluginRequests) uploadMethods(caller string, served func() error) map[string]mcpserver.MethodFunc {
 	if p == nil {
 		return nil
 	}
-	return map[string]mcp.MethodFunc{
-		mcp.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {
+	return map[string]mcpserver.MethodFunc{
+		mcpserver.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			out, err := p.UploadBegin(ctx, caller, served)
 			if err != nil {
 				return nil, uploadError(err)
 			}
 			return out, nil
 		},
-		mcp.MethodPluginUploadPart: func(ctx context.Context, raw json.RawMessage) (any, error) {
+		mcpserver.MethodPluginUploadPart: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			out, err := p.UploadPart(ctx, caller, served, raw)
 			if err != nil {
 				return nil, uploadError(err)

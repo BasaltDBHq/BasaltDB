@@ -24,7 +24,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
@@ -43,6 +42,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
@@ -455,7 +455,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, engine.Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcpServer{mcp.NewServer(env.serverInfo(nil), rt.tools...)},
+				Server: mcpServer{mcpserver.NewServer(env.serverInfo(nil), rt.tools...)},
 			})
 			continue
 		}
@@ -474,7 +474,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcpServer{mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
+			Server:     mcpServer{mcpserver.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
 		})
 	}
 	return out, nil
@@ -484,12 +484,12 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 // its update notice (nil for none). The hello answer carries who operates
 // the engine and its local page origin, so basalt mcp knows which links it
 // may open in the browser (CONTRACT.md, Auto-open).
-func (env agentEnv) serverInfo(notice func() string) mcp.Info {
+func (env agentEnv) serverInfo(notice func() string) mcpserver.Info {
 	operatedBy := mcpcontract.OperatedByPerson
 	if env.cfg.AgentOperated() {
 		operatedBy = mcpcontract.OperatedByAgent
 	}
-	return mcp.Info{
+	return mcpserver.Info{
 		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic,
 		OperatedBy: operatedBy, PagesOrigin: env.pagesOrigin,
 	}
@@ -598,7 +598,7 @@ type agentRuntime struct {
 	close func()
 	// tools serve a connect-only agent waiting for its database (svc is
 	// nil then), and run is its collect loop.
-	tools []mcp.Tool
+	tools []mcpserver.Tool
 	run   func(context.Context)
 }
 

@@ -136,7 +136,7 @@ var testHelpers = []string{
 	"internal/testkit/archtest",
 	"internal/testkit/connecttest",
 	"internal/core/passkey/passkeytest",
-	"internal/adapter/inbound/mcp/mcptest",
+	"internal/platform/mcpserver/mcptest",
 	"internal/adapter/outbound/plugintransport/adaptertest",
 	"internal/platform/vault/vaulttest",
 	"internal/platform/vault/pagetest",

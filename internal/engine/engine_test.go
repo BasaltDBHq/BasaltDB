@@ -19,8 +19,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
@@ -34,8 +34,8 @@ func shortDir(t *testing.T) string {
 	return dir
 }
 
-func whoami(name string) mcp.Tool {
-	return mcp.Tool{Name: "whoami", Call: func(context.Context, json.RawMessage) (any, error) {
+func whoami(name string) mcpserver.Tool {
+	return mcpserver.Tool{Name: "whoami", Call: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]string{"agent": name}, nil
 	}}
 }
@@ -45,12 +45,12 @@ func agent(name, dir string, uid uint32) engine.Agent {
 		Name:       name,
 		UID:        uid,
 		SocketPath: filepath.Join(dir, name+".sock"),
-		Server:     mcpServer{mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, whoami(name))},
+		Server:     mcpServer{mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, whoami(name))},
 	}
 }
 
 // mcpServer is an MCP server as the engine serves it.
-type mcpServer struct{ *mcp.Server }
+type mcpServer struct{ *mcpserver.Server }
 
 func (s mcpServer) ServeGated(ctx context.Context, in io.Reader, out io.Writer, gate engine.Gate) error {
 	return s.Server.ServeGated(ctx, in, out, gate)
@@ -60,7 +60,7 @@ func (s mcpServer) ServeGated(ctx context.Context, in io.Reader, out io.Writer, 
 type mcpLines struct{}
 
 func (mcpLines) WritePeerRefused(w io.Writer, message string) error {
-	return mcp.WritePeerRefused(w, message)
+	return mcpserver.WritePeerRefused(w, message)
 }
 
 func startEngine(t *testing.T, agents ...engine.Agent) {
@@ -97,17 +97,17 @@ func waitListening(t *testing.T, path string) {
 // testFallback stands in for what basalt mcp answers while the engine is
 // down; a request the engine took and dropped gets an error marked
 // "abandoned".
-type testFallback struct{ *mcp.Server }
+type testFallback struct{ *mcpserver.Server }
 
 func (testFallback) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	req, ok := mcp.RequestOf(line)
+	req, ok := mcpserver.RequestOf(line)
 	if !ok {
 		return nil
 	}
-	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, "abandoned")
+	return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, "abandoned")
 }
 
-var fallback = testFallback{mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{
+var fallback = testFallback{mcpserver.NewServer(mcpserver.Info{Name: "fallback", Version: "test"}, mcpserver.Tool{
 	Name: "whoami",
 	Call: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]string{"agent": "the shim"}, nil
@@ -168,7 +168,7 @@ func TestConnectionFromAnotherOSUserIsRefused(t *testing.T) {
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	require.NoError(t, err)
-	msg := mcp.PeerRefusal([]byte(line))
+	msg := mcpserver.PeerRefusal([]byte(line))
 	require.Contains(t, msg, `agent "bot"`, line)
 	require.Contains(t, msg, "osUser", "it names who may use the socket")
 	require.NotContains(t, line, `"agent": "bot"`, "nothing ran")
@@ -286,7 +286,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 		require.NoError(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
 		line, err := r.ReadString('\n')
 		require.NoError(t, err)
-		require.NotEmpty(t, mcp.PeerRefusal([]byte(line)))
+		require.NotEmpty(t, mcpserver.PeerRefusal([]byte(line)))
 		return c
 	}
 	// Probes are two bytes each; keep their number far below the engine's

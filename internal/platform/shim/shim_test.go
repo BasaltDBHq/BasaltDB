@@ -19,7 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -103,13 +103,13 @@ func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-c
 // fakeEngine serves a query tool on socket until the test ends.
 func fakeEngine(t *testing.T, socket string) {
 	t.Helper()
-	fakeEngineMin(t, socket, mcp.MinShimProtocol)
+	fakeEngineMin(t, socket, mcpserver.MinShimProtocol)
 }
 
 // fakeEngineMin is fakeEngine serving only shims of protocol minShim or newer.
 func fakeEngineMin(t *testing.T, socket string, minShim int) {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine"}, mcp.Tool{
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "engine"}, mcpserver.Tool{
 		Name: "query",
 		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil },
 	}).WithMinShimProtocol(minShim)
@@ -173,7 +173,7 @@ func TestShimWithoutAnEngineAnswersItselfThenUsesTheEngineOnceItIsUp(t *testing.
 func TestShimFallsBackWhenTheEngineGoesAway(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(socketDir(t), "bot.sock")
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.Tool{
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.Tool{
 		Name: "query",
 		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil },
 	})
@@ -208,7 +208,7 @@ func TestShimFallsBackWhenTheEngineGoesAway(t *testing.T) {
 }
 
 // answerFirstRequest serves the shim's hello and then one request on conn.
-func answerFirstRequest(srv *mcp.Server, conn net.Conn) {
+func answerFirstRequest(srv *mcpserver.Server, conn net.Conn) {
 	r := bufio.NewReader(conn)
 	for range 2 {
 		line, err := r.ReadBytes('\n')

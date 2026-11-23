@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
@@ -137,7 +137,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(time.Hour)), Phase: handoff.PhaseWaiting}}
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, mcp.ToolsFrom(c.Tools(), WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(c.Tools(), WithMeta)...)
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
@@ -210,7 +210,7 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	db := caseDatabase
 	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(time.Hour)), Phase: handoff.PhaseConfirm, Database: &db}}
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, mcp.ToolsFrom(c.Tools(), WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(c.Tools(), WithMeta)...)
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func statusToolContract(t *testing.T) mcpcontract.Tool {
 func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 	t.Parallel()
 	s := NewService(deps())
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, mcp.ToolsFrom(Tools(s), WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(Tools(s), WithMeta)...)
 	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes})
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"])

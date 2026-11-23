@@ -13,13 +13,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 // requestError sends one request and returns the JSON-RPC error that comes
 // back.
-func (c *client) requestError(t *testing.T, method string, params any) *mcp.RPCError {
+func (c *client) requestError(t *testing.T, method string, params any) *mcpserver.RPCError {
 	t.Helper()
 	c.id++
 	raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": c.id, "method": method, "params": params})
@@ -29,8 +29,8 @@ func (c *client) requestError(t *testing.T, method string, params any) *mcp.RPCE
 	line, err := c.out.ReadBytes('\n')
 	require.NoError(t, err)
 	var resp struct {
-		ID    int           `json:"id"`
-		Error *mcp.RPCError `json:"error"`
+		ID    int                 `json:"id"`
+		Error *mcpserver.RPCError `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal(line, &resp), string(line))
 	require.Equal(t, c.id, resp.ID)
@@ -41,7 +41,7 @@ func (c *client) requestError(t *testing.T, method string, params any) *mcp.RPCE
 func TestACurrentShimIsServedByAnEngineThatRequiresIt(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(socketDir(t), "bot.sock")
-	fakeEngineMin(t, socket, mcp.ShimProtocol)
+	fakeEngineMin(t, socket, mcpserver.ShimProtocol)
 	c, done := startShim(t, socket)
 
 	body, isError := c.call(t, "query")
@@ -82,15 +82,15 @@ func TestAnOldShimGetsAnActionableErrorFromANewEngine(t *testing.T) {
 	line, err := r.ReadBytes('\n')
 	require.NoError(t, err)
 	var resp struct {
-		ID     int             `json:"id"`
-		Result json.RawMessage `json:"result"`
-		Error  *mcp.RPCError   `json:"error"`
+		ID     int                 `json:"id"`
+		Result json.RawMessage     `json:"result"`
+		Error  *mcpserver.RPCError `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal(line, &resp), string(line))
 	require.Equal(t, 7, resp.ID)
 	require.Nil(t, resp.Result, "the call did not run")
 	require.NotNil(t, resp.Error)
-	require.Equal(t, mcp.ErrCodeVersionMismatch, resp.Error.Code)
+	require.Equal(t, mcpserver.ErrCodeVersionMismatch, resp.Error.Code)
 	require.Contains(t, resp.Error.Message, "too old")
 	require.Contains(t, resp.Error.Message, "Reconnect the MCP server")
 	require.Contains(t, resp.Error.Message, "/mcp")
@@ -124,10 +124,10 @@ func TestANewShimTellsTheAgentWhenTheEngineIsTooOld(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(socketDir(t), "bot.sock")
 	fakeEngine(t, socket) // protocol 1
-	c, done := startShimWith(t, socket, shim.Options{ReconnectWait: -1, MinEngineProtocol: mcp.ShimProtocol + 1})
+	c, done := startShimWith(t, socket, shim.Options{ReconnectWait: -1, MinEngineProtocol: mcpserver.ShimProtocol + 1})
 
 	e := c.requestError(t, "tools/call", map[string]any{"name": "query", "arguments": map[string]any{}})
-	require.Equal(t, mcp.ErrCodeServer, e.Code)
+	require.Equal(t, mcpserver.ErrCodeServer, e.Code)
 	require.Contains(t, e.Message, "older than this basalt mcp")
 	require.Contains(t, e.Message, "restart the basalt engine")
 	e = c.requestError(t, "tools/call", map[string]any{"name": "query", "arguments": map[string]any{}})
@@ -140,11 +140,11 @@ func TestANewShimTellsTheAgentWhenTheEngineIsTooOld(t *testing.T) {
 func TestAShimThatTheEngineRefusesIsToldToReconnectNotToRestartTheEngine(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(socketDir(t), "bot.sock")
-	fakeEngineMin(t, socket, mcp.ShimProtocol+1) // the engine wants a newer shim
+	fakeEngineMin(t, socket, mcpserver.ShimProtocol+1) // the engine wants a newer shim
 	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, MinEngineProtocol: 1})
 
 	e := c.requestError(t, "tools/call", map[string]any{"name": "query", "arguments": map[string]any{}})
-	require.Equal(t, mcp.ErrCodeVersionMismatch, e.Code)
+	require.Equal(t, mcpserver.ErrCodeVersionMismatch, e.Code)
 	require.Contains(t, e.Message, "Reconnect the MCP server")
 	require.NotContains(t, e.Message, "restart the basalt engine")
 }
@@ -170,11 +170,11 @@ func TestAnEngineFromBeforeTheNegotiationIsAProtocolZeroEngine(t *testing.T) {
 			if err != nil {
 				return
 			}
-			req, _ := mcp.RequestOf(line)
+			req, _ := mcpserver.RequestOf(line)
 			mu.Lock()
 			seen = append(seen, req.Method)
 			mu.Unlock()
-			_ = mcp.WriteError(conn, req.ID, -32601, "method not found: "+req.Method)
+			_ = mcpserver.WriteError(conn, req.ID, -32601, "method not found: "+req.Method)
 		}
 	}()
 	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, MinEngineProtocol: 1})
@@ -183,5 +183,5 @@ func TestAnEngineFromBeforeTheNegotiationIsAProtocolZeroEngine(t *testing.T) {
 	require.Contains(t, e.Message, "restart the basalt engine")
 	mu.Lock()
 	defer mu.Unlock()
-	require.Equal(t, []string{mcp.HelloMethod}, seen, "the old engine ran nothing")
+	require.Equal(t, []string{mcpserver.HelloMethod}, seen, "the old engine ran nothing")
 }

@@ -30,7 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
@@ -39,6 +38,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
@@ -164,7 +164,7 @@ func portalSource(version string) ([]shim.PluginFile, []string) {
 // path.
 func serveAgentSocket(t *testing.T, dir string, p *pluginRequests, caller string, served func() error) string {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods(caller, served))
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods(caller, served))
 	sock := filepath.Join(dir, caller+".sock")
 	ln, err := net.Listen("unix", sock)
 	require.NoError(t, err)
@@ -210,13 +210,13 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		d.Status.OperatedBy, d.Status.SameUser = mcpcontract.OperatedByAgent, true
 		d.Plugin.Requests, d.Plugin.Approvals = p, pg.store
 	})
-	server := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)
+	server := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)
 	files, executables := portalSource("1.0.0")
 	install := func() (map[string]any, bool) {
 		t.Helper()
 		id, err := f.upload(ctx, files)
 		require.NoError(t, err)
-		meta := map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": executables}}
+		meta := map[string]any{mcpserver.MetaPluginUpload: map[string]any{"uploadId": id.String(), "name": "acme-ner", "executables": executables}}
 		return callWithMeta(ctx, t, server, "request_plugin", map[string]any{"source": "/home/bot/acme-ner"}, meta)
 	}
 
@@ -371,7 +371,7 @@ func pluginSigned(t *testing.T, signer *passkeytest.Authenticator, req approval.
 
 // callWithMeta runs one tools/call with the request's _meta, as basalt mcp
 // forwards a call with its upload.
-func callWithMeta(ctx context.Context, t *testing.T, server *mcp.Server, tool string, args, meta map[string]any) (map[string]any, bool) {
+func callWithMeta(ctx context.Context, t *testing.T, server *mcpserver.Server, tool string, args, meta map[string]any) (map[string]any, bool) {
 	t.Helper()
 	params := map[string]any{"name": tool, "arguments": args}
 	if meta != nil {

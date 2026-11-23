@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
@@ -103,8 +103,8 @@ func TestHostCopiesMatchTheAdapters(t *testing.T) {
 	require.Equal(t, string(vault.StateOff), vaultStateOff)
 	require.Equal(t, string(vault.StateConnected), vaultStateConnected)
 	require.Equal(t, string(vault.StateKeyError), vaultStateKeyError)
-	require.Equal(t, mcp.MetaPluginUpload, MetaPluginUpload)
-	require.Equal(t, mcp.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
+	require.Equal(t, mcpserver.MetaPluginUpload, MetaPluginUpload)
+	require.Equal(t, mcpserver.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
 }
 
 // Every port the app used to hand the agent as one Host is a required

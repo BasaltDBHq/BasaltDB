@@ -1,9 +1,9 @@
-// Package mcp is a minimal Model Context Protocol server: newline-delimited
+// Package mcpserver is a minimal Model Context Protocol server: newline-delimited
 // JSON-RPC 2.0 over any byte stream (stdio for a local agent, or a Unix
 // socket connection between the MCP shim and the engine). It serves the
 // initialize, ping, tools/list and tools/call methods for the tools it is
 // given. The tool set itself is defined by the engine (CONTRACT.md).
-package mcp
+package mcpserver
 
 import (
 	"bufio"

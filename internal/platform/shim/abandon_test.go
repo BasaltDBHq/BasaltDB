@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // takeAndClose is an engine that reads n requests and closes the
@@ -35,7 +35,7 @@ func takeAndClose(t *testing.T, socket string, n int) {
 			conn.Close()
 			return
 		}
-		_ = mcp.WriteError(conn, mcp.HelloID, -32601, "method not found")
+		_ = mcpserver.WriteError(conn, mcpserver.HelloID, -32601, "method not found")
 		for range n {
 			if _, err := r.ReadBytes('\n'); err != nil {
 				break
@@ -77,13 +77,13 @@ func TestADroppedRequestThatIsNotAToolCallGetsAnError(t *testing.T) {
 	line, err := c.out.ReadBytes('\n')
 	require.NoError(t, err)
 	var resp struct {
-		ID     string          `json:"id"`
-		Result json.RawMessage `json:"result"`
-		Error  *mcp.RPCError   `json:"error"`
+		ID     string              `json:"id"`
+		Result json.RawMessage     `json:"result"`
+		Error  *mcpserver.RPCError `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal(line, &resp), string(line))
 	require.Equal(t, "init-1", resp.ID, "the client's own id")
 	require.Nil(t, resp.Result, "never a fake success")
 	require.NotNil(t, resp.Error)
-	require.Equal(t, mcp.ErrCodeServer, resp.Error.Code)
+	require.Equal(t, mcpserver.ErrCodeServer, resp.Error.Code)
 }

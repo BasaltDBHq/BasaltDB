@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 const (
@@ -98,7 +98,7 @@ func pluginService(t *testing.T, f *fakePluginRequests) *Service {
 }
 
 func uploadMeta() json.RawMessage {
-	return json.RawMessage(`{"` + mcp.MetaPluginUpload + `": {"uploadId": "` + casePluginUpload + `", "name": "local-ner", "executables": ["bin/ner"]}}`)
+	return json.RawMessage(`{"` + mcpserver.MetaPluginUpload + `": {"uploadId": "` + casePluginUpload + `", "name": "local-ner", "executables": ["bin/ner"]}}`)
 }
 
 func callPlugin(t *testing.T, s *Service, args map[string]any, meta json.RawMessage) (requestPluginResult, error) {
@@ -193,7 +193,7 @@ func TestRequestPluginArguments(t *testing.T) {
 // asked, so no path the agent names is ever opened by the engine.
 func TestRequestPluginNeedsTheShimsUpload(t *testing.T) {
 	t.Parallel()
-	for _, meta := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`{"` + mcp.MetaPluginUpload + `": {"uploadId": "nope", "name": "x"}}`)} {
+	for _, meta := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`{"` + mcpserver.MetaPluginUpload + `": {"uploadId": "nope", "name": "x"}}`)} {
 		f := &fakePluginRequests{opened: openedPlugin()}
 		_, err := callPlugin(t, pluginService(t, f), map[string]any{"source": "/home/me/local-ner"}, meta)
 		requireReason(t, err, CodeInvalidArgument, "")

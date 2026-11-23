@@ -1,4 +1,4 @@
-package mcp_test
+package mcpserver_test
 
 import (
 	"bytes"
@@ -10,18 +10,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
-func serve(t *testing.T, s *mcp.Server, lines ...string) []mcp.Response {
+func serve(t *testing.T, s *mcpserver.Server, lines ...string) []mcpserver.Response {
 	t.Helper()
 	var out bytes.Buffer
 	require.NoError(t, s.Serve(context.Background(), strings.NewReader(strings.Join(lines, "\n")), &out))
-	var resps []mcp.Response
+	var resps []mcpserver.Response
 	dec := json.NewDecoder(&out)
 	for dec.More() {
-		var r mcp.Response
+		var r mcpserver.Response
 		require.NoError(t, dec.Decode(&r))
 		resps = append(resps, r)
 	}
@@ -45,7 +45,7 @@ func toolText(t *testing.T, result any) (string, bool) {
 
 func TestServeInitializeListAndCall(t *testing.T) {
 	t.Parallel()
-	echo := mcp.Tool{
+	echo := mcpserver.Tool{
 		Name: "echo",
 		Call: func(_ context.Context, args json.RawMessage) (any, error) {
 			var a struct {
@@ -60,8 +60,8 @@ func TestServeInitializeListAndCall(t *testing.T) {
 			return map[string]string{"said": a.Say}, nil
 		},
 	}
-	fails := mcp.Tool{Name: "fails", Call: func(context.Context, json.RawMessage) (any, error) { return nil, errors.New("boom") }}
-	s := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, echo, fails)
+	fails := mcpserver.Tool{Name: "fails", Call: func(context.Context, json.RawMessage) (any, error) { return nil, errors.New("boom") }}
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, echo, fails)
 
 	resps := serve(t, s,
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
@@ -103,8 +103,8 @@ func TestServeInitializeListAndCall(t *testing.T) {
 
 func TestNewServerRefusesDuplicateTools(t *testing.T) {
 	t.Parallel()
-	tool := mcp.Tool{Name: "x", Call: func(context.Context, json.RawMessage) (any, error) { return struct{}{}, nil }}
-	require.Panics(t, func() { mcp.NewServer(mcp.Info{}, tool, tool) })
+	tool := mcpserver.Tool{Name: "x", Call: func(context.Context, json.RawMessage) (any, error) { return struct{}{}, nil }}
+	require.Panics(t, func() { mcpserver.NewServer(mcpserver.Info{}, tool, tool) })
 }
 
 func TestDocsURLAnchorsTheCode(t *testing.T) {

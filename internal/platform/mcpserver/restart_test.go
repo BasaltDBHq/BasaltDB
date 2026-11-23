@@ -1,4 +1,4 @@
-package mcp_test
+package mcpserver_test
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // countingGate admits the first open requests and counts what it saw.
@@ -28,11 +28,11 @@ func (g *countingGate) End() { g.ends++ }
 func TestAGatedServerAnswersRefusedRequestsAsNotRun(t *testing.T) {
 	t.Parallel()
 	ran := 0
-	write := mcp.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
+	write := mcpserver.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
 		ran++
 		return map[string]string{"ok": "yes"}, nil
 	}}
-	s := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, write)
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, write)
 	g := &countingGate{open: 1}
 	in := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":"basalt-hello","method":"basalt/hello","params":{"protocol":1}}`,
@@ -47,7 +47,7 @@ func TestAGatedServerAnswersRefusedRequestsAsNotRun(t *testing.T) {
 	require.Len(t, lines, 3, "hello, the run call and the refused one: %s", out.String())
 	require.Contains(t, lines[0], `"minShimProtocol"`, "the hello is not gated")
 	require.Contains(t, lines[1], `"id":1,"result"`)
-	id, ok := mcp.Restarting([]byte(lines[2]))
+	id, ok := mcpserver.Restarting([]byte(lines[2]))
 	require.True(t, ok, lines[2])
 	require.Equal(t, "2", id)
 	require.Contains(t, lines[2], "Nothing was run")
@@ -70,7 +70,7 @@ func TestRestartingReadsOnlyTheRestartingCode(t *testing.T) {
 		{`{"jsonrpc":"2.0","id":7,"result":{}}`, "", false},
 		{`not json`, "", false},
 	} {
-		id, ok := mcp.Restarting([]byte(tc.line))
+		id, ok := mcpserver.Restarting([]byte(tc.line))
 		require.Equal(t, tc.ok, ok, tc.line)
 		require.Equal(t, tc.id, id, tc.line)
 	}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
@@ -18,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
@@ -97,23 +97,23 @@ func agentUpdateMessage(n agent.UpdateNotice, exe string) string {
 }
 
 // AgentTools are the tools of svc as the MCP server serves them.
-func AgentTools(svc *agent.Service) []mcp.Tool {
-	return mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)
+func AgentTools(svc *agent.Service) []mcpserver.Tool {
+	return mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)
 }
 
 // EngineDownServer is what basalt mcp answers with itself while the engine
 // is down: the engine-down tools, and the answer to a request the engine
 // took but closed the connection without answering.
 type EngineDownServer struct {
-	*mcp.Server
+	*mcpserver.Server
 	down agent.EngineDown
 }
 
 // NewEngineDownServer is the engine-down tools of down, served as an
 // agent's MCP server.
 func NewEngineDownServer(down agent.EngineDown) EngineDownServer {
-	info := mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}
-	return EngineDownServer{Server: mcp.NewServer(info, mcp.ToolsFrom(down.Tools(), nil)...), down: down}
+	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}
+	return EngineDownServer{Server: mcpserver.NewServer(info, mcpserver.ToolsFrom(down.Tools(), nil)...), down: down}
 }
 
 // Abandoned answers a request the engine took and never answered (it
@@ -122,12 +122,12 @@ func NewEngineDownServer(down agent.EngineDown) EngineDownServer {
 // ENGINE_UNREACHABLE with its steps, any other request a JSON-RPC error. A
 // notification gets nothing.
 func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byte) error {
-	req, ok := mcp.RequestOf(line)
+	req, ok := mcpserver.RequestOf(line)
 	if !ok {
 		return nil
 	}
 	if req.Method != "tools/call" {
-		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, agent.AbandonedMessage)
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, agent.AbandonedMessage)
 	}
 	var p struct {
 		Name string `json:"name"`
@@ -135,9 +135,9 @@ func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byt
 	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
 	te := s.down.Abandoned(p.Name)
 	if te == nil {
-		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, agent.AbandonedMessage)
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, agent.AbandonedMessage)
 	}
-	return mcp.WriteToolError(out, req.ID, te)
+	return mcpserver.WriteToolError(out, req.ID, te)
 }
 
 // agentProbe is the store's probe as the agent reads it: the reinstall

@@ -1,0 +1,263 @@
+package guard
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+)
+
+// The column labels of the connect page (CONTRACT.md, Connect, Column
+// labels on the connect page): the classes CheckSetup shows for the
+// columns of the tables an agent will get, and the classes the person set,
+// written in the setup's transaction as basalt classify writes them.
+
+// unlabeled is the class of a column with no row in pii_columns.
+var unlabeled = guardmodel.Label{Class: guardmodel.ClassUnclassified}
+
+// tableColumn is a column of a listed table, with its type as
+// pii_readable_columns() reports it.
+type tableColumn struct {
+	table, column, dataType string
+}
+
+// tableColumns reads the ordinary columns of tables (schema.table), by
+// table in the order given and then column order.
+func tableColumns(ctx context.Context, q Querier, tables []string) ([]tableColumn, error) {
+	if len(tables) == 0 {
+		return nil, nil
+	}
+	const sql = `SELECT n.nspname::text || '.' || c.relname::text, a.attname::text, pg_catalog.format_type(a.atttypid, NULL)
+		  FROM pg_catalog.unnest($1::text[]) WITH ORDINALITY AS t(name, ord)
+		  JOIN pg_catalog.pg_namespace n ON n.nspname::text = pg_catalog.split_part(t.name, '.', 1)
+		  JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname::text = pg_catalog.split_part(t.name, '.', 2)
+		  JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+		 WHERE a.attnum > 0 AND NOT a.attisdropped AND c.relkind IN ('r', 'p')
+		 ORDER BY t.ord, a.attnum`
+	args := []any{tables}
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read the tables' columns: %w", err)
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (tableColumn, error) {
+		var c tableColumn
+		err := r.Scan(&c.table, &c.column, &c.dataType)
+		return c, err
+	})
+}
+
+// storedLabels reads, as the guard role, the rows of pii_columns for
+// tables (FOR UPDATE when lock), by schema.table and column.
+func storedLabels(ctx context.Context, tx pgx.Tx, tables []string, lock bool) (map[[2]string]guardmodel.PIIColumn, error) {
+	b := psql.Select("table_schema", "table_name", "column_name", "data_type", "class",
+		"coalesce(entity_type, '')", "coalesce(suggested_class, '')", "coalesce(suggested_entity_type, '')",
+		"coalesce(reason, '')", "needs_review", "coalesce(phone_region, '')").
+		From("basalt_meta.pii_columns").
+		Where("(table_schema || '.' || table_name) = ANY(?::text[])", tables)
+	if lock {
+		b = b.Suffix("FOR UPDATE")
+	}
+	sql, args, err := b.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read the stored classes: %w", err)
+	}
+	out := map[[2]string]guardmodel.PIIColumn{}
+	var c guardmodel.PIIColumn
+	_, err = pgx.ForEachRow(rows, []any{
+		&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
+		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion,
+	}, func() error {
+		out[[2]string{c.Schema + "." + c.Table, c.Column}] = c
+		return nil
+	})
+	return out, err
+}
+
+func labelOf(c guardmodel.PIIColumn) guardmodel.Label {
+	return guardmodel.Label{Class: c.Class, EntityType: c.EntityType, PhoneRegion: c.PhoneRegion}
+}
+
+// ReadLabels is every ordinary column of tables (schema.table), by table in
+// the order given and then column order, with its class in pii_columns:
+// UNCLASSIFIED for a column with no row, and for every column when the
+// database has no guard yet. It reads in a transaction of its own, as the
+// guard role, and changes nothing.
+func ReadLabels(ctx context.Context, conn *pgx.Conn, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
+	cols, err := tableColumns(ctx, conn, tables)
+	if err != nil {
+		return nil, err
+	}
+	var exists bool
+	if err := conn.QueryRow(ctx, "SELECT pg_catalog.to_regclass('basalt_meta.pii_columns') IS NOT NULL").Scan(&exists); err != nil {
+		return nil, err
+	}
+	stored := map[[2]string]guardmodel.PIIColumn{}
+	if exists {
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		err = asGuard(ctx, tx, n, func() error {
+			var err error
+			stored, err = storedLabels(ctx, tx, tables, false)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	out := make([]guardmodel.ColumnLabel, 0, len(cols))
+	for _, c := range cols {
+		l := unlabeled
+		if s, ok := stored[[2]string{c.table, c.column}]; ok {
+			l = labelOf(s)
+		}
+		out = append(out, guardmodel.ColumnLabel{Table: c.table, Column: c.column, Label: l})
+	}
+	return out, nil
+}
+
+// ReadableTables are the tables of pii_readable_columns() (schema.table, in
+// name order), read in q as the guard role: the tables an UPGRADE code
+// labels, which names no agent (CONTRACT.md, Connect, Column labels on the
+// connect page). None when the database has no guard yet.
+func ReadableTables(ctx context.Context, q pgx.Tx, n guardmodel.Names) ([]string, error) {
+	var exists bool
+	if err := q.QueryRow(ctx, "SELECT pg_catalog.to_regprocedure('basalt_meta.pii_readable_columns()') IS NOT NULL").Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	var cols []guardmodel.ReadableColumn
+	err := asGuard(ctx, q, n, func() error {
+		var err error
+		cols, err = readableColumns(ctx, q)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(cols))
+	for _, c := range cols {
+		out = append(out, c.Schema+"."+c.Table)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
+}
+
+// ReadReadableLabels is ReadLabels for every readable column of the
+// database (pii_readable_columns()): the labels an UPGRADE code shows. It
+// reads in a transaction of its own and changes nothing.
+func ReadReadableLabels(ctx context.Context, conn *pgx.Conn, n guardmodel.Names) ([]guardmodel.ColumnLabel, error) {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tables, err := ReadableTables(ctx, tx, n)
+	_ = tx.Rollback(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ReadLabels(ctx, conn, n, tables)
+}
+
+// WriteLabels writes the person's labels in tx, the setup's transaction,
+// as the guard role, as basalt classify writes classes: for each change,
+// the column must exist and its class stored now (UNCLASSIFIED with no
+// row) must be its Was (ErrClassesChanged otherwise, nothing written); it
+// is written with its data type from the catalog, confirmed now by the
+// login role, its suggestion, reason and needs_review kept. With
+// restPublic, every other column of tables with no class (no row, or
+// UNCLASSIFIED) is written PUBLIC the same way. When anything was written,
+// pii_catalog is set to pii_fingerprint(), so a running engine reloads its
+// classes. It reports how many columns it wrote.
+func WriteLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, tables []string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error) {
+	if len(changes) == 0 && !restPublic {
+		return 0, nil
+	}
+	written := 0
+	err := asGuard(ctx, tx, n, func() error {
+		// No class lands in between: a basalt classify meanwhile waits for
+		// this transaction (or this one for it, and then sees its rows).
+		if _, err := tx.Exec(ctx, "LOCK TABLE basalt_meta.pii_columns IN SHARE ROW EXCLUSIVE MODE"); err != nil {
+			return fmt.Errorf("lock the stored classes: %w", err)
+		}
+		cols, err := tableColumns(ctx, tx, tables)
+		if err != nil {
+			return err
+		}
+		types := make(map[[2]string]string, len(cols))
+		for _, c := range cols {
+			types[[2]string{c.table, c.column}] = c.dataType
+		}
+		stored, err := storedLabels(ctx, tx, tables, false)
+		if err != nil {
+			return err
+		}
+		var out []guardmodel.PIIColumn
+		changed := map[[2]string]bool{}
+		for _, ch := range changes {
+			key := [2]string{ch.Table, ch.Column}
+			dataType, ok := types[key]
+			if !ok {
+				return guardmodel.ErrClassesChanged
+			}
+			now, prev := unlabeled, guardmodel.PIIColumn{}
+			if s, ok := stored[key]; ok {
+				now, prev = labelOf(s), s
+			}
+			if now != ch.Was {
+				return guardmodel.ErrClassesChanged
+			}
+			out = append(out, labeled(ch.Table, ch.Column, dataType, ch.Label, prev))
+			changed[key] = true
+		}
+		if restPublic {
+			for _, c := range cols {
+				key := [2]string{c.table, c.column}
+				s, ok := stored[key]
+				if changed[key] || (ok && s.Class != guardmodel.ClassUnclassified) {
+					continue
+				}
+				out = append(out, labeled(c.table, c.column, c.dataType, guardmodel.Label{Class: guardmodel.ClassPublic}, s))
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		for start := 0; start < len(out); start += piiUpsertBatch {
+			if err := upsertPIIColumns(ctx, tx, out[start:min(start+piiUpsertBatch, len(out))], at); err != nil {
+				return err
+			}
+		}
+		if err := setPIICatalog(ctx, tx, at); err != nil {
+			return err
+		}
+		written = len(out)
+		return nil
+	})
+	return written, err
+}
+
+// labeled is the pii_columns row for table.column with label l, keeping
+// prev's suggestion, reason and needs_review.
+func labeled(table, column, dataType string, l guardmodel.Label, prev guardmodel.PIIColumn) guardmodel.PIIColumn {
+	schema, rel, _ := strings.Cut(table, ".")
+	return guardmodel.PIIColumn{
+		Schema: schema, Table: rel, Column: column, DataType: dataType,
+		Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion,
+		SuggestedClass: prev.SuggestedClass, SuggestedEntityType: prev.SuggestedEntityType,
+		Reason: prev.Reason, NeedsReview: prev.NeedsReview,
+	}
+}

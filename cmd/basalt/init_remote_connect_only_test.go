@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // connectOnlyArgs make a connect-only code: a new engine is
@@ -82,7 +82,7 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.NotNil(t, r.payload.Engine, "the engine collects the address with its key")
 	require.Equal(t, &setupcode.AllTables{Schemas: []string{"public"}}, r.payload.Agent.AllTables)
 	require.Nil(t, r.payload.Agent.Write)
-	require.Equal(t, guard.DefaultPrefix, r.payload.Prefix)
+	require.Equal(t, guardmodel.DefaultPrefix, r.payload.Prefix)
 
 	password := secretOf(t, cfg)
 	requireVerifierOf(t, r.payload.Agent.Verifier, password)
@@ -101,7 +101,7 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.Contains(t, pm, "connection string")
 	require.NotContains(t, pm, "--setup-code")
 	require.NoError(t, agent.CheckPersonMessage(pm), pm)
-	mcptest.Require(t, pm, []mcp.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}})
+	mcptest.Require(t, pm, []toolresult.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}})
 
 	// Text: the link and the fingerprint, no laptop command.
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
@@ -223,8 +223,8 @@ func TestInitRemoteRecoveryIgnoresOldSavedFlags(t *testing.T) {
 	again := remote(t, cfg, connectOnlyArgs...)
 	require.NotEqual(t, first.res.SetupID, again.res.SetupID)
 	require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
-	require.Equal(t, guard.DefaultPrefix, again.payload.Prefix)
-	require.Equal(t, guard.DefaultStatementTimeout.Milliseconds(), again.payload.Agent.StatementTimeoutMs)
+	require.Equal(t, guardmodel.DefaultPrefix, again.payload.Prefix)
+	require.Equal(t, guardmodel.DefaultStatementTimeout.Milliseconds(), again.payload.Agent.StatementTimeoutMs)
 	require.True(t, again.payload.KeepsGrants())
 	require.Equal(t, mcpcontract.OperatedByAgent, again.cfg.OperatedBy)
 	raw, err = os.ReadFile(cfg)

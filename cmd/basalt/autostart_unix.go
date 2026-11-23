@@ -16,12 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
-	"github.com/basaltdbhq/basaltdb/internal/server"
-	"github.com/basaltdbhq/basaltdb/internal/shim"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const (
@@ -148,7 +147,7 @@ func (s *starter) holdOff() (until time.Time, stop agent.LastStop, ok bool) {
 	if !ok {
 		return time.Time{}, agent.LastStop{}, false
 	}
-	until, ok = laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
+	until, ok = app.LastStopStartHoldOffUntil(app.LastStopRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
 	return until, stop, ok
 }
 
@@ -187,7 +186,7 @@ func (s *starter) start(ctx context.Context) error {
 	}
 	defer release()
 
-	if _, up, _ := server.Running(engine.LockPath(s.cfg.SocketDir)); up {
+	if _, up, _ := pidlock.Running(app.LockPath(s.cfg.SocketDir)); up {
 		return s.engineRuns(ctx)
 	}
 	// A supervisor may hold its lock before its child takes the engine
@@ -258,7 +257,7 @@ func (s *starter) waitSocket(ctx context.Context) error {
 		case <-ctx.Done():
 			return s.record(ctx.Err())
 		case <-deadline.C:
-			_, up, _ := server.Running(engine.LockPath(s.cfg.SocketDir))
+			_, up, _ := pidlock.Running(app.LockPath(s.cfg.SocketDir))
 			s.mu.Lock()
 			s.stuck = up
 			s.mu.Unlock()

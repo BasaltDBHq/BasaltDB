@@ -16,10 +16,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -52,7 +52,7 @@ const pinnedHost = "db.internal.example.com"
 func pinnedAgent(t *testing.T, first caServer) string {
 	t.Helper()
 	cfg := tempConfig(t)
-	dsn := agentDSN(t, "postgres://postgres@"+pinnedHost+":5432/postgres?sslmode=verify-full", guard.DefaultPrefix, "bot", "0123abcd")
+	dsn := agentDSN(t, "postgres://postgres@"+pinnedHost+":5432/postgres?sslmode=verify-full", guardmodel.DefaultPrefix, "bot", "0123abcd")
 	seedCredential(t, noDB(t), cfg, "bot", dsn)
 	clearSetup(t, cfg)
 	_, _, err := trustdir.Pin(cfg, pinnedHost, first.ca, false)
@@ -153,7 +153,7 @@ func TestInitRemoteTrustPin(t *testing.T) {
 func TestInitRemotePins(t *testing.T) {
 	t.Parallel()
 	s := newCAServer(t)
-	dsn := agentDSN(t, "postgres://postgres@"+pinnedHost+":5432/postgres?sslmode=require", guard.DefaultPrefix, "bot", "0123abcd")
+	dsn := agentDSN(t, "postgres://postgres@"+pinnedHost+":5432/postgres?sslmode=require", guardmodel.DefaultPrefix, "bot", "0123abcd")
 	for name, env := range map[string]map[string]string{"no marker": nil, "agent marker": {"CLAUDECODE": "1"}} {
 		cfg := tempConfig(t)
 		installedAgent(t, noDB(t), cfg, dsn)

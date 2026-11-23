@@ -16,6 +16,8 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 
 ## Layout
 
+Where code goes and which package may import which: [ARCHITECTURE.md](ARCHITECTURE.md). A Go test enforces it.
+
 ```
 cmd/basalt     the one binary
 internal/      engine, guard install, MCP transport, CLI internals
@@ -52,16 +54,16 @@ scripts/       release and packaging scripts
 
 ## IDs
 
-- **UUIDv7** for all app-generated ids (`github.com/google/uuid` `NewV7`, via `pkg/uniqueid`). `uuid` in Postgres, canonical text on the wire. Default list cursor is id-only (time-ordered).
+- **UUIDv7** for all app-generated ids (`github.com/google/uuid` `NewV7`, via `internal/lib/uniqueid`). `uuid` in Postgres, canonical text on the wire. Default list cursor is id-only (time-ordered).
 
 ## SQL
 
 - **DML and queries we write** (ledger, approvals, catalog reads): query builder **github.com/Masterminds/squirrel** with **`PlaceholderFormat(sq.Dollar)`**. Plain SQL strings only for: CTEs, complex aggregations, catalog queries that squirrel cannot express, DDL, triggers and PL/pgSQL. Each raw-SQL site gets a one-line comment saying why.
 - **Agent SQL** is never rewritten by string concatenation. It is parsed with `libpg_query` (pure-Go wasm build), classified, and refused or run as given with bound parameters. One exception, for recorded reads (M1.5): `query` appends version columns (`xmin` and the primary key of guarded tables in the `FROM`) through the parse tree and deparses, strips them from the result, and records the agent's own text. If that rewritten statement fails to plan, the original runs as given and the read is recorded without versions.
-- **DDL, triggers, PL/pgSQL** (the guard install): not squirrel. The guard's schema lives in **`.sql` files under `internal/guard/schema/`** (embedded, run in name order; one schema version, 1); other install SQL is backtick SQL in Go with **`fmt.Sprintf` limited to validated identifiers** (quote with `pgx.Identifier{…}.Sanitize()` or equivalent), readable for humans; no string-slice soup in install code.
+- **DDL, triggers, PL/pgSQL** (the guard install): not squirrel. The guard's schema lives in **`.sql` files under `internal/adapter/outbound/postgres/guard/schema/`** (embedded, run in name order; one schema version, 1); other install SQL is backtick SQL in Go with **`fmt.Sprintf` limited to validated identifiers** (quote with `pgx.Identifier{…}.Sanitize()` or equivalent), readable for humans; no string-slice soup in install code.
 - Everything installed lives in `basalt_meta` and must be removable with `DROP SCHEMA basalt_meta CASCADE`.
-- Every `basalt_meta` function declares `SET search_path = pg_catalog, pg_temp` (`pg_temp` last, or the caller's temporary tables shadow the catalog) and writes catalog relations as `pg_catalog.<name>` and the guard's own tables, views, types and functions as `basalt_meta.<name>`, so no name depends on `search_path`. Tests in `internal/guard/search_path_test.go` hold every function to it. Install SQL is idempotent. Session settings use the `basalt.` prefix with `SET LOCAL`.
-- Open every Postgres connection (pool or single) through **`internal/pgdial`**, never `pgx.Connect` or `pgxpool.ParseConfig` directly: it sets pgx `QueryExecModeExec` so Basalt works through transaction-mode poolers (Supavisor 6543, PgBouncer).
+- Every `basalt_meta` function declares `SET search_path = pg_catalog, pg_temp` (`pg_temp` last, or the caller's temporary tables shadow the catalog) and writes catalog relations as `pg_catalog.<name>` and the guard's own tables, views, types and functions as `basalt_meta.<name>`, so no name depends on `search_path`. Tests in `internal/adapter/outbound/postgres/guard/search_path_test.go` hold every function to it. Install SQL is idempotent. Session settings use the `basalt.` prefix with `SET LOCAL`.
+- Open every Postgres connection (pool or single) through **`internal/adapter/outbound/postgres/pgdial`**, never `pgx.Connect` or `pgxpool.ParseConfig` directly: it sets pgx `QueryExecModeExec` so Basalt works through transaction-mode poolers (Supavisor 6543, PgBouncer).
 - Business logic stays in Go except what must be enforced in the database (the guard). Guard triggers are the only triggers we install, and they act only when `pg_has_role(session_user, 'basalt_agents', 'USAGE')` (not `MEMBER`: from Postgres 16 the admin who created the roles is a non-inheriting member).
 - **`COUNT(id)`**, never `COUNT(*)`. Prefer **`EXISTS (SELECT 1 …)`** over a count when only presence matters. Forward-only `basalt_meta` migrations; never edit an applied one.
 
@@ -69,7 +71,7 @@ scripts/       release and packaging scripts
 
 Read **this file before implementing**; do not introduce conventions that conflict with it.
 
-- **SQL:** squirrel with `sq.Dollar` for DML; `.sql` files under `internal/guard/schema/`, or backtick SQL with validated identifiers, for DDL and triggers.
+- **SQL:** squirrel with `sq.Dollar` for DML; `.sql` files under `internal/adapter/outbound/postgres/guard/schema/`, or backtick SQL with validated identifiers, for DDL and triggers.
 - **Magic numbers:** name them; **`mnd`** is enabled in CI. Use named constants and a short comment when helpful (e.g. Postgres identifier max length **`NAMEDATALEN` − 1**, the 10/50 row limits).
 - **Control flow:** early returns and flat structure over deep nesting; type asserts **`if v, ok := x.(T); !ok { return err }`**. No silent skip on a failed assertion unless intentional and **commented**.
 - **DRY:** do not copy-paste the same non-trivial block across branches in a function; extract a small private helper when the same logic appears twice or more. **Mandatory** for reviews and audits.
@@ -100,7 +102,7 @@ Read **this file before implementing**; do not introduce conventions that confli
 - `testing` + **testify/require**; non-storage dependencies are replaced by small in-repo fakes (`guardtest`, `vaulttest`, `passkeytest`, `pagetest`, `mcptest`), not generated or testify mocks. mockery v3 is configured (`.mockery.yml`, `make mocks`) but generates nothing yet and is not installed by `make deps`; `make mocks` installs it on first use.
 - Guard, ledger and catalog code is tested against a **real Postgres** (`BASALTDB_TEST_POSTGRES_URL`; locally a Docker container). Tests create their own schema or database and clean up. Mocks only for non-storage deps.
 - Security properties (agent cannot approve, cannot write without intent, cannot bypass row limits) get explicit tests that run as the agent role.
-- **`-race`** on every test run. Exhaustive loops in `internal/pii` (the million-value dictionary, every NFKC and ignorable character, the false-positive tour) run sampled or smaller by default; `BASALTDB_TEST_FULL=1 go test -race ./internal/pii/...` runs them at full size (slow: run it before changing the tokenizer, dictionary or normalizer). `.github/workflows/nightly-full.yml` runs that command every night and on demand (workflow_dispatch); a failure fails the scheduled run. The `TestClassify*` tests in `cmd/basalt` also honour it (a 12-customer fixture by default, all 200 with the flag) and run in that job too. A package that adopts the flag is added to that job.
+- **`-race`** on every test run. Exhaustive loops in `internal/core/pii` (the million-value dictionary, every NFKC and ignorable character, the false-positive tour) run sampled or smaller by default; `BASALTDB_TEST_FULL=1 go test -race ./internal/core/pii/...` runs them at full size (slow: run it before changing the tokenizer, dictionary or normalizer). `.github/workflows/nightly-full.yml` runs that command every night and on demand (workflow_dispatch); a failure fails the scheduled run. The `TestClassify*` tests in `cmd/basalt` also honour it (a 12-customer fixture by default, all 200 with the flag) and run in that job too. A package that adopts the flag is added to that job.
 
 ## Tooling
 

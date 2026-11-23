@@ -9,9 +9,10 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/crash"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 // Crash reports (CONTRACT.md, Crash reports): a panic in a command is
@@ -60,7 +61,7 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 	for _, dir := range dirs {
 		rec.Dir = dir
 		rec.Shared = command == "engine" && dir == dirs[0]
-		rep, err := rec.Save(crash.Input{Command: command, Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
+		rep, err := rec.Save(app.CrashInput{Command: command, Kind: app.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
 		if err == nil {
 			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", rep.ID, terminalText(dir))
 			return
@@ -73,9 +74,9 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 // newRecorder is the recorder for this process and the directories to try,
 // in order: the engine's state directory for the engine, the person's config
 // directory for every other command.
-func newRecorder(command string) (crash.Recorder, []string) {
-	rec := crash.Recorder{Version: buildinfo.Version, Scrub: crash.OSScrubber(), Now: time.Now}
-	user, state := userCrashDir(), filepath.Join(config.DefaultStateDir(goosNow()), crash.DirName)
+func newRecorder(command string) (app.CrashRecorder, []string) {
+	rec := app.CrashRecorder{Version: buildinfo.Version, Scrub: app.CrashOSScrubber(), Now: time.Now}
+	user, state := userCrashDir(), filepath.Join(config.DefaultStateDir(goosNow()), app.CrashDirName)
 	dirs := []string{user, state}
 	if command == "engine" {
 		dirs = []string{state, user}
@@ -88,7 +89,7 @@ func userCrashDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(base, perUserDirName, crash.DirName)
+	return filepath.Join(base, perUserDirName, app.CrashDirName)
 }
 
 func nonEmpty(in []string) []string {

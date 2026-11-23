@@ -33,10 +33,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
 // Request is what every step is given.
@@ -147,13 +149,17 @@ type Description struct {
 	Summary []string
 }
 
+// store is the database side this package hands the setup service: pkg/setup
+// is the second composition root, for a program that calls it directly.
+var store = setupstore.New()
+
 // Describe decodes the code and applies the checks that need no database,
 // in the contract's order: the codec
 // (NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT, DAMAGED, INVALID), the clock
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
 // (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
+	s, err := setuprun.New(store, req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -343,7 +349,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	for _, e := range tables.Excluded {
 		out.Excluded = append(out.Excluded, ExcludedTable(e))
 	}
-	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, conn, false); err != nil {
+	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, store, conn, false); err != nil {
 		return Checked{}, asError(err)
 	}
 	if !req.ConnectPage { // the laptop command shows no labels and no passkeys
@@ -366,7 +372,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 
 // checkLabels are the columns Check shows: the agent's tables', or, for an
 // UPGRADE code, every readable column's table.
-func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guard.ColumnLabel, error) {
+func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guardmodel.ColumnLabel, error) {
 	if s.P.Agent == nil {
 		return guard.ReadReadableLabels(ctx, conn, s.Names)
 	}
@@ -379,7 +385,7 @@ func agentTables(s *setuprun.Setup) []string { return s.AgentTables() }
 
 // newSetup is setuprun.New for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
+	s, err := setuprun.New(store, req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +517,7 @@ func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
 			return invalid("a column of a table the agent does not get")
 		case seen[key]:
 			return invalid("a column given twice")
-		case c.Column == "" || !guard.ValidLabel(guard.Label(c.Label)) || !guard.ValidWas(guard.Label(c.Was)):
+		case c.Column == "" || !guardmodel.ValidLabel(guardmodel.Label(c.Label)) || !guardmodel.ValidWas(guardmodel.Label(c.Was)):
 			return invalid("a class, entity type or phone region the page does not set")
 		}
 		seen[key] = true
@@ -618,12 +624,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		}
 		return nil // the laptop asks after the commit
 	}
-	if err := setuprun.ApplySetupWith(ctx, conn, script, first, inTx); err != nil {
-		return Result{}, asError(setuprun.Refused(ctx, conn, s.P, err))
+	if err := setuprun.ApplySetupWith(ctx, store, conn, script, first, inTx); err != nil {
+		return Result{}, asError(setuprun.Refused(ctx, store, conn, s.P, err))
 	}
 	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}
 	if s.P.Agent != nil {
-		res.Warnings = setuprun.RLSBlindWarnings(ctx, conn, s.P.Role(), s.Spec())
+		res.Warnings = setuprun.RLSBlindWarnings(ctx, store, conn, s.P.Role(), s.Spec())
 	}
 	if in.Committed != nil {
 		in.Committed(res)
@@ -658,9 +664,9 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 	if len(in.ColumnClasses) == 0 && !in.RestPublic {
 		return nil
 	}
-	changes := make([]guard.LabelChange, 0, len(in.ColumnClasses))
+	changes := make([]guardmodel.LabelChange, 0, len(in.ColumnClasses))
 	for _, c := range in.ColumnClasses {
-		changes = append(changes, guard.LabelChange{Table: c.Table, Column: c.Column, Label: guard.Label(c.Label), Was: guard.Label(c.Was)})
+		changes = append(changes, guardmodel.LabelChange{Table: c.Table, Column: c.Column, Label: guardmodel.Label(c.Label), Was: guardmodel.Label(c.Was)})
 	}
 	var tables []string
 	switch {
@@ -675,7 +681,7 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 		}
 	}
 	_, err := guard.WriteLabels(ctx, tx, s.Names, tables, changes, in.RestPublic, now)
-	if errors.Is(err, guard.ErrClassesChanged) {
+	if errors.Is(err, guardmodel.ErrClassesChanged) {
 		return &setuprun.RefusalError{
 			Code: CodeClassesChanged, Err: err,
 			Message: "a column's label changed since the page showed it (someone classified it, or the column is gone), so the setup did not run and nothing changed: read the labels again",

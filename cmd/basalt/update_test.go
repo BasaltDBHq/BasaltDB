@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 func TestPrintUpdateLine(t *testing.T) {

@@ -1,5 +1,5 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). The headline
-// cases come from the Go tests (internal/approval/summary_test.go), so the
+// cases come from the Go tests (internal/core/approval/summary_test.go), so the
 // page and the engine's headline say the same thing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,7 +9,7 @@ import { parseApprovalRequest, parseLine } from "./codec.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const fixtures = JSON.parse(
-  readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
 );
 
 function summaryOf(name) {

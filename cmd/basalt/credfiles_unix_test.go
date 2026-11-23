@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
 
 // Root hands the credential files it writes to the owner of agents/, the
@@ -147,7 +147,7 @@ func TestRootCredFilesHandsTheFilesToTheDirOwner(t *testing.T) {
 	if os.Geteuid() != owner {
 		return
 	}
-	// The engine's read before it promotes (internal/engine, finish.go).
+	// The engine's read before it promotes (internal/app, finish.go).
 	dsn, _, err := config.ReadOwnCredential(cred + pendingSuffix)
 	require.NoError(t, err)
 	require.Contains(t, dsn, ":two@")

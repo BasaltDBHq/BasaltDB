@@ -1,6 +1,6 @@
 package main
 
-import "github.com/basaltdbhq/basaltdb/internal/engine/config"
+import "github.com/basaltdbhq/basaltdb/internal/config"
 
 // engineConfig is the engine config the person CLI reads in same-user
 // mode: config.Load, or as root loadConfigAsRoot. trusted is the user

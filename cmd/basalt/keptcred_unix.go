@@ -10,8 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 const (
@@ -26,12 +27,12 @@ const (
 // exactly the engine's user: not root, since a hardlink to an old root-only
 // file keeps root as its owner. Checks and reads use the same descriptor.
 func openEngineFile(path, engineUser string) (*os.File, error) {
-	return openOwnedFile(path, service.LookupUID(engineUser), engineUser)
+	return openOwnedFile(path, app.OSLookupUID(engineUser), engineUser)
 }
 
 // openOwnedFile is openEngineFile for the user uid, named who in errors.
 func openOwnedFile(path string, uid int, who string) (*os.File, error) {
-	f, err := service.OpenTrustedFile(path, uid)
+	f, err := app.OSOpenTrustedFile(path, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func checkEngineFile(f *os.File, uid int, engineUser string) error {
 // the unit's files, owned by that user again, and never connects with it,
 // so it takes no pgdial.CheckForeignDSN (TestRootCredentialReadsAreChecked).
 func readKeptCredential(path, engineUser string) (string, error) {
-	return readOwnedCredential(path, service.LookupUID(engineUser), engineUser)
+	return readOwnedCredential(path, app.OSLookupUID(engineUser), engineUser)
 }
 
 // readOwnedCredential is readKeptCredential for the user uid, named who in

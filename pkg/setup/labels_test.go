@@ -8,13 +8,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
-var unlabeled = setup.Label{Class: guard.ClassUnclassified}
+var unlabeled = setup.Label{Class: guardmodel.ClassUnclassified}
 
 // labelsOf reads the stored classes of table as the guard role.
 func labelsOf(t *testing.T, d *guardtest.DB, table string) map[string]setup.Label {
@@ -59,18 +60,18 @@ func TestColumnLabelsWritten(t *testing.T) {
 	}, checked.Columns, "by column order; no guard yet, so nothing is labeled")
 
 	_, give := personPasskey(t)
-	name := setup.Label{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName}
+	name := setup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPersonName}
 	_, err = setup.Run(ctx, d.Admin, ticked(code, "public.leads"), setup.RunInput{
 		Passkey: verified(t, give),
 		ColumnClasses: []setup.ColumnClass{
 			{Table: "public.leads", Column: "name", Label: name, Was: unlabeled},
-			{Table: "public.leads", Column: "score", Label: setup.Label{Class: guard.ClassSecret}, Was: unlabeled},
+			{Table: "public.leads", Column: "score", Label: setup.Label{Class: guardmodel.ClassSecret}, Was: unlabeled},
 		},
 		RestPublic: true,
 	})
 	require.NoError(t, err)
 	require.Equal(t, map[string]setup.Label{
-		"id": {Class: guard.ClassPublic}, "name": name, "score": {Class: guard.ClassSecret}, "status": {Class: guard.ClassPublic},
+		"id": {Class: guardmodel.ClassPublic}, "name": name, "score": {Class: guardmodel.ClassSecret}, "status": {Class: guardmodel.ClassPublic},
 	}, labelsOf(t, d, "public.leads"))
 	require.True(t, catalogSet(t, d), "pii_catalog is the fingerprint now, so a running engine reloads")
 }
@@ -85,7 +86,7 @@ func TestColumnLabelsRefused(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	code := newCode(t, d, connectOnly(t))
 	_, give := personPasskey(t)
-	secret := setup.Label{Class: guard.ClassSecret}
+	secret := setup.Label{Class: guardmodel.ClassSecret}
 	pk := verified(t, give)
 	run := func(in setup.RunInput, tables ...string) error {
 		in.Passkey = pk
@@ -94,7 +95,7 @@ func TestColumnLabelsRefused(t *testing.T) {
 	}
 
 	err := run(setup.RunInput{ColumnClasses: []setup.ColumnClass{
-		{Table: "public.leads", Column: "name", Label: secret, Was: setup.Label{Class: guard.ClassPublic}},
+		{Table: "public.leads", Column: "name", Label: secret, Was: setup.Label{Class: guardmodel.ClassPublic}},
 	}}, "public.leads")
 	require.Equal(t, setup.CodeClassesChanged, codeOf(t, err))
 	require.Zero(t, installedVersion(t, d), "nothing changed")
@@ -106,14 +107,14 @@ func TestColumnLabelsRefused(t *testing.T) {
 	for why, c := range map[string]setup.ColumnClass{
 		"a table not ticked":    {Table: "public.payroll", Column: "amount", Label: secret, Was: unlabeled},
 		"UNCLASSIFIED":          {Table: "public.leads", Column: "name", Label: unlabeled, Was: unlabeled},
-		"FREE_TEXT":             {Table: "public.leads", Column: "name", Label: setup.Label{Class: guard.ClassFreeText}, Was: unlabeled},
-		"IDENTIFIER, no entity": {Table: "public.leads", Column: "name", Label: setup.Label{Class: guard.ClassIdentifier}, Was: unlabeled},
-		"PHONE, no region":      {Table: "public.leads", Column: "name", Label: setup.Label{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone}, Was: unlabeled},
+		"FREE_TEXT":             {Table: "public.leads", Column: "name", Label: setup.Label{Class: guardmodel.ClassFreeText}, Was: unlabeled},
+		"IDENTIFIER, no entity": {Table: "public.leads", Column: "name", Label: setup.Label{Class: guardmodel.ClassIdentifier}, Was: unlabeled},
+		"PHONE, no region":      {Table: "public.leads", Column: "name", Label: setup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone}, Was: unlabeled},
 		"a region in lower case": {
 			Table: "public.leads", Column: "name",
-			Label: setup.Label{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: "de"}, Was: unlabeled,
+			Label: setup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "de"}, Was: unlabeled,
 		},
-		"a region without PHONE":    {Table: "public.leads", Column: "name", Label: setup.Label{Class: guard.ClassSecret, PhoneRegion: "DE"}, Was: unlabeled},
+		"a region without PHONE":    {Table: "public.leads", Column: "name", Label: setup.Label{Class: guardmodel.ClassSecret, PhoneRegion: "DE"}, Was: unlabeled},
 		"a was outside the classes": {Table: "public.leads", Column: "name", Label: secret, Was: setup.Label{Class: "PRIVATE"}},
 	} {
 		require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, run(setup.RunInput{ColumnClasses: []setup.ColumnClass{c}}, "public.leads")), why)
@@ -142,7 +143,7 @@ func TestRestPublicKeepsStoredClasses(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	_, give := personPasskey(t)
-	secret := setup.Label{Class: guard.ClassSecret}
+	secret := setup.Label{Class: guardmodel.ClassSecret}
 	first := newCode(t, d, connectOnly(t))
 	_, err := setup.Run(ctx, d.Admin, ticked(first, "public.leads"), setup.RunInput{
 		Passkey:       verified(t, give),
@@ -157,5 +158,5 @@ func TestRestPublicKeepsStoredClasses(t *testing.T) {
 	require.NoError(t, err)
 	got := labelsOf(t, d, "public.leads")
 	require.Equal(t, secret, got["name"], "a stored class is never lowered")
-	require.Equal(t, setup.Label{Class: guard.ClassPublic}, got["status"])
+	require.Equal(t, setup.Label{Class: guardmodel.ClassPublic}, got["status"])
 }

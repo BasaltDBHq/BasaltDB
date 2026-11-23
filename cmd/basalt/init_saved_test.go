@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 func TestServiceInstallRefusesAConnectionURLInitArg(t *testing.T) {
@@ -20,7 +20,7 @@ func TestServiceInstallRefusesAConnectionURLInitArg(t *testing.T) {
 	cfg := tempConfig(t)
 	require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
 	require.NoError(t, os.WriteFile(cfg, []byte("{}\n"), 0o600))
-	spec := service.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: "basalt"}
+	spec := osservice.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: "basalt"}
 	for _, bad := range []string{"--write=postgres://u:p@h/db", "--os-user=password=x", "--database-url=x", "bot"} {
 		_, err := agentSpecFromStdin(strings.NewReader("postgres://a:b@h/d\n"), spec,
 			agentInstall{name: "bot", osUser: "tester", initArgs: []string{"--agent=bot", bad}}, true, false)
@@ -44,7 +44,7 @@ func TestServiceInstallRefusesKeepCredentialWithStdin(t *testing.T) {
 func TestKeptCredentialSpec(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	spec := service.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
+	spec := osservice.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
 	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true, initArgs: []string{"--agent=bot"}}
 
 	_, err := keptCredentialSpec(spec, a, false)
@@ -76,7 +76,7 @@ func TestKeptCredentialSpecForAWaitingAgent(t *testing.T) {
 	raw, err := json.Marshal(config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{{Name: "bot", OSUser: "tester", Store: config.PostgresStore(cred), Setup: setup}}})
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfg, raw))
-	spec := service.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
+	spec := osservice.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
 	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true, initArgs: []string{"--agent=bot"}}
 
 	_, err = keptCredentialSpec(spec, a, false)

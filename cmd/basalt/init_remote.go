@@ -14,18 +14,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/demo"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // basalt init --remote runs on the engine's machine, which the agent may
@@ -196,7 +198,7 @@ func initRemote(c *cliIO, args []string) (RemoteInitResult, error) {
 // --agent only (CONTRACT.md, CLI). The role's prefix and its statement
 // timeout are fixed values.
 func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
-	f := remoteFlags{prefix: cmp.Or(c.rolePrefix, guard.DefaultPrefix), timeout: guard.DefaultStatementTimeout, operatedBy: OperatedByAgent}
+	f := remoteFlags{prefix: cmp.Or(c.rolePrefix, guardmodel.DefaultPrefix), timeout: guardmodel.DefaultStatementTimeout, operatedBy: OperatedByAgent}
 	var remote bool
 	fs := c.flags("init --remote")
 	fs.BoolVar(&remote, flagRemote, false, "set up an agent on a bot's machine: prints the connect link the person opens")
@@ -214,7 +216,7 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 func remoteAgentName(agents []config.Agent) (string, error) {
 	switch len(agents) {
 	case 0:
-		return demo.Agent, nil
+		return app.DemoAgent, nil
 	case 1:
 		return agents[0].Name, nil
 	}
@@ -226,7 +228,7 @@ func remoteAgentName(agents []config.Agent) (string, error) {
 type remoteInit struct {
 	c        *cliIO
 	f        remoteFlags
-	names    guard.Names
+	names    guardmodel.Names
 	role     string
 	settings config.Settings
 	entry    *config.Agent
@@ -634,7 +636,7 @@ func (r *remoteInit) promote(pending *credential) error {
 
 // agentConn is the agent's own connection init --remote reads with.
 type agentConn interface {
-	guard.Querier
+	app.Querier
 	Close(ctx context.Context) error
 }
 
@@ -667,7 +669,7 @@ func loginAsAgent(ctx context.Context, dsn string) (agentConn, error) {
 // setup is recorded.
 func (r *remoteInit) inspect(conn agentConn) error {
 	r.loggedIn = true
-	v, err := guard.AgentVersion(r.c.ctx, conn)
+	v, err := app.GuardAgentVersion(r.c.ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -679,7 +681,7 @@ func (r *remoteInit) inspect(conn agentConn) error {
 	if err != nil {
 		return nil //nolint:nilerr // a malformed pending setup is replaced, not reused
 	}
-	r.recorded, err = guard.SetupRecorded(r.c.ctx, conn, id)
+	r.recorded, err = app.GuardSetupRecorded(r.c.ctx, conn, id)
 	return err
 }
 
@@ -728,7 +730,7 @@ type plan struct {
 // than this build's; else an AGENT code with no change. Every AGENT code
 // names no tables: the role keeps its grants (payload).
 func (r *remoteInit) decide() (plan, error) {
-	latest := guard.LatestVersion()
+	latest := app.GuardLatestVersion()
 	if r.certChanged {
 		return r.certificatePlan()
 	}
@@ -785,7 +787,7 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 	}
 	out := setupcode.Payload{
 		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix,
-		Guard: setupcode.Guard{From: p.from, To: guard.LatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
+		Guard: setupcode.Guard{From: p.from, To: app.GuardLatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
 	}
 	if !r.connectOnly {
 		target := r.target
@@ -939,7 +941,7 @@ func (r *remoteInit) settle() error {
 // setPrefix sets the role prefix of the agent's names and role.
 func (r *remoteInit) setPrefix(prefix string) error {
 	r.f.prefix = prefix
-	r.names = guard.Names{Prefix: prefix}
+	r.names = guardmodel.Names{Prefix: prefix}
 	role, err := r.names.Agent(r.f.agent)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errUsage, err)
@@ -962,7 +964,7 @@ func credentialPrefix(u *url.URL, agent, supabaseRef string) string {
 		user = strings.TrimSuffix(user, "."+supabaseRef)
 	}
 	prefix, ok := strings.CutSuffix(user, "_agent_"+agent)
-	if !ok || (guard.Names{Prefix: prefix}).Validate() != nil {
+	if !ok || (guardmodel.Names{Prefix: prefix}).Validate() != nil {
 		return ""
 	}
 	return prefix
@@ -1099,7 +1101,7 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if !p.newPassword {
 		return nil
 	}
-	dsn, err := guard.AgentConnString(r.base.String(), r.role, p.password)
+	dsn, err := app.GuardAgentConnString(r.base.String(), r.role, p.password)
 	if err != nil {
 		return err
 	}
@@ -1283,7 +1285,7 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
 		return nil, err
 	}
-	keys, err := channel.LoadOrCreateKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
+	keys, err := app.LoadOrCreateEngineKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
 	if err != nil {
 		return nil, keyRefused(err)
 	}

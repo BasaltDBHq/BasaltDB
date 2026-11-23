@@ -9,9 +9,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -68,14 +69,14 @@ func rootChanged(ctx context.Context, dsn string, err error) error {
 // rootChangedVia is rootChanged reaching the host through dial (nil: the
 // network).
 func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Dial) error {
-	if !pgdial.CertificateNotVerified(err) {
+	if !app.CertificateNotVerified(err) {
 		return nil
 	}
 	cfg, perr := pgconn.ParseConfig(dsn)
 	if perr != nil {
 		return nil //nolint:nilerr // a string pgx cannot parse has no pinned host to compare
 	}
-	a := trustprofile.Explain(cfg, pgdial.Trust())
+	a := trustprofile.Explain(cfg, app.CurrentTrustProfileSet())
 	host := trustprofile.NormalizeHost(cfg.Host)
 	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
 		return nil

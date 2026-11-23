@@ -23,14 +23,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const (
@@ -185,7 +186,7 @@ func withState(t *testing.T, cfg string) string {
 // a password) with password pw.
 func agentDSN(t *testing.T, base, prefix, name, pw string) string {
 	t.Helper()
-	role, err := guard.Names{Prefix: prefix}.Agent(name)
+	role, err := guardmodel.Names{Prefix: prefix}.Agent(name)
 	require.NoError(t, err)
 	dsn, err := guard.AgentConnString(base, role, pw)
 	require.NoError(t, err)
@@ -241,7 +242,7 @@ const botPassword = "0123abcd"
 // supabaseDSN is the bot's credential through Supabase's pooler.
 func supabaseDSN(t *testing.T) string {
 	t.Helper()
-	return agentDSN(t, supabaseURL, guard.DefaultPrefix, "bot", botPassword)
+	return agentDSN(t, supabaseURL, guardmodel.DefaultPrefix, "bot", botPassword)
 }
 
 // credentialPassword reads the agent's password from a credential file and
@@ -341,7 +342,7 @@ func TestInitRemoteWithoutAgent(t *testing.T) {
 func TestInitRemoteMakesATargetCode(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	seed := seedCredential(t, noDB(t), cfg, "lead_bot", agentDSN(t, supabaseURL, guard.DefaultPrefix, "lead_bot", "0123abcd"))
+	seed := seedCredential(t, noDB(t), cfg, "lead_bot", agentDSN(t, supabaseURL, guardmodel.DefaultPrefix, "lead_bot", "0123abcd"))
 	r := remote(t, cfg, "--agent", "lead_bot")
 
 	p := r.payload
@@ -352,7 +353,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 	require.Equal(t, &setupcode.AllTables{Schemas: []string{"public"}}, p.Agent.AllTables, "the person ticks the tables")
 	require.Nil(t, p.Agent.Write)
 	require.Nil(t, p.Agent.Read)
-	require.Equal(t, guard.DefaultStatementTimeout.Milliseconds(), p.Agent.StatementTimeoutMs)
+	require.Equal(t, guardmodel.DefaultStatementTimeout.Milliseconds(), p.Agent.StatementTimeoutMs)
 	requireVerifierOf(t, p.Agent.Verifier, "0123abcd")
 	require.Equal(t, "0123abcd", credentialPassword(t, r.credFile), "the credential stays")
 	requireNoSecret(t, r, cfg, "0123abcd")
@@ -407,7 +408,7 @@ func requireConnectGuidance(t *testing.T, res RemoteInitResult) {
 	require.Contains(t, pm, "\n\n"+res.ConnectURL+"\n\n", "the link stands on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
 	require.NotContains(t, pm, "basalt init", "the person runs no command")
-	mcptest.Require(t, pm, []mcp.Link{{Label: agent.LabelConnect, URL: res.ConnectURL}})
+	mcptest.Require(t, pm, []toolresult.Link{{Label: agent.LabelConnect, URL: res.ConnectURL}})
 }
 
 // An agent-operated engine with the Vault on hands the connect link; an
@@ -633,11 +634,11 @@ func seedDB(t *testing.T, e remoteEnv, cfg string, d *guardtest.DB, dbURL, pw st
 func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 	t.Helper()
 	ctx := context.Background()
-	spec := guard.AgentSpec{}
+	spec := guardmodel.AgentSpec{}
 	agentName := ""
 	if p.Agent != nil {
 		agentName = p.Agent.Name
-		spec = guard.AgentSpec{
+		spec = guardmodel.AgentSpec{
 			Name: p.Agent.Name, Write: p.Agent.Write, Read: p.Agent.Read,
 			Verifier: p.Agent.Verifier, CreateOnly: p.Kind == setupcode.KindInstall,
 			StatementTimeout: time.Duration(p.Agent.StatementTimeoutMs) * time.Millisecond,
@@ -652,15 +653,15 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
 		if p.Agent != nil {
-			s, err := guard.PlanInit(ctx, tx, guard.InitOptions{Names: d.Names, Agent: spec})
+			s, err := guard.PlanInit(ctx, tx, guardmodel.InitOptions{Names: d.Names, Agent: spec})
 			if err != nil {
 				return err
 			}
-			if err := s.Apply(ctx, tx); err != nil {
+			if err := guard.ApplyScript(ctx, tx, s); err != nil {
 				return err
 			}
 		}
-		_, err := guard.RecordSetup(ctx, tx, d.Names, guard.Setup{
+		_, err := guard.RecordSetup(ctx, tx, d.Names, guardmodel.Setup{
 			ID: id, Kind: string(p.Kind), Agent: agentName,
 			GuardVersion: p.Guard.To, ExpiresAt: expires,
 		})

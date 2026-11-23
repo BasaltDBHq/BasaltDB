@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	connectv1 "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1"
-	"github.com/basaltdbhq/basaltdb/internal/connecttest"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/connecttest"
 )
 
 // codeFor is basalt init --remote's code for the bot in database d, which

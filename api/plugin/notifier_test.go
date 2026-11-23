@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
 
 // The notifier messages (CONTRACT.md, Plugins, The feed.observe and

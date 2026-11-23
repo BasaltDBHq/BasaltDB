@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"

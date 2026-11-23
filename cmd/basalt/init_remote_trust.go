@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -43,7 +44,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 		return
 	}
 	host := trustprofile.NormalizeHost(cfg.Host)
-	if trustdir.Set(r.f.configPath).For(host) != nil {
+	if app.TrustProfileFor(r.f.configPath, host) != nil {
 		return // a profile, a pin included, decides; a changed pin shows at the login
 	}
 	chain, err := r.c.fetchChain(r.c.ctx, host, int(cfg.Port))
@@ -59,7 +60,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 // pinOf is the engine's pin for host in the config's trust.d: its
 // pin-<host> profile, or nil.
 func pinOf(configPath, host string) *trustprofile.Profile {
-	p := trustdir.Set(configPath).For(host)
+	p := app.TrustProfileFor(configPath, host)
 	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
 		return nil
 	}

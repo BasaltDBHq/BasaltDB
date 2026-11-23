@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
-	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
 
 var (
@@ -469,7 +469,7 @@ func TestErrorCodesHaveDocsAnchors(t *testing.T) {
 	page, ok := docs["page"].(string)
 	require.True(t, ok)
 	for code := range contractErrorCodes(t) {
-		url := mcp.DocsURL(code)
+		url := toolresult.DocsURL(code)
 		anchor := strings.ToLower(strings.ReplaceAll(code, "_", "-"))
 		require.Truef(t, anchors[anchor], "%s has no section on the docs errors page (add #%s there, then to docs-anchors.json)", code, anchor)
 		require.Equal(t, page+"#"+anchor, url)

@@ -9,10 +9,10 @@ import { CodeError, TruncatedLinkError, parseApprovalRequest, parseRevertRequest
 import { APPROVE_REOPEN, REVERT_REOPEN, linkFailure, webauthnError, whenText } from "./page.js";
 
 const approvalFragment = JSON.parse(
-  readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/approval/testdata/fixtures.json", import.meta.url), "utf8"),
 ).request.fragment;
 const revertFragment = JSON.parse(
-  readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../internal/core/revert/testdata/fixtures.json", import.meta.url), "utf8"),
 ).request.fragment;
 
 async function failure(parse, fragment) {

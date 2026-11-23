@@ -10,14 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/vault"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 func TestVaultModeFlag(t *testing.T) {
@@ -72,7 +74,7 @@ func TestChooseVault(t *testing.T) {
 func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
-	spec := service.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
+	spec := osservice.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
 	install := func(a agentInstall) (string, string) {
 		t.Helper()
 		var lines bytes.Buffer
@@ -170,7 +172,7 @@ func engineKeys(t *testing.T) (string, *channel.EngineKeys) {
 	t.Helper()
 	stateDir := filepath.Join(t.TempDir(), "state")
 	require.NoError(t, os.MkdirAll(stateDir, 0o700))
-	keys, err := channel.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
+	keys, err := keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
 	require.NoError(t, err)
 	return stateDir, keys
 }

@@ -15,9 +15,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // recoverRig is a same-user engine config on a real guard, not yet running.
@@ -66,7 +66,7 @@ func (r *recoverRig) start(startedBy string) {
 	r.cancel = cancel
 	r.done = make(chan error, 1)
 	go func() {
-		r.done <- engine.RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), engine.RestartOptions{StartedBy: startedBy})
+		r.done <- app.RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), app.RestartOptions{StartedBy: startedBy})
 	}()
 	r.t.Cleanup(func() { cancel() })
 }
@@ -100,7 +100,7 @@ func TestRunAfterUpdateLikeRestore(t *testing.T) {
 	require.NoError(t, os.Chmod(r.stateDir, 0o755))
 	require.NoError(t, os.MkdirAll(r.socketDir, 0o755))
 	require.NoError(t, os.Chmod(r.socketDir, 0o755))
-	require.NoError(t, os.WriteFile(engine.LockPath(r.socketDir), []byte("999999\n"), 0o644))
+	require.NoError(t, os.WriteFile(app.LockPath(r.socketDir), []byte("999999\n"), 0o644))
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: r.sock, Net: "unix"})
 	require.NoError(t, err)
 	ln.SetUnlinkOnClose(false)
@@ -156,12 +156,12 @@ func TestRunForgetsAnEarlierGiveUp(t *testing.T) {
 	t.Parallel()
 	r := newRecoverRig(t)
 	require.NoError(t, os.MkdirAll(r.stateDir, 0o700))
-	record := filepath.Join(r.stateDir, engine.LastStopFile)
+	record := filepath.Join(r.stateDir, app.LastStopFile)
 	require.NoError(t, os.WriteFile(record, []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() {
-		_ = engine.RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), engine.RestartOptions{StableAfter: 300 * time.Millisecond})
+		_ = app.RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), app.RestartOptions{StableAfter: 300 * time.Millisecond})
 	}()
 
 	require.Eventually(t, r.answers, 30*time.Second, 50*time.Millisecond)

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 )
 
 // The engine's user owns agents/, so it could plant a symlink to a root-only
@@ -19,7 +19,7 @@ import (
 func TestKeptCredentialSpecRefusesASymlink(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	spec := service.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
+	spec := osservice.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
 	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true}
 	cred := filepath.Join(filepath.Dir(cfg), "agents", "bot.url")
 	target := filepath.Join(t.TempDir(), "id_rsa")

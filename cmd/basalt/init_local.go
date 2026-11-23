@@ -9,11 +9,10 @@ import (
 	"os/user"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/demo"
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // setupWait bounds how long init waits for the engine's setup page after
@@ -77,7 +76,7 @@ func runInitLocal(c *cliIO, args []string) int {
 		// engineResetAsked is never the answer here: waitForSetupPage
 		// takes a "No" it finds at the start as an engine set up.
 	}
-	link, err := localsetup.Link(engine.SetupOrigin, job)
+	link, err := localsetup.Link(app.SetupOrigin, job)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -99,7 +98,7 @@ func runInitLocal(c *cliIO, args []string) int {
 // install.
 func changeLink(c *cliIO, job localsetup.Job) (code int, reset bool) {
 	job.Job, job.Demo = localsetup.JobChange, false
-	link, err := localsetup.Link(engine.SetupOrigin, job)
+	link, err := localsetup.Link(app.SetupOrigin, job)
 	if err != nil {
 		return c.fail(err), false
 	}
@@ -131,7 +130,7 @@ func waitForRemoval(c *cliIO) engineState {
 	ctx, cancel := context.WithTimeout(c.ctx, removalWait)
 	defer cancel()
 	for {
-		code, err := c.host.SetupState(ctx, engine.SetupOrigin)
+		code, err := c.host.SetupState(ctx, app.SetupOrigin)
 		switch {
 		case err == nil && code == localsetup.CodeEngineRemoved:
 			return engineRemoved
@@ -153,8 +152,8 @@ func waitForRemoval(c *cliIO) engineState {
 // service. The person's password is the proof the page cannot give.
 func resetEngineService(c *cliIO) int {
 	return runServiceDialog(c, serviceDialog{
-		script:    service.ResetScript,
-		prompt:    service.ResetPrompt,
+		script:    app.OSResetScript,
+		prompt:    app.OSResetPrompt,
 		noDialog:  "BasaltDB on this computer is reset through the system's administrator dialog, which cannot be shown here (%w), so nothing was reset. Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: you answered that the database this computer's BasaltDB serves is not yours. Asking for your password in the system's administrator dialog to reset BasaltDB on this computer: it deletes the engine's config, its agents' credentials and its certificate pins, and restarts the engine. No database is touched.",
 		cancelled: "the administrator dialog was closed, so nothing was reset. Run basalt init again and answer the question on the page again",
@@ -168,8 +167,8 @@ func resetEngineService(c *cliIO) int {
 // script (service.RemoveScript), which refuses while engine.json exists.
 func removeEngineService(c *cliIO) int {
 	return runServiceDialog(c, serviceDialog{
-		script:    service.RemoveScript,
-		prompt:    service.RemovePrompt,
+		script:    app.OSRemoveScript,
+		prompt:    app.OSRemovePrompt,
 		noDialog:  "BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.",
 		cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init again to remove it",
@@ -195,7 +194,7 @@ func runServiceDialog(c *cliIO, d serviceDialog) int {
 	}
 	fmt.Fprintln(c.stderr, d.asking)
 	if err := c.host.AdminDialog(c.ctx, c.goos, d.prompt, script, c.stderr); err != nil {
-		if errors.Is(err, service.ErrDialogCancelled) {
+		if errors.Is(err, app.ErrOSDialogCancelled) {
 			return c.fail(errors.New(d.cancelled))
 		}
 		return c.fail(fmt.Errorf(d.failed, err))
@@ -209,7 +208,7 @@ func runServiceDialog(c *cliIO, d serviceDialog) int {
 func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 	fs := newFlagSet("init")
 	fs.SetOutput(c.stderr)
-	agent := fs.String("agent", "", "the agent's name (default: "+demo.Agent+")")
+	agent := fs.String("agent", "", "the agent's name (default: "+app.DemoAgent+")")
 	demoFlag := fs.Bool("demo", false, "set up the sample database instead of your own tables")
 	fs.Usage = func() {
 		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--remote] [--demo]\n\n"+
@@ -228,9 +227,9 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 	}
 	name := *agent
 	if name == "" {
-		name = demo.Agent
+		name = app.DemoAgent
 	}
-	if !localsetup.ValidAgentName(name) {
+	if !guardmodel.ValidAgentName(name) {
 		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", errUsage, name)
 	}
 	return localsetup.Job{Job: localsetup.JobInstall, Agent: name, Demo: *demoFlag}, nil
@@ -240,7 +239,7 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 // administrator dialog when it is not installed yet: one password, in the
 // dialog. It never falls back to running the engine as the person.
 func ensureEngineService(c *cliIO) error {
-	if c.host.System(io.Discard, io.Discard).Exists(service.UnitPath(c.goos)) {
+	if c.host.System(io.Discard, io.Discard).Exists(app.OSUnitPath(c.goos)) {
 		return nil
 	}
 	if err := c.host.DialogAvailable(c.goos); err != nil {
@@ -251,9 +250,9 @@ func ensureEngineService(c *cliIO) error {
 		return err
 	}
 	fmt.Fprintf(c.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		service.DefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
-	if err := c.host.AdminDialog(c.ctx, c.goos, service.InstallPrompt, script, c.stderr); err != nil {
-		if errors.Is(err, service.ErrNoDialog) {
+		app.OSDefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
+	if err := c.host.AdminDialog(c.ctx, c.goos, app.OSInstallPrompt, script, c.stderr); err != nil {
+		if errors.Is(err, app.ErrOSNoDialog) {
 			return noDialog(err)
 		}
 		return err
@@ -286,7 +285,7 @@ func waitForSetupPage(c *cliIO) (engineState, error) {
 	defer cancel()
 	firstRuns := -1
 	for {
-		code, err := c.host.SetupState(ctx, engine.SetupOrigin)
+		code, err := c.host.SetupState(ctx, app.SetupOrigin)
 		switch {
 		case err == nil && code == localsetup.CodeJobUnavailable:
 			return engineSetUp, nil
@@ -311,7 +310,7 @@ func waitForSetupPage(c *cliIO) (engineState, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return 0, fmt.Errorf("the engine service did not answer on %s within %s; see %s", engine.SetupOrigin, setupWait, engineLogHint(c.goos))
+			return 0, fmt.Errorf("the engine service did not answer on %s within %s; see %s", app.SetupOrigin, setupWait, engineLogHint(c.goos))
 		case <-time.After(setupWaitStep):
 		}
 	}

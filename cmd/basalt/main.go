@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
 // Exit codes (CONTRACT.md).

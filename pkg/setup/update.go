@@ -8,10 +8,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
 // The Update check on the connect page (CONTRACT.md, Connect, Update on the
@@ -83,7 +83,7 @@ type Revoked struct {
 // active passkey is ANSWERS_INVALID, nothing changed. A refusal is an
 // *Error.
 func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialID []byte) (Revoked, error) {
-	s, err := setuprun.New(req.Code, req.Now, true)
+	s, err := setuprun.New(store, req.Code, req.Now, true)
 	if err != nil {
 		return Revoked{}, asError(err)
 	}

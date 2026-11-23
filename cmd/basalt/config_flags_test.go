@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // The engine config, the credential file and the sockets are found by
@@ -59,7 +59,7 @@ func TestServiceInstallIsPinnedToTheConfigTheRemovalChecks(t *testing.T) {
 	require.Equal(t, exitUsage, code)
 	require.Contains(t, errw.String(), "flag provided but not defined: -config")
 	for _, goos := range []string{"linux", "darwin"} {
-		script, err := service.RemoveScript(goos)
+		script, err := osservice.RemoveScript(goos)
 		require.NoError(t, err)
 		path := config.DefaultPath(goos)
 		if strings.Contains(path, " ") {

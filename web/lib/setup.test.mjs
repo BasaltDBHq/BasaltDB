@@ -26,8 +26,8 @@ test("the page asks for nothing outside the engine's own local origin", () => {
   }
 });
 
-// The link basalt init prints (internal/localsetup.Link) parses to its job.
-const vector = JSON.parse(readFileSync(new URL("../../internal/localsetup/testdata/link.json", import.meta.url), "utf8"));
+// The link basalt init prints (internal/adapter/inbound/localsetup.Link) parses to its job.
+const vector = JSON.parse(readFileSync(new URL("../../internal/adapter/inbound/localsetup/testdata/link.json", import.meta.url), "utf8"));
 
 test("the page reads the link basalt init prints", () => {
   const url = new URL(vector.link);

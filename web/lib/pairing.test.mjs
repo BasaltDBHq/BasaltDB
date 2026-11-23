@@ -1,5 +1,5 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). The pairing
-// code the registration page shows, against the cases Go's internal/passkey
+// code the registration page shows, against the cases Go's internal/core/passkey
 // tests run (api/mcp/passkey/pairing-code.json).
 import { test } from "node:test";
 import assert from "node:assert/strict";

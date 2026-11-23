@@ -17,9 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/browser"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
+	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
 )
 
 // host is what basalt init does on the machine beyond Postgres: elevate
@@ -56,7 +57,7 @@ type host interface {
 	// Run runs a command as the person.
 	Run(ctx context.Context, args []string, out, errw io.Writer) error
 	// System runs service install steps in this process (init as root).
-	System(out, errw io.Writer) service.System
+	System(out, errw io.Writer) app.OSSystem
 	// Probe waits until the engine answers MCP initialize on socket.
 	Probe(ctx context.Context, socket string) error
 	// EngineLog reads the end of the engine service's log on goos, when
@@ -93,13 +94,13 @@ func (osHost) ResolvedExecutable() (string, error) {
 const darwinConsole = "/dev/console"
 
 func (osHost) DialogAvailable(goos string) error {
-	paths, err := service.DialogPaths(goos)
+	paths, err := app.OSDialogPaths(goos)
 	if err != nil {
 		return err
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
-			return fmt.Errorf("%w (%s is missing)", service.ErrNoDialog, p)
+			return fmt.Errorf("%w (%s is missing)", app.ErrOSNoDialog, p)
 		}
 	}
 	if goos != "darwin" {
@@ -108,10 +109,10 @@ func (osHost) DialogAvailable(goos string) error {
 	// The dialog shows on the Mac's screen: only for the person logged in there.
 	uid, err := fileOwnerUID(darwinConsole)
 	if err != nil {
-		return fmt.Errorf("%w (%s: %w)", service.ErrNoDialog, darwinConsole, err)
+		return fmt.Errorf("%w (%s: %w)", app.ErrOSNoDialog, darwinConsole, err)
 	}
 	if uid != os.Geteuid() {
-		return fmt.Errorf("%w (you are not the user logged in at this Mac's screen)", service.ErrNoDialog)
+		return fmt.Errorf("%w (you are not the user logged in at this Mac's screen)", app.ErrOSNoDialog)
 	}
 	return nil
 }
@@ -121,7 +122,7 @@ func (osHost) DialogAvailable(goos string) error {
 var dialogEnv = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
 
 func (osHost) AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error {
-	argv, err := service.DialogCommand(goos, prompt, script)
+	argv, err := app.OSDialogCommand(goos, prompt, script)
 	if err != nil {
 		return err
 	}
@@ -135,7 +136,7 @@ func (osHost) AdminDialog(ctx context.Context, goos, prompt, script string, out 
 	if errors.As(err, &exitErr) {
 		code = exitErr.ExitCode()
 	}
-	return service.DialogError(goos, code, said.String(), err)
+	return app.OSDialogError(goos, code, said.String(), err)
 }
 
 func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
@@ -165,13 +166,13 @@ func (osHost) ServiceRuns(ctx context.Context, goos string) (int, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
 	defer cancel()
 	if goos == "darwin" {
-		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/"+service.LaunchdLabel).Output()
+		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/"+app.OSLaunchdLabel).Output()
 		if err != nil {
 			return 0, 0, err
 		}
 		return parseLaunchdRuns(string(out))
 	}
-	out, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "NRestarts", "-p", "ExecMainStatus", service.SystemdUnitName).Output()
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "NRestarts", "-p", "ExecMainStatus", app.OSUnitName).Output()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -265,8 +266,8 @@ func (osHost) PagesUp(ctx context.Context, origin string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func (osHost) System(out, errw io.Writer) service.System {
-	return service.OSSystem{Stdout: out, Stderr: errw}
+func (osHost) System(out, errw io.Writer) app.OSSystem {
+	return app.OSExecSystem{Stdout: out, Stderr: errw}
 }
 
 // Probe timing: a service manager starts the engine within seconds.
@@ -300,7 +301,7 @@ const (
 
 func (osHost) EngineLog(ctx context.Context, goos string) (string, error) {
 	if goos != "darwin" {
-		out, err := exec.CommandContext(ctx, "journalctl", "-u", service.SystemdUnitName,
+		out, err := exec.CommandContext(ctx, "journalctl", "-u", app.OSUnitName,
 			"-n", engineJournalLines, "-o", "cat", "--no-pager").Output()
 		return string(out), err
 	}

@@ -8,11 +8,12 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/basaltdbhq/basaltdb/internal/channel"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/links"
-	"github.com/basaltdbhq/basaltdb/internal/vault"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The Vault in basalt init and basalt status (CONTRACT.md, Vault channel,
@@ -142,15 +143,15 @@ func localVault(cfg config.Config, stateDir string) (report, identity *agent.Vau
 	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) || !ownedByMe(path) {
 		return nil, nil
 	}
-	keys, err := channel.LoadKeys(path)
+	keys, err := app.ReadEngineKeys(path)
 	if err != nil {
-		return &agent.VaultStatus{State: string(vault.StateKeyError)}, nil
+		return &agent.VaultStatus{State: app.VaultStateKeyError}, nil
 	}
 	id := &agent.VaultStatus{EngineID: keys.EngineID(), Fingerprint: keys.Fingerprint()}
 	if cfg.VaultEnabled() {
 		return nil, id
 	}
-	id.State = string(vault.StateOff)
+	id.State = app.VaultStateOff
 	return id, nil
 }
 

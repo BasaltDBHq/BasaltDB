@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/websec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -182,7 +182,7 @@ func serve(t *testing.T, files fs.FS) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	srv := httptest.NewUnstartedServer(websec.Headers()(http.FileServerFS(files)))
+	srv := httptest.NewUnstartedServer(httpsec.Headers()(http.FileServerFS(files)))
 	srv.Listener = ln
 	srv.Start()
 	t.Cleanup(srv.Close)

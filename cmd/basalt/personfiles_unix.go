@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // loadConfigAsRoot reads the engine config for a root person CLI (sudo
@@ -37,7 +37,7 @@ func loadConfigAsRoot(path string) (cfg config.Config, trusted int, err error) {
 		return config.Config{}, 0, err
 	}
 	cfg, err = config.LoadOpen(abs, func(p string) (*os.File, error) {
-		f, err := service.OpenTrustedFile(p, trusted)
+		f, err := app.OSOpenTrustedFile(p, trusted)
 		if err != nil {
 			return nil, err
 		}
@@ -79,7 +79,7 @@ func readCredentialAsRoot(path string, trusted int, fromConfig bool) (string, er
 		return "", fmt.Errorf("credential file %s is refused: %w", path, err)
 	}
 	if trusted != 0 {
-		if err := pgdial.CheckForeignDSN(line); err != nil {
+		if err := app.CheckForeignDSN(line); err != nil {
 			return "", fmt.Errorf("credential file %s belongs to uid %d, not root: as root, basalt takes from it %w; "+
 				"run the command as that user (sudo -u <user>), or fix the file", path, trusted, err)
 		}

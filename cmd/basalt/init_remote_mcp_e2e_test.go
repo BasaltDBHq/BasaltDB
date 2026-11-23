@@ -17,9 +17,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
 
 // mcpStartDeadline is well under the shim's 15s autostart wait, so a
@@ -81,7 +81,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, socketDir string) {
 	t.Helper()
 	t.Cleanup(func() {
-		if pid, up, _ := server.Running(engine.LockPath(socketDir)); up {
+		if pid, up, _ := pidlock.Running(app.LockPath(socketDir)); up {
 			if ppid, err := parentOf(pid); err == nil {
 				_ = syscall.Kill(ppid, syscall.SIGTERM)
 			}

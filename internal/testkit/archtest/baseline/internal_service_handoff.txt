@@ -1,0 +1,3 @@
+collect.go imports net/http (a service reaches the database and the network through a port)
+probe.go imports github.com/jackc/pgx/v5 (a service reaches the database and the network through a port)
+probe.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)

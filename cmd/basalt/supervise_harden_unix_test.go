@@ -19,10 +19,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const (
@@ -150,7 +150,7 @@ func TestSuperviseStopsWhenStartedFromPathIsGone(t *testing.T) {
 		held, err := lockHeld(filepath.Join(socketDir, superviseLock))
 		return err == nil && held
 	}, 5*time.Second, 20*time.Millisecond)
-	if pid, up, _ := server.Running(engine.LockPath(socketDir)); up {
+	if pid, up, _ := pidlock.Running(app.LockPath(socketDir)); up {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
 	require.NoError(t, os.Remove(bin))

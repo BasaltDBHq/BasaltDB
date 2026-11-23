@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statuscli"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -27,10 +27,10 @@ import (
 type appUpdateHost struct{ h cli.Machine }
 
 func (u appUpdateHost) UpdateDisabled(getenv func(string) string) bool {
-	return app.UpdateDisabled(getenv)
+	return updatecheck.Disabled(getenv)
 }
 
-func (u appUpdateHost) UpdateDevVersion() string { return app.UpdateDevVersion }
+func (u appUpdateHost) UpdateDevVersion() string { return updatecheck.DevVersion }
 
 func (u appUpdateHost) Euid() int { return u.h.Euid() }
 
@@ -39,42 +39,42 @@ func (u appUpdateHost) DiscoverConfig(system string) (string, error) {
 }
 
 func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return cli.LoadEngineConfigAs(app.Shell{}, euid, path)
+	return cli.LoadEngineConfigAs(Shell{}, euid, path)
 }
 
 // noticeOf is n as the CLI prints it for the binary at exe; nil without a
 // notice.
-func noticeOf(n *app.UpdateNotice, exe string) *status.UpdateNotice {
+func noticeOf(n *updatecheck.Notice, exe string) *status.UpdateNotice {
 	if n == nil {
 		return nil
 	}
 	return &status.UpdateNotice{Line: n.Line(exe), Security: n.Security}
 }
 
-func updateChecker(getenv func(string) string) (*app.UpdateChecker, error) {
-	if buildinfo.Version == app.UpdateDevVersion {
+func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
+	if buildinfo.Version == updatecheck.DevVersion {
 		return nil, errDevBuild
 	}
-	dir, err := app.UpdateCacheDir(getenv(envCacheDir))
+	dir, err := updatecheck.CacheDir(getenv(envCacheDir))
 	if err != nil {
 		return nil, err
 	}
-	return &app.UpdateChecker{Dir: dir, Current: buildinfo.Version}, nil
+	return &updatecheck.Checker{Dir: dir, Current: buildinfo.Version}, nil
 }
 
 // errDevBuild means this build has no release number, so no check runs.
 var errDevBuild = errors.New("a build with no release number gets no update notice")
 
-// startUpdateNotice starts the refresh for a command and returns the
+// StartUpdateNotice starts the refresh for a command and returns the
 // function to call after it ran: it prints the notice. It does nothing for
 // the commands in status.NoUpdateLine and for --json (whose output carries the
 // notice as a field where the command has one).
-func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv func(string) string) func() {
+func StartUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv func(string) string) func() {
 	nothing := func() {}
 	if len(args) == 0 || slices.Contains(status.NoUpdateLine, args[0]) || cli.WantsJSON(args) {
 		return nothing
 	}
-	if status.UpdateOff(getenv, appUpdateHost{app.OSHost{}}, appUpdateHost{app.OSHost{}}) {
+	if status.UpdateOff(getenv, appUpdateHost{OSHost{}}, appUpdateHost{OSHost{}}) {
 		return nothing
 	}
 	ck, err := updateChecker(getenv)

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffcli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -25,7 +26,7 @@ func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.
 	shell := appShell{}
 	c := &cli.IO{
 		Ctx: ctx, Stdin: bufio.NewReader(std.In), Stdout: std.Out, Stderr: std.Err,
-		Getenv: getenv, Now: time.Now, Rand: rand.Reader, Goos: runtime.GOOS, Host: osHost{},
+		Getenv: getenv, Now: time.Now, Rand: rand.Reader, Goos: runtime.GOOS, Host: app.OSHost{},
 		Shell: shell,
 		AgentLogin: func(ctx context.Context, dsn string) (cli.AgentConn, error) {
 			return handoffcli.LoginAsAgent(ctx, shell, dsn)

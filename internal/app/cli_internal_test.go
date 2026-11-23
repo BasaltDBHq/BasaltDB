@@ -14,7 +14,7 @@ import (
 // cmd. A package variable could be reassigned at run time (by a test, or by
 // any code in the binary) and skip the check, so each must be a function.
 var trustChecks = []string{
-	"CheckForeignDSN", "CertificateNotVerified", "WithCertificateHint", "CurrentTrustProfileSet",
+	"CertificateNotVerified", "WithCertificateHint", "CurrentTrustProfileSet",
 	"OSLookupUID", "OSOpenTrustedDir", "OSOpenTrustedFile",
 }
 

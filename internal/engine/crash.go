@@ -33,6 +33,14 @@ type Host interface {
 	LastStopHashEngineJSON(path string) string
 }
 
+// StarterHost is what the engine's starter reads of the last-stop record.
+type StarterHost interface {
+	// LastStopStartHoldOffUntil is when a give-up recorded as rec holds off
+	// a new start of the engine at configPath until, as of now; false when
+	// it does not.
+	LastStopStartHoldOffUntil(rec servicespec.LastStopFileRecord, configPath string, now time.Time) (time.Time, bool)
+}
+
 // Terminal is what the engine's use cases read from the CLI shell.
 type Terminal interface {
 	// TerminalText is s safe to print on a terminal.

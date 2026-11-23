@@ -39,7 +39,7 @@ type pluginStatusView interface {
 	SameUser() bool
 	// DevLocalPages says engine.json has devLocalPages set.
 	DevLocalPages() bool
-	// VaultState is the engine's Vault state, vaultStateOff when there is
+	// VaultState is the engine's Vault state, VaultOff when there is
 	// no Vault reporter.
 	VaultState() string
 	// GuardStatus reads the guard's state on the agent's credential.

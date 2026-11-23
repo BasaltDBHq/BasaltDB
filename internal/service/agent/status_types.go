@@ -37,11 +37,7 @@ const (
 	problemConfirmDatabase    = "CONFIRM_DATABASE"
 	problemDatabaseRefused    = "DATABASE_REFUSED"
 	problemUnreachableFromBot = "DATABASE_UNREACHABLE_FROM_BOT"
-	problemTrustRootMismatch  = "TRUST_ROOT_MISMATCH"
-	problemAddressInvalid     = "ADDRESS_INVALID"
 	problemSetupNotFound      = "SETUP_NOT_FOUND"
-	problemClockSkew          = "CLOCK_SKEW"
-	problemEngineAsRoot       = "ENGINE_AS_ROOT"
 	// problemEngineStartFailed: basalt mcp tried to start the engine and
 	// could not (CONTRACT.md, MCP tools, status).
 	problemEngineStartFailed = "ENGINE_START_FAILED"

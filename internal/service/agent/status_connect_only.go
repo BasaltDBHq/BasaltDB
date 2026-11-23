@@ -398,11 +398,11 @@ func connectOnlyProblems(st handoff.State, ps *guidance.Problems, now time.Time)
 	case st.Expired:
 		v.addProblem(ps)
 	case st.Problem == handoff.ProblemAddressInvalid:
-		ps.Add(problemAddressInvalid, "the database address the connect page handed over was refused",
+		ps.Add(handoff.ProblemAddressInvalid, "the database address the connect page handed over was refused",
 			func(b *guidance.Steps) string { return addressInvalidSteps(b, ps.Cmds) })
 	case st.Problem == handoff.ProblemTrustRootMismatch && st.Database != nil:
 		db := *st.Database
-		ps.Add(problemTrustRootMismatch, db.Name()+" presents another certificate authority to this machine than the one the person trusted on the connect page; nothing was pinned",
+		ps.Add(handoff.ProblemTrustRootMismatch, db.Name()+" presents another certificate authority to this machine than the one the person trusted on the connect page; nothing was pinned",
 			func(b *guidance.Steps) string { return trustRootMismatchSteps(b, s.Code, ps.ConnectBudget, db) })
 	case st.Problem == handoff.ProblemUnreachable && st.Database != nil:
 		db := *st.Database
@@ -412,9 +412,9 @@ func connectOnlyProblems(st handoff.State, ps *guidance.Problems, now time.Time)
 		v.addProblem(ps)
 		switch st.Problem {
 		case handoff.ProblemClockSkew:
-			ps.Add(problemClockSkew, "the clock of this machine is more than 5 minutes off; the address cannot be collected until it is set right", clockSkewSteps)
+			ps.Add(handoff.ProblemClockSkew, "the clock of this machine is more than 5 minutes off; the address cannot be collected until it is set right", clockSkewSteps)
 		case handoff.ProblemEngineAsRoot:
-			ps.Add(problemEngineAsRoot, "the engine runs as root, so it does not collect this agent's database address", engineAsRootSteps)
+			ps.Add(handoff.ProblemEngineAsRoot, "the engine runs as root, so it does not collect this agent's database address", engineAsRootSteps)
 		}
 	}
 	return out

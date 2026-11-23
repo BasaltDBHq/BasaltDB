@@ -12,7 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // PasskeyRequest is one registration of the person's portal passkey: the

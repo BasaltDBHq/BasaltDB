@@ -1,4 +1,4 @@
-// Package portalcheck is the engine's daily check of the hosted portal
+// Package status is the engine's daily check of the hosted portal
 // (CONTRACT.md, CLI, `basalt portal verify`; Next steps, PORTAL_MISMATCH).
 // Once a day the engine runs the same comparison as `basalt portal verify`
 // against the portal in its config and keeps the answer: in memory for the
@@ -6,7 +6,7 @@
 // an engine that runs as the person. The check reads public pages only and
 // sends nothing about the engine. It never stops the engine and never blocks
 // a tool: a portal that differs is a warning, not a refusal.
-package portalcheck
+package status
 
 import (
 	"context"

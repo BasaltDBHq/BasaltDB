@@ -13,7 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-// Upkeep is the store side of the engine's timer (upkeep.Store) on one
+// Upkeep is the store side of the engine's timer (ledger.Store) on one
 // agent's credential: the guard's functions take the agent from
 // session_user, so each agent checks in for itself. Its errors are only
 // logged, never answered to an agent, so they are not mapped.

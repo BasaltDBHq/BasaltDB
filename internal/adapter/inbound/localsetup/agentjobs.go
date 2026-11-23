@@ -15,7 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The fixes of the Update check (CONTRACT.md, The Update check): setup
@@ -118,7 +118,7 @@ func (s *Service) engineRemoved() error {
 // validateAgentJob checks everything about an UPDATE, a REMOVE or a fix
 // that needs no database, in order. The admin connection string must name
 // the database the agent's own credential connects to, compared as the
-// connect service compares a setup code's target (setuprun.SameDatabase),
+// connect service compares a setup code's target (setup.SameDatabase),
 // before anything connects with it. run is a run's request, which may carry
 // what its check does not.
 func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
@@ -165,7 +165,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 	case err != nil:
 		return agentJob{}, refuse(CodeSetupFailed, "This engine cannot read the agent's credential, so it cannot tell which database is the agent's. Nothing changed.")
 	}
-	if !setuprun.SameDatabase(want, got) {
+	if !setup.SameDatabase(want, got) {
 		return agentJob{}, refuse(CodeTargetMismatch, fmt.Sprintf("This admin connection string is for another database than the agent %s uses. Use the admin connection string of the agent's own database; nothing changed.", req.Agent))
 	}
 	j := agentJob{req: req, agent: a, role: role, names: guardmodel.Names{Prefix: s.opts.Prefix}, target: want, host: host, missing: missing}
@@ -182,7 +182,7 @@ func (s *Service) validateAgentJob(req Request, run bool) (agentJob, error) {
 		}
 		// An agent whose credential cannot be read cannot be served
 		// either: it goes with the removal rather than stay behind.
-		if t, err := credentialTarget(o); err != nil || setuprun.SameDatabase(want, t) {
+		if t, err := credentialTarget(o); err != nil || setup.SameDatabase(want, t) {
 			j.others = append(j.others, o.Name)
 		}
 	}
@@ -298,7 +298,7 @@ type agentPlan struct {
 	script            guardmodel.Script
 	installed, latest int
 	// REMOVE
-	remove  setuprun.RemovePlan
+	remove  setup.RemovePlan
 	removed []string
 }
 
@@ -398,13 +398,13 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	}, nil
 }
 
-// planRemove plans the removal (setuprun.PlanRemove: the guard's
+// planRemove plans the removal (setup.PlanRemove: the guard's
 // policies, basalt_meta, the roles and the marked sample schema), and
 // says what this engine forgets. A database BasaltDB is already gone from
 // (a removal whose engine.json write failed) plans only IF EXISTS drops,
 // and the run finishes the removal on this engine.
 func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob) (agentPlan, error) {
-	rp, err := setuprun.PlanRemove(ctx, s.be, tx, s.opts.Prefix)
+	rp, err := setup.PlanRemove(ctx, s.be, tx, s.opts.Prefix)
 	if err != nil {
 		return agentPlan{}, err
 	}
@@ -478,8 +478,8 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	if req.Job == JobUpdate && req.ConfirmName != "" {
 		return RunAnswer{}, refuse(CodeAnswersInvalid, "An update is not confirmed with the database name.")
 	}
-	if req.Job == JobRemove && setuprun.CheckDatabaseName(req.ConfirmName) != nil {
-		return RunAnswer{}, refuse(CodeAnswersInvalid, setuprun.WrongDatabaseName)
+	if req.Job == JobRemove && setup.CheckDatabaseName(req.ConfirmName) != nil {
+		return RunAnswer{}, refuse(CodeAnswersInvalid, setup.WrongDatabaseName)
 	}
 	conn, err := s.connect(ctx, req.DatabaseURL)
 	if err != nil {
@@ -496,8 +496,8 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if req.Job == JobRemove {
 			// The typed name is read against the database inside the
 			// transaction, before anything is planned or dropped
-			// (setuprun.RunRemove, as the connect page's removal).
-			rp, kept, err := setuprun.RunRemove(ctx, s.be, tx, s.opts.Prefix, req.ConfirmName)
+			// (setup.RunRemove, as the connect page's removal).
+			rp, kept, err := setup.RunRemove(ctx, s.be, tx, s.opts.Prefix, req.ConfirmName)
 			if err != nil {
 				return removeRefusal(err)
 			}
@@ -507,7 +507,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err
 		}
-		if err := setuprun.ApplyInitTx(ctx, s.be, tx, p.script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, tx, p.script); err != nil {
 			return setupFailed("update script", err)
 		}
 		return nil
@@ -536,9 +536,9 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	return answer, nil
 }
 
-// removeRefusal is a setuprun removal refusal as this page's.
+// removeRefusal is an internal/setup removal refusal as this page's.
 func removeRefusal(err error) error {
-	var r *setuprun.RefusalError
+	var r *setup.RefusalError
 	if errors.As(err, &r) {
 		out := refuse(r.Code, r.Message)
 		if r.Code == CodeSetupFailed {

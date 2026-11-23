@@ -1,11 +1,11 @@
-// Package upkeep is the engine's timer for one agent: a heartbeat in the
+// Package ledger is the engine's timer for one agent: a heartbeat in the
 // ledger and a DEAD_MAN row after a long silence (the dead-man switch,
 // owner decision #14), retention (decision #10), the coverage check
 // (unguarded tables, recorded when the set changes), a warning for tables
 // row-level security hides from the agent, and incremental
 // verification of the ledger chain from a head pinned outside the
 // database, so a rewrite of history is noticed even across restarts.
-package upkeep
+package ledger
 
 import (
 	"bytes"

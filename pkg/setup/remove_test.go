@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 

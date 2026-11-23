@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
@@ -127,7 +126,7 @@ func TestHeldWriteDescriptionsWaitOnce(t *testing.T) {
 func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
-		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": ledgersvc.RunHistoryArgs{}, "list_pending": listPendingArgs{},
+		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": runHistoryArgs{}, "list_pending": listPendingArgs{},
 		"list_runs":      action.RunListParams{},
 		"request_revert": requestRevertArgs{},
 		"preview_revert": previewRevertArgs{},

@@ -10,19 +10,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // History is one page of a run's change records with the rows each wrote.
 type History = action.History[action.Change, action.RowChange]
-
-// RunHistoryArgs is the run_history tool's input
-// (api/mcp/tools/run_history.json): the list params struct embeds
-// pagination.Params, as every list does.
-type RunHistoryArgs struct {
-	pagination.Params
-	RunID string `json:"runId" validate:"required,uuid"`
-}
 
 // runFinder is the ledger lookup of one run of the agent.
 type runFinder interface {

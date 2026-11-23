@@ -634,7 +634,10 @@ func RefuseAnswers(allRows []string) error {
 	return nil
 }
 
-// policies are the blind tables the person let the agent see every row of.
+// policies are the blind tables the person let the agent see every row of:
+// each a question this setup asks, answered once (a table named twice is
+// refused, as the local setup page refuses it). A question not named is
+// answered no.
 func (p *Prepared) policies(allRows []string) ([]guardmodel.BlindTable, error) {
 	var out []guardmodel.BlindTable
 	for _, table := range allRows {
@@ -642,9 +645,10 @@ func (p *Prepared) policies(allRows []string) ([]guardmodel.BlindTable, error) {
 		if i < 0 {
 			return nil, setuprunRefuse(SetuprunCodeAnswersInvalid, fmt.Sprintf("the answers name table %s, which this setup does not ask about; check the setup again", printableLabel(table)))
 		}
-		if blindIndex(out, table) < 0 {
-			out = append(out, p.Blind[i])
+		if blindIndex(out, table) >= 0 {
+			return nil, setuprunRefuse(SetuprunCodeAnswersInvalid, fmt.Sprintf("the answers name table %s twice; answer each question once and check the setup again", printableLabel(table)))
 		}
+		out = append(out, p.Blind[i])
 	}
 	return out, nil
 }

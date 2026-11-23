@@ -36,7 +36,7 @@ type rootFiles struct {
 
 // openRootFiles opens the files of agent for a root engine: credFile must
 // be the computed agents/<agent>.url (handoff.RootCredentialPath).
-func openRootFiles(configPath, agent, credFile string) (agentFiles, error) {
+func openRootFiles(configPath, agent, credFile string) (handoff.AgentFiles, error) {
 	path, err := handoff.RootCredentialPath(configPath, agent, credFile)
 	if err != nil {
 		return nil, err

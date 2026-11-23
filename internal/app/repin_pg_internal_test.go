@@ -140,7 +140,7 @@ func (f rotationFixture) approve(t *testing.T, trustRoot string) {
 // memoryPending is engine.json's pending setup, held in memory; the pin is
 // replaced in the fixture's real trust.d.
 type memoryPending struct {
-	repinFiles
+	handoff.RepinSetupFiles
 	setup config.Setup
 }
 
@@ -159,7 +159,7 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 			Dial:     f.newDial,
 			Profiles: trustdir.Set(f.cfg), ConnConfig: pgdial.ConnConfigTrusting,
 		},
-		Files: memoryPending{repinFiles: repinFiles{handoffFiles{configPath: f.cfg, agent: "bot"}}, setup: f.setup},
+		Files: memoryPending{RepinSetupFiles: handoff.RepinSetupFiles{SetupFiles: handoff.SetupFiles{ConfigPath: f.cfg, Agent: "bot", Pins: trustPins{}}}, setup: f.setup},
 		Log:   slog.New(slog.DiscardHandler), Now: time.Now,
 	})
 	require.NoError(t, err)

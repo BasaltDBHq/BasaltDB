@@ -42,7 +42,7 @@ var plainConfigLoads = map[string]string{
 	engineCLIDir + "mcp.go:RunMCPAt:Load": "basalt mcp, as the agent's user",
 	// The hand-off reads a connect-only agent's pending setup from the
 	// engine config, as the engine's own user, refusing a link at it.
-	appDir + "handoff_files.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
+	handoffDir + "setupfiles.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
 }
 
 // configLoadsIn lists the config loaders f refers to, as
@@ -123,9 +123,13 @@ const appDir = "../../internal/app/"
 // the supervisor's config read (SuperviseConfig) passes through it.
 const engineDir = "../../internal/engine/"
 
+// handoffDir is the hand-off use case's source folder, from this package: the
+// connect-only agent's files read the engine config as the engine's user.
+const handoffDir = "../../internal/handoff/"
+
 // No root code path reads the engine config with a config loader directly:
 // a new call outside plainConfigLoads, in this package, the CLI shell, the
-// engine's use cases or its CLI controllers, the setup CLI controllers, or the composition root,
+// engine's use cases or its CLI controllers, the setup CLI controllers, the composition root, or the hand-off,
 // fails here, so it uses cli.LoadEngineConfig.
 func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 	t.Parallel()
@@ -137,6 +141,7 @@ func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 		engineCLIDir: "the engine's CLI controllers",
 		setupCLIDir:  "the setup CLI controllers",
 		appDir:       "the composition root",
+		handoffDir:   "the hand-off",
 	} {
 		more, err := filepath.Glob(dir + "*.go")
 		require.NoError(t, err)

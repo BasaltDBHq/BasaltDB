@@ -187,8 +187,8 @@ func mkdir(mode os.FileMode, user, path string) Step {
 	return Step{Kind: StepMkdir, Path: path, Mode: mode, Owner: user}
 }
 
-// Validate checks the spec can be installed.
-func (s Spec) Validate() error {
+// validateSpec checks spec s can be installed.
+func validateSpec(s servicespec.Spec) error {
 	switch {
 	case s.GOOS != goosLinux && s.GOOS != goosDarwin:
 		return fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
@@ -204,15 +204,15 @@ func (s Spec) Validate() error {
 
 // InstallPlan returns the steps that create the engine's user if missing,
 // its directories, and the unit, then start the service.
-func InstallPlan(ctx context.Context, sys System, s Spec) ([]Step, error) {
-	if err := s.Validate(); err != nil {
+func InstallPlan(ctx context.Context, sys System, s servicespec.Spec) ([]Step, error) {
+	if err := validateSpec(s); err != nil {
 		return nil, err
 	}
 	if err := sys.CheckBinary(s.Binary); err != nil {
 		return nil, err
 	}
 	if len(s.Plugins) > 0 {
-		if err := validateHost(s.pluginHost()); err != nil {
+		if err := validateHost(pluginHostOf(s)); err != nil {
 			return nil, err
 		}
 	}
@@ -224,19 +224,19 @@ func InstallPlan(ctx context.Context, sys System, s Spec) ([]Step, error) {
 
 // pluginSteps make the plugin base, then every local plugin entry's user,
 // socket directory and unit (CONTRACT.md, Plugins, Isolation and trust).
-func pluginSteps(sys System, s Spec, ids *idAllocator) ([]Step, error) {
+func pluginSteps(sys System, s servicespec.Spec, ids *idAllocator) ([]Step, error) {
 	steps, err := PluginBaseSteps(s.GOOS)
 	if err != nil {
 		return nil, err
 	}
-	more, err := pluginEntriesSteps(sys, s.pluginHost(), s.Plugins, ids)
+	more, err := pluginEntriesSteps(sys, pluginHostOf(s), s.Plugins, ids)
 	if err != nil {
 		return nil, err
 	}
 	return append(steps, more...), nil
 }
 
-func linuxInstall(sys System, s Spec) ([]Step, error) {
+func linuxInstall(sys System, s servicespec.Spec) ([]Step, error) {
 	var steps []Step
 	if !sys.UserExists(s.User) {
 		steps = append(steps, run("useradd", "--system", "--user-group", "--no-create-home",
@@ -269,7 +269,7 @@ func linuxInstall(sys System, s Spec) ([]Step, error) {
 
 // fileSteps write the spec's files (the engine config, an agent's
 // credential) owned by the engine's user, each directory first.
-func fileSteps(s Spec) []Step {
+func fileSteps(s servicespec.Spec) []Step {
 	var steps []Step
 	made := map[string]bool{filepath.Dir(s.ConfigPath): true}
 	for _, f := range s.Files {
@@ -285,7 +285,7 @@ func fileSteps(s Spec) []Step {
 	return steps
 }
 
-func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
+func darwinInstall(ctx context.Context, sys System, s servicespec.Spec) ([]Step, error) {
 	var steps []Step
 	var ids *idAllocator
 	if !sys.UserExists(s.User) || len(s.Plugins) > 0 {

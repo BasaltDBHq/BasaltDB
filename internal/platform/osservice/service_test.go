@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -109,12 +110,12 @@ func (f *fakeSystem) Remove(path string) error {
 	return os.ErrNotExist
 }
 
-func linuxSpec() osservice.Spec {
-	return osservice.Spec{GOOS: "linux", Binary: "/usr/local/bin/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"}
+func linuxSpec() servicespec.Spec {
+	return servicespec.Spec{GOOS: "linux", Binary: "/usr/local/bin/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"}
 }
 
-func darwinSpec() osservice.Spec {
-	return osservice.Spec{
+func darwinSpec() servicespec.Spec {
+	return servicespec.Spec{
 		GOOS: "darwin", Binary: "/usr/local/bin/basalt",
 		ConfigPath: "/Library/Application Support/Basalt/engine.json", User: "_basalt",
 	}
@@ -313,7 +314,7 @@ func TestSettleSkippedSteps(t *testing.T) {
 
 func TestSpecValidate(t *testing.T) {
 	t.Parallel()
-	bad := []osservice.Spec{
+	bad := []servicespec.Spec{
 		{GOOS: "windows", Binary: "/b", ConfigPath: "/c", User: "u"},
 		{GOOS: "linux", Binary: "basalt", ConfigPath: "/c", User: "u"},
 		{GOOS: "linux", Binary: "/b", ConfigPath: "engine.json", User: "u"},
@@ -335,7 +336,7 @@ func TestDefaultUser(t *testing.T) {
 func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	t.Parallel()
 	spec := linuxSpec()
-	spec.Files = []osservice.File{
+	spec.Files = []servicespec.File{
 		{Path: "/etc/basalt/engine.json", Content: []byte(`{"socketDir":"/run/basalt"}`)},
 		{Path: "/etc/basalt/agents/bot.url", Content: []byte("postgres://secret")},
 	}
@@ -363,7 +364,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.NotContains(t, out.String(), "secret", "file contents are never printed")
 
 	dspec := darwinSpec()
-	dspec.Files = []osservice.File{{Path: "/Library/Application Support/Basalt/agents/bot.url", Content: []byte("x")}}
+	dspec.Files = []servicespec.File{{Path: "/Library/Application Support/Basalt/agents/bot.url", Content: []byte("x")}}
 	sys = newFake()
 	sys.users["_basalt"] = true
 	sys.exists[osservice.LaunchdPlist] = true
@@ -395,7 +396,7 @@ func fakeMkdir(path string, mode os.FileMode, owner, group string) string {
 // socket directory 0755 and the state directory 0700 on Linux (0750 on
 // macOS).
 func TestEngineDirsMatchTheUnit(t *testing.T) {
-	unit := osservice.SystemdUnit(osservice.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
+	unit := osservice.SystemdUnit(servicespec.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
 	require.Contains(t, unit, "RuntimeDirectory=basalt\nRuntimeDirectoryMode=0755\n")
 	require.Contains(t, unit, "StateDirectory=basalt\nStateDirectoryMode=0700\n")
 

@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // fakeHost records what init would do on the machine; nothing runs.
@@ -221,7 +221,7 @@ func me(t *testing.T) string {
 func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
-	spec := osservice.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
+	spec := servicespec.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
 	a := agentInstall{name: "bot", osUser: agentOSUser(t), personUIDs: []uint32{4242}}
 
 	_, err := agentSpecFromStdin(strings.NewReader("postgres://x\n"), spec, a, false, false)

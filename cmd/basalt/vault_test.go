@@ -13,7 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 func TestVaultModeFlag(t *testing.T) {
@@ -68,7 +68,7 @@ func TestChooseVault(t *testing.T) {
 func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
-	spec := osservice.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
+	spec := servicespec.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
 	install := func(a agentInstall) (string, string) {
 		t.Helper()
 		var lines bytes.Buffer

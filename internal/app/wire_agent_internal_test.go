@@ -29,7 +29,7 @@ func TestAgentHostDepsFillsEveryAdapterPort(t *testing.T) {
 		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
 	}
 	for _, name := range supplied {
-		require.NotContains(t, strings.Split(msg, ", "), name, "AgentHostDeps leaves %s unset", name)
+		require.NotContains(t, strings.Split(strings.TrimPrefix(msg, "agent: required dependencies missing: "), ", "), name, "AgentHostDeps leaves %s unset", name)
 	}
 	require.NotZero(t, AgentHostDeps().Approval.SortSpec, "AgentHostDeps leaves Approval.SortSpec unset")
 	require.NotZero(t, AgentHostDeps().Plugin.ApprovalsVersion, "AgentHostDeps leaves Plugin.ApprovalsVersion unset")

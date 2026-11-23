@@ -29,7 +29,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -104,12 +103,12 @@ func (appSetupHost) OSDefaultUser(goos string) string { return app.OSDefaultUser
 
 func (appSetupHost) OSUnitPath(goos string) string { return app.OSUnitPath(goos) }
 
-func (appSetupHost) ConnTarget(dsn string) (setupcli.ConnTarget, error) {
+func (appSetupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
 	cfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
-		return setupcli.ConnTarget{}, err
+		return setup.ConnTarget{}, err
 	}
-	return setupcli.ConnTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
+	return setup.ConnTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
 }
 
 func (appSetupHost) ServerMessage(err error) (string, bool) { return pgErrors{}.ServerMessage(err) }

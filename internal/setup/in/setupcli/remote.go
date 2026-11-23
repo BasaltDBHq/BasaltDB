@@ -176,14 +176,6 @@ type remoteInit struct {
 	certChanged bool
 }
 
-// ConnTarget is where a connection string connects.
-type ConnTarget struct {
-	Host string
-	Port int
-	// SystemRoots: TLS is on and the roots are the system's.
-	SystemRoots bool
-}
-
 // Host is what basalt init --remote reaches outside the CLI: the guard's
 // versions, records and agent connection string, the engine's keys, the
 // trust profiles next to the config, the database's server errors, and the
@@ -197,7 +189,7 @@ type Host interface {
 	// ConnTarget is the host and port a connection string names, and whether
 	// its TLS check uses the system's roots (TLS on, no root certificate
 	// given); the error is the driver's own.
-	ConnTarget(dsn string) (ConnTarget, error)
+	ConnTarget(dsn string) (setup.ConnTarget, error)
 	// GuardAgentConnString is adminURL with the agent's role and password.
 	GuardAgentConnString(adminURL, role, password string) (string, error)
 	// GuardAgentVersion is the guard version q's database has, 0 when none.

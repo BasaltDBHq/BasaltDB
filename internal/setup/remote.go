@@ -222,3 +222,11 @@ type RootConfigDir interface {
 	// Close closes the directory.
 	Close()
 }
+
+// ConnTarget is where a connection string connects.
+type ConnTarget struct {
+	Host string
+	Port int
+	// SystemRoots: TLS is on and the roots are the system's.
+	SystemRoots bool
+}

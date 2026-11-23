@@ -38,6 +38,8 @@ Each row lists what a package in that layer may import from this repo. Anything 
 | cmd | app, service, inbound, config, core, lib, pkg, api, web (not outbound) |
 | pkg | pkg, lib; `pkg/setup` also service, core and outbound |
 
+A non-test file under `internal/service` imports no `github.com/jackc/pgx` package (including `pgconn`), no `database/sql` and no `net/http`: the service declares a port and an outbound adapter holds the driver. The baseline lists the services that still do; it only shrinks.
+
 Test files and the test helper packages (`guardtest`, `mcptest`, `passkeytest`, `pagetest`, `vaulttest`, `adaptertest`, `trustprofiletest`, `connecttest`, `archtest`) are exempt from the layer rules, core purity and the decision rule. The list is in the test.
 
 Every package under `internal/` sits in one of the layers above. A new top-level directory under `internal/` needs a row here and in the test.
@@ -99,7 +101,7 @@ A codec function is a function of a decision package that only decodes, parses o
 
 ## Known violations
 
-The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or regenerate the files with `go test ./internal/testkit/archtest -update`. Do not add a line to make a new violation pass.
+The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lists what is left, one file per importing package. A violation that is not listed fails the test, and so does a listed one that no longer exists: remove the line when you fix it, or regenerate the files with `go test ./internal/testkit/archtest -update`. The baseline only shrinks: do not add a line to make a new violation pass.
 
 ## Where is a feature
 

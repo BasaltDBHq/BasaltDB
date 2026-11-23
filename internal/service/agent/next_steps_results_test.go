@@ -181,7 +181,7 @@ func resultCases() map[string]resultCase {
 					Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.deps.Core.Now().Add(time.Hour)},
 					Notice:   n.ApprovalNotice, tooLargeSteps: n.steps,
 				}
-				person, links, steps, err := s.itemGuidance(item)
+				person, links, steps, err := s.approval.itemGuidance(item)
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -232,7 +232,7 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "PENDING"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)))
+				person, links, steps, err := s.approval.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -240,7 +240,7 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "EXPIRED"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)))
+				person, links, steps, err := s.approval.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
 			},
@@ -442,7 +442,7 @@ func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 func TestAnApprovedPendingItemNeedsNothingFromThePerson(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	_, _, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)))
+	_, _, steps, err := s.approval.itemGuidance(pendingItem(ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)))
 	require.NoError(t, err)
 	require.Empty(t, steps)
 }

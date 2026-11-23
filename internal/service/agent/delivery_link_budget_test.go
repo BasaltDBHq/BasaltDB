@@ -76,7 +76,7 @@ const localPages = "http://localhost:8787"
 
 func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) heldNotice {
 	t.Helper()
-	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
+	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
 		time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issue)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
@@ -160,7 +160,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, 1)
 		s.deps.Core.Commands = cmds
-		n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: lines},
+		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: lines},
 			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issueLink)
 		require.NoError(t, err)
 		requirePersonMessage(t, n.PersonMessage, n.Links)
@@ -343,7 +343,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 
 	item := PendingItem{Notice: n.ApprovalNotice}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
-	_, _, steps, err := s.itemGuidance(item)
+	_, _, steps, err := s.approval.itemGuidance(item)
 	require.NoError(t, err)
 	requireSendRequestFirst(t, steps, item.Notice.RequestFile, "list_pending approval")
 }
@@ -366,7 +366,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	n := approvalNoticeOf(t, s, 60, keepLink)
 	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
-	_, _, steps, err := s.itemGuidance(item)
+	_, _, steps, err := s.approval.itemGuidance(item)
 	require.NoError(t, err)
 	require.Len(t, steps, 1)
 	require.Equal(t, toolresult.ActionOpenLink, steps[0].Action)
@@ -382,9 +382,9 @@ func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
 	require.NotNil(t, n.RequestFile)
 	item := PendingItem{Notice: n.ApprovalNotice}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)
-	require.False(t, s.waitsForPerson(item))
+	require.False(t, s.approval.waitsForPerson(item))
 	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)
-	require.False(t, s.waitsForPerson(item))
+	require.False(t, s.approval.waitsForPerson(item))
 }
 
 // APPROVAL_INVALID sends the person back to the page the hold handed over:

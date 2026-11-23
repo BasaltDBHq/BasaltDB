@@ -53,7 +53,7 @@ func updateOff(getenv func(string) string, h host) bool {
 		// Two configs: the command itself reports it; the system one decides.
 		path = config.DefaultPath(runtime.GOOS)
 	}
-	cfg, err := loadEngineConfigAs(h.Euid(), path)
+	cfg, err := loadEngineConfigAs(appShell{}, h.Euid(), path)
 	switch {
 	case err == nil:
 		return !cfg.UpdateCheckOn()

@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
+
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Environment variables the CLI reads.
@@ -60,6 +60,9 @@ type cliIO struct {
 	// host runs what init does outside Postgres (sudo, the service probe,
 	// claude mcp add); tests use a fake.
 	host host
+	// shell is what the shell reaches outside itself: connections, the
+	// trust profiles and the hardened config open (appShell).
+	shell shellHost
 	// agentLogin logs in with the agent's credential (basalt init
 	// --remote): nil and no error when the database refuses the login.
 	agentLogin func(ctx context.Context, dsn string) (agentConn, error)
@@ -74,12 +77,38 @@ type cliIO struct {
 	fetchChain func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 }
 
+// shellHost is what the CLI shell reaches outside itself: database
+// connections, the trust profiles a connection uses and the hardened open
+// of a config file. The shell names no adapter; appShell is the real one.
+type shellHost interface {
+	// Connect opens one connection, usable through a transaction pooler.
+	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
+	// WithCertificateHint is err with what can fix it, when it is a
+	// certificate of dsn's host that did not verify.
+	WithCertificateHint(dsn string, err error) error
+	// CertificateNotVerified reports whether err is a server certificate
+	// that did not verify.
+	CertificateNotVerified(err error) bool
+	// CurrentTrustProfileSet is the trust profiles a connection opened now
+	// uses.
+	CurrentTrustProfileSet() *trustprofile.Set
+	// OSOpenTrustedFile opens path read-only for root, never through a
+	// symlink, its directory trusted only from root or owner.
+	OSOpenTrustedFile(path string, owner int) (*os.File, error)
+}
+
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
+	shell := appShell{}
 	c := &cliIO{
 		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
-		agentLogin: loginAsAgent,
-		dial:       connect,
+		shell: shell,
+		agentLogin: func(ctx context.Context, dsn string) (agentConn, error) {
+			return loginAsAgent(ctx, shell, dsn)
+		},
+		dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
+			return connect(ctx, shell, dsn)
+		},
 		fetchChain: fetchChain,
 		width:      func() int { return terminalWidth(std.out) },
 	}
@@ -161,20 +190,23 @@ func parse(fs *flag.FlagSet, args []string) error {
 
 // connect opens one connection, usable through a transaction pooler
 // (pgdial).
-func connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
-	conn, err := app.Connect(ctx, dsn)
+func connect(ctx context.Context, sh shellHost, dsn string) (*pgx.Conn, error) {
+	conn, err := sh.Connect(ctx, dsn)
 	if err != nil {
-		if changed := rootChanged(ctx, dsn, err); changed != nil {
+		if changed := rootChanged(ctx, sh, dsn, err); changed != nil {
 			return nil, fmt.Errorf("connect: %w", changed)
 		}
-		return nil, fmt.Errorf("connect: %w", app.WithCertificateHint(dsn, err))
+		return nil, fmt.Errorf("connect: %w", sh.WithCertificateHint(dsn, err))
 	}
 	return conn, nil
 }
 
-// withIO adapts a guard command to the command table.
-func withIO(f func(c *cliIO, args []string) int) func(context.Context, []string, stdio) int {
+// withIO adapts a guard command to the command table: open builds the
+// command's cliIO (newIO).
+func withIO(open func(context.Context, stdio, func(string) string) *cliIO,
+	f func(c *cliIO, args []string) int,
+) func(context.Context, []string, stdio) int {
 	return func(ctx context.Context, args []string, std stdio) int {
-		return f(newIO(ctx, std, os.Getenv), args)
+		return f(open(ctx, std, os.Getenv), args)
 	}
 }

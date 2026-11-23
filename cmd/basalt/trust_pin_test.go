@@ -114,3 +114,8 @@ func trustConfig(t *testing.T) string {
 	require.NoError(t, os.Chmod(dir, 0o700))
 	return filepath.Join(dir, "engine.json")
 }
+
+// rootChangedVia is rootChangedOn with the real shell host.
+func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Dial) error {
+	return rootChangedOn(ctx, appShell{}, dsn, err, dial)
+}

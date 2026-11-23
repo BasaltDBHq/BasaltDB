@@ -143,7 +143,7 @@ func (h *fakeHost) OpenURL(_ context.Context, link string) error {
 
 func (h *fakeHost) PagesUp(context.Context, string) bool { return h.pagesUp }
 
-func (h *fakeHost) System(io.Writer, io.Writer) osservice.System { return h.sys }
+func (h *fakeHost) System(io.Writer, io.Writer) system { return h.sys }
 
 func (h *fakeHost) Probe(_ context.Context, socket string) error {
 	h.probed = append(h.probed, socket)

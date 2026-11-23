@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -19,11 +20,6 @@ import (
 // its own reading of the chain matches. These helpers stand alone, on
 // pkg/trustpin and trustdir, so init --remote needs nothing of the removed
 // basalt trust commands.
-
-// connectPageTrust is what init --remote says about a certificate no
-// authority on this machine verifies.
-const connectPageTrust = "the person checks its certificate authority and trusts it on the connect page; " +
-	"the bot's engine pins it only after its own reading of the chain matches"
 
 // errNoEngineForTrust: the engine collects the certificate the person
 // trusted with its key, so a code without one could never finish.
@@ -52,7 +48,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 	}
 	if seen := trustpin.Check(chain, host, r.c.Now()); seen.Pinnable() {
 		fmt.Fprintf(r.c.Stderr, "basalt: %s presents a certificate authority no authority on this machine verifies: %s\n",
-			cli.TerminalText(host), connectPageTrust)
+			cli.TerminalText(host), setup.ConnectPageTrust)
 	}
 }
 

@@ -1117,8 +1117,8 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if err != nil {
 		return err
 	}
-	dsn, applied := hardenedCredential(r.c.Ctx, r.c.Probe, dsn)
-	fmt.Fprint(r.c.Stderr, applied.line())
+	dsn, applied := setup.HardenedCredential(r.c.Ctx, r.c.Probe, pgErrors{}, dsn)
+	fmt.Fprint(r.c.Stderr, applied.Line())
 	path := r.credFile
 	if r.credExists {
 		path += pendingSuffix

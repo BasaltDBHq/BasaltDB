@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -36,22 +37,22 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 
 // runEngineOn is runEngine with the host that tells root and the config dir.
 func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
-	fs := newFlagSet("engine")
+	fs := cli.NewFlagSet("engine")
 	fs.SetOutput(io.err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	pluginDebug := fs.Bool("plugin-debug", false, "show local plugins' stderr on this terminal (a foreground engine only; never logged)")
 	supervised := fs.Bool("supervise", false, "run the engine as a child and restart it when it crashes")
 	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp or crash (set by basalt mcp and --supervise)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
-		return exitUsage
+		return cli.ExitUsage
 	}
 	if !slices.Contains([]string{startedByHand, startedByMCP, startedByCrash}, *startedBy) {
 		_, _ = fmt.Fprintf(io.err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
-		return exitUsage
+		return cli.ExitUsage
 	}
 	if *supervised && *pluginDebug {
 		_, _ = fmt.Fprintln(io.err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
-		return exitUsage
+		return cli.ExitUsage
 	}
 	*configPath = configOrFallback(h, fs, *configPath)
 	// Started as root, the hardened read: the config's
@@ -69,7 +70,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
-				return exitOK
+				return cli.ExitOK
 			}
 			return fail(io.err, "engine", err)
 		}
@@ -100,7 +101,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	if err := serveRestarting(ctx, run, osRestart(log), reload, log); err != nil {
 		return fail(io.err, "engine", err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // waitsForConfig: a service engine on a first install, started before its
@@ -221,11 +222,11 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 // their own). The config is found by itself ([Config discovery]); the socket
 // directory and, when the engine serves one agent, the agent come from it.
 func runMCPAt(ctx context.Context, args []string, io stdio, h host, system string) int {
-	fs := newFlagSet("mcp")
+	fs := cli.NewFlagSet("mcp")
 	fs.SetOutput(io.err)
 	name := fs.String("agent", "", "agent name (needed only when the engine serves more than one agent)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
-		return exitUsage
+		return cli.ExitUsage
 	}
 	cfgPath, err := discoverConfig(h, system)
 	if err != nil {
@@ -245,14 +246,14 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 	}
 	if *name == "" {
 		if len(names) != 1 {
-			fail(io.err, "mcp", fmt.Errorf("%w: --agent NAME is needed: the engine serves %s", errUsage, cmp.Or(strings.Join(names, ", "), "no agent")))
-			return exitUsage
+			fail(io.err, "mcp", fmt.Errorf("%w: --agent NAME is needed: the engine serves %s", cli.ErrUsage, cmp.Or(strings.Join(names, ", "), "no agent")))
+			return cli.ExitUsage
 		}
 		*name = names[0]
 	}
 	if !config.ValidAgentName(*name) {
 		fs.Usage()
-		return exitUsage
+		return cli.ExitUsage
 	}
 	path := config.SocketPath(socketDir, *name)
 	log := engineLog(io.err)
@@ -273,7 +274,7 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 	if err := shim.ServeWith(ctx, path, app.NewEngineDownServer(down), io.in, io.out, opts); err != nil {
 		return fail(io.err, "mcp", err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // socketAgents are the agents with a socket in dir.
@@ -393,10 +394,10 @@ func runService(ctx context.Context, args []string, io stdio) int {
 func runServiceAt(ctx context.Context, args []string, io stdio, configPath string) int {
 	if len(args) == 0 || args[0] != "install" {
 		fail(io.err, "service", errors.New("want install"))
-		return exitUsage
+		return cli.ExitUsage
 	}
 	action := args[0]
-	fs := newFlagSet("service " + action)
+	fs := cli.NewFlagSet("service " + action)
 	fs.SetOutput(io.err)
 	user := fs.String("user", app.OSDefaultUser(runtime.GOOS), "OS user the engine runs as")
 	binary := fs.String("binary", "", "absolute path of the basalt binary (default: this binary)")
@@ -445,11 +446,11 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	fs.BoolVar(&a.keepCredential, flagKeepCredential, false, "install --agent: keep the agent's credential file (its role kept its password)")
 	credStdin := fs.Bool("credential-stdin", false, "install --agent: read the agent's connection string from stdin")
 	if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
-		return exitUsage
+		return cli.ExitUsage
 	}
 	if a.keepCredential && *credStdin {
 		fail(io.err, "service", errors.New("--keep-credential and --credential-stdin cannot be used together"))
-		return exitUsage
+		return cli.ExitUsage
 	}
 	bin, err := binaryPath(*binary)
 	if err != nil {
@@ -514,7 +515,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 			return fail(io.err, "service", fmt.Errorf("give %s.lock to %s: %w", configPath, *user, err))
 		}
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // maxCredentialBytes bounds the connection string read from stdin.

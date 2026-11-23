@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
@@ -170,7 +171,7 @@ func runInitRemote(c *cliIO, h remoteHost, args []string) int {
 	if err := printRemoteResult(c, res); err != nil {
 		return c.fail(err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // initRemote runs basalt init --remote and returns what it prints.
@@ -205,7 +206,7 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs := c.flags("init --remote")
 	fs.BoolVar(&remote, flagRemote, false, "set up an agent on a bot's machine: prints the connect link the person opens")
 	fs.StringVar(&f.agent, "agent", "", "the agent's name (lowercase letters, digits, _); needed only when the engine serves more than one agent")
-	if err := parse(fs, args); err != nil {
+	if err := cli.Parse(fs, args); err != nil {
 		return f, fmt.Errorf("%w (basalt init --remote takes only --agent; the connect page asks for the rest)", err)
 	}
 	f.configPath = cmp.Or(c.paths.config, c.systemConfig())
@@ -222,7 +223,7 @@ func remoteAgentName(agents []config.Agent) (string, error) {
 	case 1:
 		return agents[0].Name, nil
 	}
-	return "", fmt.Errorf("%w: this engine serves more than one agent: give --agent NAME", errUsage)
+	return "", fmt.Errorf("%w: this engine serves more than one agent: give --agent NAME", cli.ErrUsage)
 }
 
 // remoteInit is one run of basalt init --remote: the paths, the existing
@@ -384,7 +385,7 @@ func (r *remoteInit) paths() error {
 		r.f.agent = name
 	}
 	if !config.ValidAgentName(r.f.agent) {
-		return fmt.Errorf("%w: agent name %q is not valid for the engine (lowercase letters, digits and _)", errUsage, r.f.agent)
+		return fmt.Errorf("%w: agent name %q is not valid for the engine (lowercase letters, digits and _)", cli.ErrUsage, r.f.agent)
 	}
 	for i := range r.prev.Agents {
 		if r.prev.Agents[i].Name == r.f.agent {
@@ -969,7 +970,7 @@ func (r *remoteInit) setPrefix(prefix string) error {
 	r.names = guardmodel.Names{Prefix: prefix}
 	role, err := r.names.Agent(r.f.agent)
 	if err != nil {
-		return fmt.Errorf("%w: %w", errUsage, err)
+		return fmt.Errorf("%w: %w", cli.ErrUsage, err)
 	}
 	r.role = role
 	return nil
@@ -1109,7 +1110,7 @@ func encodeSetup(p setupcode.Payload) (string, error) {
 	case errors.Is(err, setupcode.ErrCodeTooLong):
 		return "", fmt.Errorf("the setup code would be longer than %d characters: name fewer tables", setupcode.MaxCodeLen)
 	case err != nil:
-		return "", fmt.Errorf("%w: %s", errUsage, setupcode.InvalidDetail(err))
+		return "", fmt.Errorf("%w: %s", cli.ErrUsage, setupcode.InvalidDetail(err))
 	}
 	return code, nil
 }
@@ -1274,7 +1275,7 @@ func printRemoteResult(c *cliIO, res RemoteInitResult) error {
 // printRemoteMCP prints the basalt mcp command the agent registers.
 func printRemoteMCP(c *cliIO, res RemoteInitResult) error {
 	_, err := fmt.Fprintf(c.stdout, "then add this MCP server to the agent's client, running as OS user %s:\n  %s\n",
-		res.osUser, shellJoin(res.MCPCommand))
+		res.osUser, cli.ShellJoin(res.MCPCommand))
 	return err
 }
 

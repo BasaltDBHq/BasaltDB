@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // localInit runs basalt init on the person's machine with the fake host.
@@ -74,7 +75,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	// The engine is still starting, then waits for its config.
 	h.setupErrs = []error{errors.New("connection refused"), errors.New("connection refused")}
 	r, read := localInit(t, h, "--demo")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 
 	script, err := osservice.InstallScript("linux", fakeBin)
 	require.NoError(t, err)
@@ -102,7 +103,7 @@ func TestInitWithoutDemoOpensTheInstallOfARealDatabase(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
 	r, read := localInit(t, h, "--agent", "sales_bot")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Len(t, h.dialogs, 1, "the engine service is installed through the dialog, as for --demo")
 	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
 	require.Len(t, lines, 2, r.stdout)
@@ -117,7 +118,7 @@ func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
 	h := newFakeHost(t)
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 	r, _ := localInit(t, h, "--demo", "--agent", "sales_bot")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.dialogs)
 	require.Equal(t, "sales_bot", linkJob(t, strings.SplitN(r.stdout, "\n", 2)[0]).Agent)
 }
@@ -129,7 +130,7 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 		h.setupCodes = []string{localsetup.CodeJobUnavailable}
 		r, read := localInitWithin(t, 2*time.Second, h, args...)
-		require.Equal(t, exitOK, r.code, "%v: %s", args, r.stderr)
+		require.Equal(t, cli.ExitOK, r.code, "%v: %s", args, r.stderr)
 		require.Contains(t, r.stderr, "after a Remove on that page, run basalt init once more", "no Remove within the wait: init returns, and removes nothing")
 		require.Empty(t, h.dialogs, "no password: the service is there")
 		lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
@@ -154,11 +155,11 @@ func TestInitStopsBeforeTheDialog(t *testing.T) {
 		code int
 		want string
 	}{
-		{"an admin-flow flag", []string{"--demo", "--write", "public.leads"}, nil, exitUsage, "takes only --agent and --demo"},
-		{"the old --yes", []string{"--demo", "--yes"}, nil, exitUsage, "takes only --agent and --demo"},
-		{"a bad agent name", []string{"--demo", "--agent", "Bad-Name"}, nil, exitUsage, "is not a name an agent can have"},
-		{"root", []string{"--demo"}, func(h *fakeHost) { h.euid = 0 }, exitUsage, "not root"},
-		{"no dialog", []string{"--demo"}, func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (/usr/bin/pkexec is missing)", osservice.ErrNoDialog) }, exitError, "cannot be shown here"},
+		{"an admin-flow flag", []string{"--demo", "--write", "public.leads"}, nil, cli.ExitUsage, "takes only --agent and --demo"},
+		{"the old --yes", []string{"--demo", "--yes"}, nil, cli.ExitUsage, "takes only --agent and --demo"},
+		{"a bad agent name", []string{"--demo", "--agent", "Bad-Name"}, nil, cli.ExitUsage, "is not a name an agent can have"},
+		{"root", []string{"--demo"}, func(h *fakeHost) { h.euid = 0 }, cli.ExitUsage, "not root"},
+		{"no dialog", []string{"--demo"}, func(h *fakeHost) { h.noDialog = fmt.Errorf("%w (/usr/bin/pkexec is missing)", osservice.ErrNoDialog) }, cli.ExitError, "cannot be shown here"},
 	} {
 		h := newFakeHost(t)
 		if v.edit != nil {
@@ -184,7 +185,7 @@ func TestInitSaysWhenTheEngineNeverAnswers(t *testing.T) {
 	}
 	h.setupErrs = errs
 	r, _ := localInitWithin(t, time.Second, h, "--demo")
-	require.Equal(t, exitError, r.code)
+	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, "did not answer on http://localhost:8787")
 	require.Empty(t, r.stdout)
 }
@@ -207,7 +208,7 @@ func TestInitSaysWhenTheEngineServiceKeepsStopping(t *testing.T) {
 	h.setupErrs, h.runs, h.lastExit = refused(), []int{3, 3, 4}, 1
 	start := time.Now()
 	r, _ := localInitWithin(t, 5*time.Second, h, "--demo")
-	require.Equal(t, exitError, r.code)
+	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, "the engine service keeps stopping: it started 4 times and last exited with code 1")
 	require.Contains(t, r.stderr, "journalctl -u "+osservice.SystemdUnitName)
 	require.Less(t, time.Since(start), 2*time.Second, "no wait for the setup page's whole bound")
@@ -264,7 +265,7 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 	h.setupCodes = []string{localsetup.CodeEngineRemoved}
 	r, read := localInit(t, h)
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.opened)
 	require.Empty(t, r.stdout)
 	script, err := osservice.RemoveScript("linux")
@@ -292,7 +293,7 @@ func TestInitRemovalStops(t *testing.T) {
 		h.setupCodes = []string{localsetup.CodeEngineRemoved}
 		v.edit(h)
 		r, _ := localInit(t, h)
-		require.Equal(t, exitError, r.code, v.name)
+		require.Equal(t, cli.ExitError, r.code, v.name)
 		require.Contains(t, r.stderr, v.want, v.name)
 	}
 }
@@ -305,7 +306,7 @@ func TestInitRemovesTheServiceWhenTheRemoveLandsWithinTheWait(t *testing.T) {
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 	h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeEngineRemoved}
 	r, _ := localInit(t, h)
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Len(t, h.opened, 1, "init opened the Update/Remove link first")
 	script, err := osservice.RemoveScript("linux")
 	require.NoError(t, err)
@@ -325,7 +326,7 @@ func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
 		localsetup.CodeJobUnavailable, localsetup.CodeJobUnavailable, localsetup.CodeResetAsked, localsetup.CodeInvalidArgument,
 	}
 	r, read := localInit(t, h)
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	script, err := osservice.ResetScript("linux")
 	require.NoError(t, err)
 	require.Equal(t, []string{script}, h.dialogs, "one password, in the administrator dialog, for the fixed reset script")
@@ -357,7 +358,7 @@ func TestInitResetStops(t *testing.T) {
 		h.setupCodes = []string{localsetup.CodeJobUnavailable, localsetup.CodeResetAsked}
 		v.edit(h)
 		r, _ := localInit(t, h)
-		require.Equal(t, exitError, r.code, v.name)
+		require.Equal(t, cli.ExitError, r.code, v.name)
 		require.Contains(t, r.stderr, v.want, v.name)
 		require.Len(t, h.opened, 1, "%s: no install link", v.name)
 		if v.name == "no dialog" {
@@ -369,7 +370,7 @@ func TestInitResetStops(t *testing.T) {
 	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
 	h.setupCodes = []string{localsetup.CodeResetAsked, localsetup.CodeJobUnavailable}
 	r, _ := localInitWithin(t, 3*time.Second, h)
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.dialogs, "a No left from an earlier page resets nothing")
 	require.Len(t, h.opened, 1)
 	require.Equal(t, localsetup.JobChange, linkJob(t, h.opened[0]).Job)
@@ -407,7 +408,7 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 		c.goos, c.host, c.interactive = "linux", newFakeHost(t), tc.interactive
 		code := runInit(c, appSetupHost{}, []string{"--demo"})
 		cancel()
-		require.Equal(t, exitOK, code, "%s: %s", tc.name, stderr.String())
+		require.Equal(t, cli.ExitOK, code, "%s: %s", tc.name, stderr.String())
 		require.NotContains(t, read, envAdminURL, tc.name)
 		require.NotContains(t, stdout.String()+stderr.String(), "pw@db.example", tc.name)
 	}

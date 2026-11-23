@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -50,7 +51,7 @@ func TestTopLevelHelpHidesEngine(t *testing.T) {
 	// The command is hidden, not gone: it still parses its own flags.
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"engine", "--help"}, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr})
-	require.Equal(t, exitUsage, code)
+	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, stderr.String(), "-config")
 	require.NotContains(t, stderr.String(), "unknown command")
 }

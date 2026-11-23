@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // requireEmptyDir fails when dir holds anything: root wrote nothing there.
@@ -49,7 +50,7 @@ func TestInitRemoteAsRootRefusesASymlinkedAgentsDir(t *testing.T) {
 			require.NoError(t, os.Symlink(elsewhere, agents))
 
 			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey)
-			require.Equal(t, exitError, r.code, r.stdout)
+			require.Equal(t, cli.ExitError, r.code, r.stdout)
 			require.Contains(t, r.stderr, "a symlink is refused")
 			requireEmptyDir(t, elsewhere)
 		})
@@ -131,10 +132,10 @@ func TestEngineAsRootUsesTheHardenedConfigRead(t *testing.T) {
 		link := filepath.Join(dir, "engine.json")
 		require.NoError(t, os.Symlink(other, link))
 		code, stderr := run(t, 0, link)
-		require.NotEqual(t, exitOK, code)
+		require.NotEqual(t, cli.ExitOK, code)
 		require.Contains(t, stderr, "a symlink, which is refused")
 		code, stderr = run(t, 501, link)
-		require.NotEqual(t, exitOK, code)
+		require.NotEqual(t, cli.ExitOK, code)
 		require.Contains(t, stderr, "invalid character", "not as root, the plain read follows the link")
 	})
 	t.Run("writable by others", func(t *testing.T) {
@@ -143,7 +144,7 @@ func TestEngineAsRootUsesTheHardenedConfigRead(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte(notJSON), 0o600))
 		require.NoError(t, os.Chmod(path, 0o666))
 		code, stderr := run(t, 0, path)
-		require.NotEqual(t, exitOK, code)
+		require.NotEqual(t, cli.ExitOK, code)
 		require.Contains(t, stderr, "writable by group or others")
 	})
 }

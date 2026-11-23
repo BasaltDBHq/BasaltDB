@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -54,7 +55,7 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 		}
 		v, err := pluginhost.Verify(root, k, p.ManifestSHA256, trust, pluginmodel.ModeService)
 		if err != nil {
-			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: %s\n", k, terminalText(verifyFailure(err)))
+			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: %s\n", k, cli.TerminalText(verifyFailure(err)))
 			continue
 		}
 		if e, ok := unitEntry(p, v); ok {
@@ -85,10 +86,10 @@ func checkAgentOSUserWith(osUser, engineUser string, lookupGroup func(string) (*
 	groups func(string) ([]string, error),
 ) error {
 	if strings.HasPrefix(osUser, "basalt-plugin-") || strings.HasPrefix(osUser, "_basalt-plugin-") {
-		return fmt.Errorf("%w: --os-user %s is named as a plugin's OS user; Basalt keeps those names for plugins", errUsage, osUser)
+		return fmt.Errorf("%w: --os-user %s is named as a plugin's OS user; Basalt keeps those names for plugins", cli.ErrUsage, osUser)
 	}
 	if osUser == engineUser {
-		return fmt.Errorf("%w: --os-user %s is the engine's own OS user; give the agent an OS user of its own", errUsage, osUser)
+		return fmt.Errorf("%w: --os-user %s is the engine's own OS user; give the agent an OS user of its own", cli.ErrUsage, osUser)
 	}
 	g, err := lookupGroup(engineUser)
 	var unknown user.UnknownGroupError
@@ -104,7 +105,7 @@ func checkAgentOSUserWith(osUser, engineUser string, lookupGroup func(string) (*
 	}
 	if slices.Contains(gids, g.Gid) {
 		return fmt.Errorf("%w: --os-user %s is in the engine's group %s, which reaches plugin sockets and the engine's config; "+
-			"take it out of that group or give the agent another OS user", errUsage, osUser, engineUser)
+			"take it out of that group or give the agent another OS user", cli.ErrUsage, osUser, engineUser)
 	}
 	return nil
 }

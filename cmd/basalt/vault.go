@@ -5,6 +5,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // The Vault in basalt init and basalt status (CONTRACT.md, Vault channel,
@@ -113,7 +114,7 @@ func (v VaultMode) other() VaultMode {
 func chooseVault(given VaultMode, operatedBy OperatedBy, pagesURL, defaultWhy string) (vaultChoice, error) {
 	if given == VaultModeOn && pagesURL != links.Portal {
 		return vaultChoice{}, fmt.Errorf("%w: --vault=on needs the portal's pages (%s), and these are %s: "+
-			"a passkey registered there cannot sign on the portal, so the engine would not use the Vault", errUsage, links.Portal, pagesURL)
+			"a passkey registered there cannot sign on the portal, so the engine would not use the Vault", cli.ErrUsage, links.Portal, pagesURL)
 	}
 	if operatedBy == OperatedByAgent && pagesURL == links.Portal {
 		return vaultChoice{given: given, def: VaultModeOn, why: "default for --operated-by=agent; --vault=off to turn it off"}, nil

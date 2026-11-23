@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // testAsBasaltEnv makes the test binary run main() (see TestMain).
@@ -222,7 +223,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	require.NoError(t, err, "its output goes to the engine log")
 
 	require.NoError(t, inW.Close())
-	require.Equal(t, exitOK, <-done, out.String())
+	require.Equal(t, cli.ExitOK, <-done, out.String())
 }
 
 func parentOf(pid int) (int, error) {
@@ -251,7 +252,7 @@ func TestSuperviseBesideAnEngineStartedByHand(t *testing.T) {
 
 	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
 
-	require.Equal(t, exitOK, code, stderr.String())
+	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another engine already runs for this config")
 	require.NotContains(t, stderr.String(), "restarting it", "no crash loop")
 }

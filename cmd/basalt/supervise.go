@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // The values of --started-by: who started this engine.
@@ -141,7 +142,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 	release, err := config.LockFile(filepath.Join(cfg.SocketDir, superviseLock))
 	if errors.Is(err, config.ErrLocked) {
 		_, _ = fmt.Fprintln(io.err, "basalt engine: another basalt engine --supervise runs for this config")
-		return exitOK
+		return cli.ExitOK
 	}
 	if err != nil {
 		return fail(io.err, "engine", err)
@@ -162,7 +163,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 	if err := supervise(ctx, o); err != nil {
 		return fail(io.err, "engine", err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // superviseConfig is the config the supervisor needs (its socket and state

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 func skipIfSystemConfig(t *testing.T) {
@@ -36,7 +37,7 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	r := remoteWith(t, userRemote(h), "", "--agent", "bot")
 	want := []string{fakeBin, "mcp", "--agent", "bot"}
 	require.Equal(t, want, r.res.MCPCommand)
-	require.Contains(t, r.stdout, "  "+shellJoin(want)+"\n")
+	require.Contains(t, r.stdout, "  "+cli.ShellJoin(want)+"\n")
 	require.NotContains(t, r.stdout, "--config")
 	require.FileExists(t, filepath.Join(h.configDir, perUserDirName, "engine.json"))
 }
@@ -49,7 +50,7 @@ func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 	r := remoteWith(t, userRemote(h), cfg, "--agent", "lead_bot")
 	want := []string{fakeBin, "mcp", "--agent", "lead_bot"}
 	require.Equal(t, want, r.res.MCPCommand)
-	require.Contains(t, r.stdout, "  "+shellJoin(want)+"\n")
+	require.Contains(t, r.stdout, "  "+cli.ShellJoin(want)+"\n")
 }
 
 // Root/service init --remote with a service config returns the command the
@@ -76,7 +77,7 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 		func(string) string { return "" })
 	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
 	code := runInit(c, appSetupHost{}, []string{"--remote", "--agent", "bot"})
-	require.Equal(t, exitError, code, stderr.String())
+	require.Equal(t, cli.ExitError, code, stderr.String())
 	require.Contains(t, stderr.String(), system)
 	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
 	require.ErrorIs(t, err, os.ErrNotExist, "no second config")

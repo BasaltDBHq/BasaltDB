@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -32,7 +33,7 @@ func guarded(args []string, std stdio, f func() int) (code int) {
 		if v == nil {
 			return
 		}
-		code = exitError
+		code = cli.ExitError
 		reportPanic(std.err, commandName(args), v, debug.Stack())
 	}()
 	return f()
@@ -63,12 +64,12 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 		rec.Shared = command == "engine" && dir == dirs[0]
 		rep, err := rec.Save(app.CrashInput{Command: command, Kind: app.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
 		if err == nil {
-			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", rep.ID, terminalText(dir))
+			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", rep.ID, cli.TerminalText(dir))
 			return
 		}
 		lastErr = err
 	}
-	fmt.Fprintf(w, "basalt: crashed, and the crash report could not be saved (%s)\n", terminalText(lastErr.Error()))
+	fmt.Fprintf(w, "basalt: crashed, and the crash report could not be saved (%s)\n", cli.TerminalText(lastErr.Error()))
 }
 
 // newRecorder is the recorder for this process and the directories to try,

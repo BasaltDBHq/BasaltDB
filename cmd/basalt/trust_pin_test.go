@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -78,7 +79,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
 	code := runInit(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
-	require.Equal(t, exitOK, code, errb.String())
+	require.Equal(t, cli.ExitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
 }

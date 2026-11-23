@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // The surface budget (contract/surface.json): every command, flag, MCP
@@ -89,8 +90,8 @@ func commandKey(setName string) string {
 func probeFlags(t *testing.T, run func(context.Context, []string, stdio) int, args []string) map[string][]string {
 	t.Helper()
 	var made []*flag.FlagSet
-	flagSetMade = func(fs *flag.FlagSet) { made = append(made, fs) }
-	defer func() { flagSetMade = nil }()
+	cli.FlagSetMade = func(fs *flag.FlagSet) { made = append(made, fs) }
+	defer func() { cli.FlagSetMade = nil }()
 	var out bytes.Buffer
 	run(context.Background(), append(append([]string{}, args...), "-h"), stdio{in: strings.NewReader(""), out: &out, err: &out})
 	got := map[string][]string{}
@@ -111,7 +112,7 @@ var extraProbes = map[string][][]string{
 }
 
 // flagSetNames matches the literal names the source gives to flag sets.
-var flagSetNames = regexp.MustCompile(`(?:\.flags|newFlagSet)\("([a-z]+(?: [a-z-]+)+)"`)
+var flagSetNames = regexp.MustCompile(`(?:\.flags|NewFlagSet)\("([a-z]+(?: [a-z-]+)+)"`)
 
 func actualCommandsAndFlags(t *testing.T, actual map[string]surfaceEntry) {
 	t.Helper()

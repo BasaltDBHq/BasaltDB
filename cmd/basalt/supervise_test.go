@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // superviseRig is supervise with a fake clock: a child "runs" by moving the
@@ -175,7 +176,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 
 	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
 
-	require.Equal(t, exitOK, code, stderr.String())
+	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another basalt engine --supervise runs")
 }
 
@@ -183,7 +184,7 @@ func TestStartedByRefusesUnknownValue(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
 	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
-	require.Equal(t, exitUsage, code)
+	require.Equal(t, cli.ExitUsage, code)
 }
 
 func TestLastStopIsWrittenAndCleared(t *testing.T) {

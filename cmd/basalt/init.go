@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"os/user"
-	"strings"
 )
 
 // runInit: basalt init. --remote makes a setup code for an agent-operated
@@ -15,15 +14,6 @@ func runInit(c *cliIO, h remoteHost, args []string) int {
 		return runInitRemote(c, h, args)
 	}
 	return runInitLocal(c, args)
-}
-
-// shellQuote quotes s for a POSIX shell when it has anything but plain
-// path characters.
-func shellQuote(s string) string {
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./:=@") == "" {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // invokingUser is the person running init: under sudo, the user who ran

@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -20,7 +19,6 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
-	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
@@ -101,40 +99,10 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		cfg = next
 		return nil
 	}
-	if err := engine.ServeRestarting(ctx, run, osRestart(log), reload, log); err != nil {
+	if err := engine.ServeRestarting(ctx, run, app.OSRestart(log), reload, log); err != nil {
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
-}
-
-// osRestart watches the binary this engine was started from. When it
-// cannot (its path cannot be read), the engine runs without the restart.
-func osRestart(log *slog.Logger) engine.BinaryRestart {
-	sys := binwatch.OS{}
-	exe, err := os.Executable()
-	if err != nil {
-		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
-		return engine.BinaryRestart{}
-	}
-	path, err := binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, sys.Stat)
-	if err != nil {
-		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
-		return engine.BinaryRestart{}
-	}
-	w, err := binwatch.New(path, exe, sys, os.Geteuid() == 0, log)
-	if err != nil {
-		log.Warn("the engine does not restart onto an upgraded binary: its binary cannot be watched", "path", path, "err", err)
-		return engine.BinaryRestart{}
-	}
-	path = w.Path()
-	log.Info("the engine restarts onto an upgraded binary installed at its path", "path", path)
-	argv := slices.Clone(os.Args)
-	return engine.BinaryRestart{Upgrade: w.Wait, Exec: func() error {
-		if err := w.Recheck(); err != nil {
-			return err
-		}
-		return binwatch.Exec(path, argv, os.Environ())
-	}}
 }
 
 // runMCP is the agent's MCP server: a relay from stdio to the agent's engine

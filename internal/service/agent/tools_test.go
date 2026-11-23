@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
+	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 
@@ -71,7 +72,8 @@ func deps() Deps {
 
 // servedTools are s's tools as the engine lists them (app's agentTools,
 // whose tests pin the list and its order): each group's tools under their
-// contracts, around s.Wrap.
+// contracts, around s.Wrap. It copies app's composer: a layer app adds
+// around Wrap, or a group it adds or reorders, must be added here too.
 func servedTools(s *Service) []guidance.Tool {
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
@@ -82,7 +84,7 @@ func servedTools(s *Service) []guidance.Tool {
 	}
 	tools := RunStartTools(s, mount)
 	for _, list := range [][]guidance.Tool{
-		WriteTools(s, mount), RunTools(s, mount), approvalmcp.Tools(s, mount), revertmcp.Tools(s, mount),
+		WriteTools(s, mount), ledgermcp.Tools(s, mount), RunTools(s, mount), approvalmcp.Tools(s, mount), revertmcp.Tools(s, mount),
 		PluginTools(s, mount), DescribeTools(s, mount), StatusTools(s, mount),
 	} {
 		tools = append(tools, list...)
@@ -111,7 +113,7 @@ func TestHeldWriteDescriptionsWaitOnce(t *testing.T) {
 func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
-		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": runHistoryArgs{},
+		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{},
 		"list_runs": action.RunListParams{},
 		"describe":  describeArgs{},
 	}

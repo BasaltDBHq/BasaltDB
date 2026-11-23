@@ -30,6 +30,12 @@ func (s *Service) History(ctx context.Context, p action.ChangeListParams) (Histo
 	return s.ledger.History(ctx, p)
 }
 
+// Record is the wire record of one change and its rows, as the ledger
+// renders it (run_history).
+func (s *Service) Record(ch action.Change, rows []action.RowChange) any {
+	return s.deps.Write.Record(ch, rows)
+}
+
 // ListRuns returns one page of the agent's own runs with what each did.
 func (s *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	return s.agent.ListRuns(ctx, p)

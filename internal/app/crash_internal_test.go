@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 )
 
 func TestOnPanicSavesAScrubbedSharedReport(t *testing.T) {

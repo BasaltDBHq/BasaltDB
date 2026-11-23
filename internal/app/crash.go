@@ -7,8 +7,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 

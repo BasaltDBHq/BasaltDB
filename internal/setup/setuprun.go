@@ -42,6 +42,9 @@ const (
 	SetuprunCodeClassesChanged = "CLASSES_CHANGED"
 	// SetuprunCodeSetupFailed: the database or its driver failed; nothing changed.
 	SetuprunCodeSetupFailed = "SETUP_FAILED"
+	// SetuprunCodeGuardUnusable: the database has a basalt_meta this build
+	// can neither install over nor update; nothing changed.
+	SetuprunCodeGuardUnusable = "GUARD_UNUSABLE"
 )
 
 // SetuprunRefusalError is a refused setup: a code and the sentence the person reads.
@@ -469,7 +472,7 @@ func (s *Setup) readDatabase(ctx context.Context, q Querier) (setupcode.Database
 	if db.Prefix == s.Names.Prefix {
 		// Another prefix is PREFIX_MISMATCH, from the checks.
 		if err := s.be.CheckUsable(ctx, q); s.be.UnusableInstall(err) {
-			return db, state, &SetuprunRefusalError{Code: SetuprunCodeSetupFailed, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + s.be.RemoveOldInstallDoc() + " says how. Nothing changed."}
+			return db, state, &SetuprunRefusalError{Code: SetuprunCodeGuardUnusable, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + s.be.RemoveOldInstallDoc() + " says how. Nothing changed."}
 		} else if err != nil {
 			return db, state, err
 		}
@@ -584,8 +587,8 @@ func rowCount(n int64) string {
 // Plan builds the SQL with the person's answers (step 6): the migrations up
 // to the code's guard.to, the role (taken over only when it is a plain
 // agent), the grants, the policies on allRows, attach, the engine, and
-// record_setup last. An answer about a table p did not ask about is
-// refused.
+// record_setup last. An answer about a table p did not ask about, or a
+// table named twice, is refused.
 func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Script, error) {
 	policies, err := p.policies(allRows)
 	if err != nil {

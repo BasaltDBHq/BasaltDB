@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -60,7 +61,7 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 	t.Cleanup(func() { _ = dict.Close() })
 	env := agenttest.PgService(t, a.URL, agenttest.WithReturned(returned), agenttest.WithDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
 		if obs == nil {
-			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
+			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(pool))
 		}
 		deps.Write.PII = obs
 	}))

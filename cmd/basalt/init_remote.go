@@ -258,8 +258,9 @@ type remoteInit struct {
 	// and closes files.
 	unlock func()
 	// loggedIn: the role logs in with the credential (or its .pending one,
-	// then moved over the credential file). installed is the guard version
-	// it sees, recorded whether the pending setup is recorded.
+	// then moved over the credential file once the pending setup is
+	// recorded). installed is the guard version it sees, recorded whether
+	// the pending setup is recorded.
 	loggedIn, recorded bool
 	installed          int
 	// stateDir is the engine's state directory, where its key file is.
@@ -580,10 +581,12 @@ func (r *remoteInit) connection() error {
 			return err
 		}
 	}
-	if pending != nil && pending.target != r.target {
+	// A credential for another database, or another role, is not this
+	// one's: the engine uses a .pending only for its own database and role.
+	if pending != nil && !r.sameLogin(pending) {
 		pending = nil
 	}
-	if cred != nil && cred.target != r.target {
+	if cred != nil && !r.sameLogin(cred) {
 		cred = nil
 	}
 	// The password this machine holds for the database: the newest one.
@@ -597,6 +600,20 @@ func (r *remoteInit) connection() error {
 	// pinned here.
 	r.noteUnknownAuthority()
 	return r.login(pending, cred)
+}
+
+// sameLogin reports whether c names the database and the role of the base
+// credential (r.base, r.target).
+func (r *remoteInit) sameLogin(c *credential) bool {
+	return c.target == r.target && urlUser(c.url) == urlUser(r.base)
+}
+
+// urlUser is u's user name, "" when it names none.
+func urlUser(u *url.URL) string {
+	if u == nil || u.User == nil {
+		return ""
+	}
+	return u.User.Username()
 }
 
 // readCredentialIfAny reads a credential file with the no-follow checks,
@@ -630,19 +647,23 @@ func readCredentialIfAny(files credFiles, path string) (*credential, error) {
 
 // login logs in as the agent: with the .pending credential first (a
 // setup the person may have run), which then replaces the credential
-// file, else with the credential file. A refused login is not an error:
-// the role cannot log in. An unreachable database is, and changes nothing.
+// file once the pending setup is recorded, as the engine promotes it, else
+// with the credential file. A refused login is not an error: the role
+// cannot log in. An unreachable database is, and changes nothing.
 func (r *remoteInit) login(pending, cred *credential) error {
 	if pending != nil {
 		conn, err := r.c.AgentLogin(r.c.Ctx, pending.dsn)
 		switch {
 		case err == nil:
 			defer conn.Close(r.c.Ctx)
-			if err := r.promote(pending); err != nil {
+			r.password = pending.password()
+			if err := r.inspect(conn); err != nil {
 				return err
 			}
-			r.password = pending.password()
-			return r.inspect(conn)
+			if !r.recorded {
+				return nil // .pending stays until its setup is recorded
+			}
+			return r.promote(pending)
 		case r.rootChanged(pending.dsn, err):
 			r.certChanged = true
 			return nil
@@ -671,14 +692,17 @@ func (r *remoteInit) login(pending, cred *credential) error {
 }
 
 // promote moves the .pending credential, which logs in, over the
-// credential file, once the .pending path still names the file read.
+// credential file, once the .pending path still names the file read, a
+// regular file with one link.
 func (r *remoteInit) promote(pending *credential) error {
 	pendingFile := r.credFile + pendingSuffix
 	now, err := r.files.stat(pendingFile)
 	if err != nil {
 		return err
 	}
-	if !os.SameFile(now, pending.file) {
+	// The engine's check (config.SameCredentialFile): the same file, still
+	// a regular file with one link.
+	if !os.SameFile(now, pending.file) || config.CheckPlainFile(now) != nil {
 		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
 	}
 	if err := r.files.rename(pendingFile, r.credFile); err != nil {
@@ -1140,11 +1164,17 @@ func encodeSetup(p setupcode.Payload) (string, error) {
 // writeCredential writes a new password's connection string. It never
 // replaces a credential file that exists: a login refused now may be a
 // transient error, and the old password may still be the one that works,
-// so the new one waits in .pending until a login proves it (the engine,
-// or the next run of init, then moves it over). Only the first credential
-// goes straight to the credential file. Both 0600, atomic, never through
-// a symlink (config.WriteFile). A password this machine already holds is
-// not written again.
+// so the new one waits in .pending until a login proves it and the pending
+// setup is recorded (the engine, or the next run of init, then moves it
+// over). Only the first credential goes straight to the credential file.
+// Both 0600, atomic, never through a symlink (config.WriteFile). A password
+// this machine already holds is not written again.
+//
+// One state is left as is: with the credential file deleted by hand, a
+// .pending that logs in for a setup not recorded, and a new password
+// (confirmedNotFound), the new password goes to the credential file while
+// the working one stays in .pending. init never deletes the credential
+// file itself, so only a hand edit reaches this state.
 func (r *remoteInit) writeCredential(p plan) error {
 	if !p.newPassword {
 		return nil

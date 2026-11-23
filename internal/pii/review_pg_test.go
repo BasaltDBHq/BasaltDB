@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -37,7 +38,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
-	require.NoError(t, classes.Load(ctx, pool))
+	require.NoError(t, classes.Load(ctx, pgquerier.Neutralize(pool)))
 
 	// Every connection of the pool held by a transaction.
 	txs := make([]pgx.Tx, 2)
@@ -48,7 +49,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	// The tick needs a connection: it waits for one.
 	tickDone := make(chan error, 1)
 	go func() {
-		_, err := classes.Tick(ctx, pool)
+		_, err := classes.Tick(ctx, pgquerier.Neutralize(pool))
 		tickDone <- err
 	}()
 	time.Sleep(200 * time.Millisecond)
@@ -116,7 +117,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	}
 	wg.Go(func() {
 		for range 4 {
-			_, err := classes.Tick(ctx, pool)
+			_, err := classes.Tick(ctx, pgquerier.Neutralize(pool))
 			report(err)
 		}
 	})
@@ -130,7 +131,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 		for range 4 {
 			res, err := reader.Read(ctx, `SELECT label FROM plain`, nil, action.Statement{})
 			if err == nil {
-				err = obs.Observe(ctx, pool, res.Columns, res.Rows)
+				err = obs.Observe(ctx, pgquerier.Neutralize(pool), res.Columns, res.Rows)
 			}
 			report(err)
 		}
@@ -202,18 +203,18 @@ func TestClassifyBetweenALoadsReadsIsReloadedAtTheNextTick(t *testing.T) {
 
 	tx, err := f.pool.BeginTx(ctx, pgx.TxOptions{}) // read committed, as a write's
 	require.NoError(t, err)
-	got, err := m.Resolve(ctx, tx, []ColumnRef{note})
+	got, err := m.Resolve(ctx, pgquerier.Neutralize(tx), []ColumnRef{note})
 	require.NoError(t, err)
 	require.NoError(t, tx.Rollback(ctx))
 	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class, "the classes were read after the classify committed")
 
-	reloaded, err := m.Tick(ctx, f.pool)
+	reloaded, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.True(t, reloaded, "the marks were read before it: the tick sees the catalog move and reloads")
-	reloaded, err = m.Tick(ctx, f.pool)
+	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.False(t, reloaded, "classes and marks agree again")
-	got, err = m.Resolve(ctx, f.pool, []ColumnRef{note})
+	got, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{note})
 	require.NoError(t, err)
 	require.Equal(t, guardmodel.EntityOther, got[0].EntityType)
 }

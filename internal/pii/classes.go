@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 var piidictPsql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
@@ -128,7 +129,7 @@ func (m *Map) Load(ctx context.Context, db PiidictQuerier) error {
 // load loads a snapshot. fresh asks for a load begun after this call (an
 // unknown oid, a moved catalog); otherwise a load already running will do.
 func (m *Map) load(ctx context.Context, db PiidictQuerier, fresh bool) error {
-	if _, ok := db.(beginner); !ok {
+	if _, ok := beginnerOf(db); !ok {
 		// Inside the caller's transaction: read on its own connection.
 		m.mu.Lock()
 		seq := m.nextSeq
@@ -372,7 +373,7 @@ type beginner interface {
 // db is a pool, so the map and its marks come from one snapshot; inside a
 // caller's transaction (a write's RETURNING) it runs there.
 func withSnapshot[T any](ctx context.Context, db PiidictQuerier, read func(context.Context, PiidictQuerier) (T, error)) (T, error) {
-	b, ok := db.(beginner)
+	b, ok := beginnerOf(db)
 	if !ok {
 		return read(ctx, db)
 	}
@@ -383,7 +384,18 @@ func withSnapshot[T any](ctx context.Context, db PiidictQuerier, read func(conte
 	}
 	// Read-only: nothing to commit.
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	return read(ctx, tx)
+	return read(ctx, pgquerier.Neutralize(tx))
+}
+
+// beginnerOf is db as a pool. A pgx handle comes wrapped
+// (pgquerier.Neutralize), so the pool is the handle inside.
+func beginnerOf(db PiidictQuerier) (beginner, bool) {
+	if n, ok := db.(pgquerier.Neutral); ok {
+		b, ok := n.Pgx().(beginner)
+		return b, ok
+	}
+	b, ok := db.(beginner)
+	return b, ok
 }
 
 // readSnapshot reads the marks first, then the classes. Inside a write's
@@ -413,7 +425,7 @@ func readSnapshot(ctx context.Context, db PiidictQuerier, between func()) (*snap
 		ref ColumnRef
 		c   Class
 	)
-	_, err = pgx.ForEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &c.Schema, &c.Table, &c.Column, &c.Class, &c.EntityType, &c.PhoneRegion}, func() error {
+	err = forEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &c.Schema, &c.Table, &c.Column, &c.Class, &c.EntityType, &c.PhoneRegion}, func() error {
 		s.cols[ref] = c
 		s.oids[ref.TableOID] = struct{}{}
 		return nil
@@ -447,7 +459,7 @@ func readMarks(ctx context.Context, db PiidictQuerier) (marks, error) {
 		fp []byte
 		at time.Time
 	)
-	_, err = pgx.ForEachRow(rows, []any{&fp, &at}, func() error {
+	err = forEachRow(rows, []any{&fp, &at}, func() error {
 		classified := at
 		mk.catalogPrint, mk.classifiedAt = bytes.Clone(fp), &classified
 		return nil

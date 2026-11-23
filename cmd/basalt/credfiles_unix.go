@@ -242,7 +242,7 @@ func (r rootCredFiles) lock(path string) (func(), error) {
 	// engine's user), as config.LockFile does, so the engine can open it.
 	unlock, err := config.LockAt(r.dir, name)
 	if errors.Is(err, config.ErrLocked) {
-		return nil, fmt.Errorf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
+		return nil, lockedError{path: path}
 	}
 	return unlock, err
 }

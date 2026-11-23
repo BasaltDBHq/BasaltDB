@@ -166,7 +166,17 @@ func readCredentialFrom(f *os.File, owner func(uid uint32) (ok bool, want string
 func lockFile(path string) (func(), error) {
 	unlock, err := config.LockFile(path)
 	if errors.Is(err, config.ErrLocked) {
-		return nil, fmt.Errorf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
+		return nil, lockedError{path: path}
 	}
 	return unlock, err
 }
+
+// lockedError is the agent's lock held by another run: init --remote's
+// message, still config.ErrLocked for errors.Is.
+type lockedError struct{ path string }
+
+func (e lockedError) Error() string {
+	return fmt.Sprintf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", e.path)
+}
+
+func (lockedError) Unwrap() error { return config.ErrLocked }

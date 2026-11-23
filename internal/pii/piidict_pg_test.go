@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
@@ -188,35 +189,35 @@ func TestMapReloadsWhenClassifiedAtMoves(t *testing.T) {
 	m := NewMap(slog.New(slog.DiscardHandler))
 
 	// Before the first classify: no catalog row, no class.
-	reloaded, err := m.Tick(ctx, f.pool)
+	reloaded, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.True(t, reloaded, "the first tick loads")
 	email := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "email")}
-	ids, err := m.Identifiers(ctx, f.pool)
+	ids, err := m.Identifiers(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.Empty(t, ids)
 
-	reloaded, err = m.Tick(ctx, f.pool)
+	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.False(t, reloaded, "nothing moved")
 
 	f.classify(t, time.Now())
-	reloaded, err = m.Tick(ctx, f.pool)
+	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.True(t, reloaded, "basalt classify ran: the catalog moved")
-	got, err := m.Resolve(ctx, f.pool, []ColumnRef{email})
+	got, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{email})
 	require.NoError(t, err)
 	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
 
 	// Only classified_at moves (the same classes again): still a reload.
 	f.classify(t, time.Now().Add(time.Minute))
-	reloaded, err = m.Tick(ctx, f.pool)
+	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.True(t, reloaded)
 
 	// A readable column added moves the live fingerprint.
 	f.db.Exec(t, `ALTER TABLE public.plain ADD COLUMN extra text`)
-	reloaded, err = m.Tick(ctx, f.pool)
+	reloaded, err = m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.True(t, reloaded)
 }
@@ -232,14 +233,14 @@ func TestMissingColumnIsUnclassifiedAndWarnedOncePerTick(t *testing.T) {
 	f.db.Exec(t, `ALTER TABLE public.customers ADD COLUMN secret_word text`)
 	ref := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "secret_word")}
 	for range 3 {
-		got, err := m.Resolve(ctx, f.pool, []ColumnRef{ref})
+		got, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{ref})
 		require.NoError(t, err)
 		require.Equal(t, Unclassified, got[0])
 	}
 	require.Equal(t, 1, strings.Count(out.String(), "UNCLASSIFIED"), out.String())
-	_, err := m.Tick(ctx, f.pool)
+	_, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
-	_, err = m.Resolve(ctx, f.pool, []ColumnRef{ref})
+	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{ref})
 	require.NoError(t, err)
 	require.Equal(t, 2, strings.Count(out.String(), "UNCLASSIFIED"), "warned again on the next tick")
 }
@@ -252,7 +253,7 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
-	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(f.pool)
+	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(f.pool))
 
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
@@ -387,7 +388,7 @@ func TestWatchWarnsAboutUnclassifiedColumns(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	log, out := newLog()
-	w := NewWatch("bot", NewMap(log), f.pool, log)
+	w := NewWatch("bot", NewMap(log), pgquerier.Neutralize(f.pool), log)
 	require.NoError(t, w.Tick(ctx))
 	require.Contains(t, out.String(), "pii: 2 columns unclassified: public.plain.id, public.plain.label")
 	require.Contains(t, out.String(), "pii: classification loaded")
@@ -401,7 +402,7 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	ctx := context.Background()
-	m := NewMap(slog.New(slog.DiscardHandler)).On(f.pool)
+	m := NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(f.pool))
 
 	secrets, err := m.Secrets(ctx)
 	require.NoError(t, err)
@@ -425,7 +426,7 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
 		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
-	_, err = m.m.Tick(ctx, f.pool)
+	_, err = m.m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 
 	secrets, err = m.Secrets(ctx)
@@ -447,7 +448,7 @@ func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
 	ctx := context.Background()
 	log, _ := newLog()
 	m := NewMap(log)
-	require.NoError(t, m.Load(ctx, f.pool))
+	require.NoError(t, m.Load(ctx, pgquerier.Neutralize(f.pool)))
 	require.EqualValues(t, 1, m.loads.Load())
 
 	// A table created again after the load has a new oid: the first result
@@ -458,7 +459,7 @@ func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
 		GRANT SELECT ON public.nokey, public.emails_v TO `+f.agent.Role)
 	f.classify(t, time.Now())
 	ref := ColumnRef{TableOID: f.oid(t, "public.nokey"), Attnum: 1}
-	got, err := m.Resolve(ctx, f.pool, []ColumnRef{ref})
+	got, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{ref})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, m.loads.Load(), "an unknown oid reloads the map")
 	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
@@ -467,7 +468,7 @@ func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
 	// A table with no classes reloads once per tick, not on every query.
 	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
 	for range 5 {
-		got, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
+		got, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
 		require.NoError(t, err)
 		require.Equal(t, guardmodel.ClassUnclassified, got[0].Class)
 	}
@@ -475,17 +476,17 @@ func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
 
 	// The next tick lets it reload once more (the marks are unchanged, so
 	// the tick itself does not reload).
-	reloaded, err := m.Tick(ctx, f.pool)
+	reloaded, err := m.Tick(ctx, pgquerier.Neutralize(f.pool))
 	require.NoError(t, err)
 	require.False(t, reloaded)
-	_, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
+	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
 	require.NoError(t, err)
-	_, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
+	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
 	require.NoError(t, err)
 	require.EqualValues(t, 4, m.loads.Load())
 
 	// A computed column has no source: no reload, no class.
-	got, err = m.Resolve(ctx, f.pool, []ColumnRef{{}})
+	got, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{{}})
 	require.NoError(t, err)
 	require.Equal(t, Class{}, got[0])
 	require.EqualValues(t, 4, m.loads.Load())
@@ -497,7 +498,7 @@ func TestMapBoundsReloadsAndWarnings(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx := context.Background()
 	m := NewMap(slog.New(slog.DiscardHandler))
-	require.NoError(t, m.Load(ctx, f.pool))
+	require.NoError(t, m.Load(ctx, pgquerier.Neutralize(f.pool)))
 
 	// More unknown oids than the bound, in one result: one reload covers
 	// them, and the per-tick sets stop at their bounds.
@@ -505,7 +506,7 @@ func TestMapBoundsReloadsAndWarnings(t *testing.T) {
 	for i := range maxReloadOIDs + 100 {
 		refs = append(refs, ColumnRef{TableOID: uint32(4_000_000_000 - i), Attnum: 1})
 	}
-	_, err := m.Resolve(ctx, f.pool, refs)
+	_, err := m.Resolve(ctx, pgquerier.Neutralize(f.pool), refs)
 	require.NoError(t, err)
 	require.EqualValues(t, 2, m.loads.Load())
 	m.mu.Lock()
@@ -514,7 +515,7 @@ func TestMapBoundsReloadsAndWarnings(t *testing.T) {
 	m.mu.Unlock()
 
 	// More unknown oids past the bound: no reload until the next tick.
-	_, err = m.Resolve(ctx, f.pool, []ColumnRef{{TableOID: 12345678, Attnum: 1}})
+	_, err = m.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{{TableOID: 12345678, Attnum: 1}})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, m.loads.Load())
 }
@@ -526,7 +527,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
-	obs := NewObserver(classes, dict).On(f.pool)
+	obs := NewObserver(classes, dict).On(pgquerier.Neutralize(f.pool))
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
@@ -542,7 +543,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 					err = obs.Observe(ctx, res.Columns, res.Rows)
 				}
 				if err == nil {
-					_, err = classes.Resolve(ctx, f.pool, []ColumnRef{plain})
+					_, err = classes.Resolve(ctx, pgquerier.Neutralize(f.pool), []ColumnRef{plain})
 				}
 				if err != nil {
 					errs <- err
@@ -561,7 +562,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	})
 	wg.Go(func() {
 		for range 3 {
-			if _, err := classes.Tick(ctx, f.pool); err != nil {
+			if _, err := classes.Tick(ctx, pgquerier.Neutralize(f.pool)); err != nil {
 				errs <- err
 				return
 			}

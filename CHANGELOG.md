@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- The unused agent-context marker `BASALT_AGENT_CONTEXT` (and the coding agents' markers `basalt` listed with it): nothing read them since the commands they guarded were removed.
 - `basalt passkey`, `basalt trust` and `basalt classify`, with their flags, and the `/passkeys/check` and `/passkeys/forget` pages. Passkeys, a changed certificate and column labels are fixed on the page `basalt init` opens (`basalt init --remote` on an agent-operated engine), and every hint that named one of these commands now says to run `basalt init`.
 - `basalt init --setup-code` and the laptop half of the setup code, with the `init` flags the setup page replaced. Every code `basalt init --remote` makes is run on the connect page: the output is its link, or where to paste the code.
 - `basalt approve` and `basalt revert`, the pasted approval and revert codes, `write`'s `approval` argument and `request_revert`'s `signature`. You sign a held write or a revert on its page, and the page sends the signature to the engine itself: the engine's own pages on your computer, or the portal through the hosted relay on a bot's computer. Nothing is pasted. A whole-task revert is the agent's `request_revert` with `taskId`, widened on the signing page; a revert too large to prepare in 100 seconds is split into narrower ones. A long link, from an engine that serves no pages and is not connected to Basalt Vault, opens for review only.

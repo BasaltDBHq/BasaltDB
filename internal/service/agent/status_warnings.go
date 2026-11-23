@@ -89,20 +89,20 @@ type UpgradeChecker interface {
 
 // upgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
 // only non-breaking guard migrations are missing.
-func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
-	available, err := s.deps.Status.Upgrade.UpgradeAvailable(ctx)
+func (sc *statusKeeper) upgradeWarnings(ctx context.Context) []toolresult.Warning {
+	available, err := sc.deps.Upgrade.UpgradeAvailable(ctx)
 	if err != nil {
-		s.deps.Core.Log.Error("check for a guard upgrade", "err", err)
+		sc.core.Log.Error("check for a guard upgrade", "err", err)
 		return nil
 	}
 	if !available {
 		return nil
 	}
 	b := guidance.NewSteps()
-	person := upgradeSteps(b, s.deps.Core.Commands)
+	person := upgradeSteps(b, sc.core.Commands)
 	steps, err := b.Build()
 	if err != nil {
-		s.deps.Core.Log.Error("cannot build the guard upgrade warning", "err", err)
+		sc.core.Log.Error("cannot build the guard upgrade warning", "err", err)
 		return nil
 	}
 	return []toolresult.Warning{{

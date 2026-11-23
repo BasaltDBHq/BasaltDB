@@ -462,7 +462,7 @@ func warningCases() map[string]warningCase {
 		}},
 		toolresult.WarningGuardUpgradeAvailable: {tool: "run_start", build: func(t *testing.T, s *Service) []toolresult.Warning {
 			s.deps.Status.Upgrade = fakeUpgrade{available: true}
-			return s.upgradeWarnings(context.Background())
+			return s.status.upgradeWarnings(context.Background())
 		}},
 	}
 }
@@ -558,9 +558,9 @@ func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
 	s.deps.Write.RLS = &fakeRLS{err: errors.New("down")}
 	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
 	s.deps.Status.Upgrade = fakeUpgrade{err: errors.New("down")}
-	require.Empty(t, s.upgradeWarnings(context.Background()))
+	require.Empty(t, s.status.upgradeWarnings(context.Background()))
 	s.deps.Status.Upgrade = fakeUpgrade{}
-	require.Empty(t, s.upgradeWarnings(context.Background()), "no migration missing: no warning")
+	require.Empty(t, s.status.upgradeWarnings(context.Background()), "no migration missing: no warning")
 }
 
 func TestBlindCacheAsksOncePerTableUntilRefreshed(t *testing.T) {

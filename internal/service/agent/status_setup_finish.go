@@ -86,29 +86,29 @@ func (c *setupCache) remember(id string, now time.Time) {
 }
 
 // pendingSetup is the agent's pending setup, nil when none is.
-func (s *Service) pendingSetup() *config.Setup {
-	s.setupMu.Lock()
-	defer s.setupMu.Unlock()
-	return s.setup
+func (sc *statusKeeper) pendingSetup() *config.Setup {
+	sc.setupMu.Lock()
+	defer sc.setupMu.Unlock()
+	return sc.setup
 }
 
 // setupFinished forgets the pending setup id once it is recorded.
-func (s *Service) setupFinished(id string) {
-	s.setupMu.Lock()
-	defer s.setupMu.Unlock()
-	if s.setup != nil && s.setup.SetupID == id {
-		s.setup = nil
+func (sc *statusKeeper) setupFinished(id string) {
+	sc.setupMu.Lock()
+	defer sc.setupMu.Unlock()
+	if sc.setup != nil && sc.setup.SetupID == id {
+		sc.setup = nil
 	}
 }
 
 // AdmitTick is the heartbeat's gate: it first looks for a pending setup of
 // any kind in the database, so a rotated credential is picked up and
 // engine.json cleared even when nobody calls status, then admits as Admit.
-func (s *Service) AdmitTick(ctx context.Context) error {
-	if d := s.statusDeps(); d.setup != nil && d.setup.Kind != guardmodel.SetupInstall {
+func (sc *statusKeeper) AdmitTick(ctx context.Context) error {
+	if d := sc.statusDeps(); d.setup != nil && d.setup.Kind != guardmodel.SetupInstall {
 		d.pendingRecorded(ctx)
 	}
-	return s.Admit(ctx)
+	return sc.Admit(ctx)
 }
 
 // recordedAsAgent reads, with the agent's own credential, whether setup id

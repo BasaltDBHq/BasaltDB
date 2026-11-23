@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -271,15 +270,6 @@ func (noPII) Observe(context.Context, []action.Column, []map[string]any) error {
 // Service runs one agent's tool calls.
 type Service struct {
 	deps Deps
-	// setupMu guards setup, the agent's pending setup: Status.Setup until
-	// the database shows it recorded.
-	setupMu sync.Mutex
-	setup   *config.Setup
-	// notRecorded is the held calls' cache of a setup not recorded yet.
-	notRecorded setupCache
-	// lockTrouble is a lock file the engine could not open while finishing
-	// a setup (problem LOCK_FILE_UNUSABLE).
-	lockTrouble lockTrouble
 	// describe is the describe use case.
 	describe *describeCase
 	// delivery is how held actions reach the person.
@@ -292,6 +282,8 @@ type Service struct {
 	write *writeCase
 	// plugin is the plugin use case.
 	plugin *pluginCase
+	// status is the status use case.
+	status *statusKeeper
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -347,7 +339,7 @@ func NewService(d Deps) *Service {
 	if d.Delivery.Poll <= 0 {
 		d.Delivery.Poll = DefaultPoll
 	}
-	s := &Service{deps: d, setup: d.Status.Setup}
+	s := &Service{deps: d}
 	s.wire()
 	return s
 }
@@ -355,13 +347,14 @@ func NewService(d Deps) *Service {
 // wire builds the use cases over the service's dependencies. Each holds a
 // reference to its own group of s.deps and to the shared core group.
 func (s *Service) wire() {
-	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.updateInfo)
+	s.status = newStatusKeeper(&s.deps.Core, &s.deps.Status)
+	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.status.updateInfo)
 	s.delivery = newDeliveryCase(&s.deps.Core, &s.deps.Delivery, s.Failure)
 	s.revert = newRevertCase(&s.deps.Core, &s.deps.Revert, s.delivery, s.describe, s)
 	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, s.revert, liveWrites{&s.deps.Write}, s)
 	s.delivery.approvals = s.approval
-	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s, s)
-	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s, s)
+	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
+	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
 }
 
 // missing names the required ports d lacks.

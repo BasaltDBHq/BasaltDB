@@ -319,6 +319,23 @@ type RowSecurityQuestion struct {
 	Text string
 }
 
+// adminTx runs the setup's transaction on the admin connection conn.
+func adminTx(conn *pgx.Conn) setuprun.TxRunner {
+	return func(ctx context.Context, fn func(setuprun.Querier) error) error {
+		return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return fn(pgquerier.Neutralize(tx)) })
+	}
+}
+
+// pgxTx is the transaction adminTx handed the setup, for the writes in it
+// that run on the driver itself (labels, the trust pin, the passkey).
+func pgxTx(q setuprun.Querier) pgx.Tx {
+	tx, ok := pgquerier.Unwrap(q).(pgx.Tx)
+	if !ok {
+		panic("setup: the setup's transaction did not come from adminTx")
+	}
+	return tx
+}
+
 // adminAt is where the admin connection conn points, for the setup's
 // target check.
 func adminAt(conn *pgx.Conn) setuprun.ConnConfig {
@@ -614,8 +631,9 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	// the grants name them.
 	// A table dropped between this read and the grants still fails the
 	// grant itself: SETUP_FAILED, nothing changed.
-	first := func(ctx context.Context, tx pgx.Tx) error { return s.RecheckTables(ctx, pgquerier.Neutralize(tx)) }
-	inTx := func(ctx context.Context, tx pgx.Tx) error {
+	first := func(ctx context.Context, q setuprun.Querier) error { return s.RecheckTables(ctx, q) }
+	inTx := func(ctx context.Context, q setuprun.Querier) error {
+		tx := pgxTx(q)
 		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
 			return err
 		}
@@ -636,7 +654,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		}
 		return nil // the laptop asks after the commit
 	}
-	if err := setuprun.ApplySetupWith(ctx, store, conn, script, first, inTx); err != nil {
+	if err := setuprun.ApplySetupWith(ctx, store, adminTx(conn), script, first, inTx); err != nil {
 		return Result{}, asError(setuprun.Refused(ctx, store, pgquerier.Neutralize(conn), s.P, err))
 	}
 	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}

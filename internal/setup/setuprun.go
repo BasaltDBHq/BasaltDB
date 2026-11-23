@@ -20,12 +20,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // Refusal codes this package adds to setupcode's (setupcode.Refusal).
@@ -668,20 +666,21 @@ func blindIndex(tables []guardmodel.BlindTable, table string) int {
 // transaction after the migrations and the coverage check and before
 // record_setup (a passkey registered with the setup). An error from it
 // rolls everything back. first, when set, runs in the transaction before
-// anything else (the tables read again before the grants name them).
-func ApplySetupWith(ctx context.Context, b SetuprunBackend, conn *pgx.Conn, script guardmodel.Script, first, inTx func(context.Context, pgx.Tx) error) error {
+// anything else (the tables read again before the grants name them). run
+// opens the transaction on the admin connection.
+func ApplySetupWith(ctx context.Context, b SetuprunBackend, run TxRunner, script guardmodel.Script, first, inTx func(context.Context, Querier) error) error {
 	n := len(script.Statements)
 	if n == 0 {
 		return errors.New("nothing to run")
 	}
 	body, record := guardmodel.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1]
-	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+	err := run(ctx, func(tx Querier) error {
 		if first != nil {
 			if err := first(ctx, tx); err != nil {
 				return err
 			}
 		}
-		if err := ApplyInitTx(ctx, b, pgquerier.Neutralize(tx), body); err != nil {
+		if err := ApplyInitTx(ctx, b, tx, body); err != nil {
 			return err
 		}
 		if inTx != nil {
@@ -689,7 +688,7 @@ func ApplySetupWith(ctx context.Context, b SetuprunBackend, conn *pgx.Conn, scri
 				return err
 			}
 		}
-		if err := b.Run(ctx, pgquerier.Neutralize(tx), record.SQL); err != nil {
+		if err := b.Run(ctx, tx, record.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 		return nil

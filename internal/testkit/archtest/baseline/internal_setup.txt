@@ -1,3 +1,2 @@
 apply.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)
-setuprun.go imports github.com/jackc/pgx/v5 (a service reaches the database and the network through a port)
 setuprun.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)

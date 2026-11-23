@@ -113,7 +113,7 @@ func TestEveryToolRefusesEverySpellingOfAnAdminString(t *testing.T) {
 			for _, args := range []map[string]any{{"sql": v}, {"intent": v}, {"params": []any{v}}} {
 				body, isError := serveCall(t, srv, tool.Name, args)
 				require.True(t, isError, tool.Name+" "+name)
-				require.Equal(t, ReasonAdminCredential, body["reason"], tool.Name+" "+name)
+				require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name+" "+name)
 				raw, err := json.Marshal(body)
 				require.NoError(t, err)
 				require.NotContains(t, string(raw), secret, tool.Name+" "+name)
@@ -135,7 +135,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	tools := Tools(NewService(d))
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...)
 	url := "postgres://admin:" + secret + "@db.example.com:5432/app"
-	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, ReasonAdminCredential, "")
+	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, guidance.ReasonAdminCredential, "")
 	require.True(t, ok)
 
 	for _, tool := range tools {
@@ -146,7 +146,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 			body, isError := serveCall(t, srv, tool.Name, args)
 			require.True(t, isError, tool.Name+" "+name)
 			require.Equal(t, guidance.CodeInvalidArgument, body["code"], tool.Name)
-			require.Equal(t, ReasonAdminCredential, body["reason"], tool.Name)
+			require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name)
 			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 			require.Contains(t, body["personMessage"], "Change that database password", tool.Name)
 			raw, err := json.Marshal(body)
@@ -163,7 +163,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
 			body, isError := serveCall(t, downSrv, tool.Name, args)
 			require.True(t, isError, tool.Name)
-			require.Equal(t, ReasonAdminCredential, body["reason"], tool.Name)
+			require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name)
 			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 			raw, err := json.Marshal(body)
 			require.NoError(t, err)

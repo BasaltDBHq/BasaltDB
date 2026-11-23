@@ -13,18 +13,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// ReasonAdminCredential is INVALID_ARGUMENT for a tool call whose arguments
-// hold a Postgres connection URL with a password (CONTRACT.md, Agents and
-// the admin credential).
-const ReasonAdminCredential = "ADMIN_CREDENTIAL" //nolint:gosec // an error reason, not a credential
-
 const (
 	adminCredentialMessage = "an argument holds a database connection string with a password; basalt did not use or keep it. " +
 		"An agent never asks for, accepts or passes the admin connection string or password."
-	adminCredentialAsk = "Tell the person that a database connection string with a password was in your call and that basalt did not keep it, " +
-		"and ask them to change that database password now. Do not repeat or use the string."
-	adminCredentialRevise = "Then call again without the connection string. To set up, run basalt init (basalt init --remote where the person cannot reach this computer) and show the person the link it prints."
-	adminCredentialPerson = "A database connection string with a password was sent through your agent. Basalt refused the call and kept no copy. Change that database password now."
 )
 
 // postgresPassword matches a postgres:// or postgresql:// URL (scheme in any
@@ -185,15 +176,15 @@ func isHex(c byte) bool {
 }
 
 func adminCredentialError() error {
-	return &guidance.ArgumentError{Reason: ReasonAdminCredential, Message: adminCredentialMessage}
+	return &guidance.ArgumentError{Reason: guidance.ReasonAdminCredential, Message: adminCredentialMessage}
 }
 
 // adminCredentialToolError is the refusal as a tool error with its steps,
 // for the tools that answer without the service (the engine-down tools).
 func adminCredentialToolError(tool string) *toolresult.ToolError {
-	te := &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
+	te := &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Reason: guidance.ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: guidance.AdminCredentialPerson}
 	b := guidance.NewSteps()
-	invalidArgumentSteps(b, te, failure{tool: tool})
+	guidance.InvalidArgumentSteps(b, te, guidance.Failure{Tool: tool})
 	te.NextSteps, _ = b.Build() // fixed steps: they cannot fail
 	return te
 }

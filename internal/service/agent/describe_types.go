@@ -114,9 +114,9 @@ const (
 	// up to MaxRetryRows it is held for approval, over it refused.
 	policyAllowedUpTo = 10
 
-	formOverview = "OVERVIEW"
-	formSearch   = "SEARCH"
-	formResource = "RESOURCE"
+	FormOverview = "OVERVIEW"
+	FormSearch   = "SEARCH"
+	FormResource = "RESOURCE"
 	privSelect   = "SELECT"
 )
 

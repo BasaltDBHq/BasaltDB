@@ -57,6 +57,9 @@ const (
 	ArgApprovalID     = "approvalId"
 	ArgChangeID       = "changeId"
 	ArgWaitApproval   = "waitForApproval"
+	ToolDescribe      = "describe"
+	ArgQuery          = "query"
+	ArgResource       = "resource"
 )
 
 // Reasons of the error cases request_revert returns (CONTRACT.md, Next

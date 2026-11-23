@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
+	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -420,7 +421,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 	var a agentInstall
 	fs.StringVar(&a.name, "agent", "", "install: also place this agent (basalt init runs this under sudo)")
 	fs.StringVar(&a.osUser, "os-user", "", "install --agent: the agent's OS user")
-	pagesURLFlag(fs, &a.pagesURL, "install --agent: the pages base URL the agent's passkey belongs to")
+	linkscli.PagesURLFlag(fs, &a.pagesURL, "install --agent: the pages base URL the agent's passkey belongs to")
 	fs.BoolVar(&a.devLocalPages, flagDevLocalPages, false, "install --agent: the config's devLocalPages, as basalt init --dev-local-pages sets it")
 	fs.Func(flagVault, "install --agent: on or off, the config's vault as the person chose it (default: keep the config's)", func(v string) error {
 		var m VaultMode

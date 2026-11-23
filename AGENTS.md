@@ -19,8 +19,8 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 Where code goes and which package may import which: [ARCHITECTURE.md](ARCHITECTURE.md). A Go test enforces it.
 
 ```
-cmd/basalt     the one binary
-internal/      engine, guard install, MCP transport, CLI internals
+cmd/basalt     the one binary: main.go calls app.Main
+internal/      app (wiring), one folder per domain (use cases, with in/ and out/ adapters), platform, core, lib, config
 pkg/           shared libraries (uniqueid, pagination, …)
 docs/          user guides: install, approving, MCP clients, releasing
 scripts/       release and packaging scripts
@@ -102,7 +102,7 @@ Read **this file before implementing**; do not introduce conventions that confli
 - `testing` + **testify/require**; non-storage dependencies are replaced by small in-repo fakes (`guardtest`, `vaulttest`, `passkeytest`, `pagetest`, `mcptest`), not generated or testify mocks. mockery v3 is configured (`.mockery.yml`, `make mocks`) but generates nothing yet and is not installed by `make deps`; `make mocks` installs it on first use.
 - Guard, ledger and catalog code is tested against a **real Postgres** (`BASALTDB_TEST_POSTGRES_URL`; locally a Docker container). Tests create their own schema or database and clean up. Mocks only for non-storage deps.
 - Security properties (agent cannot approve, cannot write without intent, cannot bypass row limits) get explicit tests that run as the agent role.
-- **`-race`** on every test run. Exhaustive loops in `internal/core/pii` (the million-value dictionary, every NFKC and ignorable character, the false-positive tour) run sampled or smaller by default; `BASALTDB_TEST_FULL=1 go test -race ./internal/core/pii/...` runs them at full size (slow: run it before changing the tokenizer, dictionary or normalizer). `.github/workflows/nightly-full.yml` runs that command every night and on demand (workflow_dispatch); a failure fails the scheduled run. The `TestClassify*` tests in `cmd/basalt` also honour it (a 12-customer fixture by default, all 200 with the flag) and run in that job too. A package that adopts the flag is added to that job.
+- **`-race`** on every test run. Exhaustive loops in `internal/core/pii` (the million-value dictionary, every NFKC and ignorable character, the false-positive tour) run sampled or smaller by default; `BASALTDB_TEST_FULL=1 go test -race ./internal/core/pii/... ./internal/pii/...` runs them at full size (slow: run it before changing the tokenizer, dictionary or normalizer). `.github/workflows/nightly-full.yml` runs that command every night and on demand (workflow_dispatch); a failure fails the scheduled run. A package that adopts the flag is added to that job.
 
 ## Tooling
 

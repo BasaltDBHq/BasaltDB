@@ -90,7 +90,7 @@ func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialI
 	if s.P.Target == nil {
 		return Revoked{}, asError(&setuprun.SetuprunRefusalError{Code: string(setupcode.RefusalInvalid), Message: "a connect-only setup code names no database to remove a passkey from; ask your agent for a new one"})
 	}
-	if err := setuprun.CheckConnTarget(s.P, conn.Config()); err != nil {
+	if err := setuprun.CheckConnTarget(s.P, adminAt(conn)); err != nil {
 		return Revoked{}, asError(err)
 	}
 	installed, err := guard.InstalledPrefix(ctx, conn)

@@ -271,7 +271,9 @@ func (s *Setup) RunsAsInstall() bool { return s.asInstall }
 // questions the person answers before the setup runs.
 type Prepared struct {
 	*Setup
-	Conn  *pgx.Conn
+	Conn *pgx.Conn
+	// At is where Conn points.
+	At    ConnConfig
 	State setupcode.SummaryState
 	// Engine is what the database records about the code's engine.
 	Engine SetuprunEngineState
@@ -286,13 +288,13 @@ type Prepared struct {
 	Blind []guardmodel.BlindTable
 }
 
-// Prepare checks s against the database conn opens, in the contract's
+// Prepare checks s against the database conn opens, at, in the contract's
 // order: the target (step 3), the database's state and the engine (step
 // 4), then whether an UPGRADE code has anything to do, and reads the
 // row-level security questions. Every refusal leaves the database as it
 // was.
-func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) {
-	if err := CheckConnTarget(s.P, conn.Config()); err != nil {
+func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn, at ConnConfig) (*Prepared, error) {
+	if err := CheckConnTarget(s.P, at); err != nil {
 		return nil, err
 	}
 	q := pgquerier.Neutralize(conn)
@@ -324,7 +326,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err != nil {
 		return nil, err
 	}
-	p := &Prepared{Setup: s, Conn: conn, State: state, Engine: engine}
+	p := &Prepared{Setup: s, Conn: conn, At: at, State: state, Engine: engine}
 	if UpgradeDone(s.be, s.P, state.GuardVersion) {
 		p.EngineOnly = p.engineToRecord()
 		p.NothingToDo = !p.EngineOnly
@@ -594,7 +596,7 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Scrip
 	}
 	script, err := p.plan(ctx, policies)
 	if err != nil {
-		return guardmodel.Script{}, MissingTablesHint(p.be, err, p.Conn.Config().Database)
+		return guardmodel.Script{}, MissingTablesHint(p.be, err, p.At.Database)
 	}
 	return script, nil
 }

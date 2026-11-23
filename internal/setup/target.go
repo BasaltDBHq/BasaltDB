@@ -4,10 +4,24 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
+
+// ConnConfig is where an open admin connection points: its host, port,
+// database and user, and every host it falls back to.
+type ConnConfig struct {
+	Host      string
+	Port      uint16
+	Database  string
+	User      string
+	Fallbacks []ConnHost
+}
+
+// ConnHost is one host and port a connection may use.
+type ConnHost struct {
+	Host string
+	Port uint16
+}
 
 // CheckTarget refuses an admin connection whose database, got, is not the
 // code's target (step 3, CO-17): with a Supabase project ref, the same ref
@@ -27,9 +41,9 @@ func CheckTarget(p setupcode.Payload, got setupcode.Target) error {
 
 // CheckConnTarget is CheckTarget for an open connection's configuration:
 // its host, port, database and user, and every fallback on the same host
-// and port (pgx adds one per TLS mode it tries). Its message names no
-// connection string.
-func CheckConnTarget(p setupcode.Payload, cfg *pgx.ConnConfig) error {
+// and port (the driver adds one per TLS mode it tries). Its message names
+// no connection string.
+func CheckConnTarget(p setupcode.Payload, cfg ConnConfig) error {
 	for _, fb := range cfg.Fallbacks {
 		if !strings.EqualFold(fb.Host, cfg.Host) || fb.Port != cfg.Port {
 			return setuprunRefuse(SetuprunCodeTargetMismatch, "the admin connection names several hosts; connect to the database's one host")

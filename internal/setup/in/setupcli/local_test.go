@@ -25,8 +25,7 @@ import (
 )
 
 const (
-	fakeBin     = "/opt/basalt/bin/basalt"
-	envAdminURL = "BASALT_ADMIN_DATABASE_URL"
+	fakeBin = "/opt/basalt/bin/basalt"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -161,7 +160,7 @@ func localInitWithin(t *testing.T, limit time.Duration, h *fakeHost, args ...str
 		switch k {
 		case "CLAUDECODE":
 			return "1"
-		case envAdminURL:
+		case setup.EnvAdminURL:
 			return "postgres://admin" + ":" + "pw@db.example/app"
 		}
 		return ""
@@ -213,7 +212,7 @@ func TestInitInstallsThroughTheDialogThenPrintsAndOpensTheLink(t *testing.T) {
 	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t), Demo: true}, linkJob(t, lines[0]))
 	require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 
-	require.NotContains(t, read, envAdminURL, "init never reads the admin connection string")
+	require.NotContains(t, read, setup.EnvAdminURL, "init never reads the admin connection string")
 	require.NotContains(t, r.stderr, "[Y/n]", "init asks nothing in the terminal")
 	require.NotContains(t, r.stderr, "Admin connection string")
 	require.NotContains(t, r.stdout+r.stderr, "pw@db.example")
@@ -232,7 +231,7 @@ func TestInitWithoutDemoOpensTheInstallOfARealDatabase(t *testing.T) {
 	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "sales_bot", OSUser: me752(t), Demo: false}, linkJob(t, lines[0]))
 	require.Equal(t, "basalt mcp --agent sales_bot", lines[1])
 	require.Equal(t, []string{lines[0]}, h.opened)
-	require.NotContains(t, read, envAdminURL)
+	require.NotContains(t, read, setup.EnvAdminURL)
 }
 
 func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
@@ -264,7 +263,7 @@ func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {
 		require.Equal(t, localsetup.Job{Job: localsetup.JobChange, Agent: agent, OSUser: me752(t)}, linkJob(t, lines[0]), "%v", args)
 		require.Equal(t, []string{lines[0]}, h.opened, "init opens its own link")
 		require.Contains(t, r.stderr, "update the guard or remove BasaltDB")
-		require.NotContains(t, read, envAdminURL)
+		require.NotContains(t, read, setup.EnvAdminURL)
 	}
 }
 
@@ -293,7 +292,7 @@ func TestInitStopsBeforeTheDialog(t *testing.T) {
 		require.Empty(t, h.dialogs, v.name)
 		require.Empty(t, h.sudo, v.name)
 		require.Empty(t, r.stdout, v.name)
-		require.NotContains(t, read, envAdminURL, v.name)
+		require.NotContains(t, read, setup.EnvAdminURL, v.name)
 	}
 }
 
@@ -367,7 +366,7 @@ func TestInitOnARemovedEngineRemovesTheService(t *testing.T) {
 	require.Equal(t, []string{servicespec.RemovePrompt}, h.prompts, "the dialog names the removal")
 	require.Empty(t, h.sudo)
 	require.Contains(t, r.stderr, "the engine service is removed")
-	require.NotContains(t, read, envAdminURL)
+	require.NotContains(t, read, setup.EnvAdminURL)
 }
 
 func TestInitRemovalStops(t *testing.T) {
@@ -430,7 +429,7 @@ func TestInitResetsThroughTheDialogThenOpensTheInstallLink(t *testing.T) {
 	require.Equal(t, localsetup.Job{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: me752(t)}, linkJob(t, h.opened[1]))
 	require.Contains(t, r.stderr, "BasaltDB on this computer is reset")
 	require.Contains(t, r.stdout, "basalt mcp --agent demo_bot")
-	require.NotContains(t, read, envAdminURL)
+	require.NotContains(t, read, setup.EnvAdminURL)
 }
 
 // Without the dialog, or with it closed, nothing is reset and no install
@@ -490,7 +489,7 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 		getenv := func(k string) string {
 			read = append(read, k)
 			switch {
-			case k == envAdminURL:
+			case k == setup.EnvAdminURL:
 				return "postgres://admin" + ":" + "pw@db.example/app"
 			case k == "CLAUDECODE" && tc.marker:
 				return "1"
@@ -502,7 +501,7 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 		code := setupcli.RunLocal(c, localHost{}, []string{"--demo"})
 		cancel()
 		require.Equal(t, cli.ExitOK, code, "%s: %s", tc.name, stderr.String())
-		require.NotContains(t, read, envAdminURL, tc.name)
+		require.NotContains(t, read, setup.EnvAdminURL, tc.name)
 		require.NotContains(t, stdout.String()+stderr.String(), "pw@db.example", tc.name)
 	}
 }

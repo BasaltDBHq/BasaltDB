@@ -26,10 +26,3 @@ const (
 	EngineRemoved                             // the page removed its last agent
 	EngineResetAsked                          // the person said the database is not theirs
 )
-
-// ServiceDialog is one fixed script run through the administrator dialog,
-// with what init says around it.
-type ServiceDialog struct {
-	Script                                            func(goos string) (string, error)
-	Prompt, NoDialog, Asking, Cancelled, Failed, Done string
-}

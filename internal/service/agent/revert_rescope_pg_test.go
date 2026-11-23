@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
 	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
@@ -214,7 +216,7 @@ func (e *rescopeEnv) widenBody(t *testing.T, signer *passkeytest.Authenticator, 
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
 	as, err := signer.Sign(reverttest.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
+	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 }
@@ -360,7 +362,7 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 		"not json":                 `select`,
 		"twenty-one tables, with a proof": string(scopeBody(t, agent.ScopeRequest{
 			Select:    revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Tables: manyTables(revert.MaxFilter + 1)},
-			NewSecret: newLinkSecret(t), Proof: &agent.ScopeProof{CredentialID: []byte{1}, AuthenticatorData: []byte{1}, ClientDataJSON: []byte{1}, Signature: []byte{1}},
+			NewSecret: newLinkSecret(t), Proof: &linksvc.ScopeProof{CredentialID: []byte{1}, AuthenticatorData: []byte{1}, ClientDataJSON: []byte{1}, Signature: []byte{1}},
 		})),
 	}
 	for name, body := range shapes {

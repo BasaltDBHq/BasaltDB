@@ -30,21 +30,6 @@ type EngineRecord struct {
 	RevokedAt  *time.Time
 }
 
-// The statuses of the ledger's approvals and reverts, as the database
-// keeps them.
-const (
-	approvalPending  = "PENDING"
-	approvalApproved = "APPROVED"
-	approvalApplied  = "APPLIED"
-	approvalExpired  = "EXPIRED"
-
-	revertPending  = "PENDING"
-	revertApplying = "APPLYING"
-	revertApplied  = "APPLIED"
-	revertRejected = "REJECTED"
-	revertExpired  = "EXPIRED"
-)
-
 // The Vault connection's states in status.vault.state.
 const (
 	vaultStateOff       = "OFF"

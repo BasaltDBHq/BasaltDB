@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -19,7 +21,7 @@ func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 	if err != nil {
 		return approval.Request{}, err
 	}
-	ids, err := ac.delivery.credentialIDs(ctx)
+	ids, err := ac.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return approval.Request{}, err
 	}
@@ -29,22 +31,22 @@ func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 	}
 	return approval.Request{
 		ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: ac.delivery.columnsOf(ctx, a.Lines),
+		Columns: ac.delivery.ColumnsOf(ctx, a.Lines),
 	}, nil
 }
 
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
-func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) (Receipt, error) {
+func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
 	if _, err := ac.openApproval(ctx, r.ApprovalID); err != nil {
-		return Receipt{}, err
+		return linksvc.Receipt{}, err
 	}
 	if _, err := ac.deps.Store.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
-		return Receipt{}, err
+		return linksvc.Receipt{}, err
 	}
 	// Postgres accepted the signature: the receipt names the approval as
 	// Postgres records it, never as the page sent it.
-	return ac.delivery.approvalReceipt(ctx, r.ApprovalID)
+	return ac.delivery.ApprovalReceipt(ctx, r.ApprovalID)
 }
 
 // openApproval is one of this agent's held writes that can still be
@@ -58,17 +60,17 @@ func (ac *approvalCase) openApproval(ctx context.Context, id uuid.UUID) (action.
 	}
 	a, err := ac.deps.Store.FindApproval(ctx, id)
 	if guidance.Sentinel(err, ac.deps.ErrNotFound) {
-		return action.Approval{}, ErrNotThisAgent
+		return action.Approval{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {
 		return action.Approval{}, err
 	}
 	switch {
-	case a.Status == approvalExpired || !ac.core.Now().Before(a.ExpiresAt):
+	case a.Status == action.ApprovalExpired || !ac.core.Now().Before(a.ExpiresAt):
 		return a, &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(guidance.PersonTime))}
-	case a.Status == approvalApproved:
+	case a.Status == action.ApprovalApproved:
 		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this write is already approved; the agent applies it")
-	case a.Status == approvalApplied:
+	case a.Status == action.ApprovalApplied:
 		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this approval was already used")
 	}
 	return a, nil

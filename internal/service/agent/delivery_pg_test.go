@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -23,23 +25,23 @@ import (
 // the seam the approval.deliver plugins sit behind.
 type delivered struct {
 	mu   sync.Mutex
-	list []agent.LinkNotice
+	list []linksvc.LinkNotice
 }
 
-func (d *delivered) DeliverLink(n agent.LinkNotice) {
+func (d *delivered) DeliverLink(n linksvc.LinkNotice) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.list = append(d.list, n)
 }
 
-func (d *delivered) all() []agent.LinkNotice {
+func (d *delivered) all() []linksvc.LinkNotice {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return append([]agent.LinkNotice(nil), d.list...)
+	return append([]linksvc.LinkNotice(nil), d.list...)
 }
 
 // take returns the notices since the last take.
-func (d *delivered) take() []agent.LinkNotice {
+func (d *delivered) take() []linksvc.LinkNotice {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	out := d.list
@@ -81,7 +83,7 @@ func TestNoticeCarriesTheAgentsLink(t *testing.T) {
 		require.Len(t, got, 1)
 		require.Equal(t, link, got[0].Link, "the answer's link, byte for byte")
 		require.Regexp(t, noticeLinkPattern(t), link, "a link the engine issued fits the notice's schema")
-		require.Equal(t, agent.NoticeApprovalRequested, got[0].Kind)
+		require.Equal(t, linksvc.NoticeApprovalRequested, got[0].Kind)
 		require.Equal(t, id, got[0].ApprovalID.String())
 		require.Equal(t, "Update 15 rows in public·leads", got[0].Headline)
 		require.Equal(t, str(t, ap["expiresAt"]), got[0].ExpiresAt.UTC().Format(time.RFC3339))
@@ -130,7 +132,7 @@ func noticeLinkPattern(t *testing.T) *regexp.Regexp {
 // panics is a deliverer that fails in the worst way.
 type panics struct{}
 
-func (panics) DeliverLink(agent.LinkNotice) { panic("the deliverer broke") }
+func (panics) DeliverLink(linksvc.LinkNotice) { panic("the deliverer broke") }
 
 // TestDelivererCannotChangeTheAnswer: with a deliverer that panics, the
 // agent gets the answer it gets with none: held, with its link.
@@ -164,7 +166,7 @@ func TestWaitingWriteIsNoticedWhenHeld(t *testing.T) {
 	held := rec.all()
 	require.Len(t, held, 1, "held and waiting: the person is told now, not when the call answers")
 	require.Empty(t, done, "the call is still open")
-	require.Equal(t, agent.NoticeApprovalRequested, held[0].Kind)
+	require.Equal(t, linksvc.NoticeApprovalRequested, held[0].Kind)
 	require.Contains(t, held[0].Link, "#s=")
 
 	body := <-done
@@ -243,7 +245,7 @@ func TestRevertAndReissueAreNoticed(t *testing.T) {
 	revertID := str(t, req["revertId"])
 	got := rec.take()
 	require.Len(t, got, 1)
-	require.Equal(t, agent.NoticeRevertRequested, got[0].Kind)
+	require.Equal(t, linksvc.NoticeRevertRequested, got[0].Kind)
 	require.Equal(t, revertID, got[0].RevertID.String())
 	require.Equal(t, str(t, req["revertUrl"]), got[0].Link)
 	require.Contains(t, got[0].Link, "#s=")
@@ -254,7 +256,7 @@ func TestRevertAndReissueAreNoticed(t *testing.T) {
 	again := requestRevert(t, env.h, map[string]any{"revertId": revertID, "reissueLink": true})
 	got = rec.take()
 	require.Len(t, got, 1)
-	require.Equal(t, agent.NoticeLinkReplaced, got[0].Kind)
+	require.Equal(t, linksvc.NoticeLinkReplaced, got[0].Kind)
 	require.Equal(t, str(t, again["revertUrl"]), got[0].Link)
 	require.NotEqual(t, str(t, req["revertUrl"]), got[0].Link)
 
@@ -271,7 +273,7 @@ func TestRevertAndReissueAreNoticed(t *testing.T) {
 	got = rec.take()
 	require.Len(t, got, 2)
 	for _, n := range got {
-		require.Equal(t, agent.NoticeLinkReplaced, n.Kind)
+		require.Equal(t, linksvc.NoticeLinkReplaced, n.Kind)
 		for _, item := range list {
 			switch {
 			case item["approvalId"] == approvalID && n.ApprovalID.String() == approvalID:
@@ -328,13 +330,13 @@ func TestCommandLineReissueSendsNoNotice(t *testing.T) {
 
 func TestNoticeHeadline(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "Update 27 rows in public·leads", agent.NoticeHeadline("Update 27 rows in public.leads"))
+	require.Equal(t, "Update 27 rows in public·leads", linksvc.NoticeHeadline("Update 27 rows in public.leads"))
 	require.Equal(t, "Delete 1 row in public·customers + 30 cascaded rows (public·invoices 28, public·payments 2 [values hidden])",
-		agent.NoticeHeadline("Delete 1 row in public.customers + 30 cascaded rows (public.invoices 28, public.payments 2 [values hidden])"))
+		linksvc.NoticeHeadline("Delete 1 row in public.customers + 30 cascaded rows (public.invoices 28, public.payments 2 [values hidden])"))
 	const revert = "Revert of run 0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b: 27 rows to restore, 0 left as they are (changed after the agent)."
-	require.Equal(t, revert, agent.NoticeHeadline(revert))
-	require.Equal(t, "Update 1 row in evil·example·com/x", agent.NoticeHeadline("Update 1 row in evil.example.com/x\n\u202e"))
-	long := agent.NoticeHeadline("Update 1 row in " + strings.Repeat("a", 2000))
+	require.Equal(t, revert, linksvc.NoticeHeadline(revert))
+	require.Equal(t, "Update 1 row in evil·example·com/x", linksvc.NoticeHeadline("Update 1 row in evil.example.com/x\n\u202e"))
+	long := linksvc.NoticeHeadline("Update 1 row in " + strings.Repeat("a", 2000))
 	require.Len(t, []rune(long), 1000)
 	require.True(t, strings.HasSuffix(long, "…"))
 }

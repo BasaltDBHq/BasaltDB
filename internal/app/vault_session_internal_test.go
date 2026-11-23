@@ -47,7 +47,7 @@ type heldAgent struct {
 	lines   []string
 	cred    passkey.Credential
 	// receipt is what RelayApproval returns.
-	receipt agent.Receipt
+	receipt linksvc.Receipt
 
 	mu       sync.Mutex
 	approved bool
@@ -55,22 +55,22 @@ type heldAgent struct {
 
 func (a *heldAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
 	if id != a.id {
-		return approval.Request{}, agent.ErrNotThisAgent
+		return approval.Request{}, linksvc.ErrNotThisAgent
 	}
 	return approval.Request{ApprovalID: id, Binding: a.binding, Lines: a.lines}, nil
 }
 
-func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (agent.Receipt, error) {
+func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (linksvc.Receipt, error) {
 	if r.ApprovalID != a.id {
-		return agent.Receipt{}, agent.ErrNotThisAgent
+		return linksvc.Receipt{}, linksvc.ErrNotThisAgent
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.approved {
-		return agent.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "this approval was already used"}
+		return linksvc.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "this approval was already used"}
 	}
 	if _, err := approvaltest.Verify(a.binding, a.cred, r); err != nil {
-		return agent.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "the signature does not verify"}
+		return linksvc.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "the signature does not verify"}
 	}
 	a.approved = true
 	return a.receipt, nil
@@ -83,29 +83,29 @@ func (a *heldAgent) isApproved() bool {
 }
 
 func (a *heldAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
-	return revert.Request{}, agent.ErrNotThisAgent
+	return revert.Request{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
-	return agent.ScopeResponse{}, agent.ErrNotThisAgent
+	return agent.ScopeResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
 func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
-	return agent.RejectResponse{}, agent.ErrNotThisAgent
+	return agent.RejectResponse{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RevealApproval(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
-	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+func (a *heldAgent) RevealApproval(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
-	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, agent.Receipt, error) {
-	return action.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
+func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+	return action.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
@@ -174,7 +174,7 @@ func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSe
 	store := links.NewSecrets(time.Now, rand.Reader)
 	held := &heldAgent{
 		secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential(),
-		receipt: agent.Receipt{Token: "basalt-receipt.1.cA.cw"},
+		receipt: linksvc.Receipt{Token: "basalt-receipt.1.cA.cw"},
 	}
 	s := serveOverVaultWith(t, w, opts, held, store, id)
 	s.agent, s.person = held, person

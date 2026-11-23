@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -33,26 +35,26 @@ type revertCase struct {
 
 // revertDelivery is what the revert use case asks of the delivery use case.
 type revertDelivery interface {
-	awaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error
-	carriesLarge(cost int64) bool
-	columnsOf(ctx context.Context, lines []string) approval.ColumnOrder
-	credentialIDs(ctx context.Context) ([]passkey.Bytes, error)
-	deliver(n LinkNotice)
-	largeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
-	pageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
-	pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
-	revertTooLargeError(id uuid.UUID, cost int64, expires time.Time) error
-	shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error)
-	shortLinked(id uuid.UUID) bool
-	signReceipt(p channel.Receipt, verb, noun string) (Receipt, error)
-	tooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string
-	linkRevoke(id uuid.UUID) error
-	linkRotate(id uuid.UUID, secret string, expires time.Time) (links.Rotated, error)
-	linkExtend(id uuid.UUID, expires time.Time) (links.RelayLink, bool, error)
-	linkReset(id uuid.UUID, until time.Time) error
-	linkWasReset(id uuid.UUID, secret string) bool
-	relayRegister(ctx context.Context, token channel.LinkToken, expires time.Time) error
-	notifyRevertTo(ctx context.Context, n RevertNotice) error
+	AwaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error
+	CarriesLarge(cost int64) bool
+	ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder
+	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
+	Deliver(n linksvc.LinkNotice)
+	LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
+	PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
+	PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
+	RevertTooLargeError(id uuid.UUID, cost int64, expires time.Time) error
+	ShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error)
+	ShortLinked(id uuid.UUID) bool
+	SignReceipt(p channel.Receipt, verb, noun string) (linksvc.Receipt, error)
+	TooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string
+	LinkRevoke(id uuid.UUID) error
+	LinkRotate(id uuid.UUID, secret string, expires time.Time) (links.Rotated, error)
+	LinkExtend(id uuid.UUID, expires time.Time) (links.RelayLink, bool, error)
+	LinkReset(id uuid.UUID, until time.Time) error
+	LinkWasReset(id uuid.UUID, secret string) bool
+	RelayRegister(ctx context.Context, token channel.LinkToken, expires time.Time) error
+	NotifyRevertTo(ctx context.Context, n linksvc.RevertNotice) error
 }
 
 // revertDescribe is what the revert use case reads of the describe use case.
@@ -80,7 +82,7 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
 // RelayRevert is the revert use case's RelayRevert.
-func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, Receipt, error) {
+func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
 	return s.revert.RelayRevert(ctx, r)
 }
 
@@ -120,7 +122,7 @@ func (s *Service) CheckResetLink(id uuid.UUID, secret string) bool {
 // locks the revert row, so a signature racing it comes first or second,
 // never between.
 // RevealRevert is the revert use case's RevealRevert.
-func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
+func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return s.revert.RevealRevert(ctx, id, secret, in)
 }
 

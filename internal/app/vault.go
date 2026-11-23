@@ -30,7 +30,7 @@ type engineVault struct {
 
 // receipts is the signer of the agents' receipts: none (a nil interface)
 // when the key file is refused, and the answers then carry noReceipt.
-func (v engineVault) receipts() agent.ReceiptSigner {
+func (v engineVault) receipts() linksvc.ReceiptSigner {
 	if v.keys == nil {
 		return nil
 	}

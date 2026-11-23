@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -40,7 +42,7 @@ func (rc *revertCase) RevertRequest(ctx context.Context, id uuid.UUID, secret st
 	if err != nil {
 		return revert.Request{}, err
 	}
-	ids, err := rc.delivery.credentialIDs(ctx)
+	ids, err := rc.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -48,38 +50,38 @@ func (rc *revertCase) RevertRequest(ctx context.Context, id uuid.UUID, secret st
 	case r.Widened && held:
 		req := st.request
 		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
-		req.Columns = rc.delivery.columnsOf(ctx, req.Lines)
+		req.Columns = rc.delivery.ColumnsOf(ctx, req.Lines)
 		return req, nil
 	case r.Widened:
 		return revert.Request{}, widenAgain(nonce)
 	}
 	return revert.Request{
 		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: rc.delivery.columnsOf(ctx, r.Lines),
+		Columns: rc.delivery.ColumnsOf(ctx, r.Lines),
 	}, nil
 }
 
 // RelayRevert applies the person's signed revert (apply_revert): Postgres
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
-func (rc *revertCase) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, Receipt, error) {
+func (rc *revertCase) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
 	open, err := rc.openRevert(ctx, r.RevertID)
 	if err != nil {
-		return action.AppliedRevert{}, Receipt{}, err
+		return action.AppliedRevert{}, linksvc.Receipt{}, err
 	}
 	applied, err := rc.deps.Store.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
-		return action.AppliedRevert{}, Receipt{}, rc.applyRevertError(ctx, open, err)
+		return action.AppliedRevert{}, linksvc.Receipt{}, rc.applyRevertError(ctx, open, err)
 	}
 	// Postgres accepted the signature: the receipt names the revert as
 	// Postgres records it now.
 	signed, err := rc.deps.Store.FindRevert(ctx, r.RevertID)
 	if err != nil {
-		return action.AppliedRevert{}, Receipt{}, err
+		return action.AppliedRevert{}, linksvc.Receipt{}, err
 	}
 	receipt, err := rc.revertReceipt(signed)
 	if err != nil {
-		return action.AppliedRevert{}, Receipt{}, err
+		return action.AppliedRevert{}, linksvc.Receipt{}, err
 	}
 	return applied, receipt, nil
 }
@@ -92,15 +94,15 @@ func (rc *revertCase) openRevert(ctx context.Context, id uuid.UUID) (action.Reve
 	}
 	r, err := rc.deps.Store.FindRevert(ctx, id)
 	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
-		return action.Revert{}, ErrNotThisAgent
+		return action.Revert{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {
 		return action.Revert{}, err
 	}
 	switch {
-	case r.Status == revertExpired || (r.Status == revertPending && !rc.core.Now().Before(r.ExpiresAt)):
+	case r.Status == action.RevertExpired || (r.Status == action.RevertPending && !rc.core.Now().Before(r.ExpiresAt)):
 		return r, rc.revertExpired(r)
-	case r.Status != revertPending:
+	case r.Status != action.RevertPending:
 		return r, alreadySigned(r)
 	}
 	return r, nil

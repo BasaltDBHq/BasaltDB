@@ -561,7 +561,7 @@ func TestRelayRevertWidenKeepsTheSession(t *testing.T) {
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
 	as, err := e.person.Sign(reverttest.RescopeChallenge(revertID, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	widen, err := json.Marshal(agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
+	widen, err := json.Marshal(agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)

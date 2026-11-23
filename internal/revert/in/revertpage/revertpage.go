@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -43,7 +45,7 @@ type appliedDTO struct {
 // relayedRevert is what RelayRevert returns, for Find.
 type relayedRevert struct {
 	applied action.AppliedRevert
-	receipt agent.Receipt
+	receipt linksvc.Receipt
 }
 
 func (p revertPage) getRevert(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +160,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 // postRevertReveal shows the person the values of the revert's redacted
 // lines (Server.Reveal).
 func (p revertPage) postRevertReveal(w http.ResponseWriter, r *http.Request) {
-	p.s.Reveal(w, r, pageserver.RevertParam, func(ctx context.Context, a pageserver.Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+	p.s.Reveal(w, r, pageserver.RevertParam, func(ctx context.Context, a pageserver.Agent, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 		return a.RevealRevert(ctx, id, secret, in)
 	})
 }

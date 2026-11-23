@@ -35,12 +35,13 @@ func (r *pluginRelay) Register(context.Context, channel.LinkToken, time.Time) er
 // portalPluginService is an agent-operated engine on the bot's computer
 // (same-user, the portal's pages, no local pages) with the fake
 // engine-kept plugins and a Vault relay.
-func portalPluginService(t *testing.T, f *fakePluginRequests, r *pluginRelay, vaultState string) *Service {
+func portalPluginService(t *testing.T, f *fakePluginRequests, r *pluginRelay, vaultState string, opts ...func(*Deps)) *Service {
 	t.Helper()
-	s := pluginService(t, f)
-	s.deps.Core.Commands = s.deps.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent)
-	s.deps.Status.OperatedBy, s.deps.Status.SameUser = mcpcontract.OperatedByAgent, true
-	s.deps.Core.PagesOrigin, s.deps.Core.PagesBase = "", links.Portal
+	portal := func(d *Deps) {
+		d.Status.OperatedBy, d.Status.SameUser = mcpcontract.OperatedByAgent, true
+		d.Core.PagesOrigin, d.Core.PagesBase = "", links.Portal
+	}
+	s := pluginService(t, f, append([]func(*Deps){portal}, opts...)...)
 	setApprovals(&s.deps, originKeys{origins: []string{links.Portal}}) // a passkey that signs on the portal
 	s.deps.Delivery.Relay = r
 	s.deps.Status.Vault = fixedVault{VaultStatus{State: vaultState}}
@@ -123,8 +124,9 @@ func TestRequestPluginDevLocalPages(t *testing.T) {
 	t.Parallel()
 	f := &fakePluginRequests{opened: openedPlugin()}
 	r := &pluginRelay{}
-	s := portalPluginService(t, f, r, string(vault.StateOff))
-	s.deps.Status.DevLocalPages, s.deps.Core.PagesOrigin = true, "http://localhost:7878"
+	s := portalPluginService(t, f, r, string(vault.StateOff), func(d *Deps) {
+		d.Status.DevLocalPages, d.Core.PagesOrigin = true, "http://localhost:7878"
+	})
 	out, err := callPlugin(t, s, map[string]any{"source": "/home/bot/local-ner"}, uploadMeta())
 	require.NoError(t, err)
 	require.Zero(t, r.tokens)

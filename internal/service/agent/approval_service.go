@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -29,17 +31,17 @@ type approvalCase struct {
 
 // approvalDelivery is what the approval use case asks of the delivery use case.
 type approvalDelivery interface {
-	approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error)
-	carriesLarge(cost int64) bool
-	columnsOf(ctx context.Context, lines []string) approval.ColumnOrder
-	credentialIDs(ctx context.Context) ([]passkey.Bytes, error)
-	deliver(n LinkNotice)
-	largeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
-	pageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
-	pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
-	shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error)
-	shortLinked(id uuid.UUID) bool
-	tooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string
+	ApprovalReceipt(ctx context.Context, id uuid.UUID) (linksvc.Receipt, error)
+	CarriesLarge(cost int64) bool
+	ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder
+	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
+	Deliver(n linksvc.LinkNotice)
+	LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
+	PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
+	PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
+	ShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error)
+	ShortLinked(id uuid.UUID) bool
+	TooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string
 }
 
 // approvalReverts is what the approval use case reads of the revert use case:
@@ -47,7 +49,7 @@ type approvalDelivery interface {
 // a pending one.
 type approvalReverts interface {
 	ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error)
-	pendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error
+	PendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error
 }
 
 // admitter admits a call: the engine is set up and its guard is current.
@@ -74,7 +76,7 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
-func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (Receipt, error) {
+func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
 	return s.approval.RelayApproval(ctx, r)
 }
 
@@ -84,7 +86,7 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 }
 
 // RevealApproval reveals the rows of a held write to the page holding secret.
-func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
+func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return s.approval.RevealApproval(ctx, id, secret, in)
 }
 
@@ -98,7 +100,7 @@ func (ac *approvalCase) FindApproval(ctx context.Context, id uuid.UUID) (action.
 	return ac.deps.Store.FindApproval(ctx, id)
 }
 
-func (ac *approvalCase) hasColumns() bool { return ac.deps.Columns != nil }
+func (ac *approvalCase) HasColumns() bool { return ac.deps.Columns != nil }
 
 func (ac *approvalCase) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
 	return ac.deps.Columns.ColumnOrder(ctx, tables)

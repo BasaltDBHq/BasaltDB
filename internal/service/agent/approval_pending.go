@@ -6,9 +6,12 @@ import (
 	"slices"
 	"strings"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -20,23 +23,17 @@ func (ac *approvalCase) deliverReissued(items []PendingEntry) {
 		switch {
 		case e.Approval != nil && e.Approval.issued:
 			d := pendingFromDomain(*e.Approval)
-			ac.delivery.deliver(LinkNotice{
-				Kind: NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
+			ac.delivery.Deliver(linksvc.LinkNotice{
+				Kind: linksvc.NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
 			})
 		case e.Revert != nil && e.Revert.issued:
 			d := pendingRevertFromDomain(*e.Revert)
-			ac.delivery.deliver(LinkNotice{
-				Kind: NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
+			ac.delivery.Deliver(linksvc.LinkNotice{
+				Kind: linksvc.NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
 			})
 		}
 	}
 }
-
-// Kinds of list_pending items (owner decision LP-1).
-const (
-	KindApproval = "APPROVAL"
-	KindRevert   = "REVERT"
-)
 
 // PendingParams are list_pending's validated arguments: one page over held
 // writes and reverts, keyset on the id (UUIDv7, so time order). RunID
@@ -79,7 +76,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 	}
 	var entries []PendingEntry
 	more := false
-	if p.Kind != KindRevert && p.Status != revertApplying {
+	if p.Kind != guidance.KindRevert && p.Status != action.RevertApplying {
 		page, err := ac.deps.Store.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
@@ -89,7 +86,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 		}
 		more = page.NextCursor != ""
 	}
-	if p.Kind != KindApproval && p.Status != approvalApproved && p.RunID == uuid.Nil {
+	if p.Kind != guidance.KindApproval && p.Status != action.ApprovalApproved && p.RunID == uuid.Nil {
 		page, err := ac.reverts.ListOpenReverts(ctx, action.RevertListParams{Params: p.Params, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
@@ -129,16 +126,16 @@ func (ac *approvalCase) pendingGuidance(ctx context.Context, e PendingEntry, rei
 			return err
 		}
 		a.Notice = n.ApprovalNotice
-		a.Restated = !reissue && (ac.delivery.shortLinked(a.ID) || isPageAddress(n.ApprovalURL))
-		if n.reason == reasonRequestTooLarge {
-			a.tooLargeSteps = n.steps
+		a.Restated = !reissue && (ac.delivery.ShortLinked(a.ID) || linksvc.IsPageAddress(n.ApprovalURL))
+		if n.Reason == linksvc.ReasonRequestTooLarge {
+			a.tooLargeSteps = n.Steps
 		}
 		if !ac.waitsForPerson(*a) {
 			a.Notice.RequestFile = nil // nothing left to sign: no request to send
 		}
-		a.issued = reissue && n.shortURL != "" && ac.waitsForPerson(*a)
+		a.issued = reissue && n.ShortURL != "" && ac.waitsForPerson(*a)
 		a.PersonMessage, a.Links, a.NextSteps, err = ac.itemGuidance(*a)
 		return err
 	}
-	return ac.reverts.pendingRevert(ctx, e.Revert, reissue)
+	return ac.reverts.PendingRevert(ctx, e.Revert, reissue)
 }

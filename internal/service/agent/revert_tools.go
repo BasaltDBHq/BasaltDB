@@ -56,7 +56,7 @@ func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with tables"}
 	}
 	if len(a.Runs) > revert.MaxFilter || len(a.Tables) > revert.MaxFilter {
-		return action.Scope{}, scopeFilterCapped()
+		return action.Scope{}, ScopeFilterCapped()
 	}
 	if (a.Runs != nil && len(a.Runs) == 0) || (a.Tables != nil && len(a.Tables) == 0) {
 		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +

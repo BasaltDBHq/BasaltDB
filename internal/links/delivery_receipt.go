@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"context"
@@ -49,19 +49,19 @@ type Receipt struct {
 	Line string
 }
 
-// approvalReceipt reads approval id from Postgres, after the person's
+// ApprovalReceipt reads approval id from Postgres, after the person's
 // signature was accepted, and signs its receipt. Only an approved (or
 // already applied) approval gets one.
-func (dc *deliveryCase) approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
+func (dc *Service) ApprovalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
 	a, err := dc.approvals.FindApproval(ctx, id)
 	if err != nil {
 		return Receipt{}, err
 	}
-	return dc.approvalReceiptOf(a)
+	return dc.ApprovalReceiptOf(a)
 }
 
-func (dc *deliveryCase) approvalReceiptOf(a action.Approval) (Receipt, error) {
-	if a.Status != approvalApproved && a.Status != approvalApplied {
+func (dc *Service) ApprovalReceiptOf(a action.Approval) (Receipt, error) {
+	if a.Status != action.ApprovalApproved && a.Status != action.ApprovalApplied {
 		return Receipt{}, fmt.Errorf("approval %s is %s, not signed", a.ID, a.Status)
 	}
 	b, err := approval.ParseBinding(a.BindingText)
@@ -75,16 +75,16 @@ func (dc *deliveryCase) approvalReceiptOf(a action.Approval) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	return dc.signReceipt(channel.Receipt{
+	return dc.SignReceipt(channel.Receipt{
 		Kind: channel.ReceiptApproval, ItemID: a.ID.String(), Status: channel.ReceiptApproved,
 		Headline: summary.Headline(), RowsHash: b.RowsHash,
 	}, "Approved", "approval")
 }
 
-// signReceipt fills in the agent, the engine and the time and signs p
+// SignReceipt fills in the agent, the engine and the time and signs p
 // with the engine's key. Without a usable key (KEY_ERROR) there is no
 // receipt, and the line says why.
-func (dc *deliveryCase) signReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
+func (dc *Service) SignReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
 	if dc.deps.Receipts == nil {
 		return Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, nil
 	}
@@ -110,20 +110,20 @@ func receiptLine(verb, noun string, p channel.Receipt, fingerprint string) strin
 	return format(guidance.Clip(headline, room))
 }
 
-// withReceiptLine puts the receipt line first in a personMessage.
-func withReceiptLine(line, message string) string {
+// WithReceiptLine puts the receipt line first in a personMessage.
+func WithReceiptLine(line, message string) string {
 	if message == "" {
 		return line
 	}
 	return line + "\n" + message
 }
 
-// widenedReceiptLine is the line of a widened revert, which has no
+// WidenedReceiptLine is the line of a widened revert, which has no
 // receipt (provisional, CONTRACT.md, Receipts): the totals the agent may
 // see, and what to do if the person did not widen it.
-func widenedReceiptLine(r action.Revert) string {
+func WidenedReceiptLine(r action.Revert) string {
 	what := fmt.Sprintf("%d rows restored", r.Rows)
-	if r.Status == revertApplying {
+	if r.Status == action.RevertApplying {
 		what = fmt.Sprintf("%d rows to restore in batches", r.Rows)
 	}
 	return "No receipt: the revert's scope was changed on the signing page (" + what + "). If you did not change it, tell the agent at once."

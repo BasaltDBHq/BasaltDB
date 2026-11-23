@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -58,7 +60,7 @@ type WriteOutcome struct {
 	ApprovalID uuid.UUID
 	Warnings   []toolresult.Warning
 	// Receipt is the approval's receipt when the write applied under one.
-	Receipt *Receipt
+	Receipt *linksvc.Receipt
 }
 
 // Write checks sql against the policy and runs it through the guard with
@@ -91,7 +93,7 @@ func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, er
 		// waits would otherwise keep the person from hearing of it until it
 		// answers. Its link is the hold's own answer's, which is the answer
 		// the agent gets unless the person signs first.
-		wc.delivery.deliverHeld(id, expires, err)
+		wc.delivery.DeliverHeld(id, expires, err)
 		if p.Wait == 0 {
 			return WriteOutcome{}, err
 		}

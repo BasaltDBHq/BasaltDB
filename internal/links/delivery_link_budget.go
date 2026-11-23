@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"time"
@@ -22,53 +22,53 @@ import (
 type linkKind int
 
 const (
-	// linkShort is a short link: never measured.
-	linkShort linkKind = iota + 1
-	// linkLong is a long link within the budget.
-	linkLong
-	// linkHash is the hash link that stands in for a long link over the
+	// LinkShort is a short link: never measured.
+	LinkShort linkKind = iota + 1
+	// LinkLong is a long link within the budget.
+	LinkLong
+	// LinkHash is the hash link that stands in for a long link over the
 	// budget; File carries the request.
-	linkHash
-	// linkPage is a page's address with no fragment, for a request too
+	LinkHash
+	// LinkPage is a page's address with no fragment, for a request too
 	// large for a long link that a short link given earlier carries.
-	linkPage
-	// linkNone is the page's address of a request that no link this engine
+	LinkPage
+	// LinkNone is the page's address of a request that no link this engine
 	// has can carry (REQUEST_TOO_LARGE).
-	linkNone
+	LinkNone
 )
 
-// handOver is the link the engine hands over, which of the three it is,
+// HandOver is the link the engine hands over, which of the three it is,
 // and, for a hash link, the request to send beside it.
-type handOver struct {
+type HandOver struct {
 	URL  string
 	Kind linkKind
 	File *links.RequestFile
-	// sent is set when the agent already sent File's request with an
+	// Sent is set when the agent already sent File's request with an
 	// earlier result: the message points back to it.
-	sent bool
+	Sent bool
 }
 
-// chooseLink picks the link to hand over: short when it is not empty, else
+// ChooseLink picks the link to hand over: short when it is not empty, else
 // long, measured in characters of the whole URL (every link is ASCII) against
 // budget, else the hash link with the request file named fileName.
-func chooseLink(short, long string, budget int, fileName string) (handOver, error) {
+func ChooseLink(short, long string, budget int, fileName string) (HandOver, error) {
 	switch {
 	case short != "":
-		return handOver{URL: short, Kind: linkShort}, nil
+		return HandOver{URL: short, Kind: LinkShort}, nil
 	case len(long) <= budget:
-		return handOver{URL: long, Kind: linkLong}, nil
+		return HandOver{URL: long, Kind: LinkLong}, nil
 	}
 	hash, file, err := links.HashLink(long, fileName)
 	if err != nil {
-		return handOver{}, err
+		return HandOver{}, err
 	}
-	return handOver{URL: hash, Kind: linkHash, File: &file}, nil
+	return HandOver{URL: hash, Kind: LinkHash, File: &file}, nil
 }
 
 // Labels of links next to a personMessage: what opening the link does
 // (api/mcp/links/link.schema.json).
 const (
-	labelApprove = "Approve the held write"
+	LabelApprove = "Approve the held write"
 	labelRevert  = "Review and sign the revert"
 )
 
@@ -98,50 +98,50 @@ const (
 // Limits that keep what the agent supplies, and what the database names,
 // from pushing a message over its 500 characters.
 const (
-	maxHeadlineChars = 100
-	maxIntentChars   = 80
+	MaxHeadlineChars = 100
+	MaxIntentChars   = 80
 )
 
-// approvalMessage is the personMessage of a held write at the link handed
+// ApprovalMessage is the personMessage of a held write at the link handed
 // over: lead says what happened, tail lines follow the link.
-func approvalMessage(lead string, pick handOver, tail ...string) (string, []toolresult.Link) {
+func ApprovalMessage(lead string, pick HandOver, tail ...string) (string, []toolresult.Link) {
 	return buildApprovalMessage(lead, pick, tail)
 }
 
-func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []toolresult.Link) {
+func buildApprovalMessage(lead string, pick HandOver, tail []string) (string, []toolresult.Link) {
 	msg := guidance.NewMessage().Text(lead)
 	switch pick.Kind {
-	case linkHash:
-		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent))
-	case linkLong:
+	case LinkHash:
+		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.Sent))
+	case LinkLong:
 		msg.Text(reviewOnly)
 	default:
 		msg.Text("Approve it with your passkey here:")
 	}
-	msg.Link(labelApprove, pick.URL)
+	msg.Link(LabelApprove, pick.URL)
 	for _, line := range tail {
 		msg.Text(line)
 	}
 	return msg.Build()
 }
 
-// revertMessage is the personMessage of a prepared revert at the link handed
+// RevertMessage is the personMessage of a prepared revert at the link handed
 // over: what it restores, why, and when it expires, then the link.
-func revertMessage(summary string, pick handOver, extra ...string) (string, []toolresult.Link) {
+func RevertMessage(summary string, pick HandOver, extra ...string) (string, []toolresult.Link) {
 	msg := guidance.NewMessage().Text(summary)
 	for _, line := range extra {
 		msg.Text(line)
 	}
 	sign := "Sign it with your passkey here:"
 	switch pick.Kind {
-	case linkShort, linkPage, linkNone:
-	case linkHash:
-		sign = reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent)
-	case linkLong:
+	case LinkShort, LinkPage, LinkNone:
+	case LinkHash:
+		sign = reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.Sent)
+	case LinkLong:
 		sign = reviewOnly
 	}
 	return msg.Text(sign).Link(labelRevert, pick.URL).Build()
 }
 
-// expiryLine states a deadline for a person.
-func expiryLine(t time.Time) string { return "Expires " + t.UTC().Format(guidance.PersonTime) + "." }
+// ExpiryLine states a deadline for a person.
+func ExpiryLine(t time.Time) string { return "Expires " + t.UTC().Format(guidance.PersonTime) + "." }

@@ -34,11 +34,11 @@ import (
 type (
 	OSSystem     = osservice.System
 	OSExecSystem = osservice.OSSystem
-	OSSpec       = osservice.Spec
-	OSFile       = osservice.File
+	OSSpec       = servicespec.Spec
+	OSFile       = servicespec.File
 	OSTrustedDir = osservice.TrustedDir
-	OSPluginHost = osservice.PluginHost
-	OSPluginUnit = osservice.PluginEntry
+	OSPluginHost = servicespec.PluginHost
+	OSPluginUnit = servicespec.PluginEntry
 )
 
 const (

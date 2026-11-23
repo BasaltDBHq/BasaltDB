@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/connect"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 )
@@ -189,11 +190,11 @@ func TestPluginIsolationAsRoot(t *testing.T) {
 		require.NoError(t, sys.WriteFile(f, []byte("secret"), 0o600, "basalt"))
 	}
 
-	h := PluginHost{GOOS: goosLinux, EngineUser: "basalt", ConfigDir: cfgDir, StateDir: state, SocketDir: "/run/basalt"}
-	a := PluginEntry{Name: "acme-ner", Instance: "default", Dir: "/opt/basalt/plugins/acme-ner/default/x", Command: "bin/p", Enabled: true}
+	h := servicespec.PluginHost{GOOS: goosLinux, EngineUser: "basalt", ConfigDir: cfgDir, StateDir: state, SocketDir: "/run/basalt"}
+	a := servicespec.PluginEntry{Name: "acme-ner", Instance: "default", Dir: "/opt/basalt/plugins/acme-ner/default/x", Command: "bin/p", Enabled: true}
 	b := a
 	b.Instance, b.Dir = "client_x", "/opt/basalt/plugins/acme-ner/client_x/x"
-	steps, err := PluginInstallPlan(context.Background(), sys, h, []PluginEntry{a, b})
+	steps, err := PluginInstallPlan(context.Background(), sys, h, []servicespec.PluginEntry{a, b})
 	require.NoError(t, err)
 	apply(t, steps)
 	na, err := NamesFor(goosLinux, a.Name, a.Instance)
@@ -201,7 +202,7 @@ func TestPluginIsolationAsRoot(t *testing.T) {
 	nb, err := NamesFor(goosLinux, b.Name, b.Instance)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		for _, k := range []PluginEntry{a, b} {
+		for _, k := range []servicespec.PluginEntry{a, b} {
 			if rm, err := PluginRemoveSteps(sys, goosLinux, k.Name, k.Instance); err == nil {
 				apply(t, rm)
 			}

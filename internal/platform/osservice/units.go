@@ -39,37 +39,10 @@ const (
 	darwinStateDirMode = configDirMode
 )
 
-// Spec is what the unit runs.
-type Spec struct {
-	// GOOS is linux or darwin.
-	GOOS string
-	// Binary is the absolute path of the basalt binary.
-	Binary string
-	// ConfigPath is the engine config file.
-	ConfigPath string
-	// User is the OS user the engine runs as.
-	User string
-	// Files are written mode 0600, owned by User, before the service
-	// starts: the engine config and an agent's credential from basalt init.
-	Files []File
-	// MemoryMB is the engine's pii.maxMemoryMB; 0 is the default. The unit
-	// limits the engine's memory from it, so pressure throttles or stops
-	// only the engine's own OS user (M5.1 plan, section 5).
-	MemoryMB int
-	// Plugins are the config's local plugin entries: install makes each
-	// one's OS user, socket directory and unit, uninstall removes them.
-	Plugins []PluginEntry
-	// StateDir and SocketDir are the engine's, from its config (the
-	// defaults when empty), and CredentialFiles every agent's and plugin's
-	// credential file: a plugin's unit makes them inaccessible.
-	StateDir, SocketDir string
-	CredentialFiles     []string
-}
-
-// pluginHost is what s's plugin units hide and who reaches their sockets.
-// It is HostFor's, from the fields withPluginUnits copied out of it.
-func (s Spec) pluginHost() PluginHost {
-	h := PluginHost{
+// pluginHostOf is what s's plugin units hide and who reaches their
+// sockets. It is HostFor's, from the fields withPluginUnits copied out of it.
+func pluginHostOf(s servicespec.Spec) servicespec.PluginHost {
+	h := servicespec.PluginHost{
 		GOOS: s.GOOS, EngineUser: s.User, ConfigDir: filepath.Dir(s.ConfigPath),
 		StateDir: s.StateDir, SocketDir: s.SocketDir, CredentialFiles: s.CredentialFiles,
 	}
@@ -97,18 +70,12 @@ const (
 )
 
 // memoryLimitsMB are the soft and hard limits for s, in MiB.
-func (s Spec) memoryLimitsMB() (high, hard int) {
+func memoryLimitsMB(s servicespec.Spec) (high, hard int) {
 	mb := s.MemoryMB
 	if mb <= 0 {
 		mb = config.DefaultPIIMaxMemoryMB
 	}
 	return mb * memoryHighFactor, mb * memoryMaxFactor
-}
-
-// File is one file the install writes for the engine.
-type File struct {
-	Path    string
-	Content []byte
 }
 
 // DefaultUser is the engine's OS user on goos.
@@ -139,7 +106,8 @@ func RestartArgs(goos string) []string {
 	return []string{"systemctl", "restart", servicespec.SystemdUnitName}
 }
 
-func (s Spec) args() []string {
+// specArgs is the command line s's unit runs.
+func specArgs(s servicespec.Spec) []string {
 	return []string{s.Binary, "engine", "--config", s.ConfigPath, "--supervise"}
 }
 
@@ -148,12 +116,12 @@ func (s Spec) args() []string {
 // takes an agent's lock, promotes a .pending credential and clears a
 // finished setup from engine.json), and a read-only view of everything
 // else.
-func SystemdUnit(s Spec) string {
-	quoted := make([]string, 0, len(s.args()))
-	for _, a := range s.args() {
+func SystemdUnit(s servicespec.Spec) string {
+	quoted := make([]string, 0, len(specArgs(s)))
+	for _, a := range specArgs(s) {
 		quoted = append(quoted, systemdQuote(a))
 	}
-	high, hard := s.memoryLimitsMB()
+	high, hard := memoryLimitsMB(s)
 	return fmt.Sprintf(`[Unit]
 Description=BasaltDB engine
 Documentation=https://github.com/BasaltDBHq/BasaltDB
@@ -201,10 +169,10 @@ func systemdQuote(s string) string {
 }
 
 // LaunchdDaemon renders the macOS launch daemon.
-func LaunchdDaemon(s Spec) string {
-	high, hard := s.memoryLimitsMB()
+func LaunchdDaemon(s servicespec.Spec) string {
+	high, hard := memoryLimitsMB(s)
 	var args strings.Builder
-	for _, a := range s.args() {
+	for _, a := range specArgs(s) {
 		args.WriteString("\n\t\t<string>" + xmlEscape(a) + "</string>")
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>

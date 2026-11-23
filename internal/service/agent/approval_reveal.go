@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -22,8 +24,8 @@ import (
 // back, recorded as an apply records it, and reveal_approval_rows reads
 // the rows there, for the page holding secret, the approval's live link
 // secret. The ticket lives in this call only.
-func (ac *approvalCase) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
-	key, err := in.revealKey()
+func (ac *approvalCase) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	key, err := in.RevealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
@@ -36,16 +38,16 @@ func (ac *approvalCase) RevealApproval(ctx context.Context, id uuid.UUID, secret
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	ticket, err := ac.deps.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
+	ticket, err := ac.deps.Store.OpenReveal(ctx, id, in.Proof.Assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
 	rows, err := ac.deps.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
-		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
-	return checkedAnswer(a.Lines, rows)
+	return linksvc.CheckedAnswer(a.Lines, rows)
 }
 
 // heldRun is what re-runs a held write: its statement and parameters as
@@ -92,11 +94,11 @@ func (ac *approvalCase) revealApprovalError(err error, link string) error {
 	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRefused:
-		return revealRefused(guidance.CodeApprovalInvalid, link)
+		return linksvc.RevealRefused(guidance.CodeApprovalInvalid, link)
 	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRowsChanged:
-		return revealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
+		return linksvc.RevealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
 	case code == guardmodel.CodeApprovalInvalid && detail == approvalNotFoundDetail:
-		return ErrNotThisAgent
+		return linksvc.ErrNotThisAgent
 	case code == guardmodel.CodeApprovalInvalid:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeApprovalInvalid,

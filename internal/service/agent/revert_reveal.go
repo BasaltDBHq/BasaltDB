@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -18,8 +20,8 @@ import (
 // secret. It serializes with the revert's other page routes; Postgres
 // locks the revert row, so a signature racing it comes first or second,
 // never between.
-func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
-	key, err := in.revealKey()
+func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	key, err := in.RevealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
@@ -48,14 +50,14 @@ func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret str
 		}
 		lines = st.request.Lines
 	}
-	out, err := rc.deps.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
+	out, err := rc.deps.Store.RevealRevertRows(ctx, id, in.Proof.Assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.pageLink(links.Revert, id, secret))
+		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.PageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
-		return approval.RevealAnswer{}, revealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
+		return approval.RevealAnswer{}, linksvc.RevealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
 	}
-	return checkedAnswer(lines, out.Rows)
+	return linksvc.CheckedAnswer(lines, out.Rows)
 }
 
 // revealRevertError is the page's answer to a revert reveal Postgres
@@ -65,9 +67,9 @@ func (rc *revertCase) revealRevertError(r action.Revert, err error, link string)
 	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevealRefused:
-		return revealRefused(guidance.CodeRevertInvalid, link)
+		return linksvc.RevealRefused(guidance.CodeRevertInvalid, link)
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
-		return ErrNotThisAgent
+		return linksvc.ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:
 		return rc.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -171,10 +173,10 @@ func newRelayEnv(t *testing.T, opts vaulttest.Options, rnd io.Reader, connect bo
 }
 
 // notice holds a write for approval and returns what the agent hands over.
-func (e *relayEnv) notice(t *testing.T) heldNotice {
+func (e *relayEnv) notice(t *testing.T) linksvc.HeldAnswer {
 	t.Helper()
-	n, err := e.svc.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
-		e.clock.Now().Add(time.Hour), issueLink)
+	n, err := e.svc.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
+		e.clock.Now().Add(time.Hour), linksvc.IssueLink)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
 	return n
@@ -226,7 +228,7 @@ func TestRelayHandsOverTheRegisteredPortalShortLink(t *testing.T) {
 	n := e.notice(t)
 
 	require.True(t, strings.HasPrefix(n.ApprovalURL, links.Portal+"/approvals/"+caseApproval+"#s="), n.ApprovalURL)
-	require.Equal(t, n.ApprovalURL, n.shortURL)
+	require.Equal(t, n.ApprovalURL, n.ShortURL)
 	require.Contains(t, n.PersonMessage, "\n\n"+n.ApprovalURL+"\n\n")
 	secret, keys := shortSecret(t, n.ApprovalURL)
 	require.Equal(t, e.keys.EngineID(), e.owner(keys.Token), "registered before it was handed over")
@@ -236,7 +238,7 @@ func TestRelayHandsOverTheRegisteredPortalShortLink(t *testing.T) {
 
 	// A revert's link goes the same way.
 	id := uuid.Must(uuid.NewV7())
-	link, err := e.svc.delivery.shortLink(context.Background(), links.Revert, id, e.clock.Now().Add(time.Hour), issueLink)
+	link, err := e.svc.delivery.ShortLink(context.Background(), links.Revert, id, e.clock.Now().Add(time.Hour), linksvc.IssueLink)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(link, links.Portal+"/reverts/"+id.String()+"#s="), link)
 	_, rkeys := shortSecret(t, link)
@@ -248,8 +250,8 @@ func TestRelayDownHandsOverTheLongLink(t *testing.T) {
 	e := newRelayEnv(t, vaulttest.Options{}, rand.Reader, false)
 	n := e.notice(t)
 
-	require.Empty(t, n.shortURL)
-	require.Equal(t, n.longURL, n.ApprovalURL)
+	require.Empty(t, n.ShortURL)
+	require.Equal(t, n.LongURL, n.ApprovalURL)
 	require.True(t, strings.HasPrefix(n.ApprovalURL, links.Portal+"/approvals/"+caseApproval+"#2."), n.ApprovalURL)
 	require.LessOrEqual(t, len(n.ApprovalURL), links.DefaultBudget, "the fallback stays within the link budget")
 	require.Empty(t, e.svc.deps.Delivery.Links.Relay(), "no secret is issued while the socket is down")
@@ -265,8 +267,8 @@ func TestRelayTimeoutFallsBackToTheLongLink(t *testing.T) {
 	n := e.notice(t)
 
 	require.GreaterOrEqual(t, time.Since(start), e.timeout, "it waited for the answer")
-	require.Empty(t, n.shortURL)
-	require.Equal(t, n.longURL, n.ApprovalURL)
+	require.Empty(t, n.ShortURL)
+	require.Equal(t, n.LongURL, n.ApprovalURL)
 	require.Empty(t, e.svc.deps.Delivery.Links.Relay(), "the unregistered link is revoked, never handed over")
 	secrets := e.rnd.secrets()
 	require.Len(t, secrets, 1)
@@ -283,8 +285,8 @@ func TestRelayRefusedFallsBackToTheLongLink(t *testing.T) {
 		return vaulttest.Verdict{Code: vaulttest.ErrLinkLimit}
 	}}, rand.Reader, true)
 	n := e.notice(t)
-	require.Empty(t, n.shortURL)
-	require.Equal(t, n.longURL, n.ApprovalURL)
+	require.Empty(t, n.ShortURL)
+	require.Equal(t, n.LongURL, n.ApprovalURL)
 	require.Empty(t, e.svc.deps.Delivery.Links.Relay())
 }
 
@@ -310,8 +312,8 @@ func TestRelayConflictRevokesTheLink(t *testing.T) {
 	e.v.Bind(keys.Token.Wire(), rivalEngine, time.Now().Add(time.Hour))
 
 	n := e.notice(t)
-	require.Empty(t, n.shortURL)
-	require.Equal(t, n.longURL, n.ApprovalURL, "the long link instead")
+	require.Empty(t, n.ShortURL)
+	require.Equal(t, n.LongURL, n.ApprovalURL, "the long link instead")
 	require.False(t, e.svc.deps.Delivery.Links.Check(uuid.MustParse(caseApproval), next), "the link is revoked")
 	require.Empty(t, e.svc.deps.Delivery.Links.Relay())
 	require.Equal(t, rivalEngine, e.owner(keys.Token), "the Vault keeps the rival's binding")

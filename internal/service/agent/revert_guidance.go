@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -45,7 +47,7 @@ func (rc *revertCase) planGuidance(plan RevertPlan) (string, []toolresult.NextSt
 	r := plan.Revert
 	b := guidance.NewSteps()
 	switch {
-	case r.Status == revertPending && r.Widened:
+	case r.Status == action.RevertPending && r.Widened:
 		// No link to give (RS-5): the step names the page, without a URL,
 		// which the step builder requires.
 		steps := []toolresult.NextStep{
@@ -55,23 +57,23 @@ func (rc *revertCase) planGuidance(plan RevertPlan) (string, []toolresult.NextSt
 		}
 		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
 			guidance.Sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(guidance.PersonTime)), steps, nil
-	case r.Status == revertPending && plan.tooLarge:
-		steps, err := revertTooLargeSteps(r.ID, false)
+	case r.Status == action.RevertPending && plan.tooLarge:
+		steps, err := linksvc.RevertTooLargeSteps(r.ID, false)
 		return plan.PersonMessage, steps, err
-	case r.Status == revertPending:
+	case r.Status == action.RevertPending:
 		b.SendRequest(plan.RequestFile).
 			OpenLink(plan.RevertURL, "Open the link, review the plan and sign it once with your passkey.").
 			TellAgent("Tell the agent when you have signed.").
 			EndTurn("End your turn: apply the lines only after the person says they signed.")
 		steps, err := b.Build()
 		return plan.PersonMessage, steps, err
-	case r.Status == revertApplying:
+	case r.Status == action.RevertApplying:
 		steps, err := rc.applyBatchSteps(plan)
 		return "", steps, err
-	case r.Status == revertApplied:
+	case r.Status == action.RevertApplied:
 		steps, err := b.Stop("The revert is done; do not request it again.").Build()
 		return outcomeMessage(r), steps, err
-	case r.Status == revertRejected:
+	case r.Status == action.RevertRejected:
 		steps, err := b.Stop("The person rejected the revert and nothing was reverted. Do not request it again on your own.").Build()
 		return rejectedMessage(r), steps, err
 	}
@@ -101,7 +103,7 @@ func (rc *revertCase) applyBatchSteps(plan RevertPlan) ([]toolresult.NextStep, e
 // batchGuidance is what apply_revert_batch adds to a batch's result: more
 // lines to read, or the plan's end.
 func (rc *revertCase) batchGuidance(res action.BatchResult) (string, []toolresult.NextStep, error) {
-	if res.Status != revertApplied {
+	if res.Status != action.RevertApplied {
 		return "", applyingSteps(res.RevertID), nil
 	}
 	steps, err := guidance.NewSteps().Stop("The revert is done; do not apply more lines.").Build()
@@ -118,7 +120,7 @@ func outcomeMessage(r action.Revert) string {
 	}
 	what := guidance.Sentence(revertTitle(r))
 	switch {
-	case r.Status == revertApplied:
+	case r.Status == action.RevertApplied:
 		return fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them after the agent (people win).",
 			restored, skipped)
 	case r.SignedAt != nil:

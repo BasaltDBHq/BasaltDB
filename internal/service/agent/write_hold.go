@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -48,20 +50,20 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 		}
 		return uuid.Nil, time.Time{}, err
 	}
-	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}
-	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
+	req := linksvc.SizedRequest{Binding: held.BindingText, Lines: lines, Cost: linksvc.TextsCost(lines)}
+	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, linksvc.IssueLink)
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
 	// The notice carries the long link, which works anywhere, and the
 	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
-	sent := HeldNotice{
+	sent := linksvc.HeldNotice{
 		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: p.SQL,
-		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
-		ShortURL: notice.shortURL,
+		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.LongURL,
+		ShortURL: notice.ShortURL,
 	}
-	if err := wc.delivery.notifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
+	if err := wc.delivery.NotifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
 		wc.core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
 	return held.ApprovalID, held.ExpiresAt, approvalRequiredError(notice)
@@ -97,9 +99,9 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 	if a, err = wc.approvals.FindApproval(ctx, a.ID); err != nil {
 		return WriteOutcome{}, err
 	}
-	var receipt *Receipt
-	if a.Status == approvalApproved {
-		r, err := wc.delivery.approvalReceiptOf(a)
+	var receipt *linksvc.Receipt
+	if a.Status == action.ApprovalApproved {
+		r, err := wc.delivery.ApprovalReceiptOf(a)
 		if err != nil {
 			return WriteOutcome{}, err
 		}
@@ -135,7 +137,7 @@ func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, er
 	default:
 		return err
 	}
-	n, linkErr := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+	n, linkErr := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, linksvc.KeepLink)
 	if linkErr != nil {
 		return linkErr
 	}
@@ -145,9 +147,9 @@ func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, er
 // sameAsHeld checks the call repeats the held write.
 func sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
-	case a.Status == approvalApplied:
+	case a.Status == action.ApprovalApplied:
 		return approvalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
-	case a.Status == approvalExpired:
+	case a.Status == action.ApprovalExpired:
 		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
 		return differentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
@@ -182,7 +184,7 @@ func sameParams(held json.RawMessage, params []any) bool {
 }
 
 func (wc *writeCase) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
-	err := wc.delivery.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
+	err := wc.delivery.AwaitWhile(ctx, wait, func() bool { return a.Status == action.ApprovalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
 		next, err := wc.approvals.FindApproval(budget.With(ctx), a.ID)
@@ -196,15 +198,15 @@ func (wc *writeCase) awaitSigned(ctx context.Context, a action.Approval, wait ti
 }
 
 func (wc *writeCase) waitForSignature(ctx context.Context, a action.Approval, p WriteParams) (action.Approval, error) {
-	if a.Status != approvalPending || p.Wait == 0 {
+	if a.Status != action.ApprovalPending || p.Wait == 0 {
 		return a, nil
 	}
 	a, err := wc.awaitSigned(ctx, a, p.Wait)
 	if err != nil {
 		return a, err
 	}
-	if a.Status == approvalPending {
-		n, err := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+	if a.Status == action.ApprovalPending {
+		n, err := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, linksvc.KeepLink)
 		if err != nil {
 			return a, err
 		}

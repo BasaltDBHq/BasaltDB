@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -45,7 +47,7 @@ func reviewOnlyRevertSteps(id uuid.UUID, link string) []toolresult.NextStep {
 	return []toolresult.NextStep{
 		guidance.OpenLink(link, "Open the link to review the rows. It cannot be signed yet."),
 		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
-		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), linksvc.ArgReissueLink: true},
 			"Once status shows the Vault connected, call this for a link the person can sign, and show it."),
 	}
 }
@@ -69,7 +71,7 @@ func waitEndedSteps(id uuid.UUID, link, open string) []toolresult.NextStep {
 		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
 		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), linksvc.ArgReissueLink: true},
 			"For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working."),
 	}
 }
@@ -89,7 +91,7 @@ func widenedWaitSteps(id uuid.UUID) []toolresult.NextStep {
 		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
 		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), linksvc.ArgReissueLink: true},
 			"Only if the person asks for a new link: it resets the revert to your own work, dropping what they added."),
 	}
 }
@@ -194,7 +196,7 @@ func filterText(scope action.Scope) string {
 // longRevertLink is r's long link: it carries the whole request, so the
 // engine can give it again when the short link is gone.
 func (rc *revertCase) longRevertLink(ctx context.Context, r action.Revert) (string, error) {
-	ids, err := rc.delivery.credentialIDs(ctx)
+	ids, err := rc.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -223,17 +225,17 @@ func (rc *revertCase) signingLink(ctx context.Context, r action.Revert, text str
 	switch {
 	case r.Widened:
 		return guidance.OpenLink("", text), nil
-	case rc.delivery.shortLinked(r.ID):
+	case rc.delivery.ShortLinked(r.ID):
 		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	pick, err := rc.restatedRevertLink(ctx, r)
 	if err != nil {
 		return toolresult.NextStep{}, err
 	}
-	if pick.Kind == linkPage || pick.Kind == linkNone {
+	if pick.Kind == linksvc.LinkPage || pick.Kind == linksvc.LinkNone {
 		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
-	if pick.Kind == linkHash {
+	if pick.Kind == linksvc.LinkHash {
 		text = "Open the link with the request file the agent sent you earlier. " + text
 	}
 	return guidance.OpenLink(pick.URL, text), nil
@@ -248,23 +250,23 @@ func (rc *revertCase) signingLink(ctx context.Context, r action.Revert, text str
 // A request too large for a long link is restated as the page's address:
 // linkPage when a short link given earlier carries it, else linkNone
 // (CONTRACT.md, Large values, rule 3).
-func (rc *revertCase) restatedRevertLink(ctx context.Context, r action.Revert) (handOver, error) {
-	req := revertRequestOf(r)
-	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
+func (rc *revertCase) restatedRevertLink(ctx context.Context, r action.Revert) (linksvc.HandOver, error) {
+	req := linksvc.RevertRequestOf(r)
+	long, tooLarge, err := linksvc.LongOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
 	if err != nil {
-		return handOver{}, err
+		return linksvc.HandOver{}, err
 	}
 	if tooLarge {
-		kind := linkNone
-		if rc.delivery.carriesLarge(req.Cost) {
-			kind = linkPage
+		kind := linksvc.LinkNone
+		if rc.delivery.CarriesLarge(req.Cost) {
+			kind = linksvc.LinkPage
 		}
-		return handOver{URL: rc.delivery.pageAddress(links.Revert, r.ID), Kind: kind}, nil
+		return linksvc.HandOver{URL: rc.delivery.PageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
-	if rc.delivery.shortLinked(r.ID) {
-		return handOver{URL: long, Kind: linkLong}, nil
+	if rc.delivery.ShortLinked(r.ID) {
+		return linksvc.HandOver{URL: long, Kind: linksvc.LinkLong}, nil
 	}
-	return chooseLink("", long, rc.core.LinkBudget, links.RevertFile(r.ID))
+	return linksvc.ChooseLink("", long, rc.core.LinkBudget, links.RevertFile(r.ID))
 }
 
 // revertTitle names revert r for the person, starting lowercase: its scope,
@@ -365,7 +367,7 @@ func nothingSigned(r action.Revert) error {
 
 func alreadySigned(r action.Revert) error {
 	msg := fmt.Sprintf("revert %s was already signed (status %s); nothing more was applied", r.ID, r.Status)
-	if r.Status == revertRejected {
+	if r.Status == action.RevertRejected {
 		msg = fmt.Sprintf("revert %s was rejected by the person on the revert page; nothing was reverted", r.ID)
 	}
 	return &toolresult.ToolError{

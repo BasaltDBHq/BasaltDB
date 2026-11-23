@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -44,16 +46,16 @@ func (probeAgent) ApprovalRequest(context.Context, uuid.UUID) (approval.Request,
 	return approval.Request{}, errors.New("ApprovalRequest")
 }
 
-func (probeAgent) RelayApproval(context.Context, approval.Response) (agent.Receipt, error) {
-	return agent.Receipt{}, errors.New("RelayApproval")
+func (probeAgent) RelayApproval(context.Context, approval.Response) (linksvc.Receipt, error) {
+	return linksvc.Receipt{}, errors.New("RelayApproval")
 }
 
 func (probeAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
 	return revert.Request{}, errors.New("RevertRequest")
 }
 
-func (probeAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, agent.Receipt, error) {
-	return action.AppliedRevert{}, agent.Receipt{}, errors.New("RelayRevert")
+func (probeAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+	return action.AppliedRevert{}, linksvc.Receipt{}, errors.New("RelayRevert")
 }
 
 func (probeAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
@@ -64,11 +66,11 @@ func (probeAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectR
 	return agent.RejectResponse{}, errors.New("RejectRevert")
 }
 
-func (probeAgent) RevealApproval(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
+func (probeAgent) RevealApproval(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return approval.RevealAnswer{}, errors.New("RevealApproval")
 }
 
-func (probeAgent) RevealRevert(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
+func (probeAgent) RevealRevert(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return approval.RevealAnswer{}, errors.New("RevealRevert")
 }
 

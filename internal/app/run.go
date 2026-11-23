@@ -33,6 +33,7 @@ import (
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
@@ -47,7 +48,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/internal/status"
@@ -559,7 +559,7 @@ type agentEnv struct {
 	plugins agent.PluginReporter
 	// deliverer gives each agent where its approval notices go, for the
 	// approval.deliver plugins; nil when the engine keeps no plugins.
-	deliverer func(name string) agent.LinkDeliverer
+	deliverer func(name string) linksvc.LinkDeliverer
 	// requests serve request_plugin on a service engine, once its
 	// engine-kept plugins are open; nil on a same-user engine.
 	requests *pluginRequests
@@ -567,7 +567,7 @@ type agentEnv struct {
 	update *updatecheck.Checker
 	// receipts signs the receipt of every relayed signature; nil when the
 	// engine key file is refused (KEY_ERROR).
-	receipts agent.ReceiptSigner
+	receipts linksvc.ReceiptSigner
 	// relay and relayLinks are set when the engine dials out to the Vault:
 	// each agent registers its portal short links there.
 	relay      *vault.Client
@@ -683,7 +683,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		r, err := guard.EngineRecord(ctx, pool, id)
 		return agentEngineRecord(r), postgres.MapError(err)
 	}
-	var relay agent.LinkRelay
+	var relay linksvc.LinkRelay
 	if env.relay != nil {
 		relay = env.relay
 	}
@@ -693,7 +693,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
-	var deliverer agent.LinkDeliverer
+	var deliverer linksvc.LinkDeliverer
 	if env.deliverer != nil {
 		deliverer = env.deliverer(a.Name)
 	}

@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -45,11 +47,11 @@ type Agent interface {
 	ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.Request, error)
 	// RelayApproval and RelayRevert relay the person's signature and return
 	// the engine's receipt of it (CONTRACT.md, Vault channel, Receipts).
-	RelayApproval(ctx context.Context, r approval.Response) (agent.Receipt, error)
+	RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error)
 	// RevertRequest is the request for the page holding secret, the
 	// revert's live link secret.
 	RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error)
-	RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, agent.Receipt, error)
+	RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error)
 	// RescopeRevert changes the revert's scope for the page holding secret
 	// (CONTRACT.md, Rescope, widen and reject).
 	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in agent.ScopeRequest) (agent.ScopeResponse, error)
@@ -59,8 +61,8 @@ type Agent interface {
 	// RevealApproval and RevealRevert return the values of the item's
 	// redacted lines for the person's reveal proof (CONTRACT.md, Rows hidden
 	// from the agent), for the page holding secret.
-	RevealApproval(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
-	RevealRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
+	RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error)
+	RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error)
 	// CheckLink reports whether secret is the live link secret of one of
 	// this agent's items (CONTRACT.md, Link secrets).
 	CheckLink(id uuid.UUID, secret string) bool
@@ -302,7 +304,7 @@ func (s *Server) page(name string) http.HandlerFunc {
 // proof. The answer is sent with Cache-Control: no-store (WriteJSON) and
 // kept nowhere.
 func (s *Server) Reveal(w http.ResponseWriter, r *http.Request, name string,
-	ask func(context.Context, Agent, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error),
+	ask func(context.Context, Agent, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error),
 ) {
 	id, ok := s.LinkedID(w, r, name)
 	if !ok {
@@ -333,12 +335,12 @@ func (s *Server) Reveal(w http.ResponseWriter, r *http.Request, name string,
 
 // revealBody decodes a reveal body strictly: no unknown key, every proof
 // field and the secret present.
-func revealBody(body []byte) (agent.RevealRequest, bool) {
-	var in agent.RevealRequest
+func revealBody(body []byte) (linksvc.RevealRequest, bool) {
+	var in linksvc.RevealRequest
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() {
-		return agent.RevealRequest{}, false
+		return linksvc.RevealRequest{}, false
 	}
 	p := in.Proof
 	complete := len(p.CredentialID) > 0 && len(p.AuthenticatorData) > 0 && len(p.ClientDataJSON) > 0 && len(p.Signature) > 0
@@ -376,7 +378,7 @@ func (s *Server) deadLink(id uuid.UUID, secret string) error {
 	if !reset {
 		return unknownLink()
 	}
-	te, err := agent.LinkReset()
+	te, err := linksvc.LinkReset()
 	if err != nil {
 		return err
 	}
@@ -406,7 +408,7 @@ func Find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 	s.mu.RUnlock()
 	for _, a := range agents {
 		out, err := ask(ctx, a)
-		if errors.Is(err, agent.ErrNotThisAgent) {
+		if errors.Is(err, linksvc.ErrNotThisAgent) {
 			continue
 		}
 		if err != nil {
@@ -440,7 +442,7 @@ func pageFailure(a Agent, err error) error {
 // unknownLink is the NOT_FOUND answer for a link no agent knows. Should its
 // steps fail to build, the answer is the error itself (INTERNAL).
 func unknownLink() error {
-	te, err := agent.LinkNotFound()
+	te, err := linksvc.LinkNotFound()
 	if err != nil {
 		return err
 	}

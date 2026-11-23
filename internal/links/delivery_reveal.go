@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ type ScopeProof struct {
 	Signature         passkey.Bytes `json:"signature"`
 }
 
-func (p ScopeProof) assertion() passkey.Assertion {
+func (p ScopeProof) Assertion() passkey.Assertion {
 	return passkey.Assertion{
 		CredentialID: p.CredentialID, AuthenticatorData: p.AuthenticatorData,
 		ClientDataJSON: p.ClientDataJSON, Signature: p.Signature,
@@ -45,7 +45,7 @@ type RevealRequest struct {
 
 // revealKey is the key Postgres checks the proof against, derived from the
 // page's reveal secret, which never reaches Postgres.
-func (in RevealRequest) revealKey() ([]byte, error) {
+func (in RevealRequest) RevealKey() ([]byte, error) {
 	raw, err := links.DecodeSecret(in.RevealSecret)
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: "revealSecret must be 16 random bytes, base64url without padding"}
@@ -54,11 +54,11 @@ func (in RevealRequest) revealKey() ([]byte, error) {
 	return approval.RevealKey(raw)
 }
 
-// checkedAnswer is the answer the page gets, checked first as the page
+// CheckedAnswer is the answer the page gets, checked first as the page
 // checks it: rows of redacted lines, in order, each hashing to its line
 // (or with its SECRET columns null). A row that fails is a defect, never
 // shown.
-func checkedAnswer(lines []string, rows []approval.RevealedRow) (approval.RevealAnswer, error) {
+func CheckedAnswer(lines []string, rows []approval.RevealedRow) (approval.RevealAnswer, error) {
 	if rows == nil {
 		rows = []approval.RevealedRow{}
 	}
@@ -69,11 +69,11 @@ func checkedAnswer(lines []string, rows []approval.RevealedRow) (approval.Reveal
 	return answer, nil
 }
 
-// revealRefused is every refused proof, key, nonce or ticket: one answer,
+// RevealRefused is every refused proof, key, nonce or ticket: one answer,
 // so the agent holding the link learns nothing from which check failed. Its
 // step opens the page again (link, with the page's own secret: the answer
 // goes back to that page only) to press Show values with passkey once more.
-func revealRefused(code, link string) error {
+func RevealRefused(code, link string) error {
 	te := &toolresult.ToolError{
 		Code: code, Reason: guardmodel.RevealRefused,
 		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
@@ -87,14 +87,14 @@ func revealRefused(code, link string) error {
 	return &guidance.PageError{ToolError: te}
 }
 
-// pageLink is the page's own short link, with the secret it holds.
-func (dc *deliveryCase) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
+// PageLink is the page's own short link, with the secret it holds.
+func (dc *Service) PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
 	return links.WithSecret(page(dc.core.PagesBase, id), secret)
 }
 
-// revealRowsChanged is a reveal whose hidden rows changed since the agent
+// RevealRowsChanged is a reveal whose hidden rows changed since the agent
 // asked: nothing is shown, and the item can no longer apply as signed.
-func revealRowsChanged(code, what, then string) error {
+func RevealRowsChanged(code, what, then string) error {
 	return &guidance.PageError{ToolError: &toolresult.ToolError{
 		Code: code, Reason: guidance.ReasonRowsChanged,
 		Message:       fmt.Sprintf("the hidden rows of this %s changed since it was prepared; nothing was shown", what),

@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 const (
@@ -238,7 +239,7 @@ func TestRequestPluginUploadsAndOpensThePluginPage(t *testing.T) {
 		sources = append(sources, source)
 		return mcpserver.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner"}, nil
 	}
-	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open, UploadPlugin: upload})
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open, UploadPlugin: upload, UploadAllowed: plugin.UploadAllowed})
 
 	res := c.request(t, "tools/call", map[string]any{
 		"name": "request_plugin", "arguments": map[string]any{"source": "/home/me/local-ner"},

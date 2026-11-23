@@ -5,13 +5,14 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // PluginUnitHost is the plugin units a service engine expects, as the plugin
 // host's port (engine.UnitHost): the engine configured by one config, run as
 // one OS user.
 type PluginUnitHost struct {
-	host PluginHost
+	host servicespec.PluginHost
 	goos string
 }
 

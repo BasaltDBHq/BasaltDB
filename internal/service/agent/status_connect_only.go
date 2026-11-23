@@ -16,8 +16,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
 // A connect-only setup on the engine (CONTRACT.md, Setup from your laptop,

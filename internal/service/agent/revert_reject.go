@@ -6,6 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -102,7 +104,7 @@ func refusedInNote(r rune) bool {
 // to a revert Postgres refuses everything for: it is logged.
 func (rc *revertCase) revokeRejected(ctx context.Context, id uuid.UUID) {
 	revoke := func() {
-		if err := rc.delivery.linkRevoke(id); err != nil {
+		if err := rc.delivery.LinkRevoke(id); err != nil {
 			rc.core.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
 		}
 	}
@@ -127,7 +129,7 @@ func (rc *revertCase) rejectError(r action.Revert, heldToken bool, err error) er
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused:
 		return rejectRefused()
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
-		return ErrNotThisAgent
+		return linksvc.ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:
 		return rc.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:

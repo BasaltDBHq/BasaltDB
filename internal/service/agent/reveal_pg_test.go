@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"testing"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
 	"github.com/google/uuid"
@@ -29,7 +31,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The agent cannot reveal hidden rows (CONTRACT.md, Approvals, Rows hidden
@@ -142,7 +143,7 @@ func revealBody(t *testing.T, sign func(challenge []byte) passkey.Assertion, kin
 	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, rowsHash)
 	require.NoError(t, err)
 	as := sign(ch)
-	body, err := json.Marshal(agent.RevealRequest{RevealSecret: base64.RawURLEncoding.EncodeToString(raw), Proof: agent.ScopeProof{
+	body, err := json.Marshal(linksvc.RevealRequest{RevealSecret: base64.RawURLEncoding.EncodeToString(raw), Proof: linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)

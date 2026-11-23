@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"context"
@@ -29,11 +29,11 @@ type ColumnOrder interface {
 	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
 }
 
-// columnsOf is the column order of the tables lines name, for the pages'
+// ColumnsOf is the column order of the tables lines name, for the pages'
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.
-func (dc *deliveryCase) columnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
-	if !dc.approvals.hasColumns() {
+func (dc *Service) ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
+	if !dc.approvals.HasColumns() {
 		return nil
 	}
 	seen := map[string]bool{}
@@ -64,13 +64,13 @@ func (dc *deliveryCase) columnsOf(ctx context.Context, lines []string) approval.
 
 // CheckLink reports whether secret is the live link secret of one of this
 // agent's items.
-func (dc *deliveryCase) CheckLink(id uuid.UUID, secret string) bool {
+func (dc *Service) CheckLink(id uuid.UUID, secret string) bool {
 	return dc.deps.Links.Check(id, secret)
 }
 
-// issuedLink is a newly issued short link; this engine must serve the
+// IssuedLink is a newly issued short link; this engine must serve the
 // pages.
-func (dc *deliveryCase) issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
+func (dc *Service) IssuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
 	link, err := dc.localLink(page, id, expires)
 	if err != nil {
 		return "", err

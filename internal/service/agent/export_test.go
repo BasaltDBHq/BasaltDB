@@ -1,11 +1,14 @@
 package agent
 
-import "github.com/basaltdbhq/basaltdb/internal/core/links"
+import (
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+)
 
 // The external tests reach into a built service through these.
 
 // SetDeliverer replaces s's link deliverer.
-func SetDeliverer(s *Service, d LinkDeliverer) { s.deps.Delivery.Deliverer = d }
+func SetDeliverer(s *Service, d linksvc.LinkDeliverer) { s.deps.Delivery.Deliverer = d }
 
 // SetLinkBudget replaces s's link budget.
 func SetLinkBudget(s *Service, n int) { s.deps.Core.LinkBudget = n }

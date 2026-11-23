@@ -45,6 +45,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -178,7 +179,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
 		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
 	}
-	keepsPlugins := keepsPluginEntries(cfg)
+	keepsPlugins := plugin.KeepsEntries(cfg)
 	if keepsPlugins {
 		// A service engine, and an agent-operated one on the bot's computer,
 		// keeps plugin entries of its own, added with request_plugin, and
@@ -197,7 +198,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.deliverer = plugins.DeliverLinks
 	}
 	if keepsPlugins {
-		env.requests = newPluginRequests(agentUIDs, pluginCallers(cfg, uint32(os.Geteuid())))
+		env.requests = newPluginRequests(agentUIDs, plugin.Callers(cfg, uint32(os.Geteuid())))
 	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
@@ -342,26 +343,6 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	default:
 	}
 	return err
-}
-
-// keepsPluginEntries reports whether the engine keeps plugin entries of
-// its own: a service engine, and an agent-operated engine that runs as the
-// agent's own OS user (the bot's computer). A person-operated engine that
-// runs as the person's own OS user keeps none (SAME_USER_MODE).
-func keepsPluginEntries(cfg config.Config) bool {
-	return cfg.Service() || cfg.AgentOperated()
-}
-
-// pluginCallers are the OS users whose agents may change plugins: on a
-// service engine the person's (personUids); on an agent-operated engine
-// that runs as the agent's own OS user, that user, which every agent of the
-// engine runs as. An agent-operated service engine admits nobody here:
-// request_plugin refuses it AGENT_OPERATED before it asks.
-func pluginCallers(cfg config.Config, euid uint32) []uint32 {
-	if cfg.Service() {
-		return cfg.PersonUIDs
-	}
-	return []uint32{euid}
 }
 
 // runtimeFunc builds one agent's runtime (newAgentRuntime outside tests).

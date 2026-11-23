@@ -146,7 +146,10 @@ func labelsSQL(req Request) string {
 
 // writeLabels writes the person's labels in the run's transaction, after
 // the grants: CLASSES_CHANGED, nothing changed, when a column's class is
-// not the one the person saw.
+// not the one the person saw. Its tables are the picks, not the role's
+// grants (pkg/setup's writeLabels takes those): the person labels only the
+// columns this page showed, and a role finished after an interrupted run
+// can hold grants beyond the picks, whose columns restPublic must not mark.
 func (s *Service) writeLabels(ctx context.Context, tx pgx.Tx, names guardmodel.Names, picks []TablePick, req Request, now time.Time) (int, error) {
 	if len(req.ColumnClasses) == 0 && !req.RestPublic {
 		return 0, nil

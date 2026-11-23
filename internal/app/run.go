@@ -740,7 +740,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.Database = agent.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
 	deps.Status.Finisher = finisher
 	deps.Describe.Catalog = agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)}
-	deps.Describe.Classes = storeClasses{BoundMap: classes.On(pool)}
+	deps.Describe.Classes = pii.StoreClasses{BoundMap: classes.On(pool), Store: storeErrors{}}
 	// The plugin approval routes read and relay on the agent's own
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests

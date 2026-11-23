@@ -11,8 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statuscli"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func commands() []cli.Command {
 		{Name: "mcp", Summary: "MCP server for an agent: relays stdio to the engine", Run: runMCP},
 		{Name: "service", Summary: "Install the engine service (install)", Run: runService},
 		{Name: "init", Summary: "Start setup: install the engine service when needed, then print and open the setup link", Run: cli.WithIO(newIO, runInitCommand)},
-		{Name: "version", Summary: "Print the version", Run: runVersion},
+		{Name: "version", Summary: "Print the version", Run: statuscli.RunVersion},
 		{Name: "help", Summary: "Show this help"},
 	}
 }
@@ -50,7 +50,7 @@ func run(ctx context.Context, args []string, io cli.Stdio) int {
 		usage(io.Out)
 		return cli.ExitOK
 	case "--version":
-		return runVersion(ctx, nil, io)
+		return statuscli.RunVersion(ctx, nil, io)
 	}
 	useTrustDir(args[1:])
 	for _, cmd := range commands() {
@@ -61,11 +61,6 @@ func run(ctx context.Context, args []string, io cli.Stdio) int {
 	fmt.Fprintf(io.Err, "basalt: unknown command %q\n\n", args[0])
 	usage(io.Err)
 	return cli.ExitUsage
-}
-
-func runVersion(_ context.Context, _ []string, io cli.Stdio) int {
-	fmt.Fprintln(io.Out, "basalt "+buildinfo.Version)
-	return cli.ExitOK
 }
 
 func usage(w io.Writer) {

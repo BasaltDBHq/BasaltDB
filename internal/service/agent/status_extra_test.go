@@ -14,6 +14,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 )
 
@@ -34,9 +35,9 @@ func TestStatusShowsTheSavedCrashReportAndItsLink(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rec := crash.Recorder{Dir: dir, Version: "v1.2.3", Scrub: crash.NewScrubber("", "", nil), Now: func() time.Time { return statusNow }}
-	_, err := rec.Save(crash.Input{Command: "query", Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
+	_, err := rec.Save(servicespec.CrashInput{Command: "query", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
 	require.NoError(t, err)
-	newest, err := rec.Save(crash.Input{Command: "write", Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte("main.g()\n\t/src/b.go:2 +0x2\n")})
+	newest, err := rec.Save(servicespec.CrashInput{Command: "write", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte("main.g()\n\t/src/b.go:2 +0x2\n")})
 	require.NoError(t, err)
 
 	r, _ := extraStatus(t, func(d *Deps) { d.Status.CrashDirs = []string{dir} })
@@ -54,7 +55,7 @@ func TestStatusCrashLinkIsCutToTheLinkBudget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rec := crash.Recorder{Dir: dir, Version: "v1", Scrub: crash.NewScrubber("", "", nil), Now: func() time.Time { return statusNow }}
-	_, err := rec.Save(crash.Input{Command: "query", Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
+	_, err := rec.Save(servicespec.CrashInput{Command: "query", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
 	require.NoError(t, err)
 	r, _ := extraStatus(t, func(d *Deps) { d.Status.CrashDirs = []string{dir} })
 	require.NotNil(t, r.Crash)
@@ -128,7 +129,7 @@ func TestStatusLeavesTheCrashLinkOutWhenItCannotFitTheBudget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	rec := crash.Recorder{Dir: dir, Version: strings.Repeat("v", 64), Scrub: crash.NewScrubber("", "", nil), Now: func() time.Time { return statusNow }}
-	rep, err := rec.Save(crash.Input{Command: strings.Repeat("c", 40), Kind: crash.KindPanic, ErrorCode: strings.Repeat("E", 60), Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
+	rep, err := rec.Save(servicespec.CrashInput{Command: strings.Repeat("c", 40), Kind: servicespec.CrashKindPanic, ErrorCode: strings.Repeat("E", 60), Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
 	require.NoError(t, err)
 	r, raw := extraStatus(t, func(d *Deps) { d.Status.CrashDirs = []string{dir}; d.Core.LinkBudget = 600 })
 	require.NotNil(t, r.Crash)

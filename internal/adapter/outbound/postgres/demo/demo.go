@@ -21,8 +21,6 @@ const (
 	Schema = "basalt_demo"
 	// Comment marks a schema the demo made, so removal drops only that.
 	Comment = "BasaltDB demo data"
-	// Agent is the demo's agent unless one is named.
-	Agent = "demo_bot"
 )
 
 // Tables are the sample tables the demo's agent writes.

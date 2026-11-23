@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 func TestHashEngineJSON(t *testing.T) {
@@ -32,7 +34,7 @@ func TestStartHoldOffUntil(t *testing.T) {
 	path := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte("one\n"), 0o600))
 	at := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
-	rec := LastStopFileRecord{Reason: "the engine crashed 5 times within 10s", At: at, EngineSHA256: HashEngineJSON(path)}
+	rec := servicespec.LastStopFileRecord{Reason: "the engine crashed 5 times within 10s", At: at, EngineSHA256: HashEngineJSON(path)}
 
 	_, ok := StartHoldOffUntil(rec, path, at.Add(-time.Second))
 	require.False(t, ok, "before the give-up is not a hold-off")
@@ -58,7 +60,7 @@ func TestStartHoldOffUntil(t *testing.T) {
 	_, ok = StartHoldOffUntil(rec, filepath.Join(dir, "gone.json"), at.Add(30*time.Second))
 	require.True(t, ok)
 	// An older record without a hash holds off on at alone.
-	old := LastStopFileRecord{Reason: rec.Reason, At: at}
+	old := servicespec.LastStopFileRecord{Reason: rec.Reason, At: at}
 	until, ok = StartHoldOffUntil(old, path, at.Add(30*time.Second))
 	require.True(t, ok)
 	require.Equal(t, at.Add(time.Minute), until)

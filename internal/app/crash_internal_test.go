@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 )
 
@@ -22,7 +23,7 @@ func TestOnPanicSavesAScrubbedSharedReport(t *testing.T) {
 	id := env.onPanic("write", "DELETE FROM customers WHERE email = 'a@b.example'", stack)
 	require.NotEmpty(t, id)
 
-	dir := filepath.Join(state, crash.DirName)
+	dir := filepath.Join(state, servicespec.CrashDirName)
 	reports := crash.List(dir)
 	require.Len(t, reports, 1)
 	require.Equal(t, id, reports[0].ID)

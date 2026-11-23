@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,42 +18,15 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
 
-// rootCredFiles reaches init --remote's credential files as root. The config
-// directory may belong to the engine's user, who could swap agents/ for a
-// symlink to send root's reads and writes elsewhere, so agents/ is opened
-// once from / without following a link (service.OpenTrustedDir: every
-// directory on the way owned by root or the config directory's owner, not
-// writable by group or others) and every file is then reached relative to
-// it, never by path.
-//
-// The files belong to the engine's user, the owner of agents/ read from its
-// open descriptor (the same rule as the lock files): root hands every file
-// it writes, and the lock file, to that owner, so the engine can read its
-// credential and promote a .pending one. Root reads files owned by root or
-// that owner. In a root-owned agents/ the files stay root's.
-type rootCredFiles struct {
-	dir trustedDir
-	// owner gets the files root writes; -1 when agents/ is root's.
-	owner int
-	// self is this process's uid: a file it does not own is checked with
-	// pgdial.CheckForeignDSN.
-	self int
-}
-
-// openRootCredFiles opens dir, the agents directory, as root, making it
-// (and the config directory) when missing, through h. trusted is
-// rootTrustedOwner's.
+// openRootCredFiles opens dir, the agents directory, as root
+// (app.OpenRootCredFiles), making it (and the config directory) when
+// missing, through h. trusted is rootTrustedOwner's.
 func openRootCredFiles(h setupFilesHost, dir string, trusted int) (credFiles, error) {
-	d, err := h.OSOpenTrustedDir(dir, trusted, true)
+	files, err := app.OpenRootCredFiles(h, dir, trusted)
 	if err != nil {
-		return nil, fmt.Errorf("the credential directory %s is refused: %w", dir, err)
-	}
-	dirUID, err := d.Owner()
-	if err != nil {
-		_ = d.Close()
 		return nil, err
 	}
-	return rootCredFiles{dir: d, owner: credentialOwner(dirUID), self: os.Geteuid()}, nil
+	return files, nil
 }
 
 // rootConfigDir is the config directory init --remote opened as root
@@ -92,7 +64,7 @@ func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (
 	// engine.json goes to the config directory's owner (the engine's user
 	// in service mode), as the files in agents/ do, so the engine can read
 	// it; never to root.
-	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, credentialOwner(dirUID), s, a)
+	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, app.CredentialOwner(dirUID), s, a)
 }
 
 func (d *rootConfigDir) close() { _ = d.dir.Close() }
@@ -145,7 +117,7 @@ func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, 
 		if err != nil {
 			return nil, err
 		}
-		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, credentialOwner(dirUID))
+		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, app.CredentialOwner(dirUID))
 		clear(raw)
 		if err == nil {
 			return keys.PublicKeySPKI(), nil
@@ -203,112 +175,3 @@ func readRootKeyFile(d trustedDir, dirUID int) (*channel.EngineKeys, error) {
 // rootKeyFileMax bounds what root reads of the key file (a valid one is
 // well under 1 KiB; ParseKeyFile refuses more than 8 KiB).
 const rootKeyFileMax = 8 << 10
-
-// credentialOwner is who gets the credential files root writes in a
-// directory dirUID owns: that owner, never root (-1: keep root's).
-func credentialOwner(dirUID int) int {
-	if dirUID <= 0 {
-		return -1
-	}
-	return dirUID
-}
-
-// ownedBy accepts a credential file owned by this process's user or by the
-// directory's owner, the engine's user root hands them to.
-func (r rootCredFiles) ownedBy(uid uint32) (bool, string) {
-	if (r.self >= 0 && uint64(uid) == uint64(r.self)) || (r.owner >= 0 && uint64(uid) == uint64(r.owner)) {
-		return true, ""
-	}
-	if r.owner < 0 {
-		return false, "root"
-	}
-	return false, fmt.Sprintf("root or uid %d (the owner of %s)", r.owner, r.dir.Path())
-}
-
-// name is path's file name, refusing a path outside the opened directory.
-func (r rootCredFiles) name(path string) (string, error) {
-	if filepath.Dir(path) != r.dir.Path() {
-		return "", fmt.Errorf("%s is not in %s", path, r.dir.Path())
-	}
-	return filepath.Base(path), nil
-}
-
-func (r rootCredFiles) Lock(path string) (func(), error) {
-	name, err := r.name(path)
-	if err != nil {
-		return nil, err
-	}
-	// A lock file root makes, or finds root's, goes to agents/' owner (the
-	// engine's user), as config.LockFile does, so the engine can open it.
-	unlock, err := config.LockAt(r.dir, name)
-	if errors.Is(err, config.ErrLocked) {
-		return nil, lockedError{path: path}
-	}
-	return unlock, err
-}
-
-func (r rootCredFiles) open(path string) (*os.File, error) {
-	name, err := r.name(path)
-	if err != nil {
-		return nil, err
-	}
-	return r.dir.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-}
-
-func (r rootCredFiles) Read(path string) (string, os.FileInfo, error) {
-	f, err := r.open(path)
-	if err != nil {
-		return "", nil, err
-	}
-	defer f.Close()
-	dsn, fi, err := readCredentialFrom(f, r.ownedBy)
-	if err != nil {
-		return "", nil, err
-	}
-	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || r.self < 0 || uint64(st.Uid) != uint64(r.self) {
-		if err := app.CheckForeignDSN(dsn); err != nil {
-			return "", nil, fmt.Errorf("it belongs to the owner of %s, not root: as root, basalt init --remote takes from it %w; "+
-				"run basalt init --remote as that user (sudo -u <user>), or fix the file", r.dir.Path(), err)
-		}
-	}
-	return dsn, fi, nil
-}
-
-func (r rootCredFiles) Stat(path string) (os.FileInfo, error) {
-	f, err := r.open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return f.Stat()
-}
-
-func (r rootCredFiles) Write(path string, data []byte) error {
-	name, err := r.name(path)
-	if err != nil {
-		return err
-	}
-	return r.dir.WriteFile(name, data, config.FileMode, r.owner)
-}
-
-func (r rootCredFiles) Rename(from, to string) error {
-	a, err := r.name(from)
-	if err != nil {
-		return err
-	}
-	b, err := r.name(to)
-	if err != nil {
-		return err
-	}
-	return r.dir.Rename(a, b)
-}
-
-func (r rootCredFiles) Remove(path string) error {
-	name, err := r.name(path)
-	if err != nil {
-		return err
-	}
-	return r.dir.Remove(name)
-}
-
-func (r rootCredFiles) Close() { _ = r.dir.Close() }

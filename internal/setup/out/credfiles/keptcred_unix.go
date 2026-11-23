@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package credfiles
 
 import (
 	"errors"
@@ -18,19 +18,19 @@ const (
 	credentialPermMask = 0o077
 )
 
-// openEngineFile opens a file in the engine's own directories as root. The
+// OpenEngineFile opens a file in the engine's own directories as root. The
 // engine's user owns those directories and could plant a link, so every
 // directory is reached from / without following one (service.OpenTrustedFile)
 // and the open descriptor must be a regular file with one link owned by
 // exactly the engine's user: not root, since a hardlink to an old root-only
 // file keeps root as its owner. Checks and reads use the same descriptor.
 // h reaches the file and the user's uid.
-func openEngineFile(h setupFilesHost, path, engineUser string) (*os.File, error) {
+func OpenEngineFile(h FilesHost, path, engineUser string) (*os.File, error) {
 	return openOwnedFile(h, path, h.OSLookupUID(engineUser), engineUser)
 }
 
-// openOwnedFile is openEngineFile for the user uid, named who in errors.
-func openOwnedFile(h setupFilesHost, path string, uid int, who string) (*os.File, error) {
+// openOwnedFile is OpenEngineFile for the user uid, named who in errors.
+func openOwnedFile(h FilesHost, path string, uid int, who string) (*os.File, error) {
 	f, err := h.OSOpenTrustedFile(path, uid)
 	if err != nil {
 		return nil, err
@@ -60,19 +60,19 @@ func checkEngineFile(f *os.File, uid int, engineUser string) error {
 	return nil
 }
 
-// readKeptCredential reads the agent's existing credential file as root
-// (openEngineFile), mode 0600 or tighter.
-// readKeptCredential reads the engine user's credential for basalt service
+// ReadKeptCredential reads the agent's existing credential file as root
+// (OpenEngineFile), mode 0600 or tighter.
+// ReadKeptCredential reads the engine user's credential for basalt service
 // install when the role kept its password. Root only writes it back into
 // the unit's files, owned by that user again, and never connects with it,
 // so it takes no pgdial.CheckForeignDSN (TestRootCredentialReadsAreChecked).
-func readKeptCredential(h setupFilesHost, path, engineUser string) (string, error) {
+func ReadKeptCredential(h FilesHost, path, engineUser string) (string, error) {
 	return readOwnedCredential(h, path, h.OSLookupUID(engineUser), engineUser)
 }
 
-// readOwnedCredential is readKeptCredential for the user uid, named who in
+// readOwnedCredential is ReadKeptCredential for the user uid, named who in
 // errors.
-func readOwnedCredential(h setupFilesHost, path string, uid int, who string) (string, error) {
+func readOwnedCredential(h FilesHost, path string, uid int, who string) (string, error) {
 	f, err := openOwnedFile(h, path, uid, who)
 	if err != nil {
 		return "", err
@@ -85,12 +85,12 @@ func readOwnedCredential(h setupFilesHost, path string, uid int, who string) (st
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", fmt.Errorf("mode %o is more open than 0600", fi.Mode().Perm())
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, maxCredentialBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, MaxCredentialBytes+1))
 	if err != nil {
 		return "", err
 	}
 	line := strings.TrimSpace(string(raw))
-	if line == "" || len(raw) > maxCredentialBytes {
+	if line == "" || len(raw) > MaxCredentialBytes {
 		return "", errors.New("empty or too large")
 	}
 	return line, nil
@@ -149,12 +149,12 @@ func readCredentialFrom(f *os.File, owner func(uid uint32) (ok bool, want string
 	if ok, want := owner(st.Uid); !ok {
 		return "", nil, fmt.Errorf("owned by uid %d, not %s", st.Uid, want)
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, maxCredentialBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, MaxCredentialBytes+1))
 	if err != nil {
 		return "", nil, err
 	}
 	line := strings.TrimSpace(string(raw))
-	if line == "" || len(raw) > maxCredentialBytes {
+	if line == "" || len(raw) > MaxCredentialBytes {
 		return "", nil, errors.New("empty or too large")
 	}
 	return line, fi, nil

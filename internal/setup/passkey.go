@@ -46,7 +46,7 @@ func PasskeyNeeded(ctx context.Context, b SetuprunBackend, q Querier, add bool) 
 		return true, nil
 	}
 	has, err := b.HasPasskeyFor(ctx, q, passkey.Production.Origin)
-	if isUndefinedTable(err) {
+	if b.UndefinedTable(err) {
 		return true, nil
 	}
 	return !has, err

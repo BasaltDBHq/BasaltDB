@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"time"
@@ -28,7 +29,7 @@ func guarded(args []string, std cli.Stdio, f func() int) (code int) {
 			return
 		}
 		code = cli.ExitError
-		engine.ReportPanic(crashHost{}, crashHost{}, std.Err, commandName(args), v, debug.Stack())
+		engine.ReportPanic(crashHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
 	}()
 	return f()
 }
@@ -47,12 +48,17 @@ func commandName(args []string) string {
 	return ""
 }
 
-// crashHost is the crash use case's engine.Host and engine.Terminal.
+// crashHost is the crash use case's engine.Host.
 type crashHost struct{}
 
 func (crashHost) NewRecorder(command string) (engine.Recorder, []string) { return newRecorder(command) }
 
-func (crashHost) TerminalText(s string) string { return cli.TerminalText(s) }
+// engineTerminal is engine.Terminal on the CLI shell.
+type engineTerminal struct{}
+
+func (engineTerminal) TerminalText(s string) string { return cli.TerminalText(s) }
+
+func (engineTerminal) InfoOwnerUID(fi os.FileInfo) (int, bool) { return cli.InfoOwnerUID(fi) }
 
 // crashRecorder is engine.Recorder on the crash recorder rec.
 type crashRecorder struct{ rec app.CrashRecorder }

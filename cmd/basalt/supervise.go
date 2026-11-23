@@ -71,9 +71,9 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 
 // superviseConfig is the config the supervisor needs (its socket and state
 // folders): the config file's, or, for a service engine whose config does
-// not exist yet, the defaults its child waits with (waitsForConfig).
+// not exist yet, the defaults its child waits with (engine.WaitsForConfig).
 func superviseConfig(euid int, configPath string) (config.Config, error) {
-	if waitsForConfig(euid, configPath) {
+	if engine.WaitsForConfig(engineTerminal{}, euid, configPath) {
 		return config.Config{
 			SocketDir: config.DefaultSocketDir(runtime.GOOS), StateDir: config.DefaultStateDir(runtime.GOOS),
 		}, nil

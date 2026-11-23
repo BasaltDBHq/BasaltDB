@@ -55,17 +55,9 @@ func (c keptClient) PluginRemove(ctx context.Context, p PluginEntryParams) (Plug
 	return c.s.Remove(ctx, c.scope, p)
 }
 
-// shimFile is one file of a plugin folder, as basalt mcp's uploader sends
-// it (shim.PluginFile, which this package's tests cannot import: the shim
-// imports this package).
-type shimFile struct {
-	Path string
-	Data []byte
-}
-
 // PluginUpload begins an upload and sends files in parts of at most the
 // engine's maxPartBytes, as basalt mcp does.
-func (c keptClient) PluginUpload(ctx context.Context, files []shimFile) (uuid.UUID, error) {
+func (c keptClient) PluginUpload(ctx context.Context, files []UploadFile) (uuid.UUID, error) {
 	begun, err := c.PluginUploadBegin(ctx)
 	if err != nil {
 		return uuid.Nil, err

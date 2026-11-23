@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -28,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -61,7 +61,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// Started as root, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
 	if *supervised {
-		return runSupervise(ctx, enginePath(*configPath), *startedBy, io, h)
+		return runSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h)
 	}
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)
@@ -69,7 +69,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// handed is the setup page's listener of an engine that waited for its
 	// config: the first run serves its own pages on it.
 	var handed net.Listener
-	if waitsForConfig(h.Euid(), enginePath(*configPath)) {
+	if engine.WaitsForConfig(engineTerminal{}, h.Euid(), engine.EnginePath(*configPath)) {
 		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -83,13 +83,14 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
-	run := func(ctx context.Context, o app.RestartOptions) error {
+	run := func(ctx context.Context, r engine.Restart) error {
+		o := app.RestartOptions{Restart: r}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		if *pluginDebug {
 			o.PluginStderr = io.Err
 		}
-		return app.RunWith(ctx, cfg, enginePath(*configPath), log, o)
+		return app.RunWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
@@ -101,110 +102,40 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		cfg = next
 		return nil
 	}
-	if err := serveRestarting(ctx, run, osRestart(log), reload, log); err != nil {
+	if err := engine.ServeRestarting(ctx, run, osRestart(log), reload, log); err != nil {
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
 }
 
-// waitsForConfig: a service engine on a first install, started before its
-// config exists (CONTRACT.md, The local setup page). It runs as its own OS
-// user from the system config path, whose folder the install made, and
-// finds no engine.json there yet, in a folder it owns. It then serves only the setup page and
-// waits for the config instead of exiting.
-func waitsForConfig(euid int, configPath string) bool {
-	return waitsForConfigAt(euid, configPath, config.DefaultPath(runtime.GOOS))
-}
-
-// waitsForConfigAt is waitsForConfig with the system config path given.
-func waitsForConfigAt(euid int, configPath, systemPath string) bool {
-	if euid == 0 || configPath != systemPath {
-		return false
-	}
-	if _, err := os.Lstat(configPath); !errors.Is(err, fs.ErrNotExist) {
-		return false
-	}
-	// The install made the folder for this engine's own user: a folder
-	// anyone else owns is not this engine's to wait in.
-	dir, err := os.Lstat(filepath.Dir(configPath))
-	if err != nil || !dir.IsDir() {
-		return false
-	}
-	owner, ok := cli.InfoOwnerUID(dir)
-	return ok && owner == euid
-}
-
-// restart is how the engine restarts onto an upgraded binary: upgrade says
-// when (nil turns it off) and exec runs the new binary in this process.
-type restart struct {
-	upgrade engine.UpgradeFunc
-	exec    func() error
-}
-
 // osRestart watches the binary this engine was started from. When it
 // cannot (its path cannot be read), the engine runs without the restart.
-func osRestart(log *slog.Logger) restart {
+func osRestart(log *slog.Logger) engine.BinaryRestart {
 	sys := binwatch.OS{}
 	exe, err := os.Executable()
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
-		return restart{}
+		return engine.BinaryRestart{}
 	}
 	path, err := binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, sys.Stat)
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
-		return restart{}
+		return engine.BinaryRestart{}
 	}
 	w, err := binwatch.New(path, exe, sys, os.Geteuid() == 0, log)
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its binary cannot be watched", "path", path, "err", err)
-		return restart{}
+		return engine.BinaryRestart{}
 	}
 	path = w.Path()
 	log.Info("the engine restarts onto an upgraded binary installed at its path", "path", path)
 	argv := slices.Clone(os.Args)
-	return restart{upgrade: w.Wait, exec: func() error {
+	return engine.BinaryRestart{Upgrade: w.Wait, Exec: func() error {
 		if err := w.Recheck(); err != nil {
 			return err
 		}
 		return binwatch.Exec(path, argv, os.Environ())
 	}}
-}
-
-// serveRestarting runs the engine and, each time it stops for an upgrade,
-// runs the new binary in this process; each time it stops for a reload, it
-// reads the config again and runs the engine anew. When that fails, this binary serves
-// on, until the binary changes again.
-func serveRestarting(ctx context.Context, run func(context.Context, app.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
-	for {
-		err := run(ctx, app.RestartOptions{Restart: engine.Restart{Upgrade: r.upgrade}})
-		if errors.Is(err, engine.ErrReload) && ctx.Err() == nil {
-			// Same binary, same process: the config is read again and the
-			// engine serves anew. A config it cannot read now stops it.
-			log.Info("serving the engine config again: an agent's connect-only setup changed")
-			if err := reload(); err != nil {
-				return err
-			}
-			continue
-		}
-		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
-			// A stop that came during the restart wins: never run the new
-			// binary after the engine was told to stop.
-			return err
-		}
-		log.Info("restarting onto the upgraded binary")
-		err = r.exec()
-		log.Error("could not run the upgraded binary; this one serves on", "err", err)
-	}
-}
-
-// enginePath is the absolute path of the engine config, which the engine
-// names in the commands it gives the person.
-func enginePath(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		return abs
-	}
-	return path
 }
 
 // runMCP is the agent's MCP server: a relay from stdio to the agent's engine
@@ -278,7 +209,7 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	} else {
 		// A service engine's config is the engine's own: the person can
 		// list its socket directory, not read the config.
-		names = socketAgents(socketDir)
+		names = engine.SocketAgents(socketDir)
 	}
 	if *name == "" {
 		if len(names) != 1 {
@@ -293,7 +224,7 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	}
 	path := config.SocketPath(socketDir, *name)
 	log := m.EngineLog(io.Err)
-	down, err := m.EngineDown(shimAgent(*name, path), enginePath(cfgPath), log)
+	down, err := m.EngineDown(engine.ShimAgent(*name, path), engine.EnginePath(cfgPath), log)
 	if err != nil {
 		return fail(io.Err, "mcp", err)
 	}
@@ -301,41 +232,16 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	// person-operated engine; the engine says which in its hello answer.
 	// A plugin the agent asks for (request_plugin) is uploaded over a
 	// second connection to the agent's own socket.
-	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path), UploadAllowed: plugin.UploadAllowed}
+	opts := shim.Options{Open: h.OpenURL, UploadPlugin: pluginUploader(path), UploadAllowed: plugin.UploadAllowed}
 	if exe, err := cli.ShimExecutable(); err == nil {
 		var failure func() string
-		opts.Start, failure = m.EngineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
+		opts.Start, failure = m.EngineStarter(engine.EnginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
 	if err := shim.ServeWith(ctx, path, m.NewEngineDownServer(down), io.In, io.Out, opts); err != nil {
 		return fail(io.Err, "mcp", err)
 	}
 	return cli.ExitOK
-}
-
-// socketAgents are the agents with a socket in dir.
-func socketAgents(dir string) []string {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		name, ok := strings.CutSuffix(e.Name(), ".sock")
-		if ok && e.Type()&os.ModeSocket != 0 && config.ValidAgentName(name) {
-			names = append(names, name)
-		}
-	}
-	return names
-}
-
-// shimAgent names the agent in status when basalt mcp was given only a
-// socket path: the socket's base name.
-func shimAgent(name, socket string) string {
-	if name != "" {
-		return name
-	}
-	return strings.TrimSuffix(filepath.Base(socket), ".sock")
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.
@@ -648,3 +554,17 @@ func checkServicePersons(uids []uint32, engineUser string) error {
 // engineLog is the engine's and basalt mcp's log on w: a text handler that
 // scrubs link secrets from what it writes (logredact).
 func engineLog(w io.Writer) *slog.Logger { return slog.New(logredact.NewTextHandler(w, nil)) }
+
+// pluginUploader is basalt mcp's uploader of request_plugin folders: the
+// plugin service's UploadFolder over the shim's channel to the agent's
+// socket at socketPath, answered as the shim hands it to the engine.
+func pluginUploader(socketPath string) shim.PluginUploader {
+	ch := shim.NewUploader(socketPath)
+	return func(ctx context.Context, source string) (mcpserver.PluginUpload, error) {
+		up, err := plugin.UploadFolder(ctx, ch, source)
+		if err != nil {
+			return mcpserver.PluginUpload{}, err
+		}
+		return mcpserver.PluginUpload{UploadID: up.UploadID, Name: up.Name, Executables: up.Executables}, nil
+	}
+}

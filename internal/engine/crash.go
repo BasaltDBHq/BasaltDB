@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -27,10 +28,13 @@ type Host interface {
 	NewRecorder(command string) (Recorder, []string)
 }
 
-// Terminal is the CLI shell's text for a terminal.
+// Terminal is what the engine's use cases read from the CLI shell.
 type Terminal interface {
 	// TerminalText is s safe to print on a terminal.
 	TerminalText(s string) string
+	// InfoOwnerUID is the owner of the file fi describes; false where the
+	// platform has no owners.
+	InfoOwnerUID(fi os.FileInfo) (int, bool)
 }
 
 // osHost is the machine's per-user config directory.

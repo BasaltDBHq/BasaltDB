@@ -40,7 +40,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
-	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -114,7 +113,7 @@ func (f *portalFixture) entries() []config.Plugin {
 
 // upload sends files to the kept plugins in parts, as basalt mcp does over
 // the person's own socket, and returns the upload's id.
-func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uuid.UUID, error) {
+func (f *portalFixture) upload(ctx context.Context, files []plugin.UploadFile) (uuid.UUID, error) {
 	begun, err := f.s.UploadBegin(ctx, portalPerson)
 	if err != nil {
 		return uuid.Nil, err
@@ -140,7 +139,7 @@ func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uu
 }
 
 // portalSource is a plugin's source files and its executables.
-func portalSource(version string) ([]shim.PluginFile, []string) {
+func portalSource(version string) ([]plugin.UploadFile, []string) {
 	exe := []byte("#!/bin/sh\nexit 0\n" + version)
 	manifest := fmt.Sprintf(`{
   "manifestVersion": 1, "name": "acme-ner", "version": %q, "publisher": "Acme",
@@ -151,7 +150,7 @@ func portalSource(version string) ([]shim.PluginFile, []string) {
   "network": { "egress": [] }
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
-	return []shim.PluginFile{
+	return []plugin.UploadFile{
 		{Path: plugin.ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
@@ -238,7 +237,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(dir, file.Path), file.Data, mode))
 	}
-	uploader := shim.NewPluginUploader(serveAgentSocket(t, f.base, p, "bot", svc.PluginUploadsServed))
+	uploader := pluginUploader(serveAgentSocket(t, f.base, p, "bot", svc.PluginUploadsServed))
 	_, err = uploader(ctx, dir)
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)

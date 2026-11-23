@@ -63,7 +63,7 @@ func ReportPanic(h Host, t Terminal, w io.Writer, command string, v any, stack [
 	rec, dirs := h.NewRecorder(), crashDirs(h, command)
 	var lastErr error
 	for _, dir := range dirs {
-		shared := command == "engine" && dir == dirs[0]
+		shared := command == engineCommand && dir == dirs[0]
 		id, err := rec.SaveIn(dir, shared, servicespec.CrashInput{Command: command, Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
 		if err == nil {
 			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", id, t.TerminalText(dir))

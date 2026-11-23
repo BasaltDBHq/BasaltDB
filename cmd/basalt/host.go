@@ -19,6 +19,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/jackc/pgx/v5"
@@ -332,7 +333,7 @@ func (osHost) EngineLog(ctx context.Context, goos string) (string, error) {
 			"-n", engineJournalLines, "-o", "cat", "--no-pager").Output()
 		return string(out), err
 	}
-	f, err := os.Open(darwinEngineLog)
+	f, err := os.Open(engine.DarwinEngineLog)
 	if err != nil {
 		return "", err
 	}

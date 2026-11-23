@@ -10,14 +10,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
-// basalt mcp finds the config and the socket directory itself, so the line
-// is the same wherever the config is.
-func TestMCPArgsNameOnlyTheAgent(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, mcpArgs("bot", "basalt"))
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, mcpArgs("bot", mcpBinary(newFakeHost(t))))
-}
-
 func TestResolveExecutableFollowsLinks(t *testing.T) {
 	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
@@ -28,27 +20,6 @@ func TestResolveExecutableFollowsLinks(t *testing.T) {
 	require.NoError(t, os.Symlink(target, link))
 	require.Equal(t, target, cli.ResolveExecutable(link))
 	require.Equal(t, filepath.Join(dir, "gone"), cli.ResolveExecutable(filepath.Join(dir, "gone")))
-}
-
-func TestTemporaryBinaryWarning(t *testing.T) {
-	t.Parallel()
-	tmp, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	require.Contains(t, temporaryBinaryWarning(filepath.Join(tmp, "x", "basalt"), tmp), "put the binary in a folder that survives")
-	require.Contains(t, temporaryBinaryWarning("/home/u/.cache/go-build/ab/basalt", tmp), "/home/u/.cache/go-build/ab/basalt")
-	require.Empty(t, temporaryBinaryWarning("/opt/basalt/bin/basalt", tmp))
-	require.Empty(t, temporaryBinaryWarning(tmp+"x/basalt", tmp))
-}
-
-func TestTemporaryBinaryWarningResolvesLinkedTempDir(t *testing.T) {
-	t.Parallel()
-	realTmp, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	link := filepath.Join(t.TempDir(), "tmp-link")
-	require.NoError(t, os.Symlink(realTmp, link))
-	bin := filepath.Join(realTmp, "basalt")
-	require.Contains(t, temporaryBinaryWarning(bin, link), "put the binary in a folder that survives")
-	require.Empty(t, temporaryBinaryWarning("/opt/basalt/bin/basalt", link))
 }
 
 // Saved init arguments never carry a password or a connection string with

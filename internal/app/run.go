@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger/out/pinfile"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
@@ -43,6 +42,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/x509"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -45,11 +46,21 @@ func (r *remoteInit) noteUnknownAuthority() {
 	}
 }
 
+// pinOf is the engine's pin for host in the config's trust.d: its
+// pin-<host> profile, or nil, read through h.
+func pinOf(h remoteHost, configPath, host string) *trustprofile.Profile {
+	p := h.TrustProfileFor(configPath, host)
+	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
+		return nil
+	}
+	return p
+}
+
 // pinnedSHA is the SHA-256 (DER, lowercase hex) of the certificate the
 // engine has pinned for the target's host: the code's trustPin, "" when it
 // has no pin.
 func (r *remoteInit) pinnedSHA() string {
-	p := setup.PinOf(r.setup, r.f.ConfigPath, trustprofile.NormalizeHost(r.target.Host))
+	p := pinOf(r.setup, r.f.ConfigPath, trustprofile.NormalizeHost(r.target.Host))
 	if p == nil || len(p.Certificates()) == 0 {
 		return ""
 	}
@@ -70,7 +81,7 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 		return false
 	}
 	host := trustprofile.NormalizeHost(cfg.Host)
-	p := setup.PinOf(r.setup, r.f.ConfigPath, host)
+	p := pinOf(r.setup, r.f.ConfigPath, host)
 	if p == nil {
 		return false
 	}
@@ -78,9 +89,26 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 	if ferr != nil || len(chain) == 0 {
 		return false
 	}
-	return !setup.Pinned(p.Certificates(), chain[len(chain)-1])
+	return !pinned(p.Certificates(), chain[len(chain)-1])
 }
 
+// pinned reports whether top is one of the pinned certificates.
+func pinned(certs []*x509.Certificate, top *x509.Certificate) bool {
+	for _, c := range certs {
+		if c.Equal(top) {
+			return true
+		}
+	}
+	return false
+}
+
+// certificatePlan is the code for a changed certificate (CONTRACT.md,
+// basalt init --remote, step 3): a code that changes no grant, no password
+// and no policy, carrying engine. Never a new password: the credential is
+// not refused, its server's certificate is. An UPGRADE code from guard
+// version 0: it names no agent, so the role keeps its password and its
+// grants, and its migrations are the ones the database lacks, none when it
+// has them.
 func (r *remoteInit) certificatePlan() (setup.Plan, error) {
 	return setup.Plan{Kind: setupcode.KindUpgrade}, nil
 }

@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,7 +13,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 const (
@@ -210,31 +208,3 @@ func KeyRefused(err error) error {
 // trusted with its key, so a code without one could never finish.
 var ErrNoEngineForTrust = errors.New("the database's certificate changed, and the setup code that replaces the engine's pin " +
 	"needs the engine's key, which cannot be read here: run basalt init --remote as the engine's OS user")
-
-// TrustProfiles is what init --remote reads of the trust profiles next to
-// the config.
-type TrustProfiles interface {
-	// TrustProfileFor is the profile in the trust.d next to the config at
-	// configPath that names host, or nil.
-	TrustProfileFor(configPath, host string) *trustprofile.Profile
-}
-
-// PinOf is the engine's pin for host in the config's trust.d: its
-// pin-<host> profile, or nil, read through h.
-func PinOf(h TrustProfiles, configPath, host string) *trustprofile.Profile {
-	p := h.TrustProfileFor(configPath, host)
-	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
-		return nil
-	}
-	return p
-}
-
-// Pinned reports whether top is one of the pinned certificates.
-func Pinned(certs []*x509.Certificate, top *x509.Certificate) bool {
-	for _, c := range certs {
-		if c.Equal(top) {
-			return true
-		}
-	}
-	return false
-}

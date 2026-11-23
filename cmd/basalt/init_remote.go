@@ -191,7 +191,7 @@ type remoteInit struct {
 	// code (CONTRACT.md, Connect-only setup codes).
 	connectOnly bool
 	// certChanged: the agent's login failed on the certificate of its
-	// setup.Pinned host, which presents another chain top (TRUST_ROOT_CHANGED):
+	// pinned host, which presents another chain top (TRUST_ROOT_CHANGED):
 	// this run makes an AGENT code with no change, marked
 	// certificateChanged, never a new password.
 	certChanged bool
@@ -444,7 +444,7 @@ func (r *remoteInit) connection() error {
 	}
 	// Before any login sends a startup message: say that a chain no
 	// authority here verifies is trusted on the connect page. Nothing is
-	// setup.Pinned here.
+	// pinned here.
 	r.noteUnknownAuthority()
 	return r.login(pending, cred)
 }
@@ -489,7 +489,7 @@ func (r *remoteInit) login(pending, cred *setup.Credential) error {
 	case errors.Is(err, handoff.ErrLoginRefused):
 		return nil // the role cannot log in
 	case r.rootChanged(cred.DSN, err):
-		// Not a refused credential: the setup.Pinned host presents another
+		// Not a refused credential: the pinned host presents another
 		// certificate. The connect page asks the person.
 		r.certChanged = true
 		return nil

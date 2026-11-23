@@ -53,7 +53,7 @@ type FeedSnapshot interface {
 	ChainHeadSeq(ctx context.Context) (int64, error)
 	PluginEntryEvents(ctx context.Context, name, instance string) ([]PluginEntryEvent, error)
 	SeqRetired(ctx context.Context, seq int64) (bool, error)
-	ReadFeedRows(ctx context.Context, after int64, limit int) ([]FeedRow, error)
+	ReadFeedRows(ctx context.Context, after int64, limit int, f FeedFilter) ([]FeedRow, error)
 	OldestSeqAfter(ctx context.Context, after int64) (int64, bool, error)
 }
 
@@ -66,4 +66,14 @@ type PluginEntryEvent struct {
 	Egress    []string
 	Endpoint  PluginEndpoint
 	DecodeErr bool
+}
+
+// FeedFilter is which ledger rows a feed read returns: rows of the listed
+// kinds, a CHANGE only when it was applied (AppliedChangesOnly), and a
+// REFUSED only when its op is not SELECT (SkipRefusedReads). The store
+// applies it in its query, so a limit pages over the rows it keeps.
+type FeedFilter struct {
+	Kinds              []string
+	AppliedChangesOnly bool
+	SkipRefusedReads   bool
 }

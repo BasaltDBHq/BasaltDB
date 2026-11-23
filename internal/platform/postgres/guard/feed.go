@@ -14,30 +14,26 @@ import (
 // ledgerKind is the ledger's kind column.
 const ledgerKind = "kind"
 
-// FeedKinds are the ledger kinds feed/1 may carry. A CHANGE is an event only
-// when its status is APPLIED, a REFUSED only when its op is not SELECT
-// (ReadFeedRows filters both).
-var FeedKinds = []string{
-	guardmodel.KindChange, guardmodel.KindRefused, guardmodel.KindApprovalPending, guardmodel.KindApproved,
-	guardmodel.KindRevertPending, guardmodel.KindRevertSigned, guardmodel.KindReverted, guardmodel.KindRevertRejected,
-}
-
 // ReadFeedRows reads the calling agent's own ledger (agent_ledger shows only
-// session_user's rows) after seq after: at most limit rows that are feed/1
-// events, in seq order.
-func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int) ([]guardmodel.FeedRow, error) {
+// session_user's rows) after seq after: at most limit rows that f keeps, in
+// seq order.
+func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guardmodel.FeedFilter) ([]guardmodel.FeedRow, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	sql, args, err := psql.Select("seq", "at", ledgerKind, "change_id", "op",
+	b := psql.Select("seq", "at", ledgerKind, "change_id", "op",
 		"detail ->> 'runId'", "detail ->> 'taskId'", "detail ->> 'table'", "detail ->> 'rows'", "detail ->> 'cascadedRows'",
 		"detail ->> 'approvalId'", "detail ->> 'expiresAt'", "detail ->> 'revertId'", "detail ->> 'code'").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Gt{"seq": after}).
-		Where(sq.Eq{ledgerKind: FeedKinds}).
-		Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange)).
-		Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused)).
-		OrderBy("seq").Limit(uint64(limit)).ToSql()
+		Where(sq.Eq{ledgerKind: f.Kinds})
+	if f.AppliedChangesOnly {
+		b = b.Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange))
+	}
+	if f.SkipRefusedReads {
+		b = b.Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused))
+	}
+	sql, args, err := b.OrderBy("seq").Limit(uint64(limit)).ToSql()
 	if err != nil {
 		return nil, err
 	}

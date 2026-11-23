@@ -16,7 +16,7 @@ import (
 // block) against the engine's socket and session code, in both directions.
 func TestChannelSpecMatchesVaultLimits(t *testing.T) {
 	t.Parallel()
-	raw, err := os.ReadFile("../../../../docs/security/vault-channel-spec.md")
+	raw, err := os.ReadFile("../../../docs/security/vault-channel-spec.md")
 	require.NoError(t, err)
 	_, rest, ok := strings.Cut(string(raw), "```constants vault\n")
 	require.True(t, ok, "the spec has no vault constants block")
@@ -49,7 +49,7 @@ func TestChannelSpecMatchesVaultLimits(t *testing.T) {
 	require.Equal(t, want, got)
 
 	// The response limit is the page's (the engine never reads a response).
-	page, err := os.ReadFile("../../../../web/lib/channel.js")
+	page, err := os.ReadFile("../../../web/lib/channel.js")
 	require.NoError(t, err)
 	require.Contains(t, string(page), "const RESPONSE_MAX = 16 << 20;")
 	require.Equal(t, 5*60, int(IdleTimeout.Seconds()))

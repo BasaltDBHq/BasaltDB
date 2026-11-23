@@ -128,8 +128,6 @@ linters:
           files:
             - "!$test"
           deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest
-              desc: vaulttest is a test fake; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest
               desc: vaulttest is a test fake; import it from _test.go files only
         # Test helper packages (fakes, fixtures and the core test oracles) are
@@ -157,8 +155,6 @@ linters:
             - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest
               desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest
-              desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest
               desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest
               desc: a test helper package; import it from _test.go files only

@@ -87,13 +87,13 @@ func commandKey(setName string) string {
 
 // probeFlags runs the command line args with -h and returns every flag set
 // the command made, by command key. -h stops the command at flag parsing.
-func probeFlags(t *testing.T, run func(context.Context, []string, stdio) int, args []string) map[string][]string {
+func probeFlags(t *testing.T, run func(context.Context, []string, cli.Stdio) int, args []string) map[string][]string {
 	t.Helper()
 	var made []*flag.FlagSet
 	cli.FlagSetMade = func(fs *flag.FlagSet) { made = append(made, fs) }
 	defer func() { cli.FlagSetMade = nil }()
 	var out bytes.Buffer
-	run(context.Background(), append(append([]string{}, args...), "-h"), stdio{in: strings.NewReader(""), out: &out, err: &out})
+	run(context.Background(), append(append([]string{}, args...), "-h"), cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &out})
 	got := map[string][]string{}
 	for _, fs := range made {
 		key := commandKey(fs.Name())
@@ -121,7 +121,7 @@ func actualCommandsAndFlags(t *testing.T, actual map[string]surfaceEntry) {
 		t.Setenv(k, "")
 	}
 	probed := map[string]bool{}
-	probe := func(run func(context.Context, []string, stdio) int, args []string) {
+	probe := func(run func(context.Context, []string, cli.Stdio) int, args []string) {
 		for key, flags := range probeFlags(t, run, args) {
 			probed[key] = true
 			for _, name := range flags {
@@ -133,19 +133,19 @@ func actualCommandsAndFlags(t *testing.T, actual map[string]surfaceEntry) {
 		}
 	}
 	for _, cmd := range commands() {
-		if cmd.run == nil {
+		if cmd.Run == nil {
 			continue // help is the table's own listing, not a command
 		}
-		actual["command "+cmd.name] = surfaceEntry{Kind: "command", Name: cmd.name}
-		probe(cmd.run, nil)
-		for _, extra := range extraProbes[cmd.name] {
-			probe(cmd.run, extra)
+		actual["command "+cmd.Name] = surfaceEntry{Kind: "command", Name: cmd.Name}
+		probe(cmd.Run, nil)
+		for _, extra := range extraProbes[cmd.Name] {
+			probe(cmd.Run, extra)
 		}
-		for _, sub := range subcommandsOf(cmd.summary) {
-			key := cmd.name + " " + sub
-			probe(cmd.run, []string{sub})
+		for _, sub := range subcommandsOf(cmd.Summary) {
+			key := cmd.Name + " " + sub
+			probe(cmd.Run, []string{sub})
 			if !probed[key] {
-				t.Errorf("the summary of %q lists %q, but running it makes no flag set", cmd.name, sub)
+				t.Errorf("the summary of %q lists %q, but running it makes no flag set", cmd.Name, sub)
 				continue
 			}
 			actual["command "+key] = surfaceEntry{Kind: "command", Name: key}

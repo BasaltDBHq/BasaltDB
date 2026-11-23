@@ -21,19 +21,19 @@ import (
 
 // runGuarded runs the command line and turns a panic into a saved crash
 // report, one line on stderr and exit code 1.
-func runGuarded(ctx context.Context, args []string, std stdio) int {
+func runGuarded(ctx context.Context, args []string, std cli.Stdio) int {
 	return guarded(args, std, func() int { return run(ctx, args, std) })
 }
 
 // guarded runs f, which runs the command line args.
-func guarded(args []string, std stdio, f func() int) (code int) {
+func guarded(args []string, std cli.Stdio, f func() int) (code int) {
 	defer func() {
 		v := recover()
 		if v == nil {
 			return
 		}
 		code = cli.ExitError
-		reportPanic(std.err, commandName(args), v, debug.Stack())
+		reportPanic(std.Err, commandName(args), v, debug.Stack())
 	}()
 	return f()
 }
@@ -45,8 +45,8 @@ func commandName(args []string) string {
 		return ""
 	}
 	for _, cmd := range commands() {
-		if cmd.name == args[0] {
-			return cmd.name
+		if cmd.Name == args[0] {
+			return cmd.Name
 		}
 	}
 	return ""

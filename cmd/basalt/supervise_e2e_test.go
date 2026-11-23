@@ -172,7 +172,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	outR, outW := io.Pipe()
 	done := make(chan int, 1)
 	go func() {
-		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, stdio{in: in, out: outW, err: &out}, osHost{}, cfgPath)
+		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, cli.Stdio{In: in, Out: outW, Err: &out}, osHost{}, cfgPath)
 		_ = outW.Close()
 	}()
 	_, err = fmt.Fprintf(inW, "%s\n%s\n",
@@ -250,7 +250,7 @@ func TestSuperviseBesideAnEngineStartedByHand(t *testing.T) {
 	defer hand.Release()
 	var stderr bytes.Buffer
 
-	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
+	code := runSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
 
 	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another engine already runs for this config")

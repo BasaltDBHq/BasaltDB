@@ -98,10 +98,10 @@ type shellHost interface {
 	OSOpenTrustedFile(path string, owner int) (*os.File, error)
 }
 
-func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
+func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cliIO {
 	shell := appShell{}
 	c := &cliIO{
-		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
+		ctx: ctx, stdin: bufio.NewReader(std.In), stdout: std.Out, stderr: std.Err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
 		shell: shell,
 		agentLogin: func(ctx context.Context, dsn string) (agentConn, error) {
@@ -111,10 +111,10 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 			return connect(ctx, shell, dsn)
 		},
 		fetchChain: fetchChain,
-		width:      func() int { return cli.TerminalWidth(std.out) },
+		width:      func() int { return cli.TerminalWidth(std.Out) },
 	}
 	c.probe = probeLogin(c)
-	stdin := std.in
+	stdin := std.In
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		c.terminal = f
 		c.interactive = true
@@ -162,10 +162,10 @@ func connect(ctx context.Context, sh shellHost, dsn string) (*pgx.Conn, error) {
 
 // withIO adapts a guard command to the command table: open builds the
 // command's cliIO (newIO).
-func withIO(open func(context.Context, stdio, func(string) string) *cliIO,
+func withIO(open func(context.Context, cli.Stdio, func(string) string) *cliIO,
 	f func(c *cliIO, args []string) int,
-) func(context.Context, []string, stdio) int {
-	return func(ctx context.Context, args []string, std stdio) int {
+) func(context.Context, []string, cli.Stdio) int {
+	return func(ctx context.Context, args []string, std cli.Stdio) int {
 		return f(open(ctx, std, os.Getenv), args)
 	}
 }

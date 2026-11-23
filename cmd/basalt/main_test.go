@@ -15,7 +15,7 @@ import (
 
 func runArgs(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), args, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr})
+	code := run(context.Background(), args, cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr})
 	return code, stdout.String(), stderr.String()
 }
 

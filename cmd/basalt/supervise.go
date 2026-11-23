@@ -126,30 +126,30 @@ func runChild(ctx context.Context, o superviseOptions, startedBy string) error {
 
 // runSupervise is basalt engine --supervise: one supervisor per config,
 // restarting the engine as a child of this process.
-func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h host) int {
+func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdio, h host) int {
 	cfg, err := superviseConfig(h.Euid(), configPath)
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	startedFrom, err := superviseBinaryPath()
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	// An update can drop empty folders; the engine makes its own too.
 	if err := os.MkdirAll(cfg.SocketDir, privateDirMode); err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	release, err := config.LockFile(filepath.Join(cfg.SocketDir, superviseLock))
 	if errors.Is(err, config.ErrLocked) {
-		_, _ = fmt.Fprintln(io.err, "basalt engine: another basalt engine --supervise runs for this config")
+		_, _ = fmt.Fprintln(io.Err, "basalt engine: another basalt engine --supervise runs for this config")
 		return cli.ExitOK
 	}
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	defer release()
 
-	log := engineLog(io.err)
+	log := engineLog(io.Err)
 	stateDir := cfg.StateDirFor(runtime.GOOS)
 	lockPath := app.LockPath(cfg.SocketDir)
 	o := superviseOptions{
@@ -161,7 +161,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 		lastStop:       func(reason string) { writeLastStop(stateDir, reason, configPath, time.Now(), log) },
 	}
 	if err := supervise(ctx, o); err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
 }
@@ -207,14 +207,14 @@ func resolveSuperviseBinary(startedFrom string) (string, error) {
 // with this process's output, after resolving startedFrom again. A child
 // that stays up for fastCrash clears the last give-up; one that fails
 // because another engine holds the lock reports errAnotherEngine.
-func childStarter(startedFrom, configPath, lockPath, stateDir string, io stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
+func childStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
 	return func(ctx context.Context, startedBy string) (func() error, error) {
 		exe, err := resolveSuperviseBinary(startedFrom)
 		if err != nil {
 			return nil, err
 		}
 		cmd := exec.CommandContext(ctx, exe, "engine", "--config", configPath, "--started-by", startedBy)
-		cmd.Stdout, cmd.Stderr = io.out, io.err
+		cmd.Stdout, cmd.Stderr = io.Out, io.Err
 		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 		cmd.WaitDelay = childStopWait
 		prepareSuperviseChild(cmd)

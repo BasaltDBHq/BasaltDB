@@ -24,7 +24,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cache := t.TempDir()
-	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr},
+	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(stdin), Out: &stdout, Err: &stderr},
 		func(k string) string {
 			if v, ok := env[k]; ok || k != envCacheDir {
 				return v

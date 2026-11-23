@@ -68,7 +68,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guardmodel.DefaultPrefix, "bot", "0123abcd"))
 	var events []string
 	var out, errb bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
+	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb}, func(string) string { return "" })
 	c.probe, c.host = noNetworkProbe, systemSocketHost(t)
 	c.agentLogin = func(ctx context.Context, dsn string) (agentConn, error) {
 		events = append(events, "login")

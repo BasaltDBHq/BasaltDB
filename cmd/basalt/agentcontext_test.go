@@ -50,7 +50,7 @@ func TestTopLevelHelpHidesEngine(t *testing.T) {
 
 	// The command is hidden, not gone: it still parses its own flags.
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"engine", "--help"}, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr})
+	code := run(context.Background(), []string{"engine", "--help"}, cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr})
 	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, stderr.String(), "-config")
 	require.NotContains(t, stderr.String(), "unknown command")

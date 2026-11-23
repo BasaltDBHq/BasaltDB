@@ -365,7 +365,7 @@ func TestRelayApprovalEndToEnd(t *testing.T) {
 
 	select {
 	case body := <-waiting:
-		require.Equal(t, agent.StatusApplied, body["status"], "%v", body)
+		require.Equal(t, "APPLIED", body["status"], "%v", body)
 		requireNothingToPaste(t, body)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the waiting write did not return")
@@ -414,7 +414,7 @@ func TestRelayApprovalAfterTheVaultWasDown(t *testing.T) {
 	require.Equal(t, "APPROVED", signed["result"].(map[string]any)["status"])
 	select {
 	case body := <-waiting:
-		require.Equal(t, agent.StatusApplied, body["status"], "%v", body)
+		require.Equal(t, "APPLIED", body["status"], "%v", body)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the waiting write did not return")
 	}

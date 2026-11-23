@@ -1,4 +1,4 @@
-package agent
+package agentmcp
 
 import (
 	"context"
@@ -59,7 +59,7 @@ type describeResourceResult struct {
 func (h handlers) describe(ctx context.Context, raw json.RawMessage) (any, error) {
 	out, err := h.describeForm(ctx, raw)
 	if err != nil {
-		return nil, h.svc.agent.DescribeError(err)
+		return nil, h.svc.DescribeError(err)
 	}
 	return out, nil
 }
@@ -100,7 +100,7 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 }
 
 // DescribeTools are the tools that describe the database.
-func DescribeTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func DescribeTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
 		mount(guidance.ToolDescribe, h.describe),

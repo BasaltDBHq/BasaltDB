@@ -1,4 +1,4 @@
-package agent
+package agentmcp
 
 import (
 	"context"
@@ -64,7 +64,7 @@ func (h handlers) listRuns(ctx context.Context, raw json.RawMessage) (any, error
 }
 
 // RunTools are the tools that list the agent's runs.
-func RunTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func RunTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
 		mount("list_runs", h.listRuns),

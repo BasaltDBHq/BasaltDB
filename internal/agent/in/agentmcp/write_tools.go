@@ -1,4 +1,4 @@
-package agent
+package agentmcp
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// StatusApplied is the status of an applied write.
-const StatusApplied = "APPLIED"
+// statusApplied is the status of an applied write.
+const statusApplied = "APPLIED"
 
 // --- write ---
 
@@ -47,7 +47,7 @@ type writeResult struct {
 func writeResultFromDomain(o agentsvc.WriteOutcome) writeResult {
 	out := writeResult{
 		ChangeID: o.ChangeID.String(), RunID: o.RunID.String(), Op: string(o.Op), Rows: o.Rows,
-		DurationMs: o.Duration.Milliseconds(), Status: StatusApplied, Returning: o.Returning, Warnings: o.Warnings,
+		DurationMs: o.Duration.Milliseconds(), Status: statusApplied, Returning: o.Returning, Warnings: o.Warnings,
 	}
 	if o.Receipt != nil {
 		out.PersonMessage, out.Receipt, out.NoReceipt = o.Receipt.Line, o.Receipt.Token, o.Receipt.Missing
@@ -93,8 +93,8 @@ func (a writeArgs) wait() time.Duration {
 
 // WriteTools are the tools of a store that speaks SQL: query and write;
 // none for another store (CONTRACT.md, Stores).
-func WriteTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
-	if !speaksSQL(svc.deps.Core.Store.Kind()) {
+func WriteTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+	if !speaksSQL(svc.StoreKind()) {
 		return nil
 	}
 	h := handlers{svc: svc}

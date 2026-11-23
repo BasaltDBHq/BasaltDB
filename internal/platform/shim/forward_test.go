@@ -7,20 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/status"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // An engine that stops for a restart closes the shim's connection. When the
@@ -67,13 +61,10 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 		}
 	}()
 
-	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
-	require.NoError(t, err)
-	down := agent.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	r := &relay{
-		path: socket, fallback: newDownServer(down),
+		path: socket, fallback: newDownServer(t),
 		out: &lineWriter{w: outW}, files: defaultRequestFiles(),
 		reconnectWait: 5 * time.Second, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
 	}
@@ -124,21 +115,4 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 	require.EqualValues(t, 2, dials.Load())
 	require.NoError(t, inW.Close())
 	require.NoError(t, <-served)
-}
-
-// testServiceManager is a service manager with fixed commands: no shim test
-// reads them.
-func testServiceManager() guidance.ServiceManager {
-	return guidance.ServiceManager{
-		StartCommand: func(string) string { return "start-the-engine" },
-		RestartArgs:  func(string) []string { return []string{"restart-the-engine"} },
-	}
-}
-
-// testEngineHost is what the engine-down status reads from the host, fixed.
-func testEngineHost() status.EngineHost {
-	return status.EngineHost{
-		LatestGuardVersion: func() int { return 1 },
-		StartHoldOffUntil:  func(guidance.LastStop, string, time.Time) (time.Time, bool) { return time.Time{}, false },
-	}
 }

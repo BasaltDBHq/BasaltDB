@@ -6,6 +6,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 )
 
 // UseTrustDirFor makes every connection this process opens trust the
@@ -23,5 +25,5 @@ func UseTrustDirFor(args []string) {
 			path = config.DefaultPath(runtime.GOOS)
 		}
 	}
-	UseTrustDir(path)
+	pgdial.SetTrust(trustdir.Source(path))
 }

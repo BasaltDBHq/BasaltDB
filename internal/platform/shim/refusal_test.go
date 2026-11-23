@@ -5,7 +5,6 @@ package shim
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const testRefusal = `the basalt engine refused this connection: the socket of agent "bot" serves only that agent's OS user`
@@ -60,13 +58,10 @@ func refusingEngine(t *testing.T, socket string, refused int) {
 // machine produces when the engine's refusal and close win the race.
 func relayLosingRace(t *testing.T, socket string, out *strings.Builder, late int) *relay {
 	t.Helper()
-	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
-	require.NoError(t, err)
-	down := agent.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	dials := 0
 	return &relay{
 		path:     socket,
-		fallback: newDownServer(down),
+		fallback: newDownServer(t),
 		out:      &lineWriter{w: out},
 		files:    defaultRequestFiles(),
 		dial: func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles, neg negotiation) (*session, error) {

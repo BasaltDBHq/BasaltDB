@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statuscli"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -26,10 +27,10 @@ import (
 type appUpdateHost struct{ h cli.Machine }
 
 func (u appUpdateHost) UpdateDisabled(getenv func(string) string) bool {
-	return UpdateDisabled(getenv)
+	return updatecheck.Disabled(getenv)
 }
 
-func (u appUpdateHost) UpdateDevVersion() string { return UpdateDevVersion }
+func (u appUpdateHost) UpdateDevVersion() string { return updatecheck.DevVersion }
 
 func (u appUpdateHost) Euid() int { return u.h.Euid() }
 
@@ -43,22 +44,22 @@ func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config,
 
 // noticeOf is n as the CLI prints it for the binary at exe; nil without a
 // notice.
-func noticeOf(n *UpdateNotice, exe string) *status.UpdateNotice {
+func noticeOf(n *updatecheck.Notice, exe string) *status.UpdateNotice {
 	if n == nil {
 		return nil
 	}
 	return &status.UpdateNotice{Line: n.Line(exe), Security: n.Security}
 }
 
-func updateChecker(getenv func(string) string) (*UpdateChecker, error) {
-	if buildinfo.Version == UpdateDevVersion {
+func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
+	if buildinfo.Version == updatecheck.DevVersion {
 		return nil, errDevBuild
 	}
-	dir, err := UpdateCacheDir(getenv(envCacheDir))
+	dir, err := updatecheck.CacheDir(getenv(envCacheDir))
 	if err != nil {
 		return nil, err
 	}
-	return &UpdateChecker{Dir: dir, Current: buildinfo.Version}, nil
+	return &updatecheck.Checker{Dir: dir, Current: buildinfo.Version}, nil
 }
 
 // errDevBuild means this build has no release number, so no check runs.

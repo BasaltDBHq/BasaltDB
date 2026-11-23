@@ -23,7 +23,7 @@ import (
 // others. trusted is that user: the
 // credential the config names must belong to it (readCredentialAsRoot),
 // so a config the engine's user wrote cannot name a file only root reads.
-func loadConfigAsRoot(sh shellHost, path string) (cfg config.Config, trusted int, err error) {
+func loadConfigAsRoot(sh cli.Host, path string) (cfg config.Config, trusted int, err error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return config.Config{}, 0, err

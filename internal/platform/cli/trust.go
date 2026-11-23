@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// fetchChain reads the chain host:port presents with the TLS handshake
-// alone (trustpin.Fetch); cliIO.fetchChain outside tests.
-func fetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
+// FetchChain reads the chain host:port presents with the TLS handshake
+// alone (trustpin.Fetch); the IO's fetchChain outside tests.
+func FetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
 	return trustpin.Fetch(ctx, nil, host, port)
 }
 
@@ -27,13 +28,13 @@ const codeTrustRootChanged = "TRUST_ROOT_CHANGED"
 // presents now (read with the TLS handshake alone) is not the pinned one:
 // both fingerprints and where the new one is accepted. Nil
 // otherwise. Never accepted automatically.
-func rootChanged(ctx context.Context, sh shellHost, dsn string, err error) error {
-	return rootChangedOn(ctx, sh, dsn, err, nil)
+func rootChanged(ctx context.Context, sh Host, dsn string, err error) error {
+	return RootChangedOn(ctx, sh, dsn, err, nil)
 }
 
-// rootChangedOn is rootChanged reaching the host through dial (nil: the
+// RootChangedOn is rootChanged reaching the host through dial (nil: the
 // network).
-func rootChangedOn(ctx context.Context, sh shellHost, dsn string, err error, dial trustpin.Dial) error {
+func RootChangedOn(ctx context.Context, sh Host, dsn string, err error, dial trustpin.Dial) error {
 	if !sh.CertificateNotVerified(err) {
 		return nil
 	}
@@ -61,4 +62,17 @@ func rootChangedOn(ctx context.Context, sh shellHost, dsn string, err error, dia
 	return fmt.Errorf("%w; %s: %s presents the certificate authority SHA-256 %s, but it is pinned to %s. Check it against your "+
 		"provider's console; to accept it, run basalt init (basalt init --remote on an agent-operated engine) and trust it on the page it opens",
 		err, codeTrustRootChanged, host, trustprofile.Fingerprint(top), strings.Join(pinnedTo, ", "))
+}
+
+// Connect opens one connection, usable through a transaction pooler
+// (pgdial).
+func Connect(ctx context.Context, sh Host, dsn string) (*pgx.Conn, error) {
+	conn, err := sh.Connect(ctx, dsn)
+	if err != nil {
+		if changed := rootChanged(ctx, sh, dsn, err); changed != nil {
+			return nil, fmt.Errorf("connect: %w", changed)
+		}
+		return nil, fmt.Errorf("connect: %w", sh.WithCertificateHint(dsn, err))
+	}
+	return conn, nil
 }

@@ -79,7 +79,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 // requireMCPCommandReachesEngine runs the printed mcpCommand (argv after
 // "basalt mcp") and requires a status tool call that finds the engine
 // reachable, well under the 15s autostart wait.
-func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, socketDir string) {
+func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h cli.Machine, socketDir string) {
 	t.Helper()
 	t.Cleanup(func() {
 		if pid, up, _ := pidlock.Running(app.LockPath(socketDir)); up {

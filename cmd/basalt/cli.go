@@ -18,7 +18,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Environment variables the CLI reads.
@@ -60,10 +59,10 @@ type cliIO struct {
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,
 	// claude mcp add); tests use a fake.
-	host host
+	host cli.Machine
 	// shell is what the shell reaches outside itself: connections, the
 	// trust profiles and the hardened config open (appShell).
-	shell shellHost
+	shell cli.Host
 	// agentLogin logs in with the agent's credential (basalt init
 	// --remote): nil and no error when the database refuses the login.
 	agentLogin func(ctx context.Context, dsn string) (agentConn, error)
@@ -78,26 +77,6 @@ type cliIO struct {
 	fetchChain func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 }
 
-// shellHost is what the CLI shell reaches outside itself: database
-// connections, the trust profiles a connection uses and the hardened open
-// of a config file. The shell names no adapter; appShell is the real one.
-type shellHost interface {
-	// Connect opens one connection, usable through a transaction pooler.
-	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
-	// WithCertificateHint is err with what can fix it, when it is a
-	// certificate of dsn's host that did not verify.
-	WithCertificateHint(dsn string, err error) error
-	// CertificateNotVerified reports whether err is a server certificate
-	// that did not verify.
-	CertificateNotVerified(err error) bool
-	// CurrentTrustProfileSet is the trust profiles a connection opened now
-	// uses.
-	CurrentTrustProfileSet() *trustprofile.Set
-	// OSOpenTrustedFile opens path read-only for root, never through a
-	// symlink, its directory trusted only from root or owner.
-	OSOpenTrustedFile(path string, owner int) (*os.File, error)
-}
-
 func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cliIO {
 	shell := appShell{}
 	c := &cliIO{
@@ -108,9 +87,9 @@ func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cliI
 			return loginAsAgent(ctx, shell, dsn)
 		},
 		dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
-			return connect(ctx, shell, dsn)
+			return cli.Connect(ctx, shell, dsn)
 		},
-		fetchChain: fetchChain,
+		fetchChain: cli.FetchChain,
 		width:      func() int { return cli.TerminalWidth(std.Out) },
 	}
 	c.probe = probeLogin(c)
@@ -145,19 +124,6 @@ func (c *cliIO) flags(name string) *flag.FlagSet {
 	fs := cli.NewFlagSet(name)
 	fs.SetOutput(c.stderr)
 	return fs
-}
-
-// connect opens one connection, usable through a transaction pooler
-// (pgdial).
-func connect(ctx context.Context, sh shellHost, dsn string) (*pgx.Conn, error) {
-	conn, err := sh.Connect(ctx, dsn)
-	if err != nil {
-		if changed := rootChanged(ctx, sh, dsn, err); changed != nil {
-			return nil, fmt.Errorf("connect: %w", changed)
-		}
-		return nil, fmt.Errorf("connect: %w", sh.WithCertificateHint(dsn, err))
-	}
-	return conn, nil
 }
 
 // withIO adapts a guard command to the command table: open builds the

@@ -118,5 +118,5 @@ func trustConfig(t *testing.T) string {
 
 // rootChangedVia is rootChangedOn with the real shell host.
 func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Dial) error {
-	return rootChangedOn(ctx, appShell{}, dsn, err, dial)
+	return cli.RootChangedOn(ctx, appShell{}, dsn, err, dial)
 }

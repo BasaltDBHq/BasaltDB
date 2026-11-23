@@ -8,21 +8,8 @@ import (
 	"os"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
-
-// discoverConfig is the engine.json a command finds by itself
-// (config.Discover): the one at system, else the one in the person's own
-// config directory. root has no per-user config: its engine config is the
-// system one.
-func discoverConfig(h host, system string) (string, error) {
-	user := ""
-	if h.Euid() != 0 {
-		if base, err := h.UserConfigDir(); err == nil {
-			user = config.UserPath(base)
-		}
-	}
-	return config.Discover(system, user)
-}
 
 // systemConfig is the system path of engine.json; tests point it at a
 // temporary file.
@@ -40,7 +27,7 @@ func (c *cliIO) findConfig() (string, error) {
 	if c.paths.config != "" {
 		return c.paths.config, nil
 	}
-	return discoverConfig(c.host, c.systemConfig())
+	return cli.DiscoverConfig(c.host, c.systemConfig())
 }
 
 // refuseSecondConfig is the error of a setup that would write the person's

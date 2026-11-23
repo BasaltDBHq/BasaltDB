@@ -847,7 +847,7 @@ func (s *KeptPlugins) listed(p config.Plugin, source string, scope Scope, reader
 		}
 	}
 	if err == nil {
-		d := pluginDetail(k, v, mode, s.goos, s.ports.Network)
+		d := pluginDetail(k, v, mode, s.goos, PluginNetwork)
 		l.Version, l.Signer = v.Manifest.Version, string(v.Signer)
 		if v.Signer == pluginmodel.SignerKnown {
 			l.SignerKeyID = v.SignerKeyID

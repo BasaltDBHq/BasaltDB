@@ -207,10 +207,6 @@ func TestDarwinPluginDisableKeepsTheLog(t *testing.T) {
 
 func TestPluginNetwork(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "ENFORCED", osservice.PluginNetwork("linux", nil))
-	require.Equal(t, "DECLARED", osservice.PluginNetwork("linux", []string{"hooks.slack.com:443"}))
-	require.Equal(t, "NOT_ENFORCED", osservice.PluginNetwork("darwin", nil))
-
 	none, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, none, "\nPrivateNetwork=yes\n", "an empty egress runs without network")
@@ -603,12 +599,4 @@ func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {
 	for _, r := range sys.ran {
 		require.NotContains(t, r, "basalt-plugin-acme-ner")
 	}
-}
-
-func TestUserClash(t *testing.T) {
-	t.Parallel()
-	long := "acme-ner-presidio"
-	others := []pluginmodel.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
-	require.Nil(t, osservice.UserClash(long, "default", others), "an entry does not clash with itself")
-	require.Nil(t, osservice.UserClash("other", "default", others))
 }

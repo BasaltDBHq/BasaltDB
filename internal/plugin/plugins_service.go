@@ -136,7 +136,7 @@ func (ep *Plugins) unitTarget(p config.Plugin, v pluginmodel.Verified) (serviceT
 	}
 	// The plan fails when the entry's names or unit cannot be rendered, or
 	// when two entries would share an OS user, socket and directory.
-	names, _, err := ep.unitHost.Plan(p, v, ep.allKeys)
+	names, err := ep.planUnit(p, v)
 	if err != nil {
 		return serviceTarget{}, whyNoUnit
 	}
@@ -223,7 +223,7 @@ func (ep *Plugins) initServiceUnits(cfg config.Config, configPath string) {
 		ep.unitHostErr = errNoEngineUser
 		return
 	}
-	ep.unitHost = ep.o.Ports.NewUnitHost(cfg, ep.o.goos, configPath, name)
+	ep.unitHost = ep.o.Ports.NewUnitHost(HostFor(cfg, ep.o.goos, configPath, name))
 }
 
 // checkServiceAgents refuses every local entry when an agent's OS user is

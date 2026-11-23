@@ -87,8 +87,8 @@ func (f *fakeUnits) source() *UnitSource {
 // writes, run by uid.
 func installed(t *testing.T, cfg config.Config, v pluginmodel.Verified, uid int) *fakeUnits {
 	t.Helper()
-	h := osservice.HostFor(cfg, "linux", "/etc/basalt/engine.json", "basalt")
-	e, ok := osservice.EntryFor(cfg.Plugins[0], v)
+	h := HostFor(cfg, "linux", "/etc/basalt/engine.json", "basalt")
+	e, ok := EntryFor(cfg.Plugins[0], v)
 	require.True(t, ok)
 	unit, err := osservice.PluginUnit(h, e)
 	require.NoError(t, err)

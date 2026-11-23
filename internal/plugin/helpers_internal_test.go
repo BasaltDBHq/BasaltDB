@@ -14,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -128,11 +127,10 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 // testPorts are the real adapters, as the app builds them.
 var testPorts = Ports{
 	Guard:            pluginledger.Ledger{},
-	Network:          osservice.PluginNetwork,
 	InGroup:          osservice.InGroup,
 	SystemdOverrides: osservice.SystemdOverridesOnMachine,
-	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) UnitHost {
-		return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
+	NewUnitHost: func(host servicespec.PluginHost) UnitHost {
+		return osservice.NewPluginUnitHost(host)
 	},
 }
 

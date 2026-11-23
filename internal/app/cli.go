@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -67,11 +68,11 @@ func OSDialogError(goos string, code int, stderr string, runErr error) error {
 }
 func OSDialogPaths(goos string) ([]string, error) { return osservice.DialogPaths(goos) }
 func OSEntryFor(p config.Plugin, v pluginmodel.Verified) (OSPluginUnit, bool) {
-	return osservice.EntryFor(p, v)
+	return plugin.EntryFor(p, v)
 }
 
 func OSHostFor(cfg config.Config, goos, configPath, engineUser string) OSPluginHost {
-	return osservice.HostFor(cfg, goos, configPath, engineUser)
+	return plugin.HostFor(cfg, goos, configPath, engineUser)
 }
 
 func OSInstallPlan(ctx context.Context, sys OSSystem, s OSSpec) ([]osservice.Step, error) {

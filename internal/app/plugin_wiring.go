@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
@@ -39,11 +40,10 @@ func init() {
 // pluginPorts are the adapters the plugin feature is built on.
 var pluginPorts = plugin.Ports{
 	Guard:            pluginledger.Ledger{},
-	Network:          osservice.PluginNetwork,
 	InGroup:          osservice.InGroup,
 	SystemdOverrides: osservice.SystemdOverridesOnMachine,
-	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) plugin.UnitHost {
-		return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
+	NewUnitHost: func(host servicespec.PluginHost) plugin.UnitHost {
+		return osservice.NewPluginUnitHost(host)
 	},
 }
 

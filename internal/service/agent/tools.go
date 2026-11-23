@@ -7,8 +7,6 @@ import (
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 
-	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
-
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -17,7 +15,7 @@ import (
 )
 
 // RunStartTools are the tools that start a run. mount lists a tool under its
-// contract, around Service.Wrap; the tool list's composer supplies it.
+// contract, around agentmcp.Wrap; the tool list's composer supplies it.
 // Handlers parse, validate, make one service call and render.
 func RunStartTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
@@ -34,53 +32,9 @@ type handlers struct {
 	svc *Service
 }
 
-// wrap admits the call (every tool but status, see Service.Admit) and maps
-// every error to the contract's error body, logging the ones that are the
-// engine's fault.
-func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
-	return func(ctx context.Context, args json.RawMessage) (any, error) {
-		// Before anything else: the call is not admitted, decoded, recorded
-		// or logged, and its arguments are not echoed into the error.
-		if holdsAdminCredential(args) {
-			te := h.svc.Failure(tool, nil, adminCredentialError())
-			if h.svc.deps.Status.DevLocalPages {
-				return nil, linksvc.DevLocalError(te)
-			}
-			return nil, te
-		}
-		out, err := h.admitted(ctx, tool, args, call)
-		switch {
-		case err == nil && h.svc.deps.Status.DevLocalPages:
-			return linksvc.DevLocalResult(out)
-		case err == nil:
-			return out, nil
-		}
-		te := h.svc.Failure(tool, guidance.CallArgs(args), err)
-		if h.svc.deps.Status.DevLocalPages {
-			return nil, linksvc.DevLocalError(te)
-		}
-		return nil, te
-	}
-}
-
-// Wrap is wrap for the tool list's composer: every served tool's call goes
-// through it.
-func (s *Service) Wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
-	return handlers{svc: s}.wrap(tool, call)
-}
-
-func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessage, call func(context.Context, json.RawMessage) (any, error)) (any, error) {
-	// status always answers; confirm_database answers INVALID_ARGUMENT
-	// here, where no connect-only database waits (ConnectOnly serves it
-	// while one does).
-	if tool == guidance.ToolStatus || tool == guidance.ToolConfirmDatabase {
-		return call(ctx, args)
-	}
-	if err := h.svc.Admit(ctx); err != nil {
-		return nil, err
-	}
-	return call(ctx, args)
-}
+// DevLocalPages reports whether engine.json sets devLocalPages: every
+// personMessage then starts with the DEV_LOCAL_PAGES warning.
+func (s *Service) DevLocalPages() bool { return s.deps.Status.DevLocalPages }
 
 // optionalID parses an optional uuid argument already validated by tags.
 func optionalID(s string) uuid.UUID {

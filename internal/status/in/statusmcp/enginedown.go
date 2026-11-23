@@ -8,7 +8,7 @@ import (
 	"time"
 
 	engine "github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -86,7 +86,7 @@ func (d EngineDown) Tools() []guidance.Tool {
 		if c.Name == guidance.ToolStatus {
 			call = d.status
 		}
-		out = append(out, guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: agent.RefuseAdminCredential(c.Name, call)})
+		out = append(out, guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: mcpserver.RefuseAdminCredential(c.Name, call)})
 	}
 	return out
 }

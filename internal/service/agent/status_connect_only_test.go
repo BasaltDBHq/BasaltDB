@@ -78,6 +78,7 @@ func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) Conne
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
 		ConnectBudget: links.DefaultBudget, Handoff: h,
 		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+		RefuseAdminCredential: mcpserver.RefuseAdminCredential,
 	}
 }
 

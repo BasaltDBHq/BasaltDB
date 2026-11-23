@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
 	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
@@ -74,15 +75,15 @@ func deps() Deps {
 
 // servedTools are s's tools as the engine lists them (app's agentTools,
 // whose tests pin the list and its order): each group's tools under their
-// contracts, around s.Wrap. It copies app's composer: a layer app adds
-// around Wrap, or a group it adds or reorders, must be added here too.
+// contracts, around agentmcp.Wrap. It copies app's composer: a layer app
+// adds around Wrap, or a group it adds or reorders, must be added here too.
 func servedTools(s *Service) []guidance.Tool {
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 		if !ok {
 			panic("no contract for tool " + name)
 		}
-		return guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: s.Wrap(name, call)}
+		return guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: agentmcp.Wrap(s, name, call)}
 	}
 	tools := RunStartTools(s, mount)
 	for _, list := range [][]guidance.Tool{
@@ -246,8 +247,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 		var logged strings.Builder
 		d := deps()
 		d.Core.Log = slog.New(slog.NewTextHandler(&logged, nil))
-		h := handlers{svc: NewService(d)}
-		call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
+		call := agentmcp.Wrap(NewService(d), "query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
 
 		_, err := call(context.Background(), nil)
 		var te *toolresult.ToolError
@@ -266,8 +266,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 
 func TestErrorIDOnlyOnInternalAndUnavailable(t *testing.T) {
 	t.Parallel()
-	h := handlers{svc: NewService(deps())}
-	call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) {
+	call := agentmcp.Wrap(NewService(deps()), "query", func(context.Context, json.RawMessage) (any, error) {
 		return nil, &guidance.ArgumentError{Message: "bad"}
 	})
 	_, err := call(context.Background(), nil)

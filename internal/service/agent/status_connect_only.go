@@ -52,6 +52,10 @@ type ConnectOnly struct {
 	// is the basalt_meta version this build installs.
 	Errors             guidance.ErrorMap
 	LatestGuardVersion func() int
+	// RefuseAdminCredential runs a tool's call after refusing a call that
+	// holds an admin connection string (mcpserver.RefuseAdminCredential):
+	// every tool goes through it.
+	RefuseAdminCredential func(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error)
 }
 
 // guide is a Service with only what the error guidance reads.
@@ -70,6 +74,9 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 	if c.Handoff == nil || c.Log == nil || c.Now == nil || c.LatestGuardVersion == nil {
 		panic("agent: a connect-only agent needs its hand-off, a logger, a clock and the guard version")
 	}
+	if c.RefuseAdminCredential == nil {
+		panic("agent: a connect-only agent needs the admin-credential refusal")
+	}
 	contracts := mcpcontract.MustLoad()
 	out := make([]guidance.Tool, 0, len(contracts))
 	for _, ct := range contracts {
@@ -85,7 +92,7 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 		default:
 			call = c.refused(ct.Name)
 		}
-		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: RefuseAdminCredential(ct.Name, call)})
+		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: c.RefuseAdminCredential(ct.Name, call)})
 	}
 	return out
 }

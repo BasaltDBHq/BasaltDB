@@ -502,6 +502,9 @@ type credFiles interface {
 	read(path string) (string, os.FileInfo, error)
 	// stat is the file at path, not following a link.
 	stat(path string) (os.FileInfo, error)
+	// sameFile reports whether path still names the file fi describes, a
+	// regular file with one link, not following a link.
+	sameFile(path string, fi os.FileInfo) error
 	write(path string, data []byte) error
 	rename(from, to string) error
 	// remove removes the file at path, not following a link.
@@ -523,6 +526,10 @@ func (pathCredFiles) read(path string) (string, os.FileInfo, error) {
 }
 
 func (pathCredFiles) stat(path string) (os.FileInfo, error) { return os.Lstat(path) }
+
+func (pathCredFiles) sameFile(path string, fi os.FileInfo) error {
+	return config.SameCredentialFile(path, fi)
+}
 
 func (pathCredFiles) write(path string, data []byte) error { return config.WriteFile(path, data) }
 
@@ -580,10 +587,12 @@ func (r *remoteInit) connection() error {
 			return err
 		}
 	}
-	if pending != nil && pending.target != r.target {
+	// A credential for another database, or another role, is not this
+	// one's: the engine uses a .pending only for its own database and role.
+	if pending != nil && !r.sameLogin(pending) {
 		pending = nil
 	}
-	if cred != nil && cred.target != r.target {
+	if cred != nil && !r.sameLogin(cred) {
 		cred = nil
 	}
 	// The password this machine holds for the database: the newest one.
@@ -597,6 +606,20 @@ func (r *remoteInit) connection() error {
 	// pinned here.
 	r.noteUnknownAuthority()
 	return r.login(pending, cred)
+}
+
+// sameLogin reports whether c names the database and the role of the base
+// credential (r.base, r.target).
+func (r *remoteInit) sameLogin(c *credential) bool {
+	return c.target == r.target && urlUser(c.url) == urlUser(r.base)
+}
+
+// urlUser is u's user name, "" when it names none.
+func urlUser(u *url.URL) string {
+	if u == nil || u.User == nil {
+		return ""
+	}
+	return u.User.Username()
 }
 
 // readCredentialIfAny reads a credential file with the no-follow checks,
@@ -630,19 +653,23 @@ func readCredentialIfAny(files credFiles, path string) (*credential, error) {
 
 // login logs in as the agent: with the .pending credential first (a
 // setup the person may have run), which then replaces the credential
-// file, else with the credential file. A refused login is not an error:
-// the role cannot log in. An unreachable database is, and changes nothing.
+// file once the pending setup is recorded, as the engine promotes it, else
+// with the credential file. A refused login is not an error: the role
+// cannot log in. An unreachable database is, and changes nothing.
 func (r *remoteInit) login(pending, cred *credential) error {
 	if pending != nil {
 		conn, err := r.c.agentLogin(r.c.ctx, pending.dsn)
 		switch {
 		case err == nil:
 			defer conn.Close(r.c.ctx)
-			if err := r.promote(pending); err != nil {
+			r.password = pending.password()
+			if err := r.inspect(conn); err != nil {
 				return err
 			}
-			r.password = pending.password()
-			return r.inspect(conn)
+			if !r.recorded {
+				return nil // .pending stays until its setup is recorded
+			}
+			return r.promote(pending)
 		case r.rootChanged(pending.dsn, err):
 			r.certChanged = true
 			return nil
@@ -671,14 +698,14 @@ func (r *remoteInit) login(pending, cred *credential) error {
 }
 
 // promote moves the .pending credential, which logs in, over the
-// credential file, once the .pending path still names the file read.
+// credential file, once the .pending path still names the file read, a
+// regular file with one link.
 func (r *remoteInit) promote(pending *credential) error {
 	pendingFile := r.credFile + pendingSuffix
-	now, err := r.files.stat(pendingFile)
-	if err != nil {
-		return err
-	}
-	if !os.SameFile(now, pending.file) {
+	if err := r.files.sameFile(pendingFile, pending.file); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
 	}
 	if err := r.files.rename(pendingFile, r.credFile); err != nil {

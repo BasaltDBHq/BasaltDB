@@ -39,7 +39,7 @@ func (u appUpdateHost) DiscoverConfig(system string) (string, error) {
 }
 
 func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return cli.LoadEngineConfigAs(appShell{}, euid, path)
+	return cli.LoadEngineConfigAs(app.Shell{}, euid, path)
 }
 
 // noticeOf is n as the CLI prints it for the binary at exe; nil without a

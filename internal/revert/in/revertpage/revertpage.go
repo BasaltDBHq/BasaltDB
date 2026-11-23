@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -21,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // revertPage serves the revert page's API on the server's agents.
@@ -103,7 +104,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in agent.ScopeRequest
+	var in revertsvc.ScopeRequest
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
@@ -114,7 +115,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
-	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (agent.ScopeResponse, error) {
+	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (revertsvc.ScopeResponse, error) {
 		return a.RescopeRevert(ctx, id, secret, in)
 	})
 	if err != nil {
@@ -136,7 +137,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in agent.RejectRequest
+	var in revertsvc.RejectRequest
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() {
@@ -147,7 +148,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
-	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (agent.RejectResponse, error) {
+	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (revertsvc.RejectResponse, error) {
 		return a.RejectRevert(ctx, id, secret, in)
 	})
 	if err != nil {

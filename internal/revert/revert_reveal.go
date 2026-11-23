@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 // secret. It serializes with the revert's other page routes; Postgres
 // locks the revert row, so a signature racing it comes first or second,
 // never between.
-func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
+func (rc *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	key, err := in.RevealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
@@ -62,7 +62,7 @@ func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret str
 
 // revealRevertError is the page's answer to a revert reveal Postgres
 // refused.
-func (rc *revertCase) revealRevertError(r action.Revert, err error, link string) error {
+func (rc *Service) revealRevertError(r action.Revert, err error, link string) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)
 	switch {

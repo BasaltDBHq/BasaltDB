@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -15,30 +14,26 @@ import (
 // ledgerKind is the ledger's kind column.
 const ledgerKind = "kind"
 
-// FeedKinds are the ledger kinds feed/1 may carry. A CHANGE is an event only
-// when its status is APPLIED, a REFUSED only when its op is not SELECT
-// (ReadFeedRows filters both).
-var FeedKinds = []string{
-	guardmodel.KindChange, guardmodel.KindRefused, guardmodel.KindApprovalPending, guardmodel.KindApproved,
-	guardmodel.KindRevertPending, guardmodel.KindRevertSigned, guardmodel.KindReverted, guardmodel.KindRevertRejected,
-}
-
 // ReadFeedRows reads the calling agent's own ledger (agent_ledger shows only
-// session_user's rows) after seq after: at most limit rows that are feed/1
-// events, in seq order.
-func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int) ([]guardmodel.FeedRow, error) {
+// session_user's rows) after seq after: at most limit rows that f keeps, in
+// seq order.
+func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guardmodel.FeedFilter) ([]guardmodel.FeedRow, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	sql, args, err := psql.Select("seq", "at", ledgerKind, "change_id", "op",
+	b := psql.Select("seq", "at", ledgerKind, "change_id", "op",
 		"detail ->> 'runId'", "detail ->> 'taskId'", "detail ->> 'table'", "detail ->> 'rows'", "detail ->> 'cascadedRows'",
 		"detail ->> 'approvalId'", "detail ->> 'expiresAt'", "detail ->> 'revertId'", "detail ->> 'code'").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Gt{"seq": after}).
-		Where(sq.Eq{ledgerKind: FeedKinds}).
-		Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange)).
-		Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused)).
-		OrderBy("seq").Limit(uint64(limit)).ToSql()
+		Where(sq.Eq{ledgerKind: f.Kinds})
+	if f.AppliedChangesOnly {
+		b = b.Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange))
+	}
+	if f.SkipRefusedReads {
+		b = b.Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused))
+	}
+	sql, args, err := b.OrderBy("seq").Limit(uint64(limit)).ToSql()
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +97,11 @@ func OldestSeqAfter(ctx context.Context, q Querier, after int64) (int64, bool, e
 	return *seq, true, nil
 }
 
-// ServedFrom is the seq of the newest record in the calling agent's ledger
-// after seq after that begins serving entry (name, instance) to it: a
-// PLUGIN_ENABLED, or a PLUGIN_CHANGED that adds an egress host or moves the
-// endpoint (CONTRACT.md, Notifier messages, The cursor). False when there is
-// none.
-func ServedFrom(ctx context.Context, q Querier, name, instance string, after int64) (int64, bool, error) {
+// PluginEntryEvents are the PLUGIN_ENABLED, PLUGIN_CHANGED and
+// PLUGIN_DISABLED records of entry (name, instance) in the calling agent's
+// ledger, in seq order, with their egress and endpoint decoded; a record
+// whose egress or endpoint does not decode has DecodeErr set.
+func PluginEntryEvents(ctx context.Context, q Querier, name, instance string) ([]guardmodel.PluginEntryEvent, error) {
 	sql, args, err := psql.Select("seq", ledgerKind, "detail -> 'egress'", "detail -> 'endpoint'").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Eq{ledgerKind: []string{string(guardmodel.PluginEnabled), string(guardmodel.PluginChanged), string(guardmodel.PluginDisabled)}}).
@@ -115,55 +109,24 @@ func ServedFrom(ctx context.Context, q Querier, name, instance string, after int
 		Where(sq.Expr("detail ->> 'instance' = ?", instance)).
 		OrderBy("seq").ToSql()
 	if err != nil {
-		return 0, false, err
+		return nil, err
 	}
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return 0, false, err
+		return nil, err
 	}
-	type record struct {
-		seq      int64
-		kind     string
-		egress   []byte
-		endpoint []byte
-	}
-	recs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (record, error) {
-		var r record
-		err := row.Scan(&r.seq, &r.kind, &r.egress, &r.endpoint)
-		return r, err
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.PluginEntryEvent, error) {
+		var (
+			e                guardmodel.PluginEntryEvent
+			egress, endpoint []byte
+		)
+		if err := row.Scan(&e.Seq, &e.Kind, &egress, &endpoint); err != nil {
+			return e, err
+		}
+		e.DecodeErr = !decodes(egress, &e.Egress) || !decodes(endpoint, &e.Endpoint)
+		return e, nil
 	})
-	if err != nil {
-		return 0, false, err
-	}
-	var from int64
-	found := false
-	for i, r := range recs {
-		if r.seq <= after {
-			continue
-		}
-		starts := r.kind == string(guardmodel.PluginEnabled)
-		if r.kind == string(guardmodel.PluginChanged) && i > 0 {
-			starts = widens(recs[i-1].egress, recs[i-1].endpoint, r.egress, r.endpoint)
-		}
-		if starts {
-			from, found = r.seq, true
-		}
-	}
-	return from, found, nil
 }
 
-// widens reports whether a plugin record's egress and endpoint, after the
-// one before, add an egress host or move the endpoint. A detail that does
-// not decode counts as a change: starting again at it only skips events.
-func widens(prevEgress, prevEndpoint, egress, endpoint []byte) bool {
-	var pe, e []string
-	var pp, p guardmodel.PluginEndpoint
-	if json.Unmarshal(prevEgress, &pe) != nil || json.Unmarshal(egress, &e) != nil ||
-		json.Unmarshal(prevEndpoint, &pp) != nil || json.Unmarshal(endpoint, &p) != nil {
-		return true
-	}
-	if pp != p {
-		return true
-	}
-	return slices.ContainsFunc(e, func(h string) bool { return !slices.Contains(pe, h) })
-}
+// decodes reports whether raw decodes as JSON into v.
+func decodes(raw []byte, v any) bool { return json.Unmarshal(raw, v) == nil }

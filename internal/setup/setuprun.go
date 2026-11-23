@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -693,7 +692,7 @@ func ApplySetupWith(ctx context.Context, b SetuprunBackend, run TxRunner, script
 		}
 		return nil
 	})
-	return WithGuardDetail(err)
+	return WithGuardDetail(b, err)
 }
 
 // Refused turns a failed transaction into what the person reads. Nothing
@@ -703,7 +702,7 @@ func Refused(ctx context.Context, b SetuprunBackend, q Querier, p setupcode.Payl
 	agent := AgentWord(p)
 	detail, ok := b.SetupRefusal(err)
 	if !ok {
-		return NothingChanged(WithGuardDetail(err))
+		return NothingChanged(WithGuardDetail(b, err))
 	}
 	switch setupcode.Refusal(detail) {
 	case setupcode.RefusalUsed, setupcode.RefusalSuperseded:
@@ -743,13 +742,4 @@ func RLSBlindWarnings(ctx context.Context, b SetuprunBackend, q Querier, role st
 			"the agent will read 0 rows. Add a policy for that role, or disable RLS on the table.", t, role))
 	}
 	return out
-}
-
-// sqlUndefinedTable is Postgres's undefined_table: a guard older than the
-// table, or none.
-const sqlUndefinedTable = "42P01"
-
-func isUndefinedTable(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == sqlUndefinedTable
 }

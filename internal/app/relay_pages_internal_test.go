@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 
 	"github.com/google/uuid"
@@ -561,7 +563,7 @@ func TestRelayRevertWidenKeepsTheSession(t *testing.T) {
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
 	as, err := e.person.Sign(reverttest.RescopeChallenge(revertID, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	widen, err := json.Marshal(agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
+	widen, err := json.Marshal(revertsvc.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)
@@ -598,7 +600,7 @@ func TestRelayRevertRejectEndsTheSession(t *testing.T) {
 	p := startPageDriver(t, e.v.URL())
 	p.ok(t, map[string]any{"op": "open", "secret": secret})
 	note := "Not this one"
-	body, err := json.Marshal(agent.RejectRequest{Note: &note})
+	body, err := json.Marshal(revertsvc.RejectRequest{Note: &note})
 	require.NoError(t, err)
 	r := p.ok(t, map[string]any{"op": "request", "method": http.MethodPost, "path": "/api/v1/reverts/" + id + "/reject", "secret": secret, "body": string(body)})
 	require.EqualValues(t, http.StatusOK, r["status"], r["body"])

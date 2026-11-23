@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -23,7 +25,7 @@ func gatedService(t *testing.T) *Service {
 	d := deps()
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}
 	setApprovals(&d, struct{ approvalStore }{})
-	setReverts(&d, struct{ Reverts }{})
+	setReverts(&d, struct{ revertsvc.Store }{})
 	return NewService(d)
 }
 
@@ -47,7 +49,7 @@ func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
 	requireGuardOutdated(t, err, "pages revert")
 	_, err = s.RevertRequest(ctx, id, "secret")
 	requireGuardOutdated(t, err, "revert page")
-	_, err = s.RescopeRevert(ctx, id, "secret", ScopeRequest{})
+	_, err = s.RescopeRevert(ctx, id, "secret", revertsvc.ScopeRequest{})
 	requireGuardOutdated(t, err, "pages scope")
 
 	// The page tells the person the agent gives them a link to update it.

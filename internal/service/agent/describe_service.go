@@ -38,7 +38,7 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 
 // statementTimeout is the agent's statement timeout, 0 when the service
 // knows no catalog.
-func (ds *describeCase) statementTimeout() time.Duration {
+func (ds *describeCase) StatementTimeout() time.Duration {
 	if ds.deps.Catalog == nil {
 		return 0
 	}

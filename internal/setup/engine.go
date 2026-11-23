@@ -36,7 +36,7 @@ func (s *Setup) readEngine(ctx context.Context, q Querier) (SetuprunEngineState,
 	}
 	st := SetuprunEngineState{Key: key, ID: channel.EngineIDOf(key)}
 	engines, err := s.be.Engines(ctx, q, true)
-	if isUndefinedTable(err) {
+	if s.be.UndefinedTable(err) {
 		return st, nil
 	}
 	if err != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -49,7 +51,7 @@ type approvalDelivery interface {
 // a pending one.
 type approvalReverts interface {
 	ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error)
-	PendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error
+	PendingRevert(ctx context.Context, p *revertsvc.PendingRevert, reissue bool) error
 }
 
 // admitter admits a call: the engine is set up and its guard is current.

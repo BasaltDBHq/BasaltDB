@@ -44,10 +44,6 @@ func (Ledger) OpenPluginApproval(ctx context.Context, db q, d guardmodel.PluginA
 	return guard.OpenPluginApproval(ctx, db, d, s)
 }
 
-func (Ledger) EndPluginApproval(ctx context.Context, db q, name, instance string) error {
-	return guard.EndPluginApproval(ctx, db, name, instance)
-}
-
 func (Ledger) ReadPluginApproval(ctx context.Context, db q, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	return guard.ReadPluginApproval(ctx, db, id)
 }
@@ -101,16 +97,16 @@ func (s snapshot) ChainHeadSeq(ctx context.Context) (int64, error) {
 	return guard.ChainHeadSeq(ctx, s.tx)
 }
 
-func (s snapshot) ServedFrom(ctx context.Context, name, instance string, after int64) (int64, bool, error) {
-	return guard.ServedFrom(ctx, s.tx, name, instance, after)
+func (s snapshot) PluginEntryEvents(ctx context.Context, name, instance string) ([]guardmodel.PluginEntryEvent, error) {
+	return guard.PluginEntryEvents(ctx, s.tx, name, instance)
 }
 
 func (s snapshot) SeqRetired(ctx context.Context, seq int64) (bool, error) {
 	return guard.SeqRetired(ctx, s.tx, seq)
 }
 
-func (s snapshot) ReadFeedRows(ctx context.Context, after int64, limit int) ([]guardmodel.FeedRow, error) {
-	return guard.ReadFeedRows(ctx, s.tx, after, limit)
+func (s snapshot) ReadFeedRows(ctx context.Context, after int64, limit int, f guardmodel.FeedFilter) ([]guardmodel.FeedRow, error) {
+	return guard.ReadFeedRows(ctx, s.tx, after, limit, f)
 }
 
 func (s snapshot) OldestSeqAfter(ctx context.Context, after int64) (int64, bool, error) {

@@ -170,6 +170,13 @@ func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 // agentHarnessLimits is agentHarnessKeys with the agent's limits.
 func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, pagesOrigin ...string) agentEnv {
 	t.Helper()
+	return agentHarnessWith(t, d, a, keys, limits, nil, pagesOrigin...)
+}
+
+// agentHarnessWith is agentHarnessLimits with an edit of the dependencies,
+// made before the service is built, so every use case reads it.
+func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, edit func(*agent.Deps), pagesOrigin ...string) agentEnv {
+	t.Helper()
 	var receipts linksvc.ReceiptSigner
 	if keys != nil {
 		receipts = keys
@@ -199,6 +206,9 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 		d.Delivery.Notifier = sent
 		d.Approval.Columns = store.NewColumnOrder(pool)
 		d.Core.Commands, d.Core.PagesOrigin, d.Delivery.Poll, d.Write.RLS, d.Delivery.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
+		if edit != nil {
+			edit(d)
+		}
 	})).Svc
 	return agentEnv{d: d, a: a, h: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }

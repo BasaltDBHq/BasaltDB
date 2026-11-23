@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/coder/websocket"
@@ -117,7 +119,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	}
 
 	// A refused widen reads the same in the session as on loopback.
-	wider, err := json.Marshal(agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task}})
+	wider, err := json.Marshal(revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task}})
 	require.NoError(t, err)
 	refused := do(p, http.MethodPost, scopePath, s.secret, string(wider))
 	status, body := viaLoopback(scopePath, pagetest.PostHeaders(s.secret), string(wider))
@@ -153,13 +155,13 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	require.Len(t, proposal.RescopeNonce, 16)
 	as, err := person.Sign(reverttest.RescopeChallenge(id, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	widen, err := json.Marshal(agent.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
+	widen, err := json.Marshal(revertsvc.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)
 	r := do(p, http.MethodPost, scopePath, s.secret, string(widen))
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
-	var out agent.ScopeResponse
+	var out revertsvc.ScopeResponse
 	require.NoError(t, json.Unmarshal([]byte(r.Body), &out))
 	b, err := out.Request.Check()
 	require.NoError(t, err)

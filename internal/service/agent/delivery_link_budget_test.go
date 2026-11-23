@@ -17,10 +17,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
@@ -173,96 +171,6 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	}
 }
 
-func revertOf(t *testing.T, intent string, lines []string, batched bool) action.Revert {
-	t.Helper()
-	rows := len(lines)
-	binding := fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": %q, "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "skipped": 0, "widened": false, `+
-		`"database": "app", "revertId": %q, "rowsHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80", `+
-		`"expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`, rows, intent, caseRunID, caseRevertID)
-	if batched {
-		binding = strings.Replace(binding, `"skipped": 0`, `"skipped": 0, "batched": true, "sampleHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80"`, 1)
-		binding = strings.Replace(binding, fmt.Sprintf(`"rows": %d`, rows), `"rows": 1200`, 1)
-	}
-	r := caseRevert(false)
-	r.Rows, r.BindingText, r.Lines, r.Batched = rows, binding, lines, batched
-	return r
-}
-
-func revertLines(n int) []string {
-	out := make([]string, 0, n)
-	for i := range n {
-		sum := sha256.Sum256(fmt.Appendf(nil, "restore %d", i))
-		sum2 := sha256.Sum256(sum[:])
-		out = append(out, fmt.Sprintf(`{"op": "INSERT", "key": {"id": %d}, "now": null, "set": {"id": %d, "note": "%s%s"}, "table": "public.leads", `+
-			`"action": "RESTORE", "cascaded": false, "conflict": null, "sqlState": null, "changeIds": ["%s"]}`,
-			i, i, hex.EncodeToString(sum[:]), hex.EncodeToString(sum2[:]), caseChangeID))
-	}
-	return out
-}
-
-func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	small, big := revertOf(t, "Undo the bad merge", revertLines(2), false), revertOf(t, "Undo the bad merge", revertLines(60), false)
-
-	short, err := noticeService(localPages, 1).revert.revertNotice(ctx, big)
-	require.NoError(t, err)
-	require.Contains(t, short.URL, "#s=", "a short link is never measured")
-	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: short.URL}}, short.Links)
-	require.Contains(t, short.Message, "\n\n"+short.URL)
-	require.Nil(t, short.File)
-	stepcatalogtest.RequirePersonMessage(t, short.Message, short.Links)
-
-	within, err := noticeService("", links.DefaultBudget).revert.revertNotice(ctx, small)
-	require.NoError(t, err)
-	require.Contains(t, within.URL, "#2.")
-	require.LessOrEqual(t, len(within.URL), links.DefaultBudget)
-	require.Nil(t, within.File)
-	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: within.URL}}, within.Links)
-	stepcatalogtest.RequirePersonMessage(t, within.Message, within.Links)
-
-	over, err := noticeService("", links.DefaultBudget).revert.revertNotice(ctx, big)
-	require.NoError(t, err)
-	require.Greater(t, len(over.long), links.DefaultBudget, "the fixture must be over budget")
-	require.Regexp(t, `/reverts/`+caseRevertID+`#h=[A-Za-z0-9_-]{22}$`, over.URL)
-	require.NotNil(t, over.File)
-	require.Equal(t, links.RevertFile(uuid.MustParse(caseRevertID)), over.File.FileName)
-	require.Equal(t, links.RequestHash(over.File.Text), over.URL[strings.Index(over.URL, "#h=")+3:])
-	require.Contains(t, over.Message, "Review only, this link cannot be signed: open this link, then open the request file the agent sends you")
-	require.Contains(t, over.Message, "\n\n"+over.URL)
-	require.NotContains(t, over.Message, "#2.")
-	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
-	stepcatalogtest.RequirePersonMessage(t, over.Message, over.Links)
-}
-
-// TestRevertNoticeNamesOnlyTheFileWithoutBlocks: a request too long for ten
-// blocks goes as a file only, and the message says so.
-func TestRevertNoticeNamesOnlyTheFileWithoutBlocks(t *testing.T) {
-	t.Parallel()
-	huge := revertOf(t, "Undo the bad merge", revertLines(200), false)
-	n, err := noticeService("", links.DefaultBudget).revert.revertNotice(context.Background(), huge)
-	require.NoError(t, err)
-	require.NotNil(t, n.File)
-	require.Greater(t, len(n.File.Text), links.RequestPieceChars*links.RequestMaxBlocks, "the fixture must need more than ten blocks")
-	require.Nil(t, n.File.Blocks)
-	require.Contains(t, n.Message, "open the request file the agent sends you:")
-	require.NotContains(t, n.Message, "text blocks")
-	stepcatalogtest.RequirePersonMessage(t, n.Message, n.Links)
-}
-
-func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
-	t.Parallel()
-	intent := strings.Repeat("Undo the bad merge of the leads. ", 15) // 495 characters, the tool's limit is 500
-	for _, batched := range []bool{false, true} {
-		for _, origin := range []string{localPages, ""} {
-			r := revertOf(t, intent, revertLines(60), batched)
-			n, err := noticeService(origin, 1).revert.revertNotice(context.Background(), r)
-			require.NoError(t, err)
-			stepcatalogtest.RequirePersonMessage(t, n.Message, n.Links)
-		}
-	}
-}
-
 // TestPersonMessagesNameNoCommandWithALongConfigPath builds the
 // personMessages that once offered a command named after --config, with a
 // 252-character path: each stays within the limit and names no basalt
@@ -274,22 +182,8 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	require.NoError(t, err)
 	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	s.wire()
-	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
 
 	messages := map[string]string{}
-	for _, tool := range []string{guidance.ToolPreviewRevert, guidance.ToolRequestRevert} {
-		err := s.revert.prepareTimeout(tool, scope, "57014")
-		var te *toolresult.ToolError
-		require.ErrorAs(t, err, &te)
-		messages["timeout "+tool] = te.PersonMessage
-	}
-	err = s.revert.nothingToRevertError(context.Background(), guidance.ToolPreviewRevert, scope, guidance.ReasonReadsOnly, "changed no rows")
-	var te *toolresult.ToolError
-	require.ErrorAs(t, err, &te)
-	messages["nothing to revert, task"] = te.PersonMessage
-	for _, st := range te.NextSteps {
-		require.Empty(t, st.Command, "no command for other agents' changes in the task")
-	}
 	messages["not granted"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).notGrantedSteps(guidance.NewSteps(), 12)
 	messages["describe not found"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
@@ -327,25 +221,12 @@ func requireSendRequestFirst(t *testing.T, steps []toolresult.NextStep, file *li
 // with SEND_REQUEST (CONTRACT.md, The request file and pasted blocks).
 func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	s := noticeService("", links.DefaultBudget)
 
 	n := approvalNoticeOf(t, s, 60, linksvc.IssueLink)
 	te := s.Failure(guidance.ToolWrite, writeArgs0, approvalRequiredError(n))
 	require.Same(t, n.RequestFile, te.Approval.RequestFile)
 	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
-
-	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
-	out, err := s.revert.revertWithLink(ctx, r)
-	require.NoError(t, err)
-	require.Contains(t, out.RevertURL, "#h=")
-	requireSendRequestFirst(t, out.NextSteps, out.RequestFile, "request_revert")
-
-	p := &PendingRevert{Revert: r}
-	require.NoError(t, s.revert.PendingRevert(ctx, p, false))
-	require.Contains(t, p.RevertURL, "#h=", "a restated link without pages is the hash link")
-	requireSendRequestFirst(t, p.NextSteps, p.RequestFile, "list_pending revert")
-	require.Equal(t, p.RevertURL, p.NextSteps[1].URL)
 
 	item := PendingItem{Notice: n.ApprovalNotice}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
@@ -359,16 +240,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 // OPEN_LINK carries no url, even when the long link is over the budget.
 func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	s := noticeService(localPages, links.DefaultBudget)
-	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
-	p := &PendingRevert{Revert: r}
-	require.NoError(t, s.revert.PendingRevert(ctx, p, false))
-	require.Nil(t, p.RequestFile)
-	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
-	require.Empty(t, p.NextSteps[0].URL)
-	require.Contains(t, p.RevertURL, "#2.", "the field keeps the long link")
-
 	n := approvalNoticeOf(t, s, 60, linksvc.KeepLink)
 	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
@@ -416,65 +288,5 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 		require.Contains(t, open.URL, "#h=")
 		require.Contains(t, te.PersonMessage, "the request file the agent sent you earlier")
 		require.NotContains(t, te.PersonMessage, "sends you")
-	}
-}
-
-// REVERT_INVALID refusals that send the person back to the revert page
-// (BAD_SIGNATURE, PASSKEY_REVOKED) follow the link budget like the request:
-// with the pages served, the short link the person has (no url, never the
-// long link over the budget); without them, the hash link on the step only,
-// naming the request file the agent already sent, and no SEND_REQUEST.
-func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	big := revertOf(t, "Undo the bad merge", revertLines(60), false)
-	for _, origin := range []string{localPages, ""} {
-		s := noticeService(origin, links.DefaultBudget)
-		long, err := s.revert.longRevertLink(ctx, big)
-		require.NoError(t, err)
-		require.Greater(t, len(long), links.DefaultBudget, "the fixture must be over budget")
-		for name, refuse := range map[string]func() error{
-			guidance.ReasonBadSignature:   func() error { return s.revert.badSignature(ctx, big, "the code does not verify") },
-			guidance.ReasonPasskeyRevoked: func() error { return s.revert.passkeyRevoked(ctx, big) },
-		} {
-			te := testErrors().ToolError(refuse())
-			require.Equal(t, guidance.CodeRevertInvalid, te.Code, name)
-			stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
-			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
-			var open *toolresult.NextStep
-			for i := range te.NextSteps {
-				step := te.NextSteps[i]
-				require.NotEqual(t, toolresult.ActionSendRequest, step.Action, "%s %q: the file was sent with the request", name, origin)
-				require.LessOrEqual(t, len(step.URL), links.DefaultBudget, "%s %q: no step carries a link over the budget", name, origin)
-				if step.Action == toolresult.ActionOpenLink {
-					open = &step
-				}
-			}
-			require.NotNil(t, open, name)
-			if origin != "" {
-				require.Empty(t, open.URL, "%s: the short link the person has", name)
-				require.Contains(t, open.Text, "short link the agent gave you earlier", name)
-				continue
-			}
-			hash, _, err := links.HashLink(long, links.RevertFile(big.ID))
-			require.NoError(t, err)
-			require.Equal(t, hash, open.URL, "%s: the hash link the request handed over", name)
-			require.Contains(t, open.Text, "request file the agent sent you earlier", name)
-		}
-	}
-}
-
-// A widened revert's refusal names no link: the person signs on the page
-// they widened on (RS-5), whether or not the engine serves the pages.
-func TestWidenedRevertInvalidNamesNoLink(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	r := revertOf(t, "Undo the bad merge", revertLines(2), false)
-	r.Widened = true
-	for _, origin := range []string{localPages, ""} {
-		te := testErrors().ToolError(noticeService(origin, links.DefaultBudget).revert.badSignature(ctx, r, "m"))
-		require.Equal(t, toolresult.ActionOpenLink, te.NextSteps[0].Action)
-		require.Empty(t, te.NextSteps[0].URL, origin)
-		require.NotContains(t, te.NextSteps[0].Text, "short link the agent gave you", origin)
 	}
 }

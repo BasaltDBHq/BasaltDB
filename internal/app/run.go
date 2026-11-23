@@ -638,14 +638,14 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	url, err := files.readCredential()
+	url, err := files.ReadCredential()
 	if err != nil {
-		files.close()
+		files.Close()
 		return agentRuntime{}, err
 	}
 	pool, password, err := postgres.NewSwitchablePool(ctx, url, agentPoolConns)
 	if err != nil {
-		files.close()
+		files.Close()
 		return agentRuntime{}, err
 	}
 	if env.rotated != nil {
@@ -743,7 +743,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		close: func() {
 			stopGuardLog()
 			pool.Close()
-			files.close()
+			files.Close()
 		},
 	}, nil
 }
@@ -756,7 +756,7 @@ const guardLogTimeout = 15 * time.Second
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 	if !env.asRoot {
-		return pathFiles{configPath: env.configPath, credFile: a.Store.CredentialFile}, nil
+		return handoff.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
 	}
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
 }

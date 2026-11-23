@@ -549,7 +549,7 @@ func holdsPluginApprovals(st guardmodel.Status, version int) bool {
 }
 
 // writeOwedEnds writes, in parallel and each within 15 seconds, every
-// PLUGIN_DISABLED agents owe for k (guard.OwedPluginEnd). One that cannot be written
+// PLUGIN_DISABLED agents owe for k (owedPluginEnd). One that cannot be written
 // refuses the request: DATABASE_UNREACHABLE.
 func (s *KeptPlugins) writeOwedEnds(ctx context.Context, k pluginmodel.EntryKey, agents []string) error {
 	errs := s.endAll(ctx, k, agents)
@@ -575,7 +575,7 @@ func (s *KeptPlugins) endAll(ctx context.Context, k pluginmodel.EntryKey, agents
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
-			if err := s.ports.Guard.EndPluginApproval(ctx, a.db, k.Name, k.Instance); err != nil {
+			if err := endPluginApproval(ctx, s.ports.Guard, a.db, k.Name, k.Instance); err != nil {
 				s.log.Warn("PLUGIN_DISABLED of an engine-kept plugin not recorded; it is written before the plugin is turned on again",
 					"agent", name, "plugin", k.String(), "err", err)
 				mu.Lock()

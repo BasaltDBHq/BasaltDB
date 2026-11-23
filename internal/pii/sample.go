@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
@@ -76,8 +75,10 @@ func KeyColumns(ctx context.Context, q Querier) (map[KeyRef]KeyKind, error) {
 // read-only transaction under a statement timeout. The values are returned
 // to the caller only; nothing is logged.
 type Sampler struct {
-	Conn    *pgx.Conn
-	Timeout time.Duration
+	// ReadOnly runs a read-only transaction on the admin connection
+	// (pgquerier.ReadOnlyTx).
+	ReadOnly ReadOnlyTx
+	Timeout  time.Duration
 	// MaxChars cuts each value to this many characters; 0 means
 	// maxValueChars.
 	MaxChars int
@@ -87,20 +88,20 @@ type Sampler struct {
 // not read leaves the column unsampled (Sample.Unavailable); any other
 // error fails.
 func (s Sampler) Sample(ctx context.Context, col Column) (Sample, error) {
-	ident := pgx.Identifier{col.Name}.Sanitize()
+	ident := quoteIdentifier(col.Name)
 	maxChars := s.MaxChars
 	if maxChars <= 0 {
 		maxChars = maxValueChars
 	}
 	query, args, err := psql.Select(fmt.Sprintf("pg_catalog.left(%s::text, %d)", ident, maxChars)).
-		From(pgx.Identifier{col.Schema, col.Table}.Sanitize()).
+		From(quoteIdentifier(col.Schema, col.Table)).
 		Where(ident + " IS NOT NULL").
 		Limit(SampleRows).ToSql()
 	if err != nil {
 		return Sample{}, err
 	}
 	var values []string
-	err = readOnly(ctx, s.Conn, func(tx pgx.Tx) error {
+	err = s.ReadOnly(ctx, func(tx Querier) error {
 		timeout := psql.Select().Column(sq.Expr("set_config('statement_timeout', ?, true)", strconv.FormatInt(s.Timeout.Milliseconds(), 10)))
 		tsql, targs, err := timeout.ToSql()
 		if err != nil {
@@ -113,8 +114,12 @@ func (s Sampler) Sample(ctx context.Context, col Column) (Sample, error) {
 		if err != nil {
 			return err
 		}
-		values, err = pgx.CollectRows(rows, pgx.RowTo[string])
-		return err
+		values = []string{}
+		var v string
+		return forEachRow(rows, []any{&v}, func() error {
+			values = append(values, v)
+			return nil
+		})
 	})
 	if err == nil {
 		return Sample{Values: values}, nil
@@ -122,28 +127,37 @@ func (s Sampler) Sample(ctx context.Context, col Column) (Sample, error) {
 	// A Postgres error's message and detail can quote a value (invalid
 	// input syntax for type integer: "…"), so only its SQLSTATE is kept,
 	// and the column is left for a person to review.
-	var pg *pgconn.PgError
+	var pg sqlStater
 	if !errors.As(err, &pg) {
 		return Sample{}, fmt.Errorf("sample %s: the connection failed", col.FullName())
 	}
-	switch pg.Code {
+	code := pg.SQLState()
+	switch code {
 	case sqlStateQueryCanceled:
 		return Sample{Unavailable: UnavailableTimeout}, nil
 	case sqlStatePermissionDenied:
 		return Sample{Unavailable: UnavailableNoReadable}, nil
 	}
-	return Sample{Unavailable: "error " + pg.Code}, nil
+	return Sample{Unavailable: "error " + code}, nil
 }
 
-// readOnly runs fn in a read-only transaction that is always rolled back:
-// a sample changes nothing, so nothing is committed.
-func readOnly(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return err
+// sqlStater is an error Postgres raised, with its SQLSTATE (the driver's
+// error has this method).
+type sqlStater interface {
+	error
+	SQLState() string
+}
+
+// quoteIdentifier is the identifier of parts (schema, table or column),
+// each double-quoted with its quotes doubled and any NUL dropped, joined by
+// dots: what the driver's Identifier.Sanitize writes.
+func quoteIdentifier(parts ...string) string {
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		p = strings.ReplaceAll(p, "\x00", "")
+		quoted[i] = `"` + strings.ReplaceAll(p, `"`, `""`) + `"`
 	}
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	return fn(tx)
+	return strings.Join(quoted, ".")
 }
 
 // BaseTypes maps every column whose type is a domain to the type the domain

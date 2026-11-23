@@ -76,3 +76,20 @@ func Unwrap(q any) Querier {
 	}
 	return n.Pgx()
 }
+
+// ReadOnlyTx runs fn in a read-only transaction on b (a pool or a
+// connection), always rolled back: for reads that change nothing. It returns
+// fn's error, or the error of beginning the transaction.
+func ReadOnlyTx(b interface {
+	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+},
+) func(ctx context.Context, fn func(Port) error) error {
+	return func(ctx context.Context, fn func(Port) error) error {
+		tx, err := b.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+		return fn(Neutralize(tx))
+	}
+}

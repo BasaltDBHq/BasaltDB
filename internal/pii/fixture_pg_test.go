@@ -133,7 +133,7 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pi
 			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref],
 		})
 	}
-	sampler := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}
+	sampler := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}
 	results, err := pii.SuggestAll(ctx, cols, sampler.Sample, opts,
 		func(pii.Column, pii.Suggestion) bool { return keep })
 	require.NoError(t, err)
@@ -204,7 +204,7 @@ func TestSampleTimesOutAndIsReviewed(t *testing.T) {
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE VIEW public.slow AS SELECT pg_sleep(2)::text || 'x' AS v FROM generate_series(1, 3)`)
 	ctx := context.Background()
-	s, err := pii.Sampler{Conn: d.Admin, Timeout: 50 * time.Millisecond}.Sample(ctx,
+	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 50 * time.Millisecond}.Sample(ctx,
 		pii.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"})
 	require.NoError(t, err)
 	require.Equal(t, pii.UnavailableTimeout, s.Unavailable)
@@ -226,7 +226,7 @@ func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
 		INSERT INTO public.items VALUES (1, 'Blue Widget');
 		CREATE VIEW public.bad AS SELECT label::integer AS n FROM public.items`)
 	col := pii.Column{Schema: "public", Table: "bad", Name: "n", DataType: "integer"}
-	s, err := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(), col)
+	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}.Sample(context.Background(), col)
 	require.NoError(t, err)
 	require.Equal(t, pii.Sample{Unavailable: "error 22P02"}, s)
 	require.Equal(t, pii.Suggestion{
@@ -254,7 +254,7 @@ func TestSampleIsBounded(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.big (v text); INSERT INTO public.big SELECT repeat('x', 5000) FROM generate_series(1, 1500)`)
-	s, err := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(),
+	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second}.Sample(context.Background(),
 		pii.Column{Schema: "public", Table: "big", Name: "v", DataType: "text"})
 	require.NoError(t, err)
 	require.Len(t, s.Values, pii.SampleRows)
@@ -267,7 +267,7 @@ func TestSampleCutsEachValueToMaxChars(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.wide (v text); INSERT INTO public.wide SELECT repeat('é', 5000) FROM generate_series(1, 5)`)
-	s, err := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second, MaxChars: 256}.Sample(context.Background(),
+	s, err := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(d.Admin), Timeout: 5 * time.Second, MaxChars: 256}.Sample(context.Background(),
 		pii.Column{Schema: "public", Table: "wide", Name: "v", DataType: "text"})
 	require.NoError(t, err)
 	require.Len(t, s.Values, 5)

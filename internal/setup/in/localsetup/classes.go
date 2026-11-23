@@ -268,7 +268,7 @@ func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, o
 	}
 	sctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
-	sampler := pii.Sampler{Conn: conn, Timeout: sampleStatementTimeout, MaxChars: sampleChars}
+	sampler := pii.Sampler{ReadOnly: pgquerier.ReadOnlyTx(conn), Timeout: sampleStatementTimeout, MaxChars: sampleChars}
 	read := sampler.Sample
 	if s.opts.SampleColumn != nil {
 		read = func(ctx context.Context, col pii.Column) (pii.Sample, error) {

@@ -15,19 +15,20 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 func TestVaultModeFlag(t *testing.T) {
 	t.Parallel()
-	var m VaultMode
+	var m setup.VaultMode
 	require.NoError(t, m.Set("on"))
-	require.Equal(t, config.VaultOn, m.enum())
+	require.Equal(t, config.VaultOn, m.Enum())
 	require.NoError(t, m.Set("off"))
-	require.Equal(t, config.VaultOff, m.enum())
+	require.Equal(t, config.VaultOff, m.Enum())
 	for _, bad := range []string{"ON", "true", "", "yes"} {
 		require.Error(t, m.Set(bad), bad)
 	}
-	require.Empty(t, VaultMode("").enum(), "no choice keeps the config's")
+	require.Empty(t, setup.VaultMode("").Enum(), "no choice keeps the config's")
 }
 
 func TestChooseVault(t *testing.T) {
@@ -36,32 +37,32 @@ func TestChooseVault(t *testing.T) {
 	const agentWhy = "default for --operated-by=agent; --vault=off to turn it off"
 	for _, tc := range []struct {
 		name       string
-		given      VaultMode
+		given      setup.VaultMode
 		operatedBy OperatedBy
 		pages      string
-		want       vaultChoice
+		want       setup.VaultChoice
 	}{
-		{"agent default", "", OperatedByAgent, links.Portal, vaultChoice{"", VaultModeOn, agentWhy}},
-		{"person default", "", OperatedByPerson, links.Portal, vaultChoice{"", VaultModeOff, personWhy}},
-		{"person on the portal", VaultModeOn, OperatedByPerson, links.Portal, vaultChoice{VaultModeOn, VaultModeOff, personWhy}},
-		{"agent turns it off", VaultModeOff, OperatedByAgent, links.Portal, vaultChoice{VaultModeOff, VaultModeOn, agentWhy}},
-		{"off with local pages", VaultModeOff, OperatedByPerson, links.DefaultLocal, vaultChoice{VaultModeOff, VaultModeOff, personWhy}},
+		{"agent default", "", OperatedByAgent, links.Portal, setup.VaultChoice{Given: "", Def: setup.VaultModeOn, Why: agentWhy}},
+		{"person default", "", OperatedByPerson, links.Portal, setup.VaultChoice{Given: "", Def: setup.VaultModeOff, Why: personWhy}},
+		{"person on the portal", setup.VaultModeOn, OperatedByPerson, links.Portal, setup.VaultChoice{Given: setup.VaultModeOn, Def: setup.VaultModeOff, Why: personWhy}},
+		{"agent turns it off", setup.VaultModeOff, OperatedByAgent, links.Portal, setup.VaultChoice{Given: setup.VaultModeOff, Def: setup.VaultModeOn, Why: agentWhy}},
+		{"off with local pages", setup.VaultModeOff, OperatedByPerson, links.DefaultLocal, setup.VaultChoice{Given: setup.VaultModeOff, Def: setup.VaultModeOff, Why: personWhy}},
 	} {
 		got, err := chooseVault(tc.given, tc.operatedBy, tc.pages, personWhy)
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, got, tc.name)
 	}
 
-	byAgent := vaultChoice{"", VaultModeOn, agentWhy}
+	byAgent := setup.VaultChoice{Given: "", Def: setup.VaultModeOn, Why: agentWhy}
 	require.Equal(t, "basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n",
-		byAgent.line(config.VaultWritten{Vault: config.VaultOn}), "the contract's line")
+		byAgent.Line(config.VaultWritten{Vault: config.VaultOn}), "the contract's line")
 	require.Equal(t, "basalt: vault: off (kept from engine.json; --vault=on to change)\n",
-		byAgent.line(config.VaultWritten{Vault: config.VaultOff, Kept: true}))
+		byAgent.Line(config.VaultWritten{Vault: config.VaultOff, Kept: true}))
 	require.Equal(t, "basalt: vault: off (--vault=off)\n",
-		vaultChoice{VaultModeOff, VaultModeOn, agentWhy}.line(config.VaultWritten{Vault: config.VaultOff}))
+		setup.VaultChoice{Given: setup.VaultModeOff, Def: setup.VaultModeOn, Why: agentWhy}.Line(config.VaultWritten{Vault: config.VaultOff}))
 
 	for _, pages := range []string{links.DefaultLocal, "http://localhost:7777"} {
-		_, err := chooseVault(VaultModeOn, OperatedByPerson, pages, personWhy)
+		_, err := chooseVault(setup.VaultModeOn, OperatedByPerson, pages, personWhy)
 		require.ErrorIs(t, err, cli.ErrUsage, "--vault=on needs the portal's pages, not %s", pages)
 	}
 }
@@ -73,7 +74,7 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	install := func(a agentInstall) (string, string) {
 		t.Helper()
 		var lines bytes.Buffer
-		a.report = func(v config.VaultWritten) { lines.WriteString(a.vaultChoice().line(v)) }
+		a.report = func(v config.VaultWritten) { lines.WriteString(a.vaultChoice().Line(v)) }
 		got, err := agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(cfgPath, got.Files[0].Content, config.FileMode))
@@ -86,7 +87,7 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 	a.vaultDefault = config.VaultOff
 	v, line := install(a)
 	require.Equal(t, config.VaultOff, v, "a new config takes the default")
-	require.Equal(t, "basalt: vault: off ("+personDefaultWhy+")\n", line)
+	require.Equal(t, "basalt: vault: off ("+setup.PersonDefaultWhy+")\n", line)
 
 	a.vault, a.vaultDefault = config.VaultOn, ""
 	v, line = install(a)

@@ -89,7 +89,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 		s.staleReadSteps(b, te, f)
 	case guidance.CodeStatementRefused:
 		if te.Reason == action.ReasonHoldTooLarge {
-			person = s.approval.holdTooLargeSteps(b, te)
+			person = s.approval.HoldTooLargeSteps(b, te)
 			break
 		}
 		person = refusedSteps(b, te, f)
@@ -98,12 +98,12 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 	case guidance.CodeQueryTimeout:
 		queryTimeoutSteps(b, te, f)
 	case guidance.CodeApprovalRequired:
-		person = s.approval.approvalRequiredSteps(b, te)
+		person = s.approval.ApprovalRequiredSteps(b, te)
 	case guidance.CodeApprovalExpired:
 		guidance.ApprovalExpiredSteps(b)
-		person = approvalExpiredMessage
+		person = ApprovalExpiredMessage
 	case guidance.CodeApprovalInvalid:
-		person = approvalInvalidSteps(b, te, f.arg(guidance.ArgRunID))
+		person = ApprovalInvalidSteps(b, te, f.arg(guidance.ArgRunID))
 	case guidance.CodeRevertInvalid:
 		revertsvc.InvalidSteps(b, te, f.arg(guidance.ArgRevertID))
 	case guidance.CodePermissionDenied:
@@ -483,7 +483,7 @@ func (s *Service) openApprovalAgain(b *guidance.Steps, n linksvc.HeldAnswer, tex
 // file the agent already sent).
 func (s *Service) approvalAgainMessage(lead string, n linksvc.HeldAnswer) (string, []toolresult.Link) {
 	if n.ShortHeld {
-		return pointBackMessage(lead)
+		return PointBackMessage(lead)
 	}
 	return linksvc.ApprovalMessage(lead, linksvc.HandOver{URL: n.Pick.URL, Kind: n.Pick.Kind, File: n.Pick.File, Sent: true})
 }

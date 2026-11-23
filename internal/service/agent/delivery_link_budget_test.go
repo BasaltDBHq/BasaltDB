@@ -81,7 +81,7 @@ const localPages = "http://localhost:8787"
 
 func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) linksvc.HeldAnswer {
 	t.Helper()
-	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
+	n, err := s.approval.ApprovalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
 		time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issue)
 	require.NoError(t, err)
 	stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
@@ -164,7 +164,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	lines = append(lines, bigLines(3)...)
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, 1, func(d *Deps) { d.Core.Commands = cmds })
-		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: lines},
+		n, err := s.approval.ApprovalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: lines},
 			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), linksvc.IssueLink)
 		require.NoError(t, err)
 		stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
@@ -224,7 +224,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	s := noticeService("", links.DefaultBudget)
 
 	n := approvalNoticeOf(t, s, 60, linksvc.IssueLink)
-	te := s.Failure(guidance.ToolWrite, writeArgs0, approvalRequiredError(n))
+	te := s.Failure(guidance.ToolWrite, writeArgs0, ApprovalRequiredError(n))
 	require.Same(t, n.RequestFile, te.Approval.RequestFile)
 	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
 

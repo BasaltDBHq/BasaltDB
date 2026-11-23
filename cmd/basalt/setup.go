@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
@@ -134,8 +135,8 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 
 // vaultChoice is the init choice a service install carries: only basalt
 // init, which is person-operated, runs it.
-func (a agentInstall) vaultChoice() vaultChoice {
-	return vaultChoice{given: modeOf(a.vault), def: modeOf(a.vaultDefault), why: personDefaultWhy}
+func (a agentInstall) vaultChoice() setup.VaultChoice {
+	return setup.VaultChoice{Given: setup.ModeOf(a.vault), Def: setup.ModeOf(a.vaultDefault), Why: setup.PersonDefaultWhy}
 }
 
 // Flags of basalt service install --agent that carry init's saved flags and

@@ -69,9 +69,9 @@ func (ac *approvalCase) openApproval(ctx context.Context, id uuid.UUID) (action.
 	case a.Status == action.ApprovalExpired || !ac.core.Now().Before(a.ExpiresAt):
 		return a, &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(guidance.PersonTime))}
 	case a.Status == action.ApprovalApproved:
-		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this write is already approved; the agent applies it")
+		return a, ApprovalInvalid(guidance.ReasonAlreadyUsed, "this write is already approved; the agent applies it")
 	case a.Status == action.ApprovalApplied:
-		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this approval was already used")
+		return a, ApprovalInvalid(guidance.ReasonAlreadyUsed, "this approval was already used")
 	}
 	return a, nil
 }

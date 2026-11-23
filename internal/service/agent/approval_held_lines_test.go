@@ -15,7 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
-// holdTooLarge refuses lines over the cap before the hold, and maps an
+// HoldTooLarge refuses lines over the cap before the hold, and maps an
 // older guard's per-line refusal (BS008 with a line over 64 KiB) to
 // HOLD_TOO_LARGE; any other error stays as it is.
 func TestHoldTooLarge(t *testing.T) {
@@ -24,19 +24,19 @@ func TestHoldTooLarge(t *testing.T) {
 	wide := []string{strings.Repeat("x", guardmodel.MaxHeldLineBytesBefore37+1)}
 	bs008 := store.MapError(&pgconn.PgError{Code: "BS008", Message: "LEDGER_INPUT_INVALID", Detail: "each line must be the jsonb text of a preview line"})
 
-	require.Nil(t, holdTooLarge(small, nil))
-	require.Nil(t, holdTooLarge(wide, nil), "within the cap: the hold decides")
-	require.Nil(t, holdTooLarge(small, bs008), "a small line's invalid input is not a size refusal")
-	require.Nil(t, holdTooLarge(wide, errors.New("connection reset")))
+	require.Nil(t, HoldTooLarge(small, nil))
+	require.Nil(t, HoldTooLarge(wide, nil), "within the cap: the hold decides")
+	require.Nil(t, HoldTooLarge(small, bs008), "a small line's invalid input is not a size refusal")
+	require.Nil(t, HoldTooLarge(wide, errors.New("connection reset")))
 
-	over := holdTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes/2), strings.Repeat("y", guardmodel.MaxHeldLinesBytes/2+1)}, nil)
+	over := HoldTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes/2), strings.Repeat("y", guardmodel.MaxHeldLinesBytes/2+1)}, nil)
 	require.NotNil(t, over)
 	require.Equal(t, guidance.CodeStatementRefused, over.Code)
 	require.Equal(t, action.ReasonHoldTooLarge, over.Reason)
 	require.Contains(t, over.Message, "at most 64.0 MiB")
 	require.NotContains(t, over.Message, olderGuardNote)
 
-	older := holdTooLarge(wide, bs008)
+	older := HoldTooLarge(wide, bs008)
 	require.NotNil(t, older)
 	require.Equal(t, action.ReasonHoldTooLarge, older.Reason)
 	require.Contains(t, older.Message, olderGuardNote)
@@ -47,20 +47,20 @@ func TestHoldTooLarge(t *testing.T) {
 // themselves or have the agent write fewer rows.
 func TestHoldTooLargeTellsThePerson(t *testing.T) {
 	t.Parallel()
-	older := holdTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLineBytesBefore37+1)}, store.MapError(&pgconn.PgError{Code: "BS008"}))
-	over := holdTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes+1)}, nil)
+	older := HoldTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLineBytesBefore37+1)}, store.MapError(&pgconn.PgError{Code: "BS008"}))
+	over := HoldTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes+1)}, nil)
 	for _, operatedBy := range []string{"", mcpcontract.OperatedByAgent} {
 		s := operatedService(t, "linux", "", operatedBy)
 
 		b := guidance.NewSteps()
-		msg := s.approval.holdTooLargeSteps(b, older)
+		msg := s.approval.HoldTooLargeSteps(b, older)
 		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "64 KiB")
 		require.NotContains(t, msg, "basalt ", "the person runs no command: the agent gives a link")
 		require.Contains(t, msg, "update the guard")
 
 		b = guidance.NewSteps()
-		msg = s.approval.holdTooLargeSteps(b, over)
+		msg = s.approval.HoldTooLargeSteps(b, over)
 		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "Make the change yourself")
 		steps, err := b.Build()

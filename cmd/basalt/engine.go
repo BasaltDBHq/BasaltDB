@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
@@ -56,7 +57,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// Started as root, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
 	if *supervised {
-		return runSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h)
+		return enginecli.RunSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
 	}
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)
@@ -170,14 +171,9 @@ func refuseSecretInitArgs(args []string) error {
 // socket whose name is not an agent name.
 const fallbackAgentName = "agent"
 
-// runService installs the engine as a system service, always on the
-// system config path: it takes no --config, so the removal script's
-// engine.json check (service.RemoveScript) is about the config it runs. It prints every
-// step first; --dry-run stops there. The removal is the setup page's
-// Remove, after which basalt init removes the service through the
-// administrator dialog (service.RemoveScript).
+// runService is basalt service for the command table.
 func runService(ctx context.Context, args []string, io cli.Stdio) int {
-	return runServiceAt(ctx, args, io, config.DefaultPath(runtime.GOOS))
+	return enginecli.RunService(ctx, args, io, engineCLIHost{})
 }
 
 // runServiceAt is runService on the engine config at configPath: the
@@ -199,19 +195,19 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 	linkscli.PagesURLFlag(fs, &a.pagesURL, "install --agent: the pages base URL the agent's passkey belongs to")
 	fs.BoolVar(&a.devLocalPages, flagDevLocalPages, false, "install --agent: the config's devLocalPages, as basalt init --dev-local-pages sets it")
 	fs.Func(flagVault, "install --agent: on or off, the config's vault as the person chose it (default: keep the config's)", func(v string) error {
-		var m VaultMode
+		var m setup.VaultMode
 		if err := m.Set(v); err != nil {
 			return err
 		}
-		a.vault = m.enum()
+		a.vault = m.Enum()
 		return nil
 	})
 	fs.Func(flagVaultDefault, "install --agent: on or off, the config's vault only when it has none yet", func(v string) error {
-		var m VaultMode
+		var m setup.VaultMode
 		if err := m.Set(v); err != nil {
 			return err
 		}
-		a.vaultDefault = m.enum()
+		a.vaultDefault = m.Enum()
 		return nil
 	})
 	fs.Func("operated-by", "install --agent: person or agent, the config's operatedBy (default: keep the config's)", func(v string) error {
@@ -268,7 +264,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 			a.personUIDs = []uint32{uid}
 		}
 		if !*dryRun {
-			a.report = func(v config.VaultWritten) { _, _ = fmt.Fprint(io.Err, a.vaultChoice().line(v)) }
+			a.report = func(v config.VaultWritten) { _, _ = fmt.Fprint(io.Err, a.vaultChoice().Line(v)) }
 			// Hold the config lock from reading engine.json until the new
 			// one is in place, as every config writer does; the lock file
 			// goes to the engine's user (CONTRACT.md, Lock files).

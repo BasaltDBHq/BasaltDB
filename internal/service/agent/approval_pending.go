@@ -123,7 +123,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 // pendingGuidance fills e with its link, message and next steps.
 func (ac *approvalCase) pendingGuidance(ctx context.Context, e PendingEntry, reissue bool) error {
 	if a := e.Approval; a != nil {
-		n, err := ac.approvalNotice(ctx, a.ID, a.RunID, requestOf(a.Approval), a.ExpiresAt, reissue)
+		n, err := ac.ApprovalNotice(ctx, a.ID, a.RunID, RequestOf(a.Approval), a.ExpiresAt, reissue)
 		if err != nil {
 			return err
 		}

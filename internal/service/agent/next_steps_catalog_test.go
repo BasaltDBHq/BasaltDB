@@ -142,9 +142,9 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
 		n := linksvc.HeldAnswer{ApprovalNotice: caseNotice(url), Reason: reason}
 		if reason == guidance.ReasonWaitEnded {
-			return approvalStillPendingError(n)
+			return ApprovalStillPendingError(n)
 		}
-		return approvalRequiredError(n)
+		return ApprovalRequiredError(n)
 	}
 }
 
@@ -168,7 +168,7 @@ func tooLargeNotice(t *testing.T, s *Service, issue bool) linksvc.HeldAnswer {
 		setApprovals(&s.deps, catalogApprovals{})
 	}
 	req := linksvc.SizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
-	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
+	n, err := s.approval.ApprovalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
 		time.Now().Add(time.Hour), issue)
 	require.NoError(t, err)
 	return n

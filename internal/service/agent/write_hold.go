@@ -40,18 +40,18 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: guidance.CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
-	if te := holdTooLarge(lines, nil); te != nil {
+	if te := HoldTooLarge(lines, nil); te != nil {
 		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 	}
 	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
-		if te := holdTooLarge(lines, err); te != nil {
+		if te := HoldTooLarge(lines, err); te != nil {
 			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 		}
 		return uuid.Nil, time.Time{}, err
 	}
 	req := linksvc.SizedRequest{Binding: held.BindingText, Lines: lines, Cost: linksvc.TextsCost(lines)}
-	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, linksvc.IssueLink)
+	notice, err := wc.approvals.ApprovalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, linksvc.IssueLink)
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
@@ -66,7 +66,7 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 	if err := wc.delivery.NotifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
 		wc.core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
-	return held.ApprovalID, held.ExpiresAt, approvalRequiredError(notice)
+	return held.ApprovalID, held.ExpiresAt, ApprovalRequiredError(notice)
 }
 
 // applyApproved runs a held write under its approval: the same statement,
@@ -81,8 +81,8 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 		return WriteOutcome{}, err
 	}
 	a, err := wc.approvals.FindApproval(ctx, p.ApprovalID)
-	if guidance.Sentinel(err, wc.approvals.notFound()) {
-		return WriteOutcome{}, approvalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
+	if guidance.Sentinel(err, wc.approvals.NotFound()) {
+		return WriteOutcome{}, ApprovalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
 		return WriteOutcome{}, err
@@ -137,7 +137,7 @@ func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, er
 	default:
 		return err
 	}
-	n, linkErr := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, linksvc.KeepLink)
+	n, linkErr := wc.approvals.ApprovalNotice(ctx, a.ID, a.RunID, RequestOf(a), a.ExpiresAt, linksvc.KeepLink)
 	if linkErr != nil {
 		return linkErr
 	}
@@ -148,13 +148,13 @@ func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, er
 func sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
 	case a.Status == action.ApprovalApplied:
-		return approvalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
+		return ApprovalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == action.ApprovalExpired:
 		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
-		return differentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
+		return DifferentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
 	case a.Statement != p.SQL || !sameParams(a.Params, p.Params):
-		return differentWrite(a, "sql and params must be exactly those of the held write")
+		return DifferentWrite(a, "sql and params must be exactly those of the held write")
 	}
 	return nil
 }
@@ -206,11 +206,11 @@ func (wc *writeCase) waitForSignature(ctx context.Context, a action.Approval, p 
 		return a, err
 	}
 	if a.Status == action.ApprovalPending {
-		n, err := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, linksvc.KeepLink)
+		n, err := wc.approvals.ApprovalNotice(ctx, a.ID, a.RunID, RequestOf(a), a.ExpiresAt, linksvc.KeepLink)
 		if err != nil {
 			return a, err
 		}
-		return a, approvalStillPendingError(n)
+		return a, ApprovalStillPendingError(n)
 	}
 	return a, sameAsHeld(a, p) // it may have expired meanwhile
 }

@@ -72,12 +72,12 @@ func (d EngineDown) gaveUpMessage() string {
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
 // answering as above.
-func (d EngineDown) Tools() []guidance.Tool {
+func (d EngineDown) Tools() []mcpserver.Tool {
 	if d.Log == nil || d.Now == nil {
 		panic("statusmcp: engine-down tools need a logger and a clock")
 	}
 	contracts := mcpcontract.MustLoad()
-	out := make([]guidance.Tool, 0, len(contracts))
+	out := make([]mcpserver.Tool, 0, len(contracts))
 	for _, c := range contracts {
 		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
 			continue
@@ -86,7 +86,7 @@ func (d EngineDown) Tools() []guidance.Tool {
 		if c.Name == guidance.ToolStatus {
 			call = d.status
 		}
-		out = append(out, guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: mcpserver.RefuseAdminCredential(c.Name, call)})
+		out = append(out, mcpserver.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: mcpserver.RefuseAdminCredential(c.Name, call)})
 	}
 	return out
 }

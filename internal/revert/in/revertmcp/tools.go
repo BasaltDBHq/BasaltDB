@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
@@ -527,9 +528,9 @@ func pendingRevertFromDomain(p revertsvc.PendingRevert) pendingRevertDTO {
 // Tools are the tools that preview, plan, request and apply a revert. mount
 // lists a tool under its contract, around the agent's admission and error
 // mapping; the tool list's composer supplies it.
-func Tools(svc Reverts, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func Tools(svc Reverts, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []guidance.Tool{
+	return []mcpserver.Tool{
 		mount("preview_revert", h.previewRevert),
 		mount("revert_plan", h.revertPlan),
 		mount("apply_revert_batch", h.applyRevertBatch),

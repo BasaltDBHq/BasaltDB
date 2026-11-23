@@ -2,25 +2,12 @@ package guidance
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 )
-
-// Tool is one tool the agent serves: its listing and its handler. The
-// inbound adapter turns it into the protocol's own tool (its fields match,
-// so a conversion carries them over). InputSchema is the JSON Schema of the
-// arguments. Call returns a value rendered as JSON text, or an error; a
-// *toolresult.ToolError keeps its code on the wire.
-type Tool struct {
-	Name        string
-	Description string
-	InputSchema map[string]any
-	Call        func(ctx context.Context, args json.RawMessage) (any, error)
-}
 
 // CallArgs are the arguments of a call, as the engine reads them back into
 // the next steps of its error (a repeated call merges over them). Numbers

@@ -93,7 +93,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	t.Parallel()
 	cmds := newCommands(t, "/srv/basalt/engine.json")
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
 
 	served := make([]string, 0, len(down.Tools()))
 	for _, tool := range down.Tools() {
@@ -140,7 +140,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
 
 	v, ok := stepcatalogtest.CatalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)
@@ -176,7 +176,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Equal(t, guidance.ReasonEngineUnreachable, r.Problems[1].Code, "the manual step stays")
 	require.False(t, r.Ready)
 
-	var query guidance.Tool
+	var query mcpserver.Tool
 	for _, tool := range down.Tools() {
 		if tool.Name == "query" {
 			query = tool

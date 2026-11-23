@@ -21,7 +21,7 @@ func (postgresStore) Kind() action.StoreKind { return action.StorePostgres }
 func TestServedToolsMatchTheContracts(t *testing.T) {
 	t.Parallel()
 	contracts := mcpcontract.MustLoad()
-	tools := agentTools(NewService(testAgentDeps("bot", postgresStore{})))
+	tools := AgentTools(NewService(testAgentDeps("bot", postgresStore{})))
 	served := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		served = append(served, tool.Name)
@@ -37,7 +37,7 @@ func TestServedToolsMatchTheContracts(t *testing.T) {
 // reads in tools/list, so the per-domain lists must join in this order.
 func TestServedToolListOrder(t *testing.T) {
 	t.Parallel()
-	tools := agentTools(NewService(testAgentDeps("bot", postgresStore{})))
+	tools := AgentTools(NewService(testAgentDeps("bot", postgresStore{})))
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
@@ -58,7 +58,7 @@ func (driveStore) Kind() action.StoreKind { return action.StoreDrive }
 // not speak SQL: the same order, without query and write.
 func TestServedToolListOrderWithoutSQL(t *testing.T) {
 	t.Parallel()
-	tools := agentTools(NewService(testAgentDeps("bot", driveStore{})))
+	tools := AgentTools(NewService(testAgentDeps("bot", driveStore{})))
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
@@ -74,5 +74,5 @@ func TestServedToolListOrderWithoutSQL(t *testing.T) {
 // defect.
 func TestAgentToolsNeedAService(t *testing.T) {
 	t.Parallel()
-	require.Panics(t, func() { agentTools(nil) })
+	require.Panics(t, func() { AgentTools(nil) })
 }

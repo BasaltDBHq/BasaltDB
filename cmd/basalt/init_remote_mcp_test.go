@@ -75,7 +75,7 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr},
 		func(string) string { return "" })
-	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
+	c.Host, c.AgentLogin, c.Probe, c.SystemConfigPath = h, refusedLogin, noNetworkProbe, system
 	code := runInit(c, appSetupHost{}, []string{"--remote", "--agent", "bot"})
 	require.Equal(t, cli.ExitError, code, stderr.String())
 	require.Contains(t, stderr.String(), system)

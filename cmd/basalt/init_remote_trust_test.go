@@ -68,10 +68,10 @@ func certRun(t *testing.T, cfg string, server caServer) (RemoteInitResult, strin
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := noDB(t).io(&stdout, &stderr)
-	c.agentLogin = func(context.Context, string) (agentConn, error) {
+	c.AgentLogin = func(context.Context, string) (cli.AgentConn, error) {
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
-	c.fetchChain = server.fetch
+	c.FetchChain = server.fetch
 	res, err := initRemote(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	return res, stderr.String(), err
 }
@@ -163,7 +163,7 @@ func TestInitRemotePins(t *testing.T) {
 		e.noNetwork = false
 		var stdout, stderr bytes.Buffer
 		c := e.io(&stdout, &stderr)
-		c.fetchChain = s.fetch
+		c.FetchChain = s.fetch
 		code := runInit(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 		require.Equal(t, cli.ExitOK, code, "%s: %s", name, stderr.String())
 		require.Contains(t, stderr.String(), "trusts it on the connect page", name)

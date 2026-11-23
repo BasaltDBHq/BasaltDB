@@ -69,12 +69,12 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	var events []string
 	var out, errb bytes.Buffer
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb}, func(string) string { return "" })
-	c.probe, c.host = noNetworkProbe, systemSocketHost(t)
-	c.agentLogin = func(ctx context.Context, dsn string) (agentConn, error) {
+	c.Probe, c.Host = noNetworkProbe, systemSocketHost(t)
+	c.AgentLogin = func(ctx context.Context, dsn string) (cli.AgentConn, error) {
 		events = append(events, "login")
 		return nil, errLoginRefused
 	}
-	c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
+	c.FetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
 		events = append(events, "handshake")
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}

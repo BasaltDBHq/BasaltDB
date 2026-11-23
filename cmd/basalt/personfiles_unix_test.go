@@ -23,7 +23,7 @@ const rootCredURL = "postgres://bot:pw@db.example.com/app?sslmode=require"
 // (engine.json, agents/bot.url), and a secret elsewhere that only root
 // should read. The CLI runs as root (fake euid 0).
 type rootCLIFixture struct {
-	c                        *cliIO
+	c                        *cli.IO
 	configPath, cred, secret string
 }
 
@@ -42,7 +42,7 @@ func newRootCLIFixture(t *testing.T) rootCLIFixture {
 	writeEngineJSON(t, configPath, cred)
 	h := newFakeHost(t)
 	h.euid = 0
-	return rootCLIFixture{c: &cliIO{host: h, shell: appShell{}, getenv: func(string) string { return "" }}, configPath: configPath, cred: cred, secret: secret}
+	return rootCLIFixture{c: &cli.IO{Host: h, Shell: appShell{}, Getenv: func(string) string { return "" }}, configPath: configPath, cred: cred, secret: secret}
 }
 
 func writeEngineJSON(t *testing.T, path, cred string) {

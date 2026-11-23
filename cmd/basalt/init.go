@@ -1,10 +1,12 @@
 package main
 
+import "github.com/basaltdbhq/basaltdb/internal/platform/cli"
+
 // runInit: basalt init. --remote makes a setup code for an agent-operated
 // engine; without it, init starts the local setup (runInitLocal), which
 // never reads the admin connection string. h is what init --remote reaches
 // outside the CLI.
-func runInit(c *cliIO, h remoteHost, args []string) int {
+func runInit(c *cli.IO, h remoteHost, args []string) int {
 	if isRemote(args) {
 		return runInitRemote(c, h, args)
 	}

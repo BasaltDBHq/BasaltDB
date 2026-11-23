@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // Commands no longer take --config, --socket-dir or --credential-file: they
@@ -19,7 +21,7 @@ var keepsConfigFlag = []string{"runLog", "runAccess", "runRevert", "runStatus"}
 // takePathFlags removes --config, --socket-dir and --credential-file (and
 // their values) from args and sets them on c, unless the command named by
 // fn still takes them.
-func takePathFlags(c *cliIO, fn any, args []string) []string {
+func takePathFlags(c *cli.IO, fn any, args []string) []string {
 	name := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
 	name = name[strings.LastIndex(name, ".")+1:]
 	return takePathFlagsFor(c, slices.Contains(keepsConfigFlag, name), args)
@@ -27,7 +29,7 @@ func takePathFlags(c *cliIO, fn any, args []string) []string {
 
 // takePathFlagsFor is takePathFlags for a command known by name: keep is
 // true when the command still takes --config.
-func takePathFlagsFor(c *cliIO, keep bool, args []string) []string {
+func takePathFlagsFor(c *cli.IO, keep bool, args []string) []string {
 	if keep {
 		return args
 	}
@@ -39,11 +41,11 @@ func takePathFlagsFor(c *cliIO, keep bool, args []string) []string {
 		}
 		switch name {
 		case "--config":
-			c.paths.config = value
+			c.Paths.Config = value
 		case "--socket-dir":
-			c.paths.socketDir = value
+			c.Paths.SocketDir = value
 		case "--credential-file":
-			c.paths.credFile = value
+			c.Paths.CredFile = value
 		default:
 			out = append(out, args[i])
 			continue

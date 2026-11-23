@@ -148,15 +148,15 @@ const (
 
 // dialogScript is the first install's fixed script for the running
 // binary, with every link resolved and checked as root would run it.
-func dialogScript(c *cliIO) (bin, script string, err error) {
-	bin, err = c.host.ResolvedExecutable()
+func dialogScript(c *cli.IO) (bin, script string, err error) {
+	bin, err = c.Host.ResolvedExecutable()
 	if err != nil {
 		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
 	}
-	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
+	if err := c.Host.System(c.Stderr, c.Stderr).CheckBinary(bin); err != nil {
 		return "", "", err
 	}
-	script, err = app.OSInstallScript(c.goos, bin)
+	script, err = app.OSInstallScript(c.Goos, bin)
 	return bin, script, err
 }
 
@@ -187,12 +187,12 @@ func engineLogHint(goos string) string {
 const envSudoUID = "SUDO_UID"
 
 // invokingUID is the uid of the person running init.
-func invokingUID(c *cliIO) (uint32, error) {
-	euid := c.host.Euid()
+func invokingUID(c *cli.IO) (uint32, error) {
+	euid := c.Host.Euid()
 	if euid != 0 {
 		return uint32(euid), nil
 	}
-	sudo := c.getenv(envSudoUID)
+	sudo := c.Getenv(envSudoUID)
 	if sudo == "" {
 		return 0, errNoPerson
 	}

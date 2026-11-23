@@ -44,10 +44,6 @@ func (Ledger) OpenPluginApproval(ctx context.Context, db q, d guardmodel.PluginA
 	return guard.OpenPluginApproval(ctx, db, d, s)
 }
 
-func (Ledger) EndPluginApproval(ctx context.Context, db q, name, instance string) error {
-	return guard.EndPluginApproval(ctx, db, name, instance)
-}
-
 func (Ledger) ReadPluginApproval(ctx context.Context, db q, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	return guard.ReadPluginApproval(ctx, db, id)
 }

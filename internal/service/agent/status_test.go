@@ -593,7 +593,7 @@ func requireOnlyStatusServed(t *testing.T, srv *mcpserver.Server, tools []mcpser
 		if tool.Name == guidance.ToolStatus {
 			continue
 		}
-		if tool.Name == toolConfirmDatabase {
+		if tool.Name == guidance.ToolConfirmDatabase {
 			// No connect-only database waits here: INVALID_ARGUMENT, never
 			// admitted further.
 			body, isError := serveCall(t, srv, tool.Name, map[string]any{})

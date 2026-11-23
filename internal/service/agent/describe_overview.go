@@ -127,7 +127,7 @@ func plural(n int, one, many string) string {
 // one the agent cannot read: the same answer, so names cannot be probed.
 func describeNotFound(resource string) error {
 	return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: fmt.Sprintf(
-		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, maxTableChars))}
+		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, guidance.MaxTableChars))}
 }
 
 // describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on

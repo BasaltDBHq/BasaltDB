@@ -314,6 +314,6 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 func (h handlers) statusTools() []guidance.Tool {
 	return []guidance.Tool{
 		contractTool(guidance.ToolStatus, h.wrap(guidance.ToolStatus, h.status)),
-		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
+		contractTool(guidance.ToolConfirmDatabase, h.wrap(guidance.ToolConfirmDatabase, h.confirmDatabase)),
 	}
 }

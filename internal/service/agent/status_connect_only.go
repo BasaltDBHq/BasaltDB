@@ -27,12 +27,10 @@ import (
 // answer, and every other tool is refused.
 
 const (
-	toolConfirmDatabase = "confirm_database"
-	argSetupID          = "setupId"
-	argDatabase         = "database"
-	argAnswer           = "answer"
-	answerYes           = "YES"
-	answerNo            = "NO"
+	argSetupID  = "setupId"
+	argDatabase = "database"
+	answerYes   = "YES"
+	answerNo    = "NO"
 	// The states of confirm_database's result.
 	confirmedState = "CONFIRMED"
 	refusedState   = "REFUSED"
@@ -97,7 +95,7 @@ func connectOnlySteps(b *guidance.Steps, code, fingerprint string, budget int) (
 func confirmDatabaseSteps(b *guidance.Steps, setupID string, db setupcode.Address) string {
 	b.AskPerson("Ask the person exactly: The setup points me at " + db.Name() + ". Is that your database?")
 	b.EndTurn("End your turn: the person answers next.")
-	b.CallTool(toolConfirmDatabase, map[string]any{argSetupID: setupID, argDatabase: databaseArg(db)},
+	b.CallTool(guidance.ToolConfirmDatabase, map[string]any{argSetupID: setupID, argDatabase: databaseArg(db)},
 		"Call this with answer set to the person's own yes (YES) or no (NO) about that database. Never answer for them.")
 	return "The setup points the agent at " + db.Name() + ". The agent asks you in the chat whether that is your database, and uses it only after you say yes. " +
 		"If it is not the one you pasted on the connect page, say no."
@@ -137,10 +135,10 @@ func setupNotFoundSteps(b *guidance.Steps, cmds guidance.Commands, database stri
 	if database != "" {
 		where = database
 	}
-	b.AskPerson("Tell the person " + guidance.Shown(where, maxTableChars) + " does not record this agent's setup, and that you make a new setup code.")
+	b.AskPerson("Tell the person " + guidance.Shown(where, guidance.MaxTableChars) + " does not record this agent's setup, and that you make a new setup code.")
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
-	return "The database you confirmed, " + guidance.Shown(where, maxTableChars) + ", does not record this agent's setup. The agent gives you a new link to run the setup there."
+	return "The database you confirmed, " + guidance.Shown(where, guidance.MaxTableChars) + ", does not record this agent's setup. The agent gives you a new link to run the setup there."
 }
 
 // clockSkewSteps: the clock of the bot's machine is off.
@@ -277,7 +275,7 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 		switch ct.Name {
 		case guidance.ToolStatus:
 			call = c.status
-		case toolConfirmDatabase:
+		case guidance.ToolConfirmDatabase:
 			call = c.confirm
 		default:
 			call = c.refused(ct.Name)
@@ -317,14 +315,14 @@ type confirmArgs struct {
 func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args confirmArgs
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
-		return nil, c.guide().Failure(toolConfirmDatabase, nil, err)
+		return nil, c.guide().Failure(guidance.ToolConfirmDatabase, nil, err)
 	}
 	ans, err := c.Handoff.Confirm(ctx, args.SetupID, args.Database, args.Answer == answerYes)
 	switch {
 	case errors.Is(err, handoff.ErrNotWaiting):
-		return nil, c.guide().Failure(toolConfirmDatabase, guidance.CallArgs(raw), &guidance.ArgumentError{Message: err.Error()})
+		return nil, c.guide().Failure(guidance.ToolConfirmDatabase, guidance.CallArgs(raw), &guidance.ArgumentError{Message: err.Error()})
 	case err != nil:
-		return nil, c.guide().Failure(toolConfirmDatabase, guidance.CallArgs(raw), err)
+		return nil, c.guide().Failure(guidance.ToolConfirmDatabase, guidance.CallArgs(raw), err)
 	}
 	return confirmResult(ans, c.Commands.OperatedBy(c.OperatedBy))
 }

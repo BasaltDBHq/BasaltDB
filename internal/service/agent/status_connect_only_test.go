@@ -125,10 +125,10 @@ func confirmResultCases() map[string]resultCase {
 			return r.PersonMessage, r.Links, r.NextSteps
 		}
 	}
-	args := map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes}
+	args := map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), guidance.ArgAnswer: answerYes}
 	return map[string]resultCase{
-		resultKey(toolConfirmDatabase, confirmedState): {tool: toolConfirmDatabase, args: args, build: build(true)},
-		resultKey(toolConfirmDatabase, refusedState):   {tool: toolConfirmDatabase, args: args, build: build(false)},
+		resultKey(guidance.ToolConfirmDatabase, confirmedState): {tool: guidance.ToolConfirmDatabase, args: args, build: build(true)},
+		resultKey(guidance.ToolConfirmDatabase, refusedState):   {tool: guidance.ToolConfirmDatabase, args: args, build: build(false)},
 	}
 }
 
@@ -157,7 +157,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	requireStatusSchema(t, statusToolContract(t), r)
 
 	for _, tool := range c.Tools() {
-		if tool.Name == guidance.ToolStatus || tool.Name == toolConfirmDatabase {
+		if tool.Name == guidance.ToolStatus || tool.Name == guidance.ToolConfirmDatabase {
 			continue
 		}
 		body, isError := serveCall(t, srv, tool.Name, map[string]any{})
@@ -166,8 +166,8 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 		require.Equal(t, guidance.ReasonSetupPending, body["reason"], tool.Name)
 		require.Equal(t, []mcpcontract.StepKind{{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool}}, steps(t, body), tool.Name)
 	}
-	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{
-		argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes,
+	body, isError := serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{
+		argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), guidance.ArgAnswer: answerYes,
 	})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"], "nothing waits for confirmation yet")
@@ -222,9 +222,9 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	p := findProblem(t, r, problemConfirmDatabase)
 	require.Contains(t, p.NextSteps[0].Text, "The setup points me at Supabase project abcdefghijklmnopqrst, database postgres. Is that your database?")
 	call := p.NextSteps[2]
-	require.Equal(t, toolConfirmDatabase, call.Tool)
+	require.Equal(t, guidance.ToolConfirmDatabase, call.Tool)
 	require.Equal(t, caseSetupID, call.Arguments[argSetupID])
-	require.NotContains(t, call.Arguments, argAnswer, "the engine never fills in the answer")
+	require.NotContains(t, call.Arguments, guidance.ArgAnswer, "the engine never fills in the answer")
 
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
@@ -234,18 +234,18 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	// confirms a database the person was not asked about.
 	other := databaseArg(caseDatabase)
 	other["database"] = "other"
-	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: other, argAnswer: answerYes})
+	body, isError = serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: other, guidance.ArgAnswer: answerYes})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
-	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: "MAYBE"})
+	body, isError = serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), guidance.ArgAnswer: "MAYBE"})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 
-	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerNo})
+	body, isError = serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), guidance.ArgAnswer: answerNo})
 	require.False(t, isError, "%v", body)
 	require.Equal(t, refusedState, body["state"])
 	require.NotEmpty(t, body["personMessage"])
-	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), toolConfirmDatabase)
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolConfirmDatabase)
 	require.True(t, ok)
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 	t.Parallel()
 	s := NewService(deps())
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(Tools(s), WithMeta)...)
-	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes})
+	body, isError := serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), guidance.ArgAnswer: answerYes})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 }

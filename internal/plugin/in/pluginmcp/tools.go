@@ -1,11 +1,25 @@
-package agent
+// Package pluginmcp serves the plugin tools over MCP: request_plugin.
+// Handlers parse, validate, make one call to the plugin use case and render.
+package pluginmcp
 
 import (
 	"context"
 	"encoding/json"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
+
+// Plugins is the plugin use case as request_plugin calls it: meta is the
+// request's _meta object (the files basalt mcp uploaded), nil when it had
+// none.
+type Plugins interface {
+	RequestPlugin(ctx context.Context, source, name, instance string, agents []string, remove *bool, approvalID string, waitForApproval *int, meta json.RawMessage) (any, error)
+}
+
+type handlers struct {
+	svc Plugins
+}
 
 // request_plugin (CONTRACT.md, MCP tools, request_plugin): the agent
 // prepares a plugin install or change that the person approves on the
@@ -34,7 +48,7 @@ func (h handlers) requestPlugin(ctx context.Context, raw json.RawMessage) (any, 
 	if err := args.check(); err != nil {
 		return nil, err
 	}
-	return h.svc.plugin.RequestPlugin(ctx, args.Source, args.Name, args.Instance, args.Agents, args.Remove, args.ApprovalID, args.WaitForApproval, metaOf(ctx))
+	return h.svc.RequestPlugin(ctx, args.Source, args.Name, args.Instance, args.Agents, args.Remove, args.ApprovalID, args.WaitForApproval, mcpserver.Meta(ctx))
 }
 
 // check holds the call to exactly one form.
@@ -61,8 +75,10 @@ func (a requestPluginArgs) check() error {
 	return nil
 }
 
-// PluginTools are the tools that ask for a plugin.
-func PluginTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+// Tools are the tools that ask for a plugin. mount lists a tool under its
+// contract, around the agent's admission and error mapping; the tool list's
+// composer supplies it.
+func Tools(svc Plugins, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
 		mount(toolRequestPlugin, h.requestPlugin),

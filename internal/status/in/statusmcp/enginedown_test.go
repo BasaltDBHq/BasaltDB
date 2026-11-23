@@ -83,7 +83,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	cmds, err := agent.NewCommands("bot", "/srv/basalt/engine.json", "linux", testManager())
 	require.NoError(t, err)
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), agent.WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
 
 	served := make([]string, 0, len(down.Tools()))
 	for _, tool := range down.Tools() {
@@ -131,7 +131,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), agent.WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
 
 	v, ok := stepcatalogtest.CatalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)

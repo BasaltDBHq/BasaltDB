@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +22,13 @@ func (s *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 // Postgres recorded it.
 func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
 	return s.plugin.RelayPluginApproval(ctx, r)
+}
+
+// RequestPlugin serves request_plugin: it prepares a plugin install or
+// change for the person to approve, waits once for it, or removes a plugin.
+// meta is the request's _meta object, nil when it had none.
+func (s *Service) RequestPlugin(ctx context.Context, source, name, instance string, agents []string, remove *bool, approvalID string, waitForApproval *int, meta json.RawMessage) (any, error) {
+	return s.plugin.RequestPlugin(ctx, source, name, instance, agents, remove, approvalID, waitForApproval, meta)
 }
 
 // PluginUploadsServed reports why this engine does not serve the plugin

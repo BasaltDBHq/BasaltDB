@@ -170,7 +170,7 @@ const endTurnSetup = "End your turn: the person changes the setup first."
 // run's pending holds.
 func approvalTooLargeSteps(runID uuid.UUID) ([]toolresult.NextStep, error) {
 	return guidance.NewSteps().AskPerson(tooLargeAsk(false)).EndTurn(endTurnSetup).
-		CallTool(guidance.ToolListPending, map[string]any{"kind": KindApproval, "status": "PENDING", guidance.ArgRunID: runID.String(), argReissueLink: true},
+		CallTool(guidance.ToolListPending, map[string]any{"kind": guidance.KindApproval, "status": "PENDING", guidance.ArgRunID: runID.String(), argReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives the held write a new link.").
 		Build()
 }

@@ -12,7 +12,7 @@ import (
 // person's signature: APPLIED or APPLYING. A widened revert has none: the
 // agent role's view holds no binding of it (RS-5).
 func (rc *revertCase) revertReceipt(r action.Revert) (Receipt, error) {
-	if r.Status != revertApplied && r.Status != revertApplying {
+	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
 		return Receipt{}, fmt.Errorf("revert %s is %s, not signed", r.ID, r.Status)
 	}
 	if r.Widened {

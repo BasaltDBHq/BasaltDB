@@ -365,7 +365,7 @@ func nothingSigned(r action.Revert) error {
 
 func alreadySigned(r action.Revert) error {
 	msg := fmt.Sprintf("revert %s was already signed (status %s); nothing more was applied", r.ID, r.Status)
-	if r.Status == revertRejected {
+	if r.Status == action.RevertRejected {
 		msg = fmt.Sprintf("revert %s was rejected by the person on the revert page; nothing was reverted", r.ID)
 	}
 	return &toolresult.ToolError{

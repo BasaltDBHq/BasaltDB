@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
 	"github.com/google/uuid"
@@ -30,7 +31,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // testPoll is how often a waiting call reads the person's signature in
@@ -109,7 +109,7 @@ func signBinding(t *testing.T, signer *passkeytest.Authenticator, binding string
 // relayRevert is what the revert page does after the passkey signed: it
 // posts the signature, which the engine relays to Postgres (RelayRevert),
 // on its own pages or through the Vault. Nothing is pasted.
-func relayRevert(svc *agent.Service, id uuid.UUID, as passkey.Assertion) error {
+func relayRevert(svc *app.Service, id uuid.UUID, as passkey.Assertion) error {
 	_, _, err := svc.RelayRevert(context.Background(), reverttest.NewResponse(id, as))
 	return err
 }

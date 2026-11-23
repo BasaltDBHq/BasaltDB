@@ -20,7 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // guardWithout is a database whose guard lacks migration version, as an
@@ -35,7 +34,7 @@ func guardWithout(t *testing.T, version int, migs []guardmodel.Migration) (harne
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, version)
 
-	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Status.Probe = app.NewAgentProbe(store.Probe{Q: pool, Migrations: migs})
 	})).Svc
 	return harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, d
@@ -149,7 +148,7 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 func TestStatusOnAFullGuard(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	svc := agenttest.PgService(t, agentURL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, agentURL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Status.Probe = app.NewAgentProbe(store.Probe{Q: pool, Migrations: guard.Migrations()})
 	})).Svc
 	r, err := svc.Status(context.Background())

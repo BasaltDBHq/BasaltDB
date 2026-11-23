@@ -34,7 +34,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // syncBuffer is a log sink the tests read back.
@@ -63,7 +62,7 @@ func (b *syncBuffer) String() string {
 type revealEnv struct {
 	d       *guardtest.DB
 	person  *passkeytest.Authenticator
-	svc     *agent.Service
+	svc     *Service
 	secrets *links.Secrets
 	logs    *syncBuffer
 	held    uuid.UUID
@@ -107,7 +106,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 	// The person's passkey is a synced one: its counter stays 0.
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
 
-	e.svc = pg.service(func(d *agent.Deps) {
+	e.svc = pg.service(func(d *Deps) {
 		d.Core.Log, d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = log, links.Portal, e.secrets, &lateRelay{}
 	})
 	return e

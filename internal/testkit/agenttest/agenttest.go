@@ -19,11 +19,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // UseStore binds every port of d that reads the agent's store to s.
-func UseStore(d *agent.Deps, s agent.SQLStore) {
+func UseStore(d *app.Deps, s app.SQLStore) {
 	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = s, s, s, s, s
 }
 
@@ -40,7 +39,7 @@ type PgWiring struct {
 	poolCfg  func(*pgxpool.Config)
 	budgeted bool
 	returned postgres.ReturnedFunc
-	deps     []func(*agent.Deps, *pgxpool.Pool)
+	deps     []func(*app.Deps, *pgxpool.Pool)
 }
 
 type PgOption func(*PgWiring)
@@ -64,13 +63,13 @@ func WithReturned(f postgres.ReturnedFunc) PgOption { return func(w *PgWiring) {
 // WithDeps changes the service's dependencies after the Postgres ones are
 // filled in, to add optional ones or to wrap a store. It also gets the pool,
 // for the dependencies that read the database themselves.
-func WithDeps(f func(*agent.Deps, *pgxpool.Pool)) PgOption {
+func WithDeps(f func(*app.Deps, *pgxpool.Pool)) PgOption {
 	return func(w *PgWiring) { w.deps = append(w.deps, f) }
 }
 
 // PgEnv is a service wired to Postgres, with the parts tests reach for.
 type PgEnv struct {
-	Svc    *agent.Service
+	Svc    *app.Service
 	Pool   *pgxpool.Pool
 	Store  *postgres.Store
 	Reader *postgres.Reader
@@ -115,5 +114,5 @@ func PgService(t *testing.T, url string, opts ...PgOption) PgEnv {
 	for _, f := range w.deps {
 		f(&d, pool)
 	}
-	return PgEnv{Svc: agent.NewService(d), Pool: pool, Store: store, Reader: reader}
+	return PgEnv{Svc: app.NewService(d), Pool: pool, Store: store, Reader: reader}
 }

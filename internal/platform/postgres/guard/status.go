@@ -11,7 +11,7 @@ import (
 
 // Migrations lists every version this build installs, in order. Each one
 // is breaking unless flagged non-breaking; flagging one needs a test that
-// serves an agent on a guard without it (internal/service/agent,
+// serves an agent on a guard without it (internal/app/servedagent,
 // TestEveryNonBreakingMigrationIsServedWithoutIt).
 func Migrations() []guardmodel.Migration {
 	out := make([]guardmodel.Migration, 0, len(migrations))

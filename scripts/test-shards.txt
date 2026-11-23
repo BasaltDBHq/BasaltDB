@@ -7,7 +7,6 @@ shard 1
 internal/app
 
 shard 2
-internal/service/agent
 internal/app/servedagent
 
 shard 3

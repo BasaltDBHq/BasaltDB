@@ -30,7 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // A reject inside a Vault session behaves as on loopback: a bad body gets
@@ -68,7 +67,7 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := pg.service(func(d *agent.Deps) {
+	svc := pg.service(func(d *Deps) {
 		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = links.Portal, secrets, relay
 	})
 	s := serveOverVault(t, &wire{}, svc, secrets, id)

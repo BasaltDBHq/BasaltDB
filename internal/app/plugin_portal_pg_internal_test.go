@@ -44,7 +44,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // portalPerson is the person's OS user id in these tests: any id but the
@@ -203,7 +202,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
 	pg := newPGAgent(t, f.roles["bot"].URL, 4)
-	svc := pg.service(func(d *agent.Deps) {
+	svc := pg.service(func(d *Deps) {
 		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay, d.Delivery.Receipts, d.Delivery.Poll = links.Portal, secrets, relay, keys, relayPoll
 		d.Core.Commands = d.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent)
 		d.Status.OperatedBy, d.Status.SameUser = mcpcontract.OperatedByAgent, true

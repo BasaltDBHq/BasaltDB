@@ -26,7 +26,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // client is an MCP client on the shim's stdio: one request, one answer.
@@ -89,7 +88,7 @@ func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client,
 // startShimWith is startShim with the relay's options.
 func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-chan error) {
 	t.Helper()
-	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
+	cmds, err := app.NewCommands("bot", "", "linux", testServiceManager())
 	require.NoError(t, err)
 	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	fallback := app.NewEngineDownServer(down)

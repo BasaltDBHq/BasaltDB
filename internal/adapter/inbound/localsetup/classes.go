@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
@@ -257,11 +258,11 @@ type sampled struct {
 // time gets no suggestion. The values stay in memory and are dropped as
 // each column is scored.
 func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, out []ColumnInfo) {
-	keys, err := pii.KeyColumns(ctx, conn)
+	keys, err := pii.KeyColumns(ctx, pgquerier.Neutralize(conn))
 	if err != nil {
 		keys = nil
 	}
-	bases, err := pii.BaseTypes(ctx, conn)
+	bases, err := pii.BaseTypes(ctx, pgquerier.Neutralize(conn))
 	if err != nil {
 		bases = nil
 	}

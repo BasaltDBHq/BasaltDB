@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
@@ -91,7 +92,7 @@ func describeDBWithUpdate(t *testing.T, update func() *agent.UpdateNotice) descr
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 		d.Status.Update = update
 	})).Svc
 	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, db: d, role: a.Role}
@@ -331,7 +332,7 @@ func TestDescribeSearchScale(t *testing.T) {
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
@@ -378,7 +379,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map

@@ -35,6 +35,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -705,7 +706,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Core.Name, deps.Core.Log, deps.Core.Now = a.Name, log, time.Now
 	deps.Core.Store, deps.Core.Commands = store, cmds
 	deps.Core.PagesBase, deps.Core.PagesOrigin, deps.Core.LinkBudget = env.pagesBase, env.pagesOrigin, env.cfg.LinkBudgetOrDefault()
-	deps.Write.Store, deps.Write.RLS, deps.Write.PII = store, blind, observer.On(pool)
+	deps.Write.Store, deps.Write.RLS, deps.Write.PII = store, blind, observer.On(pgquerier.Neutralize(pool))
 	deps.Approval.Store, deps.Approval.Columns = store, postgres.NewColumnOrder(budgeted)
 	deps.Revert.Store = store
 	deps.Delivery.Deliverer, deps.Delivery.Links, deps.Delivery.Relay, deps.Delivery.Receipts = deliverer, secrets, relay, env.receipts
@@ -721,7 +722,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.Database = agent.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
 	deps.Status.Finisher = finisher
 	deps.Describe.Catalog = agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)}
-	deps.Describe.Classes = pii.StoreClasses{BoundMap: classes.On(pool), Store: storeErrors{}}
+	deps.Describe.Classes = pii.StoreClasses{BoundMap: classes.On(pgquerier.Neutralize(pool)), Store: storeErrors{}}
 	// The plugin approval routes read and relay on the agent's own
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests
@@ -732,7 +733,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		run: repin,
 		upkeep: ledger.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
-			WithPII(pii.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
+			WithPII(pii.NewWatch(a.Name, classes, pgquerier.Neutralize(pool), log.With("component", "pii"))),
 		scan: pii.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
 		db:   pool,
 		kept: keptAgent{

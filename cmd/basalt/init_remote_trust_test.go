@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -73,7 +74,7 @@ func certRun(t *testing.T, cfg string, server caServer) (setup.RemoteInitResult,
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
 	c.FetchChain = server.fetch
-	res, err := initRemote(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	res, err := setupcli.InitRemote(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	return res, stderr.String(), err
 }
 

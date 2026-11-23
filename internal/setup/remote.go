@@ -208,3 +208,25 @@ func KeyRefused(err error) error {
 // trusted with its key, so a code without one could never finish.
 var ErrNoEngineForTrust = errors.New("the database's certificate changed, and the setup code that replaces the engine's pin " +
 	"needs the engine's key, which cannot be read here: run basalt init --remote as the engine's OS user")
+
+// StateDirName is the engine's state directory next to a per-user config.
+const StateDirName = "state"
+
+// RootConfigDir is the config directory init --remote opened as root: the
+// consumer is the setup CLI, whose host opens it, and the type is here so
+// the host's implementation need not import that controller.
+type RootConfigDir interface {
+	// Upsert is config.UpsertAgentVault on the config file name, relative to
+	// the opened directory.
+	Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error)
+	// Close closes the directory.
+	Close()
+}
+
+// ConnTarget is where a connection string connects.
+type ConnTarget struct {
+	Host string
+	Port int
+	// SystemRoots: TLS is on and the roots are the system's.
+	SystemRoots bool
+}

@@ -1,4 +1,8 @@
-package agent
+// Package revertmcp serves the revert tools over MCP: preview_revert,
+// revert_plan, apply_revert_batch and request_revert, and the revert items
+// of list_pending. Handlers parse, validate, make one call to the revert use
+// case and render.
+package revertmcp
 
 import (
 	"context"
@@ -19,6 +23,19 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
+
+// Reverts is the revert use case as the revert tools call it.
+type Reverts interface {
+	PreviewRevert(ctx context.Context, p revertsvc.PreviewRevertParams) (revertsvc.RevertPreview, error)
+	RevertPlan(ctx context.Context, p action.RevertLineParams) (revertsvc.RevertPlan, error)
+	ApplyRevertBatch(ctx context.Context, p revertsvc.ApplyRevertBatchParams) (revertsvc.AppliedBatch, error)
+	RequestRevert(ctx context.Context, p revertsvc.RequestRevertParams) (revertsvc.RequestedRevert, error)
+	AwaitRevert(ctx context.Context, p revertsvc.AwaitRevertParams) (revertsvc.RequestedRevert, error)
+}
+
+type handlers struct {
+	svc Reverts
+}
 
 // --- preview_revert ---
 
@@ -456,8 +473,61 @@ func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (an
 	}, nil
 }
 
-// RevertTools are the tools that preview, plan, request and apply a revert.
-func RevertTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+// --- list_pending ---
+
+// pendingRevertDTO is a list_pending revert item (list_pending.json,
+// kind REVERT). A widened revert has no scope and no link (RS-5).
+type pendingRevertDTO struct {
+	Kind          string                `json:"kind"`
+	RevertID      string                `json:"revertId"`
+	Status        string                `json:"status"`
+	Scope         string                `json:"scope,omitempty"`
+	ScopeID       string                `json:"scopeId,omitempty"`
+	Intent        string                `json:"intent"`
+	Rows          int                   `json:"rows"`
+	Skipped       int                   `json:"skipped"`
+	Batched       bool                  `json:"batched"`
+	Widened       bool                  `json:"widened"`
+	CreatedAt     string                `json:"createdAt"`
+	ExpiresAt     string                `json:"expiresAt"`
+	ApplyBy       string                `json:"applyBy,omitempty"`
+	Progress      *revertProgressDTO    `json:"progress,omitempty"`
+	Headline      string                `json:"headline"`
+	RevertURL     string                `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile    `json:"requestFile,omitempty"`
+	PersonMessage string                `json:"personMessage"`
+	Links         []toolresult.Link     `json:"links,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
+}
+
+// PendingRevert is a revert of list_pending as the tool returns it, for the
+// approval tools that list it.
+func PendingRevert(p revertsvc.PendingRevert) any {
+	return pendingRevertFromDomain(p)
+}
+
+func pendingRevertFromDomain(p revertsvc.PendingRevert) pendingRevertDTO {
+	d := pendingRevertDTO{
+		Kind: guidance.KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
+		Batched: p.Batched, Widened: p.Widened, CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt),
+		Headline: p.Headline, RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
+	}
+	if !p.Widened {
+		d.Scope, d.ScopeID = p.Scope, p.ScopeID.String()
+	}
+	if p.ApplyBy != nil {
+		d.ApplyBy = guidance.TimeText(*p.ApplyBy)
+	}
+	if p.Batched && p.SignedAt != nil {
+		d.Progress = &revertProgressDTO{Restored: p.Progress.Restored, Skipped: p.Progress.Skipped, Pending: p.Progress.Pending, Batches: p.Batches}
+	}
+	return d
+}
+
+// Tools are the tools that preview, plan, request and apply a revert. mount
+// lists a tool under its contract, around the agent's admission and error
+// mapping; the tool list's composer supplies it.
+func Tools(svc Reverts, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
 		mount("preview_revert", h.previewRevert),

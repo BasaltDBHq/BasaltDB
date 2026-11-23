@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
@@ -89,9 +87,15 @@ func unclassified(ctx context.Context, db PiidictQuerier) ([]guardmodel.Unclassi
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.UnclassifiedColumn, error) {
-		var c guardmodel.UnclassifiedColumn
-		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Why)
-		return c, err
-	})
+	// Collected as pgx.CollectRows does: an empty answer is an empty slice,
+	// and any error drops what was read.
+	out := []guardmodel.UnclassifiedColumn{}
+	var c guardmodel.UnclassifiedColumn
+	if err := forEachRow(rows, []any{&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Why}, func() error {
+		out = append(out, c)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

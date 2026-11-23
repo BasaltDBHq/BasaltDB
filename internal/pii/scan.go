@@ -18,6 +18,7 @@ import (
 
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // Scan defaults (M5.1 plan, section 6; CONTRACT.md engine config).
@@ -69,9 +70,10 @@ type Builder interface {
 	RebuildNeeded() <-chan struct{}
 }
 
-// Pool is an agent's connection pool.
+// Pool is an agent's connection pool. The scan hands it to the dictionary
+// and its own reads through pgquerier.Neutralize.
 type Pool interface {
-	PiidictQuerier
+	pgquerier.Querier
 	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
 }
 
@@ -242,7 +244,7 @@ type scanRun struct {
 
 func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 	lctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
-	cols, err := src.Classes.Identifiers(lctx, src.DB)
+	cols, err := src.Classes.Identifiers(lctx, pgquerier.Neutralize(src.DB))
 	cancel()
 	if err != nil {
 		return fmt.Errorf("agent %s: %w", src.Agent, err)
@@ -316,7 +318,7 @@ func byTable(cols []IdentifierColumn) []scanTable {
 // (slowRelationError) instead of failing the whole cycle.
 func (r *scanRun) table(ctx context.Context, src ScanSource, t scanTable) error {
 	kctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
-	keys, relkind, err := keysetOf(kctx, src.DB, t.oid)
+	keys, relkind, err := keysetOf(kctx, pgquerier.Neutralize(src.DB), t.oid)
 	cancel()
 	if err != nil {
 		return err
@@ -392,7 +394,7 @@ func keysetOf(ctx context.Context, db PiidictQuerier, oid uint32) ([]keyColumn, 
 		readable bool
 		all      = true
 	)
-	_, err = pgx.ForEachRow(rows, []any{&k.name, &k.typ, &readable}, func() error {
+	err = forEachRow(rows, []any{&k.name, &k.typ, &readable}, func() error {
 		keys = append(keys, k)
 		all = all && readable
 		return nil

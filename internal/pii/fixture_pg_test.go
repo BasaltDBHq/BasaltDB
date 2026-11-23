@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -120,9 +121,9 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pi
 		st, err = guard.ReadClassification(ctx, tx, d.Names)
 		return err
 	}))
-	keys, err := pii.KeyColumns(ctx, d.Admin)
+	keys, err := pii.KeyColumns(ctx, pgquerier.Neutralize(d.Admin))
 	require.NoError(t, err)
-	bases, err := pii.BaseTypes(ctx, d.Admin)
+	bases, err := pii.BaseTypes(ctx, pgquerier.Neutralize(d.Admin))
 	require.NoError(t, err)
 	cols := make([]pii.Column, 0, len(st.Readable))
 	for _, r := range st.Readable {

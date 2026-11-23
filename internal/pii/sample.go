@@ -61,7 +61,7 @@ func KeyColumns(ctx context.Context, q Querier) (map[KeyRef]KeyKind, error) {
 		ref       KeyRef
 		generated bool
 	)
-	_, err = pgx.ForEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &generated}, func() error {
+	err = forEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &generated}, func() error {
 		k := out[ref]
 		k.Generated = k.Generated || generated
 		k.Key = k.Key || !generated
@@ -171,7 +171,7 @@ func BaseTypes(ctx context.Context, q Querier) (map[KeyRef]string, error) {
 		ref  KeyRef
 		base string
 	)
-	_, err = pgx.ForEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &base}, func() error {
+	err = forEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &base}, func() error {
 		out[ref] = base
 		return nil
 	})

@@ -135,6 +135,7 @@ func layerOf(rel string) string {
 var testHelpers = []string{
 	"internal/testkit/archtest",
 	"internal/testkit/connecttest",
+	"internal/testkit/stepcatalogtest",
 	"internal/core/passkey/passkeytest",
 	"internal/adapter/outbound/plugintransport/adaptertest",
 	"pkg/trustprofile/trustprofiletest",

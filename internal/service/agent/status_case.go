@@ -26,18 +26,22 @@ func newStatusKeeper(core *CoreDeps, deps *StatusDeps) *statusKeeper {
 
 // The reads the plugin use case makes of the status group, read as it stands.
 
-func (sc *statusKeeper) sameUser() bool { return sc.deps.SameUser }
+// SameUser says the engine runs as the person's own OS user.
+func (sc *statusKeeper) SameUser() bool { return sc.deps.SameUser }
 
-func (sc *statusKeeper) devLocalPages() bool { return sc.deps.DevLocalPages }
+// DevLocalPages says engine.json has devLocalPages set.
+func (sc *statusKeeper) DevLocalPages() bool { return sc.deps.DevLocalPages }
 
-func (sc *statusKeeper) vaultState() string {
+// VaultState is the engine's Vault state, vaultStateOff when there is no Vault reporter.
+func (sc *statusKeeper) VaultState() string {
 	if sc.deps.Vault == nil {
 		return vaultStateOff
 	}
 	return sc.deps.Vault.VaultStatus().State
 }
 
-func (sc *statusKeeper) guardStatus(ctx context.Context) (guardmodel.Status, error) {
+// GuardStatus reads the guard's state on the agent's credential.
+func (sc *statusKeeper) GuardStatus(ctx context.Context) (guardmodel.Status, error) {
 	return sc.deps.Probe.GuardStatus(ctx)
 }
 

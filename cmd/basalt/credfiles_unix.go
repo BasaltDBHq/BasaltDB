@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -21,7 +23,7 @@ import (
 // openRootCredFiles opens dir, the agents directory, as root
 // (app.OpenRootCredFiles), making it (and the config directory) when
 // missing, through h. trusted is rootTrustedOwner's.
-func openRootCredFiles(h setupFilesHost, dir string, trusted int) (credFiles, error) {
+func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFiles, error) {
 	files, err := app.OpenRootCredFiles(h, dir, trusted)
 	if err != nil {
 		return nil, err
@@ -53,10 +55,10 @@ func openRootConfigDir(h setupFilesHost, dir string, trusted int) (*rootConfigDi
 	return &rootConfigDir{dir: d, trusted: trusted}, nil
 }
 
-// upsert is config.UpsertAgentVault on the config file name, relative to
+// Upsert is config.UpsertAgentVault on the config file name, relative to
 // the opened directory, the file checked as the hardened read checks it and
 // written owned by the directory's owner.
-func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {
+func (d *rootConfigDir) Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {
 	dirUID, err := d.dir.Owner()
 	if err != nil {
 		return config.VaultWritten{}, err
@@ -67,7 +69,7 @@ func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (
 	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, app.CredentialOwner(dirUID), s, a)
 }
 
-func (d *rootConfigDir) close() { _ = d.dir.Close() }
+func (d *rootConfigDir) Close() { _ = d.dir.Close() }
 
 // rootEngineKey is the engine's public key for a root init --remote: the
 // key file in the engine's state directory, read or (when there is none)
@@ -138,7 +140,7 @@ func missingStateDir(stateDir, goos string, owner int) error {
 		return fmt.Errorf("the state directory %s does not exist yet; start the engine's service once (it makes it), then run basalt init --remote again", stateDir)
 	}
 	return fmt.Errorf("the state directory %s does not exist yet; make it for the engine's user (sudo install -d -m %04o -o %d %s), then run basalt init --remote again",
-		stateDir, stateDirMode, owner, stateDir)
+		stateDir, engine.StateDirMode, owner, stateDir)
 }
 
 // readRootKeyFile reads the key file in the state directory d, owned by

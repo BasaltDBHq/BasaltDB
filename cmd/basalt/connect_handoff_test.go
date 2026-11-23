@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -213,7 +214,7 @@ func sameUserConfig(t *testing.T, cfgPath string) {
 	// The state directory stays: the engine signs with the key init put
 	// in the code. The Vault is off, so the test dials nothing else.
 	if m["stateDir"] == nil {
-		m["stateDir"] = filepath.Join(filepath.Dir(cfgPath), stateDirName)
+		m["stateDir"] = filepath.Join(filepath.Dir(cfgPath), setup.StateDirName)
 	}
 	m["socketDir"], m["pagesAddr"], m["mode"], m["vault"] = filepath.Join(dir, "run"), "off", "SAME_USER", "OFF"
 	m["agents"].([]any)[0].(map[string]any)["osUser"] = me.Username
@@ -552,7 +553,7 @@ func slicesContains(list []string, v string) bool {
 // engineKeysOf loads the engine key init made for cfg.
 func engineKeysOf(t *testing.T, cfg string) *channel.EngineKeys {
 	t.Helper()
-	k, err := keyfile.LoadKeys(filepath.Join(filepath.Dir(cfg), stateDirName, "channel.json"))
+	k, err := keyfile.LoadKeys(filepath.Join(filepath.Dir(cfg), setup.StateDirName, "channel.json"))
 	require.NoError(t, err)
 	return k
 }

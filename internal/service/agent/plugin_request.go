@@ -243,7 +243,7 @@ func (pc *pluginCase) PluginUploadsServed() error { return pc.pluginsServed(true
 // through the portal).
 func (pc *pluginCase) pluginsServed(opens bool) error {
 	switch {
-	case pc.core.Commands.AgentOperated() && (!pc.status.sameUser() || pc.deps.Requests == nil):
+	case pc.core.Commands.AgentOperated() && (!pc.status.SameUser() || pc.deps.Requests == nil):
 		return pluginRefused(ReasonPluginAgentOperated,
 			"request_plugin is refused: this engine is operated by an agent and runs as a service under its own OS user, where plugin changes stay refused. Nothing was written",
 			"Plugins cannot be added or changed on this engine: an agent operates it and it runs as its own user. Nothing was changed.")
@@ -252,7 +252,7 @@ func (pc *pluginCase) pluginsServed(opens bool) error {
 			return noPortalLinkError("request_plugin is refused: "+why+", so there is no page to approve the plugin on. Nothing was written",
 				"Basalt cannot hand you a link to approve the plugin right now: "+why+". Nothing was changed.")
 		}
-	case pc.status.sameUser() || pc.deps.Requests == nil:
+	case pc.status.SameUser() || pc.deps.Requests == nil:
 		return pluginRefused(ReasonPluginSameUserMode,
 			"request_plugin is refused: this engine runs as the person's own OS user and keeps no plugins of its own. Nothing was written",
 			"This Basalt engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.")
@@ -268,7 +268,7 @@ func (pc *pluginCase) pluginsServed(opens bool) error {
 // portal's: on an agent-operated engine, unless it serves its own pages
 // for development (devLocalPages).
 func (pc *pluginCase) portalPluginLinks() bool {
-	return pc.core.Commands.AgentOperated() && (!pc.status.devLocalPages() || pc.core.PagesOrigin == "")
+	return pc.core.Commands.AgentOperated() && (!pc.status.DevLocalPages() || pc.core.PagesOrigin == "")
 }
 
 // noPortalLink is why the engine cannot hand over a plugin approval's
@@ -278,7 +278,7 @@ func (pc *pluginCase) noPortalLink() string {
 	if !pc.portalPluginLinks() || pc.delivery.RelayConnected() {
 		return ""
 	}
-	state := pc.status.vaultState()
+	state := pc.status.VaultState()
 	switch state {
 	case vaultStateOff:
 		return "the Vault is off on this engine (vault in engine.json)"

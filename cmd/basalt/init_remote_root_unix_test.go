@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // requireEmptyDir fails when dir holds anything: root wrote nothing there.
@@ -170,7 +171,7 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	clearSetup(t, cfg)
 	rotate := remoteDBRun(t, cfg, "--agent", "bot")
 	require.Equal(t, "AGENT", rotate.res.Kind)
-	pending := install.credFile + pendingSuffix
+	pending := install.credFile + setup.PendingSuffix
 	newPassword := credentialPassword(t, pending)
 	runViaConnect(t, d, rotate.res.Code)
 
@@ -191,7 +192,7 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	require.NotNil(t, before.Agents[0].Setup)
 	g := olderGuard{d: d, configPath: cfg, socketDir: filepath.Join(dir, "run")}
 	g.startEngine(t)
-	g.callTool(t, toolStatus)
+	g.callTool(t, "status")
 	require.NoFileExists(t, pending, "promoted")
 	require.Equal(t, newPassword, credentialPassword(t, install.credFile))
 	c, err := config.Load(cfg)

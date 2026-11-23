@@ -88,8 +88,8 @@ func NewSetupKeeper(setup *config.Setup) *SetupKeeper { return &SetupKeeper{setu
 // and the host's logger and clock.
 func (k *SetupKeeper) Watch(database string, probe setupProbe, finisher SetupFinisher, log *slog.Logger, now func() time.Time) SetupWatch {
 	return SetupWatch{
-		setup: k.Pending(), database: database, probe: probe, finisher: finisher,
-		finished: k.Finished, notRecorded: &k.notRecorded, lockTrouble: &k.lockTrouble,
+		setup: k.pending(), database: database, probe: probe, finisher: finisher,
+		finished: k.finished, notRecorded: &k.notRecorded, lockTrouble: &k.lockTrouble,
 		log: log, now: now,
 	}
 }
@@ -104,15 +104,15 @@ func NewLocalWatch(setup *config.Setup, probe setupProbe, log *slog.Logger, now 
 	}
 }
 
-// Pending is the agent's pending setup, nil when none is.
-func (k *SetupKeeper) Pending() *config.Setup {
+// pending is the agent's pending setup, nil when none is.
+func (k *SetupKeeper) pending() *config.Setup {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	return k.setup
 }
 
-// Finished forgets the pending setup id once it is recorded.
-func (k *SetupKeeper) Finished(id string) {
+// finished forgets the pending setup id once it is recorded.
+func (k *SetupKeeper) finished(id string) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.setup != nil && k.setup.SetupID == id {

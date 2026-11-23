@@ -78,7 +78,7 @@ func describeDB(t *testing.T) describeHarness { return describeDBWithUpdate(t, n
 
 // describeDBWithUpdate is describeDB for an engine whose update check
 // answers with update.
-func describeDBWithUpdate(t *testing.T, update func() *agent.UpdateNotice) describeHarness {
+func describeDBWithUpdate(t *testing.T, update func() *agent.ReleaseNotice) describeHarness {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, describeSQL)
@@ -404,8 +404,8 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 // carries the engine's newer-release notice (CONTRACT.md, Update notice).
 func TestDescribeOverviewCarriesTheUpdate(t *testing.T) {
 	t.Parallel()
-	h := describeDBWithUpdate(t, func() *agent.UpdateNotice {
-		return &agent.UpdateNotice{Current: "0.0.1", Latest: "0.0.2", Security: true, URL: "https://example.test/r"}
+	h := describeDBWithUpdate(t, func() *agent.ReleaseNotice {
+		return &agent.ReleaseNotice{Current: "0.0.1", Latest: "0.0.2", Security: true, URL: "https://example.test/r"}
 	})
 	overview, isError := h.describe(t, map[string]any{})
 	require.False(t, isError, "%v", overview)

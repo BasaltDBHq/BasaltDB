@@ -37,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 const (
@@ -52,7 +53,7 @@ var fingerprintPattern = regexp.MustCompile(`^[0-9a-f]{4}( [0-9a-f]{4}){4}$`)
 // remoteRun is one basalt init --remote with its files.
 type remoteRun struct {
 	result
-	res      RemoteInitResult
+	res      setup.RemoteInitResult
 	payload  setupcode.Payload
 	cfg      config.Config
 	credFile string
@@ -160,9 +161,9 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 	all = append(all, args...)
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	res, err := initRemote(c, appSetupHost{}, takePathFlags(c, runInit, all))
+	res, err := setupcli.InitRemote(c, appSetupHost{}, takePathFlags(c, runInit, all))
 	require.NoError(t, err, stderr.String())
-	require.NoError(t, printRemoteResult(c, res))
+	require.NoError(t, setupcli.PrintRemoteResult(c, res))
 	r := remoteRun{result: result{cli.ExitOK, stdout.String(), stderr.String()}, res: res}
 	p, err := setupcode.Decode(r.res.Code)
 	require.NoError(t, err)
@@ -185,7 +186,7 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 // engine's key there.
 func withState(t *testing.T, cfg string) string {
 	t.Helper()
-	require.NoError(t, os.MkdirAll(filepath.Join(filepath.Dir(cfg), stateDirName), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(filepath.Dir(cfg), setup.StateDirName), 0o700))
 	return cfg
 }
 
@@ -405,7 +406,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 // requireConnectGuidance checks a result that carries the connect link: the
 // link is the code in the portal's fragment, on a line of its own in the
 // message, and the person runs no command.
-func requireConnectGuidance(t *testing.T, res RemoteInitResult) {
+func requireConnectGuidance(t *testing.T, res setup.RemoteInitResult) {
 	t.Helper()
 	require.GreaterOrEqual(t, len(res.MCPCommand), 4)
 	require.Equal(t, []string{fakeBin, "mcp", "--agent", res.Agent}, res.MCPCommand[:4])
@@ -502,7 +503,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 	}
 	r := remoteWith(t, e, cfg, "--agent", "bot")
 	require.Equal(t, []string{"verify-full/require", "verify-full/"}, probed)
-	pending := r.credFile + pendingSuffix
+	pending := r.credFile + setup.PendingSuffix
 	raw, err := os.ReadFile(pending)
 	require.NoError(t, err)
 	u, err := url.Parse(strings.TrimSpace(string(raw)))
@@ -520,7 +521,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 func TestInitRemoteExplainsACredentialWithTargetParams(t *testing.T) {
 	t.Parallel()
 	const stored = "postgres://basalt_agent_bot:enginepw@db.example.com:5432/crm?sslmode=require&host=10.0.0.9\n"
-	for _, suffix := range []string{"", pendingSuffix} {
+	for _, suffix := range []string{"", setup.PendingSuffix} {
 		cfg := tempConfig(t)
 		path := filepath.Join(filepath.Dir(cfg), "agents", "bot.url"+suffix)
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
@@ -553,7 +554,7 @@ func TestInitRemoteRejectedCredentialGetsANewPassword(t *testing.T) {
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	require.False(t, rotate.res.Reused)
 	require.Equal(t, "0123abcd", credentialPassword(t, rotate.credFile))
-	pw := credentialPassword(t, rotate.credFile+pendingSuffix)
+	pw := credentialPassword(t, rotate.credFile+setup.PendingSuffix)
 	require.NotEqual(t, "0123abcd", pw)
 	requireVerifierOf(t, rotate.payload.Agent.Verifier, pw)
 	requireNoSecret(t, rotate, cfg, pw)
@@ -564,7 +565,7 @@ func TestInitRemoteRejectedCredentialGetsANewPassword(t *testing.T) {
 	require.Equal(t, rotate.res.SetupID, again.res.SetupID)
 	require.Equal(t, rotate.res.ExpiresAt, again.res.ExpiresAt)
 	require.Equal(t, rotate.res.Code, again.res.Code)
-	require.Equal(t, pw, credentialPassword(t, rotate.credFile+pendingSuffix))
+	require.Equal(t, pw, credentialPassword(t, rotate.credFile+setup.PendingSuffix))
 }
 
 // An expired code (SETUP_EXPIRED) is never printed again: the next run
@@ -605,13 +606,13 @@ func TestInitRemoteRefusesASymlinkedCredential(t *testing.T) {
 	// A .pending planted as a link is refused the same way.
 	require.NoError(t, os.Remove(first.credFile))
 	require.NoError(t, config.WriteFile(first.credFile, []byte(supabaseDSN(t)+"\n")))
-	require.NoError(t, os.Symlink(target, first.credFile+pendingSuffix))
+	require.NoError(t, os.Symlink(target, first.credFile+setup.PendingSuffix))
 	r = cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code)
-	require.Contains(t, r.stderr, pendingSuffix+" is not usable")
+	require.Contains(t, r.stderr, setup.PendingSuffix+" is not usable")
 
 	// config.WriteFile, which writes every file init writes, refuses a link.
-	require.Error(t, config.WriteFile(first.credFile+pendingSuffix, []byte("x")))
+	require.Error(t, config.WriteFile(first.credFile+setup.PendingSuffix, []byte("x")))
 	raw, err = os.ReadFile(target)
 	require.NoError(t, err)
 	require.Equal(t, "postgres://x@h/db\n", string(raw))
@@ -716,7 +717,7 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	require.Equal(t, "AGENT", rotate.res.Kind)
 	require.True(t, rotate.payload.KeepsGrants(), "a rejected password asks for no tables")
 	require.Equal(t, "0123abcd", credentialPassword(t, install.credFile))
-	pw2 := credentialPassword(t, install.credFile+pendingSuffix)
+	pw2 := credentialPassword(t, install.credFile+setup.PendingSuffix)
 	require.NotEqual(t, "0123abcd", pw2)
 	requireVerifierOf(t, rotate.payload.Agent.Verifier, pw2)
 	requireNoSecret(t, rotate, cfg, pw2)
@@ -727,7 +728,7 @@ func TestInitRemoteAgainstTheDatabase(t *testing.T) {
 	after := remoteDBRun(t, cfg, "--agent", "bot")
 	require.False(t, after.res.Reused)
 	require.Equal(t, pw2, credentialPassword(t, install.credFile))
-	require.NoFileExists(t, install.credFile+pendingSuffix)
+	require.NoFileExists(t, install.credFile+setup.PendingSuffix)
 
 	// UPGRADE when the guard is older than the build: no agent part.
 	runCode(t, d, after.payload)
@@ -765,7 +766,7 @@ func TestInitRemoteSetupNotFoundGetsANewPassword(t *testing.T) {
 	require.Equal(t, "AGENT", r.res.Kind)
 	require.NotNil(t, r.payload.Target)
 	require.Equal(t, botPassword, credentialPassword(t, r.credFile))
-	pw := credentialPassword(t, r.credFile+pendingSuffix)
+	pw := credentialPassword(t, r.credFile+setup.PendingSuffix)
 	require.NotEqual(t, botPassword, pw)
 	requireVerifierOf(t, r.payload.Agent.Verifier, pw)
 }
@@ -864,41 +865,13 @@ func TestInitRemoteRunsOneAtATime(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
 	first := seedCredential(t, noDB(t), cfg, "bot", supabaseDSN(t))
-	unlock, err := app.PathCredFiles{}.Lock(first.credFile + lockSuffix)
+	unlock, err := app.PathCredFiles{}.Lock(first.credFile + setup.LockSuffix)
 	require.NoError(t, err)
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, "another basalt init --remote is running")
 	unlock()
 	require.Equal(t, cli.ExitOK, cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot").code)
-}
-
-func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
-	t.Parallel()
-	name := ""
-	for n := 1; n < 100; n++ {
-		if candidate := strings.Repeat("a", n); config.ValidAgentName(candidate) {
-			name = candidate
-		}
-	}
-	require.GreaterOrEqual(t, len(name), 50)
-	pm := setupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
-	withoutURL := strings.Replace(pm, releasePage+"\n", "", 1)
-	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), guidance.MaxPersonMessageLength, pm)
-	require.Equal(t, 1, strings.Count(pm, name), "the agent is named once")
-}
-
-func TestCheckBuildVersion(t *testing.T) {
-	t.Parallel()
-	for _, ok := range []string{"0.0.1", "0.0.1-alpha.2", "0.0.1-alpha.1-295-gced6c31", "1.2.3"} {
-		require.NoError(t, checkBuildVersion(ok), ok)
-	}
-	for _, bad := range []string{"dev", "master-ced6c31", "", "0.0"} {
-		err := checkBuildVersion(bad)
-		require.Error(t, err, bad)
-		require.NotErrorIs(t, err, cli.ErrUsage)
-		require.Contains(t, err.Error(), "install a release build")
-	}
 }
 
 // A rootless bot's engine must be able to bind its sockets: with --config
@@ -969,14 +942,14 @@ func TestInitRemoteAsRootNotesServiceModeOnlyAfterWriting(t *testing.T) {
 	cfg = withState(t, tempConfig(t))
 	agents := filepath.Join(filepath.Dir(cfg), "agents")
 	require.NoError(t, os.MkdirAll(agents, 0o700))
-	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+lockSuffix)))
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+setup.LockSuffix)))
 	r = e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code, r.stderr)
 	require.NotContains(t, r.stderr, "service one", "refused at the lock, after opening the directories: nothing written")
 	_, err := os.Stat(cfg)
 	require.ErrorIs(t, err, os.ErrNotExist)
 
-	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+lockSuffix)))
+	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+setup.LockSuffix)))
 	r = e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Equal(t, 1, strings.Count(r.stderr, "this config is a service one (mode SERVICE)"), "said once, after writing: %s", r.stderr)

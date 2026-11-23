@@ -84,9 +84,9 @@ type UpgradeChecker interface {
 	UpgradeAvailable(ctx context.Context) (bool, error)
 }
 
-// upgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
+// UpgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
 // only non-breaking guard migrations are missing.
-func (sc *statusKeeper) upgradeWarnings(ctx context.Context) []toolresult.Warning {
+func (sc *statusKeeper) UpgradeWarnings(ctx context.Context) []toolresult.Warning {
 	available, err := sc.deps.Upgrade.UpgradeAvailable(ctx)
 	if err != nil {
 		sc.core.Log.Error("check for a guard upgrade", "err", err)

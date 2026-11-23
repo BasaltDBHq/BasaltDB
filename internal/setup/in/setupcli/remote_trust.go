@@ -1,11 +1,8 @@
-package main
+package setupcli
 
 import (
 	"crypto/x509"
-	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -21,11 +18,6 @@ import (
 // pkg/trustpin and trustdir, so init --remote needs nothing of the removed
 // basalt trust commands.
 
-// errNoEngineForTrust: the engine collects the certificate the person
-// trusted with its key, so a code without one could never finish.
-var errNoEngineForTrust = errors.New("the database's certificate changed, and the setup code that replaces the engine's pin " +
-	"needs the engine's key, which cannot be read here: run basalt init --remote as the engine's OS user")
-
 // noteUnknownAuthority says, before any login, that the credential's host
 // presents a chain no authority here verifies and that no profile covers:
 // the person trusts it on the connect page. Nothing is pinned. A chain that
@@ -34,15 +26,15 @@ func (r *remoteInit) noteUnknownAuthority() {
 	if r.base == nil || r.c.FetchChain == nil {
 		return
 	}
-	cfg, err := pgconn.ParseConfig(r.base.String())
-	if err != nil || cfg.Host == "" || cfg.TLSConfig == nil || cfg.TLSConfig.RootCAs != nil {
+	target, err := r.setup.ConnTarget(r.base.String())
+	if err != nil || target.Host == "" || !target.SystemRoots {
 		return
 	}
-	host := trustprofile.NormalizeHost(cfg.Host)
-	if r.setup.TrustProfileFor(r.f.configPath, host) != nil {
+	host := trustprofile.NormalizeHost(target.Host)
+	if r.setup.TrustProfileFor(r.f.ConfigPath, host) != nil {
 		return // a profile, a pin included, decides; a changed pin shows at the login
 	}
-	chain, err := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
+	chain, err := r.c.FetchChain(r.c.Ctx, host, target.Port)
 	if err != nil {
 		return
 	}
@@ -54,7 +46,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 
 // pinOf is the engine's pin for host in the config's trust.d: its
 // pin-<host> profile, or nil, read through h.
-func pinOf(h remoteHost, configPath, host string) *trustprofile.Profile {
+func pinOf(h Host, configPath, host string) *trustprofile.Profile {
 	p := h.TrustProfileFor(configPath, host)
 	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
 		return nil
@@ -66,7 +58,7 @@ func pinOf(h remoteHost, configPath, host string) *trustprofile.Profile {
 // engine has pinned for the target's host: the code's trustPin, "" when it
 // has no pin.
 func (r *remoteInit) pinnedSHA() string {
-	p := pinOf(r.setup, r.f.configPath, trustprofile.NormalizeHost(r.target.Host))
+	p := pinOf(r.setup, r.f.ConfigPath, trustprofile.NormalizeHost(r.target.Host))
 	if p == nil || len(p.Certificates()) == 0 {
 		return ""
 	}
@@ -82,16 +74,16 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 	if r.c.FetchChain == nil || !trustprofile.CertificateNotVerified(err) {
 		return false
 	}
-	cfg, perr := pgconn.ParseConfig(dsn)
-	if perr != nil || cfg.Host == "" {
+	target, perr := r.setup.ConnTarget(dsn)
+	if perr != nil || target.Host == "" {
 		return false
 	}
-	host := trustprofile.NormalizeHost(cfg.Host)
-	p := pinOf(r.setup, r.f.configPath, host)
+	host := trustprofile.NormalizeHost(target.Host)
+	p := pinOf(r.setup, r.f.ConfigPath, host)
 	if p == nil {
 		return false
 	}
-	chain, ferr := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
+	chain, ferr := r.c.FetchChain(r.c.Ctx, host, target.Port)
 	if ferr != nil || len(chain) == 0 {
 		return false
 	}
@@ -115,6 +107,6 @@ func pinned(certs []*x509.Certificate, top *x509.Certificate) bool {
 // version 0: it names no agent, so the role keeps its password and its
 // grants, and its migrations are the ones the database lacks, none when it
 // has them.
-func (r *remoteInit) certificatePlan() (plan, error) {
-	return plan{kind: setupcode.KindUpgrade}, nil
+func (r *remoteInit) certificatePlan() (setup.Plan, error) {
+	return setup.Plan{Kind: setupcode.KindUpgrade}, nil
 }

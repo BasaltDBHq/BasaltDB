@@ -77,7 +77,7 @@ func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (gua
 	if err := pc.admit.Admit(ctx); err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
-	st, err := pc.status.guardStatus(ctx)
+	st, err := pc.status.GuardStatus(ctx)
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}

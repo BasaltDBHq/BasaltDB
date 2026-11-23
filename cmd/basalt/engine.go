@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -59,7 +58,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// Started as root, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
 	if *supervised {
-		return runSupervise(ctx, enginePath(*configPath), *startedBy, io, h)
+		return runSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h)
 	}
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)
@@ -67,7 +66,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// handed is the setup page's listener of an engine that waited for its
 	// config: the first run serves its own pages on it.
 	var handed net.Listener
-	if waitsForConfig(h.Euid(), enginePath(*configPath)) {
+	if engine.WaitsForConfig(engineTerminal{}, h.Euid(), engine.EnginePath(*configPath)) {
 		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -87,7 +86,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		if *pluginDebug {
 			o.PluginStderr = io.Err
 		}
-		return app.RunWith(ctx, cfg, enginePath(*configPath), log, o)
+		return app.RunWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
@@ -103,33 +102,6 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
-}
-
-// waitsForConfig: a service engine on a first install, started before its
-// config exists (CONTRACT.md, The local setup page). It runs as its own OS
-// user from the system config path, whose folder the install made, and
-// finds no engine.json there yet, in a folder it owns. It then serves only the setup page and
-// waits for the config instead of exiting.
-func waitsForConfig(euid int, configPath string) bool {
-	return waitsForConfigAt(euid, configPath, config.DefaultPath(runtime.GOOS))
-}
-
-// waitsForConfigAt is waitsForConfig with the system config path given.
-func waitsForConfigAt(euid int, configPath, systemPath string) bool {
-	if euid == 0 || configPath != systemPath {
-		return false
-	}
-	if _, err := os.Lstat(configPath); !errors.Is(err, fs.ErrNotExist) {
-		return false
-	}
-	// The install made the folder for this engine's own user: a folder
-	// anyone else owns is not this engine's to wait in.
-	dir, err := os.Lstat(filepath.Dir(configPath))
-	if err != nil || !dir.IsDir() {
-		return false
-	}
-	owner, ok := cli.InfoOwnerUID(dir)
-	return ok && owner == euid
 }
 
 // restart is how the engine restarts onto an upgraded binary: upgrade says
@@ -194,15 +166,6 @@ func serveRestarting(ctx context.Context, run func(context.Context, app.RestartO
 		err = r.exec()
 		log.Error("could not run the upgraded binary; this one serves on", "err", err)
 	}
-}
-
-// enginePath is the absolute path of the engine config, which the engine
-// names in the commands it gives the person.
-func enginePath(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		return abs
-	}
-	return path
 }
 
 // runMCP is the agent's MCP server: a relay from stdio to the agent's engine
@@ -276,7 +239,7 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	} else {
 		// A service engine's config is the engine's own: the person can
 		// list its socket directory, not read the config.
-		names = socketAgents(socketDir)
+		names = engine.SocketAgents(socketDir)
 	}
 	if *name == "" {
 		if len(names) != 1 {
@@ -291,7 +254,7 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	}
 	path := config.SocketPath(socketDir, *name)
 	log := m.EngineLog(io.Err)
-	down, err := m.EngineDown(shimAgent(*name, path), enginePath(cfgPath), log)
+	down, err := m.EngineDown(engine.ShimAgent(*name, path), engine.EnginePath(cfgPath), log)
 	if err != nil {
 		return fail(io.Err, "mcp", err)
 	}
@@ -302,38 +265,13 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path)}
 	if exe, err := cli.ShimExecutable(); err == nil {
 		var failure func() string
-		opts.Start, failure = m.EngineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
+		opts.Start, failure = m.EngineStarter(engine.EnginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
 	if err := shim.ServeWith(ctx, path, m.NewEngineDownServer(down), io.In, io.Out, opts); err != nil {
 		return fail(io.Err, "mcp", err)
 	}
 	return cli.ExitOK
-}
-
-// socketAgents are the agents with a socket in dir.
-func socketAgents(dir string) []string {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		name, ok := strings.CutSuffix(e.Name(), ".sock")
-		if ok && e.Type()&os.ModeSocket != 0 && config.ValidAgentName(name) {
-			names = append(names, name)
-		}
-	}
-	return names
-}
-
-// shimAgent names the agent in status when basalt mcp was given only a
-// socket path: the socket's base name.
-func shimAgent(name, socket string) string {
-	if name != "" {
-		return name
-	}
-	return strings.TrimSuffix(filepath.Base(socket), ".sock")
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.

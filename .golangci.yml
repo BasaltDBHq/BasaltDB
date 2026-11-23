@@ -202,7 +202,7 @@ linters:
         # on a store adapter or on the agent service.
         no-adapter-in-ledger-and-pii:
           files:
-            - "**/internal/adapter/outbound/postgres/ledger/**"
+            - "**/internal/platform/postgres/ledger/**"
             - "**/internal/core/approval/**"
             - "**/internal/core/revert/**"
             - "**/internal/core/pii/**"

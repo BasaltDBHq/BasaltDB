@@ -116,7 +116,7 @@ The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lis
 | Revert code and authorisation line | `internal/core/revert` |
 | Passkey signature check | `internal/core/passkey` |
 | Revert SQL, verified inside Postgres | `internal/adapter/outbound/postgres/guard/revert.go`, `rescope.go`, `schema/006_reverts.sql` |
-| Ledger side of a revert | `internal/adapter/outbound/postgres/ledger/reverts.go` |
+| Ledger side of a revert | `internal/platform/postgres/ledger/reverts.go` |
 | The person's page | `internal/platform/pageserver/pages.go`, `internal/revert/in/revertpage` |
 | Command line | `cmd/basalt` |
 
@@ -128,6 +128,6 @@ The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lis
 | Approval code and the line the person signs | `internal/core/approval` |
 | Passkey signature check | `internal/core/passkey` |
 | Approval SQL, verified inside Postgres | `internal/adapter/outbound/postgres/guard/approval.go`, `schema/005_approvals.sql` |
-| Ledger side | `internal/adapter/outbound/postgres/ledger/approvals.go` |
+| Ledger side | `internal/platform/postgres/ledger/approvals.go` |
 | The person's page | `internal/platform/pageserver/pages.go`, `internal/approval/in/approvalpage` |
 | Plugin approvals | `internal/service/agent/approval_plugin.go`, `internal/core/approval/plugin.go` |

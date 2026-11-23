@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
@@ -100,7 +101,7 @@ var openKeptStore = plugin.OpenKeptStore
 // the agent's own connection, and the engine's admission of the agent (nil
 // admits it).
 type pluginLedger struct {
-	db    plugin.Querier
+	db    guard.Querier
 	admit func(context.Context) error
 }
 
@@ -133,7 +134,7 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 
 // keptAgent is an agent as the plugin methods reach it.
 type keptAgent struct {
-	db       plugin.Querier
+	db       guard.Querier
 	host     string
 	port     uint16
 	database string

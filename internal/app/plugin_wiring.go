@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -67,9 +66,6 @@ func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) 
 	child.Reap(dir, log)
 	return &child.Runs{Dir: dir}
 }
-
-// engineEUID is the engine's effective user id.
-func engineEUID() int { return os.Geteuid() }
 
 var pluginDebugWriter = plugin.DebugWriter
 

@@ -109,8 +109,8 @@ func (s snapshot) SeqRetired(ctx context.Context, seq int64) (bool, error) {
 	return guard.SeqRetired(ctx, s.tx, seq)
 }
 
-func (s snapshot) ReadFeedRows(ctx context.Context, after int64, limit int) ([]guardmodel.FeedRow, error) {
-	return guard.ReadFeedRows(ctx, s.tx, after, limit)
+func (s snapshot) ReadFeedRows(ctx context.Context, after int64, limit int, f guardmodel.FeedFilter) ([]guardmodel.FeedRow, error) {
+	return guard.ReadFeedRows(ctx, s.tx, after, limit, f)
 }
 
 func (s snapshot) OldestSeqAfter(ctx context.Context, after int64) (int64, bool, error) {

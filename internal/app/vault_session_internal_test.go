@@ -27,11 +27,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -65,10 +67,10 @@ func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (agent
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.approved {
-		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
+		return agent.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "this approval was already used"}
 	}
 	if _, err := approvaltest.Verify(a.binding, a.cred, r); err != nil {
-		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
+		return agent.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "the signature does not verify"}
 	}
 	a.approved = true
 	return a.receipt, nil
@@ -191,13 +193,13 @@ func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.A
 	t.Helper()
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	site := newPages(links.Portal, quietLog())
 	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, sessionDispatcher{site})
 	require.NotNil(t, ev.client)
-	relay.add("bot", store, ev.client.Unregister)
+	relay.Add("bot", store, ev.client.Unregister)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -432,10 +434,10 @@ func TestVaultSessionEndsWhenItsLinkIsRevoked(t *testing.T) {
 // check, so a probe cannot tell them apart by time.
 func TestVaultSessionDeadTokenTiming(t *testing.T) {
 	t.Parallel()
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	for range 2 {
 		store := links.NewSecrets(time.Now, rand.Reader)
-		relay.add("bot", store, func(channel.LinkToken) {})
+		relay.Add("bot", store, func(channel.LinkToken) {})
 		for range 50 {
 			_, _, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 			require.NoError(t, err)
@@ -456,7 +458,7 @@ func TestVaultSessionDeadTokenTiming(t *testing.T) {
 		require.NoError(t, err)
 		token := keys.Token
 		lookup := func(t channel.LinkToken) (channel.PSK, bool) {
-			l, ok := relay.Session(t)
+			l, ok := vaultLinks{relay}.Session(t)
 			return l.PSK, ok
 		}
 		start := time.Now()

@@ -19,15 +19,16 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
@@ -115,7 +116,7 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 	return func(ctx context.Context) error {
 		err := svc.Admit(ctx)
 		var te *toolresult.ToolError
-		var se *agent.SetupError
+		var se *guidance.SetupError
 		if errors.As(err, &te) || errors.As(err, &se) {
 			return fmt.Errorf("%w: %w", ErrNotAdmitted, err)
 		}

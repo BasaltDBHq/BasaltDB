@@ -11,6 +11,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 func TestHoldsAdminCredential(t *testing.T) {
@@ -132,7 +133,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	tools := Tools(NewService(d))
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...)
 	url := "postgres://admin:" + secret + "@db.example.com:5432/app"
-	entry, ok := catalogOf(t).ErrorEntry(CodeInvalidArgument, ReasonAdminCredential, "")
+	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, ReasonAdminCredential, "")
 	require.True(t, ok)
 
 	for _, tool := range tools {
@@ -142,7 +143,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 		} {
 			body, isError := serveCall(t, srv, tool.Name, args)
 			require.True(t, isError, tool.Name+" "+name)
-			require.Equal(t, CodeInvalidArgument, body["code"], tool.Name)
+			require.Equal(t, guidance.CodeInvalidArgument, body["code"], tool.Name)
 			require.Equal(t, ReasonAdminCredential, body["reason"], tool.Name)
 			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
 			require.Contains(t, body["personMessage"], "Change that database password", tool.Name)

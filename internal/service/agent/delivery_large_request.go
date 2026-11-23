@@ -132,7 +132,7 @@ func (s *Service) tooLargeMessage(what string, cost int64, expires time.Time, is
 // agent's basalt init, whose link opens the page for it.
 func (s *Service) tooLargeText(what string, cost int64, expires time.Time, isRevert bool) string {
 	lead := what + " is too large for a link, so no link was given."
-	until := " It expires at " + expires.UTC().Format(personTime) + "."
+	until := " It expires at " + expires.UTC().Format(guidance.PersonTime) + "."
 	narrower := ""
 	if isRevert {
 		narrower = " Or ask the agent for a narrower revert (only some runs or tables)."
@@ -199,7 +199,7 @@ func (s *Service) revertTooLargeError(id uuid.UUID, cost int64, expires time.Tim
 		return err
 	}
 	return &toolresult.ToolError{
-		Code: CodeQueryTimeout, Reason: reasonRequestTooLarge,
+		Code: guidance.CodeQueryTimeout, Reason: reasonRequestTooLarge,
 		Message: fmt.Sprintf("revert %s is prepared, but its rows are too large for any link this engine has: "+
 			"a page decodes at most 1 MiB from a link. It stays pending until it expires (list_pending lists it); "+
 			"do what nextSteps say.", id),

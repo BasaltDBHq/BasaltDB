@@ -454,7 +454,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 		s.deps.Core.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
 		// An engine failure, not the agent's SQL: INTERNAL even when a
 		// Postgres error (a map reload) caused it. The cause is logged above.
-		return QueryOutcome{}, &toolresult.ToolError{Code: CodeInternal, Message: "internal engine error"}
+		return QueryOutcome{}, &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
 	}
 	change, err := s.deps.Core.Store.RecordRead(ctx, action.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
@@ -486,7 +486,7 @@ func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error)
 	}
 	run, err := s.deps.Core.Store.FindRun(ctx, id)
 	if errors.Is(err, action.ErrRunNotFound) {
-		return action.Run{}, &toolresult.ToolError{Code: CodeNotFound, Reason: guidance.ReasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
+		return action.Run{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}
 	return run, err
 }
@@ -496,7 +496,7 @@ func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error)
 // arguments, a missing run, and an unreachable database are not actions.
 func recorded(code string) bool {
 	switch code {
-	case CodeInvalidArgument, CodeNotFound, CodeUnavailable, CodeInternal:
+	case guidance.CodeInvalidArgument, guidance.CodeNotFound, guidance.CodeUnavailable, guidance.CodeInternal:
 		return false
 	}
 	return true
@@ -506,7 +506,7 @@ func recorded(code string) bool {
 // keeps, and returns err. A failure to record is logged; the agent still
 // gets the original refusal.
 func (s *Service) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
-	te := messageTooLarge(actionTool(op), err, s.deps.Core.Errors.ToolError(err))
+	te := guidance.MessageTooLarge(actionTool(op), err, s.deps.Core.Errors.ToolError(err))
 	if !recorded(te.Code) {
 		return err
 	}

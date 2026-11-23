@@ -101,7 +101,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		p.ApprovalID, p.RunID = id, run.ID
 		out, waitErr := s.applyApproved(ctx, p)
 		var te *toolresult.ToolError
-		if errors.As(waitErr, &te) && te.Code == CodeApprovalRequired {
+		if errors.As(waitErr, &te) && te.Code == guidance.CodeApprovalRequired {
 			return WriteOutcome{}, err
 		}
 		return out, waitErr
@@ -150,12 +150,12 @@ func refusalOp(op action.Op) action.Op {
 // fit the guard's ledger limit.
 func checkArgs(stmt action.Statement, params []any) error {
 	if stmt.ParamCount != len(params) {
-		return &ArgumentError{Message: fmt.Sprintf("the statement uses %d parameters ($1..$%d) but %d were given",
+		return &guidance.ArgumentError{Message: fmt.Sprintf("the statement uses %d parameters ($1..$%d) but %d were given",
 			stmt.ParamCount, stmt.ParamCount, len(params))}
 	}
 	raw, err := json.Marshal(params)
 	if err != nil || len(raw) > maxParamsBytes {
-		return &ArgumentError{Message: "params must encode to at most 64 KiB of JSON"}
+		return &guidance.ArgumentError{Message: "params must encode to at most 64 KiB of JSON"}
 	}
 	return nil
 }

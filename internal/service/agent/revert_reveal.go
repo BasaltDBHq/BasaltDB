@@ -8,6 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -52,7 +53,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 		return approval.RevealAnswer{}, s.revealRevertError(r, err, s.pageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
-		return approval.RevealAnswer{}, revealRowsChanged(CodeRevertInvalid, "revert", "Prepare it again")
+		return approval.RevealAnswer{}, revealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
 	}
 	return checkedAnswer(lines, out.Rows)
 }
@@ -60,18 +61,18 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 // revealRevertError is the page's answer to a revert reveal Postgres
 // refused.
 func (s *Service) revealRevertError(r action.Revert, err error, link string) error {
-	code, _ := ledgerCode(err)
-	detail := storeDetail(err)
+	code, _ := guidance.LedgerCode(err)
+	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevealRefused:
-		return revealRefused(CodeRevertInvalid, link)
+		return revealRefused(guidance.CodeRevertInvalid, link)
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:
-		return &PageError{ToolError: &toolresult.ToolError{
-			Code:          CodeRevertInvalid,
+		return &guidance.PageError{ToolError: &toolresult.ToolError{
+			Code:          guidance.CodeRevertInvalid,
 			Message:       "the hidden rows cannot be shown: the revert was signed or rejected meanwhile",
 			PersonMessage: "This revert was signed or rejected meanwhile, so its hidden rows can no longer be shown.",
 		}}

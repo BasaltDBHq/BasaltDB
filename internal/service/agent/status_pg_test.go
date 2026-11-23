@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -62,7 +63,7 @@ func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 		{"list_runs", map[string]any{}},
 	} {
 		body, isError := h.call(t, tool.name, tool.args)
-		requireToolError(t, body, isError, agent.CodeUnavailable, "GUARD_OUTDATED", "")
+		requireToolError(t, body, isError, guidance.CodeUnavailable, "GUARD_OUTDATED", "")
 		steps := body["nextSteps"].([]any)
 		require.Len(t, steps, 3, tool.name)
 		require.Equal(t, "basalt init --agent bot", steps[0].(map[string]any)["command"], tool.name)
@@ -127,7 +128,7 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 	body, isError = h.call(t, "write", map[string]any{
 		"sql": "DELETE FROM leads WHERE id = $1", "params": []any{1}, "intent": "drop the lead", "runId": runID,
 	})
-	requireToolError(t, body, isError, agent.CodeApprovalRequired, "", "")
+	requireToolError(t, body, isError, guidance.CodeApprovalRequired, "", "")
 	require.NotEmpty(t, body["approval"].(map[string]any)["approvalId"], "the delete is held with an approval")
 
 	body, isError = h.call(t, "status", map[string]any{})

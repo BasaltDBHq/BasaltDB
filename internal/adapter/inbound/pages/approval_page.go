@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -45,7 +46,7 @@ func (p approvalPage) postApproval(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := approval.DecodeResponse(body)
 	if err != nil || resp.ApprovalID != id {
-		p.s.Fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
+		p.s.Fail(w, &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
 		return
 	}
 	receipt, err := Find(r.Context(), p.s, func(ctx context.Context, a Agent) (agent.Receipt, error) { return a.RelayApproval(ctx, resp) })

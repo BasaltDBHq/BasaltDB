@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -111,7 +112,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	rt := r.start(t)
 
 	// Before the person's laptop: every tool but status is held.
-	var se *agent.SetupError
+	var se *guidance.SetupError
 	require.ErrorAs(t, rt.svc.Admit(ctx), &se)
 	st, err := rt.svc.Status(ctx)
 	require.NoError(t, err)

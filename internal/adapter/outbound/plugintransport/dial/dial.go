@@ -15,7 +15,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"

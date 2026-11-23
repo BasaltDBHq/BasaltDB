@@ -67,7 +67,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 		return err
 	}
 	p.Headline = headline
-	expires := p.ExpiresAt.UTC().Format(personTime)
+	expires := p.ExpiresAt.UTC().Format(guidance.PersonTime)
 	if p.Widened {
 		p.PersonMessage = fmt.Sprintf("%s %s It waits for your passkey on the page where you changed the scope, until %s.",
 			widenedMessage, headline, expires)

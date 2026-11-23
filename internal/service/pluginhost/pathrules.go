@@ -11,7 +11,7 @@ import (
 
 // PathRules is the port for the path rule: who may write the directories and
 // files the host trusts (CONTRACT.md, Plugins, Where plugins live). The rule
-// reads the file system, so an outbound adapter (adapter/outbound/pluginpath)
+// reads the file system, so an outbound adapter (plugin/out/pluginpath)
 // implements it and the app installs it with UsePathRules.
 type PathRules interface {
 	// Owner is the uid the rule requires for mode.

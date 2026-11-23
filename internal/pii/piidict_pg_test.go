@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+	"github.com/basaltdbhq/basaltdb/internal/pii/out/dictfile"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

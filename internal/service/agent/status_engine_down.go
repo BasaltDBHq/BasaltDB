@@ -76,12 +76,12 @@ func (d EngineDown) gaveUpMessage() string {
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
 // answering as above.
-func (d EngineDown) Tools() []Tool {
+func (d EngineDown) Tools() []guidance.Tool {
 	if d.Log == nil || d.Now == nil {
 		panic("agent: engine-down tools need a logger and a clock")
 	}
 	contracts := mcpcontract.MustLoad()
-	out := make([]Tool, 0, len(contracts))
+	out := make([]guidance.Tool, 0, len(contracts))
 	for _, c := range contracts {
 		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
 			continue
@@ -90,14 +90,14 @@ func (d EngineDown) Tools() []Tool {
 		if c.Name == guidance.ToolStatus {
 			call = d.status
 		}
-		out = append(out, Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
+		out = append(out, guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
 	}
 	return out
 }
 
 func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) {
 	var args struct{}
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
 	return EngineDownStatusAfterStart(d.Host, d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
@@ -124,7 +124,7 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 // retry is the tool an agent-operated engine's agent calls again once it
 // started the engine; "" calls status.
 func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.ToolError, error) {
-	te := &toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
+	te := &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
 	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
 	b := guidance.NewSteps()
 	te.PersonMessage = engineUnreachableSteps(b, d.commands(), retry)
@@ -164,7 +164,7 @@ func (d EngineDown) commands() Commands {
 }
 
 func (d EngineDown) invalidArgument(err error) *toolresult.ToolError {
-	te := &toolresult.ToolError{Code: CodeInvalidArgument, Message: err.Error()}
+	te := &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: err.Error()}
 	b := guidance.NewSteps()
 	invalidArgumentSteps(b, te, failure{tool: guidance.ToolStatus})
 	te.NextSteps, _ = b.Build() // one fixed step: it cannot fail

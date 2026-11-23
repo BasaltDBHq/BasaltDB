@@ -107,7 +107,7 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 			err := svc.Admit(context.Background())
 			require.Error(t, err)
 			if tc.held {
-				var se *SetupError
+				var se *guidance.SetupError
 				require.ErrorAs(t, err, &se)
 			}
 			r, err := svc.Status(context.Background())

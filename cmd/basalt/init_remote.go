@@ -14,22 +14,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
-
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // basalt init --remote runs on the engine's machine, which the agent may
@@ -1233,7 +1231,7 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) Rem
 }
 
 // setupPersonMessage is what the agent shows the person verbatim, within
-// agent.MaxPersonMessageLength for the longest agent name: it names the
+// guidance.MaxPersonMessageLength for the longest agent name: it names the
 // agent once.
 func setupPersonMessage(name, fingerprint string) string {
 	return fmt.Sprintf("Finish setting up Basalt for %s: open %s, paste the setup code the agent shows you, "+

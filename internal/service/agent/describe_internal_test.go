@@ -184,7 +184,7 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 // would, and returns the JSON it gets: the result or the error body.
 func callDescribe(t *testing.T, s *Service, args map[string]any) (string, bool) {
 	t.Helper()
-	var describe Tool
+	var describe guidance.Tool
 	for _, tool := range Tools(s) {
 		if tool.Name == toolDescribe {
 			describe = tool
@@ -418,7 +418,7 @@ func TestDescribeNotFoundSameForAbsentAndHidden(t *testing.T) {
 		require.Equal(t, strings.ReplaceAll(hidden, "secret", "nosuch"), absent, "only the echoed name differs")
 
 		m := decodeBody(t, absent)
-		require.Equal(t, CodeNotFound, m["code"])
+		require.Equal(t, guidance.CodeNotFound, m["code"])
 		require.Equal(t, []string{"AGENT CALL_TOOL", "AGENT ASK_PERSON", "PERSON TELL_AGENT", "AGENT RUN_COMMAND"}, stepKinds(t, m), operatedBy)
 		steps := m["nextSteps"].([]any)
 		require.Equal(t, map[string]any{"query": "nosuch"}, steps[0].(map[string]any)["arguments"])
@@ -505,7 +505,7 @@ func TestDescribeRejectsQueryAndResourceTogether(t *testing.T) {
 		body, isError := callDescribe(t, s, args)
 		require.True(t, isError, "%v: %s", args, body)
 		m := decodeBody(t, body)
-		require.Equal(t, CodeInvalidArgument, m["code"], "%v", args)
+		require.Equal(t, guidance.CodeInvalidArgument, m["code"], "%v", args)
 		require.Equal(t, []string{"AGENT REVISE_CALL"}, stepKinds(t, m), "%v", args)
 	}
 }
@@ -516,8 +516,8 @@ func TestDescribeStaleCursor(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"query": "orders", "cursor": "not-a-cursor"})
 	require.True(t, isError)
 	m := decodeBody(t, body)
-	require.Equal(t, CodeInvalidArgument, m["code"])
-	require.Equal(t, ReasonStaleCursor, m["reason"])
+	require.Equal(t, guidance.CodeInvalidArgument, m["code"])
+	require.Equal(t, guidance.ReasonStaleCursor, m["reason"])
 }
 
 func TestDescribeQuotedResourceNames(t *testing.T) {
@@ -686,11 +686,11 @@ func TestDescribeErrorsStayInTheContract(t *testing.T) {
 			err  error
 			code string
 		}{
-			{store.MapError(&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}), CodeInternal},
-			{store.MapError(&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}), CodeInternal},
-			{store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}), CodeQueryTimeout},
-			{store.MapError(&pgconn.PgError{Code: "08006", Message: "connection failure"}), CodeUnavailable},
-			{errors.New("boom"), CodeInternal},
+			{store.MapError(&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}), guidance.CodeInternal},
+			{store.MapError(&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}), guidance.CodeInternal},
+			{store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}), guidance.CodeQueryTimeout},
+			{store.MapError(&pgconn.PgError{Code: "08006", Message: "connection failure"}), guidance.CodeUnavailable},
+			{errors.New("boom"), guidance.CodeInternal},
 		} {
 			s := describeService(t, &errCatalog{err: c.err}, fakeClasses{}, "")
 			body, isError := callDescribe(t, s, args)
@@ -699,7 +699,7 @@ func TestDescribeErrorsStayInTheContract(t *testing.T) {
 			require.Equal(t, c.code, m["code"], "%s: %v", name, c.err)
 			require.NotEmpty(t, m["nextSteps"], "%s: %v", name, c.err)
 			require.NotContains(t, body, "pg_class", "an engine failure names nothing")
-			if c.code == CodeQueryTimeout {
+			if c.code == guidance.CodeQueryTimeout {
 				text := m["nextSteps"].([]any)[0].(map[string]any)["text"].(string)
 				require.NotContains(t, text, "statement", "%s: the step fits describe", name)
 				if name == "search" {
@@ -722,7 +722,7 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}} {
 		body, isError := callDescribe(t, s, args)
 		require.True(t, isError, "%v", args)
-		require.Equal(t, CodeInternal, decodeBody(t, body)["code"], "%v", args)
+		require.Equal(t, guidance.CodeInternal, decodeBody(t, body)["code"], "%v", args)
 		require.NotContains(t, body, "card_token")
 	}
 }

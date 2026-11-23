@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -75,7 +76,7 @@ func (s *Service) issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, 
 		return "", err
 	}
 	if link == "" {
-		return "", &toolresult.ToolError{Code: CodeUnavailable, Message: "this engine serves no pages"}
+		return "", &toolresult.ToolError{Code: guidance.CodeUnavailable, Message: "this engine serves no pages"}
 	}
 	return link, nil
 }

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 )
 
 // The path rule is a port the app fills; the tests fill it with the real one.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -30,13 +31,13 @@ type describeArgs struct {
 func (a describeArgs) check() error {
 	switch {
 	case a.Sort != "":
-		return &ArgumentError{Message: "invalid arguments: describe has no sort; search results come ranked"}
+		return &guidance.ArgumentError{Message: "invalid arguments: describe has no sort; search results come ranked"}
 	case a.Query != nil && a.Resource != nil:
-		return &ArgumentError{Message: "invalid arguments: give query (search) or resource (one table), not both"}
+		return &guidance.ArgumentError{Message: "invalid arguments: give query (search) or resource (one table), not both"}
 	case a.IfFingerprint != nil && a.Resource == nil:
-		return &ArgumentError{Message: "invalid arguments: ifFingerprint goes with resource"}
+		return &guidance.ArgumentError{Message: "invalid arguments: ifFingerprint goes with resource"}
 	case (a.Limit != 0 || a.Cursor != "") && a.Query == nil:
-		return &ArgumentError{Message: "invalid arguments: limit and cursor go with query"}
+		return &guidance.ArgumentError{Message: "invalid arguments: limit and cursor go with query"}
 	}
 	return nil
 }
@@ -69,7 +70,7 @@ func (h handlers) describe(ctx context.Context, raw json.RawMessage) (any, error
 
 func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args describeArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	if err := args.check(); err != nil {

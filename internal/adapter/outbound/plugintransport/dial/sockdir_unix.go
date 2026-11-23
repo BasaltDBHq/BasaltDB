@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 
 	"golang.org/x/sys/unix"
 )

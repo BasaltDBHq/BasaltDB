@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -65,7 +66,7 @@ func (p revertPage) postRevert(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := revert.DecodeResponse(body)
 	if err != nil || resp.RevertID != id {
-		p.s.Fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
+		p.s.Fail(w, &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
 		return
 	}
 	out, err := Find(r.Context(), p.s, func(ctx context.Context, a Agent) (relayedRevert, error) {
@@ -98,7 +99,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
 		p.s.Fail(w, &toolresult.ToolError{
-			Code:    agent.CodeInvalidArgument,
+			Code:    guidance.CodeInvalidArgument,
 			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together",
 		})
 		return
@@ -131,7 +132,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() {
 		p.s.Fail(w, &toolresult.ToolError{
-			Code:    agent.CodeInvalidArgument,
+			Code:    guidance.CodeInvalidArgument,
 			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)",
 		})
 		return

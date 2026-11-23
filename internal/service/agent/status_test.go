@@ -585,7 +585,7 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 // that status still answers.
 func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, inMessage string) {
 	t.Helper()
-	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, reason, "")
+	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeUnavailable, reason, "")
 	require.True(t, ok)
 	for _, tool := range tools {
 		if tool.Name == guidance.ToolStatus {
@@ -596,12 +596,12 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 			// admitted further.
 			body, isError := serveCall(t, srv, tool.Name, map[string]any{})
 			require.True(t, isError)
-			require.Equal(t, CodeInvalidArgument, body["code"])
+			require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 			continue
 		}
 		body, isError := serveCall(t, srv, tool.Name, map[string]any{})
 		require.True(t, isError, tool.Name)
-		require.Equal(t, CodeUnavailable, body["code"], tool.Name)
+		require.Equal(t, guidance.CodeUnavailable, body["code"], tool.Name)
 		require.Equal(t, reason, body["reason"], tool.Name)
 		require.NotEmpty(t, body["errorId"], tool.Name)
 		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
@@ -696,7 +696,7 @@ func TestStatusRefusesArguments(t *testing.T) {
 	srv, _ := degraded(t, &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, nil)
 	body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{"verbose": true})
 	require.True(t, isError)
-	require.Equal(t, CodeInvalidArgument, body["code"])
+	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 }
 
 // --- the shim's tools ---
@@ -715,7 +715,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	sort.Strings(served)
 	require.NoError(t, mcpcontract.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 
-	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, guidance.ReasonEngineUnreachable, "query")
+	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "query")
 	require.True(t, ok)
 	for _, tool := range served {
 		if tool == guidance.ToolStatus {
@@ -723,7 +723,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 		}
 		body, isError := serveCall(t, srv, tool, map[string]any{})
 		require.True(t, isError, tool)
-		require.Equal(t, CodeUnavailable, body["code"], tool)
+		require.Equal(t, guidance.CodeUnavailable, body["code"], tool)
 		require.Equal(t, guidance.ReasonEngineUnreachable, body["reason"], tool)
 		require.NotEmpty(t, body["errorId"], tool)
 		require.NotEmpty(t, body["personMessage"], tool)
@@ -738,7 +738,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 
 	body, isError = serveCall(t, srv, guidance.ToolStatus, map[string]any{"x": 1})
 	require.True(t, isError)
-	require.Equal(t, CodeInvalidArgument, body["code"])
+	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 	require.NotEmpty(t, body["nextSteps"])
 }
 
@@ -756,7 +756,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
 
-	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, CodeUnavailable, guidance.ReasonEngineUnreachable, "")
+	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
@@ -1106,7 +1106,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Equal(t, problemEngineUnreachable, r.Problems[1].Code, "the manual step stays")
 	require.False(t, r.Ready)
 
-	var query Tool
+	var query guidance.Tool
 	for _, tool := range down.Tools() {
 		if tool.Name == "query" {
 			query = tool

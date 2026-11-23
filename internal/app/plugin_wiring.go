@@ -12,12 +12,13 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
@@ -127,7 +128,7 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 	return func(ctx context.Context) error {
 		err := svc.Admit(ctx)
 		var te *toolresult.ToolError
-		var se *agent.SetupError
+		var se *guidance.SetupError
 		if errors.As(err, &te) || errors.As(err, &se) {
 			return fmt.Errorf("%w: %w", engine.ErrNotAdmitted, err)
 		}
@@ -191,16 +192,16 @@ func (p *pluginRequests) uploadMethods(caller string, served func() error) map[s
 func uploadError(err error) *toolresult.ToolError {
 	var te *toolresult.ToolError
 	var r *agent.PluginRefusedError
-	var ae *agent.ArgumentError
+	var ae *guidance.ArgumentError
 	switch {
 	case errors.As(err, &te):
 		return te
 	case errors.As(err, &r):
 		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
 	case errors.As(err, &ae):
-		return &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: ae.Message}
+		return &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: ae.Message}
 	case errors.Is(err, agent.ErrPluginNotFound):
-		return &toolresult.ToolError{Code: agent.CodeNotFound, Message: "the upload is unknown, expired or used"}
+		return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: "the upload is unknown, expired or used"}
 	}
-	return &toolresult.ToolError{Code: agent.CodeInternal, Message: "the engine could not take the plugin's files"}
+	return &toolresult.ToolError{Code: guidance.CodeInternal, Message: "the engine could not take the plugin's files"}
 }

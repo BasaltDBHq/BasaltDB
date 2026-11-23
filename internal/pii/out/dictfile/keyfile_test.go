@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+	"github.com/basaltdbhq/basaltdb/internal/pii/out/dictfile"
 
 	"github.com/stretchr/testify/require"
 

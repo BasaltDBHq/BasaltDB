@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -75,10 +77,10 @@ func AgentErrors() guidance.ErrorMap {
 // AgentEngineHost is what the status of an engine that is down reads from
 // the host.
 func AgentEngineHost() agent.EngineHost {
-	return agent.EngineHost{LatestGuardVersion: guard.LatestVersion, StartHoldOffUntil: agentStartHoldOffUntil}
+	return agent.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.ReadLastStop, StartHoldOffUntil: agentStartHoldOffUntil}
 }
 
-func agentStartHoldOffUntil(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
+func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 	return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 }
 

@@ -9,11 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
 	t.Parallel()
-	status := func(update func() *UpdateNotice) (StatusReport, *Service) {
+	status := func(update func() *UpdateNotice) (guidance.StatusReport, *Service) {
 		d := deps()
 		d.Status.Update = update
 		d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}

@@ -20,7 +20,7 @@ import (
 // devLocalSaved are init's saved flags on a development engine.
 // devLocalStatus is the status report of an agent-operated engine on
 // development pages.
-func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
+func devLocalStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy

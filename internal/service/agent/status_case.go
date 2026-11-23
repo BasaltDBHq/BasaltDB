@@ -6,6 +6,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // statusKeeper is the status use case: the status tool, the call admission, the
@@ -53,7 +54,7 @@ func (sc *statusKeeper) guardStatus(ctx context.Context) (guardmodel.Status, err
 // or a missing guard is a problem in the result, not an error. It never
 // names the credential file.
 // Status is the status use case's Status.
-func (s *Service) Status(ctx context.Context) (StatusReport, error) {
+func (s *Service) Status(ctx context.Context) (guidance.StatusReport, error) {
 	return s.status.Status(ctx)
 }
 

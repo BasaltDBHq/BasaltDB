@@ -22,7 +22,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const (
@@ -156,7 +155,7 @@ func TestSuperviseStopsWhenStartedFromPathIsGone(t *testing.T) {
 	require.NoError(t, os.Remove(bin))
 
 	require.Eventually(t, func() bool {
-		stop, ok := agent.ReadLastStop(stateDir)
+		stop, ok := engine.ReadLastStop(stateDir)
 		return ok && strings.Contains(stop.Reason, "is gone") && strings.Contains(stop.Reason, bin)
 	}, 8*time.Second, 50*time.Millisecond)
 	err = cmd.Wait()

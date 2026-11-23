@@ -21,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // These tests run the engine's agent runtime against a real Postgres
@@ -92,7 +91,7 @@ func verifierOf(t *testing.T, password string) string {
 	return v
 }
 
-func problemCodes(r agent.StatusReport) []string {
+func problemCodes(r guidance.StatusReport) []string {
 	out := make([]string, 0, len(r.Problems))
 	for _, p := range r.Problems {
 		out = append(out, p.Code)
@@ -130,7 +129,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	r.record(t, d, guardmodel.SetupInstall)
 	st, err = rt.svc.Status(ctx)
 	require.NoError(t, err)
-	require.Equal(t, agent.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guardmodel.SetupInstall}, st.Setup)
+	require.Equal(t, guidance.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guardmodel.SetupInstall}, st.Setup)
 	require.Equal(t, []string{"NO_PASSKEY"}, problemCodes(st), "no passkey yet: a usual problem, not an unfinished setup")
 	require.Equal(t, "AGENT", st.Problems[0].NextSteps[0].Actor, "the agent makes the code that registers one")
 	require.False(t, st.Ready, "not ready until a passkey can sign; the tools are still served")

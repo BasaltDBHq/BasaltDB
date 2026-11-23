@@ -126,7 +126,7 @@ func refusedLogin(context.Context, string) (cli.AgentConn, error) {
 }
 
 // noNetworkProbe stands in for the TLS probe of a new credential
-// (hardenedCredential): a database that cannot be reached, so tests without
+// (setup.HardenedCredential): a database that cannot be reached, so tests without
 // Postgres never dial the example hosts (Supabase's pooler among them).
 func noNetworkProbe(context.Context, string) error { return context.DeadlineExceeded }
 
@@ -497,7 +497,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 	e.probe = func(_ context.Context, dsn string) error {
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
-		probed = append(probed, u.Query().Get(paramSSLMode)+"/"+u.Query().Get(paramChannelBinding))
+		probed = append(probed, u.Query().Get(setup.ParamSSLMode)+"/"+u.Query().Get(setup.ParamChannelBinding))
 		return &pgconn.PgError{Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant}
 	}
 	r := remoteWith(t, e, cfg, "--agent", "bot")
@@ -507,8 +507,8 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 	require.NoError(t, err)
 	u, err := url.Parse(strings.TrimSpace(string(raw)))
 	require.NoError(t, err)
-	require.Equal(t, sslVerifyFull, u.Query().Get(paramSSLMode))
-	require.Empty(t, u.Query().Get(paramChannelBinding))
+	require.Equal(t, setup.SSLVerifyFull, u.Query().Get(setup.ParamSSLMode))
+	require.Empty(t, u.Query().Get(setup.ParamChannelBinding))
 	const line = "basalt: connection protected: database identity verified (channel binding not available through the Supabase pooler)\n"
 	require.Equal(t, 1, strings.Count(r.stderr, line), r.stderr)
 	requireNoSecret(t, r, cfg, credentialPassword(t, pending))
@@ -926,7 +926,7 @@ func sudo(t *testing.T, uid string) remoteEnv {
 	t.Helper()
 	e := noDB(t)
 	if uid != "" {
-		e.env = map[string]string{envSudoUID: uid}
+		e.env = map[string]string{setup.EnvSudoUID: uid}
 	}
 	return e
 }

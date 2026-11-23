@@ -80,8 +80,8 @@ func connectOnlyServer(t *testing.T, operatedBy string, h Handoff) ConnectOnly {
 }
 
 // connectOnlyStatusOf is ConnectOnly's status for the hand-off state st.
-func connectOnlyStatusOf(operatedBy string, st handoff.State) func(t *testing.T) StatusReport {
-	return func(t *testing.T) StatusReport {
+func connectOnlyStatusOf(operatedBy string, st handoff.State) func(t *testing.T) guidance.StatusReport {
+	return func(t *testing.T) guidance.StatusReport {
 		t.Helper()
 		r, err := connectOnlyServer(t, operatedBy, &fakeHandoff{st: st}).Status(context.Background())
 		require.NoError(t, err)
@@ -109,7 +109,7 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 		problemAddressInvalid: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
 		problemClockSkew:      {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
 		problemEngineAsRoot:   {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
-		problemSetupNotFound: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemSetupNotFound: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return operatedStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, 1, &confirmed, operatedBy)(t)
 		}},

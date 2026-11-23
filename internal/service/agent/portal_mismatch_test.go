@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -18,7 +19,7 @@ type fakePortal struct {
 
 func (p fakePortal) PortalFinding() (PortalFinding, bool) { return p.f, p.ok }
 
-func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusReport {
+func portalStatus(t *testing.T, operatedBy string, p PortalReporter) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
@@ -34,7 +35,7 @@ func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusRepor
 	return r
 }
 
-func portalCodes(r StatusReport) []string {
+func portalCodes(r guidance.StatusReport) []string {
 	out := make([]string, 0, len(r.Problems))
 	for _, p := range r.Problems {
 		out = append(out, p.Code)

@@ -2,15 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -31,40 +26,6 @@ import (
 //
 // Without a terminal, --yes or --no-service must say which: init never
 // falls back to the foreground on its own (checkServiceAnswer).
-
-// mcpBinary is the program of the printed basalt mcp command: the absolute,
-// link-resolved path of the running binary, which the agent app finds
-// whatever its PATH is. Bare basalt only when the path is unknown.
-func mcpBinary(h cli.Machine) string {
-	if exe, err := h.Executable(); err == nil {
-		return exe
-	}
-	return "basalt"
-}
-
-// temporaryBinaryWarning is a line to print after the mcp command when bin
-// is in a folder that is often temporary (under tmp, or a Go build cache),
-// else nothing. The command keeps the path; the person should move the
-// binary somewhere that survives and register that path.
-func temporaryBinaryWarning(bin, tmp string) string {
-	// bin is link-resolved; resolve tmp too, or a tmp that is a link
-	// (macOS /var -> /private/var) never matches.
-	if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
-		tmp = resolved
-	}
-	rel, err := filepath.Rel(tmp, bin)
-	underTmp := err == nil && rel != "." && !strings.HasPrefix(rel, "..")
-	if !underTmp && !strings.Contains(filepath.ToSlash(bin), "/go-build") {
-		return ""
-	}
-	return fmt.Sprintf("basalt: %s is in a folder that may be cleared; put the binary in a folder that survives and register that path instead\n", bin)
-}
-
-// mcpArgs is basalt mcp for the agent, with bin as the program. basalt mcp
-// finds the engine config and the socket directory by itself.
-func mcpArgs(agent, bin string) []string {
-	return []string{bin, "mcp", "--agent", agent}
-}
 
 // agentInstall is the agent basalt service install places for the engine.
 type agentInstall struct {
@@ -146,82 +107,3 @@ const (
 	flagKeepCredential = "keep-credential"
 	flagPersonUID      = "person-uid"
 )
-
-// dialogScript is the first install's fixed script for the running
-// binary, with every link resolved and checked as root would run it. The
-// script comes from h.
-func dialogScript(c *cli.IO, h localHost) (bin, script string, err error) {
-	bin, err = c.Host.ResolvedExecutable()
-	if err != nil {
-		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
-	}
-	if err := c.Host.System(c.Stderr, c.Stderr).CheckBinary(bin); err != nil {
-		return "", "", err
-	}
-	script, err = h.OSInstallScript(c.Goos, bin)
-	return bin, script, err
-}
-
-// dialogEngineArgs is the command the first install's unit runs.
-func dialogEngineArgs(goos, bin string) []string {
-	return []string{bin, "engine", "--config", config.DefaultPath(goos), "--supervise"}
-}
-
-// noDialog is init's stop when no administrator dialog can be shown: it
-// never falls back to running the engine as the person's user.
-func noDialog(err error) error {
-	return fmt.Errorf("basalt init installs the engine service through the system's administrator dialog, which only you can answer, and it cannot be shown here (%w). "+
-		"Run basalt init again in a desktop session on this machine; basalt does not run the engine as your user instead", err)
-}
-
-// darwinEngineLog is the engine service's log on macOS (the unit's
-// StandardErrorPath).
-const darwinEngineLog = "/Library/Logs/Basalt/engine.log"
-
-func engineLogHint(goos string) string {
-	if goos == "darwin" {
-		return darwinEngineLog
-	}
-	return "journalctl -u " + app.OSUnitName
-}
-
-// envSudoUID is the uid of the user who ran sudo.
-const envSudoUID = "SUDO_UID"
-
-// invokingUID is the uid of the person running init.
-func invokingUID(c *cli.IO) (uint32, error) {
-	euid := c.Host.Euid()
-	if euid != 0 {
-		return uint32(euid), nil
-	}
-	sudo := c.Getenv(envSudoUID)
-	if sudo == "" {
-		return 0, errNoPerson
-	}
-	return parseUID(sudo)
-}
-
-var errNoPerson = errors.New("no person to record (init runs as root without SUDO_UID); " +
-	"give --person-uid N, the person's OS user id")
-
-// checkPersons refuses no uid and root.
-func checkPersons(uids []uint32) error {
-	if len(uids) == 0 {
-		return errNoPerson
-	}
-	for _, u := range uids {
-		if u == 0 {
-			return errors.New("--person-uid 0 is root; give the person's OS user id")
-		}
-	}
-	return nil
-}
-
-// parseUID reads an OS user id.
-func parseUID(v string) (uint32, error) {
-	uid, err := strconv.ParseUint(strings.TrimSpace(v), 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("%q is not an OS user id", v)
-	}
-	return uint32(uid), nil
-}

@@ -44,11 +44,13 @@ type EngineDown struct {
 }
 
 // EngineHost is what the status of an engine that is down reads from the
-// host: the guard version this build installs, and when the supervisor
-// tries the engine again after it gave up.
+// host: the guard version this build installs, why the supervisor gave up
+// (last-stop.json in the state directory), and when it tries the engine
+// again after that.
 type EngineHost struct {
 	LatestGuardVersion func() int
-	StartHoldOffUntil  func(stop LastStop, configPath string, now time.Time) (time.Time, bool)
+	ReadLastStop       func(stateDir string) (guidance.LastStop, bool)
+	StartHoldOffUntil  func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
 }
 
 func (d EngineDown) startFailure() string {
@@ -64,7 +66,7 @@ func (d EngineDown) gaveUpMessage() string {
 	if d.Config == nil {
 		return ""
 	}
-	stop, ok := ReadLastStop(d.Config.StateDirFor(runtime.GOOS))
+	stop, ok := d.Host.ReadLastStop(d.Config.StateDirFor(runtime.GOOS))
 	if !ok {
 		return ""
 	}

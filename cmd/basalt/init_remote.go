@@ -390,7 +390,7 @@ func (r *remoteInit) paths() error {
 	if asRoot {
 		// The user who ran sudo is the person on this machine
 		// (CONTRACT.md, Recording the person). Never root.
-		person, err := invokingUID(r.c)
+		person, err := setupcli.InvokingUID(r.c)
 		if err == nil && person != 0 {
 			r.settings.PersonUIDs = []uint32{person}
 		}
@@ -1117,8 +1117,8 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if err != nil {
 		return err
 	}
-	dsn, applied := hardenedCredential(r.c.Ctx, r.c.Probe, dsn)
-	fmt.Fprint(r.c.Stderr, applied.line())
+	dsn, applied := setup.HardenedCredential(r.c.Ctx, r.c.Probe, pgErrors{}, dsn)
+	fmt.Fprint(r.c.Stderr, applied.Line())
 	path := r.credFile
 	if r.credExists {
 		path += pendingSuffix
@@ -1196,8 +1196,8 @@ func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) Rem
 // the text output names.
 func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
 	res.osUser = r.osUser
-	res.MCPCommand = mcpArgs(r.f.agent, mcpBinary(r.c.Host))
-	fmt.Fprint(r.c.Stderr, temporaryBinaryWarning(res.MCPCommand[0], os.TempDir()))
+	res.MCPCommand = setup.MCPArgs(r.f.agent, setup.MCPBinary(r.c.Host))
+	fmt.Fprint(r.c.Stderr, setup.TemporaryBinaryWarning(res.MCPCommand[0], os.TempDir()))
 	return res
 }
 

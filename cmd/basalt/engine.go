@@ -223,7 +223,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 		return nil
 	})
 	fs.Func(flagPersonUID, "install --agent: an OS user id of the person (repeatable; default: SUDO_UID)", func(v string) error {
-		uid, err := parseUID(v)
+		uid, err := setup.ParseUID(v)
 		if err != nil {
 			return err
 		}
@@ -256,10 +256,10 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 		if a.devLocalPages {
 			_, _ = fmt.Fprintln(io.Err, "basalt: "+config.DevLocalPagesWarning)
 		}
-		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
-			uid, err := parseUID(os.Getenv(envSudoUID))
+		if len(a.personUIDs) == 0 && os.Getenv(setup.EnvSudoUID) != "" {
+			uid, err := setup.ParseUID(os.Getenv(setup.EnvSudoUID))
 			if err != nil {
-				return fail(io.Err, "service", fmt.Errorf("%s: %w", envSudoUID, err))
+				return fail(io.Err, "service", fmt.Errorf("%s: %w", setup.EnvSudoUID, err))
 			}
 			a.personUIDs = []uint32{uid}
 		}
@@ -400,7 +400,7 @@ func waitingForAddress(spec app.OSSpec, name, cred string) bool {
 // with root or the engine's own OS user among them (CONTRACT.md, CLI,
 // Recording the person).
 func checkServicePersons(uids []uint32, engineUser string) error {
-	if err := checkPersons(uids); err != nil {
+	if err := setup.CheckPersons(uids); err != nil {
 		return err
 	}
 	u, err := user.Lookup(engineUser)

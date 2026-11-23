@@ -12,6 +12,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
@@ -44,7 +45,7 @@ func portalPluginService(t *testing.T, f *fakePluginRequests, r *pluginRelay, va
 	s := pluginService(t, f, append([]func(*Deps){portal}, opts...)...)
 	setApprovals(&s.deps, originKeys{origins: []string{links.Portal}}) // a passkey that signs on the portal
 	s.deps.Delivery.Relay = r
-	s.deps.Status.Vault = fixedVault{VaultStatus{State: vaultState}}
+	s.deps.Status.Vault = fixedVault{guidance.VaultStatus{State: vaultState}}
 	return s
 }
 

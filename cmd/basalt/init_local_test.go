@@ -250,11 +250,6 @@ func TestServiceRunsParse(t *testing.T) {
 	require.Equal(t, [2]int{4, 1}, [2]int{runs, last})
 	_, _, err = parseSystemdRuns("")
 	require.Error(t, err)
-
-	require.True(t, crashLoops(2, 1))
-	require.False(t, crashLoops(1, 1), "the first exit: the service manager has not started it again yet")
-	require.False(t, crashLoops(3, 0), "a clean exit, a restart")
-	require.False(t, crashLoops(1, -1))
 }
 
 // After the page's Remove deleted engine.json, basalt init (which the agent

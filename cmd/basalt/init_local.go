@@ -5,13 +5,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os/user"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 )
@@ -50,7 +51,7 @@ func runInitLocal(c *cli.IO, h localHost, args []string) int {
 		return c.Fail(fmt.Errorf("your OS user cannot be read: %w", err))
 	}
 	job.OSUser = me.Username
-	if err := ensureEngineService(c, h); err != nil {
+	if err := enginecli.EnsureService(c, h); err != nil {
 		return c.Fail(err)
 	}
 	state, err := waitForSetupPage(c)
@@ -183,17 +184,12 @@ func removeEngineService(c *cli.IO, h localHost) int {
 // outside the CLI: the engine service's fixed scripts, its unit's path and
 // its default OS user.
 type localHost interface {
-	// OSInstallScript is the first install's fixed script for binary.
-	OSInstallScript(goos, binary string) (string, error)
+	enginecli.InstallHost
 	// OSRemoveScript is the fixed script that removes the engine service.
 	OSRemoveScript(goos string) (string, error)
 	// OSResetScript is the fixed script that resets BasaltDB on this
 	// computer.
 	OSResetScript(goos string) (string, error)
-	// OSDefaultUser is the OS user the engine service runs as.
-	OSDefaultUser(goos string) string
-	// OSUnitPath is the installed engine service unit's path.
-	OSUnitPath(goos string) string
 }
 
 // serviceDialog is one fixed script run through the administrator dialog,
@@ -254,31 +250,6 @@ func parseInitLocal(c *cli.IO, args []string) (localsetup.Job, error) {
 	return localsetup.Job{Job: localsetup.JobInstall, Agent: name, Demo: *demoFlag}, nil
 }
 
-// ensureEngineService installs the engine service through the system's
-// administrator dialog when it is not installed yet: one password, in the
-// dialog. It never falls back to running the engine as the person.
-func ensureEngineService(c *cli.IO, h localHost) error {
-	if c.Host.System(io.Discard, io.Discard).Exists(h.OSUnitPath(c.Goos)) {
-		return nil
-	}
-	if err := c.Host.DialogAvailable(c.Goos); err != nil {
-		return noDialog(err)
-	}
-	bin, script, err := dialogScript(c, h)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(c.Stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		h.OSDefaultUser(c.Goos), cli.ShellJoin(dialogEngineArgs(c.Goos, bin)))
-	if err := c.Host.AdminDialog(c.Ctx, c.Goos, app.OSInstallPrompt, script, c.Stderr); err != nil {
-		if errors.Is(err, app.ErrOSNoDialog) {
-			return noDialog(err)
-		}
-		return err
-	}
-	return nil
-}
-
 // engineState is what the engine's setup routes say about it.
 type engineState int
 
@@ -288,12 +259,6 @@ const (
 	engineRemoved                       // the page removed its last agent
 	engineResetAsked                    // the person said the database is not theirs
 )
-
-// crashLoops: the service manager started the engine again after it
-// exited with an error, so waiting longer for its page shows nothing new.
-func crashLoops(runs, lastExit int) bool {
-	return runs >= 2 && lastExit > 0
-}
 
 // waitForSetupPage waits until the engine answers its setup routes, and
 // reads from the answer whether it is waiting for its config. An engine
@@ -323,13 +288,13 @@ func waitForSetupPage(c *cli.IO) (engineState, error) {
 			if firstRuns < 0 {
 				firstRuns = runs
 			}
-			if runs > firstRuns && crashLoops(runs, last) {
-				return 0, fmt.Errorf("the engine service keeps stopping: it started %d times and last exited with code %d. See %s for why", runs, last, engineLogHint(c.Goos))
+			if runs > firstRuns && engine.CrashLoops(runs, last) {
+				return 0, fmt.Errorf("the engine service keeps stopping: it started %d times and last exited with code %d. See %s for why", runs, last, engine.LogHint(c.Goos))
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return 0, fmt.Errorf("the engine service did not answer on %s within %s; see %s", app.SetupOrigin, setupWait, engineLogHint(c.Goos))
+			return 0, fmt.Errorf("the engine service did not answer on %s within %s; see %s", app.SetupOrigin, setupWait, engine.LogHint(c.Goos))
 		case <-time.After(setupWaitStep):
 		}
 	}

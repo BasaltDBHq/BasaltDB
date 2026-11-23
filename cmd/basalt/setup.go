@@ -2,12 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -109,41 +107,3 @@ const (
 	flagKeepCredential = "keep-credential"
 	flagPersonUID      = "person-uid"
 )
-
-// dialogScript is the first install's fixed script for the running
-// binary, with every link resolved and checked as root would run it. The
-// script comes from h.
-func dialogScript(c *cli.IO, h localHost) (bin, script string, err error) {
-	bin, err = c.Host.ResolvedExecutable()
-	if err != nil {
-		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
-	}
-	if err := c.Host.System(c.Stderr, c.Stderr).CheckBinary(bin); err != nil {
-		return "", "", err
-	}
-	script, err = h.OSInstallScript(c.Goos, bin)
-	return bin, script, err
-}
-
-// dialogEngineArgs is the command the first install's unit runs.
-func dialogEngineArgs(goos, bin string) []string {
-	return []string{bin, "engine", "--config", config.DefaultPath(goos), "--supervise"}
-}
-
-// noDialog is init's stop when no administrator dialog can be shown: it
-// never falls back to running the engine as the person's user.
-func noDialog(err error) error {
-	return fmt.Errorf("basalt init installs the engine service through the system's administrator dialog, which only you can answer, and it cannot be shown here (%w). "+
-		"Run basalt init again in a desktop session on this machine; basalt does not run the engine as your user instead", err)
-}
-
-// darwinEngineLog is the engine service's log on macOS (the unit's
-// StandardErrorPath).
-const darwinEngineLog = "/Library/Logs/Basalt/engine.log"
-
-func engineLogHint(goos string) string {
-	if goos == "darwin" {
-		return darwinEngineLog
-	}
-	return "journalctl -u " + app.OSUnitName
-}

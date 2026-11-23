@@ -72,7 +72,7 @@ func versions(vs []int) string {
 
 // setupView is the agent's setup from the laptop as status reports it.
 type setupView struct {
-	status SetupStatus
+	status guidance.SetupStatus
 	// code and fingerprint are the pending code's while it is still live
 	// (status shows the fingerprint only while pending). An expired code
 	// is never reprinted, including during the collect-window hold.
@@ -149,7 +149,7 @@ func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
 		s.log.Error("status: read the latest setup", "err", err)
 	}
 	if ok {
-		v.status = SetupStatus{State: setupDone, SetupID: latest.SetupID.String(), Kind: latest.Kind}
+		v.status = guidance.SetupStatus{State: setupDone, SetupID: latest.SetupID.String(), Kind: latest.Kind}
 	}
 	return v, true
 }
@@ -163,11 +163,11 @@ func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
 // certificateChanged; the expired code is not reprinted.
 func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if p == nil || recorded {
-		return setupView{status: SetupStatus{State: setupNone}}
+		return setupView{status: guidance.SetupStatus{State: setupNone}}
 	}
 	connectOnly := connectOnlyCode(p.Code)
 	if p.Refused {
-		return setupView{refused: true, status: SetupStatus{State: setupRefused, SetupID: p.SetupID, Kind: p.Kind, ConnectOnly: true}}
+		return setupView{refused: true, status: guidance.SetupStatus{State: setupRefused, SetupID: p.SetupID, Kind: p.Kind, ConnectOnly: true}}
 	}
 	expires, err := p.Expires()
 	expired := err != nil || !now.Before(expires)
@@ -186,11 +186,11 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 		expired = false
 	}
 	if expired && p.Kind != guardmodel.SetupInstall && !p.AwaitingAddress {
-		return setupView{status: SetupStatus{State: setupNone}}
+		return setupView{status: guidance.SetupStatus{State: setupNone}}
 	}
 	v := setupView{
 		code: p.Code, fingerprint: p.Fingerprint, awaiting: p.AwaitingAddress, confirmed: confirmed,
-		status: SetupStatus{State: setupPending, SetupID: p.SetupID, Kind: p.Kind, ExpiresAt: p.ExpiresAt, Fingerprint: p.Fingerprint, ConnectOnly: connectOnly},
+		status: guidance.SetupStatus{State: setupPending, SetupID: p.SetupID, Kind: p.Kind, ExpiresAt: p.ExpiresAt, Fingerprint: p.Fingerprint, ConnectOnly: connectOnly},
 	}
 	if expired {
 		v.status.State, v.status.Fingerprint = setupExpired, ""
@@ -253,7 +253,7 @@ func (sc *statusKeeper) Admit(ctx context.Context) error {
 // when the database cannot tell whether the code was used.
 func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
 	if s.setup == nil || (s.setup.Kind != guardmodel.SetupInstall && !connectOnlyCode(s.setup.Code)) {
-		return setupView{status: SetupStatus{State: setupNone}}, true
+		return setupView{status: guidance.SetupStatus{State: setupNone}}, true
 	}
 	now := s.now()
 	if s.notRecorded.fresh(s.setup.SetupID, now) {

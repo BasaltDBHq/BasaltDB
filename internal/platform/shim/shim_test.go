@@ -233,6 +233,6 @@ func testServiceManager() guidance.ServiceManager {
 func testEngineHost() agent.EngineHost {
 	return agent.EngineHost{
 		LatestGuardVersion: func() int { return 1 },
-		StartHoldOffUntil:  func(agent.LastStop, string, time.Time) (time.Time, bool) { return time.Time{}, false },
+		StartHoldOffUntil:  func(guidance.LastStop, string, time.Time) (time.Time, bool) { return time.Time{}, false },
 	}
 }

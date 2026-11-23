@@ -78,7 +78,7 @@ func AgentEngineHost() agent.EngineHost {
 	return agent.EngineHost{LatestGuardVersion: guard.LatestVersion, StartHoldOffUntil: agentStartHoldOffUntil}
 }
 
-func agentStartHoldOffUntil(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
+func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 	return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 }
 

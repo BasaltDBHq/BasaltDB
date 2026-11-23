@@ -18,7 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 )
 
-func extraStatus(t *testing.T, edit func(*Deps)) (StatusReport, string) {
+func extraStatus(t *testing.T, edit func(*Deps)) (guidance.StatusReport, string) {
 	t.Helper()
 	d := deps()
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
@@ -77,7 +77,7 @@ func TestStatusShowsTheTablesTheAgentCanReadAndWrite(t *testing.T) {
 			return CatalogAccess{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}, NotGranted: []string{"public.secret"}}, nil
 		}
 	})
-	require.Equal(t, &AccessStatus{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}}, r.Access)
+	require.Equal(t, &guidance.AccessStatus{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}}, r.Access)
 }
 
 func TestStatusAccessListsAreEmptyNotNullAndBounded(t *testing.T) {
@@ -112,7 +112,7 @@ func TestStatusShowsPluginHealth(t *testing.T) {
 			entries:     []PluginEntry{{Name: "acme-ner", Instance: "client_x"}, {Name: "acme-ner", Instance: "default"}},
 		}
 	})
-	require.Equal(t, []PluginHealth{
+	require.Equal(t, []guidance.PluginHealth{
 		{Name: "acme-ner", Instance: "client_x", Health: PluginHealthNotReady, Problem: ProblemPluginUnavailable},
 		{Name: "acme-ner", Instance: "default", Health: PluginHealthReady},
 	}, r.Plugins)

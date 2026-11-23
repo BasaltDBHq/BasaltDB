@@ -18,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -132,10 +133,10 @@ func (s *starter) now() time.Time {
 }
 
 // holdOff reports whether last-stop.json still holds off a new start.
-func (s *starter) holdOff() (until time.Time, stop agent.LastStop, ok bool) {
+func (s *starter) holdOff() (until time.Time, stop guidance.LastStop, ok bool) {
 	stop, ok = agent.ReadLastStop(s.stateDir())
 	if !ok {
-		return time.Time{}, agent.LastStop{}, false
+		return time.Time{}, guidance.LastStop{}, false
 	}
 	until, ok = app.LastStopStartHoldOffUntil(app.LastStopRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
 	return until, stop, ok

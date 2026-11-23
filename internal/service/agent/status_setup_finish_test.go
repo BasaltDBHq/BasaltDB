@@ -140,7 +140,7 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, SetupStatus{State: setupDone, SetupID: setup.SetupID, Kind: guardmodel.SetupInstall}, r.Setup)
+	require.Equal(t, guidance.SetupStatus{State: setupDone, SetupID: setup.SetupID, Kind: guardmodel.SetupInstall}, r.Setup)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: false}}, fin.finished())
 	require.Nil(t, svc.status.pendingSetup(), "forgotten in memory too")
 	p := findProblem(t, r, problemNoPasskey)

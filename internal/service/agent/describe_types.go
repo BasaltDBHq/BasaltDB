@@ -190,7 +190,7 @@ type Overview struct {
 	OtherSchemas  *OtherSchemas         `json:"otherSchemas,omitempty"`
 	PersonMessage string                `json:"personMessage,omitempty"`
 	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
-	Update        *UpdateInfo           `json:"update,omitempty"`
+	Update        *guidance.UpdateInfo  `json:"update,omitempty"`
 }
 
 // DescribeSearchParams are a search's validated arguments.

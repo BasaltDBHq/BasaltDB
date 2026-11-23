@@ -23,7 +23,7 @@ import (
 // does not answer: engine unreachable, guard UNKNOWN, operatedBy from the
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
-func EngineDownStatus(host EngineHost, name string, cmds guidance.Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
+func EngineDownStatus(host EngineHost, name string, cmds guidance.Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (guidance.StatusReport, error) {
 	return EngineDownStatusAfterStart(host, name, cmds, cfg, cfgErr, build, now, "", "")
 }
 
@@ -32,13 +32,13 @@ func EngineDownStatus(host EngineHost, name string, cmds guidance.Commands, cfg 
 // ("basalt mcp could not start the engine: <reason>. Its log is <path>."),
 // shown as the problem ENGINE_START_FAILED before ENGINE_UNREACHABLE, whose
 // steps stay.
-func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (StatusReport, error) {
-	r := StatusReport{
+func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (guidance.StatusReport, error) {
+	r := guidance.StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
-		Engine: EngineStatus{Reachable: false, Build: build},
-		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: host.LatestGuardVersion()},
-		Setup:  SetupStatus{State: setupNone},
-		Pages:  PagesStatus{URL: links.DefaultLocal},
+		Engine: guidance.EngineStatus{Reachable: false, Build: build},
+		Guard:  guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: host.LatestGuardVersion()},
+		Setup:  guidance.SetupStatus{State: setupNone},
+		Pages:  guidance.PagesStatus{URL: links.DefaultLocal},
 	}
 	if cfg != nil {
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
@@ -74,7 +74,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	}
 	list, err := ps.Sorted()
 	if err != nil {
-		return StatusReport{}, err
+		return guidance.StatusReport{}, err
 	}
 	r.Problems, r.Ready = list, ready(list)
 	return r, nil
@@ -84,8 +84,8 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 // problem ENGINE_REVOKED. Without the engine's
 // key (the key file is refused) or a readable guard of version 33 or later,
 // the state is UNKNOWN and no problem is added.
-func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *guidance.Problems) *EngineRecordStatus {
-	unknown := &EngineRecordStatus{State: engineUnknown}
+func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *guidance.Problems) *guidance.EngineRecordStatus {
+	unknown := &guidance.EngineRecordStatus{State: engineUnknown}
 	if engineID == "" || !guardReadable || s.engineRecord == nil {
 		return unknown
 	}
@@ -97,9 +97,9 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 		return unknown
 	}
 	if e == nil {
-		return &EngineRecordStatus{State: engineNotRecorded}
+		return &guidance.EngineRecordStatus{State: engineNotRecorded}
 	}
-	out := &EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
+	out := &guidance.EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
 	if e.RevokedAt != nil {
 		out.State, out.RevokedAt = engineRevoked, e.RevokedAt.UTC().Format(time.RFC3339)
 		ps.Add(problemEngineRevoked, "the agent's database revoked this engine's key; the engine does not act on it, so the links it handed over keep working until they expire",
@@ -139,19 +139,19 @@ const (
 // ReadLastStop reads why the supervisor gave up, from dir (the state
 // directory): ok is false when there is no usable record. It is read as
 // text and shown, never trusted for anything else.
-func ReadLastStop(dir string) (LastStop, bool) {
+func ReadLastStop(dir string) (guidance.LastStop, bool) {
 	// Not a symlink, and never blocking on a pipe someone left there.
 	f, err := os.OpenFile(filepath.Join(dir, lastStopFile), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return LastStop{}, false
+		return guidance.LastStop{}, false
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return LastStop{}, false
+		return guidance.LastStop{}, false
 	}
 	var rec lastStopJSON
 	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&rec); err != nil || rec.Reason == "" {
-		return LastStop{}, false
+		return guidance.LastStop{}, false
 	}
 	if r := []rune(rec.Reason); len(r) > maxReasonRunes {
 		rec.Reason = string(r[:maxReasonRunes])
@@ -162,12 +162,12 @@ func ReadLastStop(dir string) (LastStop, bool) {
 		}
 		return ' '
 	}, rec.Reason)
-	return LastStop{Reason: rec.Reason, At: rec.At.UTC(), EngineSHA256: rec.EngineSHA256}, true
+	return guidance.LastStop{Reason: rec.Reason, At: rec.At.UTC(), EngineSHA256: rec.EngineSHA256}, true
 }
 
 // engineGaveUpMessage is the ENGINE_GAVE_UP status message: the supervisor's
 // reason, and when the next try happens during the hold-off.
-func engineGaveUpMessage(host EngineHost, stop LastStop, configPath string, now time.Time) string {
+func engineGaveUpMessage(host EngineHost, stop guidance.LastStop, configPath string, now time.Time) string {
 	msg := "the engine stopped and was not restarted: " + stop.Reason
 	if until, ok := host.StartHoldOffUntil(stop, configPath, now); ok {
 		msg += ". The next try is at " + until.UTC().Format(time.RFC3339) + "."

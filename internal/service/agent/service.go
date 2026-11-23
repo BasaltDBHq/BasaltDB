@@ -182,7 +182,7 @@ type StatusDeps struct {
 	UpdateMessage func(n UpdateNotice, exe string) string
 	// StartHoldOffUntil is when the supervisor tries the engine again after
 	// it gave up (false when it holds nothing off).
-	StartHoldOffUntil func(stop LastStop, configPath string, now time.Time) (time.Time, bool)
+	StartHoldOffUntil func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
 }
 
 // DescribeDeps is what the describe tool reads.

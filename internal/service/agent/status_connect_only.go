@@ -352,18 +352,18 @@ func confirmResult(ans handoff.Answer, cmds guidance.Commands) (ConfirmResult, e
 // the guard is UNKNOWN (no credential yet), and the setup says where the
 // hand-off stands. While it waits for the address, a status call also
 // collects.
-func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
+func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) {
 	st := c.Handoff.StatusCollect(ctx)
 	cmds := c.Commands.OperatedBy(c.OperatedBy)
 	base := c.PagesBase
 	if base == "" {
 		base = links.DefaultLocal
 	}
-	r := StatusReport{
+	r := guidance.StatusReport{
 		Agent: c.Name, OperatedBy: operatedBy(c.OperatedBy), Enforcement: enforcement(c.OperatedBy, c.SameUser),
-		Engine: EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: startedByEnum(c.StartedBy)},
-		Guard:  GuardStatus{State: guardmodel.GuardUnknown, Build: c.LatestGuardVersion()},
-		Pages:  PagesStatus{Served: c.PagesOrigin != "", URL: base},
+		Engine: guidance.EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: startedByEnum(c.StartedBy)},
+		Guard:  guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: c.LatestGuardVersion()},
+		Pages:  guidance.PagesStatus{Served: c.PagesOrigin != "", URL: base},
 	}
 	if c.Vault != nil {
 		v := c.Vault.VaultStatus()
@@ -373,14 +373,14 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 	r.Setup = connectOnlyProblems(st, &ps, c.Now())
 	list, err := ps.Sorted()
 	if err != nil {
-		return StatusReport{}, err
+		return guidance.StatusReport{}, err
 	}
 	r.Problems, r.Ready = list, ready(list)
 	return r, nil
 }
 
 // connectOnlyProblems is status.setup for st, with its problem added to ps.
-func connectOnlyProblems(st handoff.State, ps *guidance.Problems, now time.Time) SetupStatus {
+func connectOnlyProblems(st handoff.State, ps *guidance.Problems, now time.Time) guidance.SetupStatus {
 	s := st.Setup
 	v := setupFrom(&s, false, now)
 	out := v.status

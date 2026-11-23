@@ -48,7 +48,7 @@ type EngineDown struct {
 // tries the engine again after it gave up.
 type EngineHost struct {
 	LatestGuardVersion func() int
-	StartHoldOffUntil  func(stop LastStop, configPath string, now time.Time) (time.Time, bool)
+	StartHoldOffUntil  func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
 }
 
 func (d EngineDown) startFailure() string {

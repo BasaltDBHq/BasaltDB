@@ -20,7 +20,7 @@ import (
 // with its steps. It never fails on what it reads: an unreachable database
 // or a missing guard is a problem in the result, not an error. It never
 // names the credential file.
-func (sc *statusKeeper) Status(ctx context.Context) (StatusReport, error) {
+func (sc *statusKeeper) Status(ctx context.Context) (guidance.StatusReport, error) {
 	return sc.statusDeps().report(ctx)
 }
 
@@ -40,7 +40,7 @@ type statusDeps struct {
 	crashDirs                 []string
 	linkBudget                int
 	access                    AccessReader
-	update                    *UpdateInfo
+	update                    *guidance.UpdateInfo
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
 	// engine record (LocalStatus.EngineKey); the engine uses vault.
@@ -127,7 +127,7 @@ type LocalStatus struct {
 
 // Report is the status report. It panics on a missing probe, passkey
 // reader, logger or clock.
-func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
+func (l LocalStatus) Report(ctx context.Context) (guidance.StatusReport, error) {
 	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil || l.LatestGuardVersion == nil {
 		panic("agent: local status needs a probe, a passkey reader, a logger, a clock and the guard version")
 	}
@@ -145,12 +145,12 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}.report(ctx)
 }
 
-func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
+func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	s.cmds = s.cmds.OperatedBy(s.operatedBy)
-	r := StatusReport{
+	r := guidance.StatusReport{
 		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
-		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: startedByEnum(s.startedBy)},
-		Pages:  PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
+		Engine: guidance.EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: startedByEnum(s.startedBy)},
+		Pages:  guidance.PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
 		Update: s.update,
 	}
 	if s.vault != nil {
@@ -188,7 +188,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
 	switch {
 	case err != nil:
-		r.Guard = GuardStatus{State: guardmodel.GuardUnknown, Build: s.latestGuard()}
+		r.Guard = guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: s.latestGuard()}
 		if !explained {
 			s.addUnreachable(ctx, &ps, err, trust)
 		}
@@ -220,7 +220,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	}
 	list, err := ps.Sorted()
 	if err != nil {
-		return StatusReport{}, err
+		return guidance.StatusReport{}, err
 	}
 	r.Problems, r.Ready = list, ready(list)
 	return r, nil
@@ -260,8 +260,8 @@ func ready(list []guidance.Problem) bool {
 	return true
 }
 
-func guardStatusDTO(st guardmodel.Status) GuardStatus {
-	out := GuardStatus{State: st.State, Build: st.Build, MissingBreaking: st.MissingBreaking, MissingNonBreaking: st.MissingNonBreaking}
+func guardStatusDTO(st guardmodel.Status) guidance.GuardStatus {
+	out := guidance.GuardStatus{State: st.State, Build: st.Build, MissingBreaking: st.MissingBreaking, MissingNonBreaking: st.MissingNonBreaking}
 	if st.State != guardmodel.GuardMissing {
 		installed := st.Installed
 		out.Installed = &installed
@@ -272,7 +272,7 @@ func guardStatusDTO(st guardmodel.Status) GuardStatus {
 // ledgerStatus is the ledger's size and retention. A missing guard has no
 // ledger, and a size that cannot be read is logged and left out: it is
 // never a problem.
-func (s statusDeps) ledgerStatus(ctx context.Context, st guardmodel.Status) *LedgerStatus {
+func (s statusDeps) ledgerStatus(ctx context.Context, st guardmodel.Status) *guidance.LedgerStatus {
 	if st.State == guardmodel.GuardMissing {
 		return nil
 	}
@@ -281,7 +281,7 @@ func (s statusDeps) ledgerStatus(ctx context.Context, st guardmodel.Status) *Led
 		s.log.Debug("status: read the ledger size", "err", err)
 		return nil
 	}
-	return &LedgerStatus{Bytes: n, ValuesKeptDays: ledgerValuesKeptDays, RecordsKeptDays: ledgerRecordsKeptDays}
+	return &guidance.LedgerStatus{Bytes: n, ValuesKeptDays: ledgerValuesKeptDays, RecordsKeptDays: ledgerRecordsKeptDays}
 }
 
 // reinstalledAsk is LEDGER_REINSTALLED's ASK_PERSON step.
@@ -310,11 +310,11 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *guidance.Problems) {
 // passkeys counts the active passkeys that can sign the agent's links:
 // those registered on the origin of its pages (pagesPasskeys); none is
 // NO_PASSKEY. A count that fails is logged and leaves active out.
-func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, setupDone bool) PasskeysStatus {
+func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, setupDone bool) guidance.PasskeysStatus {
 	all, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
-		return PasskeysStatus{}
+		return guidance.PasskeysStatus{}
 	}
 	keys, origin := passkey.OnPagesOrigin(all, s.pagesBase)
 	n := len(keys)
@@ -325,9 +325,9 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, se
 		}
 		ps.Add(problemNoPasskey, msg, func(b *guidance.Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
 	}
-	out := PasskeysStatus{Registered: n > 0, Active: &n}
+	out := guidance.PasskeysStatus{Registered: n > 0, Active: &n}
 	for _, k := range keys {
-		entry := PasskeyStatus{CredentialID: k.ID}
+		entry := guidance.PasskeyStatus{CredentialID: k.ID}
 		code, err := k.CheckCode()
 		if err != nil {
 			s.log.Error("status: passkey check code", "err", err)
@@ -344,7 +344,7 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, se
 // passkeySummary says in words how many passkeys are registered and the
 // check code of each, so the person can compare them with the codes the
 // connect page showed (CONTRACT.md, Connect, The passkey check code).
-func passkeySummary(keys []PasskeyStatus) string {
+func passkeySummary(keys []guidance.PasskeyStatus) string {
 	if len(keys) == 0 {
 		return ""
 	}

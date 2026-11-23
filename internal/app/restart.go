@@ -3,53 +3,24 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-)
-
-// ErrRestart is what Serve and Run return after they stopped to restart
-// onto an upgraded binary: every agent connection was drained and every
-// socket closed. The caller runs the new binary (CONTRACT.md, Next steps,
-// Engine restarts).
-var ErrRestart = errors.New("the engine stopped to restart onto the upgraded binary")
-
-// UpgradeFunc blocks until the engine should restart onto a new binary and
-// returns nil then, or returns ctx's error when ctx ends first.
-type UpgradeFunc func(ctx context.Context) error
-
-const (
-	// DefaultIdleWait is how long a restart waits for a moment when no
-	// agent call runs, longer than the longest wait a call may ask for (110
-	// seconds), so only calls that keep overlapping can hold it off.
-	DefaultIdleWait = 2 * time.Minute
-	// DefaultDrainWait is how long the calls still running when the idle
-	// wait ran out may finish; past it they are cancelled, and their
-	// transactions roll back.
-	DefaultDrainWait = 2 * time.Minute
-	// drainReadGrace is how long a drained connection is still read, so the
-	// requests the shim had already sent are answered ErrCodeRestarting
-	// rather than dropped.
-	drainReadGrace = 250 * time.Millisecond
 )
 
 // RestartOptions turn on the restart onto a new binary.
 type RestartOptions struct {
-	// Upgrade says when to restart; nil turns the restart off.
-	Upgrade UpgradeFunc
+	// Restart is when the engine restarts (Upgrade; nil turns the restart
+	// off) and how long it waits for calls (IdleWait, DrainWait).
+	engine.Restart
 	// Handoff reaches the connect service and the collected database for
 	// a connect-only agent; the zero value is the contract's.
 	Handoff HandoffOptions
-	// IdleWait and DrainWait default to DefaultIdleWait and
-	// DefaultDrainWait.
-	IdleWait  time.Duration
-	DrainWait time.Duration
 	// PluginStderr is where local plugins' stderr goes (basalt engine
 	// --plugin-debug), on a foreground engine only; nil discards it. It
 	// rides along with the restart options because both are how
@@ -85,120 +56,11 @@ func startedByOrHand(v string) string {
 	return v
 }
 
-// Restart is how the engine restarts onto a new binary: the part of
-// RestartOptions that Serve reads.
-type Restart struct {
-	// Upgrade says when to restart; nil turns the restart off.
-	Upgrade UpgradeFunc
-	// IdleWait and DrainWait default to DefaultIdleWait and
-	// DefaultDrainWait.
-	IdleWait  time.Duration
-	DrainWait time.Duration
-}
-
-func (o Restart) withDefaults() Restart {
-	if o.IdleWait <= 0 {
-		o.IdleWait = DefaultIdleWait
-	}
-	if o.DrainWait <= 0 {
-		o.DrainWait = DefaultDrainWait
-	}
-	return o
-}
-
-// callGate counts the agent calls running on every connection. Once it is
-// closed it admits none, so the engine can stop between calls.
-type callGate struct {
-	mu     sync.Mutex
-	busy   int
-	closed bool
-	// idle gets a value whenever busy drops to zero.
-	idle chan struct{}
-}
-
-func newCallGate() *callGate { return &callGate{idle: make(chan struct{}, 1)} }
-
-func (g *callGate) Begin() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.closed {
-		return false
-	}
-	g.busy++
-	return true
-}
-
-func (g *callGate) End() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.busy--
-	if g.busy > 0 {
-		return
-	}
-	select {
-	case g.idle <- struct{}{}:
-	default:
-	}
-}
-
-// tryClose closes the gate when no call runs; force closes it anyway. It
-// reports whether the gate is now closed.
-func (g *callGate) tryClose(force bool) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.busy == 0 || force {
-		g.closed = true
-	}
-	return g.closed
-}
-
-// isClosed reports whether the gate admits no more calls.
-func (g *callGate) isClosed() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.closed
-}
-
-// closeWhenIdle closes the gate at the first moment no call runs, or when
-// wait runs out, whichever comes first; false when ctx ended first (the
-// gate is then left open).
-func (g *callGate) closeWhenIdle(ctx context.Context, wait time.Duration) bool {
-	t := time.NewTimer(wait)
-	defer t.Stop()
-	for !g.tryClose(false) {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-t.C:
-			return g.tryClose(true)
-		case <-g.idle:
-		}
-	}
-	return true
-}
-
-// waitIdle waits until no admitted call runs; false when ctx ended first.
-func (g *callGate) waitIdle(ctx context.Context) bool {
-	for {
-		g.mu.Lock()
-		busy := g.busy
-		g.mu.Unlock()
-		if busy == 0 {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-g.idle:
-		}
-	}
-}
-
 // gatedDispatcher counts each page-session request (an approval or a revert
 // relayed through the Vault) in the gate, and answers UNAVAILABLE with
 // nothing run once the gate is closed.
 type gatedDispatcher struct {
-	gate *callGate
+	gate engine.Gate
 	next vault.Dispatcher
 }
 
@@ -221,24 +83,4 @@ func restartingResponse() vault.Response {
 		panic(err) // a map of strings
 	}
 	return vault.Response{Status: http.StatusServiceUnavailable, ContentType: "application/json", Body: body}
-}
-
-// connGate is the gate as one connection sees it: once the gate is closed,
-// the connection is read only for drainReadGrace after its last answer.
-type connGate struct {
-	*callGate
-	conn *net.UnixConn
-}
-
-func (c connGate) End() {
-	c.callGate.End()
-	if c.isClosed() {
-		c.stopReading()
-	}
-}
-
-// stopReading lets the connection be read for drainReadGrace more, so the
-// requests already sent are answered, then ends it.
-func (c connGate) stopReading() {
-	_ = c.conn.SetReadDeadline(time.Now().Add(drainReadGrace))
 }

@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package app_test
+package engine_test
 
 import (
 	"bufio"
@@ -18,7 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
-	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 )
 
 // restartTools are an engine build's tools: write counts its runs, slow
@@ -64,8 +64,8 @@ type restartingEngine struct {
 
 func startRestarting(t *testing.T, socket string, tools *restartTools, upgrade <-chan struct{}, idle, drain time.Duration) *restartingEngine {
 	t.Helper()
-	a := app.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: mcpServer{tools.server()}}
-	e := app.New(slog.New(slog.DiscardHandler), mcpLines{}, []app.Agent{a}).WithRestart(app.Restart{
+	a := engine.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: mcpServer{tools.server()}}
+	e := engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{a}).WithRestart(engine.Restart{
 		Upgrade: func(ctx context.Context) error {
 			select {
 			case <-upgrade:
@@ -181,7 +181,7 @@ func TestAnIdleEngineRestartsAndTheNextCallReachesTheNewOne(t *testing.T) {
 	require.Equal(t, "old", answer(t, c.send(t, 1, "write"))["build"])
 
 	close(upgrade)
-	require.ErrorIs(t, old.stopped(t), app.ErrRestart)
+	require.ErrorIs(t, old.stopped(t), engine.ErrRestart)
 	_, err := os.Lstat(socket)
 	require.ErrorIs(t, err, os.ErrNotExist, "the socket is gone, so a shim waits for the new engine")
 
@@ -214,7 +214,7 @@ func TestARestartLetsTheRunningCallFinishAndSendsTheQueuedOneToTheNewEngine(t *t
 	close(oldTools.release)
 
 	require.Equal(t, "old", answer(t, slow)["build"], "the running call finished on the old engine")
-	require.ErrorIs(t, old.stopped(t), app.ErrRestart)
+	require.ErrorIs(t, old.stopped(t), engine.ErrRestart)
 	startRestarting(t, socket, newTools, make(chan struct{}), time.Minute, time.Minute)
 
 	require.Equal(t, "new", answer(t, write)["build"], "the old engine did not run it, so the shim sent it to the new one")
@@ -241,7 +241,7 @@ func TestARestartWaitsForAMomentWithNoCallRunning(t *testing.T) {
 	}
 	close(tools.release)
 	require.Equal(t, "old", answer(t, slow)["build"])
-	require.ErrorIs(t, old.stopped(t), app.ErrRestart)
+	require.ErrorIs(t, old.stopped(t), engine.ErrRestart)
 }
 
 func TestACallStillRunningAfterTheDrainWaitIsCancelled(t *testing.T) {
@@ -255,7 +255,7 @@ func TestACallStillRunningAfterTheDrainWaitIsCancelled(t *testing.T) {
 	slow := c.send(t, 1, "slow")
 	<-tools.started
 	close(upgrade)
-	require.ErrorIs(t, old.stopped(t), app.ErrRestart)
+	require.ErrorIs(t, old.stopped(t), engine.ErrRestart)
 	require.True(t, tools.cancelled.Load(), "its context was cancelled, so its transaction rolls back")
 	body := answer(t, slow)
 	require.NotEqual(t, "old", body["build"], "%v", body)

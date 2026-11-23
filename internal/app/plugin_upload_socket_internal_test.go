@@ -23,9 +23,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
+	pluginengine "github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
 // uploadPerson and uploadOther are two OS user ids other than the test's own:
@@ -71,20 +72,22 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
-	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
+	p.SetKept(pluginengine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
 	served := func() error { return nil }
 	mine := uint32(os.Getuid())
-	bot := Agent{
+	bot := engine.Agent{
 		Name: "bot", UID: mine, SocketPath: filepath.Join(dir, "bot.sock"),
 		Server: mcpServer{mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served))},
 	}
-	stranger := Agent{
+	stranger := engine.Agent{
 		Name: "other", UID: mine + 1, SocketPath: filepath.Join(dir, "other.sock"),
 		Server: mcpServer{mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served))},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- New(slog.New(slog.DiscardHandler), mcpLines{}, []Agent{bot, stranger}).Serve(ctx) }()
+	go func() {
+		done <- engine.New(slog.New(slog.DiscardHandler), mcpLines{}, []engine.Agent{bot, stranger}).Serve(ctx)
+	}()
 	t.Cleanup(func() { cancel(); <-done })
 	require.Eventually(t, func() bool {
 		c, err := net.Dial("unix", bot.SocketPath)
@@ -133,7 +136,7 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
-	p.SetKept(engine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
+	p.SetKept(pluginengine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
 	ok := func() error { return nil }
 	part := func(raw string) json.RawMessage { return json.RawMessage(raw) }
 	ctx := context.Background()

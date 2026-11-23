@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -132,7 +133,7 @@ func waitsForConfigAt(euid int, configPath, systemPath string) bool {
 // restart is how the engine restarts onto an upgraded binary: upgrade says
 // when (nil turns it off) and exec runs the new binary in this process.
 type restart struct {
-	upgrade app.UpgradeFunc
+	upgrade engine.UpgradeFunc
 	exec    func() error
 }
 
@@ -172,7 +173,7 @@ func osRestart(log *slog.Logger) restart {
 // on, until the binary changes again.
 func serveRestarting(ctx context.Context, run func(context.Context, app.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
 	for {
-		err := run(ctx, app.RestartOptions{Upgrade: r.upgrade})
+		err := run(ctx, app.RestartOptions{Restart: engine.Restart{Upgrade: r.upgrade}})
 		if errors.Is(err, app.ErrReload) && ctx.Err() == nil {
 			// Same binary, same process: the config is read again and the
 			// engine serves anew. A config it cannot read now stops it.
@@ -182,7 +183,7 @@ func serveRestarting(ctx context.Context, run func(context.Context, app.RestartO
 			}
 			continue
 		}
-		if !errors.Is(err, app.ErrRestart) || ctx.Err() != nil {
+		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
 			// A stop that came during the restart wins: never run the new
 			// binary after the engine was told to stop.
 			return err

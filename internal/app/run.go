@@ -40,6 +40,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -234,7 +235,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	var dispatch vault.Dispatcher
 	// gate counts the agent calls, person requests and page sessions
 	// running, so a restart onto an upgraded binary waits for them.
-	gate := newCallGate()
+	gate := engine.NewCallGate()
 	if cfg.VaultEnabled() {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
 		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
@@ -335,11 +336,10 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
 	}
-	err = New(log, mcpLines{}, agents).withGate(gate).
-		WithRestart(Restart{Upgrade: restart.Upgrade, IdleWait: restart.IdleWait, DrainWait: restart.DrainWait}).Serve(ctx)
+	err = engine.New(log, mcpLines{}, agents).WithGate(gate).WithRestart(restart.Restart).Serve(ctx)
 	select {
 	case <-reloading:
-		if errors.Is(err, ErrRestart) {
+		if errors.Is(err, engine.ErrRestart) {
 			return ErrReload
 		}
 	default:
@@ -350,7 +350,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 // upgradeOrReload is the restart's trigger: an upgraded binary (up, when
 // set) or a reload asked for on reload. A reload closes reloading first,
 // so RunWith returns ErrReload, not ErrRestart.
-func upgradeOrReload(up UpgradeFunc, reload <-chan struct{}, reloading chan struct{}) UpgradeFunc {
+func upgradeOrReload(up engine.UpgradeFunc, reload <-chan struct{}, reloading chan struct{}) engine.UpgradeFunc {
 	return func(ctx context.Context) error {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -419,7 +419,7 @@ type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *sl
 
 // startedAgents are the agents the engine serves and what it closes.
 type startedAgents struct {
-	agents   []Agent
+	agents   []engine.Agent
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
 	scans    []piidict.ScanSource
@@ -453,7 +453,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		if rt.svc == nil {
 			// A connect-only agent waiting for its database: its tools
 			// only, and nothing that reads a database.
-			out.agents = append(out.agents, Agent{
+			out.agents = append(out.agents, engine.Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
 				Server: mcpServer{mcp.NewServer(env.serverInfo(nil), rt.tools...)},
 			})
@@ -470,7 +470,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		if rt.scan.DB != nil {
 			out.scans = append(out.scans, rt.scan)
 		}
-		out.agents = append(out.agents, Agent{
+		out.agents = append(out.agents, engine.Agent{
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),

@@ -20,7 +20,7 @@ func (ac *approvalCase) itemGuidance(p PendingItem) (string, []toolresult.Link, 
 		b := guidance.NewSteps()
 		guidance.ApprovalExpiredSteps(b)
 		steps, err := b.Build()
-		return approvalExpiredMessage, nil, steps, err
+		return ApprovalExpiredMessage, nil, steps, err
 	case ac.waitsForPerson(p) && p.tooLargeSteps != nil:
 		return p.Notice.PersonMessage, nil, p.tooLargeSteps, nil
 	case ac.waitsForPerson(p):
@@ -65,4 +65,4 @@ func (ac *approvalCase) waitsForPerson(p PendingItem) bool {
 	return p.Status == action.ApprovalPending && !ac.expired(p)
 }
 
-const approvalExpiredMessage = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."
+const ApprovalExpiredMessage = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."

@@ -9,10 +9,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// approvalRequiredSteps are APPROVAL_REQUIRED's steps, by reason: the link,
+// ApprovalRequiredSteps are APPROVAL_REQUIRED's steps, by reason: the link,
 // the wait, and what to do when nobody can approve yet. It returns the
 // person's message the notice carries.
-func (ac *approvalCase) approvalRequiredSteps(b *guidance.Steps, te *toolresult.ToolError) string {
+func (ac *approvalCase) ApprovalRequiredSteps(b *guidance.Steps, te *toolresult.ToolError) string {
 	n := te.Approval
 	if n == nil {
 		b.Fail(fmt.Errorf("APPROVAL_REQUIRED carries no approval"))
@@ -49,11 +49,11 @@ func (ac *approvalCase) approvalRequiredSteps(b *guidance.Steps, te *toolresult.
 	return n.PersonMessage
 }
 
-// approvalInvalidSteps: what the agent does depends on why the guard
+// ApprovalInvalidSteps: what the agent does depends on why the guard
 // refused the approval. The three that need the approval page (NOT_SIGNED,
 // BAD_SIGNATURE, PASSKEY_REVOKED) are built with its link by
 // approvalLinkError.
-func approvalInvalidSteps(b *guidance.Steps, te *toolresult.ToolError, runID string) string {
+func ApprovalInvalidSteps(b *guidance.Steps, te *toolresult.ToolError, runID string) string {
 	switch te.Reason {
 	case guidance.ReasonAlreadyUsed:
 		b.CallTool(guidance.ToolRunHistory, runArgs(runID), "Read the run's history: the write was already applied.")

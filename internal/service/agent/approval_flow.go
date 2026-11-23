@@ -17,12 +17,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// approvalNotice builds what the agent shows the person about a held
+// ApprovalNotice builds what the agent shows the person about a held
 // write: its headline, the link chosen by the link budget (chooseLink: a
 // newly issued short link when this engine serves the pages and issue is
 // set, else the long one) and the message to show
 // verbatim.
-func (ac *approvalCase) approvalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error) {
+func (ac *approvalCase) ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error) {
 	ids, err := ac.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return linksvc.HeldAnswer{}, err
@@ -84,12 +84,12 @@ func (ac *approvalCase) approvalNotice(ctx context.Context, id, runID uuid.UUID,
 // waitMessage is the personMessage of a wait or a list that issues no new
 // link: the link already handed over still works.
 func waitMessage(lead string, expires time.Time) (string, []toolresult.Link) {
-	return pointBackMessage(lead, linksvc.ExpiryLine(expires))
+	return PointBackMessage(lead, linksvc.ExpiryLine(expires))
 }
 
-// pointBackMessage is lead, then a pointer to the approval link the person
+// PointBackMessage is lead, then a pointer to the approval link the person
 // was given, then tail.
-func pointBackMessage(lead string, tail ...string) (string, []toolresult.Link) {
+func PointBackMessage(lead string, tail ...string) (string, []toolresult.Link) {
 	msg := guidance.NewMessage().Text(lead).Text("Approve with the link you were given.")
 	for _, line := range tail {
 		msg.Text(line)
@@ -97,18 +97,18 @@ func pointBackMessage(lead string, tail ...string) (string, []toolresult.Link) {
 	return msg.Build()
 }
 
-// approvalRequiredError is the APPROVAL_REQUIRED answer for a new hold:
+// ApprovalRequiredError is the APPROVAL_REQUIRED answer for a new hold:
 // show the link, then wait once, in the same turn.
-func approvalRequiredError(n linksvc.HeldAnswer) error {
+func ApprovalRequiredError(n linksvc.HeldAnswer) error {
 	return approvalError(n, fmt.Sprintf("held for the person's approval: %d rows. Show the person approval.personMessage verbatim, "+
 		"then, without ending your turn, call write once with the same arguments plus approvalId: it waits up to %d seconds "+
 		"for their passkey and returns APPLIED as soon as they approve. %s It expires at %s.",
 		n.Rows, int(guidance.DefaultApprovalWait.Seconds()), afterWaitRunsOut, n.ExpiresAt))
 }
 
-// approvalStillPendingError is the APPROVAL_REQUIRED answer of a wait
+// ApprovalStillPendingError is the APPROVAL_REQUIRED answer of a wait
 // that ran out: no second wait, the person may take long.
-func approvalStillPendingError(n linksvc.HeldAnswer) error {
+func ApprovalStillPendingError(n linksvc.HeldAnswer) error {
 	n.Reason = guidance.ReasonWaitEnded
 	return approvalError(n, fmt.Sprintf("still waiting for the person's approval of %d rows; nothing was applied. "+
 		"Do not call write to wait again. End your turn: tell the person the write is waiting for their approval "+
@@ -142,8 +142,8 @@ func approvalError(n linksvc.HeldAnswer, message string) error {
 	}
 }
 
-// requestOf is a's request as the agent's read returned it.
-func requestOf(a action.Approval) linksvc.SizedRequest {
+// RequestOf is a's request as the agent's read returned it.
+func RequestOf(a action.Approval) linksvc.SizedRequest {
 	return linksvc.SizedRequest{Binding: a.BindingText, Lines: a.Lines, LeftOut: a.LinesLeftOut, Cost: max(a.LinesCost, linksvc.TextsCost(a.Lines))}
 }
 
@@ -193,14 +193,14 @@ func (ac *approvalCase) largeApprovalNotice(ctx context.Context, id, runID uuid.
 	return n, nil
 }
 
-func approvalInvalid(reason, format string, args ...any) *toolresult.ToolError {
+func ApprovalInvalid(reason, format string, args ...any) *toolresult.ToolError {
 	return &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
 }
 
-// differentWrite is the refusal of a write that is not the held one: its
+// DifferentWrite is the refusal of a write that is not the held one: its
 // step repeats the held write exactly, with its approval id.
-func differentWrite(a action.Approval, format string, args ...any) error {
-	te := approvalInvalid(guidance.ReasonDifferentWrite, format, args...)
+func DifferentWrite(a action.Approval, format string, args ...any) error {
+	te := ApprovalInvalid(guidance.ReasonDifferentWrite, format, args...)
 	call := map[string]any{"sql": a.Statement, "intent": a.Intent, guidance.ArgRunID: a.RunID.String(), guidance.ArgApprovalID: a.ID.String()}
 	var params []any
 	if len(a.Params) > 0 && json.Unmarshal(a.Params, &params) == nil && len(params) > 0 {

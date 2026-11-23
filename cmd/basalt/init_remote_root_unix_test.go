@@ -192,7 +192,7 @@ func TestEngineFinishesARootInitRotation(t *testing.T) {
 	require.NotNil(t, before.Agents[0].Setup)
 	g := olderGuard{d: d, configPath: cfg, socketDir: filepath.Join(dir, "run")}
 	g.startEngine(t)
-	g.callTool(t, toolStatus)
+	g.callTool(t, "status")
 	require.NoFileExists(t, pending, "promoted")
 	require.Equal(t, newPassword, credentialPassword(t, install.credFile))
 	c, err := config.Load(cfg)

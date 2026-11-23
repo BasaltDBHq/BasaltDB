@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,8 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // As root, init --remote writes engine.json through the config directory
@@ -32,11 +29,11 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.NoError(t, err)
 	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.NoError(t, err)
-	defer d.close()
+	defer d.Close()
 
 	require.NoError(t, os.Rename(dir, dir+".moved"))
 	require.NoError(t, os.Symlink(elsewhere, dir))
-	_, err = d.upsert("engine.json", config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(filepath.Join(dir, "agents", "bot.url"))})
+	_, err = d.Upsert("engine.json", config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(filepath.Join(dir, "agents", "bot.url"))})
 	require.NoError(t, err)
 	entries, err := os.ReadDir(elsewhere)
 	require.NoError(t, err)
@@ -62,7 +59,7 @@ func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
 	require.NoError(t, err)
 	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.NoError(t, err)
-	defer d.close()
+	defer d.Close()
 	_, err = rootEngineKey(appSetupHost{}, "/usr", runtime.GOOS, d, time.Now)
 	require.ErrorContains(t, err, fmt.Sprintf("the state directory /usr is owned by uid 0, not uid %d (the owner of the config directory %s)", os.Geteuid(), dir))
 	require.NoFileExists(t, filepath.Join("/usr", channel.KeyFileName))
@@ -86,10 +83,10 @@ func TestMissingStateDirHint(t *testing.T) {
 	require.NotContains(t, err.Error(), "service once")
 }
 
-// As root, writeConfig writes engine.json through the config directory
-// paths opened, not by path: the directory swapped for a symlink before the
-// write redirects nothing.
-func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
+// As root, engine.json is written through the config directory opened, not
+// by path: the directory swapped for a symlink before the write redirects
+// nothing.
+func TestRootConfigDirUpsertStaysInTheOpenedDir(t *testing.T) {
 	t.Parallel()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -99,16 +96,11 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	require.NoError(t, err)
 	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.NoError(t, err)
-	defer d.close()
-	var stderr bytes.Buffer
-	r := &remoteInit{
-		c: &cli.IO{Stderr: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
-		f:        setup.RemoteFlags{Agent: "bot", ConfigPath: filepath.Join(dir, "engine.json")},
-		settings: config.Settings{SocketDir: "/run/basalt"},
-	}
+	defer d.Close()
 	require.NoError(t, os.Rename(dir, dir+".moved"))
 	require.NoError(t, os.Symlink(elsewhere, dir))
-	require.NoError(t, r.writeConfig(nil))
+	_, err = d.Upsert("engine.json", config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(filepath.Join(dir, "agents", "bot.url"))})
+	require.NoError(t, err)
 	requireEmptyDir(t, elsewhere)
 	c, err := config.Load(filepath.Join(dir+".moved", "engine.json"))
 	require.NoError(t, err)

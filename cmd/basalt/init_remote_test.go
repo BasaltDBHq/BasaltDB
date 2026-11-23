@@ -37,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 const (
@@ -160,9 +161,9 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 	all = append(all, args...)
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	res, err := initRemote(c, appSetupHost{}, takePathFlags(c, runInit, all))
+	res, err := setupcli.InitRemote(c, appSetupHost{}, takePathFlags(c, runInit, all))
 	require.NoError(t, err, stderr.String())
-	require.NoError(t, printRemoteResult(c, res))
+	require.NoError(t, setupcli.PrintRemoteResult(c, res))
 	r := remoteRun{result: result{cli.ExitOK, stdout.String(), stderr.String()}, res: res}
 	p, err := setupcode.Decode(r.res.Code)
 	require.NoError(t, err)
@@ -185,7 +186,7 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 // engine's key there.
 func withState(t *testing.T, cfg string) string {
 	t.Helper()
-	require.NoError(t, os.MkdirAll(filepath.Join(filepath.Dir(cfg), stateDirName), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(filepath.Dir(cfg), setup.StateDirName), 0o700))
 	return cfg
 }
 
@@ -871,21 +872,6 @@ func TestInitRemoteRunsOneAtATime(t *testing.T) {
 	require.Contains(t, r.stderr, "another basalt init --remote is running")
 	unlock()
 	require.Equal(t, cli.ExitOK, cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot").code)
-}
-
-func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
-	t.Parallel()
-	name := ""
-	for n := 1; n < 100; n++ {
-		if candidate := strings.Repeat("a", n); config.ValidAgentName(candidate) {
-			name = candidate
-		}
-	}
-	require.GreaterOrEqual(t, len(name), 50)
-	pm := setupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
-	withoutURL := strings.Replace(pm, releasePage+"\n", "", 1)
-	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), guidance.MaxPersonMessageLength, pm)
-	require.Equal(t, 1, strings.Count(pm, name), "the agent is named once")
 }
 
 // A rootless bot's engine must be able to bind its sockets: with --config

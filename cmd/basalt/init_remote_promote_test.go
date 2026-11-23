@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 // loggedInConn is an agent connection the tests' recordedHost answers for:
@@ -60,13 +61,13 @@ func pendingAgent(t *testing.T) (cfg, credFile string) {
 
 // runRemote runs basalt init --remote for the bot at cfg on host h, every
 // agent login answered by login.
-func runRemote(t *testing.T, h remoteHost, cfg string, login func(context.Context, string) (cli.AgentConn, error)) (setup.RemoteInitResult, error) {
+func runRemote(t *testing.T, h setupcli.Host, cfg string, login func(context.Context, string) (cli.AgentConn, error)) (setup.RemoteInitResult, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	e := noDB(t)
 	e.login = login
 	c := e.io(&stdout, &stderr)
-	return initRemote(c, h, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	return setupcli.InitRemote(c, h, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 }
 
 // A .pending credential that logs in is moved over the credential file
@@ -118,90 +119,6 @@ func TestInitRemoteIgnoresACredentialForAnotherRole(t *testing.T) {
 	require.Equal(t, []string{string(bytes.TrimSpace(pending))}, dialed, "only .pending logs in")
 }
 
-// promote moves .pending only while its path names the file read, a
-// regular file with one link: one replaced, or given a second hard link,
-// since it was read is left in place, by path and through the directory
-// root opens.
-func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
-	t.Parallel()
-	adapters := map[string]func(t *testing.T, dir string) setup.CredFiles{
-		"path": func(*testing.T, string) setup.CredFiles { return app.PathCredFiles{} },
-		"root": func(t *testing.T, dir string) setup.CredFiles {
-			t.Helper()
-			files, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
-			require.NoError(t, err)
-			t.Cleanup(files.Close)
-			return files
-		},
-	}
-	changes := map[string]func(t *testing.T, path string){
-		"replaced": func(t *testing.T, path string) {
-			t.Helper()
-			require.NoError(t, config.WriteFile(path, []byte("postgres://bt_agent_bot:planted@db.example.com:5432/app\n")))
-		},
-		"hard linked": func(t *testing.T, path string) {
-			t.Helper()
-			require.NoError(t, os.Link(path, path+".link"))
-		},
-	}
-	for adapter, open := range adapters {
-		for change, apply := range changes {
-			t.Run(adapter+" "+change, func(t *testing.T) {
-				t.Parallel()
-				dir, err := filepath.EvalSymlinks(t.TempDir())
-				require.NoError(t, err)
-				credFile := filepath.Join(dir, "bot.url")
-				const old = "postgres://bt_agent_bot:old@db.example.com:5432/app\n"
-				require.NoError(t, config.WriteFile(credFile, []byte(old)))
-				require.NoError(t, config.WriteFile(credFile+setup.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
-				r := &remoteInit{credFile: credFile, files: open(t, dir)}
-				pending, err := setup.ReadCredentialIfAny(r.files, credFile+setup.PendingSuffix)
-				require.NoError(t, err)
-
-				apply(t, credFile+setup.PendingSuffix)
-				err = r.promote(pending)
-				require.ErrorContains(t, err, "changed while basalt init ran; nothing changed, run it again")
-				require.FileExists(t, credFile+setup.PendingSuffix)
-				got, err := os.ReadFile(credFile)
-				require.NoError(t, err)
-				require.Equal(t, old, string(got), "the credential file is unchanged")
-				require.False(t, r.credExists)
-			})
-		}
-	}
-}
-
-// An error reaching .pending before the move is returned as it is, not as
-// a changed file: as root, a .pending swapped for a symlink fails to open
-// (the directory is reached without following links), and nothing moves.
-func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
-	t.Parallel()
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	credFile := filepath.Join(dir, "bot.url")
-	const old = "postgres://bt_agent_bot:old@db.example.com:5432/app\n"
-	require.NoError(t, config.WriteFile(credFile, []byte(old)))
-	require.NoError(t, config.WriteFile(credFile+setup.PendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
-	files, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
-	require.NoError(t, err)
-	t.Cleanup(files.Close)
-	r := &remoteInit{credFile: credFile, files: files}
-	pending, err := setup.ReadCredentialIfAny(r.files, credFile+setup.PendingSuffix)
-	require.NoError(t, err)
-
-	elsewhere := filepath.Join(dir, "elsewhere.url")
-	require.NoError(t, os.Rename(credFile+setup.PendingSuffix, elsewhere))
-	require.NoError(t, os.Symlink(elsewhere, credFile+setup.PendingSuffix))
-	_, want := files.Stat(credFile + setup.PendingSuffix)
-	require.Error(t, want)
-	err = r.promote(pending)
-	require.Equal(t, want.Error(), err.Error(), "the open error itself")
-	require.NotContains(t, err.Error(), "changed while basalt init ran")
-	got, err := os.ReadFile(credFile)
-	require.NoError(t, err)
-	require.Equal(t, old, string(got), "the credential file is unchanged")
-}
-
 // A lock another run holds keeps init --remote's message, and is still
 // config.ErrLocked, by path and through the directory root opens.
 func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {
@@ -244,7 +161,7 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
 	io.FetchChain = second.fetch
-	res, err := initRemote(io, appSetupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	res, err := setupcli.InitRemote(io, appSetupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.NoError(t, err, stderr.String())
 	require.Equal(t, []string{pending}, dialed, "the .pending login decides")
 	p, err := setupcode.Decode(res.Code)

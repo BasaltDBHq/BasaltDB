@@ -1,4 +1,4 @@
-package main
+package setupcli
 
 import (
 	"crypto/x509"
@@ -48,7 +48,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 
 // pinOf is the engine's pin for host in the config's trust.d: its
 // pin-<host> profile, or nil, read through h.
-func pinOf(h remoteHost, configPath, host string) *trustprofile.Profile {
+func pinOf(h Host, configPath, host string) *trustprofile.Profile {
 	p := h.TrustProfileFor(configPath, host)
 	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
 		return nil

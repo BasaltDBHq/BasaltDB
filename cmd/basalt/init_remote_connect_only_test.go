@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // connectOnlyArgs make a connect-only code: a new engine is
@@ -36,7 +37,7 @@ func connectOnlyConfig(t *testing.T) string {
 // secretOf reads the agent's .secret next to the config and checks its mode.
 func secretOf(t *testing.T, cfg string) string {
 	t.Helper()
-	path := filepath.Join(filepath.Dir(cfg), "agents", "bot"+secretSuffix)
+	path := filepath.Join(filepath.Dir(cfg), "agents", "bot"+config.SecretSuffix)
 	fi, err := os.Lstat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(config.FileMode), fi.Mode().Perm())
@@ -46,7 +47,7 @@ func secretOf(t *testing.T, cfg string) string {
 }
 
 func secretPathOf(cfg string) string {
-	return filepath.Join(filepath.Dir(cfg), "agents", "bot"+secretSuffix)
+	return filepath.Join(filepath.Dir(cfg), "agents", "bot"+config.SecretSuffix)
 }
 
 // editSetup changes the agent's pending setup in engine.json.
@@ -196,7 +197,7 @@ func TestInitRemoteConnectOnlyNeedsTheConnectPath(t *testing.T) {
 func TestInitRemoteConnectOnlyNeedsTheEngineKey(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
-	state := filepath.Join(filepath.Dir(cfg), stateDirName)
+	state := filepath.Join(filepath.Dir(cfg), setup.StateDirName)
 	require.NoError(t, os.WriteFile(filepath.Join(state, channel.KeyFileName), []byte("not a key"), 0o600))
 
 	r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
@@ -267,7 +268,7 @@ func TestInitRemoteConnectOnlyNotAsRoot(t *testing.T) {
 	require.True(t, r.res.ConnectOnly)
 	require.NotNil(t, r.payload.Engine)
 	requireVerifierOf(t, r.payload.Agent.Verifier, secretOf(t, cfg))
-	require.FileExists(t, filepath.Join(filepath.Dir(cfg), stateDirName, channel.KeyFileName))
+	require.FileExists(t, filepath.Join(filepath.Dir(cfg), setup.StateDirName, channel.KeyFileName))
 
 	editSetup(t, cfg, func(s *config.Setup) { s.Refused = true })
 	again := remoteWith(t, e, cfg, connectOnlyArgs...)

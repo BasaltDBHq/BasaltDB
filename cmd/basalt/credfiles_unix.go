@@ -58,7 +58,7 @@ func openRootConfigDir(h setupFilesHost, dir string, trusted int) (*rootConfigDi
 // upsert is config.UpsertAgentVault on the config file name, relative to
 // the opened directory, the file checked as the hardened read checks it and
 // written owned by the directory's owner.
-func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {
+func (d *rootConfigDir) Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {
 	dirUID, err := d.dir.Owner()
 	if err != nil {
 		return config.VaultWritten{}, err
@@ -69,7 +69,7 @@ func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (
 	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, app.CredentialOwner(dirUID), s, a)
 }
 
-func (d *rootConfigDir) close() { _ = d.dir.Close() }
+func (d *rootConfigDir) Close() { _ = d.dir.Close() }
 
 // rootEngineKey is the engine's public key for a root init --remote: the
 // key file in the engine's state directory, read or (when there is none)

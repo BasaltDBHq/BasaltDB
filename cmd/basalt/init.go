@@ -10,7 +10,7 @@ import (
 // never reads the admin connection string. h is what init reaches outside
 // the CLI.
 func runInit(c *cli.IO, h initHost, args []string) int {
-	if isRemote(args) {
+	if setupcli.IsRemote(args) {
 		return runInitRemote(c, h, args)
 	}
 	return setupcli.RunLocal(c, h, args)
@@ -18,12 +18,21 @@ func runInit(c *cli.IO, h initHost, args []string) int {
 
 // initHost is what basalt init reaches outside the CLI, local and --remote.
 type initHost interface {
-	remoteHost
+	setupcli.Host
 	setupcli.LocalHost
 }
 
-// stateDirName is the engine's state directory next to a per-user config.
-const stateDirName = "state"
-
 // flagDevLocalPages is init's and service install's development exception.
 const flagDevLocalPages = "dev-local-pages"
+
+// runInitRemote: basalt init --remote.
+func runInitRemote(c *cli.IO, h setupcli.Host, args []string) int {
+	res, err := setupcli.InitRemote(c, h, args)
+	if err != nil {
+		return c.Fail(err)
+	}
+	if err := setupcli.PrintRemoteResult(c, res); err != nil {
+		return c.Fail(err)
+	}
+	return cli.ExitOK
+}

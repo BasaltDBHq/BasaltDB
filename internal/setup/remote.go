@@ -208,3 +208,6 @@ func KeyRefused(err error) error {
 // trusted with its key, so a code without one could never finish.
 var ErrNoEngineForTrust = errors.New("the database's certificate changed, and the setup code that replaces the engine's pin " +
 	"needs the engine's key, which cannot be read here: run basalt init --remote as the engine's OS user")
+
+// StateDirName is the engine's state directory next to a per-user config.
+const StateDirName = "state"

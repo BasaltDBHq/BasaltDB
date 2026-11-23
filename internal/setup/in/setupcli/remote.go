@@ -1,4 +1,4 @@
-package main
+package setupcli
 
 import (
 	"cmp"
@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -29,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -44,17 +42,10 @@ import (
 
 const (
 	flagRemote = "remote"
-	// secretSuffix names the file that keeps the agent's password while a
-	// connect-only code waits for the database's address (CONTRACT.md,
-	// Connect-only setup codes): agents/<agent>.secret.
-	secretSuffix = config.SecretSuffix
-	// releasePage is where the person installs basalt on their own computer.
-	releasePage = "https://github.com/BasaltDBHq/BasaltDB/releases"
-	toolStatus  = "status"
 )
 
-// isRemote reports whether args ask for basalt init --remote.
-func isRemote(args []string) bool {
+// IsRemote reports whether args ask for basalt init --remote.
+func IsRemote(args []string) bool {
 	for _, a := range args {
 		if a == "--" {
 			return false
@@ -69,20 +60,8 @@ func isRemote(args []string) bool {
 	return false
 }
 
-// runInitRemote: basalt init --remote.
-func runInitRemote(c *cli.IO, h remoteHost, args []string) int {
-	res, err := initRemote(c, h, args)
-	if err != nil {
-		return c.Fail(err)
-	}
-	if err := printRemoteResult(c, res); err != nil {
-		return c.Fail(err)
-	}
-	return cli.ExitOK
-}
-
-// initRemote runs basalt init --remote and returns what it prints.
-func initRemote(c *cli.IO, h remoteHost, args []string) (setup.RemoteInitResult, error) {
+// InitRemote runs basalt init --remote and returns what it prints.
+func InitRemote(c *cli.IO, h Host, args []string) (setup.RemoteInitResult, error) {
 	f, err := parseInitRemote(c, args)
 	if err != nil {
 		return setup.RemoteInitResult{}, err
@@ -126,7 +105,7 @@ func parseInitRemote(c *cli.IO, args []string) (setup.RemoteFlags, error) {
 func remoteAgentName(agents []config.Agent) (string, error) {
 	switch len(agents) {
 	case 0:
-		return app.DemoAgent, nil
+		return setupcode.DemoAgent, nil
 	case 1:
 		return agents[0].Name, nil
 	}
@@ -139,7 +118,7 @@ type remoteInit struct {
 	c *cli.IO
 	// setup is what the run reaches outside the CLI: the guard, the engine
 	// keys and the trust profiles.
-	setup    remoteHost
+	setup    Host
 	f        setup.RemoteFlags
 	names    guardmodel.Names
 	role     string
@@ -152,7 +131,7 @@ type remoteInit struct {
 	// configDir is, as root, the config directory opened without following
 	// a link anyone but root controls: engine.json is locked, read and
 	// written relative to it (nil not as root: by path).
-	configDir *rootConfigDir
+	configDir RootConfigDir
 	osUser    string
 	base      *url.URL
 	target    setupcode.Target
@@ -197,11 +176,16 @@ type remoteInit struct {
 	certChanged bool
 }
 
-// remoteHost is what basalt init --remote reaches outside the CLI: the
-// guard's versions, records and agent connection string, the engine's
-// keys, and the trust profiles next to the config.
-type remoteHost interface {
-	setupFilesHost
+// Host is what basalt init --remote reaches outside the CLI: the guard's
+// versions, records and agent connection string, the engine's keys, the
+// trust profiles next to the config, the database's server errors, and the
+// credential files and config directory, which root opens without following
+// a link anyone but root or the file's owner controls.
+type Host interface {
+	setup.DBErrors
+	// TrustProfileFor is the profile in the trust.d next to the config at
+	// configPath that names host, or nil.
+	TrustProfileFor(configPath, host string) *trustprofile.Profile
 	// GuardAgentConnString is adminURL with the agent's role and password.
 	GuardAgentConnString(adminURL, role, password string) (string, error)
 	// GuardAgentVersion is the guard version q's database has, 0 when none.
@@ -213,33 +197,39 @@ type remoteHost interface {
 	// LoadOrCreateEngineKeys reads the engine's keys at path, making them
 	// when there are none.
 	LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error)
-	// TrustProfileFor is the profile in the trust.d next to the config at
-	// configPath that names host, or nil.
-	TrustProfileFor(configPath, host string) *trustprofile.Profile
+	// PathCredFiles reaches the credential files by path: init --remote not
+	// as root, in the user's own directories.
+	PathCredFiles() setup.CredFiles
+	// OpenRootCredFiles opens dir, the agents directory, as root, making it
+	// (and the config directory) when missing. Every directory on the way
+	// must be owned by root or trusted, and no link is followed. Reads
+	// through it check the string another user wrote there.
+	OpenRootCredFiles(dir string, trusted int) (setup.CredFiles, error)
+	// RootTrustedOwner is the owner root trusts on the way to the config
+	// directory dir: dir's, or, when it does not exist yet, that of the
+	// nearest directory above it that does.
+	RootTrustedOwner(dir string) (int, error)
+	// OpenRootConfigDir opens dir, the config directory, as root, making it
+	// when missing; engine.json is then locked, read and written relative
+	// to it, checked as the hardened read checks it.
+	OpenRootConfigDir(dir string, trusted int) (RootConfigDir, error)
+	// RootEngineKey is the engine's public key for a root init --remote:
+	// the key file in stateDir read or, when there is none, created relative
+	// to the state directory opened without following a link anyone but
+	// root controls, owned by the config directory's owner.
+	RootEngineKey(stateDir, goos string, cfg RootConfigDir, now func() time.Time) ([]byte, error)
 }
 
-// setupFilesHost is how setup reaches the files root reads and writes for
-// the engine's user: directories and files opened from / without following
-// a link anyone but root or their owner controls, and OS user ids.
-type setupFilesHost interface {
-	// OSOpenTrustedDir opens dir for root, refusing a directory on the way
-	// that someone other than root or owner could swap; create makes it
-	// when missing.
-	OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error)
-	// OSOpenTrustedFile opens path read-only for root: its directory as
-	// OSOpenTrustedDir does, the file itself never through a symlink.
-	OSOpenTrustedFile(path string, owner int) (*os.File, error)
-	// OSLookupUID is the uid of the OS user name, or -1 when there is no
-	// such user.
-	OSLookupUID(name string) int
+// RootConfigDir is the config directory init --remote opened as root.
+type RootConfigDir interface {
+	// Upsert is config.UpsertAgentVault on the config file name, relative to
+	// the opened directory.
+	Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error)
+	// Close closes the directory.
+	Close()
 }
 
-// trustedDir is a directory opened by OSOpenTrustedDir: files in it are
-// reached relative to its descriptor, never by path. It is the credential
-// files' own (app.TrustedDir), so a setupFilesHost reaches them too.
-type trustedDir = app.TrustedDir
-
-func newRemoteInit(c *cli.IO, h remoteHost, f setup.RemoteFlags) (*remoteInit, error) {
+func newRemoteInit(c *cli.IO, h Host, f setup.RemoteFlags) (*remoteInit, error) {
 	r := &remoteInit{c: c, setup: h, f: f}
 	if err := r.paths(); err != nil {
 		return nil, err
@@ -253,7 +243,7 @@ func newRemoteInit(c *cli.IO, h remoteHost, f setup.RemoteFlags) (*remoteInit, e
 		unlock()
 		r.files.Close()
 		if r.configDir != nil {
-			r.configDir.close()
+			r.configDir.Close()
 		}
 	}
 	if err := r.connection(); err != nil {
@@ -290,7 +280,7 @@ func (r *remoteInit) paths() error {
 			// the sockets next to a config in another place.
 			r.settings.SocketDir = filepath.Join(dir, "run")
 		}
-		r.settings.StateDir = filepath.Join(dir, stateDirName)
+		r.settings.StateDir = filepath.Join(dir, setup.StateDirName)
 	}
 	r.stateDir = config.Config{StateDir: r.settings.StateDir}.StateDirFor(r.c.Goos)
 	// As root, the hardened read (cli.LoadEngineConfig): the config must be a
@@ -332,7 +322,7 @@ func (r *remoteInit) paths() error {
 	if asRoot {
 		// The user who ran sudo is the person on this machine
 		// (CONTRACT.md, Recording the person). Never root.
-		person, err := setupcli.InvokingUID(r.c)
+		person, err := InvokingUID(r.c)
 		if err == nil && person != 0 {
 			r.settings.PersonUIDs = []uint32{person}
 		}
@@ -364,9 +354,9 @@ func (r *remoteInit) paths() error {
 		}
 		r.osUser = u
 	}
-	r.files = app.PathCredFiles{}
+	r.files = r.setup.PathCredFiles()
 	if asRoot {
-		trusted, err := rootTrustedOwner(dir)
+		trusted, err := r.setup.RootTrustedOwner(dir)
 		if err != nil {
 			return err
 		}
@@ -382,12 +372,12 @@ func (r *remoteInit) paths() error {
 				"The engine runs as uid %d and records you as its person; restart its service after this run\n",
 				dir, trusted, r.settings.PersonUIDs[0], config.ModeService, trusted)
 		}
-		files, err := openRootCredFiles(r.setup, filepath.Dir(r.credFile), trusted)
+		files, err := r.setup.OpenRootCredFiles(filepath.Dir(r.credFile), trusted)
 		if err != nil {
 			return err
 		}
 		r.files = files
-		if r.configDir, err = openRootConfigDir(r.setup, dir, trusted); err != nil {
+		if r.configDir, err = r.setup.OpenRootConfigDir(dir, trusted); err != nil {
 			files.Close()
 			return err
 		}
@@ -743,7 +733,7 @@ func (r *remoteInit) settle() error {
 	if err := r.setPrefix(r.f.Prefix); err != nil {
 		return err
 	}
-	vc, err := setupcli.ChooseVault("", r.f.OperatedBy, links.Portal, setup.RemoteVaultWhy)
+	vc, err := ChooseVault("", r.f.OperatedBy, links.Portal, setup.RemoteVaultWhy)
 	if err != nil {
 		return err
 	}
@@ -906,7 +896,7 @@ func (r *remoteInit) writeCredential(p setup.Plan) error {
 	if err != nil {
 		return err
 	}
-	dsn, applied := setup.HardenedCredential(r.c.Ctx, r.c.Probe, pgErrors{}, dsn)
+	dsn, applied := setup.HardenedCredential(r.c.Ctx, r.c.Probe, r.setup, dsn)
 	fmt.Fprint(r.c.Stderr, applied.Line())
 	path := r.credFile
 	if r.credExists {
@@ -923,7 +913,7 @@ func (r *remoteInit) writeConfig(s *config.Setup) error {
 	if r.configDir != nil {
 		// As root, through the directory opened in paths: a config
 		// directory swapped for a symlink since then redirects nothing.
-		v, err = r.configDir.upsert(filepath.Base(r.f.ConfigPath), r.settings, a)
+		v, err = r.configDir.Upsert(filepath.Base(r.f.ConfigPath), r.settings, a)
 	} else {
 		v, err = config.UpsertAgentVault(r.f.ConfigPath, r.settings, a)
 	}
@@ -1018,9 +1008,9 @@ func setupPersonMessage(name, fingerprint string) string {
 		name, strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"), fingerprint)
 }
 
-// printRemoteResult prints the result: the connect link or the code in a
+// PrintRemoteResult prints the result: the connect link or the code in a
 // block of its own, its fingerprint and what the person does.
-func printRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
+func PrintRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
 	if res.Reused {
 		fmt.Fprintln(c.Stderr, "basalt: a setup code is pending for this agent; here it is again")
 	}
@@ -1073,7 +1063,7 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 	if r.c.Host.Euid() == 0 {
 		// As root, through the state directory opened without following a
 		// link the engine's user controls; a new key file is that user's.
-		spki, err := rootEngineKey(r.setup, r.stateDir, r.c.Goos, r.configDir, r.c.Now)
+		spki, err := r.setup.RootEngineKey(r.stateDir, r.c.Goos, r.configDir, r.c.Now)
 		if err != nil {
 			return nil, setup.KeyRefused(err)
 		}

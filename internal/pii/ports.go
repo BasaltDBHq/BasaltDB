@@ -1,6 +1,8 @@
 package pii
 
 import (
+	"context"
+
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
@@ -11,6 +13,11 @@ type Querier = pgquerier.Port
 
 // Rows is a query's answer as this package reads it.
 type Rows = pgquerier.Rows
+
+// ReadOnlyTx runs fn in a read-only transaction that is always rolled back
+// (a sample changes nothing, so nothing is committed), and returns fn's
+// error or the error of beginning it.
+type ReadOnlyTx = func(ctx context.Context, fn func(Querier) error) error
 
 // forEachRow scans each row of rows into scans and calls fn after each, as
 // pgx.ForEachRow does: it closes rows on return, and stops at the first

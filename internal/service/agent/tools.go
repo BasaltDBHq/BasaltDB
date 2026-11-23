@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -207,16 +208,8 @@ func intentMissing(raw json.RawMessage) bool {
 
 // --- run_history ---
 
-// runHistoryArgs is the run_history tool's input
-// (api/mcp/tools/run_history.json): the list params struct embeds
-// pagination.Params, as every list does.
-type runHistoryArgs struct {
-	pagination.Params
-	RunID string `json:"runId" validate:"required,uuid"`
-}
-
 func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, error) {
-	var args runHistoryArgs
+	var args ledgersvc.RunHistoryArgs
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}

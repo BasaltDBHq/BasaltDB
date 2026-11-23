@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -117,7 +118,7 @@ func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, er
 // writeRun finds the named run, or starts a one-write run.
 func (wc *writeCase) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
-		return findRun(ctx, wc.core.Store, p.RunID)
+		return ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
 	}
 	info, err := wc.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {

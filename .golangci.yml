@@ -200,7 +200,7 @@ linters:
               desc: the agent service reaches Postgres only through the store ports
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/sqlguard
               desc: statements are checked by the store (SQLStore.Check)
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/store
               desc: the run.go wiring picks the adapter; the service sees ports only
             - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial
               desc: the agent service opens no connection
@@ -216,7 +216,7 @@ linters:
             - "**/internal/service/piidict/**"
             - "!$test"
           deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/store
               desc: the ledger and PII code do not depend on a store adapter
             - pkg: github.com/basaltdbhq/basaltdb/internal/service/agent
               desc: the ledger and PII code do not depend on the agent service

@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 )
 

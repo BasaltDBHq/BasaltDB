@@ -195,7 +195,7 @@ func TestLastStopIsWrittenAndCleared(t *testing.T) {
 
 	cfg := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(cfg, []byte("cfg-v1\n"), 0o600))
-	engine.WriteLastStop(superviseHost{}, dir, "the engine crashed 5 times within 10s", cfg, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
+	engine.WriteLastStop(engineHost{}, engineTerminal{}, dir, "the engine crashed 5 times within 10s", cfg, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
 	raw, err := os.ReadFile(filepath.Join(dir, engine.LastStopFile))
 	require.NoError(t, err)
 	want := `{"reason":"the engine crashed 5 times within 10s","at":"2026-11-20T01:02:03Z","engineSha256":"` + laststop.HashEngineJSON(cfg) + `"}`

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -49,6 +50,12 @@ func (h fakeCrashHost) NewRecorder() engine.Recorder { return h.rec }
 func (fakeCrashHost) TerminalText(s string) string { return "<" + s + ">" }
 
 func (fakeCrashHost) InfoOwnerUID(os.FileInfo) (int, bool) { return 0, false }
+
+func (fakeCrashHost) LastStopHashEngineJSON(string) string { return "" }
+
+func (fakeCrashHost) WriteFileAtomic(string, []byte) error { return nil }
+
+func (fakeCrashHost) HeldAtEveryLook(func() bool, func(time.Duration)) bool { return false }
 
 // crashDirsOf are the person's and the system's crash directories for a
 // person whose config directory is base.

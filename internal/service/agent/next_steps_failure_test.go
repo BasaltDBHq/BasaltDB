@@ -30,7 +30,7 @@ func TestFailureCallsTheApprovalAndRevertStepBuilders(t *testing.T) {
 	}
 	cases := map[string]catalogCase{
 		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "HELD", ""): {
-			"write", writeArgs0, plain(approval.ApprovalRequiredError(held)),
+			"write", writeArgs0, plainFunc(func() error { return approval.ApprovalRequiredError(held) }),
 		},
 		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {
 			"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guardmodel.DetailHoldTooLarge),

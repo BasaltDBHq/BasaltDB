@@ -47,9 +47,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
+	"github.com/basaltdbhq/basaltdb/internal/status"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -318,7 +318,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}, piiLog)
 	wg.Go(func() { scanner.Run(ctx) })
 	if portal != nil {
-		wg.Go(func() { portal.Run(ctx, portalcheck.Interval) })
+		wg.Go(func() { portal.Run(ctx, status.Interval) })
 	}
 	if env.update != nil {
 		wg.Go(func() {

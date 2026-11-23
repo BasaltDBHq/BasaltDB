@@ -1,4 +1,4 @@
-package portalcheck
+package status
 
 import (
 	"context"

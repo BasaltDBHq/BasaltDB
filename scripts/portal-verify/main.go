@@ -15,8 +15,8 @@ import (
 	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
+	"github.com/basaltdbhq/basaltdb/internal/status"
 )
 
 func main() {
@@ -35,7 +35,7 @@ func run(ctx context.Context, args []string) int {
 		fmt.Fprintf(os.Stderr, "portal-verify: --portal-url: %v\n", err)
 		return 2
 	}
-	opts := portalcheck.Options(base)
+	opts := status.Options(base)
 	if *manifestPath != "" {
 		b, err := os.ReadFile(filepath.Clean(*manifestPath))
 		if err == nil {

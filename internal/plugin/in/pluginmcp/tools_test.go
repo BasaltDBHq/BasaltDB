@@ -1,13 +1,32 @@
-package agent
+package pluginmcp
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 )
+
+// testErrors tells apart the adapters' error values as the engine does.
+func testErrors() guidance.ErrorMap {
+	return guidance.ErrorMap{
+		InvalidParams: ledger.ErrInvalidParams,
+		InvalidIntent: guard.ErrInvalidIntent,
+		RowTooLarge: func(err error) (string, bool) {
+			var rl *resultsize.RowTooLargeError
+			if errors.As(err, &rl) {
+				return rl.Error(), true
+			}
+			return "", false
+		},
+	}
+}
 
 const casePluginApproval = "0193a4c2-7d1e-7c3a-9f00-0000000000e5"
 

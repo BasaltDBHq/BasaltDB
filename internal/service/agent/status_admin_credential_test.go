@@ -107,7 +107,7 @@ func TestEveryToolRefusesEverySpellingOfAnAdminString(t *testing.T) {
 	d.Core.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	d.Core.Now = func() time.Time { return statusNow }
 	tools := servedTools(NewService(d))
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, nil)...)
 	for _, tool := range tools {
 		for name, v := range spellings {
 			for _, args := range []map[string]any{{"sql": v}, {"intent": v}, {"params": []any{v}}} {
@@ -133,7 +133,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	d.Core.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	d.Core.Now = func() time.Time { return statusNow }
 	tools := servedTools(NewService(d))
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, nil)...)
 	url := "postgres://admin:" + secret + "@db.example.com:5432/app"
 	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, guidance.ReasonAdminCredential, "")
 	require.True(t, ok)

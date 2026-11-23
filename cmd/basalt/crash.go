@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
-	"runtime/debug"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
@@ -16,20 +21,28 @@ import (
 // runGuarded runs the command line and turns a panic into a saved crash
 // report, one line on stderr and exit code 1.
 func runGuarded(ctx context.Context, args []string, std cli.Stdio) int {
-	return guarded(args, std, func() int { return run(ctx, args, std) })
+	return enginecli.Guarded(engineCLIHost{}, engineHost{}, engineTerminal{}, args, std, func() int { return run(ctx, args, std) })
 }
 
-// guarded runs f, which runs the command line args.
-func guarded(args []string, std cli.Stdio, f func() int) (code int) {
-	defer func() {
-		v := recover()
-		if v == nil {
-			return
-		}
-		code = cli.ExitError
-		engine.ReportPanic(engineHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
-	}()
-	return f()
+// engineCLIHost is enginecli.Host for the command table, through app.
+type engineCLIHost struct{}
+
+func (engineCLIHost) CommandName(args []string) string { return commandName(args) }
+
+func (engineCLIHost) Fail(w io.Writer, name string, err error) int { return fail(w, name, err) }
+
+func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
+
+func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
+	return engineDown(name, configPath, log)
+}
+
+func (engineCLIHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
+	return engineStarter(configPath, socket, cfg, euid, exe, log)
+}
+
+func (engineCLIHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
+	return app.NewEngineDownServer(down)
 }
 
 // commandName is the command a command line runs, for the report: only a
@@ -66,6 +79,10 @@ func (engineTerminal) WriteFileAtomic(path string, data []byte) error {
 
 func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
 	return cli.HeldAtEveryLook(held, sleep)
+}
+
+func (engineTerminal) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
+	return cli.LoadEngineConfigAs(appShell{}, euid, path)
 }
 
 // newRecorder is the crash recorder for this process.

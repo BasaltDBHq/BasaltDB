@@ -39,7 +39,7 @@ var plainConfigLoads = map[string]string{
 	"engine.go:runServiceAt:LoadNoFollow": "the unit's memory limit only",
 	// basalt mcp reads the socket directory and the agents from the config,
 	// as the agent's OS user.
-	"engine.go:runMCPAt:Load": "basalt mcp, as the agent's user",
+	engineCLIDir + "mcp.go:RunMCPAt:Load": "basalt mcp, as the agent's user",
 }
 
 // configLoadsIn lists the config loaders f refers to, as
@@ -103,17 +103,32 @@ func configLoadsIn(name string, f *ast.File) []string {
 // entries in plainConfigLoads name it.
 const shellDir = "../../internal/platform/cli/"
 
+// engineCLIDir is the engine's CLI controllers' source folder, from this
+// package, as the entries in plainConfigLoads name it.
+const engineCLIDir = "../../internal/engine/in/enginecli/"
+
+// engineDir is the engine's use cases' source folder, from this package:
+// the supervisor's config read (SuperviseConfig) passes through it.
+const engineDir = "../../internal/engine/"
+
 // No root code path reads the engine config with a config loader directly:
-// a new call outside plainConfigLoads, in this package or the CLI shell,
-// fails here, so it uses cli.LoadEngineConfig.
+// a new call outside plainConfigLoads, in this package, the CLI shell, the
+// engine's use cases or its CLI controllers, fails here, so it uses
+// cli.LoadEngineConfig.
 func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 	t.Parallel()
 	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
-	shell, err := filepath.Glob(shellDir + "*.go")
-	require.NoError(t, err)
-	require.NotEmpty(t, shell, "the CLI shell's sources are scanned too")
-	files = append(files, shell...)
+	for dir, what := range map[string]string{
+		shellDir:     "the CLI shell's sources",
+		engineDir:    "the engine's use cases",
+		engineCLIDir: "the engine's CLI controllers",
+	} {
+		more, err := filepath.Glob(dir + "*.go")
+		require.NoError(t, err)
+		require.NotEmpty(t, more, what+" are scanned too")
+		files = append(files, more...)
+	}
 	fset := token.NewFileSet()
 	var found []string
 	for _, name := range files {

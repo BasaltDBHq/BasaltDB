@@ -57,6 +57,10 @@ func (fakeCrashHost) WriteFileAtomic(string, []byte) error { return nil }
 
 func (fakeCrashHost) HeldAtEveryLook(func() bool, func(time.Duration)) bool { return false }
 
+func (fakeCrashHost) LoadEngineConfigAs(int, string) (config.Config, error) {
+	return config.Config{}, nil
+}
+
 // crashDirsOf are the person's and the system's crash directories for a
 // person whose config directory is base.
 func crashDirsOf(base string) (user, state string) {

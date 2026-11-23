@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -27,11 +27,11 @@ const childStopWait = 30 * time.Second
 // runSupervise is basalt engine --supervise: one supervisor per config,
 // restarting the engine as a child of this process.
 func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdio, h cli.Machine) int {
-	cfg, err := superviseConfig(h.Euid(), configPath)
+	cfg, err := engine.SuperviseConfig(engineTerminal{}, h.Euid(), configPath)
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
-	startedFrom, err := superviseBinaryPath()
+	startedFrom, err := engine.SuperviseBinaryPath(app.BinaryWatch{})
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
@@ -66,29 +66,6 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
-}
-
-// superviseConfig is the config the supervisor needs (its socket and state
-// folders): the config file's, or, for a service engine whose config does
-// not exist yet, the defaults its child waits with (engine.WaitsForConfig).
-func superviseConfig(euid int, configPath string) (config.Config, error) {
-	if engine.WaitsForConfig(engineTerminal{}, euid, configPath) {
-		return config.Config{
-			SocketDir: config.DefaultSocketDir(runtime.GOOS), StateDir: config.DefaultStateDir(runtime.GOOS),
-		}, nil
-	}
-	return cli.LoadEngineConfigAs(appShell{}, euid, configPath)
-}
-
-// superviseBinaryPath is the path the supervisor was started from: a
-// crash restart resolves it again, so a new file at the same path is run
-// and a missing one is not looped on.
-func superviseBinaryPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, binwatch.OS{}.Stat)
 }
 
 // childStarter runs the engine as startedFrom engine --config ... --started-by ...

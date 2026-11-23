@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -29,9 +30,10 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 	t.Setenv("PGPASSWORD", "envsecretvalue99")
 
 	var errw bytes.Buffer
-	code := guarded([]string{"init", "--agent", "bot"}, cli.Stdio{Err: &errw}, func() int {
+	code := enginecli.Guarded(engineCLIHost{}, engineHost{}, engineTerminal{}, []string{"init", "--agent", "bot"}, cli.Stdio{Err: &errw}, func() int {
 		panic("connect " + leakedConn + " envsecretvalue99 " + panicSecret)
 	})
+
 	require.Equal(t, cli.ExitError, code)
 	line := errw.String()
 	require.Equal(t, 1, strings.Count(line, "\n"), line)

@@ -31,9 +31,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -161,7 +163,7 @@ func (e *rescopeEnv) request(t *testing.T) (uuid.UUID, string) {
 	t.Helper()
 	body, isError := e.h.call(t, "request_revert", map[string]any{"taskId": e.task.String(), "intent": "Undo the task"})
 	require.False(t, isError, "%v", body)
-	return uuid.MustParse(str(t, body["revertId"])), links.SecretOf(str(t, body["revertUrl"]))
+	return uuid.MustParse(str(t, body["revertId"])), linkstest.SecretOf(str(t, body["revertUrl"]))
 }
 
 func (e *rescopeEnv) own() revert.Select {
@@ -210,7 +212,7 @@ func (e *rescopeEnv) widenBody(t *testing.T, signer *passkeytest.Authenticator, 
 	require.NoError(t, err)
 	var norm string
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
-	as, err := signer.Sign(revert.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := signer.Sign(reverttest.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
@@ -404,7 +406,7 @@ func TestResetGivesTheRotatedLinkLinkReset(t *testing.T) {
 
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
 	require.False(t, isError, "%v", body)
-	agentSecret := links.SecretOf(str(t, body["revertUrl"]))
+	agentSecret := linkstest.SecretOf(str(t, body["revertUrl"]))
 	require.NotEmpty(t, agentSecret)
 
 	var perr pageError
@@ -501,7 +503,7 @@ func TestDirectResetInPostgresBeatsTheEnginesMemory(t *testing.T) {
 
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
 	require.False(t, isError, "%v", body)
-	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), links.SecretOf(str(t, body["revertUrl"])), &read))
+	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), linkstest.SecretOf(str(t, body["revertUrl"])), &read))
 	b, err := read.Check()
 	require.NoError(t, err)
 	require.False(t, b.Widened)
@@ -522,7 +524,7 @@ func TestReissueAfterADirectResetTellsThePerson(t *testing.T) {
 	require.NoError(t, err)
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
 	require.False(t, isError, "%v", body)
-	agentSecret := links.SecretOf(str(t, body["revertUrl"]))
+	agentSecret := linkstest.SecretOf(str(t, body["revertUrl"]))
 
 	var perr pageError
 	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), personSecret, &perr))

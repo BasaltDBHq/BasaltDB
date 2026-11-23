@@ -166,7 +166,7 @@ func parseKeyFile(path string, raw []byte) (*EngineKeys, error) {
 	if k.engineID != f.EngineID {
 		return nil, keyFileErr(path, "engineId is not its signing key's id")
 	}
-	sig, err := unb64(f.BoxKeySig)
+	sig, err := Unb64(f.BoxKeySig)
 	if err != nil {
 		return nil, keyFileErr(path, "boxKeySig is not base64url")
 	}

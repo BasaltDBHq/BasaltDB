@@ -15,7 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -103,7 +105,7 @@ func buildFixtures(t *testing.T) fixtures {
 	req := approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
 	// The page's fixtures keep format 1, which the pages still read; format 2
 	// has its shared vectors in api/mcp/links/compact-request.json.
-	frag, err := linkcodec.Encode(linkcodec.Format1, req)
+	frag, err := linkcodectest.Encode(linkcodec.Format1, req)
 	require.NoError(t, err)
 	f.Request.ApprovalID = approvalID.String()
 	f.Request.Binding = binding
@@ -202,7 +204,7 @@ func TestRequestRoundTrip(t *testing.T) {
 
 	_, frag, ok := strings.Cut(url, "#")
 	require.True(t, ok)
-	req, b, err := approval.ParseRequest(frag)
+	req, b, err := approvaltest.ParseRequest(frag)
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Equal(t, approvalID, b.ApprovalID)
@@ -242,7 +244,7 @@ func TestRequestRefusesMismatch(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := approval.ParseRequest(tc.fragment)
+			_, _, err := approvaltest.ParseRequest(tc.fragment)
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			require.ErrorContains(t, err, tc.detail)
 		})
@@ -253,7 +255,7 @@ func TestRequestRefusesMismatch(t *testing.T) {
 // the binding.
 func encodeV1(t *testing.T, r approval.Request) string {
 	t.Helper()
-	frag, err := linkcodec.Encode(linkcodec.Format1, r)
+	frag, err := linkcodectest.Encode(linkcodec.Format1, r)
 	require.NoError(t, err)
 	return frag
 }
@@ -262,7 +264,7 @@ func TestRequestReadsFormat1(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t)
 	require.True(t, strings.HasPrefix(f.Request.Fragment, "1."))
-	req, _, err := approval.ParseRequest("#" + f.Request.Fragment)
+	req, _, err := approvaltest.ParseRequest("#" + f.Request.Fragment)
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Len(t, req.CredentialIDs, 1, "format 1 still carries credential ids")
@@ -271,12 +273,12 @@ func TestRequestReadsFormat1(t *testing.T) {
 func TestFormat2IsShorter(t *testing.T) {
 	t.Parallel()
 	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(previewLines()), Lines: previewLines(), CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	v1, err := linkcodec.Encode(linkcodec.Format1, req)
+	v1, err := linkcodectest.Encode(linkcodec.Format1, req)
 	require.NoError(t, err)
 	v2, err := req.Fragment()
 	require.NoError(t, err)
 	require.Less(t, len(v2), len(v1))
-	got, _, err := approval.ParseRequest(v2)
+	got, _, err := approvaltest.ParseRequest(v2)
 	require.NoError(t, err)
 	require.Equal(t, req.Lines, got.Lines)
 	require.Equal(t, []passkey.Bytes{seq(16, 1)}, got.CredentialIDs, "format 2 carries the credential ids, so the page offers only those passkeys")
@@ -287,7 +289,7 @@ func TestFormat2IsShorter(t *testing.T) {
 func FuzzParseRequest(f *testing.F) {
 	lines := previewLines()
 	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(lines), Lines: lines}
-	v1, err := linkcodec.Encode(linkcodec.Format1, req)
+	v1, err := linkcodectest.Encode(linkcodec.Format1, req)
 	require.NoError(f, err)
 	v2, err := req.Fragment()
 	require.NoError(f, err)
@@ -296,7 +298,7 @@ func FuzzParseRequest(f *testing.F) {
 	f.Add("#2.")
 	f.Add("2.@@@")
 	f.Fuzz(func(t *testing.T, fragment string) {
-		got, b, err := approval.ParseRequest(fragment)
+		got, b, err := approvaltest.ParseRequest(fragment)
 		if err != nil {
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			return
@@ -312,9 +314,9 @@ func TestRequestRefusesInflationBomb(t *testing.T) {
 	t.Parallel()
 	_, err := approval.Request{ApprovalID: approvalID, Binding: strings.Repeat(" ", 2<<20), Lines: previewLines()}.Fragment()
 	require.ErrorIs(t, err, linkcodec.ErrRequestTooLarge)
-	frag, err := linkcodec.Encode(linkcodec.Format2, linkcodec.Compact(append([]string{strings.Repeat(" ", 2<<20)}, previewLines()...)))
+	frag, err := linkcodectest.Encode(linkcodec.Format2, linkcodec.Compact(append([]string{strings.Repeat(" ", 2<<20)}, previewLines()...)))
 	require.NoError(t, err)
-	_, _, err = approval.ParseRequest(frag)
+	_, _, err = approvaltest.ParseRequest(frag)
 	require.ErrorContains(t, err, "inflates past")
 }
 
@@ -338,24 +340,24 @@ func TestVerify(t *testing.T) {
 
 	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	body, err := json.Marshal(approval.NewResponse(approvalID, as))
+	body, err := json.Marshal(approvaltest.NewResponse(approvalID, as))
 	require.NoError(t, err)
 	resp, err := approval.DecodeResponse(body)
 	require.NoError(t, err)
 
-	count, err := approval.Verify(binding, person.Credential(), resp)
+	count, err := approvaltest.Verify(binding, person.Credential(), resp)
 	require.NoError(t, err)
 	require.Equal(t, uint32(1), count)
 
 	t.Run("another binding", func(t *testing.T) {
 		other := strings.Replace(binding, "Remove the spam lead", "Remove every lead", 1)
-		_, err := approval.Verify(other, person.Credential(), resp)
+		_, err := approvaltest.Verify(other, person.Credential(), resp)
 		require.ErrorIs(t, err, passkey.ErrRejected)
 	})
 	t.Run("another approval id", func(t *testing.T) {
 		moved := resp
 		moved.ApprovalID = runID
-		_, err := approval.Verify(binding, person.Credential(), moved)
+		_, err := approvaltest.Verify(binding, person.Credential(), moved)
 		require.ErrorContains(t, err, "binding for")
 	})
 	t.Run("an agent's own key", func(t *testing.T) {
@@ -364,7 +366,7 @@ func TestVerify(t *testing.T) {
 		agent.ID = person.ID
 		forged, err := agent.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
-		_, err = approval.Verify(binding, person.Credential(), approval.NewResponse(approvalID, forged))
+		_, err = approvaltest.Verify(binding, person.Credential(), approvaltest.NewResponse(approvalID, forged))
 		require.ErrorContains(t, err, "bad passkey signature")
 	})
 }

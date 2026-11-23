@@ -22,6 +22,7 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
@@ -107,7 +108,7 @@ func (f fixture) classifyWith(t *testing.T, at time.Time, extra map[string]strin
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: at})
+		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodeltest.Classification{Columns: cols, At: at})
 	}))
 }
 
@@ -423,7 +424,7 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodeltest.Classification{Columns: cols, At: time.Now()})
 	}))
 	_, err = m.m.Tick(ctx, f.pool)
 	require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 )
 
 // PrepareRevertWithin replaces the role's statement timeout for the
@@ -29,7 +30,7 @@ func TestPrepareRevertWithin(t *testing.T) {
 	require.Zero(t, scalarOf[int](t, e.a.Conn, `SELECT count(revert_id)::int FROM basalt_meta.agent_reverts`), "nothing stored")
 	require.Equal(t, own, scalarOf[string](t, e.a.Conn, `SHOW statement_timeout`), "the session keeps its own timeout")
 
-	prep, err := guard.PrepareRevertWithin(ctx, e.a.Conn, e.scope(), "Undo", guardmodel.CLIPrepareTimeout)
+	prep, err := guard.PrepareRevertWithin(ctx, e.a.Conn, e.scope(), "Undo", guardmodeltest.CLIPrepareTimeout)
 	require.NoError(t, err)
 	require.True(t, prep.Batched)
 	require.Equal(t, 1, scalarOf[int](t, e.a.Conn, `SELECT count(revert_id)::int FROM basalt_meta.agent_reverts`))

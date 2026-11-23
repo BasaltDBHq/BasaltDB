@@ -37,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -364,7 +365,7 @@ func pluginSigned(t *testing.T, signer *passkeytest.Authenticator, req approval.
 	t.Helper()
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	body, err := json.Marshal(approval.NewResponse(req.ApprovalID, as))
+	body, err := json.Marshal(approvaltest.NewResponse(req.ApprovalID, as))
 	require.NoError(t, err)
 	return string(body)
 }

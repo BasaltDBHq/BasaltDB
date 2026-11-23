@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
@@ -62,9 +63,9 @@ func TestCompactIsShorter(t *testing.T) {
 	for i := range 50 {
 		lines = append(lines, strings.ReplaceAll(pgLines()[1], `"id": 5`, `"id": `+strings.Repeat("1", i%9+1)))
 	}
-	v1, err := linkcodec.Encode(linkcodec.Format1, map[string]any{"lines": lines})
+	v1, err := linkcodectest.Encode(linkcodec.Format1, map[string]any{"lines": lines})
 	require.NoError(t, err)
-	v2, err := linkcodec.Encode(linkcodec.Format2, linkcodec.Compact(lines))
+	v2, err := linkcodectest.Encode(linkcodec.Format2, linkcodec.Compact(lines))
 	require.NoError(t, err)
 	require.Less(t, len(v2), len(v1))
 }

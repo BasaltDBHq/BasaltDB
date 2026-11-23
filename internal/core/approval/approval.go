@@ -35,7 +35,7 @@ const (
 // ErrInvalid wraps every reason a code or binding is refused.
 var ErrInvalid = errors.New("approval code invalid")
 
-func invalid(format string, args ...any) error {
+func Invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
 
@@ -63,16 +63,16 @@ func ParseBinding(text string) (Binding, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&b); err != nil {
-		return Binding{}, invalid("binding: %v", err)
+		return Binding{}, Invalid("binding: %v", err)
 	}
 	if b.Kind != KindApprove {
-		return Binding{}, invalid("binding kind %q", b.Kind)
+		return Binding{}, Invalid("binding kind %q", b.Kind)
 	}
 	if b.Rows < 1 || b.Rows > MaxRows {
-		return Binding{}, invalid("binding rows %d out of 1..%d", b.Rows, MaxRows)
+		return Binding{}, Invalid("binding rows %d out of 1..%d", b.Rows, MaxRows)
 	}
 	if _, err := hex.DecodeString(b.RowsHash); err != nil || len(b.RowsHash) != sha256.Size*2 {
-		return Binding{}, invalid("binding rowsHash is not a sha256 hex digest")
+		return Binding{}, Invalid("binding rowsHash is not a sha256 hex digest")
 	}
 	return b, nil
 }
@@ -134,13 +134,13 @@ func (r Request) Check() (Binding, error) {
 		return Binding{}, err
 	}
 	if b.ApprovalID != r.ApprovalID {
-		return Binding{}, invalid("request is for approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
+		return Binding{}, Invalid("request is for approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
 	}
 	if len(r.Lines) != b.Rows {
-		return Binding{}, invalid("request has %d lines, binding %d rows", len(r.Lines), b.Rows)
+		return Binding{}, Invalid("request has %d lines, binding %d rows", len(r.Lines), b.Rows)
 	}
 	if RowsHash(r.Lines) != b.RowsHash {
-		return Binding{}, invalid("preview lines do not match the binding's rowsHash")
+		return Binding{}, Invalid("preview lines do not match the binding's rowsHash")
 	}
 	return b, nil
 }
@@ -153,16 +153,6 @@ func (r Request) Fragment() (string, error) {
 	return linkcodec.EncodeRequest(r.Binding, r.Lines, r.CredentialIDs)
 }
 
-// fromCompact is the request a format 2 link carries, its id read from the
-// binding; Check refuses a binding that does not parse.
-func fromCompact(binding string, lines []string, ids []passkey.Bytes) Request {
-	r := Request{Binding: binding, Lines: lines, CredentialIDs: ids}
-	if b, err := ParseBinding(binding); err == nil {
-		r.ApprovalID = b.ApprovalID
-	}
-	return r
-}
-
 // URL returns the long approval link on the pages at base (links):
 // <base>/approvals/<approvalId>#2.<request>.
 func (r Request) URL(base string) (string, error) {
@@ -173,26 +163,6 @@ func (r Request) URL(base string) (string, error) {
 	return links.Approval(base, r.ApprovalID) + "#" + frag, nil
 }
 
-// ParseRequest decodes an approval link fragment of either format, with or
-// without '#', and checks it (Check).
-func ParseRequest(fragment string) (Request, Binding, error) {
-	r, err := linkcodec.DecodeRequest(fragment, MaxRows, fromCompact)
-	if err != nil {
-		return Request{}, Binding{}, invalid("approval request %v", err)
-	}
-	if r.RevealNonce != nil {
-		return Request{}, Binding{}, invalid("a link carries no revealNonce: only the engine serves it")
-	}
-	if r.Columns != nil {
-		return Request{}, Binding{}, invalid("a link carries no columns: only the engine serves them")
-	}
-	b, err := r.Check()
-	if err != nil {
-		return Request{}, Binding{}, err
-	}
-	return r, b, nil
-}
-
 // Response is what the approval page outputs after the person signs.
 type Response struct {
 	ApprovalID        uuid.UUID     `json:"approvalId"`
@@ -200,17 +170,6 @@ type Response struct {
 	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
 	ClientDataJSON    passkey.Bytes `json:"clientDataJson"`
 	Signature         passkey.Bytes `json:"signature"`
-}
-
-// NewResponse wraps an assertion for approvalID.
-func NewResponse(approvalID uuid.UUID, a passkey.Assertion) Response {
-	return Response{
-		ApprovalID:        approvalID,
-		CredentialID:      a.CredentialID,
-		AuthenticatorData: a.AuthenticatorData,
-		ClientDataJSON:    a.ClientDataJSON,
-		Signature:         a.Signature,
-	}
 }
 
 // Assertion returns the WebAuthn assertion the response carries.
@@ -228,29 +187,10 @@ func (r Response) Assertion() passkey.Assertion {
 func DecodeResponse(raw []byte) (Response, error) {
 	var r Response
 	if err := passkey.DecodeStrict(raw, &r); err != nil {
-		return Response{}, invalid("%v", err)
+		return Response{}, Invalid("%v", err)
 	}
 	if len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return Response{}, invalid("approval response is missing a field")
+		return Response{}, Invalid("approval response is missing a field")
 	}
 	return r, nil
-}
-
-// Verify checks a response against the binding text it should sign and the
-// stored passkey, the way basalt_meta.submit_approval does (without the
-// approval's state and expiry, which only Postgres knows). It returns the
-// new signature counter.
-func Verify(bindingText string, cred passkey.Credential, r Response) (uint32, error) {
-	b, err := ParseBinding(bindingText)
-	if err != nil {
-		return 0, err
-	}
-	if b.ApprovalID != r.ApprovalID {
-		return 0, invalid("response is for approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
-	}
-	count, err := passkey.VerifyAssertion(cred, Challenge(bindingText), r.Assertion())
-	if err != nil {
-		return 0, fmt.Errorf("approval %s: %w", r.ApprovalID, err)
-	}
-	return count, nil
 }

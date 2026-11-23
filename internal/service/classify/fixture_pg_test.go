@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 	"github.com/basaltdbhq/basaltdb/internal/service/classify"
 )
 
@@ -114,7 +115,7 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool) []classify.Result {
 	t.Helper()
 	ctx := context.Background()
-	var st guardmodel.ClassificationState
+	var st guardmodeltest.ClassificationState
 	require.NoError(t, pgx.BeginTxFunc(ctx, d.Admin, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		var err error
 		st, err = guard.ReadClassification(ctx, tx, d.Names)

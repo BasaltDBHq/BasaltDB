@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -136,7 +137,7 @@ func (e *revealEnv) body(t *testing.T, kind string, id uuid.UUID, nonce []byte, 
 	require.NoError(t, err)
 	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)
-	ch, err := approval.RevealChallenge(kind, id, nonce, key, rowsHash)
+	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, rowsHash)
 	require.NoError(t, err)
 	as, err := e.person.Sign(ch, passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)

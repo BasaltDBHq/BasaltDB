@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -49,7 +50,7 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(context.Background(), d.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(context.Background(), tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(context.Background(), tx, d.Names, guardmodeltest.Classification{Columns: cols, At: time.Now()})
 	}))
 	dir := t.TempDir()
 	keys, err := dictfile.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)

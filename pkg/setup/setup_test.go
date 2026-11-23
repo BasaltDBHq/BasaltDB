@@ -87,7 +87,7 @@ func personPasskey(t *testing.T) (*passkeytest.Authenticator, func(context.Conte
 			return setup.Passkey{}, err
 		}
 		_, frag, _ := strings.Cut(link, "#")
-		page, err := passkey.ParseRegistrationRequest(frag)
+		page, err := passkeytest.ParseRegistrationRequest(frag)
 		if err != nil {
 			return setup.Passkey{}, err
 		}

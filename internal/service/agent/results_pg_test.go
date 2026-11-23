@@ -9,7 +9,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 )
 
 // firstAgentCall is the first step the agent itself calls (CALL_TOOL), or
@@ -66,7 +66,7 @@ func TestLargePlanLoopDrivenOnlyByTheSteps(t *testing.T) {
 		requireToolSteps(t, body, tool, kase)
 
 		if link := openLinkWithURL(t, body); link != "" && !signed {
-			id, secret := str(t, body["revertId"]), links.SecretOf(link)
+			id, secret := str(t, body["revertId"]), linkstest.SecretOf(link)
 			relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, e.person), nil)
 			require.Equal(t, http.StatusOK, <-relayed)
 			signed = true

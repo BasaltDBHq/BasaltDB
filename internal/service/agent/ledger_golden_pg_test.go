@@ -12,9 +12,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -102,7 +103,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	body, isError := e.h.call(t, "write", holdWrite(t, e.h, nil))
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	approvalID := str(t, approvalOf(t, body)["approvalId"])
-	approvalSecret := links.SecretOf(str(t, approvalOf(t, body)["approvalUrl"]))
+	approvalSecret := linkstest.SecretOf(str(t, approvalOf(t, body)["approvalUrl"]))
 	c.get("approval_request", "/api/v1/approvals/"+approvalID, approvalSecret)
 	c.get("approval_request_without_secret", "/api/v1/approvals/"+approvalID, "")
 
@@ -111,7 +112,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	out, isError := e.h.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo the lead merge"})
 	require.False(t, isError, "%v", out)
 	revertID := uuid.MustParse(str(t, out["revertId"]))
-	secret := links.SecretOf(str(t, out["revertUrl"]))
+	secret := linkstest.SecretOf(str(t, out["revertUrl"]))
 	c.get("revert_request", revertPath(revertID), secret)
 
 	// Applying with a signature from a key the database does not know.
@@ -122,7 +123,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	forger.ID = e.person.ID
 	as, err := forger.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	c.post("revert_apply_bad_assertion", revertPath(revertID)+"/apply", secret, revert.NewResponse(revertID, as))
+	c.post("revert_apply_bad_assertion", revertPath(revertID)+"/apply", secret, reverttest.NewResponse(revertID, as))
 
 	// A widen with no proof from the person.
 	task := uuid.Must(uuid.NewV7())

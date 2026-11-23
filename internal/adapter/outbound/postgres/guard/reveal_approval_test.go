@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 const heldDelete = `DELETE FROM public.leads WHERE id = $1`
@@ -265,7 +266,7 @@ func TestOpenRevealRefused(t *testing.T) {
 		"a proof of the REVERT kind": {signed(revealChallenge(t, approval.KindRevert, id, nonce, key, hash)), key},
 		"another nonce":              {signed(revealChallenge(t, approval.KindApprove, id, make([]byte, 16), key, hash)), key},
 		"the approval signature":     {signed(approval.Challenge(e.held.BindingText)), key},
-		"a widen proof":              {signed(revert.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
+		"a widen proof":              {signed(reverttest.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
 		"a broken DER signature":     {withSig(valid, []byte{0x30, 0x00}), key},
 	}
 	var text string

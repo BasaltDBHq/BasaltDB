@@ -28,10 +28,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -173,7 +176,7 @@ func portalLink(t *testing.T, link, page string) (string, string) {
 	require.True(t, strings.HasPrefix(link, prefix), "a portal short link: %s", link)
 	id, _, ok := strings.Cut(strings.TrimPrefix(link, prefix), "#")
 	require.True(t, ok)
-	secret := links.SecretOf(link)
+	secret := linkstest.SecretOf(link)
 	require.Len(t, secret, 22)
 	return id, secret
 }
@@ -261,7 +264,7 @@ func (e *relayEnv) requireReceiptLine(t *testing.T, signed map[string]any) {
 	require.True(t, ok, "%v", signed)
 	token, ok := result["receipt"].(string)
 	require.True(t, ok, "the answer carries the engine's receipt: %v", result)
-	_, err := channel.VerifyReceipt(token, e.keys.PublicKeySPKI())
+	_, err := channeltest.VerifyReceipt(token, e.keys.PublicKeySPKI())
 	require.NoError(t, err, "signed by this engine's key")
 	line := signed["receiptLine"].(string)
 	require.Contains(t, line, "Receipt from the engine with fingerprint "+e.keys.Fingerprint())
@@ -556,7 +559,7 @@ func TestRelayRevertWidenKeepsTheSession(t *testing.T) {
 	require.NoError(t, err)
 	var norm string
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
-	as, err := e.person.Sign(revert.RescopeChallenge(revertID, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(reverttest.RescopeChallenge(revertID, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	widen, err := json.Marshal(agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,

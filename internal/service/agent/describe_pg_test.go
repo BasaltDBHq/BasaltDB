@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -114,7 +115,7 @@ func classifyDescribe(t *testing.T, d *guardtest.DB) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, d.Names, guardmodeltest.Classification{Columns: cols, At: time.Now()})
 	}))
 }
 

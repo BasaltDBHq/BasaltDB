@@ -23,9 +23,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -45,7 +47,7 @@ func (p localPages) signRevertPage(id, secret string, person *passkeytest.Authen
 	require.NoError(p.t, err)
 	as, err := person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(p.t, err)
-	body, err := json.Marshal(revert.NewResponse(b.RevertID, as))
+	body, err := json.Marshal(reverttest.NewResponse(b.RevertID, as))
 	require.NoError(p.t, err)
 	return body
 }
@@ -91,7 +93,7 @@ func requestRevert(t *testing.T, h harness, args map[string]any) map[string]any 
 // revert's id and the binding the person signs.
 func longLinkBinding(t *testing.T, link string) (uuid.UUID, string) {
 	t.Helper()
-	req, b, err := revert.ParseRequest(link[strings.Index(link, "#")+1:])
+	req, b, err := reverttest.ParseRequest(link[strings.Index(link, "#")+1:])
 	require.NoError(t, err)
 	return b.RevertID, req.Binding
 }
@@ -107,7 +109,7 @@ func signBinding(t *testing.T, signer *passkeytest.Authenticator, binding string
 // posts the signature, which the engine relays to Postgres (RelayRevert),
 // on its own pages or through the Vault. Nothing is pasted.
 func relayRevert(svc *agent.Service, id uuid.UUID, as passkey.Assertion) error {
-	_, _, err := svc.RelayRevert(context.Background(), revert.NewResponse(id, as))
+	_, _, err := svc.RelayRevert(context.Background(), reverttest.NewResponse(id, as))
 	return err
 }
 
@@ -212,7 +214,7 @@ func TestRequestRevertWaitsForTheRelayedSignature(t *testing.T) {
 	runID, _ := winLeads(t, env.h, "81, 82, 83")
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 83`)
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo the merge"})
-	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
+	id, secret := str(t, req["revertId"]), linkstest.SecretOf(str(t, req["revertUrl"]))
 
 	relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, env.person), env.afterRevertPolls())
 	start := time.Now()
@@ -242,7 +244,7 @@ func TestRequestRevertWaitForALargePlan(t *testing.T) {
 	e := newBatchEnv(t, pageOrigin)
 	p := newLocalPages(t, e.agentEnv)
 	req := requestRevert(t, e.h, map[string]any{"runId": e.runID.String(), "intent": "Undo the bulk update"})
-	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
+	id, secret := str(t, req["revertId"]), linkstest.SecretOf(str(t, req["revertUrl"]))
 	steps := requireResultSteps(t, req, "REQUESTED")
 	require.Equal(t, req["revertUrl"], steps[0]["url"])
 
@@ -344,7 +346,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	p := newLocalPages(t, env)
 	runID, _ := winLeads(t, env.h, "85")
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	id, old := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
+	id, old := str(t, req["revertId"]), linkstest.SecretOf(str(t, req["revertUrl"]))
 
 	// With local pages a wait that runs out never hands out the long link:
 	// the person signs at the short link the agent gave them earlier.
@@ -365,7 +367,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	require.Less(t, time.Since(start), 5*time.Second, "a new link returns at once, to be shown before the wait")
 	require.Equal(t, "PENDING", body["status"])
 	link := str(t, body["revertUrl"])
-	secret := links.SecretOf(link)
+	secret := linkstest.SecretOf(link)
 	require.NotEqual(t, old, secret)
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
 	require.Contains(t, str(t, body["personMessage"]), "Sign it with your passkey here:\n\n"+link)

@@ -8,9 +8,11 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // The pages pass credentialIds as allowCredentials, so the browser offers
@@ -44,12 +46,12 @@ func TestPagesOfferOnlyThisDatabasesActivePasskeys(t *testing.T) {
 	// A long link carries them too.
 	frag, err := approval.Request{ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: req.Lines, CredentialIDs: req.CredentialIDs}.Fragment()
 	require.NoError(t, err)
-	back, _, err := approval.ParseRequest(frag)
+	back, _, err := approvaltest.ParseRequest(frag)
 	require.NoError(t, err)
 	require.ElementsMatch(t, want, back.CredentialIDs)
 	rvFrag, err := revert.Request{RevertID: rv.RevertID, Binding: rv.Binding, Lines: rv.Lines, CredentialIDs: rv.CredentialIDs}.Fragment()
 	require.NoError(t, err)
-	rvBack, _, err := revert.ParseRequest(rvFrag)
+	rvBack, _, err := reverttest.ParseRequest(rvFrag)
 	require.NoError(t, err)
 	require.ElementsMatch(t, want, rvBack.CredentialIDs)
 }

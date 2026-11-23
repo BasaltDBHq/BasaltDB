@@ -17,11 +17,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -84,9 +85,9 @@ func TestVaultSessionOnAnUnsafeGuardAnswersAsLoopback(t *testing.T) {
 	require.NoError(t, err)
 	as, err := person.Sign(approval.Challenge("{}"), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	approveBody, err := json.Marshal(approval.NewResponse(id, as))
+	approveBody, err := json.Marshal(approvaltest.NewResponse(id, as))
 	require.NoError(t, err)
-	applyBody, err := json.Marshal(revert.NewResponse(id, as))
+	applyBody, err := json.Marshal(reverttest.NewResponse(id, as))
 	require.NoError(t, err)
 
 	p := s.open(t)

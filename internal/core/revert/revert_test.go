@@ -17,10 +17,11 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/fixtures.json")
@@ -82,7 +83,7 @@ func batchedBinding(all, sample []string) string {
 func planSample(t *testing.T) ([]string, []string) {
 	t.Helper()
 	all := planLines()
-	sample, err := revert.Sample(all)
+	sample, err := reverttest.Sample(all)
 	require.NoError(t, err)
 	return all, sample
 }
@@ -186,7 +187,7 @@ func buildRescope(t *testing.T) []rescopeFixture {
 			Name: c.name, RevertID: revertID.String(),
 			Nonce: passkey.Bytes(nonce).String(), NewSecret: passkey.Bytes(secret).String(),
 			Select: json.RawMessage(c.sel), SelectText: c.text, RescopeKey: hex.EncodeToString(key),
-			Challenge: passkey.Bytes(revert.RescopeChallenge(revertID, nonce, key, c.text)).String(),
+			Challenge: passkey.Bytes(reverttest.RescopeChallenge(revertID, nonce, key, c.text)).String(),
 		})
 	}
 	return out
@@ -212,7 +213,7 @@ func buildFixtures(t *testing.T) fixtures {
 	req := revert.Request{RevertID: revertID, Binding: binding, Lines: lines, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
 	// The page's fixtures keep format 1, which the pages still read; format 2
 	// has its shared vectors in api/mcp/links/compact-request.json.
-	frag, err := linkcodec.Encode(linkcodec.Format1, req)
+	frag, err := linkcodectest.Encode(linkcodec.Format1, req)
 	require.NoError(t, err)
 	f.Request.RevertID = revertID.String()
 	f.Request.Binding = binding
@@ -240,7 +241,7 @@ func buildFixtures(t *testing.T) fixtures {
 
 	all, sample := planSample(t)
 	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample}
-	f.Batched.Fragment, err = linkcodec.Encode(linkcodec.Format1, plan)
+	f.Batched.Fragment, err = linkcodectest.Encode(linkcodec.Format1, plan)
 	require.NoError(t, err)
 	f.Batched.RevertID = revertID.String()
 	f.Batched.Binding = plan.Binding
@@ -249,10 +250,10 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Batched.Skipped = planSkips
 
 	all = mixedLines(skipsPlanSkips, skipsPlanRestores)
-	sample, err = revert.Sample(all)
+	sample, err = reverttest.Sample(all)
 	require.NoError(t, err)
 	plan = revert.Request{RevertID: revertID, Binding: mixedBinding(all, sample, skipsPlanSkips, skipsPlanRestores), Lines: sample}
-	f.BatchedSkips.Fragment, err = linkcodec.Encode(linkcodec.Format1, plan)
+	f.BatchedSkips.Fragment, err = linkcodectest.Encode(linkcodec.Format1, plan)
 	require.NoError(t, err)
 	f.BatchedSkips.Fragment2, err = plan.Fragment()
 	require.NoError(t, err)
@@ -329,7 +330,7 @@ func TestRequestRoundTrip(t *testing.T) {
 
 	_, frag, ok := strings.Cut(url, "#")
 	require.True(t, ok)
-	req, b, err := revert.ParseRequest(frag)
+	req, b, err := reverttest.ParseRequest(frag)
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Equal(t, revertID, b.RevertID)
@@ -378,7 +379,7 @@ func TestRequestRefusesMismatch(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, _, err := revert.ParseRequest(tc.fragment)
+			_, _, err := reverttest.ParseRequest(tc.fragment)
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			require.ErrorContains(t, err, tc.detail)
 		})
@@ -451,7 +452,7 @@ func TestSampleSkipsFirst(t *testing.T) {
 	require.True(t, sort.StringsAreSorted(sample[planSkips:]))
 	require.Equal(t, sample[planSkips], all[0], "restores keep signed order")
 
-	small, err := revert.Sample(revertLines())
+	small, err := reverttest.Sample(revertLines())
 	require.NoError(t, err)
 	require.Equal(t, []string{revertLines()[3], revertLines()[0], revertLines()[1], revertLines()[2]}, small)
 }
@@ -497,7 +498,7 @@ func TestSampleShowsBothKinds(t *testing.T) {
 		require.Equal(t, [2]int{tc.wantSkips, tc.wantRestores}, [2]int{s, r}, name)
 
 		all := mixedLines(tc.skips, tc.restores)
-		sample, err := revert.Sample(all)
+		sample, err := reverttest.Sample(all)
 		require.NoError(t, err, name)
 		require.Len(t, sample, tc.wantSkips+tc.wantRestores, name)
 		skips, restores := []string{}, []string{}
@@ -520,7 +521,7 @@ func TestSampleShowsBothKinds(t *testing.T) {
 func TestBatchedRequestChecksTheSplit(t *testing.T) {
 	t.Parallel()
 	all := mixedLines(skipsPlanSkips, skipsPlanRestores)
-	sample, err := revert.Sample(all)
+	sample, err := reverttest.Sample(all)
 	require.NoError(t, err)
 	binding := func(lines []string) string {
 		return mixedBinding(all, lines, skipsPlanSkips, skipsPlanRestores)
@@ -544,7 +545,7 @@ func TestBatchedRequestChecksTheSplit(t *testing.T) {
 func TestBatchedRequestRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t)
-	req, b, err := revert.ParseRequest(f.Batched.Fragment)
+	req, b, err := reverttest.ParseRequest(f.Batched.Fragment)
 	require.NoError(t, err)
 	require.True(t, b.Batched)
 	require.Equal(t, planSkips+planRestores, b.Lines())
@@ -562,7 +563,7 @@ func format2Swap(t *testing.T) string {
 	last := c.Lines[len(c.Lines)-1]
 	require.False(t, last.Verbatim)
 	last.Values[0], last.Values[1] = last.Values[1], last.Values[0]
-	frag, err := linkcodec.Encode(linkcodec.Format2, c)
+	frag, err := linkcodectest.Encode(linkcodec.Format2, c)
 	require.NoError(t, err)
 	return frag
 }
@@ -571,7 +572,7 @@ func format2Swap(t *testing.T) string {
 // the binding.
 func encodeV1(t *testing.T, r revert.Request) string {
 	t.Helper()
-	frag, err := linkcodec.Encode(linkcodec.Format1, r)
+	frag, err := linkcodectest.Encode(linkcodec.Format1, r)
 	require.NoError(t, err)
 	return frag
 }
@@ -584,7 +585,7 @@ func fixtureFormat1(t *testing.T) string {
 // compactFragment encodes texts in format 2 as they are.
 func compactFragment(t *testing.T, texts ...string) string {
 	t.Helper()
-	frag, err := linkcodec.Encode(linkcodec.Format2, linkcodec.Compact(texts))
+	frag, err := linkcodectest.Encode(linkcodec.Format2, linkcodec.Compact(texts))
 	require.NoError(t, err)
 	return frag
 }
@@ -593,7 +594,7 @@ func TestRequestReadsFormat1(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t)
 	require.True(t, strings.HasPrefix(f.Request.Fragment, "1."))
-	req, _, err := revert.ParseRequest("#" + f.Request.Fragment)
+	req, _, err := reverttest.ParseRequest("#" + f.Request.Fragment)
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Len(t, req.CredentialIDs, 1, "format 1 still carries credential ids")
@@ -603,12 +604,12 @@ func TestBatchedRequestFormat2(t *testing.T) {
 	t.Parallel()
 	all, sample := planSample(t)
 	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	v1, err := linkcodec.Encode(linkcodec.Format1, plan)
+	v1, err := linkcodectest.Encode(linkcodec.Format1, plan)
 	require.NoError(t, err)
 	v2, err := plan.Fragment()
 	require.NoError(t, err)
 	require.Less(t, len(v2), len(v1), "format 2 is shorter")
-	req, b, err := revert.ParseRequest(v2)
+	req, b, err := reverttest.ParseRequest(v2)
 	require.NoError(t, err)
 	require.True(t, b.Batched)
 	require.Equal(t, sample, req.Lines)
@@ -621,9 +622,9 @@ func TestBatchedRequestFormat2(t *testing.T) {
 func TestBatchedSkipsFormat2(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t).BatchedSkips
-	v1, b1, err := revert.ParseRequest(f.Fragment)
+	v1, b1, err := reverttest.ParseRequest(f.Fragment)
 	require.NoError(t, err)
-	v2, b2, err := revert.ParseRequest(f.Fragment2)
+	v2, b2, err := reverttest.ParseRequest(f.Fragment2)
 	require.NoError(t, err)
 	require.Equal(t, b1, b2)
 	require.Equal(t, v1.Binding, v2.Binding)
@@ -637,7 +638,7 @@ func TestBatchedSkipsFormat2(t *testing.T) {
 func FuzzParseRequest(f *testing.F) {
 	lines := revertLines()
 	req := revert.Request{RevertID: revertID, Binding: bindingText(lines), Lines: lines}
-	v1, err := linkcodec.Encode(linkcodec.Format1, req)
+	v1, err := linkcodectest.Encode(linkcodec.Format1, req)
 	require.NoError(f, err)
 	v2, err := req.Fragment()
 	require.NoError(f, err)
@@ -646,7 +647,7 @@ func FuzzParseRequest(f *testing.F) {
 	f.Add("2.")
 	f.Add("2.@@@")
 	f.Fuzz(func(t *testing.T, fragment string) {
-		req, b, err := revert.ParseRequest(fragment)
+		req, b, err := reverttest.ParseRequest(fragment)
 		if err != nil {
 			require.ErrorIs(t, err, approval.ErrInvalid)
 			return
@@ -711,66 +712,6 @@ func TestRequestOverMaxLinesRejected(t *testing.T) {
 	binding := strings.Replace(strings.Replace(bindingText(lines), `"rows": 3`, `"rows": 1`, 1), `"skipped": 1`, `"skipped": 1000`, 1)
 	_, err := revert.Request{RevertID: revertID, Binding: binding, Lines: lines}.Check()
 	require.ErrorContains(t, err, "out of 1..1000")
-}
-
-// TestVerifyWithSoftwareKey signs a revert's challenge with a software
-// passkey, carries it through the JSON the page posts, and verifies it like
-// apply_revert will.
-func TestVerifyWithSoftwareKey(t *testing.T) {
-	t.Parallel()
-	binding := bindingText(revertLines())
-	person, err := passkeytest.New(passkey.Production)
-	require.NoError(t, err)
-
-	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
-	require.NoError(t, err)
-	body, err := json.Marshal(revert.NewResponse(revertID, as))
-	require.NoError(t, err)
-	resp, err := revert.DecodeResponse(body)
-	require.NoError(t, err)
-
-	count, err := revert.Verify(binding, person.Credential(), resp)
-	require.NoError(t, err)
-	require.Equal(t, uint32(1), count)
-
-	t.Run("another binding", func(t *testing.T) {
-		t.Parallel()
-		other := strings.Replace(binding, "Undo the bad merge", "Undo everything", 1)
-		_, err := revert.Verify(other, person.Credential(), resp)
-		require.ErrorIs(t, err, passkey.ErrRejected)
-	})
-	t.Run("another revert id", func(t *testing.T) {
-		t.Parallel()
-		moved := resp
-		moved.RevertID = runID
-		_, err := revert.Verify(binding, person.Credential(), moved)
-		require.ErrorContains(t, err, "binding for")
-	})
-	t.Run("an approval response is not a revert response", func(t *testing.T) {
-		t.Parallel()
-		approvalBody, err := json.Marshal(approval.NewResponse(revertID, as))
-		require.NoError(t, err)
-		_, err = revert.DecodeResponse(approvalBody)
-		require.ErrorIs(t, err, approval.ErrInvalid)
-	})
-	t.Run("a signature over an approval binding", func(t *testing.T) {
-		t.Parallel()
-		approvalBinding := `{"kind": "APPROVE"}`
-		signed, err := person.Sign(approval.Challenge(approvalBinding), passkeytest.FlagsUPUV, nil)
-		require.NoError(t, err)
-		_, err = revert.Verify(binding, person.Credential(), revert.NewResponse(revertID, signed))
-		require.ErrorIs(t, err, passkey.ErrRejected)
-	})
-	t.Run("an agent's own key", func(t *testing.T) {
-		t.Parallel()
-		agent, err := passkeytest.New(passkey.Production)
-		require.NoError(t, err)
-		agent.ID = person.ID
-		forged, err := agent.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
-		require.NoError(t, err)
-		_, err = revert.Verify(binding, person.Credential(), revert.NewResponse(revertID, forged))
-		require.ErrorContains(t, err, "bad passkey signature")
-	})
 }
 
 func TestDecodeResponseRefuses(t *testing.T) {

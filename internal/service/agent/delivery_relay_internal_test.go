@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 )
 
 // Portal short links over the Vault (VC1-6), against the Go fake Vault.
@@ -212,7 +213,7 @@ func (e *relayEnv) requireNoSecretSent(t *testing.T) {
 
 func shortSecret(t *testing.T, url string) (string, channel.LinkKeys) {
 	t.Helper()
-	secret := links.SecretOf(url)
+	secret := linkstest.SecretOf(url)
 	require.NotEmpty(t, secret, "a short link: %s", url)
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)

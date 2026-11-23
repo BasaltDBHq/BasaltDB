@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,76 +18,10 @@ import (
 
 // Connection strings (CONTRACT.md, basalt init --remote).
 const (
-	// supabasePlaceholder is the password placeholder Supabase shows in the
-	// connection string it offers: a person may paste that line as is. It
-	// is no password.
-	supabasePlaceholder = ":[YOUR-PASSWORD]@"
 	supabaseDirectHost  = ".supabase.co"
 	supabaseDirectStart = "db."
 	defaultPort         = 5432
-	passwordParam       = "password"
 )
-
-// ErrHasPassword is a connection string with a password, which basalt init
-// --remote refuses before anything else. The message is the contract's and
-// never holds the connection string.
-var ErrHasPassword = errors.New("This connection string contains a password. basalt init --remote does not need it " + //nolint:staticcheck // the contract's sentence, shown as is
-	"and it must not be shared with an agent: change your database password now.")
-
-// HasPassword reports whether conn carries a password: in the user part of
-// a URL, as a password parameter of a URL, or as a password keyword of a
-// key=value string. Supabase's [YOUR-PASSWORD] placeholder is not one.
-func HasPassword(conn string) bool {
-	conn = dropPlaceholder(conn)
-	if passwordKeyword.MatchString(conn) {
-		return true
-	}
-	u, err := url.Parse(conn)
-	if err != nil {
-		// Not a URL Go can parse: a user:secret@ part may still be in it.
-		_, rest, ok := strings.Cut(conn, "://")
-		at := strings.LastIndexByte(rest, '@')
-		return ok && at > 0 && strings.Contains(rest[:at], ":")
-	}
-	if pw, ok := u.User.Password(); ok && pw != "" {
-		return true
-	}
-	for k := range u.Query() {
-		if strings.EqualFold(strings.TrimSpace(k), passwordParam) {
-			return true
-		}
-	}
-	return false
-}
-
-// passwordKeyword is a password keyword with its =, in any case and with
-// any spaces around the = (libpq's key = value form allows them).
-var passwordKeyword = regexp.MustCompile(`(?i)` + passwordParam + `\s*=`)
-
-// dropPlaceholder removes Supabase's password placeholder.
-func dropPlaceholder(conn string) string {
-	return strings.Replace(conn, supabasePlaceholder, "@", 1)
-}
-
-// ParseConnURL parses a postgres:// connection string without a password
-// (Supabase's placeholder dropped) and returns it with its target: host,
-// port and database, and the Supabase project ref when the user
-// (postgres.<ref> through the pooler) or the host (db.<ref>.supabase.co)
-// names one. Errors never quote the string.
-func ParseConnURL(conn string) (*url.URL, Target, error) {
-	if HasPassword(conn) {
-		return nil, Target{}, ErrHasPassword
-	}
-	u, err := url.Parse(dropPlaceholder(conn))
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
-		return nil, Target{}, errors.New("the connection string must be a postgres:// URL")
-	}
-	t, err := TargetOf(u)
-	if err != nil {
-		return nil, Target{}, err
-	}
-	return u, t, nil
-}
 
 // targetParams are connection parameters that would name another server or
 // database than the URL's host, port and path: pgx reads them in place of

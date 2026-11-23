@@ -212,7 +212,7 @@ linters:
             - "**/internal/core/approval/**"
             - "**/internal/core/revert/**"
             - "**/internal/core/pii/**"
-            - "**/internal/service/classify/**"
+            - "**/internal/pii/**"
             - "**/internal/service/piidict/**"
             - "!$test"
           deny:

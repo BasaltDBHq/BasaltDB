@@ -26,7 +26,7 @@ jobs:
       - uses: ./.github/actions/go
       # Add a package here when it starts to honour BASALTDB_TEST_FULL.
       - name: Full-size tests
-        run: go test -race -count=1 -timeout 80m ./internal/core/pii/... ./internal/service/classify/...
+        run: go test -race -count=1 -timeout 80m ./internal/core/pii/... ./internal/pii/...
 
   # The classify CLI tests need a Postgres server (guardtest).
   classify-cli-full:

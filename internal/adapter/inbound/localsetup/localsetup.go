@@ -22,7 +22,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/classify"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -189,7 +189,7 @@ type Options struct {
 	Probe func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
 	// SampleColumn reads a column's sample for the check's suggestions
 	// (the classifier's sampler outside tests).
-	SampleColumn func(ctx context.Context, conn *pgx.Conn, col classify.Column) (classify.Sample, error)
+	SampleColumn func(ctx context.Context, conn *pgx.Conn, col pii.Column) (pii.Sample, error)
 	// Euid is this process's effective user id (os.Geteuid outside tests).
 	Euid func() int
 	// CredentialChanged tells the running engine an agent's new password,

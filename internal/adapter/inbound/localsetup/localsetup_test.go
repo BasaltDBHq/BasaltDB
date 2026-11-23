@@ -29,7 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/service/classify"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -840,11 +840,11 @@ func TestRealInstallColumnsWithoutASampleStillAnswer(t *testing.T) {
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
 		Now: func() time.Time { return f.now },
-		SampleColumn: func(_ context.Context, _ *pgx.Conn, col classify.Column) (classify.Sample, error) {
+		SampleColumn: func(_ context.Context, _ *pgx.Conn, col pii.Column) (pii.Sample, error) {
 			if col.Name == "email" {
-				return classify.Sample{}, errors.New("the connection failed")
+				return pii.Sample{}, errors.New("the connection failed")
 			}
-			return classify.Sample{Unavailable: classify.UnavailableTimeout}, nil
+			return pii.Sample{Unavailable: pii.UnavailableTimeout}, nil
 		},
 	})
 	require.NoError(t, err)

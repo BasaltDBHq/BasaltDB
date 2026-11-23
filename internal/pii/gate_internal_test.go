@@ -1,4 +1,4 @@
-package classify
+package pii
 
 import (
 	"math/rand/v2"

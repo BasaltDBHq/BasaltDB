@@ -27,10 +27,10 @@ func probeLogin(c *cli.IO) func(context.Context, string) error {
 // pgErrors is setup.DBErrors on pgx's server errors.
 type pgErrors struct{}
 
-func (pgErrors) SQLState(err error) (string, string, bool) {
+func (pgErrors) ServerMessage(err error) (string, bool) {
 	var pg *pgconn.PgError
 	if !errors.As(err, &pg) {
-		return "", "", false
+		return "", false
 	}
-	return pg.Code, pg.Message, true
+	return pg.Message, true
 }

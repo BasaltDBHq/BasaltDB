@@ -11,11 +11,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
 )
 
-// DBErrors reads a database error, which the setup domain cannot name.
+// DBErrors reads what SQLStateOf cannot: the message of a database
+// error, whose type the setup domain cannot name.
 type DBErrors interface {
-	// SQLState is err's SQLSTATE and message when err is (or wraps) an
-	// error the database server sent; false otherwise.
-	SQLState(err error) (code, message string, ok bool)
+	// ServerMessage is the message of the error the database server sent,
+	// when err is (or wraps) one; false otherwise.
+	ServerMessage(err error) (string, bool)
 }
 
 // ConnectPageTrust is what init --remote says about a certificate no
@@ -149,13 +150,14 @@ func tlsCandidates(mode string) []tlsCandidate {
 // message would pass a channel binding probe and leave a credential that
 // cannot log in.
 func proves(e DBErrors, c tlsCandidate, err error) bool {
-	code, message, ok := e.SQLState(err)
-	if !ok {
+	code := SQLStateOf(err)
+	if code == "" {
 		return false
 	}
 	if c.binding {
 		return code == sqlstateInvalidPassword
 	}
+	message, _ := e.ServerMessage(err)
 	return c.mode == SSLVerifyFull && (strings.HasPrefix(code, SQLStateClassAuth) ||
 		(code == SQLStateInternal && strings.Contains(message, SupavisorNoTenant)))
 }

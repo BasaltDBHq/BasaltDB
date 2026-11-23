@@ -150,7 +150,7 @@ type PluginListed struct {
 	// Serving is what the running engine serves of the entry, per agent:
 	// the approval it is served on and whether the plugin answers READY.
 	// Absent when it serves the entry to no agent.
-	Serving []PluginServing `json:"serving,omitempty"`
+	Serving []PersonPluginServing `json:"serving,omitempty"`
 }
 
 // PluginListedApproval is an entry's approval state per listed agent.
@@ -167,8 +167,8 @@ type PluginAgentStatus struct {
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 }
 
-// PluginServing is one agent an entry is served to.
-type PluginServing struct {
+// PersonPluginServing is one agent an entry is served to.
+type PersonPluginServing struct {
 	Agent      string     `json:"agent"`
 	ApprovalID *uuid.UUID `json:"approvalId,omitempty"`
 	Ready      bool       `json:"ready"`

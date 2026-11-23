@@ -195,7 +195,7 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	if err != nil {
 		return "", false, err
 	}
-	if err := writeFileAtomic(t.dir, id+trustFileExt, canonical, keyFileMode); err != nil {
+	if err := pluginhostWriteFileAtomic(t.dir, id+trustFileExt, canonical, keyFileMode); err != nil {
 		return "", false, err
 	}
 	return id, true, nil
@@ -288,9 +288,9 @@ func chain(base, p string) []string {
 	return out
 }
 
-// writeFileAtomic writes name in dir through a temporary file and a rename,
-// with mode set explicitly.
-func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
+// pluginhostWriteFileAtomic writes name in dir through a temporary file and
+// a rename, with mode set explicitly.
+func pluginhostWriteFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 	path := filepath.Join(dir, name)
 	f, err := os.CreateTemp(dir, ".tmp-")
 	if err != nil {

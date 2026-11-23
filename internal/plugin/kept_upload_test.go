@@ -46,7 +46,7 @@ func newStore(t *testing.T) (*plugin.Store, string, *clock) {
 	require.NoError(t, err)
 	state := filepath.Join(base, "state")
 	c := &clock{t: time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)}
-	s, err := plugin.New(state, c.now)
+	s, err := plugin.NewPluginhost(state, c.now)
 	require.NoError(t, err)
 	return s, base, c
 }
@@ -273,7 +273,7 @@ func TestUploadHardening(t *testing.T) {
 		// And at the engine's next start.
 		_, err = s.Part(peer, u2.ID, "b", 0, b64([]byte("x")))
 		require.NoError(t, err)
-		s2, err := plugin.New(s.StateDir(), c.now)
+		s2, err := plugin.NewPluginhost(s.StateDir(), c.now)
 		require.NoError(t, err)
 		require.Zero(t, s2.Open())
 		require.NoDirExists(t, filepath.Join(s.StateDir(), plugin.UploadsDir))

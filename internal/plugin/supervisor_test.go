@@ -193,7 +193,7 @@ func runSupervisor(t *testing.T, h *Host, d *dialer, c Clock, entries ...pluginm
 	return s, stop
 }
 
-func waitReady(t *testing.T, h *Host, k pluginmodel.EntryKey) {
+func pluginhostWaitReady(t *testing.T, h *Host, k pluginmodel.EntryKey) {
 	t.Helper()
 	require.Eventually(t, func() bool { return h.State(k) == StateReady }, 5*time.Second, time.Millisecond, "%s never READY", k)
 }
@@ -208,7 +208,7 @@ func TestKilledPluginRestarts(t *testing.T) {
 	s, _ := runSupervisor(t, h, d, c, e)
 
 	c.next(t, HealthInterval)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	first := d.last(e.Key)
 
 	d.failing.Store(true)
@@ -230,7 +230,7 @@ func TestKilledPluginRestarts(t *testing.T) {
 	d.failing.Store(false)
 	w.fire <- time.Now()
 	w = c.next(t, HealthInterval)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	require.Equal(t, 2, d.starts(e.Key))
 	second := d.last(e.Key)
 	require.NotSame(t, first, second)
@@ -270,8 +270,8 @@ func TestSupervisedInstancesAreSeparate(t *testing.T) {
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	def, cx := entry("acme", "default", "a"), entry("acme", "client_x", "b")
 	s, _ := runSupervisor(t, h, d, c, def, cx)
-	waitReady(t, h, def.Key)
-	waitReady(t, h, cx.Key)
+	pluginhostWaitReady(t, h, def.Key)
+	pluginhostWaitReady(t, h, cx.Key)
 	pd, pc := d.last(def.Key), d.last(cx.Key)
 	require.NotSame(t, pd, pc)
 
@@ -307,7 +307,7 @@ func TestDrainBeforeUnregister(t *testing.T) {
 		}
 	}
 	s, _ := runSupervisor(t, h, d, c, e)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	callErr := make(chan error, 1)
 	go func() { callErr <- h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil) }()
 	<-started
@@ -352,7 +352,7 @@ func TestShutdownWithin5s(t *testing.T) {
 	}
 	_, stop := runSupervisor(t, h, d, c, busy, deaf, fine)
 	for _, k := range []pluginmodel.EntryKey{busy.Key, deaf.Key, fine.Key} {
-		waitReady(t, h, k)
+		pluginhostWaitReady(t, h, k)
 	}
 	for range pluginproto.MaxInFlight {
 		go func() { _ = h.Call(context.Background(), busy.Key, []string{"a"}, "detect", nil, nil) }()
@@ -408,7 +408,7 @@ func TestHealthGetsThroughFourHookCalls(t *testing.T) {
 	e.Timeout = pluginmodel.MaxTimeout
 	s, _ := runSupervisor(t, h, d, c, e)
 	w := c.next(t, HealthInterval)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	holdHooks(t, h, d, e.Key)
 
 	w.fire <- time.Now()
@@ -427,7 +427,7 @@ func TestShutdownGetsThroughFourHookCalls(t *testing.T) {
 	e := entry("acme", "default", "a")
 	e.Timeout = pluginmodel.MaxTimeout
 	_, stop := runSupervisor(t, h, d, c, e)
-	waitReady(t, h, e.Key)
+	pluginhostWaitReady(t, h, e.Key)
 	holdHooks(t, h, d, e.Key)
 	p := d.last(e.Key)
 
@@ -476,11 +476,11 @@ func TestAddWhileRunning(t *testing.T) {
 	h, d, c := NewHost(), newDialer(), newFakeClock()
 	def := entry("acme", "default", "a")
 	s, stop := runSupervisor(t, h, d, c, def)
-	waitReady(t, h, def.Key)
+	pluginhostWaitReady(t, h, def.Key)
 
 	cx := entry("acme", "client_x", "b")
 	require.NoError(t, s.Add(cx))
-	waitReady(t, h, cx.Key)
+	pluginhostWaitReady(t, h, cx.Key)
 	require.ErrorIs(t, s.Add(cx), ErrDuplicateEntry)
 	require.NoError(t, h.Call(context.Background(), cx.Key, []string{"b"}, "detect", nil, nil))
 
@@ -490,7 +490,7 @@ func TestAddWhileRunning(t *testing.T) {
 	wider := entry("acme", "client_x", "b")
 	wider.Agents = []string{"b", "c"}
 	require.NoError(t, s.Add(wider), "a stopped key is added again with its new agents")
-	waitReady(t, h, cx.Key)
+	pluginhostWaitReady(t, h, cx.Key)
 	require.NoError(t, h.Call(context.Background(), cx.Key, []string{"c"}, "detect", nil, nil))
 	require.ElementsMatch(t, []pluginmodel.EntryKey{def.Key, cx.Key}, s.Supervised())
 

@@ -66,7 +66,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// config: the first run serves its own pages on it.
 	var handed net.Listener
 	if engine.WaitsForConfig(engineTerminal{}, h.Euid(), engine.EnginePath(*configPath)) {
-		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
+		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: setup.PageAddr, Origin: setup.PageOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
 				return cli.ExitOK
@@ -75,7 +75,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		}
 		handed = ln
 	}
-	cfg, err := cli.LoadEngineConfigAs(appShell{}, h.Euid(), *configPath)
+	cfg, err := cli.LoadEngineConfigAs(app.Shell{}, h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
@@ -91,7 +91,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
 	reload := func() error {
-		next, err := cli.LoadEngineConfigAs(appShell{}, h.Euid(), *configPath)
+		next, err := cli.LoadEngineConfigAs(app.Shell{}, h.Euid(), *configPath)
 		if err != nil {
 			return err
 		}
@@ -342,13 +342,13 @@ func agentSpecFromStdin(in io.Reader, spec app.OSSpec, a agentInstall, credStdin
 // it is owned by the engine's user even when the user changed.
 func keptCredentialSpec(spec app.OSSpec, a agentInstall, dryRun bool) (app.OSSpec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
-	raw, err := app.ReadKeptCredential(appSetupHost{}, cred, spec.User)
+	raw, err := app.ReadKeptCredential(app.SetupHost{}, cred, spec.User)
 	if err != nil && waitingForAddress(spec, a.name, cred) {
 		// A connect-only setup waits for its address: no credential yet,
 		// and the engine writes it after the person's YES (CONTRACT.md,
 		// Connect-only setup codes), with the password in .secret, which
 		// must be the engine user's own for that.
-		if _, serr := app.ReadKeptCredential(appSetupHost{}, config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
+		if _, serr := app.ReadKeptCredential(app.SetupHost{}, config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
 			return spec, fmt.Errorf("agent %s waits for its database's address, but its .secret is not usable by the engine's user %s (%w); run basalt init --remote as that user", a.name, spec.User, serr)
 		}
 		a.keepCredential, a.waiting = true, true
@@ -365,7 +365,7 @@ func keptCredentialSpec(spec app.OSSpec, a agentInstall, dryRun bool) (app.OSSpe
 // connect-only setup and no credential file exists at cred: the agent
 // waits for its database's address.
 func waitingForAddress(spec app.OSSpec, name, cred string) bool {
-	cfg, err := cli.LoadEngineConfigAs(appShell{}, os.Geteuid(), spec.ConfigPath)
+	cfg, err := cli.LoadEngineConfigAs(app.Shell{}, os.Geteuid(), spec.ConfigPath)
 	if err != nil {
 		return false
 	}

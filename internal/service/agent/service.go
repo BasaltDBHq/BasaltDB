@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
+	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -131,6 +131,8 @@ type Service struct {
 	revert *revertsvc.Service
 	// write is the query and write use case.
 	write *writeCase
+	// ledger is the read side of the ledger: run history.
+	ledger *ledgersvc.Reads
 	// plugin is the plugin use case.
 	plugin *pluginCase
 	// status is the status use case.
@@ -190,6 +192,7 @@ func (s *Service) wire() {
 	s.approval.SetDelivery(s.delivery)
 	s.approval.SetReverts(s.revert)
 	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
+	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
 	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
 }
 
@@ -218,10 +221,10 @@ func (s *Service) approvalCore() approvalsvc.Core {
 }
 
 // runChecker answers whether a run is one of the agent's, from its ledger.
-type runChecker struct{ store runFinder }
+type runChecker struct{ store Store }
 
 func (r runChecker) CheckRun(ctx context.Context, id uuid.UUID) error {
-	_, err := findRun(ctx, r.store, id)
+	_, err := ledgersvc.FindRun(ctx, r.store, id)
 	return err
 }
 
@@ -320,7 +323,7 @@ type QueryOutcome struct {
 // cannot be recorded is not returned: the ledger must know what the agent
 // saw.
 func (wc *writeCase) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
-	run, err := findRun(ctx, wc.core.Store, p.RunID)
+	run, err := ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
 	if err != nil {
 		return QueryOutcome{}, err
 	}
@@ -356,35 +359,9 @@ func (wc *writeCase) Query(ctx context.Context, p QueryParams) (QueryOutcome, er
 	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: wc.rlsWarnings(ctx, stmt.Tables, len(res.Rows))}, nil
 }
 
-// History returns one page of a run's change records.
-func (wc *writeCase) History(ctx context.Context, p action.ChangeListParams) (History, error) {
-	if _, err := findRun(ctx, wc.core.Store, p.RunID); err != nil {
-		return History{}, err
-	}
-	return wc.core.Store.History(ctx, p)
-}
-
 // ListRuns returns one page of the agent's own runs with what each did.
 func (wc *writeCase) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	return wc.core.Store.ListRuns(ctx, p)
-}
-
-// runFinder is the ledger lookup of one run of the agent.
-type runFinder interface {
-	FindRun(ctx context.Context, id uuid.UUID) (action.Run, error)
-}
-
-// findRun looks up the agent's run in its ledger: the zero run for uuid.Nil, or
-// NOT_FOUND. Every domain that takes a runId goes through it.
-func findRun(ctx context.Context, store runFinder, id uuid.UUID) (action.Run, error) {
-	if id == uuid.Nil {
-		return action.Run{}, nil
-	}
-	run, err := store.FindRun(ctx, id)
-	if errors.Is(err, action.ErrRunNotFound) {
-		return action.Run{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
-	}
-	return run, err
 }
 
 // recorded reports whether a failure is an action the ledger keeps as

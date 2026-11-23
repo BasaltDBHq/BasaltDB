@@ -115,7 +115,7 @@ func (e remoteEnv) cli(t *testing.T, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	code := runInit(c, appSetupHost{}, takePathFlags(c, runInit, args))
+	code := runInit(c, app.SetupHost{}, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -161,7 +161,7 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 	all = append(all, args...)
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	res, err := setupcli.InitRemote(c, appSetupHost{}, takePathFlags(c, runInit, all))
+	res, err := setupcli.InitRemote(c, app.SetupHost{}, takePathFlags(c, runInit, all))
 	require.NoError(t, err, stderr.String())
 	require.NoError(t, setupcli.PrintRemoteResult(c, res))
 	r := remoteRun{result: result{cli.ExitOK, stdout.String(), stderr.String()}, res: res}

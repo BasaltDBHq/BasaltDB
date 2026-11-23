@@ -40,6 +40,9 @@ var plainConfigLoads = map[string]string{
 	// basalt mcp reads the socket directory and the agents from the config,
 	// as the agent's OS user.
 	engineCLIDir + "mcp.go:RunMCPAt:Load": "basalt mcp, as the agent's user",
+	// The hand-off reads a connect-only agent's pending setup from the
+	// engine config, as the engine's own user, refusing a link at it.
+	appDir + "handoff_files.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
 }
 
 // configLoadsIn lists the config loaders f refers to, as
@@ -111,13 +114,18 @@ const engineCLIDir = "../../internal/engine/in/enginecli/"
 // package: basalt init --remote's controller reads the engine config.
 const setupCLIDir = "../../internal/setup/in/setupcli/"
 
+// appDir is the composition root's source folder, from this package: the
+// commands' wiring and the code moving here from this package read the
+// engine config too.
+const appDir = "../../internal/app/"
+
 // engineDir is the engine's use cases' source folder, from this package:
 // the supervisor's config read (SuperviseConfig) passes through it.
 const engineDir = "../../internal/engine/"
 
 // No root code path reads the engine config with a config loader directly:
 // a new call outside plainConfigLoads, in this package, the CLI shell, the
-// engine's use cases or its CLI controllers, or the setup CLI controllers,
+// engine's use cases or its CLI controllers, the setup CLI controllers, or the composition root,
 // fails here, so it uses cli.LoadEngineConfig.
 func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 	t.Parallel()
@@ -128,6 +136,7 @@ func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 		engineDir:    "the engine's use cases",
 		engineCLIDir: "the engine's CLI controllers",
 		setupCLIDir:  "the setup CLI controllers",
+		appDir:       "the composition root",
 	} {
 		more, err := filepath.Glob(dir + "*.go")
 		require.NoError(t, err)

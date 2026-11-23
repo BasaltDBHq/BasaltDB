@@ -292,7 +292,7 @@ func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 		cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
 			Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: &tc.setup,
 		}}}
-		r, err := statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
+		r, err := statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow, "", "")
 		require.NoError(t, err)
 		require.Equal(t, tc.state, r.Setup.State)
 		require.True(t, r.Setup.ConnectOnly)

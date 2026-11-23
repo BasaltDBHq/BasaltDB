@@ -282,11 +282,11 @@ func (pc *pluginCase) noPortalLink() string {
 	}
 	state := pc.status.VaultState()
 	switch state {
-	case vaultStateOff:
+	case statussvc.VaultOff:
 		return "the Vault is off on this engine (vault in engine.json)"
-	case vaultStateKeyError:
+	case statussvc.VaultKeyError:
 		return "the engine's Vault key file is refused (status shows vault KEY_ERROR)"
-	case vaultStateConnected:
+	case statussvc.VaultConnected:
 		// Connected to the Vault, yet the relay hands over no link: the
 		// database revoked this engine's key, or the socket just dropped.
 		return "this engine cannot hand over a portal link now (status shows vault and engineRecord: a database that revoked the engine's key refuses its links)"

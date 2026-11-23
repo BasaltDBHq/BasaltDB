@@ -21,8 +21,8 @@ import (
 // Interval is the time between two checks.
 const Interval = 24 * time.Hour
 
-// FileName is the result's file in the engine's state directory.
-const FileName = "portal-check.json"
+// fileName is the result's file in the engine's state directory.
+const fileName = "portal-check.json"
 
 // maxFindings bounds the paths a result keeps.
 const maxFindings = 100
@@ -95,8 +95,8 @@ func resultOf(rep *Report, now time.Time) Result {
 	return r
 }
 
-// ConnectPageFile is the connect page's embedded file.
-const ConnectPageFile = "connect/index.html"
+// connectPageFile is the connect page's embedded file.
+const connectPageFile = "connect/index.html"
 
 // PortalcheckOptions is what the check compares and how it is run for base, the
 // portal's origin: the pages embedded in this binary, the routes people load
@@ -107,7 +107,7 @@ func PortalcheckOptions(base string) PortalverifyOptions {
 		Base: base, Files: web.Files, Headers: httpsec.ExpectedPortal(),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
-		FileHeaders: map[string]http.Header{ConnectPageFile: httpsec.ExpectedConnectPage()},
+		FileHeaders: map[string]http.Header{connectPageFile: httpsec.ExpectedConnectPage()},
 	}
 	for _, r := range web.PortalPages() {
 		o.Routes = append(o.Routes, Route{Path: r.Path, ID: r.ID, File: r.File})
@@ -129,7 +129,7 @@ type Checker struct {
 }
 
 // New returns a checker for the portal at opts.Base. Results are also
-// written to stateDir (FileName) unless it is empty.
+// written to stateDir (fileName) unless it is empty.
 func New(opts PortalverifyOptions, stateDir string, log *slog.Logger, now func() time.Time) *Checker {
 	return &Checker{opts: opts, stateDir: stateDir, log: log, now: now, verify: Verify}
 }
@@ -190,13 +190,13 @@ func (c *Checker) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// save writes res to dir/FileName (0600), replacing the old one.
+// save writes res to dir/fileName (0600), replacing the old one.
 func save(dir string, res Result) error {
 	b, err := json.Marshal(res)
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, FileName+".*")
+	f, err := os.CreateTemp(dir, fileName+".*")
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func save(dir string, res Result) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, filepath.Join(dir, FileName)); err != nil {
+	if err := os.Rename(tmp, filepath.Join(dir, fileName)); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}

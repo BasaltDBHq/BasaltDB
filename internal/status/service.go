@@ -184,16 +184,20 @@ func (sc *Service) SameUser() bool { return sc.deps.SameUser }
 // DevLocalPages says engine.json has devLocalPages set.
 func (sc *Service) DevLocalPages() bool { return sc.deps.DevLocalPages }
 
-// VaultState is the engine's Vault state, "OFF" when there is no Vault reporter.
+// VaultState is the engine's Vault state, VaultOff when there is no Vault reporter.
 func (sc *Service) VaultState() string {
 	if sc.deps.Vault == nil {
-		return vaultStateOff
+		return VaultOff
 	}
 	return sc.deps.Vault.VaultStatus().State
 }
 
-// vaultStateOff is the Vault state of an engine with no Vault reporter.
-const vaultStateOff = "OFF"
+// The Vault connection's states in status.vault.state.
+const (
+	VaultOff       = "OFF"
+	VaultConnected = "CONNECTED"
+	VaultKeyError  = "KEY_ERROR"
+)
 
 // GuardStatus reads the guard's state on the agent's credential.
 func (sc *Service) GuardStatus(ctx context.Context) (guardmodel.Status, error) {

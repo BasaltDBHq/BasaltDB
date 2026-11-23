@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -19,8 +20,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
@@ -113,6 +119,21 @@ func findProblem(t *testing.T, r guidance.StatusReport, code string) guidance.Pr
 	return guidance.Problem{}
 }
 
+// testErrors is the error map the app fills with the adapters' errors.
+func testErrors() guidance.ErrorMap {
+	return guidance.ErrorMap{
+		InvalidParams: ledger.ErrInvalidParams,
+		InvalidIntent: guard.ErrInvalidIntent,
+		RowTooLarge: func(err error) (string, bool) {
+			var rl *resultsize.RowTooLargeError
+			if errors.As(err, &rl) {
+				return rl.Error(), true
+			}
+			return "", false
+		},
+	}
+}
+
 func testManager() guidance.ServiceManager {
 	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 }
@@ -125,7 +146,7 @@ func newService(edit func(*Core, *Deps)) *Service {
 	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testManager())
 	core := Core{
 		Name: "bot", Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-		Commands: cmds, PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+		Commands: cmds, Errors: testErrors(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
 	}
 	deps := Deps{
 		Passkeys: keys{n: 1}, Probe: &fakeProbe{st: currentGuard()},
@@ -135,4 +156,37 @@ func newService(edit func(*Core, *Deps)) *Service {
 		edit(&core, &deps)
 	}
 	return NewService(core, &deps)
+}
+
+// commandsAt are the commands of the agent bot on linux, with the engine
+// config at configPath ("" for the platform default).
+func commandsAt(configPath string) guidance.Commands {
+	return guidance.NewCommands("bot", configPath, config.DefaultPath("linux"), "linux", testManager())
+}
+
+const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"
+
+// statusCredential is a credential file path no status output may hold.
+const statusCredential = "/etc/basalt/agents/bot.url"
+
+func testEngineHost() EngineHost {
+	return EngineHost{
+		LatestGuardVersion: guard.LatestVersion,
+		ReadLastStop:       engine.ReadLastStop,
+		StartHoldOffUntil: func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
+			return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
+		},
+	}
+}
+
+// recordOf reads this engine's record, revoked or not.
+func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error) {
+	return func(_ context.Context, _ string) (*EngineRecord, error) {
+		e := &EngineRecord{RecordedAt: statusNow.Add(-48 * time.Hour)}
+		if revoked {
+			at := statusNow.Add(-time.Hour)
+			e.RevokedAt = &at
+		}
+		return e, nil
+	}
 }

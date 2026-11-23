@@ -304,11 +304,11 @@ func (ep *Plugins) startCheck(k pluginmodel.EntryKey) (entryCheck, bool) {
 
 // verifyFailure is what the engine logs of a failed verification: the
 // failed check in fixed words, never a path a plugin could have named
-// (VerifyFailure).
+// (PluginhostVerifyFailure).
 func verifyFailure(err error) string {
 	var ve *pluginmodel.VerifyError
 	if errors.As(err, &ve) {
-		return VerifyFailure(ve)
+		return PluginhostVerifyFailure(ve)
 	}
 	return err.Error()
 }

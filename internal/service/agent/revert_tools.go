@@ -453,3 +453,13 @@ func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (an
 		PersonMessage: res.PersonMessage, NextSteps: res.NextSteps,
 	}, nil
 }
+
+// revertTools are the tools that preview, plan, request and apply a revert.
+func (h handlers) revertTools() []guidance.Tool {
+	return []guidance.Tool{
+		contractTool("preview_revert", h.wrap("preview_revert", h.previewRevert)),
+		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
+		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
+		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
+	}
+}

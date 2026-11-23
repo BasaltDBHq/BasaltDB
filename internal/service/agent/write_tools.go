@@ -88,3 +88,11 @@ func (a writeArgs) wait() time.Duration {
 	}
 	return DefaultApprovalWait
 }
+
+// writeTools are the tools of a store that speaks SQL: query and write.
+func (h handlers) writeTools() []guidance.Tool {
+	return []guidance.Tool{
+		contractTool("query", h.wrap("query", h.query)),
+		contractTool("write", h.wrap("write", h.write)),
+	}
+}

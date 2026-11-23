@@ -24,25 +24,21 @@ func Tools(svc *Service) []guidance.Tool {
 		panic("agent: service required")
 	}
 	h := handlers{svc: svc}
-	tools := []guidance.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
+	tools := h.runStartTools()
 	if speaksSQL(svc.deps.Core.Store.Kind()) {
-		tools = append(tools,
-			contractTool("query", h.wrap("query", h.query)),
-			contractTool("write", h.wrap("write", h.write)))
+		tools = append(tools, h.writeTools()...)
 	}
-	return append(tools,
-		contractTool("run_history", h.wrap("run_history", h.runHistory)),
-		contractTool("list_runs", h.wrap("list_runs", h.listRuns)),
-		contractTool("list_pending", h.wrap("list_pending", h.listPending)),
-		contractTool("preview_revert", h.wrap("preview_revert", h.previewRevert)),
-		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
-		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
-		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
-		contractTool(toolRequestPlugin, h.wrap(toolRequestPlugin, h.requestPlugin)),
-		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
-		contractTool(guidance.ToolStatus, h.wrap(guidance.ToolStatus, h.status)),
-		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
-	)
+	for _, list := range [][]guidance.Tool{
+		h.runTools(), h.approvalTools(), h.revertTools(), h.pluginTools(), h.describeTools(), h.statusTools(),
+	} {
+		tools = append(tools, list...)
+	}
+	return tools
+}
+
+// runStartTools are the tools that start a run.
+func (h handlers) runStartTools() []guidance.Tool {
+	return []guidance.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
 }
 
 // speaksSQL reports whether a store of kind runs SQL: the query and write

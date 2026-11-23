@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -16,12 +18,14 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
-func kinds(steps []toolresult.NextStep) []mcpcontract.StepKind { return catalogKinds(steps) }
+func kinds(steps []toolresult.NextStep) []mcpcontract.StepKind {
+	return stepcatalogtest.CatalogKinds(steps)
+}
 
 func requireConnectPending(t *testing.T, kind, code, reason string, pm string, ls []toolresult.Link, steps []toolresult.NextStep) {
 	t.Helper()
 	url := links.Portal + "/connect#" + testSetupCode
-	c := catalogOf(t)
+	c := stepcatalogtest.CatalogOf(t)
 	v, ok := c.ConnectLinkEntry(kind, code, reason, "")
 	require.True(t, ok)
 	require.Equal(t, v.Steps, kinds(steps), "the catalog's connectLink variant")
@@ -34,9 +38,9 @@ func requireConnectPending(t *testing.T, kind, code, reason string, pm string, l
 	require.Contains(t, pm, testFingerprint)
 	require.NotContains(t, pm, "basalt init", "the person runs no command")
 	require.True(t, strings.Index(pm, url) > 0, "the link is in the message")
-	requirePersonMessage(t, pm, ls)
+	stepcatalogtest.RequirePersonMessage(t, pm, ls)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{}, kind+code+reason+string(rune('0'+i)))
+		stepcatalogtest.RequireStepObeysRules(t, st, stepcatalogtest.Case{}, kind+code+reason+string(rune('0'+i)))
 	}
 }
 
@@ -66,7 +70,7 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 			require.NotContains(t, te.PersonMessage, "Vault")
 			require.Equal(t, "RUN_COMMAND", te.NextSteps[0].Action)
 			require.Equal(t, "AGENT", te.NextSteps[0].Actor, "the agent's basalt init prints the link")
-			requireObeysCatalog(t, catalogCase{tool: "query", args: queryArgs0}, te, tc.operatedBy)
+			stepcatalogtest.RequireObeysCatalog(t, stepcatalogtest.Case{Tool: "query", Args: queryArgs0}, te, tc.operatedBy)
 		})
 	}
 }

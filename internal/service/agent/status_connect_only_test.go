@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 // The contract's connect-only fixture (api/mcp/setup/setup-code.fixtures.json,
@@ -248,7 +249,7 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	require.True(t, ok)
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
-	require.NoError(t, validateSchema(tool.OutputSchema, body), string(raw))
+	require.NoError(t, stepcatalogtest.ValidateSchema(tool.OutputSchema, body), string(raw))
 }
 
 func statusToolContract(t *testing.T) mcpcontract.Tool {

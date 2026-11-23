@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -58,10 +57,13 @@ type SetuprunBackend interface {
 	MetaOwner(ctx context.Context, q Querier) (string, error)
 	// Run executes one statement on q.
 	Run(ctx context.Context, q Querier, sql string) error
-	// ApplyScript runs the script's statements on tx, in order.
-	ApplyScript(ctx context.Context, tx pgx.Tx, s guardmodel.Script) error
+	// ApplyScript runs the script's statements in tx, the install's
+	// transaction, in order.
+	ApplyScript(ctx context.Context, tx Querier, s guardmodel.Script) error
 
 	DemoSchema() string
 	DemoPlanDrop(ctx context.Context, q Querier) ([]string, error)
-	DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (kept bool, err error)
+	// DemoApplyDrop runs drops inside tx, the removal's transaction, in a
+	// savepoint of their own.
+	DemoApplyDrop(ctx context.Context, tx Querier, drops []string) (kept bool, err error)
 }

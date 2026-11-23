@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -346,7 +348,7 @@ func TestEveryCatalogResultHasACase(t *testing.T) {
 	cases := resultCases()
 	seen := map[string]bool{}
 	var missing []string
-	for _, e := range catalogOf(t).Results {
+	for _, e := range stepcatalogtest.CatalogOf(t).Results {
 		key := resultKey(e.Tool, e.Case)
 		seen[key] = true
 		if _, ok := cases[key]; !ok {
@@ -373,32 +375,16 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 		{"default config", "linux", "", []string{"--agent=bot", "--write=public.leads"}},
 		{"custom config", "darwin", "/srv/basalt/engine.json", []string{"--agent=bot", "--read=public.leads"}},
 	} {
-		for _, entry := range catalogOf(t).Results {
+		for _, entry := range stepcatalogtest.CatalogOf(t).Results {
 			kase := resultCases()[resultKey(entry.Tool, entry.Case)]
 			t.Run(variant.name+"/"+resultKey(entry.Tool, entry.Case), func(t *testing.T) {
 				t.Parallel()
 				s := resultService(t, variant.goos, variant.config)
 				person, links, steps := kase.build(t, s)
-				requireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
-					catalogCase{tool: kase.tool, args: kase.args}, person, links, steps, kase.openWithoutURL)
+				stepcatalogtest.RequireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
+					stepcatalogtest.Case{Tool: kase.tool, Args: kase.args}, person, links, steps, kase.openWithoutURL)
 			})
 		}
-	}
-}
-
-// requireObeysCatalogSteps checks a result's or warning's person message and
-// steps against its catalog entry and the rules every step follows.
-func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase catalogCase, person string, links []toolresult.Link, steps []toolresult.NextStep, openWithoutURL bool) {
-	t.Helper()
-	got := catalogKinds(steps)
-	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence")
-	require.Equal(t, entry.PersonMessage, person != "", "personMessage set exactly when the catalog says: %q", person)
-	mcptest.Require(t, person, links)
-	for i, st := range steps {
-		if st.Action == toolresult.ActionOpenLink && st.URL == "" && openWithoutURL {
-			st.URL = "http://localhost/the-link-given-earlier"
-		}
-		requireStepObeysRules(t, st, kase, "step "+string(rune('1'+i)))
 	}
 }
 
@@ -475,7 +461,7 @@ func TestEveryCatalogWarningHasACase(t *testing.T) {
 	t.Parallel()
 	cases := warningCases()
 	seen := map[string]bool{}
-	for _, e := range catalogOf(t).Warnings {
+	for _, e := range stepcatalogtest.CatalogOf(t).Warnings {
 		seen[e.Code] = true
 		require.Contains(t, cases, e.Code, "catalog warning without a case in warningCases")
 	}
@@ -493,7 +479,7 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 		{"default config", "linux", "", []string{"--agent=bot", "--write=public.leads"}},
 		{"custom config", "darwin", "/srv/basalt/engine.json", []string{"--agent=bot", "--read=public.leads"}},
 	} {
-		for _, entry := range catalogOf(t).Warnings {
+		for _, entry := range stepcatalogtest.CatalogOf(t).Warnings {
 			kase := warningCases()[entry.Code]
 			t.Run(variant.name+"/"+entry.Code, func(t *testing.T) {
 				t.Parallel()
@@ -503,8 +489,8 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 				w := warnings[0]
 				require.Equal(t, entry.Code, w.Code)
 				require.NotEmpty(t, w.Message)
-				requireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
-					catalogCase{tool: kase.tool}, w.PersonMessage, nil, w.NextSteps, false)
+				stepcatalogtest.RequireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
+					stepcatalogtest.Case{Tool: kase.tool}, w.PersonMessage, nil, w.NextSteps, false)
 			})
 		}
 	}
@@ -515,7 +501,7 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 // command on the agent's machine.
 func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T) {
 	t.Parallel()
-	for _, entry := range catalogOf(t).Warnings {
+	for _, entry := range stepcatalogtest.CatalogOf(t).Warnings {
 		kase := warningCases()[entry.Code]
 		t.Run(entry.Code, func(t *testing.T) {
 			t.Parallel()
@@ -523,7 +509,7 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 			warnings := kase.build(t, s)
 			require.Len(t, warnings, 1)
 			w := warnings[0]
-			want, pm, variant := expectedSteps(t, mcpcontract.VariantWarning, entry.Code, "", "", entry.Steps, entry.PersonMessage, mcpcontract.OperatedByAgent)
+			want, pm, variant := stepcatalogtest.ExpectedSteps(t, mcpcontract.VariantWarning, entry.Code, "", "", entry.Steps, entry.PersonMessage, mcpcontract.OperatedByAgent)
 			got := make([]mcpcontract.StepKind, 0, len(w.NextSteps))
 			for _, st := range w.NextSteps {
 				got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
@@ -531,9 +517,9 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 			require.Equal(t, want, got)
 			require.Equal(t, pm, w.PersonMessage != "")
 			mcptest.Require(t, w.PersonMessage, nil)
-			requireOperatorRules(t, w.NextSteps, w.PersonMessage, variant, mcpcontract.OperatedByAgent, entry.Code)
+			stepcatalogtest.RequireOperatorRules(t, w.NextSteps, w.PersonMessage, variant, mcpcontract.OperatedByAgent, entry.Code)
 			for i, st := range w.NextSteps {
-				requireStepObeysRules(t, st, catalogCase{tool: kase.tool}, "step "+strconv.Itoa(i+1))
+				stepcatalogtest.RequireStepObeysRules(t, st, stepcatalogtest.Case{Tool: kase.tool}, "step "+strconv.Itoa(i+1))
 			}
 		})
 	}
@@ -648,18 +634,4 @@ func urlLinesOf(message string) []string {
 		}
 	}
 	return out
-}
-
-// catalogKinds is the (actor, action) sequence of steps as the catalog lists
-// it: without the SEND_REQUEST step the engine puts first when a result
-// carries requestFile (CONTRACT.md, Next steps).
-func catalogKinds(steps []toolresult.NextStep) []mcpcontract.StepKind {
-	got := make([]mcpcontract.StepKind, 0, len(steps))
-	for i, st := range steps {
-		if i == 0 && st.Action == toolresult.ActionSendRequest {
-			continue
-		}
-		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-	}
-	return got
 }

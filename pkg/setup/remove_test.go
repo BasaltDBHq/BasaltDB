@@ -110,7 +110,7 @@ func TestRemovePlanWithoutAGuard(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT current_database()`).Scan(&database))
 	tx, err = d.Admin.Begin(ctx)
 	require.NoError(t, err)
-	_, _, err = setuprun.RunRemove(ctx, setupstore.New(), tx, d.Names.Prefix, database)
+	_, _, err = setuprun.RunRemove(ctx, setupstore.New(), pgquerier.Neutralize(tx), d.Names.Prefix, database)
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit(ctx))
 	require.Zero(t, prefixRoles(t, d))

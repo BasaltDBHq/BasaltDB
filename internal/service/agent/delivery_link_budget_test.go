@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -84,7 +86,7 @@ func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) linksvc.He
 	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
 		time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issue)
 	require.NoError(t, err)
-	requirePersonMessage(t, n.PersonMessage, n.Links)
+	stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
 	return n
 }
 
@@ -167,7 +169,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: lines},
 			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), linksvc.IssueLink)
 		require.NoError(t, err)
-		requirePersonMessage(t, n.PersonMessage, n.Links)
+		stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
 	}
 }
 
@@ -209,7 +211,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: short.URL}}, short.Links)
 	require.Contains(t, short.Message, "\n\n"+short.URL)
 	require.Nil(t, short.File)
-	requirePersonMessage(t, short.Message, short.Links)
+	stepcatalogtest.RequirePersonMessage(t, short.Message, short.Links)
 
 	within, err := noticeService("", links.DefaultBudget).revert.revertNotice(ctx, small)
 	require.NoError(t, err)
@@ -217,7 +219,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.LessOrEqual(t, len(within.URL), links.DefaultBudget)
 	require.Nil(t, within.File)
 	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: within.URL}}, within.Links)
-	requirePersonMessage(t, within.Message, within.Links)
+	stepcatalogtest.RequirePersonMessage(t, within.Message, within.Links)
 
 	over, err := noticeService("", links.DefaultBudget).revert.revertNotice(ctx, big)
 	require.NoError(t, err)
@@ -230,7 +232,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Contains(t, over.Message, "\n\n"+over.URL)
 	require.NotContains(t, over.Message, "#2.")
 	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
-	requirePersonMessage(t, over.Message, over.Links)
+	stepcatalogtest.RequirePersonMessage(t, over.Message, over.Links)
 }
 
 // TestRevertNoticeNamesOnlyTheFileWithoutBlocks: a request too long for ten
@@ -245,7 +247,7 @@ func TestRevertNoticeNamesOnlyTheFileWithoutBlocks(t *testing.T) {
 	require.Nil(t, n.File.Blocks)
 	require.Contains(t, n.Message, "open the request file the agent sends you:")
 	require.NotContains(t, n.Message, "text blocks")
-	requirePersonMessage(t, n.Message, n.Links)
+	stepcatalogtest.RequirePersonMessage(t, n.Message, n.Links)
 }
 
 func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
@@ -256,7 +258,7 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 			r := revertOf(t, intent, revertLines(60), batched)
 			n, err := noticeService(origin, 1).revert.revertNotice(context.Background(), r)
 			require.NoError(t, err)
-			requirePersonMessage(t, n.Message, n.Links)
+			stepcatalogtest.RequirePersonMessage(t, n.Message, n.Links)
 		}
 	}
 }
@@ -315,9 +317,9 @@ func requireSendRequestFirst(t *testing.T, steps []toolresult.NextStep, file *li
 	require.Equal(t, toolresult.ActionSendRequest, steps[0].Action, where)
 	require.Equal(t, guidance.SendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{tool: guidance.ToolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
+		stepcatalogtest.RequireStepObeysRules(t, st, stepcatalogtest.Case{Tool: guidance.ToolWrite, Args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}
-	require.NotEqual(t, toolresult.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
+	require.NotEqual(t, toolresult.ActionSendRequest, stepcatalogtest.CatalogKinds(steps)[0].Action, "the catalog checks skip it")
 }
 
 // TestHashLinkResultsSendTheRequestFirst: on an engine that serves no pages,
@@ -401,7 +403,7 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 		s := noticeService(origin, links.DefaultBudget)
 		n := approvalNoticeOf(t, s, 60, linksvc.KeepLink)
 		te := s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
-		requirePersonMessage(t, te.PersonMessage, te.Links)
+		stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
 		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
 		open := te.NextSteps[0]
 		require.Equal(t, toolresult.ActionOpenLink, open.Action)
@@ -437,7 +439,7 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 		} {
 			te := testErrors().ToolError(refuse())
 			require.Equal(t, guidance.CodeRevertInvalid, te.Code, name)
-			requirePersonMessage(t, te.PersonMessage, te.Links)
+			stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
 			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
 			var open *toolresult.NextStep
 			for i := range te.NextSteps {

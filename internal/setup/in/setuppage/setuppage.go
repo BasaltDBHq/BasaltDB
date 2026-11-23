@@ -14,8 +14,8 @@ import (
 	"mime"
 	"net/http"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 

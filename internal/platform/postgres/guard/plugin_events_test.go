@@ -243,11 +243,11 @@ func TestPluginEventsAreEachAgentsOwn(t *testing.T) {
 	own, err := guard.ReadPluginRecords(ctx, a.Conn)
 	require.NoError(t, err)
 	require.Equal(t, []guardmodel.PluginDetail{validLocal()}, own.EnabledPlugins())
-	require.Equal(t, []string{"jNZPxNG5htlwfhg4ZgknAA"}, own.TrustKeys)
+	require.Equal(t, []guardmodel.PluginTrustEvent{{KeyID: "jNZPxNG5htlwfhg4ZgknAA", Kind: guardmodel.PluginTrustAdded}}, own.LatestTrustEvents)
 	other, err := guard.ReadPluginRecords(ctx, b.Conn)
 	require.NoError(t, err)
 	require.Empty(t, other.Entries)
-	require.Empty(t, other.TrustKeys)
+	require.Empty(t, other.LatestTrustEvents)
 
 	// The admin (not an agent role) cannot write one at all.
 	requireCode(t, recordRaw(t, d.Admin, string(guardmodel.PluginEnabled), mutated(t, validLocal(), nil)), guardmodel.CodeNotAllowed)
@@ -331,13 +331,13 @@ func TestReadPluginRecordsTakesTheLatestTrustEvent(t *testing.T) {
 	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, k2))
 	recs, err := guard.ReadPluginRecords(ctx, a.Conn)
 	require.NoError(t, err)
-	require.Equal(t, []string{k1}, recs.TrustKeys)
+	require.ElementsMatch(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustRemoved}, {KeyID: k1, Kind: guardmodel.PluginTrustAdded}}, recs.LatestTrustEvents)
 
 	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, k2))
 	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, k1))
 	recs, err = guard.ReadPluginRecords(ctx, a.Conn)
 	require.NoError(t, err)
-	require.Equal(t, []string{k2}, recs.TrustKeys)
+	require.ElementsMatch(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustAdded}, {KeyID: k1, Kind: guardmodel.PluginTrustRemoved}}, recs.LatestTrustEvents)
 
 	require.Error(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginTrustRemoved, validLocal()), "a key event carries no entry")
 	requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustRemoved), `{"signerKeyId": "short"}`), guardmodel.CodeLedgerInputInvalid)
@@ -365,7 +365,7 @@ func TestPluginTrustRemovedMigration(t *testing.T) {
 	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"))
 	recs, err := guard.ReadPluginRecords(ctx, a.Conn)
 	require.NoError(t, err)
-	require.Empty(t, recs.TrustKeys)
+	require.Equal(t, []guardmodel.PluginTrustEvent{{KeyID: "jNZPxNG5htlwfhg4ZgknAA", Kind: guardmodel.PluginTrustRemoved}}, recs.LatestTrustEvents)
 	var public bool
 	require.NoError(t, d.Admin.QueryRow(ctx,
 		`SELECT has_function_privilege('public', 'basalt_meta.record_plugin_event(text, jsonb)', 'EXECUTE')`).Scan(&public))

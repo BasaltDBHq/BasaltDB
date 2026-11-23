@@ -16,9 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -154,10 +151,14 @@ type Prober struct {
 	// and the operator's); nil is the built-in ones. internal/app gives the
 	// engine's own.
 	Trust func() *trustprofile.Set
-	// ConnConfig parses dsn into the connection config the engine opens
-	// connections with, trusting set (nil: the engine's own trust). It is
+	// Login makes one login with dsn, trusting set (nil: the engine's own
+	// trust), to the address ip only, over dial (nil dials) and, when roots
+	// is set, verifying the server's certificate against roots alone; it
+	// closes the connection at once when the login succeeds. The database's
+	// refusal comes back as an error that carries its SQLSTATE (a
+	// SQLState() string method), as the Postgres driver's does. It is
 	// required to probe a login; internal/app gives the Postgres adapter's.
-	ConnConfig func(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, error)
+	Login func(ctx context.Context, dsn string, set *trustprofile.Set, ip string, dial func(ctx context.Context, network, addr string) (net.Conn, error), roots *x509.CertPool) error
 	// Now is the clock certificates are checked at; nil is time.Now.
 	Now func() time.Time
 }
@@ -356,55 +357,16 @@ func (p Prober) login(ctx context.Context, a setupcode.Address, ip netip.Addr, u
 	if _, err := rand.Read(password); err != nil {
 		return err
 	}
-	cfg, err := p.connConfig(a, ip, user, hex.EncodeToString(password), binding, pin)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-	conn, err := pgx.ConnectConfig(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	return conn.Close(ctx)
-}
-
-// connConfig is the connection to a as user with password, made to ip only,
-// trusting pin as well when there is one.
-func (p Prober) connConfig(a setupcode.Address, ip netip.Addr, user, password string, binding bool, pin Pin) (*pgx.ConnConfig, error) {
 	set := p.Profiles
 	if pin.Profile != nil {
 		set = p.profiles().Replacing(pin.Profile.Name, pin.Profile)
 	}
-	if p.ConnConfig == nil {
-		return nil, errors.New("handoff: the prober has no connection config")
+	if p.Login == nil {
+		return errors.New("handoff: the prober has no connection config")
 	}
-	cfg, err := p.ConnConfig(ConnString(a, user, password, binding), set)
-	if err != nil {
-		return nil, err
-	}
-	pinned := ip.String()
-	cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{pinned}, nil }
-	if p.Dial != nil {
-		cfg.DialFunc = p.Dial
-	}
-	if p.Roots != nil {
-		setRoots(&cfg.Config, p.Roots)
-	}
-	return cfg, nil
-}
-
-// setRoots verifies every TLS attempt of cfg against roots.
-func setRoots(cfg *pgconn.Config, roots *x509.CertPool) {
-	set := func(t *tls.Config) {
-		if t != nil {
-			t.RootCAs = roots
-		}
-	}
-	set(cfg.TLSConfig)
-	for _, fb := range cfg.Fallbacks {
-		set(fb.TLSConfig)
-	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	return p.Login(ctx, ConnString(a, user, hex.EncodeToString(password), binding), set, ip.String(), p.Dial, p.Roots)
 }
 
 // ConnString is the agent's connection string for a: user and password at
@@ -440,14 +402,18 @@ func LoginRefused(err error) bool { return proves(false, err) }
 // user), since pgx sends the startup message only after a TLS handshake
 // whose certificate verified for the host name.
 func proves(binding bool, err error) bool {
-	var pg *pgconn.PgError
+	var pg interface {
+		error
+		SQLState() string
+	}
 	if !errors.As(err, &pg) {
 		return false
 	}
+	code := pg.SQLState()
 	if binding {
-		return pg.Code == sqlstateInvalidPassword
+		return code == sqlstateInvalidPassword
 	}
-	return strings.HasPrefix(pg.Code, sqlstateClassAuth) || (pg.Code == sqlstateInternal && strings.Contains(pg.Message, supavisorNoTenant))
+	return strings.HasPrefix(code, sqlstateClassAuth) || (code == sqlstateInternal && strings.Contains(pg.Error(), supavisorNoTenant))
 }
 
 // unreachable is a login that reached no server: the dial failed or timed

@@ -7,7 +7,7 @@ import (
 )
 
 // Querier is the connection, pool or transaction a sample is read with,
-// seen through driver-free types (pgquerier.Port). A pgx handle is handed
+// seen through driver-free types (sqlport.Port). A pgx handle is handed
 // over through pgquerier.Neutralize.
 type Querier = sqlport.Port
 

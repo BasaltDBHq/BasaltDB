@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
+
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
@@ -112,12 +114,12 @@ func AgentTools(svc *agent.Service) []mcpserver.Tool {
 // took but closed the connection without answering.
 type EngineDownServer struct {
 	*mcpserver.Server
-	down agent.EngineDown
+	down statusmcp.EngineDown
 }
 
 // NewEngineDownServer is the engine-down tools of down, served as an
 // agent's MCP server.
-func NewEngineDownServer(down agent.EngineDown) EngineDownServer {
+func NewEngineDownServer(down statusmcp.EngineDown) EngineDownServer {
 	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}
 	return EngineDownServer{Server: mcpserver.NewServer(info, mcpserver.ToolsFrom(down.Tools(), nil)...), down: down}
 }

@@ -79,6 +79,6 @@ func InvalidArgumentSteps(b *Steps, te *toolresult.ToolError, f Failure) string 
 		b.ReviseCall(f.Tool, nil, adminCredentialRevise)
 		return AdminCredentialPerson
 	}
-	b.ReviseCall(f.Tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
+	b.FixArguments(f.Tool)
 	return ""
 }

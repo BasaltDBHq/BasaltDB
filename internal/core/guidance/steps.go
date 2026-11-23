@@ -62,6 +62,12 @@ func (b *Steps) ReviseCall(tool string, args map[string]any, text string) *Steps
 	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Tool: tool, Arguments: args}, text)
 }
 
+// FixArguments adds the step of an INVALID_ARGUMENT with no reason of its own:
+// the agent corrects the arguments as the message says, then calls tool again.
+func (b *Steps) FixArguments(tool string) *Steps {
+	return b.ReviseCall(tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
+}
+
 // RetrySmallerBatches adds an AGENT step: split the write into writes of at
 // most maxRows rows.
 func (b *Steps) RetrySmallerBatches(maxRows int, text string) *Steps {

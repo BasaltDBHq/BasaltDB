@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
+
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
@@ -89,7 +91,7 @@ func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-c
 	t.Helper()
 	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
 	require.NoError(t, err)
-	down := agent.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
+	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	fallback := app.NewEngineDownServer(down)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()

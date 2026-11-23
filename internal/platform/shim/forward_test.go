@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
+
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
@@ -70,7 +72,7 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 
 	cmds, err := agent.NewCommands("bot", "", "linux", testServiceManager())
 	require.NoError(t, err)
-	down := agent.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
+	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	r := &relay{

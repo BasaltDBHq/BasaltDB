@@ -155,21 +155,6 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 			require.NotContains(t, string(raw), "db.example.com", tool.Name)
 		}
 	}
-	// The engine-down tools (basalt mcp, engine not answering) refuse too.
-	down := EngineDown{Host: testEngineHost(), Name: "bot", Log: d.Core.Log, Now: d.Core.Now}
-	downTools := down.Tools()
-	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(downTools, WithMeta)...)
-	for _, tool := range downTools {
-		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
-			body, isError := serveCall(t, downSrv, tool.Name, args)
-			require.True(t, isError, tool.Name)
-			require.Equal(t, guidance.ReasonAdminCredential, body["reason"], tool.Name)
-			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
-			raw, err := json.Marshal(body)
-			require.NoError(t, err)
-			require.NotContains(t, string(raw), secret, tool.Name)
-		}
-	}
 	require.NotContains(t, logs.String(), secret)
 	require.NotContains(t, logs.String(), "db.example.com")
 }

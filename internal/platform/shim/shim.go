@@ -39,7 +39,7 @@ const (
 	retryQueue       = 64
 )
 
-// Fallback answers what the engine does not (agent.EngineDownServer).
+// Fallback answers what the engine does not (statusmcp.EngineDownServer).
 type Fallback interface {
 	// ServeLine answers one JSON-RPC message the engine never received.
 	ServeLine(ctx context.Context, out io.Writer, line []byte) error

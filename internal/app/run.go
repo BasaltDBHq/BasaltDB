@@ -47,7 +47,6 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
@@ -353,7 +352,7 @@ type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *sl
 type startedAgents struct {
 	agents   []engine.Agent
 	upkeeps  []*ledger.Upkeep
-	services []*agent.Service
+	services []*Service
 	scans    []pii.ScanSource
 	// pluginLedgers are the agents' own ledgers, for their plugin events.
 	pluginLedgers map[string]pluginLedger
@@ -493,7 +492,7 @@ const agentPoolConns = 4
 // agentRuntime is what the engine holds for one agent: its service, its
 // timer, and the lazy connection pool on its own credential they share.
 type agentRuntime struct {
-	svc    *agent.Service
+	svc    *Service
 	upkeep *ledger.Upkeep
 	// scan is what the engine's PII scan reads for this agent.
 	scan pii.ScanSource
@@ -564,7 +563,7 @@ type agentEnv struct {
 // is no service, and the setup page's UPDATE link for a when the engine
 // serves the setup jobs (setupOrigin).
 func (env agentEnv) commands(a config.Agent) (guidance.Commands, error) {
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
+	cmds, err := NewCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil {
 		return guidance.Commands{}, err
 	}
@@ -699,7 +698,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// The plugin approval routes read and relay on the agent's own
 	// credential, as the approval routes do.
 	deps.Plugin.Approvals, deps.Plugin.Requests = store, requests
-	svc := agent.NewService(deps)
+	svc := NewService(deps)
 	repin := newRepin(env, a, pool.Config().ConnConfig, log)
 	return agentRuntime{
 		svc: svc,

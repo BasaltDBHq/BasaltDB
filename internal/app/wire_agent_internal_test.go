@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // A port AgentHostDeps leaves unset is an adapter the agent cannot reach: a
@@ -19,7 +17,7 @@ func TestAgentHostDepsFillsEveryAdapterPort(t *testing.T) {
 	var msg string
 	func() {
 		defer func() { msg, _ = recover().(string) }()
-		agent.NewService(AgentHostDeps())
+		NewService(AgentHostDeps())
 	}()
 	require.NotEmpty(t, msg, "an empty Deps must be refused")
 	supplied := []string{

@@ -30,7 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // describeSQL is the describe fixture: a quoted schema and table, orders
@@ -92,7 +91,7 @@ func describeDBWithUpdate(t *testing.T, update func() *status.ReleaseNotice) des
 		GRANT SELECT ON "Sales"."Order Items" TO `+role)
 	classifyDescribe(t, d)
 
-	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 		d.Status.Update = update
@@ -332,7 +331,7 @@ func TestDescribeSearchScale(t *testing.T) {
 	d.Exec(t, `GRANT USAGE ON SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize()+`;
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
-	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 	})).Svc
@@ -379,7 +378,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 			END LOOP; END $$`, from, from+249, role, role))
 	}
 
-	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 	})).Svc

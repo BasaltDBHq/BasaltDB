@@ -12,7 +12,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginmcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
@@ -21,7 +20,7 @@ import (
 // and input schema, and query and write only for a store that speaks SQL
 // (CONTRACT.md, Stores). Each tool's call goes through agentmcp.Wrap; the lists
 // join in the served order.
-func agentTools(svc *agent.Service) []guidance.Tool {
+func agentTools(svc *Service) []guidance.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
@@ -42,7 +41,7 @@ func agentTools(svc *agent.Service) []guidance.Tool {
 // agent service with only what the error guidance reads, built for each
 // failure.
 func connectOnlyGuide(c handoffmcp.ConnectOnly) handoffmcp.Failures {
-	return agent.NewGuide(c.Name, c.Commands.OperatedBy(c.OperatedBy), c.Log, c.Now, c.Errors, c.ConnectBudget)
+	return NewGuide(c.Name, c.Commands.OperatedBy(c.OperatedBy), c.Log, c.Now, c.Errors, c.ConnectBudget)
 }
 
 // contractTool builds a tool from its contract. A missing contract is a

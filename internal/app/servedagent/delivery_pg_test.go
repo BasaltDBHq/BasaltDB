@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // delivered records the notices the agent's service hands its deliverer,
@@ -60,7 +60,7 @@ func deliveryHarness(t *testing.T, pages bool) (agentEnv, *delivered) {
 
 // deliveryHarnessWith is deliveryHarness with an edit of the dependencies,
 // made before the service is built.
-func deliveryHarnessWith(t *testing.T, pages bool, edit func(*agent.Deps)) (agentEnv, *delivered) {
+func deliveryHarnessWith(t *testing.T, pages bool, edit func(*app.Deps)) (agentEnv, *delivered) {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	var origin []string
@@ -70,7 +70,7 @@ func deliveryHarnessWith(t *testing.T, pages bool, edit func(*agent.Deps)) (agen
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
 	rec := &delivered{}
-	env := agentHarnessWith(t, d, d.NewAgent(t, "bot", leads, leads), keys, sqlguard.DefaultLimits(), func(dp *agent.Deps) {
+	env := agentHarnessWith(t, d, d.NewAgent(t, "bot", leads, leads), keys, sqlguard.DefaultLimits(), func(dp *app.Deps) {
 		dp.Delivery.Deliverer = rec
 		if edit != nil {
 			edit(dp)
@@ -153,7 +153,7 @@ func (panics) DeliverLink(linksvc.LinkNotice) { panic("the deliverer broke") }
 // agent gets the answer it gets with none: held, with its link.
 func TestDelivererCannotChangeTheAnswer(t *testing.T) {
 	t.Parallel()
-	env, _ := deliveryHarnessWith(t, true, func(d *agent.Deps) { d.Delivery.Deliverer = panics{} })
+	env, _ := deliveryHarnessWith(t, true, func(d *app.Deps) { d.Delivery.Deliverer = panics{} })
 	body, isError := env.h.call(t, "write", holdWrite(t, env.h, nil))
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	require.Contains(t, str(t, approvalOf(t, body)["approvalUrl"]), "#s=")
@@ -235,7 +235,7 @@ func TestWaitingWriteSignedFromItsNotice(t *testing.T) {
 // link.
 func TestNoticeWithoutStandaloneLinkHasNone(t *testing.T) {
 	t.Parallel()
-	env, rec := deliveryHarnessWith(t, false, func(d *agent.Deps) { d.Core.LinkBudget = 200 })
+	env, rec := deliveryHarnessWith(t, false, func(d *app.Deps) { d.Core.LinkBudget = 200 })
 	body, isError := env.h.call(t, "write", holdWrite(t, env.h, nil))
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)

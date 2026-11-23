@@ -25,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
@@ -144,7 +143,7 @@ func shimCommands(name, configPath string, cfg *config.Config) (guidance.Command
 	if !config.ValidAgentName(name) {
 		name = fallbackAgentName
 	}
-	cmds, err := agent.NewCommands(name, configPath, runtime.GOOS, AgentServiceManager())
+	cmds, err := NewCommands(name, configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil || cfg == nil {
 		return cmds, err
 	}
@@ -310,7 +309,7 @@ func agentSpecFromStdin(in io.Reader, spec servicespec.Spec, a agentInstall, cre
 	if err != nil {
 		return spec, err
 	}
-	if _, err := agent.NewCommands(a.name, cfgPath, spec.GOOS, AgentServiceManager()); err != nil {
+	if _, err := NewCommands(a.name, cfgPath, spec.GOOS, AgentServiceManager()); err != nil {
 		return spec, err
 	}
 	if err := setup.RefuseSecretInitArgs(a.initArgs); err != nil {

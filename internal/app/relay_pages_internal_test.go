@@ -37,7 +37,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // relayPoll is how often a waiting write or request_revert reads whether
@@ -52,7 +51,7 @@ type relayEnv struct {
 	d      *guardtest.DB
 	person *passkeytest.Authenticator
 	server *mcpserver.Server
-	svc    *agent.Service
+	svc    *Service
 	v      *vaulttest.Vault
 	keys   *channel.EngineKeys
 	relay  *lateRelay
@@ -81,7 +80,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	require.NoError(t, err)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := newPGAgent(t, bot.URL, 4).service(func(dp *agent.Deps) {
+	svc := newPGAgent(t, bot.URL, 4).service(func(dp *Deps) {
 		dp.Core.PagesBase, dp.Delivery.Links, dp.Delivery.Relay, dp.Delivery.Receipts, dp.Delivery.Poll = links.Portal, secrets, relay, keys, relayPoll
 	})
 

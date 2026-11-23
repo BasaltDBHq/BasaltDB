@@ -7,12 +7,11 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // postgresStore is a store of kind POSTGRES whose other methods these tests
 // never call.
-type postgresStore struct{ agent.SQLStore }
+type postgresStore struct{ SQLStore }
 
 func (postgresStore) Kind() action.StoreKind { return action.StorePostgres }
 
@@ -22,7 +21,7 @@ func (postgresStore) Kind() action.StoreKind { return action.StorePostgres }
 func TestServedToolsMatchTheContracts(t *testing.T) {
 	t.Parallel()
 	contracts := mcpcontract.MustLoad()
-	tools := agentTools(agent.NewService(testAgentDeps("bot", postgresStore{})))
+	tools := agentTools(NewService(testAgentDeps("bot", postgresStore{})))
 	served := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		served = append(served, tool.Name)
@@ -38,7 +37,7 @@ func TestServedToolsMatchTheContracts(t *testing.T) {
 // reads in tools/list, so the per-domain lists must join in this order.
 func TestServedToolListOrder(t *testing.T) {
 	t.Parallel()
-	tools := agentTools(agent.NewService(testAgentDeps("bot", postgresStore{})))
+	tools := agentTools(NewService(testAgentDeps("bot", postgresStore{})))
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
@@ -51,7 +50,7 @@ func TestServedToolListOrder(t *testing.T) {
 }
 
 // driveStore is a store of kind DRIVE, which does not speak SQL.
-type driveStore struct{ agent.SQLStore }
+type driveStore struct{ SQLStore }
 
 func (driveStore) Kind() action.StoreKind { return action.StoreDrive }
 
@@ -59,7 +58,7 @@ func (driveStore) Kind() action.StoreKind { return action.StoreDrive }
 // not speak SQL: the same order, without query and write.
 func TestServedToolListOrderWithoutSQL(t *testing.T) {
 	t.Parallel()
-	tools := agentTools(agent.NewService(testAgentDeps("bot", driveStore{})))
+	tools := agentTools(NewService(testAgentDeps("bot", driveStore{})))
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)

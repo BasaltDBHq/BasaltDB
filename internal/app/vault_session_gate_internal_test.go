@@ -22,7 +22,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // unsafeGuard is a guard this build does not serve: it misses a breaking
@@ -49,10 +48,10 @@ func (unsafeGuard) ReinstallNotice(context.Context, int) (string, bool, error) {
 // gatedService is a real agent service on an unsafe guard. Its stores are
 // empty interfaces: a call that got past Admit would panic, so a test that
 // passes relayed nothing.
-func gatedService(store *links.Secrets) *agent.Service {
-	d := testAgentDeps("demo_bot", struct{ agent.SQLStore }{})
+func gatedService(store *links.Secrets) *Service {
+	d := testAgentDeps("demo_bot", struct{ SQLStore }{})
 	d.Core.PagesBase, d.Delivery.Links, d.Status.Probe = links.Portal, store, unsafeGuard{}
-	return agent.NewService(d)
+	return NewService(d)
 }
 
 // On a guard the engine calls unsafe, a session's reads and relays get the

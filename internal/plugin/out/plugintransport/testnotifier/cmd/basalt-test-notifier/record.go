@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
+	tn "github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/testnotifier"
 )
 
 // recordMode keeps the record readable by its owner only.

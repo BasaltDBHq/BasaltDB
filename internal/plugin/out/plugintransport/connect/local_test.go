@@ -19,9 +19,9 @@ import (
 
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/adaptertest"
 )
 
 // shortDir returns a fresh directory with a short path: a Unix socket path

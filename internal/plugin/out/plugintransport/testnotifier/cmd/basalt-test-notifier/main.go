@@ -15,7 +15,7 @@ import (
 
 	basaltplugin "github.com/basaltdbhq/basalt-plugin-go"
 
-	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
+	tn "github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/testnotifier"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }

@@ -183,7 +183,7 @@ linters:
         # binary that also links the engine's copy would not start.
         plugin-sdk-only-in-plugins:
           files:
-            - "!**/internal/adapter/outbound/plugintransport/testnotifier/cmd/**"
+            - "!**/internal/plugin/out/plugintransport/testnotifier/cmd/**"
             - "!**/scripts/systemd-smoke/probe/**"
           deny:
             - pkg: github.com/basaltdbhq/basalt-plugin-go

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 )
 
 // exitGrace is how long, after the child has exited, the reader may still

@@ -28,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // testPluginFlag makes this test binary a JSON-RPC test plugin.
@@ -305,7 +304,7 @@ func (f *pluginFixture) reported(suffix string) []int {
 	return pids
 }
 
-func codes(ps []agent.PluginProblem) []string {
+func codes(ps []pluginProblem) []string {
 	out := make([]string, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, p.Code)
@@ -329,8 +328,8 @@ func TestInstancesAreSeparate(t *testing.T) {
 	stop := runPlugins(t, ep)
 	waitReady(t, ep, def.Key())
 	waitReady(t, ep, cx.Key())
-	require.Empty(t, ep.PluginProblems("product_a"))
-	require.Empty(t, ep.PluginProblems("client_x"))
+	require.Empty(t, ep.pluginProblems("product_a"))
+	require.Empty(t, ep.pluginProblems("client_x"))
 	require.Len(t, f.reported(".start"), 2, "one process per entry")
 	dirs, err := os.ReadDir(f.sockBase)
 	require.NoError(t, err)
@@ -345,8 +344,8 @@ func TestInstancesAreSeparate(t *testing.T) {
 
 	ep.sup.Stop(cx.Key())
 	require.Equal(t, StateReady, ep.host.State(def.Key()))
-	require.Empty(t, ep.PluginProblems("product_a"), "another instance's stop shows nothing to product_a")
-	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(ep.PluginProblems("client_x")))
+	require.Empty(t, ep.pluginProblems("product_a"), "another instance's stop shows nothing to product_a")
+	require.Equal(t, []string{problemPluginUnavailable}, codes(ep.pluginProblems("client_x")))
 	require.Len(t, f.reported(".shutdown"), 1, "client_x got shutdown")
 	dirs, err = os.ReadDir(f.sockBase)
 	require.NoError(t, err)
@@ -395,11 +394,11 @@ func TestUntrustedPluginIsNotStarted(t *testing.T) {
 	require.Empty(t, ep.entries, "nothing to start")
 	runPlugins(t, ep)()
 	require.Empty(t, f.reported(".start"))
-	probs := ep.PluginProblems("product_a")
-	require.Equal(t, []string{agent.ProblemPluginNotTrusted}, codes(probs))
+	probs := ep.pluginProblems("product_a")
+	require.Equal(t, []string{problemPluginNotTrusted}, codes(probs))
 	require.Contains(t, probs[0].Message, "plugin acme-ner/default was not started")
 	require.NotContains(t, probs[0].Message, "client_x")
-	require.Empty(t, ep.PluginProblems("client_x"))
+	require.Empty(t, ep.pluginProblems("client_x"))
 }
 
 // A copy changed while the engine runs is verified again before the
@@ -418,7 +417,7 @@ func TestChangedCopyIsNotRestarted(t *testing.T) {
 	require.NoError(t, os.Chmod(f.installedFile(p), 0o777))
 	require.NoError(t, syscall.Kill(pids[0], syscall.SIGKILL))
 	require.Eventually(t, func() bool {
-		return slices.Equal([]string{agent.ProblemPluginNotTrusted}, codes(ep.PluginProblems("product_a")))
+		return slices.Equal([]string{problemPluginNotTrusted}, codes(ep.pluginProblems("product_a")))
 	}, 10*time.Second, 10*time.Millisecond)
 	require.Len(t, f.reported(".start"), 1, "not started again")
 }
@@ -440,10 +439,10 @@ func TestPlantedFileNameIsNeverShown(t *testing.T) {
 	pids := f.reported(".start")
 	require.Len(t, pids, 1)
 	require.NoError(t, syscall.Kill(pids[0], syscall.SIGKILL))
-	var probs []agent.PluginProblem
+	var probs []pluginProblem
 	require.Eventually(t, func() bool {
-		probs = ep.PluginProblems("product_a")
-		return slices.Equal([]string{agent.ProblemPluginNotTrusted}, codes(probs))
+		probs = ep.pluginProblems("product_a")
+		return slices.Equal([]string{problemPluginNotTrusted}, codes(probs))
 	}, 10*time.Second, 10*time.Millisecond)
 	require.NotContains(t, probs[0].Message, "evil")
 	require.Contains(t, probs[0].Message, "is not in the manifest's files")
@@ -463,10 +462,10 @@ func TestRootStartsNoLocalPlugin(t *testing.T) {
 	require.Empty(t, ep.entries)
 	runPlugins(t, ep)()
 	require.Empty(t, f.reported(".start"))
-	probs := ep.PluginProblems("product_a")
-	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	probs := ep.pluginProblems("product_a")
+	require.Equal(t, []string{problemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "root's privileges")
-	require.Empty(t, ep.PluginProblems("client_x"))
+	require.Empty(t, ep.pluginProblems("client_x"))
 }
 
 // A plugin's stderr reaches the --plugin-debug writer only, and never the

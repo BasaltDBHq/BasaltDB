@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -250,35 +251,6 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return engineRecordStatusOf(t, operatedBy, recordOf(true))
 		}},
 		problemLedgerReinstalled: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
-		ProblemPluginUnavailable: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginUnavailable))
-		}},
-		ProblemPluginNotTrusted: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginNotTrusted))
-		}},
-		// Plugin approvals are same-user mode: a foreground engine.
-		ProblemPluginAwaitingApproval: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginAwaitingApproval))
-		}},
-		ProblemPluginApprovalExpired: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalExpired))
-		}},
-		ProblemPluginApprovalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalMismatch))
-		}},
-		ProblemPluginConfigInvalid: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", true, fakePlugins{"bot": {{Code: ProblemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}})
-		}},
-		ProblemPluginNoticesDropped: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
-			t.Helper()
-			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginNoticesDropped))
-		}},
 	}
 	maps.Copy(cases, trustStatusCases(operatedBy))
 	maps.Copy(cases, connectOnlyStatusCases(operatedBy))
@@ -321,12 +293,12 @@ func TestEveryStatusProblemHasACase(t *testing.T) {
 	cases := statusCases()
 	var missing []string
 	for _, p := range stepcatalogtest.CatalogOf(t).Problems {
-		if _, ok := cases[p.Code]; !ok {
+		if _, ok := cases[p.Code]; !ok && !slices.Contains(stepcatalogtest.PluginProblemCodes(), p.Code) {
 			missing = append(missing, p.Code)
 		}
 	}
 	require.Empty(t, missing, "catalog problems without a case in statusCases")
-	require.Len(t, cases, len(stepcatalogtest.CatalogOf(t).Problems), "cases without a catalog problem")
+	require.Len(t, cases, len(stepcatalogtest.CatalogOf(t).Problems)-len(stepcatalogtest.PluginProblemCodes()), "cases without a catalog problem")
 }
 
 func TestEveryStatusProblemObeysTheCatalog(t *testing.T) {
@@ -352,37 +324,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	require.NotContains(t, raw, "credential-file", "status never names the credential file")
 	require.Equal(t, kase.state, r.Guard.State)
 
-	entry, ok := guidance.ProblemEntry(code)
-	require.True(t, ok)
-	p := findProblem(t, r, code)
-	require.Equal(t, entry.Severity, p.Severity)
-	require.NotEmpty(t, p.Message)
-	got := make([]mcpcontract.StepKind, 0, len(p.NextSteps))
-	for _, st := range p.NextSteps {
-		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-	}
-	want, pm, variant := stepcatalogtest.ExpectedSteps(t, mcpcontract.VariantProblem, code, "", "", entry.Steps, entry.PersonMessage, operatedBy)
-	require.Equal(t, want, got, "(actor, action) sequence of %s", code)
-	require.Equal(t, pm, p.PersonMessage != "", "personMessage set exactly when the catalog says")
-	stepcatalogtest.RequireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, operatedBy, code)
-	stepcatalogtest.RequirePersonMessage(t, p.PersonMessage, nil)
-	for i, st := range p.NextSteps {
-		where := fmt.Sprintf("%s step %d", code, i+1)
-		if code == ProblemPluginAwaitingApproval && st.Action == toolresult.ActionOpenLink {
-			// No url: the link the agent handed over when the approval was
-			// opened, which the engine never had (CONTRACT.md, Next steps
-			// per code).
-			require.Empty(t, st.URL, where)
-			require.Empty(t, st.Command, where)
-			require.NotEmpty(t, st.Text, where)
-			continue
-		}
-		stepcatalogtest.RequireStepObeysRules(t, st, stepcatalogtest.Case{Tool: guidance.ToolStatus, Args: map[string]any{}}, where)
-	}
-	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
-	for i := 1; i < len(r.Problems); i++ {
-		require.LessOrEqual(t, guidance.SeverityRank(r.Problems[i-1].Severity), guidance.SeverityRank(r.Problems[i].Severity), "errors first")
-	}
+	stepcatalogtest.RequireProblemObeysCatalog(t, r.Problems, r.Ready, code, operatedBy)
 }
 
 func findProblem(t *testing.T, r guidance.StatusReport, code string) guidance.Problem {

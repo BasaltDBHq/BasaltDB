@@ -17,8 +17,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -82,7 +82,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h cli.Machine, socketDir string) {
 	t.Helper()
 	t.Cleanup(func() {
-		if pid, up, _ := pidlock.Running(app.LockPath(socketDir)); up {
+		if pid, up, _ := pidlock.Running(engine.LockPath(socketDir)); up {
 			if ppid, err := parentOf(pid); err == nil {
 				_ = syscall.Kill(ppid, syscall.SIGTERM)
 			}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
 // Reinstalls on the record (CONTRACT.md, "Version 36: reinstalls on the

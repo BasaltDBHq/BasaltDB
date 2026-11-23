@@ -18,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
@@ -175,7 +176,7 @@ func (s *starter) start(ctx context.Context) error {
 	}
 	defer release()
 
-	if _, up, _ := pidlock.Running(app.LockPath(s.cfg.SocketDir)); up {
+	if _, up, _ := pidlock.Running(engine.LockPath(s.cfg.SocketDir)); up {
 		return s.engineRuns(ctx)
 	}
 	// A supervisor may hold its lock before its child takes the engine
@@ -246,7 +247,7 @@ func (s *starter) waitSocket(ctx context.Context) error {
 		case <-ctx.Done():
 			return s.record(ctx.Err())
 		case <-deadline.C:
-			_, up, _ := pidlock.Running(app.LockPath(s.cfg.SocketDir))
+			_, up, _ := pidlock.Running(engine.LockPath(s.cfg.SocketDir))
 			s.mu.Lock()
 			s.stuck = up
 			s.mu.Unlock()

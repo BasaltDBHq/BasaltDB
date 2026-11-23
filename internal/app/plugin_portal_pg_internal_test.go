@@ -22,9 +22,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -194,7 +194,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	ctx := context.Background()
 	// The bot's computer: the engine runs as the agent's own OS user.
 	f := newPortalFixture(t, "bot", func(c *config.Config) { c.Mode, c.OperatedBy = "", mcpcontract.OperatedByAgent })
-	p := newPluginRequests(map[string]uint32{"bot": portalPerson}, pluginCallers(f.cfg, portalPerson))
+	p := newPluginRequests(map[string]uint32{"bot": portalPerson}, plugin.Callers(f.cfg, portalPerson))
 	p.SetKept(f.s)
 
 	stateDir := t.TempDir()

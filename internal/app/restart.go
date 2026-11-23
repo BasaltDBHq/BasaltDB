@@ -44,18 +44,6 @@ type RestartOptions struct {
 // give-up of its supervisor is forgotten (last-stop.json is removed).
 const DefaultStableAfter = 10 * time.Second
 
-// LastStopFile is the supervisor's record of giving up, in the state
-// directory (basalt engine --supervise).
-const LastStopFile = "last-stop.json"
-
-// startedByOrHand is v, or "hand" when empty.
-func startedByOrHand(v string) string {
-	if v == "" {
-		return "hand"
-	}
-	return v
-}
-
 // gatedDispatcher counts each page-session request (an approval or a revert
 // relayed through the Vault) in the gate, and answers UNAVAILABLE with
 // nothing run once the gate is closed.

@@ -176,7 +176,7 @@ func osRestart(log *slog.Logger) restart {
 func serveRestarting(ctx context.Context, run func(context.Context, app.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
 	for {
 		err := run(ctx, app.RestartOptions{Restart: engine.Restart{Upgrade: r.upgrade}})
-		if errors.Is(err, app.ErrReload) && ctx.Err() == nil {
+		if errors.Is(err, engine.ErrReload) && ctx.Err() == nil {
 			// Same binary, same process: the config is read again and the
 			// engine serves anew. A config it cannot read now stops it.
 			log.Info("serving the engine config again: an agent's connect-only setup changed")

@@ -137,7 +137,6 @@ var testHelpers = []string{
 	"internal/testkit/connecttest",
 	"internal/core/passkey/passkeytest",
 	"internal/adapter/outbound/plugintransport/adaptertest",
-	"internal/adapter/outbound/postgres/guard/guardtest",
 	"pkg/trustprofile/trustprofiletest",
 	// the core test oracles (D-CORE-DEAD): signing and parsing clients
 	// other packages' tests use

@@ -152,8 +152,6 @@ linters:
               desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest
               desc: a test helper package; import it from _test.go files only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest
-              desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest
               desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest

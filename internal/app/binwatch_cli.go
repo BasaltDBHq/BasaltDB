@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"slices"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/binwatch"
 )
 
 // BinaryWatch is engine.BinaryWatch on this machine's binaries.

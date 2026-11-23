@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"github.com/google/uuid"
@@ -14,7 +14,7 @@ import (
 // item (CONTRACT.md, Next steps): a write waiting for the person's passkey,
 // or one that expired meanwhile. An approved item needs nothing from the
 // person, and the agent applies it as the tool says.
-func (ac *approvalCase) itemGuidance(p PendingItem) (string, []toolresult.Link, []toolresult.NextStep, error) {
+func (ac *Service) itemGuidance(p PendingItem) (string, []toolresult.Link, []toolresult.NextStep, error) {
 	switch {
 	case ac.expired(p):
 		b := guidance.NewSteps()
@@ -46,7 +46,7 @@ func openItemLink(b *guidance.Steps, p PendingItem) {
 // with no url while the engine serves the pages (the person has the short
 // link the hold handed over; CONTRACT.md, The request file and pasted
 // blocks), else at the link the hold handed over.
-func (ac *approvalCase) openHeldLink(b *guidance.Steps, n *toolresult.ApprovalNotice, text string) {
+func (ac *Service) openHeldLink(b *guidance.Steps, n *toolresult.ApprovalNotice, text string) {
 	if id, err := uuid.Parse(n.ApprovalID); (err == nil && ac.delivery.ShortLinked(id)) || linksvc.IsPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink("Open the short link the agent gave you earlier and approve with your passkey.")
 		return
@@ -55,13 +55,13 @@ func (ac *approvalCase) openHeldLink(b *guidance.Steps, n *toolresult.ApprovalNo
 }
 
 // expired reports whether a held write ran out before it was approved.
-func (ac *approvalCase) expired(p PendingItem) bool {
+func (ac *Service) expired(p PendingItem) bool {
 	return p.Status == action.ApprovalExpired || !ac.core.Now().Before(p.ExpiresAt)
 }
 
 // waitsForPerson reports whether a held write still waits for the person's
 // passkey: only then does it need its request sent.
-func (ac *approvalCase) waitsForPerson(p PendingItem) bool {
+func (ac *Service) waitsForPerson(p PendingItem) bool {
 	return p.Status == action.ApprovalPending && !ac.expired(p)
 }
 

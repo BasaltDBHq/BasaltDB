@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 
 // ApprovalRequest is the approval request of a held write still waiting
 // for the person's signature: the JSON the long link carries.
-func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.Request, error) {
+func (ac *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.Request, error) {
 	a, err := ac.openApproval(ctx, id)
 	if err != nil {
 		return approval.Request{}, err
@@ -37,7 +37,7 @@ func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
-func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
+func (ac *Service) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
 	if _, err := ac.openApproval(ctx, r.ApprovalID); err != nil {
 		return linksvc.Receipt{}, err
 	}
@@ -54,7 +54,7 @@ func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) 
 //
 // It admits the call first (Admit): the pages and the MCP tools reach a held write only on a guard this build serves, so no
 // signature is relayed to a guard it calls unsafe.
-func (ac *approvalCase) openApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
+func (ac *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	if err := ac.admit.Admit(ctx); err != nil {
 		return action.Approval{}, err
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -52,7 +54,7 @@ type pendingDTO struct {
 	LargeValues []largevalue.Entry `json:"largeValues,omitempty"`
 }
 
-func pendingFromDomain(p PendingItem) pendingDTO {
+func pendingFromDomain(p approvalsvc.PendingItem) pendingDTO {
 	d := pendingDTO{
 		Kind:       guidance.KindApproval,
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
@@ -115,7 +117,7 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	params := PendingParams{Params: args.Params, Kind: args.Kind, RunID: optionalID(args.RunID), Status: args.Status, Reissue: args.ReissueLink}
+	params := approvalsvc.PendingParams{Params: args.Params, Kind: args.Kind, RunID: optionalID(args.RunID), Status: args.Status, Reissue: args.ReissueLink}
 	params.ApplyDefaultsAndClamp()
 	page, err := h.svc.ListPending(ctx, params)
 	if err != nil {

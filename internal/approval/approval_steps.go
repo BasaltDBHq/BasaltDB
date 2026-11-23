@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 // ApprovalRequiredSteps are APPROVAL_REQUIRED's steps, by reason: the link,
 // the wait, and what to do when nobody can approve yet. It returns the
 // person's message the notice carries.
-func (ac *approvalCase) ApprovalRequiredSteps(b *guidance.Steps, te *toolresult.ToolError) string {
+func (ac *Service) ApprovalRequiredSteps(b *guidance.Steps, te *toolresult.ToolError) string {
 	n := te.Approval
 	if n == nil {
 		b.Fail(fmt.Errorf("APPROVAL_REQUIRED carries no approval"))

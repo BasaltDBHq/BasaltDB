@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // fakeHost records what init would do on the machine; nothing runs.
@@ -234,7 +235,7 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 
 	noPerson := agentInstall{name: "bot", osUser: agentOSUser(t)}
 	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
-	require.ErrorIs(t, err, errNoPerson, "no person uid: no service")
+	require.ErrorIs(t, err, setup.ErrNoPerson, "no person uid: no service")
 	noPerson.personUIDs = []uint32{0}
 	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
 	require.ErrorContains(t, err, "is root", "root is never a person")

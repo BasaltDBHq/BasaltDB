@@ -926,7 +926,7 @@ func sudo(t *testing.T, uid string) remoteEnv {
 	t.Helper()
 	e := noDB(t)
 	if uid != "" {
-		e.env = map[string]string{envSudoUID: uid}
+		e.env = map[string]string{setup.EnvSudoUID: uid}
 	}
 	return e
 }

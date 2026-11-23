@@ -180,13 +180,15 @@ linters:
           deny:
             - pkg: github.com/basaltdbhq/basalt-plugin-go
               desc: only the test notifier and the systemd smoke probe import the plugin SDK
-        # The agent service and its MCP tools talk to the store only through
-        # the store ports (internal/agent: Store, WriteStore): no database
-        # driver, SQL policy or adapter in them. internal/app, which wires the
-        # adapters, is outside it.
+        # The agent service, its MCP tools and the agent service's code in
+        # internal/app (agent_*.go) talk to the store only through the store
+        # ports (internal/agent: Store, WriteStore; app: Store, SQLStore): no
+        # database driver, SQL policy or adapter in them. The rest of
+        # internal/app, which wires the adapters, is outside it.
         agent-through-store-ports:
           files:
             - "**/internal/agent/**"
+            - "**/internal/app/agent_*.go"
             - "!$test"
           deny:
             - pkg: github.com/jackc/pgx
@@ -198,7 +200,9 @@ linters:
             - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial
               desc: the agent service opens no connection
         # The ledger, the signed-message codecs and the PII code do not depend
-        # on a store adapter or on the agent service.
+        # on a store adapter or on the agent service. The agent service's
+        # wiring now lives in internal/app, which none of them can import
+        # (that would be an import cycle).
         no-adapter-in-ledger-and-pii:
           files:
             - "**/internal/platform/postgres/ledger/**"

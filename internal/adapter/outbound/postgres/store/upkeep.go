@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 // Upkeep is the store side of the engine's timer (upkeep.Store) on one

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 // personMessageLimit is the status tool's personMessage limit

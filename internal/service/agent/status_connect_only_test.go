@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/stretchr/testify/require"
@@ -69,16 +70,22 @@ func (f *fakeHandoff) Confirm(_ context.Context, id string, db setupcode.Address
 	return handoff.Answer{Confirmed: yes, Database: db}, nil
 }
 
-func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) ConnectOnly {
+// answerNo is confirm_database's answer that refuses the collected
+// database.
+const answerNo = "NO"
+
+func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) handoffmcp.ConnectOnly {
 	t.Helper()
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	return ConnectOnly{
+	return handoffmcp.ConnectOnly{
 		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
 		ConnectBudget: links.DefaultBudget, Handoff: h,
 		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-		RefuseAdminCredential: mcpserver.RefuseAdminCredential,
+		Guide: func(c handoffmcp.ConnectOnly) handoffmcp.Failures {
+			return NewGuide(c.Name, c.Commands.OperatedBy(c.OperatedBy), c.Log, c.Now, c.Errors, c.ConnectBudget)
+		},
 	}
 }
 

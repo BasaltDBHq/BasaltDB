@@ -37,6 +37,13 @@ func agentTools(svc *agent.Service) []guidance.Tool {
 	return tools
 }
 
+// connectOnlyGuide is the error presenter of the connect-only agent c: an
+// agent service with only what the error guidance reads, built for each
+// failure.
+func connectOnlyGuide(c handoffmcp.ConnectOnly) handoffmcp.Failures {
+	return agent.NewGuide(c.Name, c.Commands.OperatedBy(c.OperatedBy), c.Log, c.Now, c.Errors, c.ConnectBudget)
+}
+
 // contractTool builds a tool from its contract. A missing contract is a
 // build defect: the contract test keeps served tools and contracts aligned.
 func contractTool(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {

@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // Adder takes values into the dictionary's delta (corepii.FuseDictionary).
@@ -128,8 +125,8 @@ func (o *Observer) On(db PiidictQuerier) BoundObserver {
 
 // Returned adds a write's RETURNING values inside its transaction, before
 // COMMIT (the store's ReturnedFunc): an error rolls the write back.
-func (o *Observer) Returned(ctx context.Context, tx pgx.Tx, cols []action.Column, rows []map[string]any) error {
-	return o.Observe(ctx, pgquerier.Neutralize(tx), cols, rows)
+func (o *Observer) Returned(ctx context.Context, tx PiidictQuerier, cols []action.Column, rows []map[string]any) error {
+	return o.Observe(ctx, tx, cols, rows)
 }
 
 // BoundObserver is an Observer with its database (agent.PIIObserver).

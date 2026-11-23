@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/google/uuid"
 
@@ -33,9 +34,9 @@ type Agent interface {
 // RunStartTools are the tools that start a run. mount lists a tool under its
 // contract, around Wrap; the tool list's composer supplies it.
 // Handlers parse, validate, make one service call and render.
-func RunStartTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func RunStartTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []guidance.Tool{mount("run_start", h.runStart)}
+	return []mcpserver.Tool{mount("run_start", h.runStart)}
 }
 
 // speaksSQL reports whether a store of kind runs SQL: the query and write

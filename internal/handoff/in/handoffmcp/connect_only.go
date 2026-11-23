@@ -69,7 +69,7 @@ func (c ConnectOnly) guide() Failures {
 
 // Tools are every IMPLEMENTED tool of the contracts: status and
 // confirm_database answer, every other tool is refused.
-func (c ConnectOnly) Tools() []guidance.Tool {
+func (c ConnectOnly) Tools() []mcpserver.Tool {
 	if c.Handoff == nil || c.Log == nil || c.Now == nil || c.LatestGuardVersion == nil {
 		panic("agent: a connect-only agent needs its hand-off, a logger, a clock and the guard version")
 	}
@@ -77,7 +77,7 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 		panic("agent: a connect-only agent needs its error guide")
 	}
 	contracts := mcpcontract.MustLoad()
-	out := make([]guidance.Tool, 0, len(contracts))
+	out := make([]mcpserver.Tool, 0, len(contracts))
 	for _, ct := range contracts {
 		if ct.Status != mcpcontract.StatusImplemented {
 			continue
@@ -91,7 +91,7 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 		default:
 			call = c.refused(ct.Name)
 		}
-		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: mcpserver.RefuseAdminCredential(ct.Name, call)})
+		out = append(out, mcpserver.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: mcpserver.RefuseAdminCredential(ct.Name, call)})
 	}
 	return out
 }

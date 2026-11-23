@@ -103,11 +103,6 @@ func agentUpdateMessage(n status.ReleaseNotice, exe string) string {
 	return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 }
 
-// AgentTools are the tools of svc as the MCP server serves them.
-func AgentTools(svc *Service) []mcpserver.Tool {
-	return mcpserver.ToolsFrom(agentTools(svc), nil)
-}
-
 // EngineDownServer is what basalt mcp answers with itself while the engine
 // is down: the engine-down tools, and the answer to a request the engine
 // took but closed the connection without answering.
@@ -120,7 +115,7 @@ type EngineDownServer struct {
 // agent's MCP server.
 func NewEngineDownServer(down statusmcp.EngineDown) EngineDownServer {
 	info := mcpserver.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}
-	return EngineDownServer{Server: mcpserver.NewServer(info, mcpserver.ToolsFrom(down.Tools(), nil)...), down: down}
+	return EngineDownServer{Server: mcpserver.NewServer(info, down.Tools()...), down: down}
 }
 
 // Abandoned answers a request the engine took and never answered (it

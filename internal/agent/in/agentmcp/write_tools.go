@@ -6,6 +6,7 @@ import (
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -93,12 +94,12 @@ func (a writeArgs) wait() time.Duration {
 
 // WriteTools are the tools of a store that speaks SQL: query and write;
 // none for another store (CONTRACT.md, Stores).
-func WriteTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func WriteTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	if !speaksSQL(svc.StoreKind()) {
 		return nil
 	}
 	h := handlers{svc: svc}
-	return []guidance.Tool{
+	return []mcpserver.Tool{
 		mount("query", h.query),
 		mount("write", h.write),
 	}

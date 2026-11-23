@@ -83,9 +83,7 @@ func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) hando
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
 		ConnectBudget: links.DefaultBudget, Handoff: h,
 		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
-		Guide: func(c handoffmcp.ConnectOnly) handoffmcp.Failures {
-			return NewGuide(c.Name, c.Commands.OperatedBy(c.OperatedBy), c.Log, c.Now, c.Errors, c.ConnectBudget)
-		},
+		Guide: connectOnlyGuide,
 	}
 }
 
@@ -149,7 +147,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(time.Hour)), Phase: handoff.PhaseWaiting}}
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(c.Tools(), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, c.Tools()...)
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
@@ -222,7 +220,7 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	db := caseDatabase
 	h := &fakeHandoff{st: handoff.State{Setup: connectOnlySetup(statusNow.Add(time.Hour)), Phase: handoff.PhaseConfirm, Database: &db}}
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(c.Tools(), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, c.Tools()...)
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
@@ -274,7 +272,7 @@ func statusToolContract(t *testing.T) mcpcontract.Tool {
 func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 	t.Parallel()
 	s := NewService(deps())
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(servedTools(s), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, AgentTools(s)...)
 	body, isError := serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": handoff.AnswerYes})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 
 	"github.com/google/uuid"
@@ -115,9 +116,9 @@ func optionalID(s string) uuid.UUID {
 // Tools are the tools that read held writes. mount lists a tool under its
 // contract, around the agent's admission and error mapping; the tool list's
 // composer supplies it.
-func Tools(svc Pending, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func Tools(svc Pending, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []guidance.Tool{
+	return []mcpserver.Tool{
 		mount("list_pending", h.listPending),
 	}
 }

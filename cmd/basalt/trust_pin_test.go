@@ -77,7 +77,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		events = append(events, "handshake")
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
-	code := runInit(c, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	code := runInit(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.Equal(t, exitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)

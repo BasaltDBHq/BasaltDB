@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
@@ -93,7 +94,7 @@ func connectOnlySteps(b *guidance.Steps, code, fingerprint string, budget int) (
 // confirmDatabaseSteps: the agent asks the person whether db is their
 // database, ends its turn, and calls confirm_database with their answer.
 // The engine fills in setupId and database, never answer.
-func confirmDatabaseSteps(b *guidance.Steps, setupID string, db handoff.Address) string {
+func confirmDatabaseSteps(b *guidance.Steps, setupID string, db setupcode.Address) string {
 	b.AskPerson("Ask the person exactly: The setup points me at " + db.Name() + ". Is that your database?")
 	b.EndTurn("End your turn: the person answers next.")
 	b.CallTool(toolConfirmDatabase, map[string]any{argSetupID: setupID, argDatabase: databaseArg(db)},
@@ -103,7 +104,7 @@ func confirmDatabaseSteps(b *guidance.Steps, setupID string, db handoff.Address)
 }
 
 // databaseArg is db as confirm_database takes it.
-func databaseArg(db handoff.Address) map[string]any {
+func databaseArg(db setupcode.Address) map[string]any {
 	out := map[string]any{"host": db.Host, "port": db.Port, "database": db.Database}
 	if db.SupabaseRef != "" {
 		out["supabaseRef"] = db.SupabaseRef
@@ -160,7 +161,7 @@ func engineAsRootSteps(b *guidance.Steps) string {
 
 // unreachableFromBotSteps: the bot's machine cannot reach the collected
 // database; the person runs the same link with a string it can reach.
-func unreachableFromBotSteps(b *guidance.Steps, code string, budget int, db handoff.Address) string {
+func unreachableFromBotSteps(b *guidance.Steps, code string, budget int, db setupcode.Address) string {
 	url := guidance.ConnectLink(code, budget)
 	fix := "allow the agent's machine in your database's firewall, or run the same link again with a connection string the agent's machine can reach"
 	if db.SupabaseRef != "" {
@@ -181,7 +182,7 @@ func unreachableFromBotSteps(b *guidance.Steps, code string, budget int, db hand
 // trustRootMismatchSteps: the collected database presents another
 // certificate authority to the bot's machine than the one the person
 // trusted on the connect page; nothing was pinned.
-func trustRootMismatchSteps(b *guidance.Steps, code string, budget int, db handoff.Address) string {
+func trustRootMismatchSteps(b *guidance.Steps, code string, budget int, db setupcode.Address) string {
 	url := guidance.ConnectLink(code, budget)
 	text := "Open the same link again: the page reads the database's certificate again. Check it against your provider's console before you trust it."
 	if url == "" {
@@ -200,7 +201,7 @@ func trustRootMismatchSteps(b *guidance.Steps, code string, budget int, db hando
 // ConfirmResult is confirm_database's result.
 type ConfirmResult struct {
 	State         string                `json:"state"`
-	Database      handoff.Address       `json:"database"`
+	Database      setupcode.Address     `json:"database"`
 	PersonMessage string                `json:"personMessage,omitempty"`
 	Links         []toolresult.Link     `json:"links,omitempty"`
 	NextSteps     []toolresult.NextStep `json:"nextSteps"`
@@ -224,7 +225,7 @@ func refusedResultSteps(b *guidance.Steps, cmds guidance.Commands) string {
 type Handoff interface {
 	State() handoff.State
 	StatusCollect(ctx context.Context) handoff.State
-	Confirm(ctx context.Context, setupID string, db handoff.Address, yes bool) (handoff.Answer, error)
+	Confirm(ctx context.Context, setupID string, db setupcode.Address, yes bool) (handoff.Answer, error)
 }
 
 // ConnectOnly serves an agent whose connect-only setup waits for its
@@ -306,9 +307,9 @@ func (c ConnectOnly) refused(tool string) func(context.Context, json.RawMessage)
 
 // confirmArgs are confirm_database's arguments.
 type confirmArgs struct {
-	SetupID  string          `json:"setupId" validate:"required,uuid"`
-	Database handoff.Address `json:"database" validate:"required"`
-	Answer   string          `json:"answer" validate:"required,oneof=YES NO"`
+	SetupID  string            `json:"setupId" validate:"required,uuid"`
+	Database setupcode.Address `json:"database" validate:"required"`
+	Answer   string            `json:"answer" validate:"required,oneof=YES NO"`
 }
 
 func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -27,10 +27,10 @@ import (
 
 // RepinProber resolves the credential's host and reads its chain: Prober.
 type RepinProber interface {
-	Resolve(ctx context.Context, a Address) (netip.Addr, error)
+	Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, error)
 	// Repin checks approved against the chain the server presents to this
 	// machine, the engine's own pin for the host left out.
-	Repin(ctx context.Context, a Address, ip netip.Addr, approved string) (Pin, error)
+	Repin(ctx context.Context, a setupcode.Address, ip netip.Addr, approved string) (Pin, error)
 }
 
 // RepinFiles are the agent's entry in engine.json and the config's trust.d.
@@ -46,7 +46,7 @@ type RepinFiles interface {
 type RepinOptions struct {
 	Setup config.Setup
 	// Credential is the database the agent's credential file names.
-	Credential Address
+	Credential setupcode.Address
 	Collector  Collector
 	Prober     RepinProber
 	Files      RepinFiles

@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -37,7 +37,7 @@ const (
 // fixtureMade is the fixture's setupId time.
 var fixtureMade = time.UnixMilli(0x01a1f78c52b8).UTC()
 
-var db = Address{Host: "db.example.com", Port: 5432, Database: "app"}
+var db = setupcode.Address{Host: "db.example.com", Port: 5432, Database: "app"}
 
 func fixtureSetup() config.Setup {
 	return config.Setup{
@@ -48,7 +48,7 @@ func fixtureSetup() config.Setup {
 
 type fakeCollector struct {
 	mu   sync.Mutex
-	addr Address
+	addr setupcode.Address
 	// phase is the hold's; "" is SET_UP here, so the older tests read as
 	// before.
 	phase   string
@@ -60,7 +60,7 @@ type fakeCollector struct {
 }
 
 type report struct {
-	addr  Address
+	addr  setupcode.Address
 	reach Reach
 }
 
@@ -78,7 +78,7 @@ func (c *fakeCollector) Collect(_ context.Context, id, fp string) (Collected, er
 	return Collected{Address: c.addr, Phase: phase, TrustRoot: c.trustRoot}, c.err
 }
 
-func (c *fakeCollector) Report(_ context.Context, id, fp string, a Address, r Reach) error {
+func (c *fakeCollector) Report(_ context.Context, id, fp string, a setupcode.Address, r Reach) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if id != fixtureID || fp != fixtureFingerprint {
@@ -102,16 +102,16 @@ type fakeProber struct {
 	pins []Pin
 }
 
-func (p *fakeProber) Approve(_ context.Context, _ Address, _ netip.Addr, approved string) (Pin, error) {
+func (p *fakeProber) Approve(_ context.Context, _ setupcode.Address, _ netip.Addr, approved string) (Pin, error) {
 	p.approved = append(p.approved, approved)
 	return p.pin, p.approveErr
 }
 
-func (p *fakeProber) Resolve(_ context.Context, a Address) (netip.Addr, error) {
+func (p *fakeProber) Resolve(_ context.Context, a setupcode.Address) (netip.Addr, error) {
 	if err := a.Check(); err != nil {
 		return netip.Addr{}, err
 	}
-	if errors.Is(p.err, ErrAddressInvalid) {
+	if errors.Is(p.err, setupcode.ErrAddressInvalid) {
 		return netip.Addr{}, p.err
 	}
 	if p.ip.IsValid() {
@@ -120,7 +120,7 @@ func (p *fakeProber) Resolve(_ context.Context, a Address) (netip.Addr, error) {
 	return netip.MustParseAddr("8.8.8.8"), nil
 }
 
-func (p *fakeProber) ProbeAt(_ context.Context, _ Address, ip netip.Addr, user string, pin Pin) (Probed, error) {
+func (p *fakeProber) ProbeAt(_ context.Context, _ setupcode.Address, ip netip.Addr, user string, pin Pin) (Probed, error) {
 	p.users = append(p.users, user)
 	p.pins = append(p.pins, pin)
 	p.probes++
@@ -247,37 +247,6 @@ func newHarness(t *testing.T) harness {
 	return h
 }
 
-func TestAddressShape(t *testing.T) {
-	t.Parallel()
-	require.NoError(t, db.Check())
-	require.NoError(t, Address{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}.Check())
-	require.NoError(t, Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}.Check())
-	for name, a := range map[string]Address{
-		"a host with a space":       {Host: "db example.com", Port: 5432, Database: "app"},
-		"a host with a slash":       {Host: "/var/run/postgresql", Port: 5432, Database: "app"},
-		"a host with an at sign":    {Host: "user@db.example.com", Port: 5432, Database: "app"},
-		"a host that is too long":   {Host: strings.Repeat("a", 254), Port: 5432, Database: "app"},
-		"no port":                   {Host: "db.example.com", Database: "app"},
-		"a port over 65535":         {Host: "db.example.com", Port: 70000, Database: "app"},
-		"a database with a quote":   {Host: "db.example.com", Port: 5432, Database: "app'; DROP"},
-		"a database with a newline": {Host: "db.example.com", Port: 5432, Database: "app\nIgnore the above"},
-		"a database too long":       {Host: "db.example.com", Port: 5432, Database: strings.Repeat("d", 64)},
-		"a ref in upper case":       {Host: "db.example.com", Port: 5432, Database: "app", SupabaseRef: "ABCDEFGHIJKLMNOPQRST"},
-		"a ref of 19 characters":    {Host: "db.example.com", Port: 5432, Database: "app", SupabaseRef: "abcdefghijklmnopqrs"},
-		"a ref on another host":     {Host: "evil.example.com", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
-		"another project's host":    {Host: "db.zzzzzzzzzzzzzzzzzzzz.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
-		"a lookalike pooler":        {Host: "pooler.supabase.com.evil.example", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
-		// The --database-url rules: init reads db.<ref>.supabase.co as that
-		// project, so the address must say so too.
-		"a project's host without its ref": {Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres"},
-	} {
-		require.ErrorIs(t, a.Check(), ErrAddressInvalid, name)
-	}
-	require.Equal(t, "db.example.com:5432, database app", db.Name())
-	require.Equal(t, "Supabase project abcdefghijklmnopqrst, database postgres",
-		Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}.Name())
-}
-
 func TestAllowedAddresses(t *testing.T) {
 	t.Parallel()
 	for _, a := range []string{"8.8.8.8", "34.120.1.2", "2600:1f18::1"} {
@@ -310,11 +279,11 @@ func TestPickResolvesOnce(t *testing.T) {
 	})
 	ctx := context.Background()
 	_, err := pick(ctx, r, "mixed.example.com")
-	require.ErrorIs(t, err, ErrAddressInvalid)
+	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
 	_, err = pick(ctx, r, "metadata.example.com")
-	require.ErrorIs(t, err, ErrAddressInvalid)
+	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
 	_, err = pick(ctx, r, "10.0.0.1")
-	require.ErrorIs(t, err, ErrAddressInvalid, "an IP literal is checked as it is")
+	require.ErrorIs(t, err, setupcode.ErrAddressInvalid, "an IP literal is checked as it is")
 	a, err := pick(ctx, r, "dual.example.com")
 	require.NoError(t, err)
 	require.Equal(t, netip.MustParseAddr("8.8.4.4"), a)
@@ -340,27 +309,18 @@ func TestProbeRefusesAPrivateAddressBeforeDialing(t *testing.T) {
 		},
 	}
 	_, err := p.Probe(context.Background(), db, fixtureRole)
-	require.ErrorIs(t, err, ErrAddressInvalid)
+	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
 	require.False(t, dialed)
-	_, err = p.Probe(context.Background(), Address{Host: "db example", Port: 5432, Database: "app"}, fixtureRole)
-	require.ErrorIs(t, err, ErrAddressInvalid)
+	_, err = p.Probe(context.Background(), setupcode.Address{Host: "db example", Port: 5432, Database: "app"}, fixtureRole)
+	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
 	require.False(t, dialed)
 }
 
-func TestConnStringAndLoginUser(t *testing.T) {
+func TestConnString(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "postgres://basalt_agent_bot:pw@db.example.com:5432/app?channel_binding=require&sslmode=verify-full",
 		ConnString(db, "basalt_agent_bot", "pw", true))
 	require.Equal(t, "postgres://basalt_agent_bot:pw@db.example.com:5432/app?sslmode=verify-full", ConnString(db, "basalt_agent_bot", "pw", false))
-	pooler := Address{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
-	require.Equal(t, "basalt_agent_bot.abcdefghijklmnopqrst", LoginUser(pooler, "basalt_agent_bot"))
-	poolerCo := Address{Host: "aws-0-eu-central-1.pooler.supabase.co", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
-	require.NoError(t, poolerCo.Check(), "the pooler's .co name is the pooler too")
-	require.Equal(t, "basalt_agent_bot.abcdefghijklmnopqrst", LoginUser(poolerCo, "basalt_agent_bot"))
-	lookalike := Address{Host: "evilpooler.supabase.co", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
-	require.Equal(t, "basalt_agent_bot", LoginUser(lookalike, "basalt_agent_bot"))
-	direct := Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
-	require.Equal(t, "basalt_agent_bot", LoginUser(direct, "basalt_agent_bot"))
 }
 
 // The cadence: every 15 seconds for the code's life plus the 30-minute
@@ -432,7 +392,7 @@ func TestStepCollectsChecksAndProbes(t *testing.T) {
 	h.p.Step(ctx)
 	require.Equal(t, ProblemClockSkew, h.p.State().Problem)
 
-	h.col.err, h.col.addr = nil, Address{Host: "db example", Port: 5432, Database: "app"}
+	h.col.err, h.col.addr = nil, setupcode.Address{Host: "db example", Port: 5432, Database: "app"}
 	h.clock.advance(fastEvery)
 	h.p.Step(ctx)
 	st = h.p.State()
@@ -468,7 +428,7 @@ func TestStepCollectsChecksAndProbes(t *testing.T) {
 	// Once the probe passed, nothing collects: the database the person is
 	// asked about cannot change under the question.
 	calls := h.col.calls
-	h.col.addr = Address{Host: "other.example.com", Port: 5432, Database: "app"}
+	h.col.addr = setupcode.Address{Host: "other.example.com", Port: 5432, Database: "app"}
 	h.clock.advance(fastEvery)
 	h.p.Step(ctx)
 	h.p.StatusCollect(ctx)
@@ -585,14 +545,14 @@ func TestPreviewOnlyReports(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	ctx := context.Background()
-	h.col.err, h.col.addr, h.col.phase = nil, Address{Host: "DB.Example.com", Port: 6543, Database: "app"}, HoldPreview
+	h.col.err, h.col.addr, h.col.phase = nil, setupcode.Address{Host: "DB.Example.com", Port: 6543, Database: "app"}, HoldPreview
 	h.p.Step(ctx)
 	st := h.p.State()
 	require.Equal(t, PhaseWaiting, st.Phase)
 	require.Nil(t, st.Database)
 	require.Empty(t, st.Problem)
 	require.Empty(t, h.files.ops, "no file is touched")
-	require.Equal(t, []report{{Address{Host: "DB.Example.com", Port: 6543, Database: "app"}, Reach{}}}, h.col.reports)
+	require.Equal(t, []report{{setupcode.Address{Host: "DB.Example.com", Port: 6543, Database: "app"}, Reach{}}}, h.col.reports)
 	require.Equal(t, 1, h.prober.probes)
 	_, ok := h.p.nextWait()
 	require.True(t, ok, "it keeps collecting")
@@ -632,11 +592,11 @@ func TestPreviewOnlyReports(t *testing.T) {
 	// A refused range is reported ADDRESS_REFUSED; a shape that fails is
 	// never reported.
 	h.prober.err = &ReachError{Reason: ReasonAddressRefused}
-	h.col.addr = Address{Host: "private.example.com", Port: 5432, Database: "app"}
+	h.col.addr = setupcode.Address{Host: "private.example.com", Port: 5432, Database: "app"}
 	h.clock.advance(fastEvery)
 	h.p.Step(ctx)
 	require.Equal(t, report{h.col.addr, Reach{Reason: ReasonAddressRefused}}, h.col.reports[4])
-	h.col.addr = Address{Host: "db example", Port: 5432, Database: "app"}
+	h.col.addr = setupcode.Address{Host: "db example", Port: 5432, Database: "app"}
 	h.clock.advance(fastEvery)
 	h.p.Step(ctx)
 	require.Len(t, h.col.reports, 5)
@@ -685,7 +645,7 @@ func TestSetUpReusesAPassedPreviewProbe(t *testing.T) {
 	require.Equal(t, 2, h.prober.probes, "another IP: probed again")
 
 	h = preview(t)
-	h.col.addr = Address{Host: "other.example.com", Port: 5432, Database: "app"}
+	h.col.addr = setupcode.Address{Host: "other.example.com", Port: 5432, Database: "app"}
 	h.p.Step(ctx)
 	require.Equal(t, 2, h.prober.probes, "another address on the same IP: probed again")
 
@@ -700,14 +660,14 @@ func TestReachReasons(t *testing.T) {
 	r, ok := ReachOf(nil)
 	require.True(t, ok)
 	require.Empty(t, r.Reason)
-	_, ok = ReachOf(ErrAddressInvalid)
+	_, ok = ReachOf(setupcode.ErrAddressInvalid)
 	require.False(t, ok, "a shape that fails is never reported")
 	r, ok = ReachOf(&ReachError{Reason: ReasonAddressRefused})
 	require.True(t, ok)
 	require.Equal(t, ReasonAddressRefused, r.Reason)
-	require.ErrorIs(t, &ReachError{Reason: ReasonAddressRefused}, ErrAddressInvalid)
+	require.ErrorIs(t, &ReachError{Reason: ReasonAddressRefused}, setupcode.ErrAddressInvalid)
 	require.ErrorIs(t, &ReachError{Reason: ReasonTimeout}, ErrUnreachable)
-	require.NotErrorIs(t, &ReachError{Reason: ReasonTimeout}, ErrAddressInvalid)
+	require.NotErrorIs(t, &ReachError{Reason: ReasonTimeout}, setupcode.ErrAddressInvalid)
 
 	require.Equal(t, ReasonTimeout, reasonOf(context.DeadlineExceeded))
 	require.Equal(t, ReasonTLSNotVerified, reasonOf(fmt.Errorf("connect: %w", x509.HostnameError{Host: "db.example.com", Certificate: &x509.Certificate{}})))
@@ -725,10 +685,10 @@ func TestReachReasons(t *testing.T) {
 	_, err := p.Resolve(context.Background(), db)
 	r, _ = ReachOf(err)
 	require.Equal(t, ReasonNoRoute, r.Reason)
-	_, err = p.Resolve(context.Background(), Address{Host: "private.example.com", Port: 5432, Database: "app"})
+	_, err = p.Resolve(context.Background(), setupcode.Address{Host: "private.example.com", Port: 5432, Database: "app"})
 	r, _ = ReachOf(err)
 	require.Equal(t, ReasonAddressRefused, r.Reason)
-	require.ErrorIs(t, err, ErrAddressInvalid)
+	require.ErrorIs(t, err, setupcode.ErrAddressInvalid)
 }
 
 // A preview leaves status as before the address came: a problem from an
@@ -817,7 +777,7 @@ func TestProbeCacheAcrossProcesses(t *testing.T) {
 
 // probeAt probes a at a public address, through a server presenting a chain
 // for certHost from a test CA that stands in for Supabase's root.
-func probeAt(t *testing.T, a Address, certHost string) error {
+func probeAt(t *testing.T, a setupcode.Address, certHost string) error {
 	t.Helper()
 	ca, cert := trustprofiletest.Chain(t, certHost)
 	p := Prober{ConnConfig: pgdial.ConnConfigTrusting, Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
@@ -831,18 +791,18 @@ func probeAt(t *testing.T, a Address, certHost string) error {
 func TestProbeTrustsSupabaseRootOnSupabaseHosts(t *testing.T) {
 	t.Parallel()
 	for _, host := range []string{"db.abcdefghijklmnopqrst.supabase.co", "aws-0-eu-central-1.pooler.supabase.com"} {
-		a := Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+		a := setupcode.Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 		require.NoError(t, probeAt(t, a, host), host)
 	}
-	notVerified := func(a Address, certHost string) {
+	notVerified := func(a setupcode.Address, certHost string) {
 		r, ok := ReachOf(probeAt(t, a, certHost))
 		require.True(t, ok)
 		require.Equal(t, ReasonTLSNotVerified, r.Reason, a.Host)
 	}
 	for _, host := range []string{"db.example.com", "db.evilsupabase.co"} {
-		notVerified(Address{Host: host, Port: 5432, Database: "postgres"}, host)
+		notVerified(setupcode.Address{Host: host, Port: 5432, Database: "postgres"}, host)
 	}
-	notVerified(Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres"}, "db.otherprojectref000000.supabase.co")
+	notVerified(setupcode.Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres"}, "db.otherprojectref000000.supabase.co")
 }
 
 // The agent's saved connection string, opened as the engine opens it,
@@ -850,10 +810,10 @@ func TestProbeTrustsSupabaseRootOnSupabaseHosts(t *testing.T) {
 func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	t.Parallel()
 	host := "db.abcdefghijklmnopqrst.supabase.co"
-	a := Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+	a := setupcode.Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 	login := func(certHost string) error {
 		ca, cert := trustprofiletest.Chain(t, certHost)
-		cfg, err := pgdial.ConnConfigTrusting(ConnString(a, LoginUser(a, fixtureRole), "pw", true), trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}))
+		cfg, err := pgdial.ConnConfigTrusting(ConnString(a, setupcode.LoginUser(a, fixtureRole), "pw", true), trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}))
 		require.NoError(t, err)
 		require.Equal(t, host, cfg.TLSConfig.ServerName)
 		require.False(t, cfg.TLSConfig.InsecureSkipVerify)

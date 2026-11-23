@@ -469,7 +469,7 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 	})
 }
 
-var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", "net", "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
+var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", netPkg, "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
 
 func bannedImport(p string) bool {
 	switch {
@@ -520,11 +520,39 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 		if !ok {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
+		id, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		ip := names[id.Name]
+		if ip == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
 			v.add(rel, f.name+" calls time."+sel.Sel.Name+" (core must stay pure)")
+		}
+		if only, limited := extraOnly[ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
+			v.add(rel, fmt.Sprintf("%s uses %s.%s (the register grants %s for %s only)", f.name, ip, sel.Sel.Name, ip, strings.Join(only, ", ")))
 		}
 		return true
 	})
+}
+
+// extraOnly limits an extra import to the names listed: setupcode may
+// import net for net.JoinHostPort and nothing else of it.
+var extraOnly = map[string][]string{netPkg: {"JoinHostPort"}}
+
+// netPkg is the standard library's net package.
+const netPkg = "net"
+
+// extraAllowed reports whether the register may grant core package name the
+// extra import e: crypto/rand for key and salt generation in channel and
+// setupcode, net for setupcode's database address (net.JoinHostPort).
+func extraAllowed(name, e string) bool {
+	switch e {
+	case "crypto/rand":
+		return name == "channel" || name == "setupcode"
+	case netPkg:
+		return name == "setupcode"
+	}
+	return false
 }
 
 // checkRegister compares the register with the packages that exist.
@@ -552,8 +580,8 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 			problems = append(problems, fmt.Sprintf("register row %s: admitted-by %q must be 1, 2 or 3", name, row.row))
 		}
 		for _, e := range row.extras {
-			if e != "crypto/rand" || (name != "channel" && name != "setupcode") {
-				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode)", name, e))
+			if !extraAllowed(name, e) {
+				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode)", name, e))
 			}
 		}
 		if len(row.codecs) > 0 && row.kind != kindDecision {

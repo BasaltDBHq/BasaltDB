@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -44,7 +42,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 		return
 	}
 	host := trustprofile.NormalizeHost(cfg.Host)
-	if app.TrustProfileFor(r.f.configPath, host) != nil {
+	if r.setup.TrustProfileFor(r.f.configPath, host) != nil {
 		return // a profile, a pin included, decides; a changed pin shows at the login
 	}
 	chain, err := r.c.fetchChain(r.c.ctx, host, int(cfg.Port))
@@ -58,9 +56,9 @@ func (r *remoteInit) noteUnknownAuthority() {
 }
 
 // pinOf is the engine's pin for host in the config's trust.d: its
-// pin-<host> profile, or nil.
-func pinOf(configPath, host string) *trustprofile.Profile {
-	p := app.TrustProfileFor(configPath, host)
+// pin-<host> profile, or nil, read through h.
+func pinOf(h remoteHost, configPath, host string) *trustprofile.Profile {
+	p := h.TrustProfileFor(configPath, host)
 	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
 		return nil
 	}
@@ -71,7 +69,7 @@ func pinOf(configPath, host string) *trustprofile.Profile {
 // engine has pinned for the target's host: the code's trustPin, "" when it
 // has no pin.
 func (r *remoteInit) pinnedSHA() string {
-	p := pinOf(r.f.configPath, trustprofile.NormalizeHost(r.target.Host))
+	p := pinOf(r.setup, r.f.configPath, trustprofile.NormalizeHost(r.target.Host))
 	if p == nil || len(p.Certificates()) == 0 {
 		return ""
 	}
@@ -92,7 +90,7 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 		return false
 	}
 	host := trustprofile.NormalizeHost(cfg.Host)
-	p := pinOf(r.f.configPath, host)
+	p := pinOf(r.setup, r.f.configPath, host)
 	if p == nil {
 		return false
 	}

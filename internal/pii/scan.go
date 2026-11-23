@@ -1,4 +1,4 @@
-package piidict
+package pii
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
@@ -47,10 +47,10 @@ const (
 // out of the next base, as values the agent cannot read should. A statement
 // timeout skips only a relation read in one pass (slowRelationError).
 const (
-	sqlStateUndefinedTable  = "42P01"
-	sqlStateUndefinedColumn = "42703"
-	sqlStateInsufficient    = "42501"
-	sqlStateQueryCanceled   = "57014"
+	sqlStateUndefinedTable       = "42P01"
+	sqlStateUndefinedColumn      = "42703"
+	sqlStateInsufficient         = "42501"
+	piidictSqlStateQueryCanceled = "57014"
 )
 
 // Relation kinds (pg_class.relkind) that have a ctid to page by.
@@ -63,15 +63,15 @@ const (
 // budget can hold even at 16-bit fingerprints; the previous base stays.
 var ErrScanOverBudget = errors.New("pii: the scan found more values than pii.maxMemoryMB can hold; the previous dictionary stays")
 
-// Builder is the dictionary the scan rebuilds (pii.FuseDictionary).
+// Builder is the dictionary the scan rebuilds (corepii.FuseDictionary).
 type Builder interface {
-	StartBuild() (*pii.DictionaryBuild, error)
+	StartBuild() (*corepii.DictionaryBuild, error)
 	RebuildNeeded() <-chan struct{}
 }
 
 // Pool is an agent's connection pool.
 type Pool interface {
-	Querier
+	PiidictQuerier
 	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
 }
 
@@ -109,7 +109,7 @@ func (o ScanOptions) withDefaults() ScanOptions {
 		o.RowsPerSecond = DefaultScanRowsPerSecond
 	}
 	if o.MaxMemoryBytes <= 0 {
-		o.MaxMemoryBytes = pii.DefaultMaxMemoryMB * bytesPerMB
+		o.MaxMemoryBytes = corepii.DefaultMaxMemoryMB * bytesPerMB
 	}
 	if o.LoadTimeout <= 0 {
 		o.LoadTimeout = DefaultLoadTimeout
@@ -223,7 +223,7 @@ func (s *Scanner) cycle(ctx context.Context) (ScanResult, error) {
 			return run.res, err
 		}
 	}
-	if err := b.Commit(pii.ScanStats{At: start, Columns: run.res.Columns, Rows: run.res.Rows}); err != nil {
+	if err := b.Commit(corepii.ScanStats{At: start, Columns: run.res.Columns, Rows: run.res.Rows}); err != nil {
 		return run.res, err
 	}
 	s.log.Info("pii: dictionary scan", "columns", run.res.Columns, "rows", run.res.Rows,
@@ -234,7 +234,7 @@ func (s *Scanner) cycle(ctx context.Context) (ScanResult, error) {
 // scanRun is one cycle in progress.
 type scanRun struct {
 	s         *Scanner
-	b         *pii.DictionaryBuild
+	b         *corepii.DictionaryBuild
 	limit     limiter
 	maxValues int64
 	res       ScanResult
@@ -324,7 +324,7 @@ func (r *scanRun) table(ctx context.Context, src ScanSource, t scanTable) error 
 	if len(keys) == 0 && relkind != relkindTable && relkind != relkindMaterialized {
 		err := r.pageAll(ctx, src, onePassPager(t))
 		var pe *pgconn.PgError
-		if errors.As(err, &pe) && pe.Code == sqlStateQueryCanceled {
+		if errors.As(err, &pe) && pe.Code == piidictSqlStateQueryCanceled {
 			return &slowRelationError{err: err}
 		}
 		return err
@@ -362,8 +362,8 @@ func (k keyColumn) sql() string {
 
 // keysetOf reads a table's relkind and its primary key columns with their
 // types; no key when any key column is not readable by the agent.
-func keysetOf(ctx context.Context, db Querier, oid uint32) ([]keyColumn, string, error) {
-	q, args, err := psql.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
+func keysetOf(ctx context.Context, db PiidictQuerier, oid uint32) ([]keyColumn, string, error) {
+	q, args, err := piidictPsql.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
 	if err != nil {
 		return nil, "", err
 	}
@@ -435,7 +435,7 @@ func rowPager(t scanTable, keys []keyColumn) func(page int) pager {
 		return pager{
 			keyCols: len(keys), cols: t.cols,
 			query: func(cursor []string) (string, []any, error) {
-				b := psql.Select(sel...).From(from).OrderBy(order...).Limit(uint64(page))
+				b := piidictPsql.Select(sel...).From(from).OrderBy(order...).Limit(uint64(page))
 				if cursor != nil {
 					b = b.Where(sq.Expr(tuple, toArgs(cursor)...))
 				}
@@ -459,7 +459,7 @@ func onePassPager(t scanTable) func(page int) pager {
 		return pager{
 			cols: t.cols, onePass: true,
 			query: func([]string) (string, []any, error) {
-				return psql.Select(sel...).From(from).ToSql()
+				return piidictPsql.Select(sel...).From(from).ToSql()
 			},
 		}
 	}
@@ -510,7 +510,7 @@ func (r *scanRun) page(ctx context.Context, src ScanSource, p pager, cursor []st
 		return nil, 0, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	timeout, targs, err := psql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", src.Limits.StatementTimeoutSetting())).ToSql()
+	timeout, targs, err := piidictPsql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", src.Limits.StatementTimeoutSetting())).ToSql()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -550,7 +550,7 @@ func (r *scanRun) add(c Class, typeOID uint32, raw []byte) error {
 	if r.res.Values >= r.maxValues {
 		return ErrScanOverBudget
 	}
-	if err := r.b.Add(pii.EntityType(c.EntityType), v, c.PhoneRegion); err != nil {
+	if err := r.b.Add(corepii.EntityType(c.EntityType), v, c.PhoneRegion); err != nil {
 		return fmt.Errorf("add a value of %s (%s): %w", c.Name(), c.EntityType, err)
 	}
 	r.res.Values++

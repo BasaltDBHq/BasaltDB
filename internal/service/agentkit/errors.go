@@ -8,8 +8,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
 // rowTooLargeHint ends a ROW_TOO_LARGE message with what to change: the
@@ -102,7 +103,7 @@ type ErrorMap struct {
 // waits for the person's confirmation (UNAVAILABLE DATABASE_NOT_CONFIRMED).
 type DatabaseNotConfirmedError struct {
 	SetupID  string
-	Database handoff.Address
+	Database setupcode.Address
 }
 
 func (e *DatabaseNotConfirmedError) Error() string {

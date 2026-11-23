@@ -7,7 +7,7 @@ import (
 
 // The validators in this file are the one implementation of the card and IBAN
 // checks: the pattern detectors (CardDetector, IBANDetector) use them on text,
-// and internal/service/classify uses them on sampled column values (M5.1 plan,
+// and internal/pii uses them on sampled column values (M5.1 plan,
 // section 3). They take a compact value: no spaces or dashes.
 
 // Card numbers are 13 to 19 digits (ISO/IEC 7812).

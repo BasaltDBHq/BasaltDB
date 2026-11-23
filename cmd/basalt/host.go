@@ -17,12 +17,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -127,6 +131,32 @@ func (appShell) CurrentTrustProfileSet() *trustprofile.Set { return app.CurrentT
 
 func (appShell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return app.OSOpenTrustedFile(path, owner)
+}
+
+// appSetupHost is basalt init --remote's real host: the adapters, reached
+// through app.
+type appSetupHost struct{}
+
+func (appSetupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
+	return app.GuardAgentConnString(adminURL, role, password)
+}
+
+func (appSetupHost) GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error) {
+	return app.GuardAgentVersion(ctx, q)
+}
+
+func (appSetupHost) GuardLatestVersion() int { return app.GuardLatestVersion() }
+
+func (appSetupHost) GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error) {
+	return app.GuardSetupRecorded(ctx, q, id)
+}
+
+func (appSetupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
+	return app.LoadOrCreateEngineKeys(path, now)
+}
+
+func (appSetupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
+	return app.TrustProfileFor(configPath, host)
 }
 
 // osHost is the real machine.

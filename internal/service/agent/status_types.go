@@ -10,7 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
@@ -240,7 +240,7 @@ type SetupStatus struct {
 	// ConnectOnly is set while the pending code is connect-only.
 	ConnectOnly bool `json:"connectOnly,omitempty"`
 	// Database is the collected and probed database (CONFIRM_DATABASE).
-	Database *handoff.Address `json:"database,omitempty"`
+	Database *setupcode.Address `json:"database,omitempty"`
 }
 
 // PagesStatus is status.pages.

@@ -8,12 +8,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
-	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // Catalog reads the structure of the database the agent can see, on the
 // agent's own credential (CONTRACT.md, describe). The Postgres adapter
-// implements it; it mirrors internal/adapter/outbound/postgres/pgcatalog.
+// implements it; it mirrors internal/platform/postgres/pgcatalog.
 type Catalog interface {
 	// Relations lists the readable relations by schema and name, and counts
 	// the ones in user schemas the agent cannot read.
@@ -40,12 +40,12 @@ type Catalog interface {
 	Limits() action.Limits
 }
 
-// ClassResolver is the agent's PII classification (piidict.BoundMap).
+// ClassResolver is the agent's PII classification (pii.BoundMap).
 type ClassResolver interface {
-	Resolve(ctx context.Context, refs []piidict.ColumnRef) ([]piidict.Class, error)
+	Resolve(ctx context.Context, refs []pii.ColumnRef) ([]pii.Class, error)
 	// Secrets lists the SECRET columns: describe never lists, matches or
 	// names them.
-	Secrets(ctx context.Context) ([]piidict.ColumnRef, error)
+	Secrets(ctx context.Context) ([]pii.ColumnRef, error)
 	// CatalogFingerprint is agent_pii_catalog.fingerprint as hex, empty
 	// before the first basalt classify.
 	CatalogFingerprint(ctx context.Context) (string, error)
@@ -89,11 +89,11 @@ type noClasses struct{}
 
 var errNoClasses = errors.New("describe: no pii classes configured")
 
-func (noClasses) Resolve(context.Context, []piidict.ColumnRef) ([]piidict.Class, error) {
+func (noClasses) Resolve(context.Context, []pii.ColumnRef) ([]pii.Class, error) {
 	return nil, errNoClasses
 }
 
-func (noClasses) Secrets(context.Context) ([]piidict.ColumnRef, error) { return nil, errNoClasses }
+func (noClasses) Secrets(context.Context) ([]pii.ColumnRef, error) { return nil, errNoClasses }
 
 func (noClasses) CatalogFingerprint(context.Context) (string, error) { return "", errNoClasses }
 

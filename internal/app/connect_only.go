@@ -68,7 +68,7 @@ func (rootCollector) Collect(context.Context, string, string) (handoff.Collected
 	return handoff.Collected{}, handoff.ErrEngineAsRoot
 }
 
-func (rootCollector) Report(context.Context, string, string, handoff.Address, handoff.Reach) error {
+func (rootCollector) Report(context.Context, string, string, setupcode.Address, handoff.Reach) error {
 	return handoff.ErrEngineAsRoot
 }
 
@@ -78,7 +78,7 @@ func (noKeyCollector) Collect(context.Context, string, string) (handoff.Collecte
 	return handoff.Collected{}, errNoEngineKey
 }
 
-func (noKeyCollector) Report(context.Context, string, string, handoff.Address, handoff.Reach) error {
+func (noKeyCollector) Report(context.Context, string, string, setupcode.Address, handoff.Reach) error {
 	return errNoEngineKey
 }
 
@@ -180,7 +180,7 @@ func newRepin(env agentEnv, a config.Agent, cc *pgx.ConnConfig, log *slog.Logger
 	}
 	t := setupcode.ConnTarget(cc.Host, int(cc.Port), cc.Database, cc.User)
 	r, err := handoff.NewRepin(handoff.RepinOptions{
-		Setup: *a.Setup, Credential: handoff.Address{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef},
+		Setup: *a.Setup, Credential: setupcode.Address(t),
 		Collector: handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now()),
 		Prober:    env.handoff.Prober,
 		Files:     repinFiles{handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}},

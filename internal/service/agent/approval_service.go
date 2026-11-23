@@ -122,4 +122,4 @@ func (ac *approvalCase) Hold(ctx context.Context, in action.Intent, r action.Hol
 	return ac.deps.Store.Hold(ctx, in, r)
 }
 
-func (ac *approvalCase) notFound() error { return ac.deps.ErrNotFound }
+func (ac *approvalCase) NotFound() error { return ac.deps.ErrNotFound }

@@ -23,11 +23,11 @@ import (
 // version 37: upgrading the guard is what lets the write be held.
 const olderGuardNote = "this database's guard holds a line of at most 64 KiB"
 
-// holdTooLarge is STATEMENT_REFUSED HOLD_TOO_LARGE for preview lines a
+// HoldTooLarge is STATEMENT_REFUSED HOLD_TOO_LARGE for preview lines a
 // hold cannot keep, or nil when they fit. holdErr is hold_action's error
 // (nil before the hold): BS008 with a line over 64 KiB is an older
 // guard's per-line cap.
-func holdTooLarge(lines []string, holdErr error) *toolresult.ToolError {
+func HoldTooLarge(lines []string, holdErr error) *toolresult.ToolError {
 	var total, longest int
 	for _, l := range lines {
 		total += len(l)
@@ -46,10 +46,10 @@ func holdTooLarge(lines []string, holdErr error) *toolresult.ToolError {
 	return nil
 }
 
-// holdTooLargeSteps: the agent stops and asks. The person makes the change
+// HoldTooLargeSteps: the agent stops and asks. The person makes the change
 // themselves or has the agent write fewer rows per call, each still held;
 // on an older guard, an upgrade lets the same write be held.
-func (ac *approvalCase) holdTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string {
+func (ac *approvalCase) HoldTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string {
 	b.Stop("Do not retry the write as it is.")
 	if strings.Contains(te.Message, olderGuardNote) {
 		b.AskPerson("Tell the person this database's guard is too old to hold a write with rows this large and needs an upgrade; " +

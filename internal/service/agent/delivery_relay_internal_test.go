@@ -177,7 +177,7 @@ func newRelayEnv(t *testing.T, opts vaulttest.Options, rnd io.Reader, connect bo
 // notice holds a write for approval and returns what the agent hands over.
 func (e *relayEnv) notice(t *testing.T) linksvc.HeldAnswer {
 	t.Helper()
-	n, err := e.svc.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
+	n, err := e.svc.approval.ApprovalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
 		e.clock.Now().Add(time.Hour), linksvc.IssueLink)
 	require.NoError(t, err)
 	stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)

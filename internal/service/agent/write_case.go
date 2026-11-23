@@ -37,13 +37,13 @@ type writeDelivery interface {
 // writeApprovals is what the write use case asks of the approval use case: to
 // hold a write and to read it back.
 type writeApprovals interface {
-	approvalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error)
+	ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error)
 	HoldColumns(ctx context.Context, sql string, params []any) ([]string, error)
 	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// notFound is the ledger's answer for an approval the role does not hold.
-	notFound() error
+	// NotFound is the ledger's answer for an approval the role does not hold.
+	NotFound() error
 }
 
 // upgradeWarner gives the warnings of a guard that can be upgraded, for run_start.

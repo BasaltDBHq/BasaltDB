@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -150,21 +149,6 @@ func shimCommands(name, configPath string, cfg *config.Config) (guidance.Command
 		cmds = cmds.Foreground()
 	}
 	return cmds, nil
-}
-
-// refuseSecretInitArgs refuses --init-arg values that look like a
-// connection string or carry a password. None is saved or replayed.
-func refuseSecretInitArgs(args []string) error {
-	for _, a := range args {
-		lower := strings.ToLower(a)
-		if strings.Contains(lower, "password=") {
-			return fmt.Errorf("saved init argument %q carries a password", a)
-		}
-		if _, rest, ok := strings.Cut(a, "://"); ok && strings.Contains(rest, "@") {
-			return fmt.Errorf("saved init argument %q looks like a connection string", a)
-		}
-	}
-	return nil
 }
 
 // fallbackAgentName names the agent in commands when basalt mcp was given a
@@ -329,16 +313,16 @@ func agentSpecFromStdin(in io.Reader, spec app.OSSpec, a agentInstall, credStdin
 	if _, err := agent.NewCommands(a.name, cfgPath, spec.GOOS, app.AgentServiceManager()); err != nil {
 		return spec, err
 	}
-	if err := refuseSecretInitArgs(a.initArgs); err != nil {
+	if err := setup.RefuseSecretInitArgs(a.initArgs); err != nil {
 		return spec, fmt.Errorf("--init-arg: %w", err)
 	}
 	if _, err := user.Lookup(a.osUser); err != nil {
 		return spec, fmt.Errorf("os user %q: %w", a.osUser, err)
 	}
-	if err := checkAgentOSUser(a.osUser, spec.User); err != nil {
+	if err := setup.CheckAgentOSUser(cliAdapter{}, a.osUser, spec.User); err != nil {
 		return spec, err
 	}
-	if err := checkServicePersons(a.personUIDs, spec.User); err != nil {
+	if err := setup.CheckServicePersons(a.personUIDs, spec.User); err != nil {
 		return spec, err
 	}
 	if a.keepCredential {
@@ -394,25 +378,6 @@ func waitingForAddress(spec app.OSSpec, name, cred string) bool {
 		}
 	}
 	return false
-}
-
-// checkServicePersons refuses a service install without a person uid, or
-// with root or the engine's own OS user among them (CONTRACT.md, CLI,
-// Recording the person).
-func checkServicePersons(uids []uint32, engineUser string) error {
-	if err := setup.CheckPersons(uids); err != nil {
-		return err
-	}
-	u, err := user.Lookup(engineUser)
-	if err != nil {
-		return nil //nolint:nilerr // the engine's user does not exist yet: the install creates it, with a new uid
-	}
-	for _, uid := range uids {
-		if strconv.FormatUint(uint64(uid), 10) == u.Uid {
-			return fmt.Errorf("--person-uid %d is the engine's own OS user %s; give the person's", uid, engineUser)
-		}
-	}
-	return nil
 }
 
 // engineLog is the engine's and basalt mcp's log on w: a text handler that

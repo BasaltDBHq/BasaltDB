@@ -17,7 +17,6 @@ import (
 
 // Environment variables the CLI reads.
 const (
-	envAdminURL = "BASALT_ADMIN_DATABASE_URL"
 	envAgentURL = "BASALT_DATABASE_URL"
 	envCacheDir = "BASALT_CACHE_DIR"
 )

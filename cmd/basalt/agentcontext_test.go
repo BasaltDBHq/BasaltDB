@@ -17,6 +17,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -28,9 +29,9 @@ var leakedAdmin = "postgres://postgres" + ":" + "hunter2-admin" + "@" + "db.exam
 // BASALT_ADMIN_DATABASE_URL and says to change that password.
 func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 	t.Parallel()
-	r := cliOn(t, newFakeHost(t), map[string]string{envAdminURL: leakedAdmin}, "",
+	r := cliOn(t, newFakeHost(t), map[string]string{setup.EnvAdminURL: leakedAdmin}, "",
 		"init", "--remote", "--agent", "bot", "--config", filepath.Join(t.TempDir(), "engine.json"))
-	require.Contains(t, r.stderr, remoteAdminEnvSet)
+	require.Contains(t, r.stderr, setup.RemoteAdminEnvSet)
 	require.NotContains(t, r.stdout+r.stderr, "hunter2")
 }
 
@@ -66,7 +67,7 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 // so a flag on the next line or after "with" is caught too.
 func manualInits(text string) []string {
 	var out []string
-	for _, bad := range []string{"--setup-code", "--database-url", envAdminURL + "="} {
+	for _, bad := range []string{"--setup-code", "--database-url", setup.EnvAdminURL + "="} {
 		if strings.Contains(text, bad) {
 			out = append(out, bad)
 		}
@@ -114,7 +115,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	requireAgentLed(t, "MCP instructions", app.Instructions)
 	for name, text := range map[string]string{
 		"agentsHelp":        cli.AgentsHelp,
-		"remoteAdminEnvSet": remoteAdminEnvSet,
+		"remoteAdminEnvSet": setup.RemoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)
 	}

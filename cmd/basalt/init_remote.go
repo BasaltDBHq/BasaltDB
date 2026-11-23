@@ -137,10 +137,10 @@ func initRemote(c *cli.IO, h remoteHost, args []string) (RemoteInitResult, error
 	if err != nil {
 		return RemoteInitResult{}, err
 	}
-	if c.Getenv(envAdminURL) != "" {
+	if c.Getenv(setup.EnvAdminURL) != "" {
 		// Never used here, but whoever can read this environment holds
 		// the admin password (CONTRACT.md, Agents and the admin credential).
-		fmt.Fprintln(c.Stderr, "basalt: warning: "+remoteAdminEnvSet)
+		fmt.Fprintln(c.Stderr, "basalt: warning: "+setup.RemoteAdminEnvSet)
 	}
 	if err := checkBuildVersion(buildVersion()); err != nil {
 		return RemoteInitResult{}, err

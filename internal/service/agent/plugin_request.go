@@ -193,7 +193,7 @@ func (pc *pluginCase) RequestPlugin(ctx context.Context, a requestPluginArgs, me
 		return requestPluginResult{}, err
 	}
 	if a.ApprovalID != "" {
-		wait := DefaultApprovalWait
+		wait := guidance.DefaultApprovalWait
 		if a.WaitForApproval != nil {
 			wait = time.Duration(*a.WaitForApproval) * time.Second
 		}
@@ -365,7 +365,7 @@ func (pc *pluginCase) pluginOpened(ctx context.Context, o PluginOpened) (request
 		fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", o.ExpiresAt.UTC().Format(guidance.PersonTime)))
 	steps.OpenLink(link, "Open the link, read what the plugin may do and approve it with your passkey.").
 		CallTool(toolRequestPlugin, map[string]any{"approvalId": o.ApprovalID.String()},
-			fmt.Sprintf("Show the person personMessage first. Then, in the same turn, call this once: it returns as soon as the plugin runs, or after %d seconds.", int(DefaultApprovalWait/time.Second)))
+			fmt.Sprintf("Show the person personMessage first. Then, in the same turn, call this once: it returns as soon as the plugin runs, or after %d seconds.", int(guidance.DefaultApprovalWait/time.Second)))
 	built, err := steps.Build()
 	if err != nil {
 		return requestPluginResult{}, err

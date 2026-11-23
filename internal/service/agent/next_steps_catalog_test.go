@@ -385,7 +385,7 @@ func catalogCases() map[string]catalogCase {
 		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {
 			"request_revert",
 			map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
-			plainFunc(scopeFilterCapped),
+			plainFunc(ScopeFilterCapped),
 		},
 
 		caseKey("INVALID_ARGUMENT", "ADMIN_CREDENTIAL", ""): {"query", queryArgs0, plain(adminCredentialError())},

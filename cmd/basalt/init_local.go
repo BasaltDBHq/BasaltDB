@@ -12,8 +12,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // setupWait bounds how long init waits for the engine's setup page after
@@ -23,7 +23,7 @@ const (
 	setupWaitStep = 250 * time.Millisecond
 	// removalWait is how long init waits, after it opened the Update/Remove
 	// link, for the page's Remove: as long as an approval wait.
-	removalWait     = agent.DefaultApprovalWait
+	removalWait     = guidance.DefaultApprovalWait
 	removalWaitStep = 500 * time.Millisecond
 )
 

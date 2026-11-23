@@ -137,5 +137,5 @@ func (ac *approvalCase) pendingGuidance(ctx context.Context, e PendingEntry, rei
 		a.PersonMessage, a.Links, a.NextSteps, err = ac.itemGuidance(*a)
 		return err
 	}
-	return ac.reverts.pendingRevert(ctx, e.Revert, reissue)
+	return ac.reverts.PendingRevert(ctx, e.Revert, reissue)
 }

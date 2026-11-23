@@ -340,7 +340,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	requireSendRequestFirst(t, out.NextSteps, out.RequestFile, "request_revert")
 
 	p := &PendingRevert{Revert: r}
-	require.NoError(t, s.revert.pendingRevert(ctx, p, false))
+	require.NoError(t, s.revert.PendingRevert(ctx, p, false))
 	require.Contains(t, p.RevertURL, "#h=", "a restated link without pages is the hash link")
 	requireSendRequestFirst(t, p.NextSteps, p.RequestFile, "list_pending revert")
 	require.Equal(t, p.RevertURL, p.NextSteps[1].URL)
@@ -361,7 +361,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	s := noticeService(localPages, links.DefaultBudget)
 	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
 	p := &PendingRevert{Revert: r}
-	require.NoError(t, s.revert.pendingRevert(ctx, p, false))
+	require.NoError(t, s.revert.PendingRevert(ctx, p, false))
 	require.Nil(t, p.RequestFile)
 	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.Empty(t, p.NextSteps[0].URL)

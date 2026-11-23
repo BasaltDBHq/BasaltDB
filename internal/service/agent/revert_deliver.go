@@ -6,6 +6,15 @@ import linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 // that answer's revertUrl.
 func (rc *revertCase) deliverRevert(kind linksvc.NoticeKind, r RequestedRevert) {
 	rc.delivery.Deliver(linksvc.LinkNotice{
-		Kind: kind, RevertID: r.Revert.ID, Headline: r.headline, ExpiresAt: r.Revert.ExpiresAt, Link: requestRevertFromDomain(r).RevertURL,
+		Kind: kind, RevertID: r.Revert.ID, Headline: r.headline, ExpiresAt: r.Revert.ExpiresAt, Link: noticeLink(r),
 	})
+}
+
+// noticeLink is the revert URL the notice carries: none for a widened revert,
+// whose scope is the person's own.
+func noticeLink(r RequestedRevert) string {
+	if r.Revert.Widened {
+		return ""
+	}
+	return r.RevertURL
 }

@@ -195,16 +195,16 @@ func TestLastStopIsWrittenAndCleared(t *testing.T) {
 
 	cfg := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(cfg, []byte("cfg-v1\n"), 0o600))
-	writeLastStop(dir, "the engine crashed 5 times within 10s", cfg, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
+	engine.WriteLastStop(superviseHost{}, dir, "the engine crashed 5 times within 10s", cfg, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
 	raw, err := os.ReadFile(filepath.Join(dir, engine.LastStopFile))
 	require.NoError(t, err)
 	want := `{"reason":"the engine crashed 5 times within 10s","at":"2026-11-20T01:02:03Z","engineSha256":"` + laststop.HashEngineJSON(cfg) + `"}`
 	require.JSONEq(t, want, string(raw))
 
-	clearLastStop(dir, log)
+	engine.ClearLastStop(dir, log)
 	_, err = os.Stat(filepath.Join(dir, engine.LastStopFile))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	clearLastStop(dir, log) // nothing to remove: no error
+	engine.ClearLastStop(dir, log) // nothing to remove: no error
 }
 
 // A stray probe of the engine lock reads as a holder for a moment; only a
@@ -272,14 +272,14 @@ func TestSuperviseGivesUpWhenBinaryIsGoneOnRestart(t *testing.T) {
 func TestResolveSuperviseBinary(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "basalt")
-	_, err := resolveSuperviseBinary(path)
+	_, err := engine.ResolveSuperviseBinary(path)
 	var gone *engine.BinaryGoneError
 	require.ErrorAs(t, err, &gone)
 	require.Equal(t, path, gone.Path)
 	require.Equal(t, "the basalt binary "+path+" is gone", gone.Error())
 
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o755))
-	got, err := resolveSuperviseBinary(path)
+	got, err := engine.ResolveSuperviseBinary(path)
 	require.NoError(t, err)
 	require.Equal(t, path, got)
 }

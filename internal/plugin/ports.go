@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
@@ -66,8 +66,8 @@ type Ports struct {
 	// SystemdOverrides are the drop-ins systemd reads for a unit on this
 	// machine (Linux only).
 	SystemdOverrides func(unit string) ([]string, error)
-	// NewUnitHost is the plugin units the engine configured by cfg expects.
-	NewUnitHost func(cfg config.Config, goos, configPath, engineUser string) UnitHost
+	// NewUnitHost is the plugin units an engine on host expects (HostFor).
+	NewUnitHost func(host servicespec.PluginHost) UnitHost
 }
 
 // UnitHost is the plugin units a service engine expects: the OS service
@@ -76,10 +76,9 @@ type UnitHost interface {
 	// EngineUser is the OS user the engine runs as; its group reaches the
 	// plugins' socket directories.
 	EngineUser() string
-	// Plan is the unit local entry p needs, verified as v; local is false
-	// for a remote entry. It fails when the unit cannot be rendered or
-	// another of allKeys would share the entry's OS user.
-	Plan(p config.Plugin, v pluginmodel.Verified, allKeys []pluginmodel.EntryKey) (plan pluginmodel.UnitPlan, local bool, err error)
+	// RenderUnit is the unit local entry e needs: its file and its names.
+	// It fails when the entry's names or unit cannot be rendered.
+	RenderUnit(e servicespec.PluginEntry) (pluginmodel.UnitPlan, error)
 	// UserInGroup says that the plugin's OS user is in the engine's group
 	// and how to take it out.
 	UserInGroup(pluginUser string) string

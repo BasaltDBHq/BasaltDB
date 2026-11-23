@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statuscli"
 )
@@ -37,8 +38,8 @@ func commands() []cli.Command {
 }
 
 // runInitCommand is basalt init for the command table: init --remote
-// reaches the adapters through appSetupHost.
-func runInitCommand(c *cli.IO, args []string) int { return runInit(c, appSetupHost{}, args) }
+// reaches the adapters through app.SetupHost.
+func runInitCommand(c *cli.IO, args []string) int { return runInit(c, app.SetupHost{}, args) }
 
 func run(ctx context.Context, args []string, io cli.Stdio) int {
 	if len(args) == 0 {

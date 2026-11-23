@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package app
 
 import (
 	"errors"
@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -21,10 +20,10 @@ import (
 )
 
 // openRootCredFiles opens dir, the agents directory, as root
-// (app.OpenRootCredFiles), making it (and the config directory) when
+// (OpenRootCredFiles), making it (and the config directory) when
 // missing, through h. trusted is rootTrustedOwner's.
 func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFiles, error) {
-	files, err := app.OpenRootCredFiles(h, dir, trusted)
+	files, err := OpenRootCredFiles(h, dir, trusted)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +65,7 @@ func (d *rootConfigDir) Upsert(name string, s config.Settings, a config.Agent) (
 	// engine.json goes to the config directory's owner (the engine's user
 	// in service mode), as the files in agents/ do, so the engine can read
 	// it; never to root.
-	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, app.CredentialOwner(dirUID), s, a)
+	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, CredentialOwner(dirUID), s, a)
 }
 
 func (d *rootConfigDir) Close() { _ = d.dir.Close() }
@@ -119,7 +118,7 @@ func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, 
 		if err != nil {
 			return nil, err
 		}
-		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, app.CredentialOwner(dirUID))
+		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, CredentialOwner(dirUID))
 		clear(raw)
 		if err == nil {
 			return keys.PublicKeySPKI(), nil

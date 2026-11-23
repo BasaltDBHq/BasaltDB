@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -76,7 +77,7 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr},
 		func(string) string { return "" })
 	c.Host, c.AgentLogin, c.Probe, c.SystemConfigPath = h, refusedLogin, noNetworkProbe, system
-	code := runInit(c, appSetupHost{}, []string{"--remote", "--agent", "bot"})
+	code := runInit(c, app.SetupHost{}, []string{"--remote", "--agent", "bot"})
 	require.Equal(t, cli.ExitError, code, stderr.String())
 	require.Contains(t, stderr.String(), system)
 	_, err := os.Stat(filepath.Join(h.configDir, config.UserDirName, "engine.json"))

@@ -31,10 +31,10 @@ type loggedInConn struct{ pgquerier.Querier }
 
 func (loggedInConn) Close(context.Context) error { return nil }
 
-// recordedHost is appSetupHost with the guard's answers given: the
+// recordedHost is app.SetupHost with the guard's answers given: the
 // database has the latest guard, and the pending setup is recorded or not.
 type recordedHost struct {
-	appSetupHost
+	app.SetupHost
 	recorded bool
 }
 
@@ -109,7 +109,7 @@ func TestInitRemoteIgnoresACredentialForAnotherRole(t *testing.T) {
 	require.NoError(t, config.WriteFile(credFile,
 		[]byte(agentDSN(t, "postgres://postgres@db.example.com:5432/app", "other", "bot", botPassword)+"\n")))
 	var dialed []string
-	_, err := runRemote(t, appSetupHost{}, cfg, func(_ context.Context, dsn string) (cli.AgentConn, error) {
+	_, err := runRemote(t, app.SetupHost{}, cfg, func(_ context.Context, dsn string) (cli.AgentConn, error) {
 		dialed = append(dialed, dsn)
 		return nil, handoff.ErrLoginRefused
 	})
@@ -129,7 +129,7 @@ func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {
 	unlock, err := config.LockFile(path)
 	require.NoError(t, err)
 	defer unlock()
-	root, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
+	root, err := app.SetupHost{}.OpenRootCredFiles(dir, os.Geteuid())
 	require.NoError(t, err)
 	defer root.Close()
 	want := fmt.Sprintf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
@@ -161,7 +161,7 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
 	io.FetchChain = second.fetch
-	res, err := setupcli.InitRemote(io, appSetupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	res, err := setupcli.InitRemote(io, app.SetupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.NoError(t, err, stderr.String())
 	require.Equal(t, []string{pending}, dialed, "the .pending login decides")
 	p, err := setupcode.Decode(res.Code)

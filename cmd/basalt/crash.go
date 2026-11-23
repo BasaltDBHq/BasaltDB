@@ -95,7 +95,7 @@ func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration
 }
 
 func (engineTerminal) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return cli.LoadEngineConfigAs(appShell{}, euid, path)
+	return cli.LoadEngineConfigAs(app.Shell{}, euid, path)
 }
 
 // newRecorder is the crash recorder for this process.

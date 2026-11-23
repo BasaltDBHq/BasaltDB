@@ -23,7 +23,7 @@ const (
 )
 
 func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.IO {
-	shell := appShell{}
+	shell := app.Shell{}
 	c := &cli.IO{
 		Ctx: ctx, Stdin: bufio.NewReader(std.In), Stdout: std.Out, Stderr: std.Err,
 		Getenv: getenv, Now: time.Now, Rand: rand.Reader, Goos: runtime.GOOS, Host: app.OSHost{},
@@ -37,7 +37,7 @@ func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.
 		FetchChain: cli.FetchChain,
 		Width:      func() int { return cli.TerminalWidth(std.Out) },
 	}
-	c.Probe = probeLogin(c)
+	c.Probe = app.ProbeLogin(c)
 	stdin := std.In
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		c.Terminal = f

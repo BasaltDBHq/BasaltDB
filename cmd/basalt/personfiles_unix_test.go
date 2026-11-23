@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -43,7 +44,7 @@ func newRootCLIFixture(t *testing.T) rootCLIFixture {
 	writeEngineJSON(t, configPath, cred)
 	h := newFakeHost(t)
 	h.euid = 0
-	return rootCLIFixture{c: &cli.IO{Host: h, Shell: appShell{}, Getenv: func(string) string { return "" }}, configPath: configPath, cred: cred, secret: secret}
+	return rootCLIFixture{c: &cli.IO{Host: h, Shell: app.Shell{}, Getenv: func(string) string { return "" }}, configPath: configPath, cred: cred, secret: secret}
 }
 
 func writeEngineJSON(t *testing.T, path, cred string) {

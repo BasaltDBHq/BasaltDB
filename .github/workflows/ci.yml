@@ -112,6 +112,9 @@ jobs:
       BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/postgres-no-autovacuum
+        with:
+          container: ${{ job.services.postgres.id }}
       # 22 or later: the portal page tests use Node's global WebSocket.
       - uses: actions/setup-node@v7
         with:
@@ -209,6 +212,9 @@ jobs:
       BASALT_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/postgres-no-autovacuum
+        with:
+          container: ${{ job.services.postgres.id }}
       - uses: ./.github/actions/go
       # The hosted image leaves /opt and /usr/local/bin writable by everyone
       # (mode 0777); stock distributions ship both as root's, mode 0755, and

@@ -50,6 +50,9 @@ jobs:
       BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/postgres-no-autovacuum
+        with:
+          container: ${{ job.services.postgres.id }}
       - uses: ./.github/actions/go
       - name: Full-size classify CLI tests
         run: go test -race -count=1 -timeout 30m -run 'TestClassify' ./cmd/basalt/

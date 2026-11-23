@@ -42,24 +42,24 @@ type RevertPreview struct {
 // It changes nothing: the guard runs the revert on trial and undoes it.
 // The scope must be the agent's own (RS-1): another agent's id answers
 // NOT_FOUND before any guard call.
-func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (RevertPreview, error) {
-	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
+func (rc *revertCase) PreviewRevert(ctx context.Context, p PreviewRevertParams) (RevertPreview, error) {
+	if err := rc.checkOwnScope(ctx, p.Scope); err != nil {
 		return RevertPreview{}, err
 	}
 	after, err := cursorHash(p.Cursor)
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	pv, err := s.deps.Revert.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
+	pv, err := rc.deps.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
 	if err != nil {
-		return RevertPreview{}, s.prepareError(ctx, guidance.ToolPreviewRevert, p.Scope, err)
+		return RevertPreview{}, rc.prepareError(ctx, guidance.ToolPreviewRevert, p.Scope, err)
 	}
 	if !pv.CursorFound {
 		return RevertPreview{}, &guidance.ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: guidance.ReasonStaleCursor}
 	}
 	if pv.Lines > 0 && pv.Restore == 0 {
 		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
-		return RevertPreview{}, s.nothingToRevertError(ctx, guidance.ToolPreviewRevert, p.Scope, skipReason(pv), "every row is skipped")
+		return RevertPreview{}, rc.nothingToRevertError(ctx, guidance.ToolPreviewRevert, p.Scope, skipReason(pv), "every row is skipped")
 	}
 	out := RevertPreview{Scope: p.Scope, Rows: pv.Restore, Skipped: pv.Lines - pv.Restore}
 	out.Page.Items = make([]revert.Line, 0, len(pv.Page))
@@ -73,7 +73,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	if pv.More {
 		out.Page.NextCursor = pagination.EncodeNameCursor(pv.Page[len(pv.Page)-1].Hash)
 	}
-	if out.PersonMessage, out.NextSteps, err = s.previewGuidance(out); err != nil {
+	if out.PersonMessage, out.NextSteps, err = rc.previewGuidance(out); err != nil {
 		return RevertPreview{}, err
 	}
 	return out, nil
@@ -121,9 +121,9 @@ type RevertPlan struct {
 // RevertPlan returns a large revert plan this agent prepared, its progress
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
-func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
-	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
-	if guidance.Sentinel(err, s.deps.Revert.ErrNotFound) {
+func (rc *revertCase) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
+	r, err := rc.deps.Store.FindRevert(ctx, p.RevertID)
+	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
 		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (Re
 		return RevertPlan{}, &guidance.ArgumentError{Message: fmt.Sprintf(
 			"revert %s has %d lines: the revert page applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
-	page, err := s.deps.Revert.Store.RevertLines(ctx, p)
+	page, err := rc.deps.Store.RevertLines(ctx, p)
 	if err != nil {
 		return RevertPlan{}, err
 	}
@@ -141,7 +141,7 @@ func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (Re
 	if r.Status == revertPending && !r.Widened {
 		// A widened plan issues no link: the person signs on the page they
 		// widened on (RS-5).
-		n, err := s.revertNotice(ctx, r)
+		n, err := rc.revertNotice(ctx, r)
 		if err != nil {
 			return RevertPlan{}, err
 		}
@@ -161,7 +161,7 @@ func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (Re
 		}
 		out.Page.Items = append(out.Page.Items, line)
 	}
-	if out.PersonMessage, out.NextSteps, err = s.planGuidance(out); err != nil {
+	if out.PersonMessage, out.NextSteps, err = rc.planGuidance(out); err != nil {
 		return RevertPlan{}, err
 	}
 	if r.Widened {
@@ -178,13 +178,13 @@ type ApplyRevertBatchParams struct {
 
 // ApplyRevertBatch applies lines of a signed plan this agent prepared.
 // Postgres checks them against the signed plan and re-checks each row.
-func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
-	res, err := s.deps.Revert.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+func (rc *revertCase) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
+	res, err := rc.deps.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
 	if err != nil {
 		return AppliedBatch{}, err
 	}
 	out := AppliedBatch{BatchResult: res}
-	if out.PersonMessage, out.NextSteps, err = s.batchGuidance(res); err != nil {
+	if out.PersonMessage, out.NextSteps, err = rc.batchGuidance(res); err != nil {
 		return AppliedBatch{}, err
 	}
 	return out, nil
@@ -227,33 +227,33 @@ type RequestedRevert struct {
 	issued   bool
 }
 
-func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
-	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
+func (rc *revertCase) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
+	if err := rc.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
 	}
-	prep, err := s.deps.Revert.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
+	prep, err := rc.deps.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
 	if err != nil {
-		return RequestedRevert{}, s.prepareError(ctx, guidance.ToolRequestRevert, p.Scope, err)
+		return RequestedRevert{}, rc.prepareError(ctx, guidance.ToolRequestRevert, p.Scope, err)
 	}
-	r, err := s.deps.Revert.Store.FindRevert(ctx, prep.RevertID)
+	r, err := rc.deps.Store.FindRevert(ctx, prep.RevertID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	out, err := s.revertWithLink(ctx, r)
+	out, err := rc.revertWithLink(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
 	if out.tooLarge.tooLarge {
-		answer := s.delivery.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
+		answer := rc.delivery.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
 		var te *toolresult.ToolError
 		if errors.As(answer, &te) {
 			// Prepared, with no link any page can open: a notice with none.
 			out.RevertURL = ""
-			s.deliverRevert(NoticeRevertRequested, out)
+			rc.deliverRevert(NoticeRevertRequested, out)
 		}
 		return RequestedRevert{}, answer
 	}
-	s.deliverRevert(NoticeRevertRequested, out)
+	rc.deliverRevert(NoticeRevertRequested, out)
 	return out, nil
 }
 
@@ -262,18 +262,18 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 // link to the person's scope (owner, Q8); otherwise the person's scope the
 // engine still holds is retired (retirePersonScope). It returns the revert
 // as it now stands.
-func (s *Service) prepareReissue(ctx context.Context, r action.Revert) (action.Revert, error) {
+func (rc *revertCase) prepareReissue(ctx context.Context, r action.Revert) (action.Revert, error) {
 	if r.Widened {
-		return s.resetToProposal(ctx, r)
+		return rc.resetToProposal(ctx, r)
 	}
-	return r, s.retirePersonScope(ctx, r)
+	return r, rc.retirePersonScope(ctx, r)
 }
 
 // revertWithLink issues r's link (revoking an earlier one) and returns it
 // with the message that carries it: the REQUESTED steps, the person signs
 // and the agent waits once.
-func (s *Service) revertWithLink(ctx context.Context, r action.Revert) (RequestedRevert, error) {
-	n, err := s.revertNotice(ctx, r)
+func (rc *revertCase) revertWithLink(ctx context.Context, r action.Revert) (RequestedRevert, error) {
+	n, err := rc.revertNotice(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -286,7 +286,7 @@ func (s *Service) revertWithLink(ctx context.Context, r action.Revert) (Requeste
 		}
 		return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, NextSteps: steps, tooLarge: n, headline: n.Headline}, nil
 	}
-	s.notifyRevert(ctx, r, n)
+	rc.notifyRevert(ctx, r, n)
 	return RequestedRevert{
 		Revert: r, RevertURL: n.URL, RequestFile: n.File, PersonMessage: n.Message, Links: n.Links,
 		NextSteps: guidance.WithSendRequest(requestedSteps(r.ID, n.URL, n.short == ""), n.File),
@@ -312,29 +312,29 @@ type AwaitRevertParams struct {
 // Reissue on a PENDING revert it issues a new link and returns at once;
 // otherwise it reads the revert about every s.deps.Delivery.Poll until it is not PENDING
 // or Wait is over. It never signs: the person signs on the revert page.
-func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
-	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
-	if guidance.Sentinel(err, s.deps.Revert.ErrNotFound) {
+func (rc *revertCase) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
+	r, err := rc.deps.Store.FindRevert(ctx, p.RevertID)
+	if guidance.Sentinel(err, rc.deps.ErrNotFound) {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
 		return RequestedRevert{}, err
 	}
 	if p.Reissue && r.Status == revertPending {
-		r, err = s.prepareReissue(ctx, r)
+		r, err = rc.prepareReissue(ctx, r)
 		if err != nil {
 			return RequestedRevert{}, err
 		}
-		out, err := s.revertWithLink(ctx, r)
+		out, err := rc.revertWithLink(ctx, r)
 		if err == nil && out.issued {
-			s.deliverRevert(NoticeLinkReplaced, out)
+			rc.deliverRevert(NoticeLinkReplaced, out)
 		}
 		return out, err
 	}
-	err = s.delivery.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
+	err = rc.delivery.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
-		next, err := s.deps.Revert.Store.FindRevert(budget.With(ctx), r.ID)
+		next, err := rc.deps.Store.FindRevert(budget.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}
@@ -344,17 +344,17 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	return s.revertState(ctx, r)
+	return rc.revertState(ctx, r)
 }
 
 // applyRevertError gives Postgres's refusal of a signature the revert page
 // relayed: expired meanwhile, rows changed since the preview, or a
 // signature that does not verify.
-func (s *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
+func (rc *revertCase) applyRevertError(ctx context.Context, r action.Revert, err error) error {
 	code, ok := guidance.LedgerCode(err)
 	switch {
 	case ok && code == guardmodel.CodeRevertExpired:
-		return s.revertExpired(r)
+		return rc.revertExpired(r)
 	case ok && code == guardmodel.CodeNothingToRevert:
 		return nothingSigned(r)
 	}
@@ -365,20 +365,20 @@ func (s *Service) applyRevertError(ctx context.Context, r action.Revert, err err
 	detail := guidance.StoreDetail(err)
 	switch {
 	case strings.Contains(detail, "rows changed since"):
-		return s.rowsChanged(r, detail)
+		return rc.rowsChanged(r, detail)
 	case strings.Contains(detail, "passkey revoked"):
-		return s.passkeyRevoked(ctx, r)
+		return rc.passkeyRevoked(ctx, r)
 	case strings.Contains(detail, "already"):
 		return alreadySigned(r)
 	}
-	return s.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+detail)
+	return rc.badSignature(ctx, r, "the database refused the signature, nothing was reverted: "+detail)
 }
 
 // revertState is the answer for r without a new link: what happened, for
 // the person, and the agent's next steps. For a widened revert the person
 // is told the agent cannot see what they added (RS-5).
-func (s *Service) revertState(ctx context.Context, r action.Revert) (RequestedRevert, error) {
-	out, err := s.revertStateOf(ctx, r)
+func (rc *revertCase) revertState(ctx context.Context, r action.Revert) (RequestedRevert, error) {
+	out, err := rc.revertStateOf(ctx, r)
 	if err != nil {
 		return out, err
 	}
@@ -390,7 +390,7 @@ func (s *Service) revertState(ctx context.Context, r action.Revert) (RequestedRe
 	}
 	// A signed revert: its receipt, from Postgres's record, the line first
 	// (CONTRACT.md, Vault channel, Receipts).
-	receipt, err := s.revertReceipt(r)
+	receipt, err := rc.revertReceipt(r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -399,7 +399,7 @@ func (s *Service) revertState(ctx context.Context, r action.Revert) (RequestedRe
 	return out, nil
 }
 
-func (s *Service) revertStateOf(ctx context.Context, r action.Revert) (RequestedRevert, error) {
+func (rc *revertCase) revertStateOf(ctx context.Context, r action.Revert) (RequestedRevert, error) {
 	out := RequestedRevert{Revert: r}
 	switch r.Status {
 	case revertApplied:
@@ -416,7 +416,7 @@ func (s *Service) revertStateOf(ctx context.Context, r action.Revert) (Requested
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:
-		return s.waitEnded(ctx, out, guidance.Sentence(revertTitle(r)))
+		return rc.waitEnded(ctx, out, guidance.Sentence(revertTitle(r)))
 	}
 	return out, nil
 }
@@ -425,7 +425,7 @@ func (s *Service) revertStateOf(ctx context.Context, r action.Revert) (Requested
 // short link the agent gave them earlier (the engine keeps only its hash,
 // and a lost one is reissued with reissueLink). Only when the engine serves
 // no pages is there no short link, and the long link is given again.
-func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what string) (RequestedRevert, error) {
+func (rc *revertCase) waitEnded(ctx context.Context, out RequestedRevert, what string) (RequestedRevert, error) {
 	r := out.Revert
 	expires := r.ExpiresAt.UTC().Format(guidance.PersonTime)
 	if r.Widened {
@@ -436,7 +436,7 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		out.NextSteps = widenedWaitSteps(r.ID)
 		return out, nil
 	}
-	link, err := s.restatedRevertLink(ctx, r)
+	link, err := rc.restatedRevertLink(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -445,10 +445,10 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		if err != nil {
 			return RequestedRevert{}, err
 		}
-		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, s.delivery.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
+		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, rc.delivery.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
 		return out, nil
 	}
-	if s.delivery.shortLinked(r.ID) || link.Kind == linkPage {
+	if rc.delivery.shortLinked(r.ID) || link.Kind == linkPage {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
@@ -471,19 +471,19 @@ func applyByText(r action.Revert) string {
 // in (any run with that task id) must be its own. Another agent's id and an
 // unknown one get the same NOT_FOUND; Postgres refuses the same scopes when
 // an agent role calls the guard directly.
-func (s *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
+func (rc *revertCase) checkOwnScope(ctx context.Context, scope action.Scope) error {
 	switch scope.Kind {
 	case revert.ScopeRun:
-		_, err := s.deps.Core.Store.FindRun(ctx, scope.ID)
+		_, err := rc.core.Store.FindRun(ctx, scope.ID)
 		if errors.Is(err, action.ErrRunNotFound) {
 			return notOwnScope(scope)
 		}
 		return err
 	case revert.ScopeChange:
-		own, err := s.deps.Revert.Store.HasChange(ctx, scope.ID)
+		own, err := rc.deps.Store.HasChange(ctx, scope.ID)
 		return ownOr(own, err, notOwnScope(scope))
 	case revert.ScopeTask:
-		own, err := s.deps.Revert.Store.HasTaskRun(ctx, scope.ID)
+		own, err := rc.deps.Store.HasTaskRun(ctx, scope.ID)
 		return ownOr(own, err, notOwnTask(scope))
 	}
 	return &guidance.ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
@@ -577,15 +577,15 @@ func scopeFilterCapped() error {
 // prepareError is the answer to a prepare that failed: what the person
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
-func (s *Service) prepareError(ctx context.Context, tool string, scope action.Scope, err error) error {
+func (rc *revertCase) prepareError(ctx context.Context, tool string, scope action.Scope, err error) error {
 	if refused := scopeRefused(scope, err); refused != nil {
 		return refused
 	}
 	if errors.Is(err, action.ErrEmptyProposal) {
-		return s.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
+		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
 	if code, ok := guidance.LedgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
-		return s.nothingToRevert(ctx, tool, scope, err)
+		return rc.nothingToRevert(ctx, tool, scope, err)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
@@ -594,7 +594,7 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope action.Sc
 	if !guidance.TimedOut(err) {
 		return err
 	}
-	return s.prepareTimeout(tool, scope, guidance.StoreError(err).SQLState)
+	return rc.prepareTimeout(tool, scope, guidance.StoreError(err).SQLState)
 }
 
 // revertLink is what the agent hands the person to sign a prepared revert:
@@ -621,9 +621,9 @@ type revertLink struct {
 // the message to show the person verbatim: the scope, what it restores and
 // skips, why, the expiry, and for a large plan that they sign it once, then
 // the link.
-func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink, error) {
+func (rc *revertCase) revertNotice(ctx context.Context, r action.Revert) (revertLink, error) {
 	req := revertRequestOf(r)
-	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
+	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
 	if err != nil {
 		return revertLink{}, err
 	}
@@ -633,20 +633,20 @@ func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink
 	}
 	var short string
 	if tooLarge {
-		short, err = s.delivery.largeShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, req.Cost)
+		short, err = rc.delivery.largeShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, req.Cost)
 	} else {
-		short, err = s.delivery.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
+		short, err = rc.delivery.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
 	}
 	if err != nil {
 		return revertLink{}, err
 	}
 	if tooLarge && short == "" {
 		return revertLink{
-			URL: s.delivery.pageAddress(links.Revert, r.ID), Headline: bindingHeadline(b, r), tooLarge: true, cost: req.Cost,
-			Message: s.delivery.tooLargeMessage(guidance.Sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
+			URL: rc.delivery.pageAddress(links.Revert, r.ID), Headline: bindingHeadline(b, r), tooLarge: true, cost: req.Cost,
+			Message: rc.delivery.tooLargeMessage(guidance.Sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
 		}, nil
 	}
-	pick, err := chooseLink(short, long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))
+	pick, err := chooseLink(short, long, rc.core.LinkBudget, links.RevertFile(r.ID))
 	if err != nil {
 		return revertLink{}, err
 	}
@@ -694,12 +694,12 @@ func revertHeadline(r action.Revert) (string, error) {
 // notifyRevert tells the person, through the Notifier, that r waits
 // for their signature (LP-2). A failed notice is logged; it never fails the
 // call.
-func (s *Service) notifyRevert(ctx context.Context, r action.Revert, n revertLink) {
-	sent := RevertNotice{RevertID: r.ID, Agent: s.deps.Core.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
+func (rc *revertCase) notifyRevert(ctx context.Context, r action.Revert, n revertLink) {
+	sent := RevertNotice{RevertID: r.ID, Agent: rc.core.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
 	if !r.Widened {
 		sent.Intent, sent.RevertURL, sent.ShortURL = r.Intent, n.long, n.short
 	}
-	if err := s.deps.Delivery.Notifier.NotifyRevert(context.WithoutCancel(ctx), sent); err != nil {
-		s.deps.Core.Log.Error("notify revert", "revertId", r.ID, "err", err)
+	if err := rc.delivery.notifyRevertTo(context.WithoutCancel(ctx), sent); err != nil {
+		rc.core.Log.Error("notify revert", "revertId", r.ID, "err", err)
 	}
 }

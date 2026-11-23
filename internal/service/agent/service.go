@@ -280,15 +280,14 @@ type Service struct {
 	// lockTrouble is a lock file the engine could not open while finishing
 	// a setup (problem LOCK_FILE_UNUSABLE).
 	lockTrouble lockTrouble
-	// rescopes are the reverts the person rescoped through this engine,
-	// in memory only (CONTRACT.md, Rescope, widen and reject).
-	rescopes *rescopes
 	// describe is the describe use case.
 	describe *describeCase
 	// delivery is how held actions reach the person.
 	delivery *deliveryCase
 	// approval is the held writes use case.
 	approval *approvalCase
+	// revert is the revert use case.
+	revert *revertCase
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -344,7 +343,7 @@ func NewService(d Deps) *Service {
 	if d.Delivery.Poll <= 0 {
 		d.Delivery.Poll = DefaultPoll
 	}
-	s := &Service{deps: d, setup: d.Status.Setup, rescopes: newRescopes()}
+	s := &Service{deps: d, setup: d.Status.Setup}
 	s.wire()
 	return s
 }
@@ -353,8 +352,10 @@ func NewService(d Deps) *Service {
 // reference to its own group of s.deps and to the shared core group.
 func (s *Service) wire() {
 	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.updateInfo)
-	s.delivery = newDeliveryCase(&s.deps.Core, &s.deps.Delivery, liveApprovals{&s.deps.Approval}, s.Failure)
-	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, serviceReverts{s}, liveWrites{&s.deps.Write}, s)
+	s.delivery = newDeliveryCase(&s.deps.Core, &s.deps.Delivery, s.Failure)
+	s.revert = newRevertCase(&s.deps.Core, &s.deps.Revert, s.delivery, s.describe, s)
+	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, s.revert, liveWrites{&s.deps.Write}, s)
+	s.delivery.approvals = s.approval
 }
 
 // missing names the required ports d lacks.

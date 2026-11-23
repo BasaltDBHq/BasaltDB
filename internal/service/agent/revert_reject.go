@@ -39,30 +39,30 @@ type RejectResponse struct {
 // it holds for this link; Postgres refuses the reject without it. On
 // success the link is revoked: inside a Vault session once the answer went
 // out, since revoking it ends the session.
-func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string, in RejectRequest) (RejectResponse, error) {
+func (rc *revertCase) RejectRevert(ctx context.Context, id uuid.UUID, secret string, in RejectRequest) (RejectResponse, error) {
 	note, err := rejectNote(in.Note)
 	if err != nil {
 		return RejectResponse{}, err
 	}
-	release, err := s.rescopes.lock(ctx, id)
+	release, err := rc.rescopes.lock(ctx, id)
 	if err != nil {
 		return RejectResponse{}, err
 	}
 	defer release()
-	r, err := s.openRevert(ctx, id)
+	r, err := rc.openRevert(ctx, id)
 	if err != nil {
 		return RejectResponse{}, err
 	}
-	st, _, err := s.heldState(r, secret)
+	st, _, err := rc.heldState(r, secret)
 	if err != nil {
 		return RejectResponse{}, err
 	}
-	out, err := s.deps.Revert.Store.RejectRevert(ctx, id, note, st.token)
+	out, err := rc.deps.Store.RejectRevert(ctx, id, note, st.token)
 	if err != nil {
-		return RejectResponse{}, s.rejectError(r, st.token != nil, err)
+		return RejectResponse{}, rc.rejectError(r, st.token != nil, err)
 	}
-	s.rescopes.drop(id)
-	s.revokeRejected(ctx, id)
+	rc.rescopes.drop(id)
+	rc.revokeRejected(ctx, id)
 	return RejectResponse{RevertID: out.RevertID.String(), Status: out.Status, RejectedAt: guidance.TimeText(out.RejectedAt)}, nil
 }
 
@@ -100,13 +100,13 @@ func refusedInNote(r rune) bool {
 
 // revokeRejected revokes a rejected revert's link. A failure leaves a link
 // to a revert Postgres refuses everything for: it is logged.
-func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
+func (rc *revertCase) revokeRejected(ctx context.Context, id uuid.UUID) {
 	revoke := func() {
-		if err := s.deps.Delivery.Links.RevokeItem(id); err != nil {
-			s.deps.Core.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
+		if err := rc.delivery.linkRevoke(id); err != nil {
+			rc.core.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
 		}
 	}
-	if s.deps.Revert.AfterAnswer(ctx, revoke) {
+	if rc.deps.AfterAnswer(ctx, revoke) {
 		return
 	}
 	revoke()
@@ -118,18 +118,18 @@ func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 // reject without a token is one fixed answer. A revert Postgres no longer
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
-func (s *Service) rejectError(r action.Revert, heldToken bool, err error) error {
+func (rc *revertCase) rejectError(r action.Revert, heldToken bool, err error) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused && heldToken:
-		return s.personScopeGone(r)
+		return rc.personScopeGone(r)
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused:
 		return rejectRefused()
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:
-		return s.revertExpired(r)
+		return rc.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,

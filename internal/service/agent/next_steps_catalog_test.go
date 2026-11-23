@@ -166,7 +166,7 @@ func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) f
 	return func(t *testing.T, s *Service) error {
 		setReverts(&s.deps, catalogReverts{lines: lines, by: by})
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return s.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
+		return s.revert.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
 	}
 }
 
@@ -203,7 +203,7 @@ func catalogCases() map[string]catalogCase {
 	revertArgs := map[string]any{"revertId": caseRevertID}
 	timeoutRevert := func(tool string) func(*testing.T, *Service) error {
 		return func(t *testing.T, s *Service) error {
-			return s.prepareTimeout(tool, action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
+			return s.revert.prepareTimeout(tool, action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
 		}
 	}
 	cases := map[string]catalogCase{
@@ -308,17 +308,17 @@ func catalogCases() map[string]catalogCase {
 			guardRevert("no such revert"),
 		},
 		caseKey("REVERT_INVALID", "ROWS_CHANGED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.rowsChanged(caseRevert(false), "rows changed")
+			return s.revert.rowsChanged(caseRevert(false), "rows changed")
 		}},
 		caseKey("REVERT_INVALID", "BAD_SIGNATURE", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.badSignatureWith(guidance.OpenLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
+			return s.revert.badSignatureWith(guidance.OpenLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
 		}},
 		caseKey("REVERT_INVALID", "PASSKEY_REVOKED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.passkeyRevokedWith(guidance.OpenLink(caseShortLink, signRevokedText), caseRevert(false))
+			return s.revert.passkeyRevokedWith(guidance.OpenLink(caseShortLink, signRevokedText), caseRevert(false))
 		}},
 
-		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(false)) }},
-		caseKey("REVERT_EXPIRED", "NOT_FINISHED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(true)) }},
+		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revert.revertExpired(caseRevert(false)) }},
+		caseKey("REVERT_EXPIRED", "NOT_FINISHED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revert.revertExpired(caseRevert(true)) }},
 
 		caseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {
 			"request_revert",

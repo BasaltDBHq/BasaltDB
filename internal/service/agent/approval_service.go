@@ -55,18 +55,6 @@ type admitter interface {
 	Admit(ctx context.Context) error
 }
 
-// serviceReverts is the revert side the approval use case reads, read live
-// from the service.
-type serviceReverts struct{ s *Service }
-
-func (r serviceReverts) ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error) {
-	return r.s.deps.Revert.Store.ListOpenReverts(ctx, p)
-}
-
-func (r serviceReverts) pendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
-	return r.s.pendingRevert(ctx, p, reissue)
-}
-
 // liveWrites is the write store's statement check, read live from the service.
 type liveWrites struct{ d *WriteDeps }
 
@@ -98,4 +86,20 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 // RevealApproval reveals the rows of a held write to the page holding secret.
 func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
 	return s.approval.RevealApproval(ctx, id, secret, in)
+}
+
+// The reads the delivery use case makes of the approval group (approvalReads).
+
+func (ac *approvalCase) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
+	return ac.deps.Store.Passkeys(ctx)
+}
+
+func (ac *approvalCase) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
+	return ac.deps.Store.FindApproval(ctx, id)
+}
+
+func (ac *approvalCase) hasColumns() bool { return ac.deps.Columns != nil }
+
+func (ac *approvalCase) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
+	return ac.deps.Columns.ColumnOrder(ctx, tables)
 }

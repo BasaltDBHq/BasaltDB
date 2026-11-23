@@ -360,11 +360,11 @@ var quotedKeywords = func() map[string]bool {
 	return m
 }()
 
-// describeError keeps a describe failure within the codes describe declares
+// DescribeError keeps a describe failure within the codes describe declares
 // (INVALID_ARGUMENT, NOT_FOUND, QUERY_TIMEOUT, UNAVAILABLE, INTERNAL): any
 // other, such as a Postgres error reading the catalog, is the engine's
 // failure, INTERNAL, logged with its cause and never shown to the agent.
-func (ds *describeCase) describeError(err error) error {
+func (ds *describeCase) DescribeError(err error) error {
 	switch ds.core.Errors.ToolError(err).Code {
 	case guidance.CodeInvalidArgument, guidance.CodeNotFound, guidance.CodeQueryTimeout, guidance.CodeUnavailable, guidance.CodeInternal:
 		return err

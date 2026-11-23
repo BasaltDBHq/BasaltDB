@@ -10,12 +10,6 @@ import (
 
 // --- describe ---
 
-const (
-	toolDescribe = "describe"
-	argQuery     = "query"
-	argResource  = "resource"
-)
-
 // describeArgs is the describe tool's input (api/mcp/tools/describe.json):
 // the search form's paging embeds pagination.Params, as every list does.
 // query and resource are pointers so an empty one is refused, not taken for
@@ -63,7 +57,7 @@ type describeResourceResult struct {
 func (h handlers) describe(ctx context.Context, raw json.RawMessage) (any, error) {
 	out, err := h.describeForm(ctx, raw)
 	if err != nil {
-		return nil, h.svc.describe.describeError(err)
+		return nil, h.svc.describe.DescribeError(err)
 	}
 	return out, nil
 }
@@ -84,7 +78,7 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 		if err != nil {
 			return nil, err
 		}
-		return describeSearchResult{Form: formSearch, Items: page.Items, NextCursor: page.NextCursor}, nil
+		return describeSearchResult{Form: FormSearch, Items: page.Items, NextCursor: page.NextCursor}, nil
 	case args.Resource != nil:
 		ifFingerprint := ""
 		if args.IfFingerprint != nil {
@@ -94,18 +88,18 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 		if err != nil {
 			return nil, err
 		}
-		return describeResourceResult{Form: formResource, Resource: res}, nil
+		return describeResourceResult{Form: FormResource, Resource: res}, nil
 	}
 	o, err := h.svc.DescribeOverview(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return describeOverviewResult{Form: formOverview, Overview: o}, nil
+	return describeOverviewResult{Form: FormOverview, Overview: o}, nil
 }
 
 // describeTools are the tools that describe the database.
 func (h handlers) describeTools() []guidance.Tool {
 	return []guidance.Tool{
-		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
+		contractTool(guidance.ToolDescribe, h.wrap(guidance.ToolDescribe, h.describe)),
 	}
 }

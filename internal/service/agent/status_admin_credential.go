@@ -193,7 +193,7 @@ func adminCredentialError() error {
 func adminCredentialToolError(tool string) *toolresult.ToolError {
 	te := &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
 	b := guidance.NewSteps()
-	invalidArgumentSteps(b, te, failure{tool: tool})
+	invalidArgumentSteps(b, te, guidance.Failure{Tool: tool})
 	te.NextSteps, _ = b.Build() // fixed steps: they cannot fail
 	return te
 }

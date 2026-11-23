@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,14 +11,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
-
-func linkIO(tty bool) (*cliIO, *bytes.Buffer) {
-	var out bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: io.Discard},
-		func(string) string { return "" })
-	c.tty = func(io.Writer) bool { return tty }
-	return c, &out
-}
 
 // badBases are bases with a control byte after the 21-byte
 // "http://localhost:8787": ESC, BEL, newline, DEL and U+009B (CSI).
@@ -42,50 +31,6 @@ func requirePrintable(t *testing.T, name, msg string) {
 	}
 }
 
-func TestPrintLinkHyperlinkOnlyOnATerminal(t *testing.T) {
-	t.Parallel()
-	const link = "http://localhost:8787/approvals/0190a3f2-7c1e-7000-8000-000000000001#1.abc"
-	c, out := linkIO(true)
-	require.NoError(t, printLink(c, out, link, linkRef{}))
-	require.Equal(t, "\x1b]8;;"+link+"\x1b\\"+link+"\x1b]8;;\x1b\\\n", out.String())
-
-	c, out = linkIO(false)
-	require.NoError(t, printLink(c, out, link, linkRef{}))
-	require.Equal(t, link+"\n", out.String(), "a pipe gets the plain URL")
-}
-
-func TestIsTerminalNeedsATerminalFile(t *testing.T) {
-	t.Parallel()
-	c, out := linkIO(false)
-	c.tty = nil
-	require.False(t, c.isTerminal(out), "a buffer is not a terminal")
-	f, err := os.Open(os.DevNull)
-	require.NoError(t, err)
-	defer f.Close()
-	require.False(t, c.isTerminal(f), "a device that is not a tty")
-}
-
-func TestPrintLinkRefusesABadURLWithoutWritingIt(t *testing.T) {
-	t.Parallel()
-	for name, base := range badBases {
-		c, out := linkIO(true)
-		err := printLink(c, out, base+"/approvals/x", linkRef{setting: "pagesUrl", item: "approval 0190", again: "ask the agent for a new link"})
-		require.Error(t, err, name)
-		require.Empty(t, out.String(), name+": nothing of the URL or a control byte is written")
-		msg := err.Error()
-		require.Contains(t, msg, "pagesUrl", name)
-		require.Contains(t, msg, "approval 0190", name)
-		require.Contains(t, msg, firstBadPosition, name)
-		require.Contains(t, msg, "ask the agent for a new link", name)
-		requirePrintable(t, name, msg)
-
-		var errOut bytes.Buffer
-		c.stderr = &errOut
-		require.Equal(t, exitError, c.fail(err), name)
-		requirePrintable(t, name, strings.TrimSuffix(errOut.String(), "\n"))
-	}
-}
-
 func TestConfigLoadRefusesABadPagesURL(t *testing.T) {
 	t.Parallel()
 	for name, base := range badBases {
@@ -101,9 +46,4 @@ func TestConfigLoadRefusesABadPagesURL(t *testing.T) {
 		require.Contains(t, err.Error(), firstBadPosition, name)
 		requirePrintable(t, name, strings.ReplaceAll(err.Error(), path, ""))
 	}
-}
-
-func TestPrintableLabel(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "a?b?c?d?", printableLabel("a\x1bb\nc\u009bd\x07"))
 }

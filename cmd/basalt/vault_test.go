@@ -8,18 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 func TestVaultModeFlag(t *testing.T) {
@@ -164,75 +158,4 @@ func TestConfigUpsertKeepsTheVaultWithoutAChoice(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, config.VaultOff, c.Vault)
 	require.Error(t, config.UpsertAgent(path, config.Settings{Vault: "on"}, bot), "engine.json holds ON or OFF")
-}
-
-// engineKeys makes the engine's key file in a new state directory, as the
-// engine does on its first start, and returns the directory and the keys.
-func engineKeys(t *testing.T) (string, *channel.EngineKeys) {
-	t.Helper()
-	stateDir := filepath.Join(t.TempDir(), "state")
-	require.NoError(t, os.MkdirAll(stateDir, 0o700))
-	keys, err := keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), time.Now)
-	require.NoError(t, err)
-	return stateDir, keys
-}
-
-func TestLocalVault(t *testing.T) {
-	t.Parallel()
-	portalOn := config.Config{Vault: config.VaultOn, PagesURL: links.Portal}
-
-	t.Run("no key file yet", func(t *testing.T) {
-		t.Parallel()
-		report, id := localVault(portalOn, filepath.Join(t.TempDir(), "state"))
-		require.Nil(t, report)
-		require.Nil(t, id)
-	})
-	t.Run("off", func(t *testing.T) {
-		t.Parallel()
-		stateDir, keys := engineKeys(t)
-		for _, cfg := range []config.Config{{}, {Vault: config.VaultOff, PagesURL: links.Portal}, {Vault: config.VaultOn, PagesURL: links.DefaultLocal}} {
-			report, id := localVault(cfg, stateDir)
-			require.Equal(t, &agent.VaultStatus{State: string(vault.StateOff), EngineID: keys.EngineID(), Fingerprint: keys.Fingerprint()}, report)
-			require.Nil(t, id)
-		}
-	})
-	t.Run("on: the state is the engine's", func(t *testing.T) {
-		t.Parallel()
-		stateDir, keys := engineKeys(t)
-		report, id := localVault(portalOn, stateDir)
-		require.Nil(t, report, "only the running engine knows the connection")
-		require.Equal(t, &agent.VaultStatus{EngineID: keys.EngineID(), Fingerprint: keys.Fingerprint()}, id)
-	})
-	t.Run("a symlinked key file is a key error", func(t *testing.T) {
-		t.Parallel()
-		stateDir, _ := engineKeys(t)
-		path := filepath.Join(stateDir, channel.KeyFileName)
-		target := filepath.Join(t.TempDir(), "elsewhere.json")
-		require.NoError(t, os.Rename(path, target))
-		require.NoError(t, os.Symlink(target, path))
-		require.Equal(t, me(t), fileOwner(path), "the link's own owner, not its target's")
-		report, id := localVault(portalOn, stateDir)
-		require.Equal(t, &agent.VaultStatus{State: string(vault.StateKeyError)}, report, "the engine refuses a link too")
-		require.Nil(t, id)
-		fi, err := os.Lstat(path)
-		require.NoError(t, err)
-		require.NotZero(t, fi.Mode()&os.ModeSymlink, "status leaves it as it is")
-	})
-	t.Run("key error", func(t *testing.T) {
-		t.Parallel()
-		stateDir, _ := engineKeys(t)
-		path := filepath.Join(stateDir, channel.KeyFileName)
-		require.NoError(t, os.Chmod(path, 0o644))
-		before, err := os.ReadFile(path)
-		require.NoError(t, err)
-		report, id := localVault(portalOn, stateDir)
-		require.Equal(t, &agent.VaultStatus{State: string(vault.StateKeyError)}, report, "no engine id without the key file")
-		require.Nil(t, id)
-		after, err := os.ReadFile(path)
-		require.NoError(t, err)
-		require.Equal(t, before, after, "status never touches the key file")
-		fi, err := os.Stat(path)
-		require.NoError(t, err)
-		require.Equal(t, os.FileMode(0o644), fi.Mode().Perm())
-	})
 }

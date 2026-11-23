@@ -40,14 +40,9 @@ type cliIO struct {
 	rand io.Reader
 	// terminal is the stdin file when it is a terminal, for hidden input.
 	terminal *os.File
-	// rawRead reads a pasted line from terminal with canonical mode off
-	// (nil: readTerminalLine); tests replace it.
-	rawRead rawLineReader
 	// interactive is true when a person answers at a terminal: init asks
 	// its setup questions only then.
 	interactive bool
-	// tty overrides the terminal check of printLink; tests set it.
-	tty func(io.Writer) bool
 	// width is the terminal's width in columns, 0 when stdout is no
 	// terminal; tests set it.
 	width func() int
@@ -162,15 +157,6 @@ func parse(fs *flag.FlagSet, args []string) error {
 		return fmt.Errorf("%w: unexpected argument %q", errUsage, fs.Arg(0))
 	}
 	return nil
-}
-
-// line reads one line from stdin without the newline.
-func (c *cliIO) line() (string, error) {
-	s, err := c.stdin.ReadString('\n')
-	if err != nil && (!errors.Is(err, io.EOF) || s == "") {
-		return "", err
-	}
-	return strings.TrimSpace(s), nil
 }
 
 // connect opens one connection, usable through a transaction pooler

@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"net"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
@@ -17,40 +14,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// defaultPGPort is Postgres's port when a connection string names none.
-const defaultPGPort = 5432
-
 // fetchChain reads the chain host:port presents with the TLS handshake
 // alone (trustpin.Fetch); cliIO.fetchChain outside tests.
 func fetchChain(ctx context.Context, host string, port int) ([]*x509.Certificate, error) {
 	return trustpin.Fetch(ctx, nil, host, port)
-}
-
-// pinTarget is the host and port a pin is for.
-type pinTarget struct {
-	host string
-	port int
-}
-
-// targetOf is the first host and port of a postgres:// URL, or false for a
-// Unix socket or a string without a host.
-func targetOf(dsn string) (pinTarget, bool) {
-	u, err := url.Parse(dsn)
-	if err != nil || u.Hostname() == "" || strings.HasPrefix(u.Query().Get(paramHost), "/") {
-		return pinTarget{}, false
-	}
-	host := strings.Split(u.Host, ",")[0]
-	h, p, err := net.SplitHostPort(host)
-	if err != nil {
-		h, p = strings.Trim(host, "[]"), ""
-	}
-	port := defaultPGPort
-	if p != "" {
-		if port, err = strconv.Atoi(p); err != nil {
-			return pinTarget{}, false
-		}
-	}
-	return pinTarget{host: trustprofile.NormalizeHost(h), port: port}, true
 }
 
 // codeTrustRootChanged starts the error of a connection to a pinned host

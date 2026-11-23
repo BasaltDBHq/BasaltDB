@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 )
 
 // envAgentContext is Basalt's own agent marker: set it to any non-empty
@@ -24,17 +23,6 @@ var agentMarkers = []string{
 	"GEMINI_CLI",                     // Gemini CLI
 	"CURSOR_AGENT",                   // Cursor's agent
 	"OPENCODE",                       // OpenCode
-}
-
-// agentMarker is the first agent marker set in the environment, or "" when
-// none is: then basalt runs as for a person.
-func (c *cliIO) agentMarker() string {
-	for _, k := range agentMarkers {
-		if strings.TrimSpace(c.getenv(k)) != "" {
-			return k
-		}
-	}
-	return ""
 }
 
 // remoteAdminEnvSet is basalt init --remote's warning when

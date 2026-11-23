@@ -35,7 +35,9 @@ func (g olderGuard) startEngine(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- app.Run(ctx, cfg, g.configPath, slog.New(slog.DiscardHandler)) }()
+	go func() {
+		done <- app.RunWith(ctx, cfg, g.configPath, slog.New(slog.DiscardHandler), app.RestartOptions{})
+	}()
 	t.Cleanup(func() {
 		cancel()
 		require.NoError(t, <-done)

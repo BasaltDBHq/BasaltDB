@@ -186,12 +186,6 @@ func LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineK
 	return keyfile.LoadOrCreateKeys(path, now)
 }
 
-// ReadEngineKeys is keyfile.LoadKeys, for the CLI: it reads and checks an
-// existing key file and never writes.
-func ReadEngineKeys(path string) (*channel.EngineKeys, error) {
-	return keyfile.LoadKeys(path)
-}
-
 // VaultStatus is status.vault for every agent's status tool: OFF (with the
 // engine id when the keys load), KEY_ERROR, or the socket's state.
 func (v engineVault) VaultStatus() agent.VaultStatus {

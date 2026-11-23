@@ -18,7 +18,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -134,12 +133,6 @@ const UpdateDevVersion = updatecheck.DevVersion
 
 func UpdateCacheDir(override string) (string, error) { return updatecheck.CacheDir(override) }
 func UpdateDisabled(getenv func(string) string) bool { return updatecheck.Disabled(getenv) }
-
-// The Vault states a local status line reports.
-const (
-	VaultStateKeyError = string(vault.StateKeyError)
-	VaultStateOff      = string(vault.StateOff)
-)
 
 // DemoAgent is the sample database's agent name.
 const DemoAgent = demo.Agent

@@ -287,12 +287,6 @@ func UpdateConfig(path string, ch Change) error {
 	return updateWith(pathFile(path), ch)
 }
 
-// UpdateConfigAt is UpdateConfig for a root process on the config file name
-// in d (see UpsertAgentVaultAt).
-func UpdateConfigAt(d Dir, name string, check func(*os.File) error, owner int, ch Change) error {
-	return updateWith(dirFile{d: d, name: name, check: check, owner: owner}, ch)
-}
-
 func updateWith(f configFile, ch Change) error {
 	unlock, err := f.lock()
 	if err != nil {

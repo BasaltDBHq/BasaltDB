@@ -1,7 +1,7 @@
 package setupstore_test
 
 import (
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 

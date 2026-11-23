@@ -209,7 +209,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		d.Status.OperatedBy, d.Status.SameUser = mcpcontract.OperatedByAgent, true
 		d.Plugin.Requests, d.Plugin.Approvals = p, pg.store
 	})
-	server := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)
+	server := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, AgentTools(svc)...)
 	files, executables := portalSource("1.0.0")
 	install := func() (map[string]any, bool) {
 		t.Helper()

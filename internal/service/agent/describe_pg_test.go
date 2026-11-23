@@ -97,7 +97,7 @@ func describeDBWithUpdate(t *testing.T, update func() *status.ReleaseNotice) des
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 		d.Status.Update = update
 	})).Svc
-	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, db: d, role: a.Role}
+	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, db: d, role: a.Role}
 }
 
 // classifyDescribe classes every readable column PUBLIC and card_token
@@ -336,7 +336,7 @@ func TestDescribeSearchScale(t *testing.T) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 	})).Svc
-	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
+	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
 	measure := func(name string, args map[string]any) {
@@ -383,7 +383,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
 	})).Svc
-	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
+	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
 	start := time.Now()

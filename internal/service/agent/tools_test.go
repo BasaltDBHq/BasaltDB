@@ -67,42 +67,25 @@ func deps() Deps {
 	return d
 }
 
-// TestServedToolsMatchTheContracts is the contract test for the served tool
-// list (CONTRACT.md): every served tool has a contract, every IMPLEMENTED
-// contract is served, and each tool lists its contract's schema.
-func TestServedToolsMatchTheContracts(t *testing.T) {
-	t.Parallel()
-	contracts := mcpcontract.MustLoad()
-	tools := Tools(NewService(deps()))
-	served := make([]string, 0, len(tools))
-	for _, tool := range tools {
-		served = append(served, tool.Name)
-		c, ok := mcpcontract.Find(contracts, tool.Name)
-		require.True(t, ok)
-		require.Equal(t, c.InputSchema, tool.InputSchema, tool.Name)
-		require.Equal(t, c.Description, tool.Description, tool.Name)
+// servedTools are s's tools as the engine lists them (app's agentTools,
+// whose tests pin the list and its order): each group's tools under their
+// contracts, around s.Wrap.
+func servedTools(s *Service) []guidance.Tool {
+	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
+		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
+		if !ok {
+			panic("no contract for tool " + name)
+		}
+		return guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: s.Wrap(name, call)}
 	}
-	require.NoError(t, mcpcontract.CheckServed(contracts, served))
-}
-
-// TestServedToolListOrder pins the order of the tool list: it is what an agent
-// reads in tools/list, so the per-domain lists must join in this order.
-func TestServedToolListOrder(t *testing.T) {
-	t.Parallel()
-	d := deps()
-	tools := Tools(NewService(d))
-	names := make([]string, 0, len(tools))
-	for _, tool := range tools {
-		names = append(names, tool.Name)
+	tools := RunStartTools(s, mount)
+	for _, list := range [][]guidance.Tool{
+		WriteTools(s, mount), RunTools(s, mount), ApprovalTools(s, mount), RevertTools(s, mount),
+		PluginTools(s, mount), DescribeTools(s, mount), StatusTools(s, mount),
+	} {
+		tools = append(tools, list...)
 	}
-	want := []string{
-		"run_start", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
-		"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
-	}
-	if speaksSQL(d.Core.Store.Kind()) {
-		want = append([]string{"run_start", "query", "write"}, want[1:]...)
-	}
-	require.Equal(t, want, names)
+	return tools
 }
 
 // TestHeldWriteDescriptionsWaitOnce: after handing over a link (write's
@@ -247,7 +230,6 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 		require.PanicsWithValue(t, "agent: required dependencies missing: "+name, func() { NewService(d) }, name)
 	}
 	require.NotPanics(t, func() { NewService(deps()) })
-	require.Panics(t, func() { Tools(nil) })
 }
 
 // An INTERNAL or UNAVAILABLE error carries a UUIDv7 errorId that the engine

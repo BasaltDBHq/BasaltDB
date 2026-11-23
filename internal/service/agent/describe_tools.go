@@ -99,9 +99,10 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 	return describeOverviewResult{Form: agentsvc.FormOverview, Overview: o}, nil
 }
 
-// describeTools are the tools that describe the database.
-func (h handlers) describeTools() []guidance.Tool {
+// DescribeTools are the tools that describe the database.
+func DescribeTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+	h := handlers{svc: svc}
 	return []guidance.Tool{
-		contractTool(guidance.ToolDescribe, h.wrap(guidance.ToolDescribe, h.describe)),
+		mount(guidance.ToolDescribe, h.describe),
 	}
 }

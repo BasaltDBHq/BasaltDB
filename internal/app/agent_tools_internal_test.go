@@ -1,0 +1,58 @@
+package app
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+)
+
+// postgresStore is a store of kind POSTGRES whose other methods these tests
+// never call.
+type postgresStore struct{ agent.SQLStore }
+
+func (postgresStore) Kind() action.StoreKind { return action.StorePostgres }
+
+// TestServedToolsMatchTheContracts is the contract test for the served tool
+// list (CONTRACT.md): every served tool has a contract, every IMPLEMENTED
+// contract is served, and each tool lists its contract's schema.
+func TestServedToolsMatchTheContracts(t *testing.T) {
+	t.Parallel()
+	contracts := mcpcontract.MustLoad()
+	tools := agentTools(agent.NewService(testAgentDeps("bot", postgresStore{})))
+	served := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		served = append(served, tool.Name)
+		c, ok := mcpcontract.Find(contracts, tool.Name)
+		require.True(t, ok)
+		require.Equal(t, c.InputSchema, tool.InputSchema, tool.Name)
+		require.Equal(t, c.Description, tool.Description, tool.Name)
+	}
+	require.NoError(t, mcpcontract.CheckServed(contracts, served))
+}
+
+// TestServedToolListOrder pins the order of the tool list: it is what an agent
+// reads in tools/list, so the per-domain lists must join in this order.
+func TestServedToolListOrder(t *testing.T) {
+	t.Parallel()
+	tools := agentTools(agent.NewService(testAgentDeps("bot", postgresStore{})))
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	want := []string{
+		"run_start", "query", "write", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
+		"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
+	}
+	require.Equal(t, want, names)
+}
+
+// TestAgentToolsNeedAService: the tool list of no service is a wiring
+// defect.
+func TestAgentToolsNeedAService(t *testing.T) {
+	t.Parallel()
+	require.Panics(t, func() { agentTools(nil) })
+}

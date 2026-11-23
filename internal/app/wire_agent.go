@@ -106,7 +106,7 @@ func agentUpdateMessage(n status.ReleaseNotice, exe string) string {
 
 // AgentTools are the tools of svc as the MCP server serves them.
 func AgentTools(svc *agent.Service) []mcpserver.Tool {
-	return mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)
+	return mcpserver.ToolsFrom(agentTools(svc), agent.WithMeta)
 }
 
 // EngineDownServer is what basalt mcp answers with itself while the engine

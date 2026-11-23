@@ -1,4 +1,4 @@
-package agent
+package statusmcp
 
 import (
 	"context"
@@ -7,8 +7,9 @@ import (
 	"runtime"
 	"time"
 
-	enginesvc "github.com/basaltdbhq/basaltdb/internal/engine"
-	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+	engine "github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -43,7 +44,7 @@ type EngineDown struct {
 	ConfigPath string
 	// Host is what the status of an engine that is down reads from the
 	// host.
-	Host statussvc.EngineHost
+	Host status.EngineHost
 }
 
 func (d EngineDown) startFailure() string {
@@ -66,14 +67,14 @@ func (d EngineDown) gaveUpMessage() string {
 	if _, holding := d.Host.StartHoldOffUntil(stop, d.ConfigPath, d.Now()); !holding {
 		return ""
 	}
-	return statussvc.EngineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
+	return status.EngineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
 }
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
 // answering as above.
 func (d EngineDown) Tools() []guidance.Tool {
 	if d.Log == nil || d.Now == nil {
-		panic("agent: engine-down tools need a logger and a clock")
+		panic("statusmcp: engine-down tools need a logger and a clock")
 	}
 	contracts := mcpcontract.MustLoad()
 	out := make([]guidance.Tool, 0, len(contracts))
@@ -85,7 +86,7 @@ func (d EngineDown) Tools() []guidance.Tool {
 		if c.Name == guidance.ToolStatus {
 			call = d.status
 		}
-		out = append(out, guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
+		out = append(out, guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: agent.RefuseAdminCredential(c.Name, call)})
 	}
 	return out
 }
@@ -95,7 +96,7 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
-	return statussvc.EngineDownStatusAfterStart(d.Host, d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
+	return status.EngineDownStatusAfterStart(d.Host, d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
 }
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {
@@ -137,7 +138,7 @@ func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.T
 // when the error cannot be built; the caller then answers with
 // engine.AbandonedMessage alone.
 func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
-	te, err := d.unreachableError(tool, "", enginesvc.AbandonedMessage)
+	te, err := d.unreachableError(tool, "", engine.AbandonedMessage)
 	if err == nil {
 		return te
 	}

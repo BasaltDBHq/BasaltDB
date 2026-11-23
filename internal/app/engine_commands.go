@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
@@ -124,7 +125,7 @@ func engineDownServer(name, configPath string, log *slog.Logger) (EngineDownServ
 // engineDown is what basalt mcp answers with while the engine is down, with
 // the config it could read, as the agent's own user (the shim never runs as
 // root).
-func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
+func engineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error) {
 	var cfg *config.Config
 	c, cfgErr := config.Load(configPath)
 	if cfgErr == nil {
@@ -132,9 +133,9 @@ func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, er
 	}
 	cmds, err := shimCommands(name, configPath, cfg)
 	if err != nil {
-		return agent.EngineDown{}, err
+		return statusmcp.EngineDown{}, err
 	}
-	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: AgentEngineHost()}, nil
+	return statusmcp.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: AgentEngineHost()}, nil
 }
 
 func shimCommands(name, configPath string, cfg *config.Config) (guidance.Commands, error) {

@@ -13,7 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
@@ -41,7 +41,7 @@ func (engineCLIHost) RunServiceAt(ctx context.Context, args []string, io cli.Std
 
 func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
 
-func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
+func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error) {
 	return engineDown(name, configPath, log)
 }
 
@@ -49,7 +49,7 @@ func (engineCLIHost) EngineStarter(configPath, socket string, cfg *config.Config
 	return EngineStarter(engineHost{}, shim.DefaultStartWait, configPath, socket, cfg, euid, exe, log)
 }
 
-func (engineCLIHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
+func (engineCLIHost) NewEngineDownServer(down statusmcp.EngineDown) shim.Fallback {
 	return NewEngineDownServer(down)
 }
 

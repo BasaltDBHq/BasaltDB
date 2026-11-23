@@ -189,8 +189,8 @@ func adminCredentialToolError(tool string) *toolresult.ToolError {
 	return te
 }
 
-// refuseAdminCredential runs call, after refusing a call that holds one.
-func refuseAdminCredential(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
+// RefuseAdminCredential runs call, after refusing a call that holds one.
+func RefuseAdminCredential(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
 	return func(ctx context.Context, raw json.RawMessage) (any, error) {
 		if holdsAdminCredential(raw) {
 			return nil, adminCredentialToolError(tool)

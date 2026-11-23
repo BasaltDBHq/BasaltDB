@@ -169,7 +169,7 @@ func containsKey(ks []pluginmodel.EntryKey, k pluginmodel.EntryKey) bool {
 
 // problem is product_a's status problem for keptKey, nil when there is
 // none.
-func (r *keptRun) problem() *PluginProblem {
+func (r *keptRun) problem() *pluginProblem {
 	for _, p := range r.ep.pluginProblems("product_a") {
 		if p.Name == keptKey.Name && p.Instance == keptKey.Instance {
 			return &p
@@ -190,7 +190,7 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 	r.requireNotRunning()
 	require.Eventually(t, func() bool {
 		p := r.problem()
-		return p != nil && p.Code == ProblemPluginAwaitingApproval
+		return p != nil && p.Code == problemPluginAwaitingApproval
 	}, keptWait, 50*time.Millisecond)
 
 	f.sign(a)
@@ -213,7 +213,7 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 	r.requireNotRunning()
 	require.Eventually(t, func() bool {
 		p := r.problem()
-		return p != nil && p.Code == ProblemPluginApprovalMismatch
+		return p != nil && p.Code == problemPluginApprovalMismatch
 	}, keptWait, 50*time.Millisecond)
 	require.True(t, r.problem().EngineKept, "its status steps name no sudo and no check")
 }
@@ -242,7 +242,7 @@ func TestServiceModeStartsWithoutRestart(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(3 * pluginWaitingPoll)
 	require.Empty(t, servedTo(r.ep, keptKey), "the old approval never serves it again")
-	require.Equal(t, ProblemPluginAwaitingApproval, r.problem().Code)
+	require.Equal(t, problemPluginAwaitingApproval, r.problem().Code)
 
 	f.sign(again.Approvals[0])
 	r.requireServed(again.Approvals[0], "product_a")
@@ -388,7 +388,7 @@ func TestRootEngineStartsNoLocalPlugin(t *testing.T) {
 	f.sign(res.Approvals[0])
 	require.Eventually(t, func() bool {
 		p := r.problem()
-		return p != nil && p.Code == ProblemPluginUnavailable
+		return p != nil && p.Code == problemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
 	require.Contains(t, r.problem().Message, "root")
 	time.Sleep(3 * pluginWaitingPoll)
@@ -405,7 +405,7 @@ func TestEngineKeptLocalRefusedWhenAgentInEngineGroup(t *testing.T) {
 	f.sign(res.Approvals[0])
 	require.Eventually(t, func() bool {
 		p := r.problem()
-		return p != nil && p.Code == ProblemPluginUnavailable
+		return p != nil && p.Code == problemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
 	time.Sleep(3 * pluginWaitingPoll)
 	require.Empty(t, reportedFiles(t, r.report, ".start"))
@@ -432,7 +432,7 @@ func TestNameClashBothHeldServesConfig(t *testing.T) {
 	r.requireNotRunning()
 	require.Eventually(t, func() bool {
 		p := r.problem()
-		return p != nil && p.Code == ProblemPluginUnavailable
+		return p != nil && p.Code == problemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
 	require.Contains(t, r.problem().Message, "engine.json holds an entry of the same name")
 	require.True(t, r.problem().EngineKept)

@@ -597,10 +597,10 @@ func TestDroppedNoticeShowsInStatus(t *testing.T) {
 	now := func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
 	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), now: now}, slog.New(slog.DiscardHandler))
 	require.NotNil(t, ep)
-	dropped := func(name string) []PluginProblem {
-		var out []PluginProblem
+	dropped := func(name string) []pluginProblem {
+		var out []pluginProblem
 		for _, pr := range ep.pluginProblems(name) {
-			if pr.Code == ProblemPluginNoticesDropped {
+			if pr.Code == problemPluginNoticesDropped {
 				out = append(out, pr)
 			}
 		}

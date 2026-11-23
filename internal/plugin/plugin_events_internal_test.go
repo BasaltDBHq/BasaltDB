@@ -240,7 +240,7 @@ func TestHeldEntryKeepsItsRecord(t *testing.T) {
 	l.record(t, f, f.plugins(nil))
 	require.NoError(t, os.WriteFile(f.installedFile(p), []byte("changed"), 0o755))
 	ep := f.plugins(nil)
-	require.Equal(t, []string{ProblemPluginNotTrusted}, codes(ep.pluginProblems("product_a")))
+	require.Equal(t, []string{problemPluginNotTrusted}, codes(ep.pluginProblems("product_a")))
 	for range 2 {
 		l.record(t, f, ep)
 	}
@@ -262,7 +262,7 @@ func TestHeldEntryOfRemovedKeyGetsDisabled(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(f.trust.Dir(), keys[0]+".pem")))
 
 	ep := f.plugins(nil)
-	require.Equal(t, []string{ProblemPluginNotTrusted}, codes(ep.pluginProblems("product_a")), "held: its key is gone")
+	require.Equal(t, []string{problemPluginNotTrusted}, codes(ep.pluginProblems("product_a")), "held: its key is gone")
 	for range 2 {
 		l.record(t, f, ep)
 	}
@@ -296,7 +296,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	waitReady(t, ep, p.Key())
 	require.Empty(t, ep.pluginProblems("product_a"))
 	probs := ep.pluginProblems("client_x")
-	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
+	require.Equal(t, []string{problemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "the guard refused its plugin record")
 	require.NotContains(t, probs[0].Message, "product_a")
 	err := ep.host.Call(context.Background(), p.Key(), []string{"client_x"}, "detect", nil, nil)
@@ -309,7 +309,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	RecordEvents(context.Background(), solo.cfg, solo.configPath, ep, map[string]AgentLedger{}, slog.New(slog.DiscardHandler))
 	require.Empty(t, ep.entries)
 	probs = ep.pluginProblems("client_x")
-	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
+	require.Equal(t, []string{problemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "database is reachable")
 	require.NotEqual(t, StateReady, ep.host.State(q.Key()))
 
@@ -416,7 +416,7 @@ func TestOldGuardWithholdsWithTheUpgradeStep(t *testing.T) {
 	ep := f.plugins(nil)
 	l.record(t, f, ep)
 	probs := ep.pluginProblems("product_a")
-	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
+	require.Equal(t, []string{problemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "basalt init")
 	require.Empty(t, ep.entries)
 }
@@ -556,7 +556,7 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "client_x")))
 	var refusedProbs int
 	for _, p := range ep.pluginProblems("product_a") {
-		require.Equal(t, ProblemPluginUnavailable, p.Code)
+		require.Equal(t, problemPluginUnavailable, p.Code)
 		if strings.Contains(p.Message, "the guard refused its plugin record") {
 			refusedProbs++
 		}

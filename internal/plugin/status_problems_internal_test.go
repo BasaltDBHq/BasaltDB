@@ -17,7 +17,7 @@ import (
 // statusProblems is the status's problem list for problems of one agent, on
 // an engine operated by operatedBy: foreground engines name their own
 // restart commands.
-func statusProblems(t *testing.T, operatedBy, configPath string, foreground bool, problems []PluginProblem) (list []guidance.Problem, ready bool) {
+func statusProblems(t *testing.T, operatedBy, configPath string, foreground bool, problems []pluginProblem) (list []guidance.Problem, ready bool) {
 	t.Helper()
 	cmds := guidance.NewCommands("bot", configPath, config.DefaultPath("linux"), "linux",
 		guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs})
@@ -48,8 +48,8 @@ func problemOf(t *testing.T, list []guidance.Problem, code string) guidance.Prob
 	return guidance.Problem{}
 }
 
-func sampleProblem(code string) []PluginProblem {
-	return []PluginProblem{{Code: code, Name: "acme-ner", Instance: "client_x", Message: "plugin acme-ner/client_x is not ready (EXITED)", EngineKept: true}}
+func sampleProblem(code string) []pluginProblem {
+	return []pluginProblem{{Code: code, Name: "acme-ner", Instance: "client_x", Message: "plugin acme-ner/client_x is not ready (EXITED)", EngineKept: true}}
 }
 
 // requireRequestPlugin checks st calls request_plugin for acme-ner/client_x.
@@ -70,7 +70,7 @@ func requireRequestPlugin(t *testing.T, st toolresult.NextStep, remove bool) {
 // They are ERRORs: the agent is not ready.
 func TestStatusShowsRemoveSteps(t *testing.T) {
 	t.Parallel()
-	for _, code := range []string{ProblemPluginUnavailable, ProblemPluginNotTrusted} {
+	for _, code := range []string{problemPluginUnavailable, problemPluginNotTrusted} {
 		list, ready := statusProblems(t, "", "/srv/basalt/engine.json", true, sampleProblem(code))
 		p := problemOf(t, list, code)
 		require.False(t, ready)
@@ -92,9 +92,9 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 		code    string
 		actions []string
 	}{
-		{ProblemPluginAwaitingApproval, []string{"OPEN_LINK", "CALL_TOOL"}},
-		{ProblemPluginApprovalExpired, []string{"ASK_PERSON", "CALL_TOOL"}},
-		{ProblemPluginApprovalMismatch, []string{"ASK_PERSON", "CALL_TOOL"}},
+		{problemPluginAwaitingApproval, []string{"OPEN_LINK", "CALL_TOOL"}},
+		{problemPluginApprovalExpired, []string{"ASK_PERSON", "CALL_TOOL"}},
+		{problemPluginApprovalMismatch, []string{"ASK_PERSON", "CALL_TOOL"}},
 	} {
 		for _, operatedBy := range []string{"", "AGENT"} {
 			list, ready := statusProblems(t, operatedBy, "/srv/basalt/engine.json", true, sampleProblem(c.code))
@@ -117,8 +117,8 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 func TestStatusShowsConfigInvalid(t *testing.T) {
 	t.Parallel()
 	for _, operatedBy := range []string{"", "AGENT"} {
-		list, _ := statusProblems(t, operatedBy, "/srv/basalt/engine.json", true, []PluginProblem{{Code: ProblemPluginConfigInvalid, Message: "engine.json changed"}})
-		p := problemOf(t, list, ProblemPluginConfigInvalid)
+		list, _ := statusProblems(t, operatedBy, "/srv/basalt/engine.json", true, []pluginProblem{{Code: problemPluginConfigInvalid, Message: "engine.json changed"}})
+		p := problemOf(t, list, problemPluginConfigInvalid)
 		require.Equal(t, "WARNING", p.Severity)
 		require.Equal(t, "engine.json changed", p.Message)
 		require.Len(t, p.NextSteps, 1)
@@ -137,9 +137,9 @@ func TestNoPluginProblemWithoutOne(t *testing.T) {
 
 func TestConfigEntryStepsOnlyAskThePerson(t *testing.T) {
 	t.Parallel()
-	for _, code := range []string{ProblemPluginUnavailable, ProblemPluginNotTrusted, ProblemPluginAwaitingApproval, ProblemPluginApprovalExpired, ProblemPluginApprovalMismatch} {
+	for _, code := range []string{problemPluginUnavailable, problemPluginNotTrusted, problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalMismatch} {
 		for _, operatedBy := range []string{"", "AGENT"} {
-			conf := []PluginProblem{{Code: code, Name: "acme-ner", Instance: "client_x", Message: "m"}}
+			conf := []pluginProblem{{Code: code, Name: "acme-ner", Instance: "client_x", Message: "m"}}
 			list, _ := statusProblems(t, operatedBy, "", false, conf)
 			p := problemOf(t, list, code)
 			require.Len(t, p.NextSteps, 1, code)
@@ -154,11 +154,11 @@ func TestStatusShowsDroppedNotices(t *testing.T) {
 	t.Parallel()
 	for _, kept := range []bool{false, true} {
 		for _, operatedBy := range []string{"", "AGENT"} {
-			list, _ := statusProblems(t, operatedBy, "", true, []PluginProblem{{
-				Code: ProblemPluginNoticesDropped, Name: "acme-notify", Instance: "client_x", EngineKept: kept,
+			list, _ := statusProblems(t, operatedBy, "", true, []pluginProblem{{
+				Code: problemPluginNoticesDropped, Name: "acme-notify", Instance: "client_x", EngineKept: kept,
 				Message: "plugin acme-notify/client_x did not get 3 approval notices of this agent in the last 24 hours",
 			}})
-			p := problemOf(t, list, ProblemPluginNoticesDropped)
+			p := problemOf(t, list, problemPluginNoticesDropped)
 			require.Equal(t, "WARNING", p.Severity)
 			require.Len(t, p.NextSteps, 1)
 			require.Equal(t, "AGENT", p.NextSteps[0].Actor)
@@ -173,9 +173,9 @@ func TestNamelessPluginProblemHasItsOwnSteps(t *testing.T) {
 	t.Parallel()
 	const file = "/var/lib/basalt/plugins.json"
 	for _, operatedBy := range []string{"", "AGENT"} {
-		nameless := []PluginProblem{{Code: ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + file + " is bad", File: file}}
+		nameless := []pluginProblem{{Code: problemPluginUnavailable, Message: "no engine-kept plugin is served: " + file + " is bad", File: file}}
 		list, _ := statusProblems(t, operatedBy, "", false, nameless)
-		p := problemOf(t, list, ProblemPluginUnavailable)
+		p := problemOf(t, list, problemPluginUnavailable)
 		require.Len(t, p.NextSteps, 2)
 		require.Equal(t, "sudo mv "+file+" "+file+".bad", p.NextSteps[0].Command)
 		require.Equal(t, "sudo systemctl restart basalt-engine.service", p.NextSteps[1].Command)
@@ -193,12 +193,12 @@ func TestNamelessPluginProblemHasItsOwnSteps(t *testing.T) {
 // names the entry; dropped notices do not make an entry NOT_READY.
 func TestPluginHealth(t *testing.T) {
 	t.Parallel()
-	entries := []PluginEntry{{Name: "acme-ner", Instance: "client_x"}, {Name: "acme-ner", Instance: "default"}, {Name: "acme-notify", Instance: "client_x"}}
-	probs := append(sampleProblem(ProblemPluginUnavailable), PluginProblem{Code: ProblemPluginNoticesDropped, Name: "acme-notify", Instance: "client_x"})
+	entries := []pluginEntry{{Name: "acme-ner", Instance: "client_x"}, {Name: "acme-ner", Instance: "default"}, {Name: "acme-notify", Instance: "client_x"}}
+	probs := append(sampleProblem(problemPluginUnavailable), pluginProblem{Code: problemPluginNoticesDropped, Name: "acme-notify", Instance: "client_x"})
 	require.Equal(t, []guidance.PluginHealth{
-		{Name: "acme-ner", Instance: "client_x", Health: PluginHealthNotReady, Problem: ProblemPluginUnavailable},
-		{Name: "acme-ner", Instance: "default", Health: PluginHealthReady},
-		{Name: "acme-notify", Instance: "client_x", Health: PluginHealthReady},
+		{Name: "acme-ner", Instance: "client_x", Health: pluginHealthNotReady, Problem: problemPluginUnavailable},
+		{Name: "acme-ner", Instance: "default", Health: pluginHealthReady},
+		{Name: "acme-notify", Instance: "client_x", Health: pluginHealthReady},
 	}, pluginHealth(entries, probs))
 	require.Nil(t, pluginHealth(nil, probs), "no entries: nothing to show")
 }
@@ -210,16 +210,16 @@ func TestEveryPluginProblemObeysTheCatalog(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
 		foreground bool
-		problems   []PluginProblem
+		problems   []pluginProblem
 	}{
-		ProblemPluginUnavailable: {false, sampleProblem(ProblemPluginUnavailable)},
-		ProblemPluginNotTrusted:  {false, sampleProblem(ProblemPluginNotTrusted)},
+		problemPluginUnavailable: {false, sampleProblem(problemPluginUnavailable)},
+		problemPluginNotTrusted:  {false, sampleProblem(problemPluginNotTrusted)},
 		// Plugin approvals are same-user mode: a foreground engine.
-		ProblemPluginAwaitingApproval: {true, sampleProblem(ProblemPluginAwaitingApproval)},
-		ProblemPluginApprovalExpired:  {true, sampleProblem(ProblemPluginApprovalExpired)},
-		ProblemPluginApprovalMismatch: {true, sampleProblem(ProblemPluginApprovalMismatch)},
-		ProblemPluginConfigInvalid:    {true, []PluginProblem{{Code: ProblemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}},
-		ProblemPluginNoticesDropped:   {true, sampleProblem(ProblemPluginNoticesDropped)},
+		problemPluginAwaitingApproval: {true, sampleProblem(problemPluginAwaitingApproval)},
+		problemPluginApprovalExpired:  {true, sampleProblem(problemPluginApprovalExpired)},
+		problemPluginApprovalMismatch: {true, sampleProblem(problemPluginApprovalMismatch)},
+		problemPluginConfigInvalid:    {true, []pluginProblem{{Code: problemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}},
+		problemPluginNoticesDropped:   {true, sampleProblem(problemPluginNoticesDropped)},
 	}
 	keys := make([]string, 0, len(cases))
 	for code := range cases {

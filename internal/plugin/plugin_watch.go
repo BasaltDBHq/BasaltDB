@@ -419,7 +419,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 			}
 			// Waiting for a signature: checked again soon.
 			if pa, ok := passes[a]; ok && approval[k] && !slices.Contains(agents, a) && slices.ContainsFunc(pa.withheld, func(u unrecordedEntry) bool {
-				return u.key == k && u.code == ProblemPluginAwaitingApproval
+				return u.key == k && u.code == problemPluginAwaitingApproval
 			}) {
 				waiting = true
 			}

@@ -20,7 +20,7 @@ func TestUnusableEntriesFileProblemNamesTheFile(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		for _, p := range r.ep.pluginProblems("product_a") {
-			if p.Code == ProblemPluginUnavailable && p.Name == "" {
+			if p.Code == problemPluginUnavailable && p.Name == "" {
 				require.Equal(t, f.s.store.EntriesPath(), p.File)
 				require.False(t, p.EngineKept)
 				return true

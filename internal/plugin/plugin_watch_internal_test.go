@@ -180,7 +180,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), p.ApprovalSettings())
 	require.Eventually(t, func() bool {
 		probs := ep.pluginProblems("product_a")
-		return len(probs) == 1 && probs[0].Code == ProblemPluginAwaitingApproval
+		return len(probs) == 1 && probs[0].Code == problemPluginAwaitingApproval
 	}, 10*time.Second, 50*time.Millisecond, "the engine sees the new entry and waits for its approval")
 	require.Empty(t, servedTo(ep, p.Key()))
 
@@ -228,7 +228,7 @@ func TestDisableStopsWithoutRestart(t *testing.T) {
 	f.cfg.Plugins[0].Enabled = true
 	lp.change()
 	require.Empty(t, servedTo(lp.ep, approved.Key()))
-	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
+	require.Equal(t, problemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
 }
 
 func lastKind(t *testing.T, l pluginLedgers, agentName string) string {
@@ -284,13 +284,13 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	f.cfg.Plugins[0].ManifestSHA256 = next.ManifestSHA256
 	lp.change()
 	lp.requireStopped(p.Key())
-	require.Equal(t, ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
+	require.Equal(t, problemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
 	v, err := Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), f.cfg.Plugins[0].ApprovalSettings())
 	lp.poll()
 	require.Empty(t, servedTo(lp.ep, p.Key()), "withheld while the new approval waits")
-	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
+	require.Equal(t, problemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
 
 	l.sign(t, pk, "product_a", a)
 	lp.poll()
@@ -328,7 +328,7 @@ func TestMismatchWhileRunningStopsPlugin(t *testing.T) {
 	lp.poll()
 	lp.requireServing(p.Key(), "client_x")
 	prob := problemFor(t, lp.ep, "product_a")
-	require.Equal(t, ProblemPluginApprovalMismatch, prob.Code)
+	require.Equal(t, problemPluginApprovalMismatch, prob.Code)
 	require.Contains(t, prob.Message, "version")
 	require.Equal(t, "PLUGIN_DISABLED", lastKind(t, l, "product_a"))
 
@@ -337,7 +337,7 @@ func TestMismatchWhileRunningStopsPlugin(t *testing.T) {
 	f.cfg.Plugins[0].MinConfidence = &mc
 	lp.change()
 	lp.requireStopped(p.Key())
-	require.Equal(t, ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "client_x").Code)
+	require.Equal(t, problemPluginApprovalMismatch, problemFor(t, lp.ep, "client_x").Code)
 	require.Contains(t, problemFor(t, lp.ep, "client_x").Message, "settingsSha256")
 }
 
@@ -375,14 +375,14 @@ func TestBadConfigWhileRunningChangesNothing(t *testing.T) {
 		for _, a := range []string{"product_a", "client_x"} {
 			probs := lp.ep.pluginProblems(a)
 			require.Len(t, probs, 1, a)
-			require.Equal(t, ProblemPluginConfigInvalid, probs[0].Code)
+			require.Equal(t, problemPluginConfigInvalid, probs[0].Code)
 			require.Empty(t, probs[0].Name)
 		}
 	}
 	require.NoError(t, os.Remove(f.configPath))
 	lp.w.step(lp.ctx)
 	lp.requireServing(p.Key(), "product_a")
-	require.Equal(t, ProblemPluginConfigInvalid, lp.ep.pluginProblems("product_a")[0].Code)
+	require.Equal(t, problemPluginConfigInvalid, lp.ep.pluginProblems("product_a")[0].Code)
 	now, _ := f.startedPIDs()
 	require.Equal(t, started, now, "the plugin was never restarted")
 	require.Len(t, l.events(t, "product_a"), events, "nothing recorded")

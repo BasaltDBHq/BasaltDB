@@ -30,7 +30,7 @@ const (
 )
 
 // withheldWhy is why an entry is not served to one agent: code is the
-// status problem (ProblemPluginUnavailable when empty), why the
+// status problem (problemPluginUnavailable when empty), why the
 // message's reason.
 type withheldWhy struct {
 	code string
@@ -48,7 +48,7 @@ type withheldWhy struct {
 // other withhold writes nothing.
 func approvalReason(code string) bool {
 	switch code {
-	case ProblemPluginAwaitingApproval, ProblemPluginApprovalExpired, ProblemPluginApprovalMismatch:
+	case problemPluginAwaitingApproval, problemPluginApprovalExpired, problemPluginApprovalMismatch:
 		return true
 	}
 	return false
@@ -110,23 +110,23 @@ func (a *agentApprovals) check(ctx context.Context, k pluginmodel.EntryKey, d gu
 	}
 	r, ok := a.newest[k]
 	if !ok {
-		return withheldWhy{code: ProblemPluginAwaitingApproval, why: whyNoApproval}, false
+		return withheldWhy{code: problemPluginAwaitingApproval, why: whyNoApproval}, false
 	}
 	switch r.Status {
 	case guardmodel.PluginApprovalStatusPending:
-		return withheldWhy{code: ProblemPluginAwaitingApproval, why: "its plugin approval is waiting for a person to sign it (it expires " +
+		return withheldWhy{code: problemPluginAwaitingApproval, why: "its plugin approval is waiting for a person to sign it (it expires " +
 			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC); the engine starts the plugin within seconds of the signature"}, false
 	case guardmodel.PluginApprovalStatusCancelled:
-		return withheldWhy{code: ProblemPluginAwaitingApproval, why: whyApprovalReplaced}, false
+		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalReplaced}, false
 	case guardmodel.PluginApprovalStatusExpired:
-		return withheldWhy{code: ProblemPluginApprovalExpired, why: "its plugin approval expired unsigned at " +
+		return withheldWhy{code: problemPluginApprovalExpired, why: "its plugin approval expired unsigned at " +
 			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC; the agent opens a new one with request_plugin, or removes the plugin"}, false
 	case guardmodel.PluginApprovalStatusApproved:
 	default:
 		return withheldWhy{why: whyApprovalsUnread}, false
 	}
 	if r.ApprovedAt == nil {
-		return withheldWhy{code: ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
+		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
 	sum, err := a.ports.Guard.PluginSettingsSHA256(ctx, a.db, s)
 	if err != nil {
@@ -135,11 +135,11 @@ func (a *agentApprovals) check(ctx context.Context, k pluginmodel.EntryKey, d gu
 	// A mismatch is named while it lasts, also once the withhold ended the
 	// approval: the person sees what differs, not only that it ended.
 	if diff := approvalMismatch(r.Bound, approvalBound(d, sum)); len(diff) > 0 {
-		return withheldWhy{code: ProblemPluginApprovalMismatch, why: "it does not match what a person approved; these differ: " +
+		return withheldWhy{code: problemPluginApprovalMismatch, why: "it does not match what a person approved; these differ: " +
 			strings.Join(diff, ", ") + ". Ask the person whether the change was theirs, then open a new approval or disable the plugin"}, false
 	}
 	if r.Ended() {
-		return withheldWhy{code: ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
+		return withheldWhy{code: problemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
 	return withheldWhy{approvalID: r.ApprovalID}, true
 }

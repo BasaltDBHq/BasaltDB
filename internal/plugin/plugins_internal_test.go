@@ -304,7 +304,7 @@ func (f *pluginFixture) reported(suffix string) []int {
 	return pids
 }
 
-func codes(ps []PluginProblem) []string {
+func codes(ps []pluginProblem) []string {
 	out := make([]string, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, p.Code)
@@ -345,7 +345,7 @@ func TestInstancesAreSeparate(t *testing.T) {
 	ep.sup.Stop(cx.Key())
 	require.Equal(t, StateReady, ep.host.State(def.Key()))
 	require.Empty(t, ep.pluginProblems("product_a"), "another instance's stop shows nothing to product_a")
-	require.Equal(t, []string{ProblemPluginUnavailable}, codes(ep.pluginProblems("client_x")))
+	require.Equal(t, []string{problemPluginUnavailable}, codes(ep.pluginProblems("client_x")))
 	require.Len(t, f.reported(".shutdown"), 1, "client_x got shutdown")
 	dirs, err = os.ReadDir(f.sockBase)
 	require.NoError(t, err)
@@ -395,7 +395,7 @@ func TestUntrustedPluginIsNotStarted(t *testing.T) {
 	runPlugins(t, ep)()
 	require.Empty(t, f.reported(".start"))
 	probs := ep.pluginProblems("product_a")
-	require.Equal(t, []string{ProblemPluginNotTrusted}, codes(probs))
+	require.Equal(t, []string{problemPluginNotTrusted}, codes(probs))
 	require.Contains(t, probs[0].Message, "plugin acme-ner/default was not started")
 	require.NotContains(t, probs[0].Message, "client_x")
 	require.Empty(t, ep.pluginProblems("client_x"))
@@ -417,7 +417,7 @@ func TestChangedCopyIsNotRestarted(t *testing.T) {
 	require.NoError(t, os.Chmod(f.installedFile(p), 0o777))
 	require.NoError(t, syscall.Kill(pids[0], syscall.SIGKILL))
 	require.Eventually(t, func() bool {
-		return slices.Equal([]string{ProblemPluginNotTrusted}, codes(ep.pluginProblems("product_a")))
+		return slices.Equal([]string{problemPluginNotTrusted}, codes(ep.pluginProblems("product_a")))
 	}, 10*time.Second, 10*time.Millisecond)
 	require.Len(t, f.reported(".start"), 1, "not started again")
 }
@@ -439,10 +439,10 @@ func TestPlantedFileNameIsNeverShown(t *testing.T) {
 	pids := f.reported(".start")
 	require.Len(t, pids, 1)
 	require.NoError(t, syscall.Kill(pids[0], syscall.SIGKILL))
-	var probs []PluginProblem
+	var probs []pluginProblem
 	require.Eventually(t, func() bool {
 		probs = ep.pluginProblems("product_a")
-		return slices.Equal([]string{ProblemPluginNotTrusted}, codes(probs))
+		return slices.Equal([]string{problemPluginNotTrusted}, codes(probs))
 	}, 10*time.Second, 10*time.Millisecond)
 	require.NotContains(t, probs[0].Message, "evil")
 	require.Contains(t, probs[0].Message, "is not in the manifest's files")
@@ -463,7 +463,7 @@ func TestRootStartsNoLocalPlugin(t *testing.T) {
 	runPlugins(t, ep)()
 	require.Empty(t, f.reported(".start"))
 	probs := ep.pluginProblems("product_a")
-	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
+	require.Equal(t, []string{problemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "root's privileges")
 	require.Empty(t, ep.pluginProblems("client_x"))
 }

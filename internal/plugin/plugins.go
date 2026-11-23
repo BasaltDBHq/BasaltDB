@@ -453,25 +453,25 @@ func (ep *Plugins) credentialFile(k pluginmodel.EntryKey) string {
 // failed check or failure class only, never another agent. While engine.json
 // holds plugins the engine cannot read, every agent also gets
 // PLUGIN_CONFIG_INVALID.
-func (ep *Plugins) pluginProblems(name string) []PluginProblem {
-	var out []PluginProblem
+func (ep *Plugins) pluginProblems(name string) []pluginProblem {
+	var out []pluginProblem
 	ep.mu.Lock()
 	configured, configProblem := slices.Clone(ep.configured), ep.configProblem
 	keptProblem, clashes := ep.keptProblem, slices.Clone(ep.clashes)
 	ep.mu.Unlock()
 	if configProblem != "" {
-		out = append(out, PluginProblem{Code: ProblemPluginConfigInvalid, Message: configProblem})
+		out = append(out, pluginProblem{Code: problemPluginConfigInvalid, Message: configProblem})
 	}
 	if keptProblem != "" {
-		out = append(out, PluginProblem{
-			Code: ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem, File: ep.kept.EntriesPath(),
+		out = append(out, pluginProblem{
+			Code: problemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem, File: ep.kept.EntriesPath(),
 		})
 	}
 	for _, p := range clashes {
 		if slices.Contains(p.Agents, name) {
 			k := p.Key()
-			out = append(out, PluginProblem{
-				Code: ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
+			out = append(out, pluginProblem{
+				Code: problemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
 				Message: "the engine-kept plugin " + k.String() + " is not served: engine.json holds an entry of the same name and instance, " +
 					"added by hand, and that one is served; remove one of them (the agent removes the engine-kept one with request_plugin, or the person edits engine.json)",
 			})
@@ -482,14 +482,14 @@ func (ep *Plugins) pluginProblems(name string) []PluginProblem {
 			continue
 		}
 		k := p.Key()
-		prob := PluginProblem{Code: ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: ep.isKept(k)}
+		prob := pluginProblem{Code: problemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: ep.isKept(k)}
 		ep.mu.Lock()
 		notTrusted, refused, dialWhy := ep.notTrusted[k], ep.refused[k], ep.dialWhy[k]
 		ep.mu.Unlock()
 		withheld := ep.unrecordedFor(k, name)
 		switch {
 		case notTrusted != nil:
-			prob.Code, prob.Message = ProblemPluginNotTrusted, NotTrustedMessage(k, notTrusted, name)
+			prob.Code, prob.Message = problemPluginNotTrusted, NotTrustedMessage(k, notTrusted, name)
 		case refused != "":
 			prob.Message = "plugin " + k.String() + " was not started: " + refused
 		case withheld.why != "":
@@ -511,8 +511,8 @@ func (ep *Plugins) pluginProblems(name string) []PluginProblem {
 		out = append(out, prob)
 	}
 	for _, dn := range ep.delivery.dropped(name) {
-		out = append(out, PluginProblem{
-			Code: ProblemPluginNoticesDropped, Name: dn.key.Name, Instance: dn.key.Instance, EngineKept: ep.isKept(dn.key),
+		out = append(out, pluginProblem{
+			Code: problemPluginNoticesDropped, Name: dn.key.Name, Instance: dn.key.Instance, EngineKept: ep.isKept(dn.key),
 			Message: fmt.Sprintf("plugin %s did not get %s of this agent in the last 24 hours: the engine dropped them "+
 				"(the plugin did not take them within about a minute, they expired first, or too many were waiting). "+
 				"The agent's answers carried the links all the same", dn.key, noticeCount(dn.count)),
@@ -523,15 +523,15 @@ func (ep *Plugins) pluginProblems(name string) []PluginProblem {
 
 // pluginEntries lists the enabled entries that list
 // name, for status.plugins.
-func (ep *Plugins) pluginEntries(name string) []PluginEntry {
+func (ep *Plugins) pluginEntries(name string) []pluginEntry {
 	ep.mu.Lock()
 	configured := slices.Clone(ep.configured)
 	ep.mu.Unlock()
-	var out []PluginEntry
+	var out []pluginEntry
 	for _, p := range configured {
 		if slices.Contains(p.Agents, name) {
 			k := p.Key()
-			out = append(out, PluginEntry{Name: k.Name, Instance: k.Instance})
+			out = append(out, pluginEntry{Name: k.Name, Instance: k.Instance})
 		}
 	}
 	return out

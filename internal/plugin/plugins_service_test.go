@@ -182,7 +182,7 @@ func TestServiceEngineRefusesWhenAnAgentIsInItsGroup(t *testing.T) {
 	require.Empty(t, ep.targets)
 	probs := ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
-	require.Equal(t, ProblemPluginNotTrusted, probs[0].Code)
+	require.Equal(t, problemPluginNotTrusted, probs[0].Code)
 	require.Contains(t, probs[0].Message, "this agent's OS user is in the engine's group")
 }
 
@@ -279,7 +279,7 @@ func TestServiceEngineRefusesAPluginUserInItsGroup(t *testing.T) {
 	ep.refused[p.Key()] = why
 	probs := ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
-	require.Equal(t, ProblemPluginUnavailable, probs[0].Code)
+	require.Equal(t, problemPluginUnavailable, probs[0].Code)
 	require.Equal(t, "plugin acme-ner/default was not started: "+why, probs[0].Message)
 }
 
@@ -388,7 +388,7 @@ func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
 	require.ErrorIs(t, err, dial.ErrNoSocket)
 	probs := ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
-	require.Equal(t, ProblemPluginUnavailable, probs[0].Code)
+	require.Equal(t, problemPluginUnavailable, probs[0].Code)
 	require.Contains(t, probs[0].Message, "must listen on the socket BASALT_PLUGIN_SOCKET names")
 
 	// A socket directory opened to others: status names that instead.

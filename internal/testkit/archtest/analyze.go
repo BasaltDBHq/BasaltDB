@@ -83,12 +83,42 @@ var pkgExtra = map[string][]string{
 // storeSQLGuard is the one named exception to "only services call decisions":
 // the Postgres store runs the SQL policy right before it runs SQL.
 const (
-	storePkg       = "internal/adapter/outbound/postgres/store"
 	sqlguardPkg    = "sqlguard"
 	storeCallsOnly = "Check CheckRepeatable WithRowVersions"
 )
 
+// storePkgs is the Postgres store, at its old and its new path.
+var storePkgs = []string{"internal/adapter/outbound/postgres/store", "internal/platform/postgres/store"}
+
+// domains are the domain folders of the new tree (DESIGN-RESULTS, option B).
+var domains = []string{"agent", "approval", "engine", "handoff", "ledger", "links", "pii", "plugin", "revert", "setup", "status"}
+
+// platformInbound are the platform packages that serve a transport; the rest
+// of internal/platform are shared outbound adapters.
+var platformInbound = []string{"httpserver", "mcpserver", "pageserver", "shim", "cli"}
+
+// newTree lists the layer prefixes of the new tree. They are tried before
+// layerOrder, and in/ and out/ come before the domain root: the first match
+// wins. The old prefixes stay in layerOrder while packages move.
+var newTree = func() []struct{ prefix, name string } {
+	type pl = struct{ prefix, name string }
+	l := make([]pl, 0, len(platformInbound)+1+3*len(domains))
+	for _, p := range platformInbound {
+		l = append(l, pl{"internal/platform/" + p, lInbound})
+	}
+	l = append(l, pl{"internal/platform", lOutbound})
+	for _, d := range domains {
+		l = append(l, pl{"internal/" + d + "/in", lInbound}, pl{"internal/" + d + "/out", lOutbound}, pl{"internal/" + d, lService})
+	}
+	return l
+}()
+
 func layerOf(rel string) string {
+	for _, l := range newTree {
+		if rel == l.prefix || strings.HasPrefix(rel, l.prefix+"/") {
+			return l.name
+		}
+	}
 	for _, l := range layerOrder {
 		if rel == l.prefix || strings.HasPrefix(rel, l.prefix+"/") {
 			return l.name
@@ -112,6 +142,19 @@ var testHelpers = []string{
 	"internal/adapter/outbound/vault/pagetest",
 	"internal/adapter/outbound/postgres/guard/guardtest",
 	"pkg/trustprofile/trustprofiletest",
+	// the core test oracles (D-CORE-DEAD): signing and parsing clients
+	// other packages' tests use
+	"internal/core/approval/approvaltest",
+	"internal/core/channel/channeltest",
+	"internal/core/linkcodec/linkcodectest",
+	"internal/core/links/linkstest",
+	"internal/core/revert/reverttest",
+	// the same helpers in the new tree
+	"internal/platform/mcpserver/mcptest",
+	"internal/plugin/out/plugintransport/adaptertest",
+	"internal/platform/vault/vaulttest",
+	"internal/platform/vault/pagetest",
+	"internal/platform/postgres/guard/guardtest",
 }
 
 func isTestHelper(rel string) bool {
@@ -374,8 +417,9 @@ func localNames(f *ast.File) map[string]string {
 	return m
 }
 
-// pluginhostPkg is the plugin host, whose path rule only the app installs.
-const pluginhostPkg = modulePath + "/internal/service/pluginhost"
+// pluginhostPkgs is the plugin host, whose path rule only the app installs,
+// at its old and its new path.
+var pluginhostPkgs = []string{modulePath + "/internal/service/pluginhost", modulePath + "/internal/plugin"}
 
 // appPkg is the package that wires everything.
 const appPkg = "internal/app"
@@ -390,7 +434,7 @@ func checkPathRulesInstall(v violations, rel string, f *goFile) {
 		if !ok || sel.Sel.Name != "UsePathRules" {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == pluginhostPkg {
+		if id, ok := sel.X.(*ast.Ident); ok && in(pluginhostPkgs, names[id.Name]) {
 			v.add(rel, fmt.Sprintf("%s calls pluginhost.UsePathRules (only internal/app installs the path rule)", f.name))
 		}
 		return true
@@ -417,7 +461,7 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 		if !isDecision || !in(funcs, sel.Sel.Name) {
 			return true
 		}
-		if rel == storePkg && dec == sqlguardPkg && in(strings.Fields(storeCallsOnly), sel.Sel.Name) {
+		if in(storePkgs, rel) && dec == sqlguardPkg && in(strings.Fields(storeCallsOnly), sel.Sel.Name) {
 			return true
 		}
 		v.add(rel, fmt.Sprintf("%s calls %s.%s", f.name, dec, sel.Sel.Name))

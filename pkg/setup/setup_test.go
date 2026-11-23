@@ -330,7 +330,7 @@ func TestRunStopsWhenNotApproved(t *testing.T) {
 }
 
 // With no passkey given, a setup that needs one is refused in its
-// transaction: nothing changes.
+// transaction, before its script runs: nothing changes.
 func TestRunWithoutTheNeededPasskey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -531,11 +531,14 @@ func TestMessagesCarryNoConnectionSecret(t *testing.T) {
 	for _, q := range checked.Questions.RowSecurity {
 		out = append(out, q.Text)
 	}
+	// With the passkey given, so the run reaches its script, which fails
+	// (the passkey rule refuses a run without one before the script).
+	_, give := personPasskey(t)
 	_, err = setup.Run(ctx, conn, request(code), setup.RunInput{Approve: func(p setup.Plan) error {
 		out = append(out, p.SQL)
 		other.Exec(t, "CREATE ROLE "+other.Names.Prefix+"_agent_bot NOLOGIN")
 		return nil
-	}})
+	}, Passkey: verified(t, give)})
 	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
 	require.Contains(t, err.Error(), "already exists")
 	require.Zero(t, installedVersion(t, other), "the transaction rolled back")
@@ -543,7 +546,6 @@ func TestMessagesCarryNoConnectionSecret(t *testing.T) {
 
 	// A run that goes through, with its warnings.
 	other.Exec(t, "DROP ROLE "+other.Names.Prefix+"_agent_bot")
-	_, give := personPasskey(t)
 	res, err := setup.Run(ctx, conn, request(newCode(t, other, func(p *setupcode.Payload) { p.Agent.Read = []string{"public.payroll"} })), setup.RunInput{
 		Approve: func(p setup.Plan) error { out = append(out, p.SQL); out = append(out, p.Warnings...); return nil },
 		Passkey: verified(t, give),

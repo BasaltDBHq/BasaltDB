@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
@@ -317,13 +319,13 @@ func TestEveryStatusProblemHasACase(t *testing.T) {
 	t.Parallel()
 	cases := statusCases()
 	var missing []string
-	for _, p := range catalogOf(t).Problems {
+	for _, p := range stepcatalogtest.CatalogOf(t).Problems {
 		if _, ok := cases[p.Code]; !ok {
 			missing = append(missing, p.Code)
 		}
 	}
 	require.Empty(t, missing, "catalog problems without a case in statusCases")
-	require.Len(t, cases, len(catalogOf(t).Problems), "cases without a catalog problem")
+	require.Len(t, cases, len(stepcatalogtest.CatalogOf(t).Problems), "cases without a catalog problem")
 }
 
 func TestEveryStatusProblemObeysTheCatalog(t *testing.T) {
@@ -358,11 +360,11 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	for _, st := range p.NextSteps {
 		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
 	}
-	want, pm, variant := expectedSteps(t, mcpcontract.VariantProblem, code, "", "", entry.Steps, entry.PersonMessage, operatedBy)
+	want, pm, variant := stepcatalogtest.ExpectedSteps(t, mcpcontract.VariantProblem, code, "", "", entry.Steps, entry.PersonMessage, operatedBy)
 	require.Equal(t, want, got, "(actor, action) sequence of %s", code)
 	require.Equal(t, pm, p.PersonMessage != "", "personMessage set exactly when the catalog says")
-	requireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, operatedBy, code)
-	requirePersonMessage(t, p.PersonMessage, nil)
+	stepcatalogtest.RequireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, operatedBy, code)
+	stepcatalogtest.RequirePersonMessage(t, p.PersonMessage, nil)
 	for i, st := range p.NextSteps {
 		where := fmt.Sprintf("%s step %d", code, i+1)
 		if code == ProblemPluginAwaitingApproval && st.Action == toolresult.ActionOpenLink {
@@ -374,7 +376,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 			require.NotEmpty(t, st.Text, where)
 			continue
 		}
-		requireStepObeysRules(t, st, catalogCase{tool: guidance.ToolStatus, args: map[string]any{}}, where)
+		stepcatalogtest.RequireStepObeysRules(t, st, stepcatalogtest.Case{Tool: guidance.ToolStatus, Args: map[string]any{}}, where)
 	}
 	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
 	for i := 1; i < len(r.Problems); i++ {
@@ -401,7 +403,7 @@ func requireStatusSchema(t *testing.T, tool mcpcontract.Tool, r StatusReport) st
 	require.NoError(t, err)
 	var v map[string]any
 	require.NoError(t, json.Unmarshal(raw, &v))
-	require.NoError(t, validateSchema(tool.OutputSchema, v), string(raw))
+	require.NoError(t, stepcatalogtest.ValidateSchema(tool.OutputSchema, v), string(raw))
 	return string(raw)
 }
 
@@ -585,7 +587,7 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 // that status still answers.
 func requireOnlyStatusServed(t *testing.T, srv *mcpserver.Server, tools []mcpserver.Tool, reason, inMessage string) {
 	t.Helper()
-	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeUnavailable, reason, "")
+	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeUnavailable, reason, "")
 	require.True(t, ok)
 	for _, tool := range tools {
 		if tool.Name == guidance.ToolStatus {
@@ -715,7 +717,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	sort.Strings(served)
 	require.NoError(t, mcpcontract.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 
-	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "query")
+	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "query")
 	require.True(t, ok)
 	for _, tool := range served {
 		if tool == guidance.ToolStatus {
@@ -756,7 +758,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), WithMeta)...)
 
-	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
+	v, ok := stepcatalogtest.CatalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)

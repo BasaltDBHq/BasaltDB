@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/coder/websocket"
@@ -178,7 +180,7 @@ func (e *relayEnv) notice(t *testing.T) linksvc.HeldAnswer {
 	n, err := e.svc.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
 		e.clock.Now().Add(time.Hour), linksvc.IssueLink)
 	require.NoError(t, err)
-	requirePersonMessage(t, n.PersonMessage, n.Links)
+	stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
 	return n
 }
 

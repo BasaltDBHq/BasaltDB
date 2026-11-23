@@ -168,6 +168,8 @@ linters:
               desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/connecttest
               desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest
+              desc: a test helper package; import it from _test.go files only
             - pkg: github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest
               desc: a test helper package; import it from _test.go files only
         # The Go plugin SDK is its own module, with its own generated copy of

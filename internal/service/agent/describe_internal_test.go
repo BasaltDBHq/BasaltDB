@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
 // fakeCatalog is a Catalog over fixed relations and details.
@@ -645,12 +646,12 @@ func TestDescribeAnswersMatchTheOutputSchema(t *testing.T) {
 		"unchanged":      {large, map[string]any{"resource": "shop.orders", "ifFingerprint": fp}},
 	} {
 		body := decodeBody(t, mustDescribe(t, c.s, c.args))
-		require.NoError(t, validateSchema(schema, body), "%s: %v", name, body)
+		require.NoError(t, stepcatalogtest.ValidateSchema(schema, body), "%s: %v", name, body)
 	}
 	// The check is live: an unknown field, a bad enum or a long comment fails.
-	require.Error(t, validateSchema(schema, map[string]any{"form": "OVERVIEW", "tables": 1.0}))
-	require.Error(t, validateSchema(schema, map[string]any{"form": "RESOURCE", "kind": "INDEX"}))
-	require.Error(t, validateSchema(schema, map[string]any{"form": "RESOURCE", "comment": strings.Repeat("x", 501)}))
+	require.Error(t, stepcatalogtest.ValidateSchema(schema, map[string]any{"form": "OVERVIEW", "tables": 1.0}))
+	require.Error(t, stepcatalogtest.ValidateSchema(schema, map[string]any{"form": "RESOURCE", "kind": "INDEX"}))
+	require.Error(t, stepcatalogtest.ValidateSchema(schema, map[string]any{"form": "RESOURCE", "comment": strings.Repeat("x", 501)}))
 }
 
 // errCatalog is a Catalog whose every read fails with err.

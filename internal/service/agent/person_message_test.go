@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -15,20 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
-
-// requirePersonMessage is the engine's check of CONTRACT.md, Links in
-// personMessage, for every personMessage the engine builds.
-func requirePersonMessage(t *testing.T, message string, links []toolresult.Link) {
-	t.Helper()
-	mcptest.Require(t, message, links)
-	require.Empty(t, removedCommand.FindString(message), "a personMessage names no removed command (CONTRACT.md, Next steps): %q", message)
-}
-
-// removedCommand is a basalt command or init flag the person no longer runs
-// ([Removed](contract/cli.md#removed)). --json and --forget count only on
-// basalt init: the plugin steps, which the plugin epic replaces, still take
-// --json.
-var removedCommand = regexp.MustCompile(`basalt (approve|revert|upgrade|passkey|trust|access|status|portal|crash|service|log|classify|uninstall|tunnel)\b|--setup-code|--add-passkey|--rotate-password|--agent-rls|--new-code|rotate-key|basalt init\b[^\n]*?--(forget|json)`)
 
 // TestRemovedCommandCatchesEveryRemovedForm: the check the catalog tests
 // run on every step and personMessage catches each removed command and
@@ -41,13 +29,13 @@ func TestRemovedCommandCatchesEveryRemovedForm(t *testing.T) {
 		"basalt init --agent bot --add-passkey", "basalt init --remote --new-code", "basalt init --remote --forget",
 		"basalt init --remote --json", "basalt log", "basalt engine rotate-key",
 	} {
-		require.NotEmpty(t, removedCommand.FindString(bad), bad)
+		require.NotEmpty(t, stepcatalogtest.RemovedCommand.FindString(bad), bad)
 	}
 	for _, ok := range []string{
 		"basalt init --agent bot", "basalt init --agent bot --remote", "sudo systemctl start basalt-engine.service",
 		"Basalt's status reports KEY_ERROR", "Tell the agent when it is done.", "the revert page",
 	} {
-		require.Empty(t, removedCommand.FindString(ok), ok)
+		require.Empty(t, stepcatalogtest.RemovedCommand.FindString(ok), ok)
 	}
 }
 
@@ -69,7 +57,7 @@ func TestMessageBuilder(t *testing.T) {
 
 	require.Equal(t, "Held for you.\nApprove here:\n\n"+first+"\n\nApprove with your passkey.\nExpires soon.\n\n"+second, msg)
 	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: first}, {Label: "Review and sign the revert", URL: second}}, links)
-	requirePersonMessage(t, msg, links)
+	stepcatalogtest.RequirePersonMessage(t, msg, links)
 
 	plain, none := guidance.NewMessage().Text("No link.").Build()
 	require.Equal(t, "No link.", plain)
@@ -153,7 +141,7 @@ func TestRevertStateMessagesObeyTheContract(t *testing.T) {
 				r.Status, r.ApplyBy = status, &at
 				out, err := s.revert.revertState(context.Background(), r)
 				require.NoError(t, err)
-				requirePersonMessage(t, out.PersonMessage, out.Links)
+				stepcatalogtest.RequirePersonMessage(t, out.PersonMessage, out.Links)
 			}
 		}
 	}

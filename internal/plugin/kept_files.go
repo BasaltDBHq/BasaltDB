@@ -75,10 +75,10 @@ const (
 	privateFile   = 0o600
 )
 
-// Kind is how the person socket answers an Error.
+// Kind is how the person socket answers a PluginhostError.
 type Kind int
 
-// Kinds of Error.
+// Kinds of PluginhostError.
 const (
 	// KindRefused is PLUGIN_REFUSED with Reason.
 	KindRefused Kind = iota
@@ -97,25 +97,25 @@ const (
 	ReasonNotTrusted     = "NOT_TRUSTED"
 )
 
-// Error is a refused store call. Message names a path relative to the
+// PluginhostError is a refused store call. Message names a path relative to the
 // upload or the state directory and the rule, never file contents.
-type Error struct {
+type PluginhostError struct {
 	Kind    Kind
 	Reason  string
 	Message string
 }
 
-func (e *Error) Error() string { return e.Message }
+func (e *PluginhostError) Error() string { return e.Message }
 
-func refused(reason, format string, args ...any) *Error {
-	return &Error{Kind: KindRefused, Reason: reason, Message: fmt.Sprintf(format, args...)}
+func refused(reason, format string, args ...any) *PluginhostError {
+	return &PluginhostError{Kind: KindRefused, Reason: reason, Message: fmt.Sprintf(format, args...)}
 }
 
-func invalid(format string, args ...any) *Error {
-	return &Error{Kind: KindInvalid, Message: fmt.Sprintf(format, args...)}
+func invalid(format string, args ...any) *PluginhostError {
+	return &PluginhostError{Kind: KindInvalid, Message: fmt.Sprintf(format, args...)}
 }
 
-var errNoUpload = &Error{Kind: KindNotFound, Message: "no such upload: it is unknown, expired, used, dropped or another OS user's; begin a new one"}
+var errNoUpload = &PluginhostError{Kind: KindNotFound, Message: "no such upload: it is unknown, expired, used, dropped or another OS user's; begin a new one"}
 
 // Store is a service engine's kept plugins: the entries file, the copies
 // and the uploads. It is safe for concurrent use; uploads and the storage

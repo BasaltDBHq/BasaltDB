@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 func requestsKept() *KeptPlugins {
@@ -55,7 +55,7 @@ func TestRequestReachIsTheCallersOSUser(t *testing.T) {
 	_, uid, scope, err := p.reach("bot")
 	require.NoError(t, err)
 	require.Equal(t, uint32(501), uid)
-	require.Equal(t, person.Scope{"bot": true, "other": true}, scope)
+	require.Equal(t, plugin.Scope{"bot": true, "other": true}, scope)
 
 	_, err = p.OpenPlugin(context.Background(), "bot", agent.PluginOpen{Name: "acme-ner", Instance: "default", Agents: []string{"other"}})
 	var r *agent.PluginRefusedError
@@ -88,10 +88,10 @@ func TestRequestApprovalState(t *testing.T) {
 	t.Parallel()
 	id, newer := uuid.New(), uuid.New()
 	ptr := func(u uuid.UUID) *uuid.UUID { return &u }
-	listed := func(states map[string]string, serving ...person.PluginServing) person.PluginListed {
-		l := person.PluginListed{Name: "acme-ner", Instance: "default", Source: person.SourceEngine, Serving: serving}
+	listed := func(states map[string]string, serving ...plugin.PluginServing) plugin.PluginListed {
+		l := plugin.PluginListed{Name: "acme-ner", Instance: "default", Source: plugin.SourceEngine, Serving: serving}
 		for _, a := range []string{"bot", "other"} {
-			l.Approval.Agents = append(l.Approval.Agents, person.PluginAgentStatus{Agent: a, State: states[a], ApprovalID: ptr(id)})
+			l.Approval.Agents = append(l.Approval.Agents, plugin.PluginAgentStatus{Agent: a, State: states[a], ApprovalID: ptr(id)})
 		}
 		return l
 	}
@@ -102,22 +102,22 @@ func TestRequestApprovalState(t *testing.T) {
 	require.Equal(t, agent.PluginStatePending, st.State)
 	require.Equal(t, []string{"bot", "other"}, st.Agents)
 
-	st, _ = approvalStateOf(listed(approved, person.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true}), id)
+	st, _ = approvalStateOf(listed(approved, plugin.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true}), id)
 	require.Equal(t, agent.PluginStateApproved, st.State, "other is not served yet")
 
 	st, _ = approvalStateOf(listed(approved,
-		person.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true},
-		person.PluginServing{Agent: "other", ApprovalID: ptr(id), Ready: false}), id)
+		plugin.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true},
+		plugin.PluginServing{Agent: "other", ApprovalID: ptr(id), Ready: false}), id)
 	require.Equal(t, agent.PluginStateApproved, st.State, "not READY")
 
 	st, _ = approvalStateOf(listed(approved,
-		person.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true},
-		person.PluginServing{Agent: "other", ApprovalID: ptr(newer), Ready: true}), id)
+		plugin.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true},
+		plugin.PluginServing{Agent: "other", ApprovalID: ptr(newer), Ready: true}), id)
 	require.Equal(t, agent.PluginStateApproved, st.State, "served on another approval")
 
 	st, _ = approvalStateOf(listed(approved,
-		person.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true},
-		person.PluginServing{Agent: "other", ApprovalID: ptr(id), Ready: true}), id)
+		plugin.PluginServing{Agent: "bot", ApprovalID: ptr(id), Ready: true},
+		plugin.PluginServing{Agent: "other", ApprovalID: ptr(id), Ready: true}), id)
 	require.Equal(t, agent.PluginStateRunning, st.State)
 
 	for _, ended := range []string{"ENDED", "EXPIRED"} {
@@ -134,11 +134,11 @@ func TestRequestApprovalState(t *testing.T) {
 func TestRequestErrors(t *testing.T) {
 	t.Parallel()
 	var r *agent.PluginRefusedError
-	require.ErrorAs(t, requestError(person.Refused("TOO_LARGE", "too large"), true), &r)
+	require.ErrorAs(t, requestError(plugin.Refused("TOO_LARGE", "too large"), true), &r)
 	require.Equal(t, "TOO_LARGE", r.Reason)
-	require.ErrorAs(t, requestError(&person.Error{Code: person.CodeAgentNotAllowed, Message: "scope"}, false), &r)
+	require.ErrorAs(t, requestError(&plugin.PersonError{Code: plugin.CodeAgentNotAllowed, Message: "scope"}, false), &r)
 	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
 	var ae *guidance.ArgumentError
-	require.ErrorAs(t, requestError(&person.Error{Code: person.CodeNotFound, Message: "gone"}, true), &ae)
-	require.ErrorIs(t, requestError(&person.Error{Code: person.CodeNotFound, Message: "no entry"}, false), agent.ErrPluginNotFound)
+	require.ErrorAs(t, requestError(&plugin.PersonError{Code: plugin.CodeNotFound, Message: "gone"}, true), &ae)
+	require.ErrorIs(t, requestError(&plugin.PersonError{Code: plugin.CodeNotFound, Message: "no entry"}, false), agent.ErrPluginNotFound)
 }

@@ -17,15 +17,15 @@ type UpdateInfo struct {
 }
 
 // updateInfo is the Service's newer release, or nil.
-func (s *Service) updateInfo() *UpdateInfo {
-	if s.deps.Status.Update == nil {
+func (sc *statusKeeper) updateInfo() *UpdateInfo {
+	if sc.deps.Update == nil {
 		return nil
 	}
-	n := s.deps.Status.Update()
+	n := sc.deps.Update()
 	if n == nil {
 		return nil
 	}
-	info := NewUpdateInfo(*n, executablePath(), s.deps.Status.UpdateMessage)
+	info := NewUpdateInfo(*n, executablePath(), sc.deps.UpdateMessage)
 	return &info
 }
 
@@ -37,8 +37,8 @@ func NewUpdateInfo(n UpdateNotice, exe string, message func(n UpdateNotice, exe 
 
 // UpdateNotice is the text the MCP server appends to a connection's first
 // tool result: the update notice for the agent, "" when none.
-func (s *Service) UpdateNotice() string {
-	if u := s.updateInfo(); u != nil {
+func (sc *statusKeeper) UpdateNotice() string {
+	if u := sc.updateInfo(); u != nil {
 		return u.Message
 	}
 	return ""

@@ -50,23 +50,6 @@ func newPluginCase(core *CoreDeps, deps *PluginDeps, delivery pluginDelivery, st
 	return &pluginCase{core: core, deps: deps, delivery: delivery, status: status, admit: admit}
 }
 
-// The reads the plugin use case makes of the status group, read as it stands.
-
-func (s *Service) sameUser() bool { return s.deps.Status.SameUser }
-
-func (s *Service) devLocalPages() bool { return s.deps.Status.DevLocalPages }
-
-func (s *Service) vaultState() string {
-	if s.deps.Status.Vault == nil {
-		return vaultStateOff
-	}
-	return s.deps.Status.Vault.VaultStatus().State
-}
-
-func (s *Service) guardStatus(ctx context.Context) (guardmodel.Status, error) {
-	return s.deps.Status.Probe.GuardStatus(ctx)
-}
-
 // PluginApprovalRequest is the request of a pending plugin approval this
 // agent's role opened: its binding and settings texts as Postgres built
 // them, and the database's passkeys.

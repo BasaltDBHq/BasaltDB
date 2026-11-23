@@ -226,11 +226,11 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // the guard is not installed or misses a breaking migration. It reads the
 // guard on every call, so a guard update needs no engine restart. status is
 // never refused.
-func (s *Service) Admit(ctx context.Context) error {
-	if v, known := s.statusDeps().setupGate(ctx); known && v.blocks() {
+func (sc *statusKeeper) Admit(ctx context.Context) error {
+	if v, known := sc.statusDeps().setupGate(ctx); known && v.blocks() {
 		return &guidance.SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired, ConnectOnly: v.status.ConnectOnly}
 	}
-	st, err := s.deps.Status.Probe.GuardStatus(ctx)
+	st, err := sc.deps.Probe.GuardStatus(ctx)
 	if err != nil {
 		return err
 	}

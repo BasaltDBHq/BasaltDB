@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
@@ -17,14 +18,14 @@ import (
 // agentTools returns the MCP tools served to one agent: every contract in
 // api/mcp that is IMPLEMENTED, each listed with the contract's description
 // and input schema, and query and write only for a store that speaks SQL
-// (CONTRACT.md, Stores). Each tool's call goes through svc.Wrap; the lists
+// (CONTRACT.md, Stores). Each tool's call goes through agentmcp.Wrap; the lists
 // join in the served order.
 func agentTools(svc *agent.Service) []guidance.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
-		return contractTool(name, svc.Wrap(name, call))
+		return contractTool(name, agentmcp.Wrap(svc, name, call))
 	}
 	tools := agent.RunStartTools(svc, mount)
 	for _, list := range [][]guidance.Tool{

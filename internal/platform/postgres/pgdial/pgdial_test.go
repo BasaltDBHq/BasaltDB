@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -93,6 +94,13 @@ func TestBuiltInRootsForTheirHosts(t *testing.T) {
 	require.Nil(t, poolTLS(t, pool).RootCAs)
 }
 
+// verifyFullDSN is a connection string for host that verifies the
+// certificate and the host name.
+func verifyFullDSN(host string) string {
+	u := url.URL{Scheme: "postgres", User: url.UserPassword("u", "pw"), Host: host + ":5432", Path: "/postgres", RawQuery: "sslmode=verify-full"}
+	return u.String()
+}
+
 // A login through pgdial.Login to a Supabase host whose chain ends at the
 // (stand-in) Supabase root verifies; the same chain on another host does not.
 func TestLoginVerifiesASupabaseChain(t *testing.T) {
@@ -101,7 +109,7 @@ func TestLoginVerifiesASupabaseChain(t *testing.T) {
 		ca, cert := trustprofiletest.Chain(t, host)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return pgdial.Login(ctx, "postgres://u:p@"+host+":5432/postgres?sslmode=verify-full",
+		return pgdial.Login(ctx, verifyFullDSN(host),
 			trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}), "127.0.0.1", trustprofiletest.Serve(t, cert), nil)
 	}
 	var pg *pgconn.PgError

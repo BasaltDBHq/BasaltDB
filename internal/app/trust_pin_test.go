@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,13 @@ func newPinServer(t *testing.T, certHost string) pinServer {
 	return pinServer{ca: ca, dial: trustprofiletest.Serve(t, full)}
 }
 
+// verifyFullDSN is a connection string for host that verifies the
+// certificate and the host name.
+func verifyFullDSN(host string) string {
+	u := url.URL{Scheme: "postgres", User: url.UserPassword("u", "pw"), Host: host + ":5432", Path: "/postgres", RawQuery: "sslmode=verify-full"}
+	return u.String()
+}
+
 // login logs in to host through s with sslmode=verify-full and the
 // profiles of cfg: the server's refusal of the password proves the
 // certificate verified.
@@ -47,7 +55,7 @@ func login(t *testing.T, s pinServer, cfg, host string) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return pgdial.Login(ctx, "postgres://u:pw@"+host+":5432/postgres?sslmode=verify-full", trustdir.Set(cfg), "127.0.0.1", s.dial, nil)
+	return pgdial.Login(ctx, verifyFullDSN(host), trustdir.Set(cfg), "127.0.0.1", s.dial, nil)
 }
 
 // init --remote reads the chain before it logs in with a credential it

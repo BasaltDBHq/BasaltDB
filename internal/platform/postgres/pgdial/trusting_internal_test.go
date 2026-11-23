@@ -2,6 +2,7 @@ package pgdial
 
 import (
 	"crypto/x509"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +17,8 @@ func TestConnConfigTrustingKeepsTheHostNameCheck(t *testing.T) {
 	t.Parallel()
 	const host = "db.abcdefghijklmnopqrst.supabase.co"
 	ca, _ := trustprofiletest.Chain(t, host)
-	cfg, err := connConfigTrusting("postgres://u:pw@"+host+":5432/postgres?sslmode=verify-full&channel_binding=require",
+	dsn := url.URL{Scheme: "postgres", User: url.UserPassword("u", "pw"), Host: host + ":5432", Path: "/postgres", RawQuery: "sslmode=verify-full&channel_binding=require"}
+	cfg, err := connConfigTrusting(dsn.String(),
 		trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}))
 	require.NoError(t, err)
 	require.Equal(t, host, cfg.TLSConfig.ServerName)

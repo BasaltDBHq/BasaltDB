@@ -92,7 +92,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*Options)) *kept
 
 // runSource is a local plugin acme-ner whose command is this test binary,
 // started as the test plugin that reports to report.
-func runSource(t *testing.T, report, hooks string) ([]shimFile, []string) {
+func runSource(t *testing.T, report, hooks string) ([]UploadFile, []string) {
 	t.Helper()
 	exe, err := os.ReadFile(os.Args[0])
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func runSource(t *testing.T, report, hooks string) ([]shimFile, []string) {
   "network": { "egress": [] }
 }
 `, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
-	return []shimFile{{Path: ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
+	return []UploadFile{{Path: ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.

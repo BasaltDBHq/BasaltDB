@@ -124,7 +124,7 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 
 // source is an unsigned local plugin acme-ner at version: its files as the
 // command uploads them, and the executables it names.
-func source(version string) ([]shimFile, []string) {
+func source(version string) ([]UploadFile, []string) {
 	exe := []byte("#!/bin/sh\nexit 0\n" + version)
 	manifest := fmt.Sprintf(`{
   "manifestVersion": 1, "name": "acme-ner", "version": %q, "publisher": "Acme",
@@ -135,7 +135,7 @@ func source(version string) ([]shimFile, []string) {
   "network": { "egress": [] }
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
-	return []shimFile{
+	return []UploadFile{
 		{Path: ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
@@ -574,7 +574,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), PluginOpenParams{UploadID: &id, Name: "other-name", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, CodePluginRefused, ReasonBadManifest)
-	id, err = f.client.PluginUpload(context.Background(), append(slices.Clone(files), shimFile{Path: "extra", Data: []byte("x")}))
+	id, err = f.client.PluginUpload(context.Background(), append(slices.Clone(files), UploadFile{Path: "extra", Data: []byte("x")}))
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	requirePersonError(t, err, CodePluginRefused, ReasonBadManifest)
@@ -584,7 +584,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	requirePersonError(t, err, CodePluginRefused, ReasonBadManifest)
 	// A file whose hash is not the manifest's.
 	bad := slices.Clone(files)
-	bad[2] = shimFile{Path: "share/model.txt", Data: []byte("other")}
+	bad[2] = UploadFile{Path: "share/model.txt", Data: []byte("other")}
 	id, err = f.client.PluginUpload(context.Background(), bad)
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
@@ -606,7 +606,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	manifest := strings.Replace(string(files[0].Data), fmt.Sprintf(`"files": { "bin/acme-ner": "sha256:%x", "share/model.txt": "sha256:%x" },`,
 		sha256.Sum256(files[1].Data), sha256.Sum256([]byte("model"))), empty, 1)
 	files[0].Data = []byte(manifest)
-	id, err = f.client.PluginUpload(context.Background(), append(files, shimFile{Path: "pkg/__init__.py"}))
+	id, err = f.client.PluginUpload(context.Background(), append(files, UploadFile{Path: "pkg/__init__.py"}))
 	require.NoError(t, err)
 	res, err := f.client.PluginOpen(context.Background(), PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	require.NoError(t, err)

@@ -30,11 +30,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 const (
@@ -119,7 +121,9 @@ func (e remoteEnv) cli(t *testing.T, args ...string) result {
 // refusedLogin stands in for a database that refuses the agent's login
 // (its role does not exist, or has another password), so tests without
 // Postgres reach no network.
-func refusedLogin(context.Context, string) (cli.AgentConn, error) { return nil, errLoginRefused }
+func refusedLogin(context.Context, string) (cli.AgentConn, error) {
+	return nil, handoff.ErrLoginRefused
+}
 
 // noNetworkProbe stands in for the TLS probe of a new credential
 // (hardenedCredential): a database that cannot be reached, so tests without
@@ -494,7 +498,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
 		probed = append(probed, u.Query().Get(paramSSLMode)+"/"+u.Query().Get(paramChannelBinding))
-		return &pgconn.PgError{Code: sqlstateInternal, Message: supavisorNoTenant}
+		return &pgconn.PgError{Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant}
 	}
 	r := remoteWith(t, e, cfg, "--agent", "bot")
 	require.Equal(t, []string{"verify-full/require", "verify-full/"}, probed)

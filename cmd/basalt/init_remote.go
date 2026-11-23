@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/app"
@@ -25,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -55,19 +55,8 @@ const (
 	lockSuffix = ".lock"
 	// releasePage is where the person installs basalt on their own computer.
 	releasePage = "https://github.com/BasaltDBHq/BasaltDB/releases"
-	// loginTimeout bounds the agent's login that decides the code's kind.
-	loginTimeout = 15 * time.Second
-	toolStatus   = "status"
+	toolStatus  = "status"
 )
-
-// sqlstateClassAuth is the SQLSTATE class of a refused login:
-// invalid_password (28P01) and invalid_authorization_specification (28000:
-// no such role, a pg_hba refusal).
-const sqlstateClassAuth = "28"
-
-// sqlstateInternal is internal_error, which Supabase's pooler raises for a
-// user it does not know (supavisorNoTenant).
-const sqlstateInternal = "XX000"
 
 // OperatedBy is the value of --operated-by: who runs the machine steps on
 // this engine's machine. CLI input spelling only; engine.json holds the
@@ -667,7 +656,7 @@ func (r *remoteInit) login(pending, cred *credential) error {
 		case r.rootChanged(pending.dsn, err):
 			r.certChanged = true
 			return nil
-		case !errors.Is(err, errLoginRefused):
+		case !errors.Is(err, handoff.ErrLoginRefused):
 			return err
 		}
 	}
@@ -676,7 +665,7 @@ func (r *remoteInit) login(pending, cred *credential) error {
 	}
 	conn, err := r.c.AgentLogin(r.c.Ctx, cred.dsn)
 	switch {
-	case errors.Is(err, errLoginRefused):
+	case errors.Is(err, handoff.ErrLoginRefused):
 		return nil // the role cannot log in
 	case r.rootChanged(cred.dsn, err):
 		// Not a refused credential: the pinned host presents another
@@ -710,31 +699,6 @@ func (r *remoteInit) promote(pending *credential) error {
 	}
 	r.credExists = true
 	return nil
-}
-
-// errLoginRefused is a login the database refused: the agent's role does
-// not exist or has another password.
-var errLoginRefused = errors.New("the database refused the agent's login")
-
-// supavisorNoTenant is what Supabase's pooler answers (SQLSTATE XX000) for a
-// user it does not know, such as an agent role not created yet.
-const supavisorNoTenant = "Tenant or user not found"
-
-// loginAsAgent connects with dsn: errLoginRefused when the database
-// refuses the login (class 28, or the pooler not knowing the role).
-func loginAsAgent(ctx context.Context, sh cli.Host, dsn string) (cli.AgentConn, error) {
-	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
-	defer cancel()
-	conn, err := cli.Connect(ctx, sh, dsn)
-	var pg *pgconn.PgError
-	switch {
-	case err == nil:
-		return conn, nil
-	case errors.As(err, &pg) && (strings.HasPrefix(pg.Code, sqlstateClassAuth) ||
-		(pg.Code == sqlstateInternal && strings.Contains(pg.Message, supavisorNoTenant))):
-		return nil, errLoginRefused
-	}
-	return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): %w", err)
 }
 
 // inspect reads, as the agent, the guard version and whether the pending

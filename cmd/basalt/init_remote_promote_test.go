@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -107,7 +108,7 @@ func TestInitRemoteIgnoresACredentialForAnotherRole(t *testing.T) {
 	var dialed []string
 	_, err := runRemote(t, appSetupHost{}, cfg, func(_ context.Context, dsn string) (cli.AgentConn, error) {
 		dialed = append(dialed, dsn)
-		return nil, errLoginRefused
+		return nil, handoff.ErrLoginRefused
 	})
 	require.NoError(t, err)
 	pending, err := os.ReadFile(credFile + pendingSuffix)

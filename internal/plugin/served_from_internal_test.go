@@ -50,4 +50,17 @@ func TestServedFrom(t *testing.T) {
 	require.True(t, widens(snap.events[2], snap.events[3]), "a moved endpoint")
 	require.False(t, widens(snap.events[3], snap.events[4]), "nothing changed")
 	require.True(t, widens(snap.events[4], snap.events[5]), "a detail that does not decode")
+	require.True(t, widens(snap.events[5], guardmodel.PluginEntryEvent{Kind: changed, Endpoint: remote, Egress: []string{"b:443"}}),
+		"after a record that did not decode")
+	require.False(t, widens(
+		guardmodel.PluginEntryEvent{Kind: changed, Endpoint: local, Egress: []string{"a:443", "b:443"}},
+		guardmodel.PluginEntryEvent{Kind: changed, Endpoint: local, Egress: []string{"b:443", "a:443", "b:443"}}),
+		"the same hosts, reordered and repeated")
+
+	// A CHANGED record with no record before it never starts serving.
+	first := entryEvents{events: []guardmodel.PluginEntryEvent{{Seq: 4, Kind: changed, Endpoint: remote, Egress: []string{"c:443"}}}}
+	from, ok, err := servedFrom(context.Background(), first, "acme-ner", "default", 0)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Zero(t, from)
 }

@@ -220,18 +220,18 @@ func TestRouteTable(t *testing.T) {
 		got = append(got, lines...)
 	}
 
-	configured := mounted(pages.New(setupOrigin, log))
+	configured := newMounted(setupOrigin, log)
 	configured.Add(probeAgent{})
 	section("configured", probeHandler(configured.Handler()))
 
-	withSetup := mounted(pages.New(setupOrigin, log))
+	withSetup := newMounted(setupOrigin, log)
 	withSetup.Add(probeAgent{})
-	withSetup.SetSetup(&fakeJobs{})
+	withSetup.MountSetup(pages.NewSetupHandlers(setupOrigin, &fakeJobs{}, log.With("component", "setup")))
 	section("with setup jobs", probeHandler(withSetup.Handler()))
 
 	section("setup only", probeHandler(pages.SetupOnlyHandler(setupOrigin, &fakeJobs{}, log)))
 
-	session := mounted(pages.New(setupOrigin, log))
+	session := newMounted(setupOrigin, log)
 	session.Add(probeAgent{})
 	section("session", probeSession(t, session))
 

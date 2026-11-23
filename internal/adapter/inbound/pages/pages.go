@@ -96,15 +96,42 @@ type Server struct {
 	files  fs.FS
 	mu     sync.RWMutex
 	agents []Agent
-	// setup runs the setup page's UPDATE and REMOVE (SetSetup); nil
-	// refuses every setup request JOB_UNAVAILABLE without reading it.
-	setup SetupJobs
 	// The handlers app mounts on the API routes, one set per page
 	// (MountApprovals, MountReverts, MountPlugins). Handler and Dispatch
 	// need all three.
 	approvals ApprovalHandlers
 	reverts   RevertHandlers
 	plugins   PluginHandlers
+	// setup serves the setup page and its routes (MountSetup); Handler
+	// needs it, Dispatch never reaches it.
+	setup SetupHandlers
+}
+
+// Setup paths (CONTRACT.md, The local setup page).
+const (
+	SetupPagePath  = "/setup/"
+	SetupCheckPath = "/api/v1/setup/check"
+	SetupRunPath   = "/api/v1/setup/run"
+	// SetupDoctorPath is the Update check: no admin string.
+	SetupDoctorPath  = "/api/v1/setup/doctor"
+	SetupEnginePath  = "/api/v1/setup/engine"
+	SetupNotMinePath = "/api/v1/setup/not-mine"
+)
+
+// SetupHandlers serve the setup page (GET SetupPagePath) and its routes.
+// Whatever is mounted, Handler refuses a databaseUrl body on every other
+// loopback route (refuseDatabaseURL).
+type SetupHandlers struct {
+	Page, Check, Run, Doctor, Engine, NotMine http.HandlerFunc
+}
+
+// MountSetup serves h on the setup routes; a later call replaces an
+// earlier one. Call it before Handler.
+func (s *Server) MountSetup(h SetupHandlers) {
+	if h.Page == nil || h.Check == nil || h.Run == nil || h.Doctor == nil || h.Engine == nil || h.NotMine == nil {
+		panic("pages: every setup handler required")
+	}
+	s.setup = h
 }
 
 // ApprovalHandlers serve the approval page's API routes: GET the request,
@@ -176,14 +203,12 @@ func (s *Server) Add(a Agent) {
 	s.agents = append(s.agents, a)
 }
 
-// SetSetup serves the setup page's jobs for this engine's agents
-// (CONTRACT.md, The local setup page): the only routes that read the admin
-// connection string. Call it before Handler.
-func (s *Server) SetSetup(jobs SetupJobs) { s.setup = jobs }
-
 // Handler routes the pages, their files and the relay.
 func (s *Server) Handler() http.Handler {
 	s.mounted()
+	if s.setup.Page == nil {
+		panic("pages: mount the setup handlers first")
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -210,21 +235,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.reverts.Reject)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/reveal", s.approvals.Reveal)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.reverts.Reveal)
-	mux.HandleFunc("GET "+SetupPagePath+"{$}", serveSetupPage)
-	if s.setup != nil {
-		st := setupRoutes{origin: s.origin, jobs: s.setup, log: s.log.With("component", "setup")}
-		mux.HandleFunc("POST "+SetupCheckPath, st.check)
-		mux.HandleFunc("POST "+SetupRunPath, st.run)
-		mux.HandleFunc("POST "+SetupDoctorPath, st.doctor)
-		mux.HandleFunc("POST "+SetupEnginePath, st.engine)
-		mux.HandleFunc("POST "+SetupNotMinePath, st.notMine)
-	} else {
-		mux.HandleFunc("POST "+SetupCheckPath, s.configuredSetup)
-		mux.HandleFunc("POST "+SetupRunPath, s.configuredSetup)
-		mux.HandleFunc("POST "+SetupDoctorPath, s.configuredSetup)
-		mux.HandleFunc("POST "+SetupEnginePath, s.configuredSetup)
-		mux.HandleFunc("POST "+SetupNotMinePath, s.configuredSetup)
-	}
+	mux.HandleFunc("GET "+SetupPagePath+"{$}", s.setup.Page)
+	mux.HandleFunc("POST "+SetupCheckPath, s.setup.Check)
+	mux.HandleFunc("POST "+SetupRunPath, s.setup.Run)
+	mux.HandleFunc("POST "+SetupDoctorPath, s.setup.Doctor)
+	mux.HandleFunc("POST "+SetupEnginePath, s.setup.Engine)
+	mux.HandleFunc("POST "+SetupNotMinePath, s.setup.NotMine)
 	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.plugins.Get)
 	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.plugins.Approve)
 	return refuseDatabaseURL(s.origin, mux)

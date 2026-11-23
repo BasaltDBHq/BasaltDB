@@ -8,12 +8,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
@@ -65,8 +66,8 @@ func testManager() guidance.ServiceManager {
 	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 }
 
-func testErrors() ErrorMap {
-	return ErrorMap{
+func testErrors() guidance.ErrorMap {
+	return guidance.ErrorMap{
 		InvalidParams: ledger.ErrInvalidParams,
 		InvalidIntent: guard.ErrInvalidIntent,
 		RowTooLarge: func(err error) (string, bool) {
@@ -83,7 +84,7 @@ func testEngineHost() EngineHost {
 	return EngineHost{
 		LatestGuardVersion: guard.LatestVersion,
 		StartHoldOffUntil: func(stop LastStop, configPath string, now time.Time) (time.Time, bool) {
-			return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
+			return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 		},
 	}
 }
@@ -104,8 +105,8 @@ func TestHostCopiesMatchTheAdapters(t *testing.T) {
 	require.Equal(t, string(vault.StateOff), vaultStateOff)
 	require.Equal(t, string(vault.StateConnected), vaultStateConnected)
 	require.Equal(t, string(vault.StateKeyError), vaultStateKeyError)
-	require.Equal(t, mcp.MetaPluginUpload, MetaPluginUpload)
-	require.Equal(t, mcp.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
+	require.Equal(t, mcpserver.MetaPluginUpload, MetaPluginUpload)
+	require.Equal(t, mcpserver.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
 }
 
 // Every port the app used to hand the agent as one Host is a required

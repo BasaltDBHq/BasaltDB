@@ -15,8 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -29,6 +27,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -198,7 +198,7 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 		d.Approval.Columns = store.NewColumnOrder(pool)
 		d.Core.Commands, d.Core.PagesOrigin, d.Delivery.Poll, d.Write.RLS, d.Delivery.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
 	})).Svc
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
+	return agentEnv{d: d, a: a, h: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {

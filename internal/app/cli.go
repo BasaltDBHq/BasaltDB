@@ -10,10 +10,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
@@ -41,16 +42,16 @@ type (
 )
 
 const (
-	OSInstallPrompt = osservice.InstallPrompt
-	OSRemovePrompt  = osservice.RemovePrompt
-	OSResetPrompt   = osservice.ResetPrompt
-	OSUnitName      = osservice.SystemdUnitName
-	OSLaunchdLabel  = osservice.LaunchdLabel
+	OSInstallPrompt = servicespec.InstallPrompt
+	OSRemovePrompt  = servicespec.RemovePrompt
+	OSResetPrompt   = servicespec.ResetPrompt
+	OSUnitName      = servicespec.SystemdUnitName
+	OSLaunchdLabel  = servicespec.LaunchdLabel
 )
 
 var (
-	ErrOSDialogCancelled = osservice.ErrDialogCancelled
-	ErrOSNoDialog        = osservice.ErrNoDialog
+	ErrOSDialogCancelled = servicespec.ErrDialogCancelled
+	ErrOSNoDialog        = servicespec.ErrNoDialog
 )
 
 func OSApply(ctx context.Context, sys OSSystem, steps []osservice.Step, dryRun bool, out io.Writer) error {
@@ -103,7 +104,7 @@ func OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 }
 
 // The last-stop record the supervisor writes and the autostart reads.
-type LastStopRecord = laststop.LastStopFileRecord
+type LastStopRecord = servicespec.LastStopFileRecord
 
 func LastStopHashEngineJSON(path string) string { return laststop.HashEngineJSON(path) }
 func LastStopStartHoldOffUntil(rec LastStopRecord, configPath string, now time.Time) (time.Time, bool) {
@@ -113,12 +114,12 @@ func LastStopStartHoldOffUntil(rec LastStopRecord, configPath string, now time.T
 // The crash reports.
 type (
 	CrashRecorder = crash.Recorder
-	CrashInput    = crash.Input
+	CrashInput    = servicespec.CrashInput
 )
 
 const (
-	CrashDirName   = crash.DirName
-	CrashKindPanic = crash.KindPanic
+	CrashDirName   = servicespec.CrashDirName
+	CrashKindPanic = servicespec.CrashKindPanic
 )
 
 func CrashOSScrubber() *crash.Scrubber { return crash.OSScrubber() }
@@ -135,7 +136,7 @@ func UpdateCacheDir(override string) (string, error) { return updatecheck.CacheD
 func UpdateDisabled(getenv func(string) string) bool { return updatecheck.Disabled(getenv) }
 
 // DemoAgent is the sample database's agent name.
-const DemoAgent = demo.Agent
+const DemoAgent = setupcode.DemoAgent
 
 // Querier is what the guard's reads take: a connection or a transaction.
 type Querier = guard.Querier

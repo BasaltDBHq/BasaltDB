@@ -15,13 +15,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -52,7 +52,7 @@ func testDB(t *testing.T) (string, string) {
 }
 
 type harness struct {
-	server *mcp.Server
+	server *mcpserver.Server
 	reader *store.Reader
 }
 
@@ -66,7 +66,7 @@ func newHarnessConns(t *testing.T, agentURL string, limits sqlguard.Limits, conn
 	t.Helper()
 	env := agenttest.PgService(t, agentURL, agenttest.WithLimits(limits), agenttest.WithConns(conns))
 	return harness{
-		server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(env.Svc), agent.WithMeta)...),
+		server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(env.Svc), agent.WithMeta)...),
 		reader: env.Reader,
 	}
 }

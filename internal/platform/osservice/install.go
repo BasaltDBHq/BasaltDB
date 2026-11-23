@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // File modes for what install writes.
@@ -253,10 +254,10 @@ func linuxInstall(sys System, s Spec) ([]Step, error) {
 		// first clears systemd's start-rate count, so a restart right after
 		// the first install's starts (the dialog's, an engine waiting for its
 		// config) is never refused for starting too often.
-		steps = append(steps, run("systemctl", "enable", SystemdUnitName),
-			run("systemctl", "reset-failed", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
+		steps = append(steps, run("systemctl", "enable", servicespec.SystemdUnitName),
+			run("systemctl", "reset-failed", servicespec.SystemdUnitName), run("systemctl", "restart", servicespec.SystemdUnitName))
 	} else {
-		steps = append(steps, run("systemctl", "enable", "--now", SystemdUnitName))
+		steps = append(steps, run("systemctl", "enable", "--now", servicespec.SystemdUnitName))
 	}
 	// The plugin units are bound to the engine's: they go after it.
 	plugins, err := pluginSteps(sys, s, nil)
@@ -319,11 +320,11 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	steps = append(steps, Step{Kind: StepWrite, Path: LaunchdPlist, Content: LaunchdDaemon(s)})
 	if installed {
 		// Already loaded: restart so it reads the new config.
-		return append(steps, run("launchctl", "kickstart", "-k", "system/"+LaunchdLabel)), nil
+		return append(steps, run("launchctl", "kickstart", "-k", "system/"+servicespec.LaunchdLabel)), nil
 	}
 	return append(steps,
 		run("launchctl", "bootstrap", "system", LaunchdPlist),
-		run("launchctl", "enable", "system/"+LaunchdLabel),
+		run("launchctl", "enable", "system/"+servicespec.LaunchdLabel),
 	), nil
 }
 

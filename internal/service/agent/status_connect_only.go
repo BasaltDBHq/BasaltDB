@@ -247,7 +247,7 @@ type ConnectOnly struct {
 	Now           func() time.Time
 	// Errors maps a failure to the contract's tool error; LatestGuardVersion
 	// is the basalt_meta version this build installs.
-	Errors             ErrorMap
+	Errors             guidance.ErrorMap
 	LatestGuardVersion func() int
 }
 
@@ -299,7 +299,7 @@ func (c ConnectOnly) refused(tool string) func(context.Context, json.RawMessage)
 		st := c.Handoff.State()
 		var err error = &guidance.SetupError{Code: st.Setup.Code, Fingerprint: st.Setup.Fingerprint, Expired: st.Expired, ConnectOnly: !st.Expired}
 		if st.Phase == handoff.PhaseConfirm && st.Database != nil {
-			err = &DatabaseNotConfirmedError{SetupID: st.Setup.SetupID, Database: *st.Database}
+			err = &guidance.DatabaseNotConfirmedError{SetupID: st.Setup.SetupID, Database: *st.Database}
 		}
 		return nil, c.guide().Failure(tool, guidance.CallArgs(raw), err)
 	}

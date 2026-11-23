@@ -106,7 +106,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 		person = s.permissionDeniedSteps(b, te, f)
 	case guidance.CodeNotFound:
 		if f.tool == toolDescribe {
-			person = s.describeNotFoundSteps(b, f)
+			person = s.describe.describeNotFoundSteps(b, f)
 			break
 		}
 		person = notFoundSteps(b, te, f)
@@ -493,7 +493,7 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 	case guidance.ReasonSetupPending, guidance.ReasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case guidance.ReasonDatabaseNotConfirmed:
-		var dn *DatabaseNotConfirmedError
+		var dn *guidance.DatabaseNotConfirmedError
 		if !errors.As(f.err, &dn) {
 			b.Fail(errors.New("a database waiting for confirmation needs its setup and address"))
 			return ""

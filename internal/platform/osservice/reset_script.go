@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // ResetScript is the administrator dialog's script for a reset (CONTRACT.md,
@@ -34,7 +35,7 @@ done
 systemctl daemon-reload >/dev/null 2>&1 || true
 `, systemdUnitDir, pluginUnitPrefix)
 		b.WriteString(resetFiles(goosLinux))
-		fmt.Fprintf(&b, "systemctl restart %s\n", SystemdUnitName)
+		fmt.Fprintf(&b, "systemctl restart %s\n", servicespec.SystemdUnitName)
 	case goosDarwin:
 		b.WriteString(darwinEngineUID())
 		b.WriteString(resetPreflight(goosDarwin))
@@ -47,7 +48,7 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 done
 `, launchDaemonsDir, pluginLabelPrefix)
 		b.WriteString(resetFiles(goosDarwin))
-		fmt.Fprintf(&b, "launchctl kickstart -k system/%s\n", LaunchdLabel)
+		fmt.Fprintf(&b, "launchctl kickstart -k system/%s\n", servicespec.LaunchdLabel)
 	default:
 		return "", fmt.Errorf("the engine service installs on linux and darwin, not %s", goos)
 	}

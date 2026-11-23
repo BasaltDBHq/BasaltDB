@@ -6,8 +6,8 @@ import (
 	"time"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // toolRequestPlugin is the one tool whose call the shim touches: it reads
@@ -19,7 +19,7 @@ const toolRequestPlugin = "request_plugin"
 // PluginUploader reads the plugin folder source as this process's OS user
 // and uploads it to the engine. It returns ErrNoUploads when the engine
 // takes none, and a *toolresult.ToolError for an answer the agent gets as it is.
-type PluginUploader func(ctx context.Context, source string) (mcp.PluginUpload, error)
+type PluginUploader func(ctx context.Context, source string) (mcpserver.PluginUpload, error)
 
 // prepare is line as the engine gets it: for a request_plugin call, any
 // upload the client named is removed, and with source the shim's own
@@ -41,7 +41,7 @@ func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []
 		// carries no upload.
 		meta = map[string]json.RawMessage{}
 	}
-	delete(meta, mcp.MetaPluginUpload)
+	delete(meta, mcpserver.MetaPluginUpload)
 	var args struct {
 		Source string `json:"source"`
 	}
@@ -53,11 +53,11 @@ func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []
 		case err == nil:
 			raw, merr := json.Marshal(up)
 			if merr == nil {
-				meta[mcp.MetaPluginUpload] = raw
+				meta[mcpserver.MetaPluginUpload] = raw
 			}
 		case asToolError(err, &te):
-			if req, ok := mcp.RequestOf(line); ok {
-				_ = mcp.WriteToolError(r.out, req.ID, te)
+			if req, ok := mcpserver.RequestOf(line); ok {
+				_ = mcpserver.WriteToolError(r.out, req.ID, te)
 			}
 			return nil, true
 		}

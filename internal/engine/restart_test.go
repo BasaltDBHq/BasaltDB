@@ -16,8 +16,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
@@ -36,13 +36,13 @@ func newRestartTools(build string) *restartTools {
 	return &restartTools{build: build, started: make(chan struct{}, 1), release: make(chan struct{})}
 }
 
-func (r *restartTools) server() *mcp.Server {
-	return mcp.NewServer(mcp.Info{Name: "basalt", Version: r.build},
-		mcp.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
+func (r *restartTools) server() *mcpserver.Server {
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: r.build},
+		mcpserver.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
 			r.writes.Add(1)
 			return map[string]string{"build": r.build}, nil
 		}},
-		mcp.Tool{Name: "slow", Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
+		mcpserver.Tool{Name: "slow", Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			r.started <- struct{}{}
 			select {
 			case <-r.release:

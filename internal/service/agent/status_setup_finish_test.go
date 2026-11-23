@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // This file tests finishing a setup from the laptop on the engine
@@ -263,9 +263,9 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 }
 
 // serverOf is svc's MCP server and tools.
-func serverOf(svc *Service) (*mcp.Server, []mcp.Tool) {
+func serverOf(svc *Service) (*mcpserver.Server, []mcpserver.Tool) {
 	tools := Tools(svc)
-	return mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...), mcp.ToolsFrom(tools, WithMeta)
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
 }
 
 // A lock file the engine cannot open is reported, not retried in silence,

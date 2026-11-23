@@ -9,9 +9,9 @@ import (
 	"time"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // openTimeout bounds one run of the browser opener: xdg-open may hang
@@ -45,7 +45,7 @@ func newAutoOpener(open func(ctx context.Context, link string) error) *autoOpene
 // answer opens the links of line, an engine's answer on a connection whose
 // hello answer was engine. It opens nothing unless the engine said it is
 // operated by a person and gave its local page origin.
-func (o *autoOpener) answer(ctx context.Context, engine mcp.Hello, line []byte) {
+func (o *autoOpener) answer(ctx context.Context, engine mcpserver.Hello, line []byte) {
 	if o == nil || engine.OperatedBy != mcpcontract.OperatedByPerson {
 		return
 	}

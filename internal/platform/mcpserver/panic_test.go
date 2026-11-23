@@ -1,4 +1,4 @@
-package mcp_test
+package mcpserver_test
 
 import (
 	"context"
@@ -7,14 +7,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 const callBoom = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"boom","arguments":{}}}`
 
-func boomTool() mcp.Tool {
-	return mcp.Tool{Name: "boom", Call: func(context.Context, json.RawMessage) (any, error) {
+func boomTool() mcpserver.Tool {
+	return mcpserver.Tool{Name: "boom", Call: func(context.Context, json.RawMessage) (any, error) {
 		panic("row value: alice@example.com")
 	}}
 }
@@ -27,7 +27,7 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 	var gotTool string
 	var gotValue any
 	var gotStack []byte
-	s := mcp.NewServer(mcp.Info{Name: "basalt", Version: "1", OnPanic: func(tool string, v any, stack []byte) string {
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1", OnPanic: func(tool string, v any, stack []byte) string {
 		gotTool, gotValue, gotStack = tool, v, stack
 		return "report-id-1"
 	}}, boomTool())
@@ -52,7 +52,7 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 
 func TestToolPanicWithoutAReportStillAnswersInternal(t *testing.T) {
 	t.Parallel()
-	s := mcp.NewServer(mcp.Info{Name: "basalt", Version: "1", OnPanic: func(string, any, []byte) string { return "" }}, boomTool())
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1", OnPanic: func(string, any, []byte) string { return "" }}, boomTool())
 	text, isError := toolText(t, serve(t, s, callBoom)[0].Result)
 	require.True(t, isError)
 	var te toolresult.ToolError
@@ -64,7 +64,7 @@ func TestToolPanicWithoutAReportStillAnswersInternal(t *testing.T) {
 // TestToolPanicIsNotRecoveredWithoutOnPanic: no hook, no change in behavior.
 func TestToolPanicIsNotRecoveredWithoutOnPanic(t *testing.T) {
 	t.Parallel()
-	s := mcp.NewServer(mcp.Info{Name: "basalt", Version: "1"}, boomTool())
+	s := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "1"}, boomTool())
 	require.Panics(t, func() { _ = s.ServeLine(context.Background(), discard{}, []byte(callBoom)) })
 }
 

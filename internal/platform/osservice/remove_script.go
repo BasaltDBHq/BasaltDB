@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // RemoveScript is the script the administrator dialog runs after the setup
@@ -154,7 +155,7 @@ fi
 	echo "basalt: the engine service is removed, but the OS user${kept} could not be deleted, so it stays with its group: the next install uses it again. To delete it: userdel NAME" >&2
 [ -z "$orphaned" ] ||
 	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with groupdel NAME"
-`, SystemdUnitName, systemdUnitDir, pluginUnitPrefix, SystemdUnitPath,
+`, servicespec.SystemdUnitName, systemdUnitDir, pluginUnitPrefix, SystemdUnitPath,
 		scriptWord(filepath.Dir(config.DefaultPath(goosLinux))), scriptWord(config.DefaultStateDir(goosLinux)),
 		scriptWord(config.DefaultSocketDir(goosLinux)), scriptWord(linuxPluginBase), u)
 }
@@ -224,7 +225,7 @@ fi
 	echo "basalt: the engine service is removed, but macOS refused to delete the OS user${kept} (it does, for example, when the app that ran basalt init has no Full Disk Access), so it stays with its group: the next install uses it again. To delete it, in a terminal with Full Disk Access: sudo dscl . -delete /Users/NAME, then sudo dscl . -delete /Groups/NAME"
 [ -z "$orphaned" ] ||
 	fail "the engine service is removed, but the group${orphaned} stays without its user, and an install refuses that group: delete it with sudo dscl . -delete /Groups/NAME"
-`, LaunchdLabel, launchDaemonsDir, pluginLabelPrefix, LaunchdPlist, newsyslogDir, pluginUnitPrefix,
+`, servicespec.LaunchdLabel, launchDaemonsDir, pluginLabelPrefix, LaunchdPlist, newsyslogDir, pluginUnitPrefix,
 		scriptWord(filepath.Dir(config.DefaultPath(goosDarwin))), scriptWord(darwinLogDir), scriptWord(darwinPluginBase),
 		darwinPluginUserPrefix, u)
 }

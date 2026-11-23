@@ -13,9 +13,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
@@ -92,7 +92,7 @@ func (c keptClient) PluginUpload(ctx context.Context, files []shim.PluginFile) (
 // returns its path.
 func serveAgentSocket(t *testing.T, dir string, p *Requests, caller string, served func() error) string {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(uploadMethods(p, caller, served))
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}).WithMethods(uploadMethods(p, caller, served))
 	sock := filepath.Join(dir, caller+".sock")
 	ln, err := net.Listen("unix", sock)
 	require.NoError(t, err)
@@ -116,7 +116,7 @@ func serveAgentSocket(t *testing.T, dir string, p *Requests, caller string, serv
 // socket, for the tests that send files through the shim. It maps only the
 // refusals they look at; the app's own methods, and every code they answer
 // with, are tested in the app (TestUploadMethodsAnswerWithTheirCodes).
-func uploadMethods(p *Requests, caller string, served func() error) map[string]mcp.MethodFunc {
+func uploadMethods(p *Requests, caller string, served func() error) map[string]mcpserver.MethodFunc {
 	if p == nil {
 		return nil
 	}
@@ -131,15 +131,15 @@ func uploadMethods(p *Requests, caller string, served func() error) map[string]m
 		}
 		return &toolresult.ToolError{Code: guidance.CodeInternal, Message: err.Error()}
 	}
-	return map[string]mcp.MethodFunc{
-		mcp.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {
+	return map[string]mcpserver.MethodFunc{
+		mcpserver.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			out, err := p.UploadBegin(ctx, caller, served)
 			if err != nil {
 				return nil, fail(err)
 			}
 			return out, nil
 		},
-		mcp.MethodPluginUploadPart: func(ctx context.Context, raw json.RawMessage) (any, error) {
+		mcpserver.MethodPluginUploadPart: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			out, err := p.UploadPart(ctx, caller, served, raw)
 			if err != nil {
 				return nil, fail(err)

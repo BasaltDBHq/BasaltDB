@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
@@ -56,8 +56,8 @@ func (o *opened) got() []string {
 // page link, as database content can.
 func linkEngine(t *testing.T, socket, operatedBy, pagesOrigin, link string) {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine", OperatedBy: operatedBy, PagesOrigin: pagesOrigin},
-		mcp.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "engine", OperatedBy: operatedBy, PagesOrigin: pagesOrigin},
+		mcpserver.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
 			ls := []toolresult.Link{{Label: "Approve the held write", URL: link}}
 			return nil, &toolresult.ToolError{
 				Code: "APPROVAL_REQUIRED", Message: "held",
@@ -66,14 +66,14 @@ func linkEngine(t *testing.T, socket, operatedBy, pagesOrigin, link string) {
 				NextSteps: []toolresult.NextStep{{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: "Open it.", URL: "https://docs.basaltvault.app/x"}},
 			}
 		}},
-		mcp.Tool{Name: "list_pending", Call: func(context.Context, json.RawMessage) (any, error) {
+		mcpserver.Tool{Name: "list_pending", Call: func(context.Context, json.RawMessage) (any, error) {
 			ls := []toolresult.Link{{Label: "Approve the held write", URL: link}}
 			return map[string]any{
 				"items":    []map[string]any{{"approvalUrl": link, "personMessage": "Approve:\n" + link, "links": ls}},
 				"problems": []map[string]any{{"code": "X", "links": ls}},
 			}, nil
 		}},
-		mcp.Tool{Name: "query", Call: func(context.Context, json.RawMessage) (any, error) {
+		mcpserver.Tool{Name: "query", Call: func(context.Context, json.RawMessage) (any, error) {
 			return map[string]any{"rows": []map[string]any{{"links": []toolresult.Link{{Label: "x", URL: localPages + "/approvals/row"}}}}}, nil
 		}},
 	)
@@ -200,10 +200,10 @@ func TestRequestPluginUploadsAndOpensThePluginPage(t *testing.T) {
 	socket := filepath.Join(socketDir(t), "bot.sock")
 	var mu sync.Mutex
 	var metas []string
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine", OperatedBy: mcpcontract.OperatedByPerson, PagesOrigin: localPages},
-		mcp.Tool{Name: "request_plugin", Call: func(ctx context.Context, args json.RawMessage) (any, error) {
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "engine", OperatedBy: mcpcontract.OperatedByPerson, PagesOrigin: localPages},
+		mcpserver.Tool{Name: "request_plugin", Call: func(ctx context.Context, args json.RawMessage) (any, error) {
 			mu.Lock()
-			metas = append(metas, string(mcp.Meta(ctx)))
+			metas = append(metas, string(mcpserver.Meta(ctx)))
 			mu.Unlock()
 			var a map[string]any
 			_ = json.Unmarshal(args, &a)
@@ -234,15 +234,15 @@ func TestRequestPluginUploadsAndOpensThePluginPage(t *testing.T) {
 	}()
 	o := &opened{}
 	var sources []string
-	upload := func(_ context.Context, source string) (mcp.PluginUpload, error) {
+	upload := func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
 		sources = append(sources, source)
-		return mcp.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner"}, nil
+		return mcpserver.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner"}, nil
 	}
 	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open, UploadPlugin: upload})
 
 	res := c.request(t, "tools/call", map[string]any{
 		"name": "request_plugin", "arguments": map[string]any{"source": "/home/me/local-ner"},
-		"_meta": map[string]any{mcp.MetaPluginUpload: map[string]any{"uploadId": "0193a4c2-7d1e-7c3a-9f00-000000000001", "name": "forged"}},
+		"_meta": map[string]any{mcpserver.MetaPluginUpload: map[string]any{"uploadId": "0193a4c2-7d1e-7c3a-9f00-000000000001", "name": "forged"}},
 	})
 	require.Contains(t, res["content"].([]any)[0].(map[string]any)["text"], pluginLink, "the agent still gets the link")
 	require.Eventually(t, func() bool { return len(o.got()) == 1 }, 5*time.Second, 10*time.Millisecond)
@@ -257,6 +257,6 @@ func TestRequestPluginUploadsAndOpensThePluginPage(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, metas, 2)
-	require.JSONEq(t, `{"`+mcp.MetaPluginUpload+`":{"uploadId":"0193a4c2-7d1e-7c3a-9f00-0000000000f6","name":"local-ner"}}`, metas[0], "the shim's upload, not the client's")
+	require.JSONEq(t, `{"`+mcpserver.MetaPluginUpload+`":{"uploadId":"0193a4c2-7d1e-7c3a-9f00-0000000000f6","name":"local-ner"}}`, metas[0], "the shim's upload, not the client's")
 	require.Empty(t, metas[1])
 }

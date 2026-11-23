@@ -19,7 +19,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -27,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -94,7 +94,7 @@ func describeDBWithUpdate(t *testing.T, update func() *agent.UpdateNotice) descr
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 		d.Status.Update = update
 	})).Svc
-	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, db: d, role: a.Role}
+	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, db: d, role: a.Role}
 }
 
 // classifyDescribe classes every readable column PUBLIC and card_token
@@ -333,7 +333,7 @@ func TestDescribeSearchScale(t *testing.T) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
-	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
+	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
 	measure := func(name string, args map[string]any) {
@@ -380,7 +380,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
 		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pool)
 	})).Svc
-	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
+	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
 	start := time.Now()

@@ -69,6 +69,12 @@ const (
 // ErrCodeTooLong is returned by Encode for a code over MaxCodeLen.
 var ErrCodeTooLong = errors.New("this setup code is too long: name fewer tables")
 
+// DemoAgent is the demo's agent unless one is named.
+const DemoAgent = "demo_bot"
+
+// ErrCovered: PinNew found a trust profile that covers the host already.
+var ErrCovered = errors.New("a trust profile covers this host already")
+
 // Payload is the JSON inside a setup code (setup-code.schema.json). Field
 // order is the schema's key order, which the encoder writes.
 type Payload struct {

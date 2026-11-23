@@ -67,7 +67,7 @@ type statusDeps struct {
 	now         func() time.Time
 	// The host's: how errors map, the guard version this build installs and
 	// the crash reports.
-	errs         ErrorMap
+	errs         guidance.ErrorMap
 	latestGuard  func() int
 	crashReports func(dirs ...string) []CrashReport
 }
@@ -122,7 +122,7 @@ type LocalStatus struct {
 	Now      func() time.Time
 	// Errors maps a failure to the contract's tool error; LatestGuardVersion
 	// is the basalt_meta version this build installs.
-	Errors             ErrorMap
+	Errors             guidance.ErrorMap
 	LatestGuardVersion func() int
 }
 

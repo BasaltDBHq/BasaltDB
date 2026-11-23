@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // The system's administrator dialogs (CONTRACT.md, The administrator
@@ -46,16 +47,10 @@ const (
 	ScriptPreflightEnd = "# end of checks: nothing above creates anything\n"
 )
 
-// Errors of an administrator dialog run.
-var (
-	// ErrNoDialog: no administrator dialog can be shown here (an SSH
-	// session, a machine without a desktop).
-	ErrNoDialog = errors.New("no administrator dialog is available here")
-	// ErrDialogCancelled: the person closed the dialog.
-	ErrDialogCancelled = errors.New("the administrator dialog was cancelled")
-	// ErrDialogScript: the person answered, and the script stopped.
-	ErrDialogScript = errors.New("the administrator dialog's script stopped")
-)
+// ErrDialogScript: the person answered, and the script stopped. The other
+// outcomes of a dialog run are servicespec.ErrNoDialog and
+// servicespec.ErrDialogCancelled.
+var ErrDialogScript = errors.New("the administrator dialog's script stopped")
 
 // safeBinary is what a binary path in the install script may hold: no
 // space, quote, backslash, dollar or newline, so it means the same in the
@@ -72,16 +67,6 @@ func DialogPaths(goos string) ([]string, error) {
 	}
 	return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", goos)
 }
-
-// The fixed prompts the macOS administrator dialog shows for each action,
-// so a dialog the person did not expect names what it would do. They are
-// constants: no value from the agent, the engine or the environment
-// reaches them.
-const (
-	InstallPrompt = "BasaltDB wants to INSTALL its engine service on this computer: it creates the engine's own system account and folders and starts the engine. Cancel unless you just asked to set up BasaltDB."
-	RemovePrompt  = "BasaltDB wants to REMOVE its engine service from this computer: it stops the engine and deletes its folders and system accounts. Cancel unless you just removed BasaltDB on the setup page."
-	ResetPrompt   = "BasaltDB wants to RESET this computer's setup: it deletes the engine's config and credentials. Cancel unless you just answered 'No, this isn't mine' on the setup page."
-)
 
 // DialogCommand is the command that asks the person, through the system's
 // administrator dialog, to run script as root: osascript "with
@@ -112,11 +97,11 @@ func DialogError(goos string, code int, stderr string, runErr error) error {
 	switch {
 	case goos == goosLinux && code == pkexecDismissed,
 		goos == goosDarwin && strings.Contains(said, "(-128)"):
-		return ErrDialogCancelled
+		return servicespec.ErrDialogCancelled
 	case goos == goosLinux && code == pkexecNotAuthorized:
-		return fmt.Errorf("%w (pkexec: %s)", ErrNoDialog, orRunErr(said, runErr))
+		return fmt.Errorf("%w (pkexec: %s)", servicespec.ErrNoDialog, orRunErr(said, runErr))
 	case goos == goosDarwin && (strings.Contains(said, "(-1713)") || strings.Contains(said, "(-60007)")):
-		return fmt.Errorf("%w (osascript: %s)", ErrNoDialog, said)
+		return fmt.Errorf("%w (osascript: %s)", servicespec.ErrNoDialog, said)
 	}
 	return fmt.Errorf("%w: %s", ErrDialogScript, orRunErr(said, runErr))
 }
@@ -176,10 +161,10 @@ func InstallScript(goos, binary string) (string, error) {
 		b.WriteString(darwinScript(spec))
 	}
 	unit := SystemdUnit(spec)
-	start := "systemctl daemon-reload\nsystemctl enable --now " + SystemdUnitName + "\n"
+	start := "systemctl daemon-reload\nsystemctl enable --now " + servicespec.SystemdUnitName + "\n"
 	if goos == goosDarwin {
 		unit = LaunchdDaemon(spec)
-		start = "launchctl bootstrap system " + LaunchdPlist + "\nlaunchctl enable system/" + LaunchdLabel + "\n"
+		start = "launchctl bootstrap system " + LaunchdPlist + "\nlaunchctl enable system/" + servicespec.LaunchdLabel + "\n"
 	}
 	if strings.Contains(unit, "\n"+unitEnd+"\n") {
 		return "", errors.New("the unit holds the script's own end marker")

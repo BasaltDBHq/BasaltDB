@@ -3,7 +3,7 @@ package shim
 import (
 	"encoding/json"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // readOnlyTools are the tools that change nothing, so running one a second
@@ -23,7 +23,7 @@ var readOnlyTools = map[string]bool{
 // retriable reports whether line can be sent again after the engine dropped
 // it without an answer: only a call of a read-only tool.
 func retriable(line []byte) bool {
-	req, ok := mcp.RequestOf(line)
+	req, ok := mcpserver.RequestOf(line)
 	if !ok {
 		return false
 	}

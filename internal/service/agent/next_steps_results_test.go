@@ -20,9 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 )
 
 // resultCase builds one result of the catalog: the person's message and the
@@ -309,7 +309,7 @@ func resultCases() map[string]resultCase {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				b := guidance.NewSteps()
-				person := s.notGrantedSteps(b, 3)
+				person := s.describe.notGrantedSteps(b, 3)
 				steps, err := b.Build()
 				require.NoError(t, err)
 				return person, nil, steps

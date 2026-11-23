@@ -22,19 +22,19 @@ import (
 // DescribeResource returns one table as the agent may see it, or only its
 // name and fingerprint when ifFingerprint is still current. A table that
 // does not exist and one the agent cannot read are the same NOT_FOUND.
-func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint string) (Resource, error) {
+func (ds *describeCase) DescribeResource(ctx context.Context, resource, ifFingerprint string) (Resource, error) {
 	schema, name, err := parseResource(resource)
 	if err != nil {
 		return Resource{}, &guidance.ArgumentError{Message: "invalid arguments: resource " + err.Error()}
 	}
-	rel, ok, err := s.deps.Describe.Catalog.Find(ctx, schema, name)
+	rel, ok, err := ds.deps.Catalog.Find(ctx, schema, name)
 	if err != nil {
 		return Resource{}, err
 	}
 	if !ok {
 		return Resource{}, describeNotFound(resource)
 	}
-	d, err := s.deps.Describe.Catalog.Describe(ctx, rel.OID)
+	d, err := ds.deps.Catalog.Describe(ctx, rel.OID)
 	if errors.Is(err, action.ErrNotFound) { // dropped since Find
 		return Resource{}, describeNotFound(resource)
 	}
@@ -45,17 +45,17 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 	for i, c := range d.Columns {
 		refs[i] = pii.ColumnRef{TableOID: d.OID, Attnum: c.Attnum}
 	}
-	classes, err := s.deps.Describe.Classes.Resolve(ctx, refs)
+	classes, err := ds.deps.Classes.Resolve(ctx, refs)
 	if err != nil {
 		return Resource{}, err
 	}
-	pii, err := s.deps.Describe.Classes.CatalogFingerprint(ctx)
+	pii, err := ds.deps.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Resource{}, err
 	}
 	detail := hideColumns(d, classes)
 	if slices.ContainsFunc(detail.Actions, func(a string) bool { return a != privSelect }) {
-		guarded, err := s.deps.Describe.Catalog.Guarded(ctx, d.OID)
+		guarded, err := ds.deps.Catalog.Guarded(ctx, d.OID)
 		if err != nil {
 			return Resource{}, err
 		}
@@ -364,8 +364,8 @@ var quotedKeywords = func() map[string]bool {
 // (INVALID_ARGUMENT, NOT_FOUND, QUERY_TIMEOUT, UNAVAILABLE, INTERNAL): any
 // other, such as a Postgres error reading the catalog, is the engine's
 // failure, INTERNAL, logged with its cause and never shown to the agent.
-func (s *Service) describeError(err error) error {
-	switch s.deps.Core.Errors.ToolError(err).Code {
+func (ds *describeCase) describeError(err error) error {
+	switch ds.core.Errors.ToolError(err).Code {
 	case guidance.CodeInvalidArgument, guidance.CodeNotFound, guidance.CodeQueryTimeout, guidance.CodeUnavailable, guidance.CodeInternal:
 		return err
 	}

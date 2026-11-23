@@ -5,20 +5,14 @@ import (
 	"encoding/hex"
 	"os"
 	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // DefaultStartHoldOff is how long basalt mcp waits after a supervisor
 // give-up before it starts another supervisor, counted from last-stop.json's
 // at, never from the file's mtime.
 const DefaultStartHoldOff = time.Minute
-
-// LastStopFileRecord is last-stop.json: why the supervisor gave up, when,
-// and the SHA-256 of engine.json at that moment.
-type LastStopFileRecord struct {
-	Reason       string    `json:"reason"`
-	At           time.Time `json:"at"`
-	EngineSHA256 string    `json:"engineSha256,omitempty"`
-}
 
 // HashEngineJSON is the lowercase hex SHA-256 of the file at path, or ""
 // when the file cannot be read.
@@ -38,7 +32,7 @@ func HashEngineJSON(path string) string {
 // zero when the hold-off does not apply: the give-up is not in the past,
 // the minute after at has passed, or engine.json has changed since the
 // give-up (engineSha256 no longer matches the current file).
-func StartHoldOffUntil(rec LastStopFileRecord, configPath string, now time.Time) (time.Time, bool) {
+func StartHoldOffUntil(rec servicespec.LastStopFileRecord, configPath string, now time.Time) (time.Time, bool) {
 	if rec.Reason == "" || rec.At.IsZero() {
 		return time.Time{}, false
 	}

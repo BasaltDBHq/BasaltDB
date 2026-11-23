@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
@@ -149,7 +150,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
 	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
 	d.Core.ServiceManager = guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-	d.Core.Errors = agent.ErrorMap{
+	d.Core.Errors = guidance.ErrorMap{
 		InvalidParams: ledger.ErrInvalidParams,
 		InvalidIntent: guard.ErrInvalidIntent,
 		RowTooLarge: func(err error) (string, bool) {
@@ -170,7 +171,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
 	d.Status.LatestGuardVersion = guard.LatestVersion
 	d.Status.StartHoldOffUntil = func(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
-		return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
+		return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 	}
 	d.Status.CrashReports = func(dirs ...string) []agent.CrashReport {
 		reports := crash.List(dirs...)

@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 )
@@ -95,7 +96,7 @@ func (f handoffFiles) change(id string, edit func(*config.Setup)) error {
 // nothing, and refuses unless that profile is this very pin.
 func (f handoffFiles) WritePin(host string, pin handoff.Pin) error {
 	_, err := trustdir.PinNew(f.configPath, host, pin.Top, pin.CAOnly)
-	if errors.Is(err, trustdir.ErrCovered) {
+	if errors.Is(err, setupcode.ErrCovered) {
 		return fmt.Errorf("%w, so the certificate authority trusted on the connect page is not pinned", err)
 	}
 	return err

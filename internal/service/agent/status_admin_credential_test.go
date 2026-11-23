@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 func TestHoldsAdminCredential(t *testing.T) {
@@ -105,7 +105,7 @@ func TestEveryToolRefusesEverySpellingOfAnAdminString(t *testing.T) {
 	d.Core.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	d.Core.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...)
 	for _, tool := range tools {
 		for name, v := range spellings {
 			for _, args := range []map[string]any{{"sql": v}, {"intent": v}, {"params": []any{v}}} {
@@ -131,7 +131,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	d.Core.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	d.Core.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...)
 	url := "postgres://admin:" + secret + "@db.example.com:5432/app"
 	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, ReasonAdminCredential, "")
 	require.True(t, ok)
@@ -156,7 +156,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	// The engine-down tools (basalt mcp, engine not answering) refuse too.
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Log: d.Core.Log, Now: d.Core.Now}
 	downTools := down.Tools()
-	downSrv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(downTools, WithMeta)...)
+	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(downTools, WithMeta)...)
 	for _, tool := range downTools {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
 			body, isError := serveCall(t, downSrv, tool.Name, args)

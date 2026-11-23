@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -46,7 +47,7 @@ type stubAgent struct {
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
 func (a *stubAgent) PageFailure(err error) *toolresult.ToolError {
-	return agent.ErrorMap{}.ToolError(err)
+	return guidance.ErrorMap{}.ToolError(err)
 }
 
 func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
@@ -126,11 +127,14 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 	return serveAgents(t, all...)
 }
 
-// mounted mounts every page's handlers on p, as app does.
-func mounted(p *pages.Server) *pages.Server {
-	p.MountApprovals(pages.NewApprovalHandlers(p))
+// newMounted is the pages for origin with every page's handlers mounted,
+// as app mounts them: the setup routes of an engine with no setup jobs.
+func newMounted(origin string, log *slog.Logger) *pages.Server {
+	p := pages.New(origin, log)
+	p.MountApprovals(approvalpage.NewApprovalHandlers(p))
 	p.MountReverts(pages.NewRevertHandlers(p))
 	p.MountPlugins(pages.NewPluginHandlers(p))
+	p.MountSetup(pages.NewConfiguredSetupHandlers(origin))
 	return p
 }
 
@@ -146,7 +150,7 @@ func serveAgents(t *testing.T, agents ...testAgent) site {
 	origin := "http://localhost:" + port
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	p := mounted(pages.New(origin, slog.New(slog.DiscardHandler)))
+	p := newMounted(origin, slog.New(slog.DiscardHandler))
 	for _, a := range agents {
 		a.wire(secrets, origin)
 		p.Add(a)

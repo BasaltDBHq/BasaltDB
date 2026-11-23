@@ -498,7 +498,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 			// The typed name is read against the database inside the
 			// transaction, before anything is planned or dropped
 			// (setup.RunRemove, as the connect page's removal).
-			rp, kept, err := setup.RunRemove(ctx, s.be, tx, s.opts.Prefix, req.ConfirmName)
+			rp, kept, err := setup.RunRemove(ctx, s.be, pgquerier.Neutralize(tx), s.opts.Prefix, req.ConfirmName)
 			if err != nil {
 				return removeRefusal(err)
 			}

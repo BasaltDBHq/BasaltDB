@@ -58,34 +58,10 @@ type TrustReport struct {
 // TrustReporter reads the TrustReport now.
 type TrustReporter func() TrustReport
 
-// TrustStatus is status.trust.
-type TrustStatus struct {
-	Host string `json:"host"`
-	// Applies is PROFILE, SSLROOTCERT, SYSTEM or NOT_VERIFIED.
-	Applies string `json:"applies"`
-	// Profile and Origin name the profile when Applies is PROFILE.
-	Profile string `json:"profile,omitempty"`
-	Origin  string `json:"origin,omitempty"`
-	// Verify is CA for a pin that checks the chain against its own root
-	// without the host name; absent for a full check.
-	Verify string `json:"verify,omitempty"`
-	// RootCount is how many roots the profile holds; Roots lists up to 8,
-	// those that expire first.
-	RootCount int               `json:"rootCount,omitempty"`
-	Roots     []TrustRootStatus `json:"roots,omitempty"`
-}
-
-// TrustRootStatus is one root of status.trust.roots.
-type TrustRootStatus struct {
-	Subject  string    `json:"subject"`
-	SHA256   string    `json:"sha256"`
-	NotAfter time.Time `json:"notAfter"`
-}
-
 // trustStatus is status.trust, adding TRUST_PROFILE_REFUSED for each
 // refused file and TRUST_ROOT_EXPIRING for roots in use that expire soon,
 // and the report it read; nil without a reporter.
-func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*TrustStatus, *TrustReport) {
+func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*guidance.TrustStatus, *TrustReport) {
 	if s.trust == nil {
 		return nil, nil
 	}
@@ -94,7 +70,7 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*Tr
 		s.addTrustRefused(ps, r)
 	}
 	a := rep.Applied
-	out := &TrustStatus{Host: a.Host, Applies: string(a.Applies)}
+	out := &guidance.TrustStatus{Host: a.Host, Applies: string(a.Applies)}
 	if a.Profile == nil {
 		return out, &rep
 	}
@@ -105,7 +81,7 @@ func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*Tr
 		out.Verify = verifyCAStatus
 	}
 	for _, c := range certs[:min(len(certs), maxTrustRoots)] {
-		out.Roots = append(out.Roots, TrustRootStatus{Subject: c.Subject.String(), SHA256: trustprofile.Fingerprint(c), NotAfter: c.NotAfter.UTC()})
+		out.Roots = append(out.Roots, guidance.TrustRootStatus{Subject: c.Subject.String(), SHA256: trustprofile.Fingerprint(c), NotAfter: c.NotAfter.UTC()})
 	}
 	s.addTrustExpiring(ps, a, certs)
 	s.addPinMismatch(ctx, ps, rep)

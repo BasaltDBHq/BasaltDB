@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -17,7 +18,7 @@ type fakePlugins map[string][]PluginProblem
 
 func (f fakePlugins) PluginProblems(agent string) []PluginProblem { return f[agent] }
 
-func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, r PluginReporter) StatusReport {
+func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, r PluginReporter) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy

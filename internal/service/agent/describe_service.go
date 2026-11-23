@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -14,10 +15,10 @@ type describeCase struct {
 	deps *DescribeDeps
 	// update is the newer release the engine knows of, as describe's overview
 	// reports it; the status use case owns it and hands it in.
-	update func() *UpdateInfo
+	update func() *guidance.UpdateInfo
 }
 
-func newDescribeCase(core *CoreDeps, deps *DescribeDeps, update func() *UpdateInfo) *describeCase {
+func newDescribeCase(core *CoreDeps, deps *DescribeDeps, update func() *guidance.UpdateInfo) *describeCase {
 	return &describeCase{core: core, deps: deps, update: update}
 }
 

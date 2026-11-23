@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -43,7 +44,7 @@ func caExpiring(t *testing.T, notAfter time.Time) *x509.Certificate {
 	return c
 }
 
-func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) StatusReport {
+func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) guidance.StatusReport {
 	t.Helper()
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
@@ -74,9 +75,9 @@ func TestStatusTrust(t *testing.T) {
 	p := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, later, soon)
 
 	r := trustLocal(t, ok, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}))
-	require.Equal(t, &TrustStatus{
+	require.Equal(t, &guidance.TrustStatus{
 		Host: host, Applies: "PROFILE", Profile: "internal", Origin: "OPERATOR", RootCount: 2,
-		Roots: []TrustRootStatus{
+		Roots: []guidance.TrustRootStatus{
 			{Subject: soon.Subject.String(), SHA256: trustprofile.Fingerprint(soon), NotAfter: soon.NotAfter.UTC()},
 			{Subject: later.Subject.String(), SHA256: trustprofile.Fingerprint(later), NotAfter: later.NotAfter.UTC()},
 		},
@@ -97,7 +98,7 @@ func TestStatusTrust(t *testing.T) {
 	require.Empty(t, r.Problems)
 
 	r = trustLocal(t, ok, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}))
-	require.Equal(t, &TrustStatus{Host: host, Applies: "SYSTEM"}, r.Trust)
+	require.Equal(t, &guidance.TrustStatus{Host: host, Applies: "SYSTEM"}, r.Trust)
 
 	r = trustLocal(t, ok, nil)
 	require.Nil(t, r.Trust)
@@ -148,7 +149,7 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 }
 
 // trustStatusOf is the engine's status with rep as its trust reporter.
-func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep TrustReporter) StatusReport {
+func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep TrustReporter) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
@@ -169,27 +170,27 @@ func trustStatusCases(operatedBy string) map[string]statusCase {
 	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	const host = "db.internal.example.com"
 	return map[string]statusCase{
-		problemCertificateNotVerified: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemCertificateNotVerified: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			err := fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})
 			return trustStatusOf(t, operatedBy, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}))
 		}},
-		problemTrustRootExpiring: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemTrustRootExpiring: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			p := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, caExpiring(t, statusNow.Add(24*time.Hour)))
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}))
 		}},
-		problemTrustRootChanged: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemTrustRootChanged: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			r, _ := pinnedStatus(t, operatedBy, true, "")
 			return r
 		}},
-		problemTrustPinMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemTrustPinMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			r, _ := pinnedStatus(t, operatedBy, false, pinSHAOther)
 			return r
 		}},
-		problemTrustProfileRefused: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemTrustProfileRefused: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem},
 				trustprofile.Refused{File: "/etc/basalt/trust.d/a.json", Reason: "it is writable by group or others"}))
@@ -220,7 +221,7 @@ const pinSHAOther = "5f9b77951a7aa1303f9b58eea9bfa89e358cfdc15f9786ff10d4930a722
 // pinnedStatus is the status of an agent whose database is pinned: with
 // certErr the connection fails on the certificate and the database now
 // presents another root; recorded, when set, is the ledger's pin.
-func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string) (StatusReport, *x509.Certificate) {
+func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string) (guidance.StatusReport, *x509.Certificate) {
 	t.Helper()
 	const host = "db.internal.example.com"
 	pinnedCA := caExpiring(t, statusNow.Add(400*24*time.Hour))

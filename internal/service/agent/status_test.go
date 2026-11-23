@@ -140,24 +140,24 @@ func pendingSetup(kind string, expires time.Time) *config.Setup {
 
 // statusCase builds a report for one situation.
 type statusCase struct {
-	report func(t *testing.T) StatusReport
+	report func(t *testing.T) guidance.StatusReport
 	// state is the guard state the report must give.
 	state string
 }
 
-func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) StatusReport {
+func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) guidance.StatusReport {
 	return operatedStatus(probe, passkeys, setup, "")
 }
 
 // operatedStatus is engineStatus on an engine whose operatedBy is operatedBy.
-func operatedStatus(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy string) func(t *testing.T) StatusReport {
+func operatedStatus(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy string) func(t *testing.T) guidance.StatusReport {
 	return operatedStatusWith(probe, passkeys, setup, operatedBy, "")
 }
 
 // operatedStatusWith is operatedStatus with the engine config at configPath
 // and the flags init saved.
-func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy, configPath string) func(t *testing.T) StatusReport {
-	return func(t *testing.T) StatusReport {
+func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy, configPath string) func(t *testing.T) guidance.StatusReport {
+	return func(t *testing.T) guidance.StatusReport {
 		t.Helper()
 		d := deps()
 		d.Status.OperatedBy = operatedBy
@@ -183,11 +183,11 @@ func statusCases() map[string]statusCase { return statusCasesFor("") }
 func statusCasesFor(operatedBy string) map[string]statusCase {
 	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	soon, past := statusNow.Add(time.Hour), statusNow.Add(-time.Hour)
-	engineStatus := func(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) StatusReport {
+	engineStatus := func(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) guidance.StatusReport {
 		return operatedStatus(probe, passkeys, setup, operatedBy)
 	}
 	cases := map[string]statusCase{
-		problemEngineUnreachable: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemEngineUnreachable: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
@@ -196,7 +196,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
-		problemEngineStartFailed: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemEngineStartFailed: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
@@ -205,7 +205,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
-		problemEngineGaveUp: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemEngineGaveUp: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
@@ -232,49 +232,49 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		problemSetupNotRun:        {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
 		problemSetupExpired:       {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
 		problemSetupChangePending: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
-		problemLockFileUnusable: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemLockFileUnusable: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
 		}},
-		problemPortalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemPortalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return portalStatus(t, operatedBy, fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
 		}},
-		problemDevLocalPages: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemDevLocalPages: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
 		}},
-		problemEngineRevoked: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		problemEngineRevoked: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return engineRecordStatusOf(t, operatedBy, recordOf(true))
 		}},
 		problemLedgerReinstalled: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
-		ProblemPluginUnavailable: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginUnavailable: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginUnavailable))
 		}},
-		ProblemPluginNotTrusted: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginNotTrusted: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginNotTrusted))
 		}},
 		// Plugin approvals are same-user mode: a foreground engine.
-		ProblemPluginAwaitingApproval: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginAwaitingApproval: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginAwaitingApproval))
 		}},
-		ProblemPluginApprovalExpired: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginApprovalExpired: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalExpired))
 		}},
-		ProblemPluginApprovalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginApprovalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalMismatch))
 		}},
-		ProblemPluginConfigInvalid: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginConfigInvalid: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, fakePlugins{"bot": {{Code: ProblemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}})
 		}},
-		ProblemPluginNoticesDropped: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
+		ProblemPluginNoticesDropped: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginNoticesDropped))
 		}},
@@ -384,7 +384,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	}
 }
 
-func findProblem(t *testing.T, r StatusReport, code string) guidance.Problem {
+func findProblem(t *testing.T, r guidance.StatusReport, code string) guidance.Problem {
 	t.Helper()
 	for _, p := range r.Problems {
 		if p.Code == code {
@@ -397,7 +397,7 @@ func findProblem(t *testing.T, r StatusReport, code string) guidance.Problem {
 
 // requireStatusSchema checks r against the tool's outputSchema and returns
 // it as JSON.
-func requireStatusSchema(t *testing.T, tool mcpcontract.Tool, r StatusReport) string {
+func requireStatusSchema(t *testing.T, tool mcpcontract.Tool, r guidance.StatusReport) string {
 	t.Helper()
 	raw, err := json.Marshal(r)
 	require.NoError(t, err)
@@ -422,9 +422,9 @@ func TestStatusWhenEverythingIsReady(t *testing.T) {
 	require.Equal(t, guardmodel.GuardOK, r.Guard.State)
 	require.True(t, r.Passkeys.Registered)
 	require.Equal(t, ptr(2), r.Passkeys.Active)
-	require.Equal(t, SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guardmodel.SetupAgent}, r.Setup)
+	require.Equal(t, guidance.SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guardmodel.SetupAgent}, r.Setup)
 	require.Nil(t, r.Vault, "no vault reporter yet: vault is left out")
-	require.Equal(t, &LedgerStatus{Bytes: 123456, ValuesKeptDays: 30, RecordsKeptDays: 365}, r.Ledger)
+	require.Equal(t, &guidance.LedgerStatus{Bytes: 123456, ValuesKeptDays: 30, RecordsKeptDays: 365}, r.Ledger)
 }
 
 func TestStatusLeavesLedgerOutWhenTheGuardCannotBeRead(t *testing.T) {
@@ -488,17 +488,17 @@ func TestStatusVaultHook(t *testing.T) {
 	t.Parallel()
 	d := deps()
 	setApprovals(&d, keys{n: 1})
-	d.Status.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
+	d.Status.Vault = fixedVault{guidance.VaultStatus{State: "KEY_ERROR"}}
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, &VaultStatus{State: "KEY_ERROR"}, r.Vault)
+	require.Equal(t, &guidance.VaultStatus{State: "KEY_ERROR"}, r.Vault)
 	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	requireStatusSchema(t, statusTool, r)
 }
 
-type fixedVault struct{ v VaultStatus }
+type fixedVault struct{ v guidance.VaultStatus }
 
-func (f fixedVault) VaultStatus() VaultStatus { return f.v }
+func (f fixedVault) VaultStatus() guidance.VaultStatus { return f.v }
 
 func TestSetupStates(t *testing.T) {
 	t.Parallel()
@@ -785,7 +785,7 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
 	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	soon := statusNow.Add(time.Hour)
-	reports := map[string]func(t *testing.T) StatusReport{
+	reports := map[string]func(t *testing.T) guidance.StatusReport{
 		"credential rejected":  operatedStatusWith(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long),
 		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long),
 		"guard missing":        operatedStatusWith(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long),
@@ -807,7 +807,7 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 
 // lockTroubleStatus is the status of an engine whose setup is recorded but
 // whose config lock file a root process left unopenable.
-func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
+func lockTroubleStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
@@ -840,14 +840,14 @@ func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error)
 
 // engineRecordStatusOf is the status of a ready agent on an engine with a
 // Vault reporter whose record is read by read.
-func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordReader) StatusReport {
+func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordReader) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
-	d.Status.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
+	d.Status.Vault = fixedVault{guidance.VaultStatus{State: "OFF", EngineID: testEngineID}}
 	d.Status.EngineRecord = read
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
@@ -864,16 +864,16 @@ func TestStatusEngineRecord(t *testing.T) {
 	revokedAt := statusNow.Add(-time.Hour).Format(time.RFC3339)
 	for name, tc := range map[string]struct {
 		read EngineRecordReader
-		want EngineRecordStatus
+		want guidance.EngineRecordStatus
 		code string
 	}{
-		"recorded":     {read: recordOf(false), want: EngineRecordStatus{State: engineRecorded, RecordedAt: recorded}},
-		"revoked":      {read: recordOf(true), want: EngineRecordStatus{State: engineRevoked, RecordedAt: recorded, RevokedAt: revokedAt}, code: problemEngineRevoked},
-		"not recorded": {read: notRecorded, want: EngineRecordStatus{State: engineNotRecorded}},
+		"recorded":     {read: recordOf(false), want: guidance.EngineRecordStatus{State: engineRecorded, RecordedAt: recorded}},
+		"revoked":      {read: recordOf(true), want: guidance.EngineRecordStatus{State: engineRevoked, RecordedAt: recorded, RevokedAt: revokedAt}, code: problemEngineRevoked},
+		"not recorded": {read: notRecorded, want: guidance.EngineRecordStatus{State: engineNotRecorded}},
 		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*EngineRecord, error) {
 			return nil, errors.New("relation does not exist")
-		}, want: EngineRecordStatus{State: engineUnknown}},
-		"no reader": {want: EngineRecordStatus{State: engineUnknown}},
+		}, want: guidance.EngineRecordStatus{State: engineUnknown}},
+		"no reader": {want: guidance.EngineRecordStatus{State: engineUnknown}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -897,11 +897,11 @@ func TestStatusEngineRecord(t *testing.T) {
 		t.Parallel()
 		d := deps()
 		setApprovals(&d, keys{n: 1})
-		d.Status.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
+		d.Status.Vault = fixedVault{guidance.VaultStatus{State: "KEY_ERROR"}}
 		d.Status.EngineRecord = recordOf(true)
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord)
+		require.Equal(t, &guidance.EngineRecordStatus{State: engineUnknown}, r.EngineRecord)
 		require.Empty(t, r.Problems)
 	})
 	t.Run("no vault reporter: left out", func(t *testing.T) {
@@ -919,7 +919,7 @@ func TestStatusEngineRecord(t *testing.T) {
 // agent's own database, with the same problems as the status tool.
 func TestLocalStatusEngineRecord(t *testing.T) {
 	t.Parallel()
-	local := func(key *string, read EngineRecordReader) StatusReport {
+	local := func(key *string, read EngineRecordReader) guidance.StatusReport {
 		t.Helper()
 		cmds, err := NewCommands("bot", "", "linux", testManager())
 		require.NoError(t, err)
@@ -946,7 +946,7 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 
 	refused := ""
 	r = local(&refused, recordOf(true))
-	require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord, "the key file is refused")
+	require.Equal(t, &guidance.EngineRecordStatus{State: engineUnknown}, r.EngineRecord, "the key file is refused")
 	require.Empty(t, r.Problems)
 
 	require.Nil(t, local(nil, recordOf(true)).EngineRecord, "an engine that is down has none")
@@ -987,7 +987,7 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	require.Len(t, one.Passkeys.Keys, 1)
 	want, err := testCredentials(1)[0].CheckCode()
 	require.NoError(t, err)
-	require.Equal(t, PasskeyStatus{CredentialID: []byte{1}, CheckCode: want}, one.Passkeys.Keys[0])
+	require.Equal(t, guidance.PasskeyStatus{CredentialID: []byte{1}, CheckCode: want}, one.Passkeys.Keys[0])
 	require.Equal(t, "1 passkey is registered, with check code "+want+
 		". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it.", one.Passkeys.Summary)
 
@@ -1031,7 +1031,7 @@ func (k originKeys) Passkeys(context.Context) ([]passkey.Credential, error) {
 // status says NO_PASSKEY with the steps to register one.
 func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	t.Parallel()
-	report := func(t *testing.T, base string, origins ...string) StatusReport {
+	report := func(t *testing.T, base string, origins ...string) guidance.StatusReport {
 		t.Helper()
 		return pagesStatus(t, mcpcontract.OperatedByAgent, base, "", origins...)
 	}
@@ -1076,7 +1076,7 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 // pagesStatus is the status of an agent whose links open at base, with
 // one passkey per origin and the setup page's Update link update ("" for
 // none).
-func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...string) StatusReport {
+func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...string) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy

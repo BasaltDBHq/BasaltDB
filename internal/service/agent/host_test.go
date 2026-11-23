@@ -83,7 +83,7 @@ func testErrors() guidance.ErrorMap {
 func testEngineHost() EngineHost {
 	return EngineHost{
 		LatestGuardVersion: guard.LatestVersion,
-		StartHoldOffUntil: func(stop LastStop, configPath string, now time.Time) (time.Time, bool) {
+		StartHoldOffUntil: func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 			return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 		},
 	}

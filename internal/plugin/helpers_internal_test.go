@@ -87,7 +87,7 @@ func (p pgAgent) service(set func(*agent.Deps)) *agent.Service {
 	return agent.NewService(d)
 }
 
-func problemCodes(r agent.StatusReport) []string {
+func problemCodes(r guidance.StatusReport) []string {
 	out := make([]string, 0, len(r.Problems))
 	for _, p := range r.Problems {
 		out = append(out, p.Code)
@@ -168,7 +168,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	d.Delivery.VaultConflict = vault.IsConflict
 	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
 	d.Status.LatestGuardVersion = guard.LatestVersion
-	d.Status.StartHoldOffUntil = func(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
+	d.Status.StartHoldOffUntil = func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 		return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 	}
 	d.Status.CrashReports = func(dirs ...string) []agent.CrashReport {

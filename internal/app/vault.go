@@ -10,10 +10,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // engineVault is the engine's keys and its socket to the Vault (CONTRACT.md,
@@ -112,7 +112,7 @@ func LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineK
 
 // VaultStatus is status.vault for every agent's status tool: OFF (with the
 // engine id when the keys load), KEY_ERROR, or the socket's state.
-func (v engineVault) VaultStatus() agent.VaultStatus {
+func (v engineVault) VaultStatus() guidance.VaultStatus {
 	st := v.status()
-	return agent.VaultStatus{State: string(st.State), EngineID: st.EngineID, Fingerprint: st.Fingerprint}
+	return guidance.VaultStatus{State: string(st.State), EngineID: st.EngineID, Fingerprint: st.Fingerprint}
 }

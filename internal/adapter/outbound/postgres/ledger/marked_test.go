@@ -57,7 +57,7 @@ func TestMarkedReadsLeaveOutLargeValuesThePersonsReadsDoNot(t *testing.T) {
 	t.Parallel()
 	a, run, big := largeLedger(t)
 	ctx := context.Background()
-	p := ledger.ChangeListParams{Params: pagination.Params{Limit: 10, Sort: "id"}, RunID: run}
+	p := action.ChangeListParams{Params: pagination.Params{Limit: 10, Sort: "id"}, RunID: run}
 
 	full, err := ledger.ListChanges(ctx, a.Conn, p)
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestMarkedRevertLinesCutChangeIDs(t *testing.T) {
 	prep, err := guardPrepare(t, a, in.RunID)
 	require.NoError(t, err)
 
-	p := ledger.RevertLineParams{Params: pagination.Params{Limit: pagination.MaxLimit}, RevertID: prep}
+	p := action.RevertLineParams{Params: pagination.Params{Limit: pagination.MaxLimit}, RevertID: prep}
 	cut := 0
 	for {
 		full, err := ledger.ListRevertLines(ctx, a.Conn, p)
@@ -173,7 +173,7 @@ func itoa(i int) string { return strconv.Itoa(i) }
 // does on the agent's credential.
 func guardPrepare(t *testing.T, a *guardtest.Agent, run uuid.UUID) (uuid.UUID, error) {
 	t.Helper()
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: run}, "Undo the counts")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: run}, "Undo the counts")
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -197,7 +197,7 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	require.NoError(t, err)
 	_, err = store.Hold(ctx, action.Intent(in), action.HoldRequest{Statement: sql, Params: []any{1}, Lines: lines})
 	require.NoError(t, err)
-	page, err := ledger.ListOpenApprovals(ctx, a.Conn, ledger.ApprovalListParams{Params: pagination.Params{Limit: 1}})
+	page, err := ledger.ListOpenApprovals(ctx, a.Conn, action.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
 	require.Equal(t, sql, page.Items[0].Statement)

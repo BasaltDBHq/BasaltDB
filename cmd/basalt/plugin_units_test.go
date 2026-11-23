@@ -10,7 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
@@ -50,12 +50,12 @@ func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
 
 func TestPluginUnitEntries(t *testing.T) {
 	t.Parallel()
-	local := pluginhost.Verified{
+	local := pluginmodel.Verified{
 		Dir: "/opt/basalt/plugins/acme-ner/default/abc",
-		Manifest: pluginhost.Manifest{
-			Endpoint:  pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-unix", Command: "bin/acme", Args: []string{"--serve"}}},
-			Network:   pluginhost.Network{Egress: []string{"hooks.slack.com:443"}},
-			Resources: &pluginhost.Resources{MemoryMB: 256},
+		Manifest: pluginmodel.Manifest{
+			Endpoint:  pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: "jsonrpc-unix", Command: "bin/acme", Args: []string{"--serve"}}},
+			Network:   pluginmodel.Network{Egress: []string{"hooks.slack.com:443"}},
+			Resources: &pluginmodel.Resources{MemoryMB: 256},
 		},
 	}
 	e, ok := unitEntry(config.Plugin{Name: "acme-ner", Enabled: true}, local)
@@ -65,7 +65,7 @@ func TestPluginUnitEntries(t *testing.T) {
 		Egress: []string{"hooks.slack.com:443"}, MemoryMB: 256, Enabled: true,
 	}, e)
 
-	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: "connectrpc", URL: "https://x.example"}}}}
+	remote := pluginmodel.Verified{Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: "connectrpc", URL: "https://x.example"}}}}
 	_, ok = unitEntry(config.Plugin{Name: "acme-ner"}, remote)
 	require.False(t, ok, "a remote entry has no unit")
 

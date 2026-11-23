@@ -73,7 +73,7 @@ func TestServiceConnectsOnlyToTheEntrysUser(t *testing.T) {
 		} else {
 			_, err = dialChecked(ctx, sock, PeerIs(me+1))
 		}
-		require.True(t, errors.Is(err, ErrWrongPeer), "%s: %v", transport, err)
+		require.True(t, errors.Is(err, connect.ErrWrongPeer), "%s: %v", transport, err)
 		cancel()
 	}
 }

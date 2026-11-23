@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
@@ -31,6 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -64,10 +64,10 @@ func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (agent
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.approved {
-		return agent.Receipt{}, &mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
+		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
 	}
 	if _, err := approval.Verify(a.binding, a.cred, r); err != nil {
-		return agent.Receipt{}, &mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
+		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
 	}
 	a.approved = true
 	return a.receipt, nil
@@ -107,7 +107,7 @@ func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.Applie
 
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
-func (a *heldAgent) PageFailure(err error) *mcp.ToolError { return AgentErrors().ToolError(err) }
+func (a *heldAgent) PageFailure(err error) *toolresult.ToolError { return AgentErrors().ToolError(err) }
 
 // intentMarker is in the held write's binding: it must never cross the
 // Vault's sockets in the clear.

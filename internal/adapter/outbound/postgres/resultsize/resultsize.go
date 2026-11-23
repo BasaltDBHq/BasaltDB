@@ -21,30 +21,6 @@ import (
 // mibShift turns bytes into MiB.
 const mibShift = 20
 
-// MaxBytes bounds what one call's reads cost, summed over their rows.
-const MaxBytes = budget.MaxBytes
-
-// ErrSizeLimit is a read stopped because the call's reads came to more than
-// MaxBytes.
-var ErrSizeLimit = budget.ErrSizeLimit
-
-// Budget is one call's budget.
-type Budget = budget.Budget
-
-// With returns ctx carrying a new budget of MaxBytes for one call.
-func With(ctx context.Context) context.Context { return budget.With(ctx) }
-
-// WithMax returns ctx carrying a new budget of max bytes.
-func WithMax(ctx context.Context, maxBytes int64) context.Context {
-	return budget.WithMax(ctx, maxBytes)
-}
-
-// Ensure returns ctx with a budget: its own when it has one, else a new one.
-func Ensure(ctx context.Context) context.Context { return budget.Ensure(ctx) }
-
-// From returns ctx's budget, nil when it has none.
-func From(ctx context.Context) *Budget { return budget.From(ctx) }
-
 // valueOverhead is what one value costs the engine beyond its bytes: its
 // map entry and Go value in the row, and its key, quotes and comma in the
 // JSON answer. A NULL or empty value costs it too, so a wide result of
@@ -84,7 +60,7 @@ func Rows(ctx context.Context, rows pgx.Rows, cancel context.CancelFunc) pgx.Row
 	if _, ok := rows.(*budgetRows); ok {
 		return rows
 	}
-	b := From(ctx)
+	b := budget.From(ctx)
 	if b == nil {
 		return rows
 	}
@@ -93,7 +69,7 @@ func Rows(ctx context.Context, rows pgx.Rows, cancel context.CancelFunc) pgx.Row
 
 type budgetRows struct {
 	pgx.Rows
-	budget *Budget
+	budget *budget.Budget
 	cancel context.CancelFunc
 	err    error
 }
@@ -140,7 +116,7 @@ type Querier interface {
 
 // query runs sql on q with its rows charged to ctx's budget.
 func query(ctx context.Context, q Querier, sql string, args ...any) (pgx.Rows, error) {
-	if From(ctx) == nil {
+	if budget.From(ctx) == nil {
 		return q.Query(ctx, sql, args...)
 	}
 	queryCtx, cancel := context.WithCancel(ctx)
@@ -155,7 +131,7 @@ func query(ctx context.Context, q Querier, sql string, args ...any) (pgx.Rows, e
 // queryRow is QueryRow with its row charged to ctx's budget, as pgx's own
 // QueryRow reads the first row of Query.
 func queryRow(ctx context.Context, q Querier, sql string, args ...any) pgx.Row {
-	if From(ctx) == nil {
+	if budget.From(ctx) == nil {
 		return q.QueryRow(ctx, sql, args...)
 	}
 	rows, err := query(ctx, q, sql, args...)
@@ -243,7 +219,7 @@ func (t budgetTx) Begin(ctx context.Context) (pgx.Tx, error) {
 }
 
 // IsSizeLimit reports whether err is a read stopped by the budget.
-func IsSizeLimit(err error) bool { return errors.Is(err, ErrSizeLimit) }
+func IsSizeLimit(err error) bool { return errors.Is(err, budget.ErrSizeLimit) }
 
 // RowTooLargeError is one row of a result that costs more than the whole
 // budget on its own (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE), or that
@@ -283,15 +259,15 @@ func (e *RowTooLargeError) Error() string {
 	}
 	if e.OnWire {
 		return fmt.Sprintf("one row of the result is %s on the wire, over the %d MiB result budget on its own, so it was not read; "+
-			"its columns: %s%s (which is largest is unknown)", Size(e.Bytes), MaxBytes>>mibShift, strings.Join(names, ", "), more)
+			"its columns: %s%s (which is largest is unknown)", Size(e.Bytes), budget.MaxBytes>>mibShift, strings.Join(names, ", "), more)
 	}
 	return fmt.Sprintf("one row of the result costs %s, over the %d MiB result budget on its own; its largest columns: %s%s",
-		Size(e.Bytes), MaxBytes>>mibShift, strings.Join(names, ", "), more)
+		Size(e.Bytes), budget.MaxBytes>>mibShift, strings.Join(names, ", "), more)
 }
 
 // Unwrap makes a row too large a SIZE_LIMIT for any caller that does not
 // tell the two apart.
-func (e *RowTooLargeError) Unwrap() error { return ErrSizeLimit }
+func (e *RowTooLargeError) Unwrap() error { return budget.ErrSizeLimit }
 
 // RowTooLargeOnWire is the error of a row over the connection's message
 // cap, of size bytes, in a result with columns fds: pgx refused it before
@@ -327,12 +303,4 @@ func Size(n int) string {
 		return fmt.Sprintf("%.1f KiB", float64(n)/kib)
 	}
 	return fmt.Sprintf("%d bytes", n)
-}
-
-// Unbudgeted is ctx with no budget: the reads made with it are not
-// charged. For reads the engine keeps to itself and never hands to the
-// agent, such as a held write's preview lines on their way back to
-// Postgres (CONTRACT.md, Large values, rule 6).
-func Unbudgeted(ctx context.Context) context.Context {
-	return budget.Without(ctx)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -55,10 +56,10 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 }
 
 // repairPlan is the REPAIR script for a new password, with its words.
-func (s *Service) repairPlan(j agentJob, password string) (setuprun.Script, []string, error) {
+func (s *Service) repairPlan(j agentJob, password string) (guardmodel.Script, []string, error) {
 	script, err := s.be.RepairScript(j.names, j.req.Agent, password, statementTimeout.Milliseconds())
 	if err != nil {
-		return setuprun.Script{}, nil, setupFailed("plan the repair", err)
+		return guardmodel.Script{}, nil, setupFailed("plan the repair", err)
 	}
 	lines := []string{fmt.Sprintf("This sets a new password for %s. Only this computer's BasaltDB knows it.", j.role)}
 	if j.missing {
@@ -129,7 +130,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		if err != nil {
 			return err
 		}
-		if err := setuprun.ApplyInitTx(ctx, tx, script); err != nil {
+		if err := setuprun.ApplyInitTx(ctx, s.be, tx, script); err != nil {
 			return refuse(CodeSetupFailed, fmt.Sprintf("The role %s is not a plain agent role this admin can repair (elevated attributes, other memberships, owned objects or settings it cannot reset). Nothing changed.", j.role))
 		}
 		wrote = true

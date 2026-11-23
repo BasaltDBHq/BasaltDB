@@ -14,7 +14,8 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 const (
@@ -114,7 +115,7 @@ func callPlugin(t *testing.T, s *Service, args map[string]any, meta json.RawMess
 	return s.RequestPlugin(context.Background(), a, meta)
 }
 
-func requireReason(t *testing.T, err error, code, reason string) *mcp.ToolError {
+func requireReason(t *testing.T, err error, code, reason string) *toolresult.ToolError {
 	t.Helper()
 	te := testErrors().ToolError(err)
 	require.Equal(t, code, te.Code, te.Message)
@@ -221,14 +222,14 @@ func TestRequestPluginOpensAnApproval(t *testing.T) {
 	require.Equal(t, PluginStatePending, out.State)
 	require.Equal(t, casePluginApproval, out.ApprovalID)
 	require.True(t, strings.HasPrefix(out.ApprovalURL, "http://localhost:7878/plugins/"+casePluginApproval+"#s="), out.ApprovalURL)
-	require.Equal(t, []mcp.Link{{Label: "Approve the plugin local-ner", URL: out.ApprovalURL}}, out.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Approve the plugin local-ner", URL: out.ApprovalURL}}, out.Links)
 	require.Contains(t, out.PersonMessage, "bot asks you to approve the plugin local-ner 0.3.1.")
 	require.Contains(t, out.PersonMessage, pluginLevelUnknownHere)
 	require.Contains(t, out.PersonMessage, "Approve it with your passkey only if you know who made it:")
 	require.Contains(t, out.PersonMessage, "\n"+out.ApprovalURL+"\n")
 	require.Len(t, out.NextSteps, 2)
-	require.Equal(t, mcp.ActionOpenLink, out.NextSteps[0].Action)
-	require.Equal(t, mcp.ActionCallTool, out.NextSteps[1].Action)
+	require.Equal(t, toolresult.ActionOpenLink, out.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionCallTool, out.NextSteps[1].Action)
 	require.Equal(t, map[string]any{"approvalId": casePluginApproval}, out.NextSteps[1].Arguments)
 
 	// With no passkey registered, the person registers one first.
@@ -238,7 +239,7 @@ func TestRequestPluginOpensAnApproval(t *testing.T) {
 	out, err = callPlugin(t, s, map[string]any{"source": "/home/me/local-ner"}, uploadMeta())
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(out.PersonMessage, "Nobody can approve this yet"), out.PersonMessage)
-	require.Equal(t, mcp.ActionRunCommand, out.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionRunCommand, out.NextSteps[0].Action)
 
 	// The name form opens a new approval for the installed copy: no upload.
 	f = &fakePluginRequests{opened: openedPlugin()}
@@ -289,14 +290,14 @@ func TestRequestPluginWaitOnlyReads(t *testing.T) {
 // endedApprovals is the caller's guard holding one plugin approval.
 type endedApprovals struct{ id uuid.UUID }
 
-func (e endedApprovals) ReadPluginApproval(_ context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+func (e endedApprovals) ReadPluginApproval(_ context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	if id != e.id {
-		return guard.PluginApprovalRecord{}, false, nil
+		return guardmodel.PluginApprovalRecord{}, false, nil
 	}
-	return guard.PluginApprovalRecord{ApprovalID: id, Name: "local-ner", Instance: "default", Status: guard.PluginApprovalStatusCancelled}, true, nil
+	return guardmodel.PluginApprovalRecord{ApprovalID: id, Name: "local-ner", Instance: "default", Status: guardmodel.PluginApprovalStatusCancelled}, true, nil
 }
 
-func (endedApprovals) SubmitPluginApproval(context.Context, guard.PluginApprovalResponse) (time.Time, error) {
+func (endedApprovals) SubmitPluginApproval(context.Context, guardmodel.PluginApprovalResponse) (time.Time, error) {
 	return time.Time{}, errors.New("never")
 }
 
@@ -317,8 +318,8 @@ func TestRequestPluginEngineAnswers(t *testing.T) {
 }
 
 func pluginResultCases() map[string]resultCase {
-	state := func(st string) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
-		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+	state := func(st string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			out, err := s.pluginWaited(uuid.MustParse(casePluginApproval), PluginApprovalState{
 				Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: st, ExpiresAt: s.deps.Core.Now().Add(time.Hour),
 			}, true)
@@ -327,8 +328,8 @@ func pluginResultCases() map[string]resultCase {
 		}
 	}
 	wait := map[string]any{"approvalId": casePluginApproval}
-	call := func(args map[string]any, opened PluginOpened) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
-		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+	call := func(args map[string]any, opened PluginOpened) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			s.deps.Plugin.Requests = &fakePluginRequests{opened: opened}
 			setApprovals(&s.deps, keys{n: 1})
 			out, err := callPlugin(t, s, args, uploadMeta())

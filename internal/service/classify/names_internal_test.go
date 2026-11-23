@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 func TestSplitName(t *testing.T) {
@@ -31,28 +31,28 @@ func TestMatchName(t *testing.T) {
 		k    kind
 		want *hit
 	}{
-		{"customerEmail", kindText, &hit{guard.ClassIdentifier, guard.EntityEmail}},
-		{"email_address", kindText, &hit{guard.ClassIdentifier, guard.EntityEmail}},
+		{"customerEmail", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityEmail}},
+		{"email_address", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityEmail}},
 		{"mail_count", kindInt, nil},
 		{"email_verified", kindBool, nil},
-		{"encrypted_password", kindText, &hit{guard.ClassSecret, ""}},
+		{"encrypted_password", kindText, &hit{guardmodel.ClassSecret, ""}},
 		{"password_changed_at", kindDate, nil},
-		{"password_hash", kindOther, &hit{guard.ClassSecret, ""}},
-		{"mobile", kindInt, &hit{guard.ClassIdentifier, guard.EntityPhone}},
-		{"name", kindText, &hit{guard.ClassIdentifier, guard.EntityPersonName}},
-		{"first_name", kindText, &hit{guard.ClassIdentifier, guard.EntityPersonName}},
-		{"contact_name", kindText, &hit{guard.ClassIdentifier, guard.EntityPersonName}},
+		{"password_hash", kindOther, &hit{guardmodel.ClassSecret, ""}},
+		{"mobile", kindInt, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPhone}},
+		{"name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
+		{"first_name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
+		{"contact_name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityPersonName}},
 		{"table_name", kindText, nil},
 		{"product_name", kindText, nil},
 		{"file_name", kindText, nil},
 		{"company_name", kindText, nil},
-		{"street_name", kindText, &hit{guard.ClassIdentifier, guard.EntityAddress}},
-		{"zip", kindInt, &hit{guard.ClassIdentifier, guard.EntityAddress}},
+		{"street_name", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityAddress}},
+		{"zip", kindInt, &hit{guardmodel.ClassIdentifier, guardmodel.EntityAddress}},
 		{"address", kindInt, nil},
-		{"ip_address", kindText, &hit{guard.ClassIdentifier, guard.EntityOther}},
-		{"date_of_birth", kindDate, &hit{guard.ClassIdentifier, guard.EntityOther}},
-		{"iban", kindText, &hit{guard.ClassIdentifier, guard.EntityOther}},
-		{"notes", kindText, &hit{guard.ClassFreeText, ""}},
+		{"ip_address", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
+		{"date_of_birth", kindDate, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
+		{"iban", kindText, &hit{guardmodel.ClassIdentifier, guardmodel.EntityOther}},
+		{"notes", kindText, &hit{guardmodel.ClassFreeText, ""}},
 		{"order_number", kindInt, nil},
 		{"status", kindText, nil},
 	} {
@@ -73,7 +73,7 @@ func TestMatchName(t *testing.T) {
 	for _, name := range []string{"pin", "otp", "cvc", "cvv", "passcode", "security_code", "card_pin"} {
 		got, ok := matchName(name, kindText)
 		require.True(t, ok, name)
-		require.Equal(t, guard.ClassSecret, got.class, name)
+		require.Equal(t, guardmodel.ClassSecret, got.class, name)
 	}
 	got, ok := matchName("email_address", kindText)
 	require.True(t, ok)
@@ -147,33 +147,33 @@ func TestSuggestShapes(t *testing.T) {
 		seq = append(seq, strconv.Itoa(1000+i))
 		ambiguous = append(ambiguous, strconv.Itoa(9900000000000000+i*7919*13))
 	}
-	review := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true}
+	review := Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true}
 	for _, tc := range []struct {
 		col    Column
 		values []string
 		want   Suggestion
 	}{
-		{col("ref", "bigint"), seq, Suggestion{Class: guard.ClassPublic, Reason: reasonSequential}},
+		{col("ref", "bigint"), seq, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonSequential}},
 		{col("ref", "text"), ambiguous, review},
 		{col("ref", "bigint"), ambiguous, review},
-		{col("price", "numeric"), []string{"1.50", "2.00", "-3.10"}, Suggestion{Class: guard.ClassPublic, Reason: reasonDecimals}},
+		{col("price", "numeric"), []string{"1.50", "2.00", "-3.10"}, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonDecimals}},
 		{col("ref", "text"), nil, review},
-		{Column{Name: "id", DataType: "bigint", Key: true}, nil, Suggestion{Class: guard.ClassPublic, Reason: reasonKey}},
+		{Column{Name: "id", DataType: "bigint", Key: true}, nil, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonKey}},
 		{Column{Name: "id", DataType: "bigint", Key: true}, ambiguous, review},
 		{Column{Name: "id", DataType: "bigint", Key: true, Generated: true}, ambiguous, review},
-		{Column{Name: "id", DataType: "bigint", Key: true, Generated: true}, seq, Suggestion{Class: guard.ClassPublic, Reason: reasonSequential}},
-		{col("id", "uuid"), nil, Suggestion{Class: guard.ClassPublic, Reason: "TYPE:uuid"}},
-		{col("secret_email", "text"), []string{"a@example.com"}, Suggestion{Class: guard.ClassSecret}},
+		{Column{Name: "id", DataType: "bigint", Key: true, Generated: true}, seq, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonSequential}},
+		{col("id", "uuid"), nil, Suggestion{Class: guardmodel.ClassPublic, Reason: "TYPE:uuid"}},
+		{col("secret_email", "text"), []string{"a@example.com"}, Suggestion{Class: guardmodel.ClassSecret}},
 		{
 			col("full_name", "text"),
 			[]string{"a long sentence that is not really a name of anyone at all, really"},
-			Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName},
+			Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPersonName},
 		},
-		{col("notes", "text"), []string{"A-1", "B-2"}, Suggestion{Class: guard.ClassPublic}},
-		{col("notes", "text"), []string{"call Alice"}, Suggestion{Class: guard.ClassFreeText}},
-		{col("notes", "text"), []string{"A-1", "B-2", "6281234567801"}, Suggestion{Class: guard.ClassFreeText}},
-		{col("email_status", "text"), []string{"verified", "pending"}, Suggestion{Class: guard.ClassPublic}},
-		{col("contact_updated", "text"), []string{"short"}, Suggestion{Class: guard.ClassPublic}},
+		{col("notes", "text"), []string{"A-1", "B-2"}, Suggestion{Class: guardmodel.ClassPublic}},
+		{col("notes", "text"), []string{"call Alice"}, Suggestion{Class: guardmodel.ClassFreeText}},
+		{col("notes", "text"), []string{"A-1", "B-2", "6281234567801"}, Suggestion{Class: guardmodel.ClassFreeText}},
+		{col("email_status", "text"), []string{"verified", "pending"}, Suggestion{Class: guardmodel.ClassPublic}},
+		{col("contact_updated", "text"), []string{"short"}, Suggestion{Class: guardmodel.ClassPublic}},
 	} {
 		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
 		if tc.want.Reason == "" {
@@ -185,20 +185,20 @@ func TestSuggestShapes(t *testing.T) {
 	// name, read with their country code (+62, not a German number).
 	phones := []string{"6281234567801", "6281299991234", "6281355512345"}
 	unnamed := Suggest(col("ref", "bigint"), Sample{Values: phones}, Options{})
-	require.Equal(t, []any{guard.EntityPhone, "ID", true}, []any{unnamed.EntityType, unnamed.PhoneRegion, unnamed.NeedsReview})
+	require.Equal(t, []any{guardmodel.EntityPhone, "ID", true}, []any{unnamed.EntityType, unnamed.PhoneRegion, unnamed.NeedsReview})
 	// Real-format Indonesian mobiles written bare, 11 to 13 digits: ID.
 	for _, vs := range [][]string{{"628123456789", "628129876543", "628131112223"}, {"6281234567890", "6285712345678", "6287812345678"}} {
 		got := Suggest(col("ref", "text"), Sample{Values: vs}, Options{})
-		require.Equal(t, []any{guard.EntityPhone, "ID"}, []any{got.EntityType, got.PhoneRegion}, "%v", vs)
+		require.Equal(t, []any{guardmodel.EntityPhone, "ID"}, []any{got.EntityType, got.PhoneRegion}, "%v", vs)
 	}
 	// Long phones among short numbers are not PUBLIC by their length spread.
 	mixed := []string{"6281234567801", "6281299991234", "6281355512345", "6281377770000", "6281388881111", "6281399992222", "6281311113333", "123", "4567", "89"}
 	got := Suggest(col("ref", "bigint"), Sample{Values: mixed}, Options{})
-	require.Equal(t, []any{guard.ClassIdentifier, guard.EntityPhone, true}, []any{got.Class, got.EntityType, got.NeedsReview}, got.Reason)
+	require.Equal(t, []any{guardmodel.ClassIdentifier, guardmodel.EntityPhone, true}, []any{got.Class, got.EntityType, got.NeedsReview}, got.Reason)
 	// A qualified secret name stays SECRET over short codes.
-	require.Equal(t, guard.ClassSecret, Suggest(col("token_sent", "text"), Sample{Values: []string{"a8F3kq92Zx"}}, Options{}).Class)
-	require.Equal(t, guard.ClassSecret, Suggest(col("pin", "text"), Sample{Values: []string{"0420", "1234"}}, Options{}).Class)
-	require.Equal(t, guard.EntityPhone, Suggest(col("msisdn", "bigint"), Sample{Values: phones}, Options{}).EntityType)
+	require.Equal(t, guardmodel.ClassSecret, Suggest(col("token_sent", "text"), Sample{Values: []string{"a8F3kq92Zx"}}, Options{}).Class)
+	require.Equal(t, guardmodel.ClassSecret, Suggest(col("pin", "text"), Sample{Values: []string{"0420", "1234"}}, Options{}).Class)
+	require.Equal(t, guardmodel.EntityPhone, Suggest(col("msisdn", "bigint"), Sample{Values: phones}, Options{}).EntityType)
 }
 
 func TestProtectedNeverLowersAConfirmedClass(t *testing.T) {
@@ -206,46 +206,46 @@ func TestProtectedNeverLowersAConfirmedClass(t *testing.T) {
 	c := ReviewColumn{
 		Result: Result{
 			Column:     Column{Schema: "public", Table: "t", Name: "c", DataType: "text"},
-			Suggestion: Suggestion{Class: guard.ClassPublic},
+			Suggestion: Suggestion{Class: guardmodel.ClassPublic},
 		},
-		Stored: &guard.PIIColumn{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail, DataType: "text"},
+		Stored: &guardmodel.PIIColumn{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityEmail, DataType: "text"},
 	}
-	require.Equal(t, Decision{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail}, c.Protected())
+	require.Equal(t, Decision{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityEmail}, c.Protected())
 	// An equal rank keeps the person's class too.
-	c.Suggestion = Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName}
-	require.Equal(t, Decision{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail}, c.Protected())
-	c.Suggestion = Suggestion{Class: guard.ClassSecret, NeedsReview: true}
-	require.Equal(t, Decision{Class: guard.ClassSecret, NeedsReview: true}, c.Protected())
-	require.Equal(t, Decision{Class: guard.ClassSecret}, c.Suggested())
+	c.Suggestion = Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPersonName}
+	require.Equal(t, Decision{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityEmail}, c.Protected())
+	c.Suggestion = Suggestion{Class: guardmodel.ClassSecret, NeedsReview: true}
+	require.Equal(t, Decision{Class: guardmodel.ClassSecret, NeedsReview: true}, c.Protected())
+	require.Equal(t, Decision{Class: guardmodel.ClassSecret}, c.Suggested())
 }
 
 func TestRowsKeepConfirmedClasses(t *testing.T) {
 	t.Parallel()
 	col := func(name string) Column { return Column{Schema: "public", Table: "t", Name: name, DataType: "text"} }
 	tables := []ReviewTable{{Table: "public.t", Columns: []ReviewColumn{
-		{Result: Result{Column: col("a"), Suggestion: Suggestion{Class: guard.ClassPublic, Reason: "r"}}},
-		{Result: Result{Column: col("b"), Suggestion: Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true}}},
+		{Result: Result{Column: col("a"), Suggestion: Suggestion{Class: guardmodel.ClassPublic, Reason: "r"}}},
+		{Result: Result{Column: col("b"), Suggestion: Suggestion{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true}}},
 		{
-			Result: Result{Column: col("c"), Suggestion: Suggestion{Class: guard.ClassPublic}},
-			Stored: &guard.PIIColumn{Class: guard.ClassSecret, DataType: "text"},
+			Result: Result{Column: col("c"), Suggestion: Suggestion{Class: guardmodel.ClassPublic}},
+			Stored: &guardmodel.PIIColumn{Class: guardmodel.ClassSecret, DataType: "text"},
 		},
 	}}}
-	rows := Rows(tables, map[string]Decision{"public.t.a": {Class: guard.ClassPublic}})
+	rows := Rows(tables, map[string]Decision{"public.t.a": {Class: guardmodel.ClassPublic}})
 	require.Len(t, rows, 2, "c keeps its confirmed row")
-	require.Equal(t, guard.ClassPublic, rows[0].Class)
-	require.Equal(t, guard.ClassUnclassified, rows[1].Class)
-	require.Equal(t, guard.ClassIdentifier, rows[1].SuggestedClass)
+	require.Equal(t, guardmodel.ClassPublic, rows[0].Class)
+	require.Equal(t, guardmodel.ClassUnclassified, rows[1].Class)
+	require.Equal(t, guardmodel.ClassIdentifier, rows[1].SuggestedClass)
 	require.True(t, rows[1].NeedsReview)
 }
 
 func TestStatusOf(t *testing.T) {
 	t.Parallel()
 	col := Column{DataType: "text"}
-	s := Suggestion{Class: guard.ClassPublic}
+	s := Suggestion{Class: guardmodel.ClassPublic}
 	require.Equal(t, StatusNew, StatusOf(nil, col, s))
-	require.Equal(t, StatusUnclassified, StatusOf(&guard.PIIColumn{Class: guard.ClassUnclassified, DataType: "text"}, col, s))
-	require.Equal(t, StatusTypeChanged, StatusOf(&guard.PIIColumn{Class: guard.ClassPublic, DataType: "integer"}, col, s))
-	require.Equal(t, StatusNeedsReview, StatusOf(&guard.PIIColumn{Class: guard.ClassPublic, DataType: "text", NeedsReview: true}, col, s))
-	require.Equal(t, StatusSuggestionDiffers, StatusOf(&guard.PIIColumn{Class: guard.ClassSecret, DataType: "text"}, col, s))
-	require.Equal(t, StatusUnchanged, StatusOf(&guard.PIIColumn{Class: guard.ClassPublic, DataType: "text"}, col, s))
+	require.Equal(t, StatusUnclassified, StatusOf(&guardmodel.PIIColumn{Class: guardmodel.ClassUnclassified, DataType: "text"}, col, s))
+	require.Equal(t, StatusTypeChanged, StatusOf(&guardmodel.PIIColumn{Class: guardmodel.ClassPublic, DataType: "integer"}, col, s))
+	require.Equal(t, StatusNeedsReview, StatusOf(&guardmodel.PIIColumn{Class: guardmodel.ClassPublic, DataType: "text", NeedsReview: true}, col, s))
+	require.Equal(t, StatusSuggestionDiffers, StatusOf(&guardmodel.PIIColumn{Class: guardmodel.ClassSecret, DataType: "text"}, col, s))
+	require.Equal(t, StatusUnchanged, StatusOf(&guardmodel.PIIColumn{Class: guardmodel.ClassPublic, DataType: "text"}, col, s))
 }

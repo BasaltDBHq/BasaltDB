@@ -17,8 +17,8 @@ type Problem struct {
 	PersonMessage string `json:"personMessage,omitempty"`
 	// Links are the URLs of PersonMessage, with labels (present exactly when
 	// it holds a URL).
-	Links     []toolresult.Link `json:"links,omitempty"`
-	NextSteps []NextStep        `json:"nextSteps"`
+	Links     []toolresult.Link     `json:"links,omitempty"`
+	NextSteps []toolresult.NextStep `json:"nextSteps"`
 }
 
 // Problems collects status problems, each built from its catalog entry.

@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `basalt init` after a Remove on macOS no longer fails with `chown: _basalt: illegal group name`, and the engine no longer crash-loops on a reinstall. The removal deletes the engine's group only once its user is gone, and when macOS refuses to delete the user (for example when the app that ran `basalt init` has no Full Disk Access) it keeps the pair and says so, where before it said nothing. The install gives a leftover engine user its group back, gives root-owned leftover engine folders (the config folder, `run`, `state`) that hold no files to the engine's user, and removes a folder it could not hand over. `basalt init` stops waiting and points at the engine's log when the engine service keeps exiting.
 - The setup page refuses a database with an older BasaltDB install that this version cannot use (`GUARD_UNUSABLE`) at the check, before you sign anything, and links to the removal steps. Before, the check passed and the run failed with `SETUP_FAILED` (`relation "basalt_meta.installs" does not exist`).
 - The setup page's install and Add a passkey no longer fail with `SETUP_FAILED` when the page sends no passkey label: the engine names the passkey `Passkey on <this computer's name>`.
 - A setup page `SETUP_FAILED` names the Postgres error code and the step that failed, and the engine log carries the step, the SQLSTATE and the database's message, with any password or connection string removed.

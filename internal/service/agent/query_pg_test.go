@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -239,7 +240,7 @@ func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
 	var tooLarge *resultsize.RowTooLargeError
 	require.ErrorAs(t, err, &tooLarge)
 	require.True(t, tooLarge.OnWire)
-	require.Greater(t, tooLarge.Bytes, store.MaxResultBytes)
+	require.Greater(t, tooLarge.Bytes, budget.MaxBytes)
 	require.Equal(t, []resultsize.ColumnSize{{Name: "big", Bytes: -1}}, tooLarge.Columns)
 }
 

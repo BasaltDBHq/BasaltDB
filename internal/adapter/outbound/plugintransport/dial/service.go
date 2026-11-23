@@ -15,10 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/peercred"
 )
 
-// ErrWrongPeer: the socket is not served by the entry's OS user, so the
-// engine does not talk to it.
-var ErrWrongPeer = connect.ErrWrongPeer
-
 // errNotSocket: the path is not itself a Unix socket.
 var errNotSocket = errors.New("the plugin socket path is not a unix socket")
 
@@ -84,11 +80,11 @@ func PeerIs(uid uint32) func(net.Conn) error {
 	return func(c net.Conn) error {
 		uc, ok := c.(*net.UnixConn)
 		if !ok {
-			return ErrWrongPeer
+			return connect.ErrWrongPeer
 		}
 		got, err := peercred.UID(uc)
 		if err != nil || got != uid {
-			return ErrWrongPeer
+			return connect.ErrWrongPeer
 		}
 		return nil
 	}

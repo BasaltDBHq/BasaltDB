@@ -20,13 +20,13 @@ import (
 
 // previewRevertRaw is PreviewRevert before MapError.
 func (s *Store) previewRevertRaw(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
-	var page guard.PreviewPage
+	var page action.PreviewPage
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
 			return err
 		}
 		var err error
-		page, err = guard.PreviewRevertPage(ctx, tx, guard.RevertScope(scope), after, limit)
+		page, err = guard.PreviewRevertPage(ctx, tx, scope, after, limit)
 		if err != nil {
 			return err
 		}
@@ -35,15 +35,15 @@ func (s *Store) previewRevertRaw(ctx context.Context, scope action.Scope, after 
 	if !errors.Is(err, errPreviewRollback) {
 		return action.PreviewPage{}, err
 	}
-	return previewPageOf(page), nil
+	return page, nil
 }
 
 // prepareRevertRaw is PrepareRevert before MapError.
 func (s *Store) prepareRevertRaw(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
-	var p guard.PreparedRevert
+	var p action.PreparedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
-		p, err = guard.PrepareRevertWithin(ctx, savepoint{tx}, guard.RevertScope(scope), intent, timeout)
+		p, err = guard.PrepareRevertWithin(ctx, savepoint{tx}, scope, intent, timeout)
 		if err != nil {
 			return err
 		}
@@ -55,26 +55,26 @@ func (s *Store) prepareRevertRaw(ctx context.Context, scope action.Scope, intent
 	if err != nil {
 		return action.PreparedRevert{}, err
 	}
-	return action.PreparedRevert(p), nil
+	return p, nil
 }
 
 // rescopeRevertRaw is RescopeRevert before MapError.
 func (s *Store) rescopeRevertRaw(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error) {
-	var out guard.RescopedRevert
+	var out action.RescopedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
 			return err
 		}
 		var err error
-		out, err = guard.RescopeRevert(ctx, tx, guard.RescopeRequest(req))
+		out, err = guard.RescopeRevert(ctx, tx, req)
 		return err
 	})
-	return rescopedOf(out), err
+	return out, err
 }
 
 // resetRevertRaw is ResetRevert before MapError.
 func (s *Store) resetRevertRaw(ctx context.Context, id uuid.UUID, timeout time.Duration) (action.RescopedRevert, error) {
-	var out guard.RescopedRevert
+	var out action.RescopedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
 			return err
@@ -83,7 +83,7 @@ func (s *Store) resetRevertRaw(ctx context.Context, id uuid.UUID, timeout time.D
 		out, err = guard.ResetRevert(ctx, tx, id)
 		return err
 	})
-	return rescopedOf(out), err
+	return out, err
 }
 
 // setStatementTimeout sets statement_timeout for tx only.
@@ -157,18 +157,18 @@ func (s *Store) revertedByRaw(ctx context.Context, scope action.Scope) (uuid.UUI
 }
 
 // findRevertRaw is FindRevert before MapError.
-func (s *Store) findRevertRaw(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (s *Store) findRevertRaw(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	return ledger.FindRevert(ctx, s.db, id)
 }
 
 // revertLinesRaw is RevertLines before MapError.
-func (s *Store) revertLinesRaw(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
+func (s *Store) revertLinesRaw(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	return ledger.ListRevertLinesMarked(ctx, s.db, p)
 }
 
 // applyRevertBatchRaw is ApplyRevertBatch before MapError.
 func (s *Store) applyRevertBatchRaw(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error) {
-	var out guard.BatchResult
+	var out action.BatchResult
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
 			return err
@@ -177,12 +177,12 @@ func (s *Store) applyRevertBatchRaw(ctx context.Context, id uuid.UUID, lines []i
 		out, err = guard.ApplyRevertBatch(ctx, tx, id, lines)
 		return err
 	})
-	return batchResultOf(out), err
+	return out, err
 }
 
 // applyRevertRaw is ApplyRevert before MapError.
 func (s *Store) applyRevertRaw(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
-	var out guard.AppliedRevert
+	var out action.AppliedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := guard.SetTimeouts(ctx, tx, s.limits.StatementTimeout); err != nil {
 			return err
@@ -191,7 +191,7 @@ func (s *Store) applyRevertRaw(ctx context.Context, id uuid.UUID, a passkey.Asse
 		out, err = guard.ApplyRevert(ctx, tx, id, a)
 		return err
 	})
-	return action.AppliedRevert(out), err
+	return out, err
 }
 
 // revertNonceRaw is RevertNonce before MapError.
@@ -202,7 +202,7 @@ func (s *Store) revertNonceRaw(ctx context.Context, id uuid.UUID) ([]byte, error
 // rejectRevertRaw is RejectRevert before MapError.
 func (s *Store) rejectRevertRaw(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error) {
 	r, err := guard.RejectRevert(ctx, s.db, id, note, token)
-	return action.RejectedRevert(r), err
+	return r, err
 }
 
 // revealNonceRaw is RevealNonce before MapError.
@@ -212,11 +212,11 @@ func (s *Store) revealNonceRaw(ctx context.Context, kind string, id uuid.UUID) (
 
 // revealRevertRowsRaw is RevealRevertRows before MapError.
 func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
-	var out guard.RevealedRevert
+	var out action.RevealedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
 		out, err = guard.RevealRevertRows(ctx, tx, id, proof, key)
 		return err
 	})
-	return action.RevealedRevert(out), err
+	return out, err
 }

@@ -18,7 +18,13 @@ import (
 // sample schema), the connection and its trust, and the engine's trust
 // files. The engine wires it (internal/app); each method is the call it
 // is named after, unchanged.
+// Backend is what the local setup needs from its adapters, beyond what
+// setuprun.Backend gives the shared run: the admin connection and its trust,
+// the credential files, and the guard's reads and writes of one install.
+// ReadCredential is not a plain read: it refuses a connection string that
+// makes the driver read a file (passfile, sslrootcert).
 type Backend interface {
+	setuprun.Backend
 	// Connections and their trust.
 	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
 	Trust() *trustprofile.Set
@@ -36,20 +42,8 @@ type Backend interface {
 	PinFileNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool, error)
 
 	// The guard's install.
-	InstalledPrefix(ctx context.Context, q setuprun.Querier) (string, error)
-	InstalledVersion(ctx context.Context, q setuprun.Querier) (int, error)
-	LatestVersion() int
-	Migrations() []guardmodel.Migration
 	AgentStatus(ctx context.Context, q setuprun.Querier, migs []guardmodel.Migration) (guardmodel.Status, error)
-	AgentRoleExists(ctx context.Context, q setuprun.Querier, n guardmodel.Names, agent string) (bool, error)
-	AgentBlindTables(ctx context.Context, q setuprun.Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]setuprun.BlindTable, error)
-	PlanInit(ctx context.Context, q setuprun.Querier, opts setuprun.InitOptions) (setuprun.Script, error)
-	RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (setuprun.Script, error)
-	CheckUsable(ctx context.Context, q setuprun.Querier) error
-	// UnusableInstall reports whether err is CheckUsable's refusal of an
-	// older or partial install.
-	UnusableInstall(err error) bool
-	RemoveOldInstallDoc() string
+	RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (guardmodel.Script, error)
 	NewPassword() string
 	AgentConnString(adminURL, role, password string) (string, error)
 
@@ -66,15 +60,14 @@ type Backend interface {
 	WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error)
 
 	// Passkeys.
-	ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.RegisteredPasskey, error)
+	ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]guardmodel.RegisteredPasskey, error)
 	RegisterPasskey(ctx context.Context, q setuprun.Querier, cred passkey.Credential, label string) error
 	RevokePasskey(ctx context.Context, q setuprun.Querier, credentialID []byte, force bool) (int, error)
 	// ListPasskeys lists the active passkeys the connection's role may read.
 	ListPasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.ActivePasskey, error)
 
 	// The sample schema.
-	DemoSchema() string
 	DemoTables() []string
-	SeedDemo(ctx context.Context, tx pgx.Tx) (setuprun.DemoPlan, error)
+	SeedDemo(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, error)
 	DemoCounts(ctx context.Context, q setuprun.Querier) (leads, notes int, err error)
 }

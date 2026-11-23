@@ -13,8 +13,9 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // This file tests finishing a setup from the laptop on the engine
@@ -69,7 +70,7 @@ func finishing(probe *fakeProbe, fin *fakeFinisher, setup *config.Setup, passkey
 }
 
 func pendingInstall() *config.Setup {
-	return pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour))
+	return pendingSetup(guardmodel.SetupInstall, statusNow.Add(time.Hour))
 }
 
 // Each check the clear depends on, failing alone: nothing is cleared, the
@@ -84,7 +85,7 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 		held bool
 	}{
 		{"the role cannot log in yet", &fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{}, true},
-		{"the role logs in but the setup is not recorded", &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, &fakeFinisher{}, true},
+		{"the role logs in but the setup is not recorded", &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, &fakeFinisher{}, true},
 		{"the database cannot be reached", &fakeProbe{err: context.DeadlineExceeded, recordedErr: context.DeadlineExceeded}, &fakeFinisher{}, false},
 		{
 			"the pending credential is refused and the engine's finds nothing",
@@ -133,12 +134,12 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 	// The person ran the code on their computer.
 	id := uuid.MustParse(setup.SetupID)
 	probe.err, probe.recordedErr, probe.recorded = nil, nil, true
-	probe.st = guardAt(guard.GuardOK, nil, nil)
-	probe.latest = &guard.AgentSetup{SetupID: id, Kind: guard.SetupInstall}
+	probe.st = guardAt(guardmodel.GuardOK, nil, nil)
+	probe.latest = &guardmodel.AgentSetup{SetupID: id, Kind: guardmodel.SetupInstall}
 
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, SetupStatus{State: setupDone, SetupID: setup.SetupID, Kind: guard.SetupInstall}, r.Setup)
+	require.Equal(t, SetupStatus{State: setupDone, SetupID: setup.SetupID, Kind: guardmodel.SetupInstall}, r.Setup)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: false}}, fin.finished())
 	require.Nil(t, svc.pendingSetup(), "forgotten in memory too")
 	p := findProblem(t, r, problemNoPasskey)
@@ -160,8 +161,8 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 // password no longer works.
 func TestAPendingCredentialThatFindsTheSetupIsPromoted(t *testing.T) {
 	t.Parallel()
-	setup := pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
-	probe := &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recordedErr: errNoRole}
+	setup := pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
+	probe := &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recordedErr: errNoRole}
 	fin := &fakeFinisher{pendingRecorded: true, has: true}
 	svc := finishing(probe, fin, setup, 1)
 
@@ -185,7 +186,7 @@ func TestAFailedFinishIsTriedAgainWhenItCanStillWork(t *testing.T) {
 		"promotion failed": {pendingRecorded: true, has: true, finishErr: errors.New("the .pending file changed")},
 		"lock held":        {finishErr: config.ErrLocked},
 	} {
-		svc := finishing(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
+		svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
 		require.NoError(t, svc.Admit(ctx), "%s: recorded, so served", name)
 		require.NotNil(t, svc.pendingSetup(), name)
 		require.NoError(t, svc.Admit(ctx), name)
@@ -193,7 +194,7 @@ func TestAFailedFinishIsTriedAgainWhenItCanStillWork(t *testing.T) {
 	}
 
 	fin := &fakeFinisher{finishErr: errors.New("read-only file system")}
-	svc := finishing(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
+	svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
 	require.NoError(t, svc.Admit(ctx))
 	require.Nil(t, svc.pendingSetup())
 	require.NoError(t, svc.Admit(ctx))
@@ -204,9 +205,9 @@ func TestAFailedFinishIsTriedAgainWhenItCanStillWork(t *testing.T) {
 // holds the tools, so a rotation is picked up when nobody calls status.
 func TestTheHeartbeatFinishesAChangeSetup(t *testing.T) {
 	t.Parallel()
-	setup := pendingSetup(guard.SetupUpgrade, statusNow.Add(time.Hour))
+	setup := pendingSetup(guardmodel.SetupUpgrade, statusNow.Add(time.Hour))
 	fin := &fakeFinisher{}
-	svc := finishing(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}, fin, setup, 1)
+	svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, setup, 1)
 	require.NoError(t, svc.Admit(context.Background()))
 	require.Empty(t, fin.finished(), "a call does not look for a change setup")
 	require.NoError(t, svc.AdmitTick(context.Background()))
@@ -273,9 +274,9 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	t.Parallel()
 	const lock = "/etc/basalt/engine.json.lock"
 	d := deps()
-	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
+	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}
 	setApprovals(&d, keys{n: 1})
-	d.Status.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
+	d.Status.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
 	d.Core.Now = func() time.Time { return statusNow }
 	fin := &fakeFinisher{finishErr: &config.LockUnusableError{Path: lock, Err: os.ErrPermission}}
 	d.Status.Finisher = fin
@@ -292,7 +293,7 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	require.NotNil(t, found, "%+v", r.Problems)
 	require.Contains(t, found.PersonMessage, lock)
 	require.Equal(t, "sudo chown "+engineUserName()+" "+lock, found.NextSteps[0].Command)
-	require.Equal(t, mcp.ActorPerson, found.NextSteps[0].Actor)
+	require.Equal(t, toolresult.ActorPerson, found.NextSteps[0].Actor)
 	require.NotNil(t, svc.pendingSetup(), "still pending: the next call tries again")
 
 	fin.mu.Lock()

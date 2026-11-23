@@ -258,7 +258,9 @@ func (e *DatabaseNotConfirmedError) Error() string {
 	return "the agent's database waits for the person's confirmation; no tool but status and confirm_database works until then"
 }
 
-// Sentinel reports whether err is target, false for a nil target.
+// Sentinel reports whether err is target, false for a nil target. NewService
+// refuses a Deps whose error values are nil, so the agent's own targets are
+// set; the zero ErrorMap that classifies machine errors names none.
 func Sentinel(err, target error) bool { return target != nil && errors.Is(err, target) }
 
 // PersonTime is how a person-facing message states a deadline.

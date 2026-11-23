@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // contractTestdata holds the contract's valid and invalid manifest examples.
@@ -29,10 +31,10 @@ func withHooks(hooks string) []byte {
 	return []byte(strings.Replace(detectorManifest, "%HOOKS%", hooks, 1))
 }
 
-func requireRefused(t *testing.T, err error, reason Refusal) *VerifyError {
+func requireRefused(t *testing.T, err error, reason pluginmodel.Refusal) *pluginmodel.VerifyError {
 	t.Helper()
 	require.Error(t, err)
-	var ve *VerifyError
+	var ve *pluginmodel.VerifyError
 	require.True(t, errors.As(err, &ve), "want a *VerifyError, got %T: %v", err, err)
 	require.Equal(t, reason, ve.Reason, ve.Error())
 	require.NotEmpty(t, ve.File)
@@ -65,7 +67,7 @@ func TestManifestHookRules(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, err := ParseManifest(withHooks(hooks))
-			ve := requireRefused(t, err, RefusedBadManifest)
+			ve := requireRefused(t, err, pluginmodel.RefusedBadManifest)
 			require.NotContains(t, ve.Error(), "other-plugin", "a refusal never quotes a value")
 			require.NotContains(t, ve.Error(), "wire.rewrite", "a refusal never quotes a value")
 		})
@@ -106,7 +108,7 @@ func TestManifestContractExamples(t *testing.T) {
 				require.NoError(t, err)
 				return
 			}
-			requireRefused(t, err, RefusedBadManifest)
+			requireRefused(t, err, pluginmodel.RefusedBadManifest)
 		})
 	}
 	b, err := os.ReadFile(filepath.Join(contractTestdata, "signed", ManifestFile))
@@ -140,7 +142,7 @@ func TestManifestStrictJSON(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, err := ParseManifest([]byte(doc))
-			requireRefused(t, err, RefusedBadManifest)
+			requireRefused(t, err, pluginmodel.RefusedBadManifest)
 		})
 	}
 	m, err := ParseManifest([]byte(strings.Replace(base, `"publisher": "Acme",`, `"publisher": "Acme", "later": null,`, 1)))

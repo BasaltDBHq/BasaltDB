@@ -18,11 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -44,11 +45,11 @@ func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) 
 	return action.WriteResult{}, nil
 }
 func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }
-func (nopStore) History(context.Context, ledger.ChangeListParams) (History, error) {
+func (nopStore) History(context.Context, action.ChangeListParams) (History, error) {
 	return History{}, nil
 }
 
-func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	return pagination.Page[action.RunSummary]{}, nil
 }
 
@@ -103,7 +104,7 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
 		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": runHistoryArgs{}, "list_pending": listPendingArgs{},
-		"list_runs":      ledger.RunListParams{},
+		"list_runs":      action.RunListParams{},
 		"request_revert": requestRevertArgs{},
 		"preview_revert": previewRevertArgs{},
 		"describe":       describeArgs{},
@@ -171,10 +172,10 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&action.RefusalError{Reason: action.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", action.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
-		{fmt.Errorf("read: %w", store.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
+		{fmt.Errorf("read: %w", budget.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
 		{store.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
-		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
+		{&toolresult.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
 		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},
 		{fmt.Errorf("list: %w", ledger.ErrInvalidParams), CodeInvalidArgument, "", ""},
 		{guard.ErrInvalidIntent, CodeInvalidArgument, "", ""},
@@ -248,7 +249,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 		call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
 
 		_, err := call(context.Background(), nil)
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		require.True(t, errors.As(err, &te), name)
 		require.Equal(t, name, te.Code)
 		id, perr := uuid.Parse(te.ErrorID)
@@ -267,7 +268,7 @@ func TestErrorIDOnlyOnInternalAndUnavailable(t *testing.T) {
 	h := handlers{svc: NewService(deps())}
 	call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, &ArgumentError{Message: "bad"} })
 	_, err := call(context.Background(), nil)
-	var te *mcp.ToolError
+	var te *toolresult.ToolError
 	require.True(t, errors.As(err, &te))
 	require.Empty(t, te.ErrorID)
 }

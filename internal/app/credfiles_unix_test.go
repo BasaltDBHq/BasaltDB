@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // rootLayout is a config directory as basalt init writes it: engine.json
@@ -29,7 +30,7 @@ func rootLayout(t *testing.T, id uuid.UUID) (cfgPath, credFile string) {
 	require.NoError(t, config.WriteFile(credFile, []byte("postgres://bt_agent_bot:old@db:5432/app\n")))
 	require.NoError(t, config.UpsertAgent(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(credFile), Setup: &config.Setup{
-			SetupID: id.String(), Kind: guard.SetupAgent,
+			SetupID: id.String(), Kind: guardmodel.SetupAgent,
 			GuardVersion: guard.LatestVersion(), ExpiresAt: "2026-11-13T10:00:00Z", Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2",
 		},
 	}))

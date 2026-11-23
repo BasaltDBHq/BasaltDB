@@ -18,7 +18,6 @@ import (
 type (
 	Commands                  = agentkit.Commands
 	ServiceManager            = agentkit.ServiceManager
-	NextStep                  = agentkit.NextStep
 	Steps                     = agentkit.Steps
 	Tool                      = agentkit.Tool
 	ArgumentError             = agentkit.ArgumentError
@@ -162,7 +161,7 @@ func NewSteps() *Steps {
 	return agentkit.NewSteps()
 }
 
-func withSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
+func withSendRequest(steps []toolresult.NextStep, f *links.RequestFile) []toolresult.NextStep {
 	return agentkit.WithSendRequest(steps, f)
 }
 
@@ -246,7 +245,7 @@ func shown(s string, n int) string {
 	return agentkit.Shown(s, n)
 }
 
-func fitToSteps(message string, steps []NextStep) string {
+func fitToSteps(message string, steps []toolresult.NextStep) string {
 	return agentkit.FitToSteps(message, steps)
 }
 

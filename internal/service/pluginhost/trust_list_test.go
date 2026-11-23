@@ -7,13 +7,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // TestAddedKeys: the keys the person added are listed by id, in order; a
 // file that is not a trusted key is not, and the built-in keys never are.
 func TestAddedKeys(t *testing.T) {
 	t.Parallel()
-	empty, err := NewTrustStore(ModeSameUser, runtime.GOOS, t.TempDir())
+	empty, err := NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, t.TempDir())
 	require.NoError(t, err)
 	none, err := empty.AddedKeys()
 	require.NoError(t, err)

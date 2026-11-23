@@ -9,22 +9,22 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // ApplyInitTx runs the script in the caller's transaction and refuses to
 // commit while any agent-writable table or cascade target is left
 // unguarded. The after statements run last, once that check passed (a
 // setup code's record_setup).
-func ApplyInitTx(ctx context.Context, tx pgx.Tx, script guard.Script, after ...guard.Statement) error {
-	if err := script.Apply(ctx, tx); err != nil {
+func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script guardmodel.Script, after ...guardmodel.Statement) error {
+	if err := b.ApplyScript(ctx, tx, script); err != nil {
 		return err
 	}
-	if err := checkCovered(ctx, tx); err != nil {
+	if err := checkCovered(ctx, b, tx); err != nil {
 		return err
 	}
 	for _, st := range after {
-		if _, err := tx.Exec(ctx, st.SQL); err != nil {
+		if err := b.Run(ctx, tx, st.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 	}
@@ -33,8 +33,8 @@ func ApplyInitTx(ctx context.Context, tx pgx.Tx, script guard.Script, after ...g
 
 // checkCovered refuses, inside the install's transaction, while any
 // agent-writable table or cascade target is left unguarded.
-func checkCovered(ctx context.Context, tx pgx.Tx) error {
-	uncovered, err := guard.UncoveredTables(ctx, tx)
+func checkCovered(ctx context.Context, b Backend, tx pgx.Tx) error {
+	uncovered, err := b.UncoveredTables(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -107,17 +107,17 @@ const demoSchema = "basalt_demo."
 // MissingTablesHint turns the guard's list of missing write and read
 // tables into one refusal naming the database, and points at the demo seed
 // when a demo table is missing. Other errors pass through.
-func MissingTablesHint(err error, database string) error {
-	var missing *guard.MissingTablesError
-	if !errors.As(err, &missing) {
+func MissingTablesHint(b Backend, err error, database string) error {
+	missing, ok := b.MissingTables(err)
+	if !ok {
 		return err
 	}
 	noun, verb := "table", "it"
-	if len(missing.Tables) > 1 {
+	if len(missing) > 1 {
 		noun, verb = "tables", "them"
 	}
-	msg := fmt.Sprintf("%s %s not found in database %q; create %s first", noun, strings.Join(missing.Tables, ", "), database, verb)
-	for _, t := range missing.Tables {
+	msg := fmt.Sprintf("%s %s not found in database %q; create %s first", noun, strings.Join(missing, ", "), database, verb)
+	for _, t := range missing {
 		if strings.HasPrefix(t, demoSchema) {
 			msg += " (basalt init --demo creates the sample tables)"
 			break

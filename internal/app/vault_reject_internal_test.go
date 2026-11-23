@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -55,7 +56,7 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 	pg := newPGAgent(t, bot.URL, 2)
 	dbStore := pg.store
 	prepare := func() uuid.UUID {
-		prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
+		prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", guardmodel.MCPPrepareTimeout)
 		require.NoError(t, err)
 		return prep.RevertID
 	}
@@ -128,7 +129,7 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 	require.Error(t, err, "the rejected revert's link opens no session")
 	status, _ = viaLoopback(http.MethodGet, "/api/v1/reverts/"+id.String(), pagetest.Headers(s.secret), "")
 	require.Equal(t, http.StatusNotFound, status)
-	require.Equal(t, []string{guard.RejectViaLinkOrAgent}, via())
+	require.Equal(t, []string{guardmodel.RejectViaLinkOrAgent}, via())
 
 	// A second revert, widened in its session: the rotated secret rejects.
 	secret2, token2, err := secrets.IssueRelay(widened, time.Now().Add(time.Hour))
@@ -169,5 +170,5 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 	r = do(p2, http.MethodPost, readPath+"/reject", newSecret, `{}`)
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
 	require.Equal(t, websocket.StatusCode(channel.ErrLinkRefused), p2.Closed(wctx))
-	require.Equal(t, []string{guard.RejectViaLinkOrAgent, guard.RejectViaScopeToken}, via())
+	require.Equal(t, []string{guardmodel.RejectViaLinkOrAgent, guardmodel.RejectViaScopeToken}, via())
 }

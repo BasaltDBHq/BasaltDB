@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -65,7 +65,7 @@ func TestPagesRevealRoute(t *testing.T) {
 	require.JSONEq(t, `{"rows":[{"line":1,"row":"[{\"id\": 9}, {\"id\": 9}, null]"}]}`, string(raw))
 	require.Len(t, a.revealed, 1)
 
-	a.err = &mcp.ToolError{Code: agent.CodeApprovalInvalid, Reason: "REVEAL_REFUSED", Message: "refused"}
+	a.err = &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Reason: "REVEAL_REFUSED", Message: "refused"}
 	status, out := s.do(t, http.MethodPost, path, host, s.origin, "application/json", revealBody, secret)
 	require.Equal(t, http.StatusConflict, status)
 	require.Contains(t, out, `"reason":"REVEAL_REFUSED"`)

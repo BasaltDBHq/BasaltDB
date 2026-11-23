@@ -30,17 +30,17 @@ type LabelChange struct {
 // since the person saw it. Nothing is written.
 var ErrClassesChanged = errors.New("a column's class or the column itself changed since it was shown")
 
-// LabelClasses are the classes the connect page sets.
-var LabelClasses = []string{ClassPublic, ClassIdentifier, ClassSecret}
+// labelClasses are the classes the connect page sets.
+var labelClasses = []string{ClassPublic, ClassIdentifier, ClassSecret}
 
-// EntityTypes are the entity types of an IDENTIFIER column.
-var EntityTypes = []string{EntityEmail, EntityPhone, EntityPersonName, EntityAddress, EntityOther}
+// entityTypes are the entity types of an IDENTIFIER column.
+var entityTypes = []string{EntityEmail, EntityPhone, EntityPersonName, EntityAddress, EntityOther}
 
 // ValidLabel reports whether l is a class the connect page may set:
 // PUBLIC, IDENTIFIER with an entity type, or SECRET; a phone region, upper
 // case ISO 3166-1 alpha-2, with PHONE only and required there.
 func ValidLabel(l Label) bool {
-	return slices.Contains(LabelClasses, l.Class) && validEntity(l, true)
+	return slices.Contains(labelClasses, l.Class) && validEntity(l, true)
 }
 
 // ValidWas reports whether l is a class a column can have now: any of the
@@ -54,7 +54,7 @@ func validEntity(l Label, regionRequired bool) bool {
 	if l.Class != ClassIdentifier {
 		return l.EntityType == "" && l.PhoneRegion == ""
 	}
-	if !slices.Contains(EntityTypes, l.EntityType) {
+	if !slices.Contains(entityTypes, l.EntityType) {
 		return false
 	}
 	if l.EntityType != EntityPhone {

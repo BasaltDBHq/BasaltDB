@@ -5,16 +5,18 @@ import (
 	"slices"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Migrations lists every version this build installs, in order. Each one
 // is breaking unless flagged non-breaking; flagging one needs a test that
 // serves an agent on a guard without it (internal/service/agent,
 // TestEveryNonBreakingMigrationIsServedWithoutIt).
-func Migrations() []Migration {
-	out := make([]Migration, 0, len(migrations))
+func Migrations() []guardmodel.Migration {
+	out := make([]guardmodel.Migration, 0, len(migrations))
 	for _, m := range migrations {
-		out = append(out, Migration{Version: m.version, Breaking: !m.nonBreaking})
+		out = append(out, guardmodel.Migration{Version: m.version, Breaking: !m.nonBreaking})
 	}
 	return out
 }
@@ -23,22 +25,22 @@ func Migrations() []Migration {
 // with migs. A missing version is one of migs not recorded in
 // schema_version. Every version lets agents read schema_version, so an agent
 // that cannot read it has no version this build knows: all are missing.
-func AgentStatus(ctx context.Context, q Querier, migs []Migration) (Status, error) {
-	st := Status{Build: buildVersion(migs)}
+func AgentStatus(ctx context.Context, q Querier, migs []guardmodel.Migration) (guardmodel.Status, error) {
+	st := guardmodel.Status{Build: buildVersion(migs)}
 	var exists, readable bool
 	// Plain SQL: catalog and privilege lookups, which any role may run.
 	err := q.QueryRow(ctx, `SELECT to_regclass('basalt_meta.schema_version') IS NOT NULL,
 		coalesce(has_table_privilege(to_regclass('basalt_meta.schema_version'), 'SELECT'), false)`).Scan(&exists, &readable)
 	if err != nil {
-		return Status{}, err
+		return guardmodel.Status{}, err
 	}
 	if !exists {
-		st.State = GuardMissing
+		st.State = guardmodel.GuardMissing
 		return st, nil
 	}
 	installed, err := installedVersions(ctx, q, readable)
 	if err != nil {
-		return Status{}, err
+		return guardmodel.Status{}, err
 	}
 	for _, v := range installed {
 		st.Installed = max(st.Installed, v)
@@ -61,10 +63,10 @@ func AgentStatus(ctx context.Context, q Querier, migs []Migration) (Status, erro
 // installed (0: none), against migs: every version of migs after installed
 // is missing. It judges a version read elsewhere (another build's engine)
 // by this build's migrations.
-func StatusAt(installed int, migs []Migration) Status {
-	st := Status{Installed: installed, Build: buildVersion(migs)}
+func StatusAt(installed int, migs []guardmodel.Migration) guardmodel.Status {
+	st := guardmodel.Status{Installed: installed, Build: buildVersion(migs)}
 	if installed == 0 {
-		st.State = GuardMissing
+		st.State = guardmodel.GuardMissing
 		return st
 	}
 	for _, m := range migs {
@@ -80,16 +82,16 @@ func StatusAt(installed int, migs []Migration) Status {
 	return st
 }
 
-func stateOf(st Status) string {
+func stateOf(st guardmodel.Status) string {
 	switch {
 	case len(st.MissingBreaking) > 0:
-		return GuardOutdated
+		return guardmodel.GuardOutdated
 	case len(st.MissingNonBreaking) > 0:
-		return GuardUpgradeAvailable
+		return guardmodel.GuardUpgradeAvailable
 	case st.Installed > st.Build:
-		return GuardNewer
+		return guardmodel.GuardNewer
 	}
-	return GuardOK
+	return guardmodel.GuardOK
 }
 
 // installedVersions are the versions recorded in schema_version, or none
@@ -109,7 +111,7 @@ func installedVersions(ctx context.Context, q Querier, readable bool) ([]int, er
 	return pgx.CollectRows(rows, pgx.RowTo[int])
 }
 
-func buildVersion(migs []Migration) int {
+func buildVersion(migs []guardmodel.Migration) int {
 	out := 0
 	for _, m := range migs {
 		out = max(out, m.Version)

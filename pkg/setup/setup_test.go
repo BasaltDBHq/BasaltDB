@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -649,7 +650,7 @@ func TestCheckAsksOnlyAboutTheAgentsRLSTables(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
-	d.Init(t, guard.AgentSpec{Name: "other", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}})
+	d.Init(t, guardmodel.AgentSpec{Name: "other", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}})
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
 		GRANT SELECT ON public.payroll TO PUBLIC`)

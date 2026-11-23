@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -41,13 +42,13 @@ func approvalSelect(ctx context.Context) sq.SelectBuilder {
 		From("basalt_meta.agent_approvals"))
 }
 
-func scanApproval(row pgx.CollectableRow) (Approval, error) {
-	var a Approval
+func scanApproval(row pgx.CollectableRow) (action.Approval, error) {
+	var a action.Approval
 	err := row.Scan(approvalDest(&a)...)
 	return a, err
 }
 
-func approvalDest(a *Approval) []any {
+func approvalDest(a *action.Approval) []any {
 	return []any{
 		&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Statement, &a.Params, &a.Assigned, &a.Rows, &a.Status,
 		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines, &a.LinesLeftOut, &a.LinesCost,
@@ -56,11 +57,11 @@ func approvalDest(a *Approval) []any {
 
 // scanMarkedApproval scans markedApprovals' row: the approval, then its
 // largeValues.
-func scanMarkedApproval(row pgx.CollectableRow) (Approval, error) {
-	var a Approval
+func scanMarkedApproval(row pgx.CollectableRow) (action.Approval, error) {
+	var a action.Approval
 	var large []byte
 	if err := row.Scan(append(approvalDest(&a), &large)...); err != nil {
-		return Approval{}, err
+		return action.Approval{}, err
 	}
 	return a, unmarshalEntries(large, &a.LargeValues)
 }
@@ -79,18 +80,18 @@ func markedApprovals(page string, desc bool, limit int) string {
 }
 
 // FindApproval returns one of the calling agent's approvals.
-func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (Approval, error) {
+func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (action.Approval, error) {
 	sql, args, err := approvalSelect(ctx).Where(sq.Eq{"approval_id": id.String()}).ToSql()
 	if err != nil {
-		return Approval{}, err
+		return action.Approval{}, err
 	}
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return Approval{}, err
+		return action.Approval{}, err
 	}
 	a, err := pgx.CollectExactlyOneRow(rows, scanApproval)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Approval{}, ErrApprovalNotFound
+		return action.Approval{}, ErrApprovalNotFound
 	}
 	return a, err
 }
@@ -99,19 +100,19 @@ func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (Approval,
 // are waiting for the person (PENDING) or approved and not yet applied
 // (APPROVED). Only list_pending reads it: a statement or params too large
 // for the agent is left out and named in LargeValues.
-func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParams) (pagination.Page[Approval], error) {
+func ListOpenApprovals(ctx context.Context, q guard.Querier, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	switch p.Status {
 	case "", ApprovalPending, ApprovalApproved:
 	default:
-		return pagination.Page[Approval]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
+		return pagination.Page[action.Approval]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
 	}
 	b := approvalSelect(ctx)
 	if p.RunID != uuid.Nil {
 		b = b.Where(sq.Eq{colRunID: p.RunID.String()})
 	}
-	l := openList[Approval]{
+	l := openList[action.Approval]{
 		selectAll: b, idColumn: colApprovalID, statuses: []string{ApprovalPending, ApprovalApproved},
-		scan: scanMarkedApproval, id: func(a Approval) uuid.UUID { return a.ID }, wrap: markedApprovals,
+		scan: scanMarkedApproval, id: func(a action.Approval) uuid.UUID { return a.ID }, wrap: markedApprovals,
 	}
 	return l.page(ctx, q, p.Params, p.Status)
 }

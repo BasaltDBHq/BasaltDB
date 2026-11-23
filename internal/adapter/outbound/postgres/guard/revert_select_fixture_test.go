@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // The revert page signs a widen proof over the select text it builds itself
@@ -30,7 +31,7 @@ func TestRevertSelectFixturesMatchPostgres(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &f))
 	require.NotEmpty(t, f.Rescope)
 	d := guardtest.New(t)
-	d.Init(t, guard.AgentSpec{Name: "bot", Password: guard.NewPassword()})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword()})
 	for _, c := range f.Rescope {
 		got := scalarOf[string](t, d.Admin, `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(c.Select))
 		require.Equal(t, c.SelectText, got, c.Name)

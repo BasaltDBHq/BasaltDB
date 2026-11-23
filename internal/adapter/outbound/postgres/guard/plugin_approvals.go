@@ -13,6 +13,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // OpenPluginApproval opens a plugin approval for the agents in d, every one
@@ -23,7 +25,7 @@ import (
 // LEDGER_INPUT_INVALID for a detail or settings outside the contract, BS007
 // NOT_ALLOWED with DetailUnknownAgent or DetailTooManyPending. It needs
 // schema version PluginApprovalsVersion.
-func OpenPluginApproval(ctx context.Context, q Querier, d PluginApprovalDetail, s PluginSettings) (PluginApproval, error) {
+func OpenPluginApproval(ctx context.Context, q Querier, d guardmodel.PluginApprovalDetail, s guardmodel.PluginSettings) (guardmodel.PluginApproval, error) {
 	d.Agents = sortedCopy(d.Agents)
 	d.Hooks = sortedCopy(d.Hooks)
 	d.Egress = sortedCopy(d.Egress)
@@ -35,19 +37,19 @@ func OpenPluginApproval(ctx context.Context, q Querier, d PluginApprovalDetail, 
 	}
 	detail, err := json.Marshal(d)
 	if err != nil {
-		return PluginApproval{}, fmt.Errorf("open plugin approval: %w", err)
+		return guardmodel.PluginApproval{}, fmt.Errorf("open plugin approval: %w", err)
 	}
 	settings, err := json.Marshal(s)
 	if err != nil {
-		return PluginApproval{}, fmt.Errorf("open plugin approval: settings: %w", err)
+		return guardmodel.PluginApproval{}, fmt.Errorf("open plugin approval: settings: %w", err)
 	}
-	var a PluginApproval
+	var a guardmodel.PluginApproval
 	// Plain SQL: a set-returning function in FROM.
 	err = q.QueryRow(ctx, `SELECT o.approval_id, o.binding_text, o.settings_text, o.expires_at
 		FROM basalt_meta.open_plugin_approval($1::jsonb, $2::jsonb) AS o`, string(detail), string(settings)).
 		Scan(&a.ID, &a.BindingText, &a.SettingsText, &a.ExpiresAt)
 	if err != nil {
-		return PluginApproval{}, err
+		return guardmodel.PluginApproval{}, err
 	}
 	return a, nil
 }
@@ -57,7 +59,7 @@ func OpenPluginApproval(ctx context.Context, q Querier, d PluginApprovalDetail, 
 // binds): s goes to q's database as jsonb, its text comes back, and the
 // lowercase hex SHA-256 is taken of that text, so both sides hash the bytes
 // Postgres writes. Go never builds the text itself.
-func PluginSettingsSHA256(ctx context.Context, q Querier, s PluginSettings) (string, error) {
+func PluginSettingsSHA256(ctx context.Context, q Querier, s guardmodel.PluginSettings) (string, error) {
 	raw, err := json.Marshal(s)
 	if err != nil {
 		return "", fmt.Errorf("plugin settings: %w", err)
@@ -89,7 +91,7 @@ func sortedCopy(in []string) []string {
 // relay. It returns when the approval was signed. Refusals: BS005
 // APPROVAL_INVALID (DetailApprovalNotFound, DetailApprovalCancelled,
 // DetailAlreadyApproved, or a failed passkey check) and APPROVAL_EXPIRED.
-func SubmitPluginApproval(ctx context.Context, q Querier, r PluginApprovalResponse) (time.Time, error) {
+func SubmitPluginApproval(ctx context.Context, q Querier, r guardmodel.PluginApprovalResponse) (time.Time, error) {
 	sql, args, err := psql.Select().Column(sq.Expr(
 		"basalt_meta.submit_plugin_approval(?::uuid, ?::bytea, ?::bytea, ?::bytea, ?::bytea)",
 		r.ApprovalID.String(), r.Assertion.CredentialID, r.Assertion.AuthenticatorData,
@@ -115,7 +117,7 @@ var pluginApprovalColumns = []string{
 // serves an entry that requires approval only on such a record that is
 // APPROVED, not ended, and matches the entry. It needs schema version
 // PluginApprovalsVersion: on an older guard the view does not exist.
-func ReadPluginApprovals(ctx context.Context, q Querier) ([]PluginApprovalRecord, error) {
+func ReadPluginApprovals(ctx context.Context, q Querier) ([]guardmodel.PluginApprovalRecord, error) {
 	sql, args, err := psql.Select(pluginApprovalColumns...).
 		Options("DISTINCT ON (name, instance)").
 		From("basalt_meta.agent_plugin_approvals").
@@ -133,33 +135,33 @@ func ReadPluginApprovals(ctx context.Context, q Querier) ([]PluginApprovalRecord
 
 // ReadPluginApproval returns one plugin approval the calling role may see
 // (it names the role or the role opened it), and false when there is none.
-func ReadPluginApproval(ctx context.Context, q Querier, id uuid.UUID) (PluginApprovalRecord, bool, error) {
+func ReadPluginApproval(ctx context.Context, q Querier, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	sql, args, err := psql.Select(pluginApprovalColumns...).
 		From("basalt_meta.agent_plugin_approvals").
 		Where(sq.Eq{"approval_id": id.String()}).ToSql()
 	if err != nil {
-		return PluginApprovalRecord{}, false, err
+		return guardmodel.PluginApprovalRecord{}, false, err
 	}
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return PluginApprovalRecord{}, false, err
+		return guardmodel.PluginApprovalRecord{}, false, err
 	}
 	r, err := pgx.CollectExactlyOneRow(rows, scanPluginApproval)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return PluginApprovalRecord{}, false, nil
+		return guardmodel.PluginApprovalRecord{}, false, nil
 	}
 	return r, err == nil, err
 }
 
-func scanPluginApproval(row pgx.CollectableRow) (PluginApprovalRecord, error) {
-	var r PluginApprovalRecord
+func scanPluginApproval(row pgx.CollectableRow) (guardmodel.PluginApprovalRecord, error) {
+	var r guardmodel.PluginApprovalRecord
 	var status string
 	var detail []byte
 	if err := row.Scan(&r.ApprovalID, &r.Name, &r.Instance, &status, &r.OpenedAt, &r.ExpiresAt, &r.ApprovedAt,
 		&r.NamesCaller, &r.EndedAt, &detail, &r.BindingText, &r.SettingsText); err != nil {
 		return r, err
 	}
-	r.Status = PluginApprovalStatus(status)
+	r.Status = guardmodel.PluginApprovalStatus(status)
 	if err := json.Unmarshal(detail, &r.Bound); err != nil {
 		return r, fmt.Errorf("plugin approval %s: detail: %w", r.ApprovalID, err)
 	}

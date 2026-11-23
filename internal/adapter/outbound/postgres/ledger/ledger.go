@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -32,12 +33,12 @@ var ChangeSortSpec = pagination.SortSpec{
 }
 
 // ListChanges returns one page of the calling agent's change records.
-func ListChanges(ctx context.Context, q guard.Querier, p ChangeListParams) (pagination.Page[Change], error) {
+func ListChanges(ctx context.Context, q guard.Querier, p action.ChangeListParams) (pagination.Page[action.Change], error) {
 	sql, args, _, err := changePage(p)
 	if err != nil {
-		return pagination.Page[Change]{}, err
+		return pagination.Page[action.Change]{}, err
 	}
-	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *Change) error {
+	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *action.Change) error {
 		return row.Scan(changeDest(c)...)
 	})
 }
@@ -60,7 +61,7 @@ var changeColumns = []string{
 // changePage is the SQL of one page of change records (one row more than
 // the limit, to tell whether another page follows), and whether it is
 // sorted newest first.
-func changePage(p ChangeListParams) (string, []any, bool, error) {
+func changePage(p action.ChangeListParams) (string, []any, bool, error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
 		return "", nil, false, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
 	}
@@ -88,7 +89,7 @@ func changePage(p ChangeListParams) (string, []any, bool, error) {
 }
 
 // changeDest are the scan destinations of changeColumns.
-func changeDest(c *Change) []any {
+func changeDest(c *action.Change) []any {
 	return []any{
 		&c.ID, &c.At, &c.Agent, &c.RunID, &c.TaskID, &c.Intent, &c.Op, &c.Table, &c.Statement,
 		&c.Params, &c.Rows, &c.CascadedRows, &c.DurationMs, &c.Status, &c.Code, &c.Reason,
@@ -97,22 +98,22 @@ func changeDest(c *Change) []any {
 }
 
 // collectChanges runs sql and returns its rows as one page of p.
-func collectChanges(ctx context.Context, q guard.Querier, p ChangeListParams, sql string, args []any,
-	scan func(pgx.CollectableRow, *Change) error,
-) (pagination.Page[Change], error) {
+func collectChanges(ctx context.Context, q guard.Querier, p action.ChangeListParams, sql string, args []any,
+	scan func(pgx.CollectableRow, *action.Change) error,
+) (pagination.Page[action.Change], error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return pagination.Page[Change]{}, err
+		return pagination.Page[action.Change]{}, err
 	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Change, error) {
-		var c Change
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (action.Change, error) {
+		var c action.Change
 		err := scan(row, &c)
 		return c, err
 	})
 	if err != nil {
-		return pagination.Page[Change]{}, err
+		return pagination.Page[action.Change]{}, err
 	}
-	page := pagination.Page[Change]{Items: items}
+	page := pagination.Page[action.Change]{Items: items}
 	if len(items) > p.Limit {
 		page.Items = items[:p.Limit]
 		page.NextCursor = pagination.EncodeIDCursor(page.Items[p.Limit-1].ID.String())
@@ -124,8 +125,8 @@ func collectChanges(ctx context.Context, q guard.Querier, p ChangeListParams, sq
 // ledger order, keyed by change id. An agent's change touches at most 50
 // rows (the row limit) and a revert at most 1000 (its line cap), so the
 // result is bounded by the page of changes.
-func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (map[uuid.UUID][]RowChange, error) {
-	out := make(map[uuid.UUID][]RowChange, len(changeIDs))
+func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (map[uuid.UUID][]action.RowChange, error) {
+	out := make(map[uuid.UUID][]action.RowChange, len(changeIDs))
 	if len(changeIDs) == 0 {
 		return out, nil
 	}
@@ -140,7 +141,7 @@ func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (ma
 	defer rows.Close()
 	for rows.Next() {
 		var id uuid.UUID
-		var r RowChange
+		var r action.RowChange
 		var key, before, after json.RawMessage
 		if err := rows.Scan(&id, &r.Seq, &r.Table, &r.Op, &key, &before, &after,
 			&r.Cascaded, &r.Redacted, &r.Pruned, &r.BasedOn, &r.BlindWrite); err != nil {
@@ -172,7 +173,7 @@ func rowChangeSelect(changeIDs []uuid.UUID) sq.SelectBuilder {
 
 // decodeImages sets r's key, before and after maps from the images' JSON
 // text and the summaries of the values in them that cost over 1 MiB.
-func decodeImages(r *RowChange, key, before, after json.RawMessage) error {
+func decodeImages(r *action.RowChange, key, before, after json.RawMessage) error {
 	for _, img := range []struct {
 		text  json.RawMessage
 		into  *map[string]any

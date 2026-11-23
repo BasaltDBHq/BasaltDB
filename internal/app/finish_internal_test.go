@@ -19,6 +19,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // recordingPassword records the passwords the pool is switched to.
@@ -35,7 +36,7 @@ func fileFinisher(t *testing.T, id uuid.UUID) (*setupFinisher, *recordingPasswor
 	require.NoError(t, config.WriteFile(credFile, []byte("postgres://bt_agent_bot:old@db:5432/app\n")))
 	require.NoError(t, config.UpsertAgent(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(credFile), Setup: &config.Setup{
-			SetupID: id.String(), Kind: guard.SetupAgent,
+			SetupID: id.String(), Kind: guardmodel.SetupAgent,
 			GuardVersion: guard.LatestVersion(), ExpiresAt: "2026-11-13T10:00:00Z", Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2",
 		},
 	}))

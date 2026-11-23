@@ -7,6 +7,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // sqlstateUndefinedTable is a view that does not exist: a guard below
@@ -48,7 +50,7 @@ func RecordedTrustPin(ctx context.Context, q Querier, host string, port int) (st
 
 // RecordedTrustPinTx is RecordedTrustPin read in tx with the admin
 // connection, as the guard role: the admin may not read agent_trust_pins.
-func RecordedTrustPinTx(ctx context.Context, tx pgx.Tx, n Names, host string, port int) (sha string, ok bool, err error) {
+func RecordedTrustPinTx(ctx context.Context, tx pgx.Tx, n guardmodel.Names, host string, port int) (sha string, ok bool, err error) {
 	err = asGuard(ctx, tx, n, func() error {
 		var err error
 		sha, ok, err = RecordedTrustPin(ctx, tx, host, port)

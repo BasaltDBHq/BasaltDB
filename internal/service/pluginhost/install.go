@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Modes of installed files. A file the source ships executable, and the
@@ -30,8 +30,8 @@ const (
 // the person declines. Its directory is readable by its owner only until
 // Commit.
 type Staged struct {
-	Verified
-	Key   EntryKey
+	pluginmodel.Verified
+	Key   pluginmodel.EntryKey
 	root  string
 	owner uint32
 	trust TrustStore
@@ -48,9 +48,9 @@ type Staged struct {
 // signature only. instance "" is "default". On any failure nothing is left
 // behind. With RequireApproval a source with no .sig stages, and its copy
 // has none.
-func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (*Staged, error) {
+func Stage(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, opts ...Option) (*Staged, error) {
 	o := optionsOf(opts)
-	owner, err := pluginpath.Owner(mode)
+	owner, err := requiredOwner(mode)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +58,11 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Opti
 		return nil, err
 	}
 	if instance == "" {
-		instance = DefaultInstance
+		instance = pluginmodel.DefaultInstance
 	}
 	srcRoot, err := os.OpenRoot(src)
 	if err != nil {
-		return nil, pathRefusal(src, "cannot be opened as a directory")
+		return nil, pluginmodel.PathRefusal(src, "cannot be opened as a directory")
 	}
 	defer func() { _ = srcRoot.Close() }()
 
@@ -98,15 +98,15 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Opti
 	if err != nil {
 		return nil, inFile(err, filepath.Join(src, ManifestFile))
 	}
-	key := EntryKey{Name: m.Name, Instance: instance}
+	key := pluginmodel.EntryKey{Name: m.Name, Instance: instance}
 	if err := checkKey(key); err != nil {
 		return nil, err
 	}
 	if _, ok := m.Files[ManifestFile]; ok {
-		return nil, &VerifyError{Reason: RefusedBadManifest, File: filepath.Join(src, ManifestFile), Why: whyFilesNameManifest}
+		return nil, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: filepath.Join(src, ManifestFile), Why: whyFilesNameManifest}
 	}
 	if _, ok := m.Files[SignatureFile]; ok {
-		return nil, &VerifyError{Reason: RefusedBadManifest, File: filepath.Join(src, ManifestFile), Why: whyFilesNameManifest}
+		return nil, &pluginmodel.VerifyError{Reason: pluginmodel.RefusedBadManifest, File: filepath.Join(src, ManifestFile), Why: whyFilesNameManifest}
 	}
 
 	nameDir := filepath.Join(root, key.Name)
@@ -121,7 +121,7 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Opti
 	}
 	tmp, err := os.MkdirTemp(instDir, stagingPrefix)
 	if err != nil {
-		return nil, pathRefusal(instDir, "cannot hold a temporary copy")
+		return nil, pluginmodel.PathRefusal(instDir, "cannot hold a temporary copy")
 	}
 	s := &Staged{Key: key, root: root, owner: owner, trust: trust, opts: o}
 	s.Dir = tmp
@@ -141,7 +141,7 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Opti
 // fill writes the manifest and signature bytes already read (no signature
 // when signed is false), and copies each listed file, into the temporary
 // copy.
-func (s *Staged) fill(srcRoot *os.Root, src string, m Manifest, manifest, sig []byte, signed bool) error {
+func (s *Staged) fill(srcRoot *os.Root, src string, m pluginmodel.Manifest, manifest, sig []byte, signed bool) error {
 	if err := writeNew(filepath.Join(s.Dir, ManifestFile), manifest, installedFileMode); err != nil {
 		return err
 	}
@@ -168,14 +168,14 @@ func (s *Staged) copyFile(srcRoot *os.Root, src, rel string, command bool) error
 	if err := noSymlinkBelow(srcRoot, src, rel); err != nil {
 		return err
 	}
-	in, err := srcRoot.OpenFile(filepath.FromSlash(rel), noFollowFlags, 0)
+	in, err := srcRoot.OpenFile(filepath.FromSlash(rel), noFollowFlags(), 0)
 	if err != nil {
-		return pathRefusal(srcPath, "cannot be opened, or is a symlink")
+		return pluginmodel.PathRefusal(srcPath, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = in.Close() }()
 	fi, err := in.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
-		return pathRefusal(srcPath, "is not a regular file")
+		return pluginmodel.PathRefusal(srcPath, "is not a regular file")
 	}
 	mode := os.FileMode(installedFileMode)
 	if command || fi.Mode().Perm()&execBits != 0 {
@@ -187,22 +187,22 @@ func (s *Staged) copyFile(srcRoot *os.Root, src, rel string, command bool) error
 	}
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, installedFileMode)
 	if err != nil {
-		return pathRefusal(dst, "cannot be created")
+		return pluginmodel.PathRefusal(dst, "cannot be created")
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		_ = out.Close()
-		return pathRefusal(srcPath, "cannot be read")
+		return pluginmodel.PathRefusal(srcPath, "cannot be read")
 	}
 	if err := out.Chmod(mode); err != nil {
 		_ = out.Close()
-		return pathRefusal(dst, "cannot be written")
+		return pluginmodel.PathRefusal(dst, "cannot be written")
 	}
 	if err := out.Sync(); err != nil {
 		_ = out.Close()
-		return pathRefusal(dst, "cannot be written")
+		return pluginmodel.PathRefusal(dst, "cannot be written")
 	}
 	if err := out.Close(); err != nil {
-		return pathRefusal(dst, "cannot be written")
+		return pluginmodel.PathRefusal(dst, "cannot be written")
 	}
 	return nil
 }
@@ -217,13 +217,13 @@ func noSymlinkBelow(srcRoot *os.Root, src, rel string) error {
 		sub := strings.Join(parts[:i], "/")
 		fi, err := srcRoot.Lstat(filepath.FromSlash(sub))
 		if err != nil {
-			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "cannot be read")
+			return pluginmodel.PathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "cannot be read")
 		}
 		if fi.Mode()&fs.ModeSymlink != 0 {
-			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is a symlink")
+			return pluginmodel.PathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is a symlink")
 		}
 		if i < len(parts) && !fi.IsDir() {
-			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is not a directory")
+			return pluginmodel.PathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is not a directory")
 		}
 	}
 	return nil
@@ -236,21 +236,21 @@ func readSource(srcRoot *os.Root, src, name string, limit int64) ([]byte, error)
 	if err := noSymlinkBelow(srcRoot, src, name); err != nil {
 		return nil, err
 	}
-	f, err := srcRoot.OpenFile(name, noFollowFlags, 0)
+	f, err := srcRoot.OpenFile(name, noFollowFlags(), 0)
 	if err != nil {
-		return nil, pathRefusal(p, "cannot be opened, or is a symlink")
+		return nil, pluginmodel.PathRefusal(p, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
-		return nil, pathRefusal(p, "is not a regular file")
+		return nil, pluginmodel.PathRefusal(p, "is not a regular file")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return nil, pathRefusal(p, "cannot be read")
+		return nil, pluginmodel.PathRefusal(p, "cannot be read")
 	}
 	if int64(len(b)) > limit {
-		return nil, pathRefusal(p, "is too large")
+		return nil, pluginmodel.PathRefusal(p, "is too large")
 	}
 	return b, nil
 }
@@ -268,10 +268,10 @@ func mkdirsIn(base, rel string) error {
 			continue
 		}
 		if err != nil {
-			return pathRefusal(cur, "cannot be created")
+			return pluginmodel.PathRefusal(cur, "cannot be created")
 		}
 		if err := os.Chmod(cur, dirMode); err != nil {
-			return pathRefusal(cur, "cannot be set to mode 0755")
+			return pluginmodel.PathRefusal(cur, "cannot be set to mode 0755")
 		}
 	}
 	return nil
@@ -281,18 +281,18 @@ func mkdirsIn(base, rel string) error {
 func writeNew(p string, b []byte, mode os.FileMode) error {
 	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
-		return pathRefusal(p, "cannot be created")
+		return pluginmodel.PathRefusal(p, "cannot be created")
 	}
 	if _, err := f.Write(b); err != nil {
 		_ = f.Close()
-		return pathRefusal(p, "cannot be written")
+		return pluginmodel.PathRefusal(p, "cannot be written")
 	}
 	if err := f.Chmod(mode); err != nil {
 		_ = f.Close()
-		return pathRefusal(p, "cannot be written")
+		return pluginmodel.PathRefusal(p, "cannot be written")
 	}
 	if err := f.Close(); err != nil {
-		return pathRefusal(p, "cannot be written")
+		return pluginmodel.PathRefusal(p, "cannot be written")
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func (s *Staged) Commit() (string, error) {
 	final := filepath.Join(instDir, s.ManifestSHA256)
 	if err := os.Chmod(s.Dir, dirMode); err != nil {
 		_ = os.RemoveAll(s.Dir)
-		return "", pathRefusal(s.Dir, "cannot be set to mode 0755")
+		return "", pluginmodel.PathRefusal(s.Dir, "cannot be set to mode 0755")
 	}
 	if _, err := os.Lstat(final); err == nil {
 		kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner, s.opts)
@@ -328,13 +328,13 @@ func (s *Staged) Commit() (string, error) {
 		old := filepath.Join(instDir, oldPrefix+strings.TrimPrefix(filepath.Base(s.Dir), stagingPrefix))
 		if err := os.Rename(final, old); err != nil {
 			_ = os.RemoveAll(s.Dir)
-			return "", pathRefusal(final, "exists, is not the staged copy, and cannot be moved aside")
+			return "", pluginmodel.PathRefusal(final, "exists, is not the staged copy, and cannot be moved aside")
 		}
 		if err := os.Rename(s.Dir, final); err != nil {
 			// Put the copy that was in place back: an entry may still name it.
 			_ = os.Rename(old, final)
 			_ = os.RemoveAll(s.Dir)
-			return "", pathRefusal(final, "cannot be put in place")
+			return "", pluginmodel.PathRefusal(final, "cannot be put in place")
 		}
 		_ = os.RemoveAll(old)
 		s.Dir = final
@@ -342,7 +342,7 @@ func (s *Staged) Commit() (string, error) {
 	}
 	if err := os.Rename(s.Dir, final); err != nil {
 		_ = os.RemoveAll(s.Dir)
-		return "", pathRefusal(final, "cannot be put in place")
+		return "", pluginmodel.PathRefusal(final, "cannot be put in place")
 	}
 	s.Dir = final
 	return final, nil
@@ -371,21 +371,21 @@ func (s *Staged) Discard() error {
 	}
 	s.done = true
 	if err := os.RemoveAll(s.Dir); err != nil {
-		return pathRefusal(s.Dir, "cannot be removed")
+		return pluginmodel.PathRefusal(s.Dir, "cannot be removed")
 	}
 	return nil
 }
 
 // Install stages the plugin in src and commits it, with no consent step in
 // between. It returns the installed copy.
-func Install(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
+func Install(src, root, instance string, trust TrustStore, mode pluginmodel.Mode, opts ...Option) (pluginmodel.Verified, error) {
 	s, err := Stage(src, root, instance, trust, mode, opts...)
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	dir, err := s.Commit()
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
 	v := s.Verified
 	v.Dir = dir

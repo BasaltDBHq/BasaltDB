@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -28,23 +29,9 @@ const allTablesSQL = `SELECT n.nspname || '.' || c.relname,
    AND c.relname ~ '^[a-z_][a-z0-9_]{0,62}$'
  ORDER BY 1`
 
-// SchemaTables are the tables of a schema as an agent.allTables setup sees
-// them, each in name order.
-type SchemaTables struct {
-	// Write are the tables the connected role owns that have a primary key:
-	// the agent may change their rows.
-	Write []string
-	// ReadOnly are the tables the connected role owns without a primary
-	// key: the guard cannot key an agent's writes there, so the agent may
-	// only read them.
-	ReadOnly []string
-	// Excluded are the tables another role owns.
-	Excluded []setupcode.ExcludedTable
-}
-
 // AllTablesIn reads the tables of schema for an agent.allTables setup.
-func AllTablesIn(ctx context.Context, q Querier, schema string) (SchemaTables, error) {
-	var out SchemaTables
+func AllTablesIn(ctx context.Context, q Querier, schema string) (guardmodel.SchemaTables, error) {
+	var out guardmodel.SchemaTables
 	rows, err := q.Query(ctx, allTablesSQL, schema)
 	if err != nil {
 		return out, fmt.Errorf("list the tables of schema %s: %w", schema, err)
@@ -54,7 +41,7 @@ func AllTablesIn(ctx context.Context, q Querier, schema string) (SchemaTables, e
 		var table, owner string
 		var mine, keyed bool
 		if err := rows.Scan(&table, &owner, &mine, &keyed); err != nil {
-			return SchemaTables{}, err
+			return guardmodel.SchemaTables{}, err
 		}
 		switch {
 		case !mine:

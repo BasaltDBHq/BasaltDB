@@ -17,9 +17,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
@@ -64,7 +64,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	const host = "db.internal.example.com"
 	s := newPinServer(t, host)
 	cfg := tempConfig(t)
-	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guard.DefaultPrefix, "bot", "0123abcd"))
+	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guardmodel.DefaultPrefix, "bot", "0123abcd"))
 	var events []string
 	var out, errb bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })

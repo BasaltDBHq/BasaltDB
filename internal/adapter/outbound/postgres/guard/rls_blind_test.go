@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // agentCount counts the rows the agent sees in table.
@@ -38,7 +39,7 @@ func TestRLSBlindTables(t *testing.T) {
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY`)
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	require.Zero(t, agentCount(t, a, "public.leads"), "init adds no policy for the agent")
 	require.Zero(t, agentCount(t, a, "public.lead_notes"))
 
@@ -99,19 +100,19 @@ func TestAgentPolicies(t *testing.T) {
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY`)
-	spec := guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: []string{"public.lead_notes"}}
+	spec := guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: []string{"public.lead_notes"}}
 
 	blind, err := guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
 	require.NoError(t, err)
-	require.Equal(t, []guard.BlindTable{{Table: "public.leads", Rows: 200, Write: true}, {Table: "public.lead_notes", Rows: 60}}, blind)
+	require.Equal(t, []guardmodel.BlindTable{{Table: "public.leads", Rows: 200, Write: true}, {Table: "public.lead_notes", Rows: 60}}, blind)
 
-	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec, AgentPolicies: blind})
+	s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names, Agent: spec, AgentPolicies: blind})
 	require.NoError(t, err)
 	role, err := d.Names.Agent("bot")
 	require.NoError(t, err)
 	require.Contains(t, s.SQL(), "CREATE POLICY "+role+" ON public.leads AS PERMISSIVE FOR ALL TO "+role+" USING (true) WITH CHECK (true);")
 	require.Contains(t, s.SQL(), "CREATE POLICY "+role+" ON public.lead_notes AS PERMISSIVE FOR SELECT TO "+role+" USING (true);")
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 
 	dsn, err := guard.AgentConnString(d.URL, role, spec.Password)
 	require.NoError(t, err)
@@ -158,7 +159,7 @@ func TestAgentBlindTablesOnlyTheAgentsTables(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	spec := guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads}
+	spec := guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads}
 	d.Init(t, spec)
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
@@ -167,10 +168,10 @@ func TestAgentBlindTablesOnlyTheAgentsTables(t *testing.T) {
 
 	blind, err := guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
 	require.NoError(t, err)
-	require.Equal(t, []guard.BlindTable{{Table: "public.leads", Rows: 200, Write: true}}, blind, "no --read: payroll is not the agent's")
+	require.Equal(t, []guardmodel.BlindTable{{Table: "public.leads", Rows: 200, Write: true}}, blind, "no --read: payroll is not the agent's")
 
-	spec = guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}}
+	spec = guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}}
 	blind, err = guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
 	require.NoError(t, err)
-	require.Equal(t, []guard.BlindTable{{Table: "public.lead_notes", Rows: 60}}, blind, "no --write: payroll is not the agent's")
+	require.Equal(t, []guardmodel.BlindTable{{Table: "public.lead_notes", Rows: 60}}, blind, "no --write: payroll is not the agent's")
 }

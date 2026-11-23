@@ -1,5 +1,13 @@
 package guardmodel
 
+import "time"
+
+// DeadManAfter is how long without an engine heartbeat before the engine,
+// checking in again, records that it was silent (D14), and before basalt
+// log warns that the engine stopped checking in; basalt log also keeps
+// showing the DEAD_MAN row of that span. Nothing gets disabled.
+const DeadManAfter = 7 * 24 * time.Hour
+
 // Guard states the status tool reports (api/mcp/tools/status.json, guard.state).
 const (
 	GuardOK               = "OK"

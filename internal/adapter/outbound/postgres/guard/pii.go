@@ -8,6 +8,8 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // piiUpsertBatch is the number of columns per INSERT: at most 13 parameters each,
@@ -20,7 +22,7 @@ const piiUpsertBatch = 1000
 // survives a revoked grant: owner decision OR-1), and sets pii_catalog to
 // pii_fingerprint(). The login role (session_user) must have been granted
 // the guard role, which basalt init does. The caller commits.
-func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classification) error {
+func WriteClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names, c guardmodel.Classification) error {
 	return asGuard(ctx, tx, n, func() error {
 		for start := 0; start < len(c.Columns); start += piiUpsertBatch {
 			end := min(start+piiUpsertBatch, len(c.Columns))
@@ -39,7 +41,7 @@ func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classificati
 // pg_temp (pg_temp last, so no temporary table shadows the catalog), then
 // puts the caller's role and search_path back, transaction-local as they
 // were (SET LOCAL ones included).
-func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
+func asGuard(ctx context.Context, tx pgx.Tx, n guardmodel.Names, fn func() error) error {
 	if err := n.Validate(); err != nil {
 		return err
 	}
@@ -65,8 +67,8 @@ func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
 // ReadClassification reads the classification state in tx as the guard
 // role (the admin may not read basalt_meta's tables or run its functions
 // itself), as WriteClassification writes it.
-func ReadClassification(ctx context.Context, tx pgx.Tx, n Names) (ClassificationState, error) {
-	st := ClassificationState{Stored: map[ColumnKey]PIIColumn{}}
+func ReadClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names) (guardmodel.ClassificationState, error) {
+	st := guardmodel.ClassificationState{Stored: map[guardmodel.ColumnKey]guardmodel.PIIColumn{}}
 	err := asGuard(ctx, tx, n, func() error {
 		var err error
 		if st.Readable, err = readableColumns(ctx, tx); err != nil {
@@ -87,7 +89,7 @@ func ReadClassification(ctx context.Context, tx pgx.Tx, n Names) (Classification
 	return st, err
 }
 
-func readableColumns(ctx context.Context, tx pgx.Tx) ([]ReadableColumn, error) {
+func readableColumns(ctx context.Context, tx pgx.Tx) ([]guardmodel.ReadableColumn, error) {
 	sql, args, err := psql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name", "data_type").
 		From("basalt_meta.pii_readable_columns()").
 		OrderBy(`table_schema COLLATE "C"`, `table_name COLLATE "C"`, "attnum").ToSql()
@@ -98,14 +100,14 @@ func readableColumns(ctx context.Context, tx pgx.Tx) ([]ReadableColumn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the readable columns: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ReadableColumn, error) {
-		var c ReadableColumn
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.ReadableColumn, error) {
+		var c guardmodel.ReadableColumn
 		err := r.Scan(&c.TableOID, &c.Attnum, &c.Schema, &c.Table, &c.Column, &c.DataType)
 		return c, err
 	})
 }
 
-func readStored(ctx context.Context, tx pgx.Tx, into map[ColumnKey]PIIColumn) error {
+func readStored(ctx context.Context, tx pgx.Tx, into map[guardmodel.ColumnKey]guardmodel.PIIColumn) error {
 	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type", "class",
 		"coalesce(entity_type, '')", "coalesce(suggested_class, '')", "coalesce(suggested_entity_type, '')",
 		"coalesce(reason, '')", "needs_review", "coalesce(phone_region, '')").
@@ -117,18 +119,18 @@ func readStored(ctx context.Context, tx pgx.Tx, into map[ColumnKey]PIIColumn) er
 	if err != nil {
 		return fmt.Errorf("read the stored classes: %w", err)
 	}
-	var c PIIColumn
+	var c guardmodel.PIIColumn
 	_, err = pgx.ForEachRow(rows, []any{
 		&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
 		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion,
 	}, func() error {
-		into[ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}] = c
+		into[guardmodel.ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}] = c
 		return nil
 	})
 	return err
 }
 
-func upsertPIIColumns(ctx context.Context, tx pgx.Tx, cols []PIIColumn, at time.Time) error {
+func upsertPIIColumns(ctx context.Context, tx pgx.Tx, cols []guardmodel.PIIColumn, at time.Time) error {
 	ins := psql.Insert("basalt_meta.pii_columns").Columns(
 		"table_schema", "table_name", "column_name", "data_type", "class", "entity_type",
 		"suggested_class", "suggested_entity_type", "reason", "needs_review", "phone_region",
@@ -140,7 +142,7 @@ func upsertPIIColumns(ctx context.Context, tx pgx.Tx, cols []PIIColumn, at time.
 			confirmed_at = EXCLUDED.confirmed_at, confirmed_by = EXCLUDED.confirmed_by`)
 	for _, col := range cols {
 		var confirmedAt, confirmedBy any // NULL for UNCLASSIFIED
-		if col.Class != ClassUnclassified {
+		if col.Class != guardmodel.ClassUnclassified {
 			confirmedAt, confirmedBy = at, sq.Expr("session_user")
 		}
 		ins = ins.Values(col.Schema, col.Table, col.Column, col.DataType, col.Class, nullString(col.EntityType),
@@ -176,7 +178,7 @@ type errRow struct{ err error }
 func (r errRow) Scan(...any) error { return r.err }
 
 // PIIUnclassified calls pii_unclassified() as the login role (version 15).
-func PIIUnclassified(ctx context.Context, q Querier) ([]UnclassifiedColumn, error) {
+func PIIUnclassified(ctx context.Context, q Querier) ([]guardmodel.UnclassifiedColumn, error) {
 	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type", "why").
 		From("basalt_meta.pii_unclassified()").ToSql()
 	if err != nil {
@@ -186,8 +188,8 @@ func PIIUnclassified(ctx context.Context, q Querier) ([]UnclassifiedColumn, erro
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (UnclassifiedColumn, error) {
-		var c UnclassifiedColumn
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.UnclassifiedColumn, error) {
+		var c guardmodel.UnclassifiedColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Why)
 		return c, err
 	})
@@ -212,7 +214,7 @@ func PIIClassCounts(ctx context.Context, q Querier) (classified int, review []st
 		needsReview bool
 	)
 	_, err = pgx.ForEachRow(rows, []any{&name, &class, &needsReview}, func() error {
-		if class != ClassUnclassified {
+		if class != guardmodel.ClassUnclassified {
 			classified++
 		}
 		if needsReview {

@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // PersonMessageLimit is the most characters a personMessage holds, not
@@ -32,7 +32,7 @@ var (
 
 // Require fails t when message or links break CONTRACT.md, Links in
 // personMessage. See Problem.
-func Require(t *testing.T, message string, links []mcp.Link) {
+func Require(t *testing.T, message string, links []toolresult.Link) {
 	t.Helper()
 	require.NoError(t, Problem(message, links), "personMessage %q", message)
 }
@@ -43,7 +43,7 @@ func Require(t *testing.T, message string, links []mcp.Link) {
 // no Markdown around a URL, and links next to the message exactly when it
 // holds a URL, one entry per URL in order, byte for byte, each with a valid
 // label.
-func Problem(message string, links []mcp.Link) error {
+func Problem(message string, links []toolresult.Link) error {
 	if message == "" && len(links) > 0 {
 		return errors.New("links without a personMessage")
 	}
@@ -121,7 +121,7 @@ func lineBreakOrBidi(r rune) bool {
 
 // LinksOf is the links array of a decoded tool result or error body, nil when
 // it has none.
-func LinksOf(t *testing.T, body map[string]any) []mcp.Link {
+func LinksOf(t *testing.T, body map[string]any) []toolresult.Link {
 	t.Helper()
 	raw, ok := body["links"]
 	if !ok {
@@ -129,7 +129,7 @@ func LinksOf(t *testing.T, body map[string]any) []mcp.Link {
 	}
 	b, err := json.Marshal(raw)
 	require.NoError(t, err)
-	var out []mcp.Link
+	var out []toolresult.Link
 	require.NoError(t, json.Unmarshal(b, &out))
 	return out
 }

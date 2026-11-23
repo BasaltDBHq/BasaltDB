@@ -39,6 +39,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
@@ -792,7 +793,7 @@ func TestConnectPageTicksAndLabels(t *testing.T) {
 	require.NoError(t, err)
 	for _, l := range labels {
 		if l.Column == "name" {
-			require.Equal(t, guard.Label{Class: "IDENTIFIER", EntityType: "PERSON_NAME"}, l.Label)
+			require.Equal(t, guardmodel.Label{Class: "IDENTIFIER", EntityType: "PERSON_NAME"}, l.Label)
 		} else {
 			require.Equal(t, "PUBLIC", l.Class, l.Column)
 		}

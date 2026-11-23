@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 func TestStepBuilderOneConstructorPerAction(t *testing.T) {
@@ -45,7 +45,7 @@ func TestStepBuilderRepeatCallAndWait(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, steps[0].RepeatCall)
 	require.Equal(t, 5, steps[0].WaitSeconds)
-	require.Equal(t, mcp.ActionCallTool, steps[0].Action)
+	require.Equal(t, toolresult.ActionCallTool, steps[0].Action)
 }
 
 func TestStepTextOverLimitIsRefusedAtBuildTime(t *testing.T) {

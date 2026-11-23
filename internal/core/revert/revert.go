@@ -24,12 +24,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
-// Code prefixes (CONTRACT.md, Revert, Lines, binding and codes).
-const (
-	// RequestPrefix starts the revert link's fragment, as for approvals.
-	RequestPrefix = approval.RequestPrefix
-)
-
 // KindRevert is the binding kind of a revert authorisation.
 const KindRevert = "REVERT"
 
@@ -57,25 +51,8 @@ const (
 	ScopeTask   Scope = "TASK"
 )
 
-// ErrInvalid wraps every reason a revert code, binding or line is refused.
-// It is the approval package's error: both codes come from the same
-// mechanism and fail the same way.
-var ErrInvalid = approval.ErrInvalid
-
 func invalid(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
-}
-
-// Challenge is the WebAuthn challenge for a binding: sha256 of its UTF-8
-// bytes, as for approvals.
-func Challenge(bindingText string) []byte {
-	return approval.Challenge(bindingText)
-}
-
-// RowsHash is the lowercase hex sha256 of every revert line, restored and
-// skipped, joined by "\n" (decision M3-6).
-func RowsHash(lines []string) string {
-	return approval.RowsHash(lines)
+	return fmt.Errorf("%w: %s", approval.ErrInvalid, fmt.Sprintf(format, args...))
 }
 
 // Select is a revert's scope descriptor as the binding carries it
@@ -307,7 +284,7 @@ func (r Request) Check() (Binding, error) {
 	if len(r.Lines) != b.Lines() {
 		return Binding{}, invalid("request has %d lines, binding %d", len(r.Lines), b.Lines())
 	}
-	if RowsHash(r.Lines) != b.RowsHash {
+	if approval.RowsHash(r.Lines) != b.RowsHash {
 		return Binding{}, invalid("revert lines do not match the binding's rowsHash")
 	}
 	restore := 0
@@ -334,7 +311,7 @@ func (r Request) checkSample(b Binding) error {
 	if len(r.Lines) != MaxLines {
 		return invalid("request has %d lines, a batched plan's sample has %d", len(r.Lines), MaxLines)
 	}
-	if RowsHash(r.Lines) != b.SampleHash {
+	if approval.RowsHash(r.Lines) != b.SampleHash {
 		return invalid("revert lines do not match the binding's sampleHash")
 	}
 	skips, restoring := 0, false
@@ -457,7 +434,7 @@ func Verify(bindingText string, cred passkey.Credential, r Response) (uint32, er
 	if b.RevertID != r.RevertID {
 		return 0, invalid("response is for revert %s, binding for %s", r.RevertID, b.RevertID)
 	}
-	count, err := passkey.VerifyAssertion(cred, Challenge(bindingText), r.Assertion())
+	count, err := passkey.VerifyAssertion(cred, approval.Challenge(bindingText), r.Assertion())
 	if err != nil {
 		return 0, fmt.Errorf("revert %s: %w", r.RevertID, err)
 	}

@@ -7,13 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 )
 
 // Row values in a change record are RFC 3339 UTC: the jsonb the guard stored
 // carries the session zone of the write (CONTRACT.md, Wire format).
 func TestRecordFromDomainTimestampsAreUTC(t *testing.T) {
 	t.Parallel()
-	rec := ledger.RecordFromDomain(ledger.Change{ID: uuid.Must(uuid.NewV7())}, []ledger.RowChange{{
+	rec := ledger.RecordFromDomain(action.Change{ID: uuid.Must(uuid.NewV7())}, []action.RowChange{{
 		Table: "public.leads", Op: "UPDATE",
 		Key:    map[string]any{"id": 1.0, "seen": "2026-11-12T14:08:04+02:00"},
 		Before: map[string]any{"updated_at": "2026-11-12T14:08:04.513958+02:00", "note": "plain", "local": "2026-11-12T14:08:04"},

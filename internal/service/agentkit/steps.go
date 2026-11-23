@@ -26,15 +26,12 @@ const (
 // ErrStepText is a step text or person message that is empty or too long.
 var ErrStepText = errors.New("step text out of bounds")
 
-// NextStep is one step of nextSteps (api/mcp/errors/next-step.schema.json).
-type NextStep = toolresult.NextStep
-
 // Steps builds a nextSteps list, one constructor per action. A step that
 // breaks the schema (text over its limit, a missing tool or command) is
 // refused when Build is called, so a bad step fails in the engine's tests,
 // not in the agent's hands. The first problem is the one reported.
 type Steps struct {
-	steps []NextStep
+	steps []toolresult.NextStep
 	err   error
 }
 
@@ -43,7 +40,7 @@ func NewSteps() *Steps { return &Steps{} }
 
 // CallTool adds an AGENT step: call tool with arguments.
 func (b *Steps) CallTool(tool string, args map[string]any, text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool, Tool: tool, Arguments: args}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool, Tool: tool, Arguments: args}, text)
 }
 
 // RepeatCall adds an AGENT step: repeat the call that returned the step with
@@ -53,7 +50,7 @@ func (b *Steps) RepeatCall(tool string, args map[string]any, waitSeconds int, te
 	if waitSeconds < 0 || waitSeconds > MaxWaitSeconds {
 		return b.Fail(fmt.Errorf("wait of %d seconds is outside 0 to %d", waitSeconds, MaxWaitSeconds))
 	}
-	return b.add(NextStep{
+	return b.add(toolresult.NextStep{
 		Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool, Tool: tool, Arguments: args,
 		RepeatCall: true, WaitSeconds: waitSeconds,
 	}, text)
@@ -62,7 +59,7 @@ func (b *Steps) RepeatCall(tool string, args map[string]any, waitSeconds int, te
 // ReviseCall adds an AGENT step: change the call as text says, then call
 // tool; args are what the engine can fill in.
 func (b *Steps) ReviseCall(tool string, args map[string]any, text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Tool: tool, Arguments: args}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Tool: tool, Arguments: args}, text)
 }
 
 // RetrySmallerBatches adds an AGENT step: split the write into writes of at
@@ -71,22 +68,22 @@ func (b *Steps) RetrySmallerBatches(maxRows int, text string) *Steps {
 	if maxRows < 1 || maxRows > MaxRetryRows {
 		return b.Fail(fmt.Errorf("maxRows %d is outside 1 to %d", maxRows, MaxRetryRows))
 	}
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRetrySmallerBatches, MaxRows: maxRows}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRetrySmallerBatches, MaxRows: maxRows}, text)
 }
 
 // AskPerson adds an AGENT step: ask the person.
 func (b *Steps) AskPerson(text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionAskPerson}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionAskPerson}, text)
 }
 
 // EndTurn adds an AGENT step: end the turn, the person acts next.
 func (b *Steps) EndTurn(text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionEndTurn}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionEndTurn}, text)
 }
 
 // Stop adds an AGENT step: do not retry and do not work around.
 func (b *Steps) Stop(text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop}, text)
 }
 
 // OpenLink adds a PERSON step: open url.
@@ -94,14 +91,14 @@ func (b *Steps) OpenLink(url, text string) *Steps {
 	if url == "" {
 		return b.Fail(errors.New("OPEN_LINK needs a url"))
 	}
-	return b.add(NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, URL: url}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, URL: url}, text)
 }
 
 // OpenGivenLink adds a PERSON step with no url: open the short link the
 // agent handed over earlier, which the engine no longer has (it keeps only
 // its hash).
 func (b *Steps) OpenGivenLink(text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink}, text)
 }
 
 // RunCommand adds a PERSON step: run command in a terminal.
@@ -109,7 +106,7 @@ func (b *Steps) RunCommand(command, text string) *Steps {
 	if command == "" {
 		return b.Fail(errors.New("RUN_COMMAND needs a command"))
 	}
-	return b.add(NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionRunCommand, Command: command}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionRunCommand, Command: command}, text)
 }
 
 // AgentRunCommand adds an AGENT step: run command on the engine's machine:
@@ -121,7 +118,7 @@ func (b *Steps) AgentRunCommand(command, text string) *Steps {
 	if command == "" {
 		return b.Fail(errors.New("RUN_COMMAND needs a command"))
 	}
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Command: command}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Command: command}, text)
 }
 
 // MachineCommand adds a machine step on the engine's machine (a catalog
@@ -140,16 +137,16 @@ func (b *Steps) SendRequest(f *links.RequestFile) *Steps {
 	if f == nil {
 		return b
 	}
-	return b.add(NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionSendRequest}, SendRequestText(f))
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionSendRequest}, SendRequestText(f))
 }
 
 // WithSendRequest puts the SEND_REQUEST step for f in front of steps; steps
 // as they are when f is nil.
-func WithSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
+func WithSendRequest(steps []toolresult.NextStep, f *links.RequestFile) []toolresult.NextStep {
 	if f == nil {
 		return steps
 	}
-	return append([]NextStep{AgentStep(toolresult.ActionSendRequest, SendRequestText(f))}, steps...)
+	return append([]toolresult.NextStep{AgentStep(toolresult.ActionSendRequest, SendRequestText(f))}, steps...)
 }
 
 // The SEND_REQUEST step's text, with and without blocks to paste.
@@ -170,11 +167,11 @@ func SendRequestText(f *links.RequestFile) string {
 
 // TellAgent adds a PERSON step: the person tells the agent to go on.
 func (b *Steps) TellAgent(text string) *Steps {
-	return b.add(NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionTellAgent}, text)
+	return b.add(toolresult.NextStep{Actor: toolresult.ActorPerson, Action: toolresult.ActionTellAgent}, text)
 }
 
 // Build returns the steps, first step first, or the first problem found.
-func (b *Steps) Build() ([]NextStep, error) {
+func (b *Steps) Build() ([]toolresult.NextStep, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -184,7 +181,7 @@ func (b *Steps) Build() ([]NextStep, error) {
 	return b.steps, nil
 }
 
-func (b *Steps) add(s NextStep, text string) *Steps {
+func (b *Steps) add(s toolresult.NextStep, text string) *Steps {
 	if b.err != nil {
 		return b
 	}

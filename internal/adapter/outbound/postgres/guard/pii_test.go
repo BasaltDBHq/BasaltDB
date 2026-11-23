@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // piiFixture is the app schema of the PII tests: customers, which bot may
@@ -51,35 +52,35 @@ func (p piiDB) classifyAll(t *testing.T) {
 	rows, err := p.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type
 		FROM basalt_meta.pii_readable_columns()`)
 	require.NoError(t, err)
-	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
-		var c guard.PIIColumn
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.PIIColumn, error) {
+		var c guardmodel.PIIColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
-		c.Class = guard.ClassPublic
+		c.Class = guardmodel.ClassPublic
 		return c, err
 	})
 	require.NoError(t, err)
 	for i := range cols {
 		switch cols[i].Table + "." + cols[i].Column {
 		case "customers.email":
-			cols[i].Class, cols[i].EntityType = guard.ClassIdentifier, guard.EntityEmail
+			cols[i].Class, cols[i].EntityType = guardmodel.ClassIdentifier, guardmodel.EntityEmail
 		case "customers.phone":
-			cols[i].Class, cols[i].EntityType, cols[i].PhoneRegion = guard.ClassIdentifier, guard.EntityPhone, "ID"
+			cols[i].Class, cols[i].EntityType, cols[i].PhoneRegion = guardmodel.ClassIdentifier, guardmodel.EntityPhone, "ID"
 		case "customers.ssn", "vault.secret":
-			cols[i].Class = guard.ClassSecret
+			cols[i].Class = guardmodel.ClassSecret
 		case "leads.name":
-			cols[i].Class = guard.ClassUnclassified
-			cols[i].SuggestedClass, cols[i].SuggestedEntityType = guard.ClassIdentifier, guard.EntityPersonName
+			cols[i].Class = guardmodel.ClassUnclassified
+			cols[i].SuggestedClass, cols[i].SuggestedEntityType = guardmodel.ClassIdentifier, guardmodel.EntityPersonName
 			cols[i].Reason = "NAME:name"
 		}
 	}
 	p.write(t, cols)
 }
 
-func (p piiDB) write(t *testing.T, cols []guard.PIIColumn) {
+func (p piiDB) write(t *testing.T, cols []guardmodel.PIIColumn) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, p.Names, guard.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 }
 
@@ -174,7 +175,7 @@ func TestAgentPIIColumnsShowsOnlyReadableColumns(t *testing.T) {
 	require.NoError(t, p.bot.Conn.QueryRow(context.Background(), `SELECT table_oid, attnum, entity_type, phone_region
 		FROM basalt_meta.agent_pii_columns WHERE table_name = 'customers' AND column_name = 'phone'`).
 		Scan(&oid, &attnum, &entity, &region))
-	require.Equal(t, guard.EntityPhone, entity)
+	require.Equal(t, guardmodel.EntityPhone, entity)
 	require.Equal(t, "ID", region)
 	require.Equal(t, 1, count(t, p.Admin, `SELECT count(1)::int FROM pg_attribute
 		WHERE attrelid = $1 AND attnum = $2 AND attname = 'phone' AND attrelid = 'public.customers'::regclass`, oid, attnum))
@@ -347,7 +348,7 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
 		before := [2]string{}
 		before[0], before[1] = settings(tx)
-		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now()}))
+		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{At: time.Now()}))
 		after := [2]string{}
 		after[0], after[1] = settings(tx)
 		require.Equal(t, before, after)
@@ -357,7 +358,7 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `SET LOCAL search_path = public, pg_temp; SET LOCAL ROLE `+p.Names.Guard())
 		require.NoError(t, err)
-		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now()}))
+		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{At: time.Now()}))
 		role, path := settings(tx)
 		require.Equal(t, p.Names.Guard(), role)
 		require.Equal(t, "public, pg_temp", path)
@@ -387,8 +388,8 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 
 	// The table checks hold: an IDENTIFIER needs an entity type.
 	err = pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now(), Columns: []guard.PIIColumn{
-			{Schema: "public", Table: "leads", Column: "name", DataType: "text", Class: guard.ClassIdentifier},
+		return guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{At: time.Now(), Columns: []guardmodel.PIIColumn{
+			{Schema: "public", Table: "leads", Column: "name", DataType: "text", Class: guardmodel.ClassIdentifier},
 		}})
 	})
 	require.Equal(t, "23514", guardtest.SQLState(err), "%v", err)

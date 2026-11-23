@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,4 +105,21 @@ func TestHostCopiesMatchTheAdapters(t *testing.T) {
 	require.Equal(t, string(vault.StateKeyError), vaultStateKeyError)
 	require.Equal(t, mcp.MetaPluginUpload, MetaPluginUpload)
 	require.Equal(t, mcp.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
+}
+
+// Every port the app used to hand the agent as one Host is a required
+// dependency now: an empty Deps is refused naming each of them, so a port the
+// app forgets stops the engine at start, not at its first use.
+func TestNewServiceRequiresEveryAdapterPort(t *testing.T) {
+	t.Parallel()
+	missing := Deps{}.missing()
+	for _, name := range []string{
+		"Core.ServiceManager", "Core.Errors.InvalidParams", "Core.Errors.InvalidIntent", "Core.Errors.RowTooLarge",
+		"Write.Record", "Approval.ErrNotFound", "Revert.ErrNotFound", "Revert.AfterAnswer", "Revert.RotateSession",
+		"Delivery.VaultConflict", "Delivery.ErrVaultNotConnected", "Status.CrashReports",
+		"Status.LatestGuardVersion", "Status.UpdateMessage", "Status.StartHoldOffUntil",
+	} {
+		require.Contains(t, missing, name)
+	}
+	require.PanicsWithValue(t, "agent: required dependencies missing: "+strings.Join(missing, ", "), func() { NewService(Deps{}) })
 }

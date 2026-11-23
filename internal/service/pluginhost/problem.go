@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // ProblemNotTrusted is the status problem for an entry the engine refused to
@@ -32,9 +34,9 @@ func (e *AgentInGroupError) Error() string {
 // names the entry and the failed check (VerifyFailure), never a path a
 // plugin could have named. It never names another agent: when another
 // agent's OS user is in the engine's group, it says so without the name.
-func NotTrustedMessage(entry EntryKey, err error, agent string) string {
+func NotTrustedMessage(entry pluginmodel.EntryKey, err error, agent string) string {
 	head := "plugin " + entry.String() + " was not started: "
-	var ve *VerifyError
+	var ve *pluginmodel.VerifyError
 	var ge *AgentInGroupError
 	switch {
 	case errors.As(err, &ve):
@@ -53,7 +55,7 @@ func NotTrustedMessage(entry EntryKey, err error, agent string) string {
 // the signature, and any other path only as "a path": a local plugin runs
 // in its installed copy, so a file there may carry a name it chose. The
 // full path is for basalt plugin check, on the person's terminal.
-func VerifyFailure(ve *VerifyError) string {
+func VerifyFailure(ve *pluginmodel.VerifyError) string {
 	switch filepath.Base(ve.File) {
 	case ManifestFile:
 		return "its manifest " + ve.Why

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // vectorDir is a signed plugin the plugin SDK (basalt-plugin-go) holds
@@ -42,7 +44,7 @@ func TestSignaturesMadeByTheSDKVerify(t *testing.T) {
 			require.NoError(t, err)
 			f.trustKey(pub)
 
-			v, err := Install(dir, f.root, "default", f.trust, ModeSameUser)
+			v, err := Install(dir, f.root, "default", f.trust, pluginmodel.ModeSameUser)
 			require.NoError(t, err)
 			require.Equal(t, id, v.SignerKeyID)
 

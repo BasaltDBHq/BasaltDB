@@ -60,11 +60,11 @@ func From(ctx context.Context) *Budget {
 	return b
 }
 
-// Charge adds cost to b and reports ErrSizeLimit once the total is over
-// MaxBytes. A nil budget charges nothing.
 // Max is the most bytes b allows.
 func (b *Budget) Max() int64 { return b.max }
 
+// Charge adds cost to b and reports ErrSizeLimit once the total is over
+// MaxBytes. A nil budget charges nothing.
 func (b *Budget) Charge(cost int) error {
 	if b == nil {
 		return nil

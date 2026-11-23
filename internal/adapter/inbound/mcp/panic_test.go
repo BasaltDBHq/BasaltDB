@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 const callBoom = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"boom","arguments":{}}}`
@@ -40,7 +41,7 @@ func TestToolPanicEndsTheCallNotTheEngine(t *testing.T) {
 	require.Contains(t, string(gotStack), "boomTool")
 
 	require.NotContains(t, text, "alice@example.com")
-	var te mcp.ToolError
+	var te toolresult.ToolError
 	require.NoError(t, json.Unmarshal([]byte(text), &te))
 	require.Equal(t, "INTERNAL", te.Code)
 	require.Contains(t, te.PersonMessage, "report-id-1")
@@ -54,7 +55,7 @@ func TestToolPanicWithoutAReportStillAnswersInternal(t *testing.T) {
 	s := mcp.NewServer(mcp.Info{Name: "basalt", Version: "1", OnPanic: func(string, any, []byte) string { return "" }}, boomTool())
 	text, isError := toolText(t, serve(t, s, callBoom)[0].Result)
 	require.True(t, isError)
-	var te mcp.ToolError
+	var te toolresult.ToolError
 	require.NoError(t, json.Unmarshal([]byte(text), &te))
 	require.Equal(t, "INTERNAL", te.Code)
 	require.Empty(t, te.PersonMessage)

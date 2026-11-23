@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/classify"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // The column labels of an install of a real database (CONTRACT.md, The
@@ -214,7 +214,7 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 			rows.Close()
 			return nil, false, err
 		}
-		c.ref = classify.KeyRef{TableOID: uint32(oid), Attnum: int16(attnum)}
+		c.ref = pii.KeyRef{TableOID: uint32(oid), Attnum: int16(attnum)}
 		cols = append(cols, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -248,7 +248,7 @@ func (s *Service) columns(ctx context.Context, conn *pgx.Conn, j job) ([]ColumnI
 // sampled is a listed column with its catalog reference.
 type sampled struct {
 	info ColumnInfo
-	ref  classify.KeyRef
+	ref  pii.KeyRef
 }
 
 // suggest samples each column and puts the classifier's suggestion into
@@ -257,28 +257,28 @@ type sampled struct {
 // time gets no suggestion. The values stay in memory and are dropped as
 // each column is scored.
 func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, out []ColumnInfo) {
-	keys, err := classify.KeyColumns(ctx, conn)
+	keys, err := pii.KeyColumns(ctx, conn)
 	if err != nil {
 		keys = nil
 	}
-	bases, err := classify.BaseTypes(ctx, conn)
+	bases, err := pii.BaseTypes(ctx, conn)
 	if err != nil {
 		bases = nil
 	}
 	sctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
-	sampler := classify.Sampler{Conn: conn, Timeout: sampleStatementTimeout, MaxChars: sampleChars}
+	sampler := pii.Sampler{Conn: conn, Timeout: sampleStatementTimeout, MaxChars: sampleChars}
 	read := sampler.Sample
 	if s.opts.SampleColumn != nil {
-		read = func(ctx context.Context, col classify.Column) (classify.Sample, error) {
+		read = func(ctx context.Context, col pii.Column) (pii.Sample, error) {
 			return s.opts.SampleColumn(ctx, conn, col)
 		}
 	}
 	failed := map[string]bool{}
-	cc := make([]classify.Column, len(cols))
+	cc := make([]pii.Column, len(cols))
 	for i, c := range cols {
 		schema, table, _ := strings.Cut(c.info.Table, ".")
-		cc[i] = classify.Column{
+		cc[i] = pii.Column{
 			Schema: schema, Table: table, Name: c.info.Column, DataType: c.info.DataType,
 			Key: keys[c.ref].Key, Generated: keys[c.ref].Generated, BaseType: bases[c.ref],
 		}
@@ -286,11 +286,11 @@ func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, o
 	// A failed or timed-out sample is not an error of the check: the column
 	// gets no suggestion, and the driver's message (which can quote a value)
 	// is dropped.
-	unsampled := func(col classify.Column) classify.Sample {
+	unsampled := func(col pii.Column) pii.Sample {
 		failed[col.FullName()] = true
-		return classify.Sample{Unavailable: classify.UnavailableTimeout}
+		return pii.Sample{Unavailable: pii.UnavailableTimeout}
 	}
-	sample := func(_ context.Context, col classify.Column) (classify.Sample, error) {
+	sample := func(_ context.Context, col pii.Column) (pii.Sample, error) {
 		if sctx.Err() != nil {
 			return unsampled(col), nil //nolint:nilerr // the driver's message can quote a value; the column gets no suggestion
 		}
@@ -301,7 +301,7 @@ func (s *Service) suggest(ctx context.Context, conn *pgx.Conn, cols []sampled, o
 		}
 		return smp, nil
 	}
-	results, err := classify.SuggestAll(sctx, cc, sample, classify.Options{}, func(classify.Column, classify.Suggestion) bool { return false })
+	results, err := pii.SuggestAll(sctx, cc, sample, pii.Options{}, func(pii.Column, pii.Suggestion) bool { return false })
 	if err != nil {
 		return
 	}

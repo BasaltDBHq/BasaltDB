@@ -1,4 +1,4 @@
-package classify_test
+package pii_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/classify"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // want is a column's expected suggestion.
@@ -111,7 +111,7 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 }
 
 // suggestAll runs the classify pipeline as basalt classify does.
-func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool) []classify.Result {
+func suggestAll(t *testing.T, d *guardtest.DB, opts pii.Options, keep bool) []pii.Result {
 	t.Helper()
 	ctx := context.Background()
 	var st guardmodel.ClassificationState
@@ -120,21 +120,21 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool)
 		st, err = guard.ReadClassification(ctx, tx, d.Names)
 		return err
 	}))
-	keys, err := classify.KeyColumns(ctx, d.Admin)
+	keys, err := pii.KeyColumns(ctx, d.Admin)
 	require.NoError(t, err)
-	bases, err := classify.BaseTypes(ctx, d.Admin)
+	bases, err := pii.BaseTypes(ctx, d.Admin)
 	require.NoError(t, err)
-	cols := make([]classify.Column, 0, len(st.Readable))
+	cols := make([]pii.Column, 0, len(st.Readable))
 	for _, r := range st.Readable {
-		ref := classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}
-		cols = append(cols, classify.Column{
+		ref := pii.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}
+		cols = append(cols, pii.Column{
 			Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
 			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref],
 		})
 	}
-	sampler := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}
-	results, err := classify.SuggestAll(ctx, cols, sampler.Sample, opts,
-		func(classify.Column, classify.Suggestion) bool { return keep })
+	sampler := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}
+	results, err := pii.SuggestAll(ctx, cols, sampler.Sample, opts,
+		func(pii.Column, pii.Suggestion) bool { return keep })
 	require.NoError(t, err)
 	return results
 }
@@ -142,7 +142,7 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool)
 func TestFixtureSchemaSuggestions(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
-	results := suggestAll(t, d, classify.Options{}, false)
+	results := suggestAll(t, d, pii.Options{}, false)
 	got := map[string]want{}
 	for _, r := range results {
 		s := r.Suggestion
@@ -159,7 +159,7 @@ func TestFixtureSchemaSuggestions(t *testing.T) {
 	require.Len(t, got, len(fixtureWant), "every readable column has an expected suggestion")
 }
 
-func reasonOf(results []classify.Result, name string) string {
+func reasonOf(results []pii.Result, name string) string {
 	for _, r := range results {
 		if r.Column.FullName() == name {
 			return r.Suggestion.Reason
@@ -171,7 +171,7 @@ func reasonOf(results []classify.Result, name string) string {
 func TestFixtureSchemaFixedPhoneRegion(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
-	for _, r := range suggestAll(t, d, classify.Options{PhoneRegion: "ID"}, false) {
+	for _, r := range suggestAll(t, d, pii.Options{PhoneRegion: "ID"}, false) {
 		if r.Suggestion.EntityType == guardmodel.EntityPhone {
 			require.Equal(t, "ID", r.Suggestion.PhoneRegion, r.Column.FullName())
 		}
@@ -181,10 +181,10 @@ func TestFixtureSchemaFixedPhoneRegion(t *testing.T) {
 func TestFixtureSchemaRoundTrip(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
-	results := suggestAll(t, d, classify.Options{}, true)
-	checks, err := classify.Check(results, func(r classify.Result) (classify.CheckTarget, bool) {
+	results := suggestAll(t, d, pii.Options{}, true)
+	checks, err := pii.Check(results, func(r pii.Result) (pii.CheckTarget, bool) {
 		s := r.Suggestion
-		return classify.CheckTarget{EntityType: s.EntityType, PhoneRegion: s.PhoneRegion}, s.Class == guardmodel.ClassIdentifier
+		return pii.CheckTarget{EntityType: s.EntityType, PhoneRegion: s.PhoneRegion}, s.Class == guardmodel.ClassIdentifier
 	})
 	require.NoError(t, err)
 	for name, w := range fixtureWant {
@@ -203,13 +203,13 @@ func TestSampleTimesOutAndIsReviewed(t *testing.T) {
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE VIEW public.slow AS SELECT pg_sleep(2)::text || 'x' AS v FROM generate_series(1, 3)`)
 	ctx := context.Background()
-	s, err := classify.Sampler{Conn: d.Admin, Timeout: 50 * time.Millisecond}.Sample(ctx,
-		classify.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"})
+	s, err := pii.Sampler{Conn: d.Admin, Timeout: 50 * time.Millisecond}.Sample(ctx,
+		pii.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"})
 	require.NoError(t, err)
-	require.Equal(t, classify.UnavailableTimeout, s.Unavailable)
+	require.Equal(t, pii.UnavailableTimeout, s.Unavailable)
 	require.Empty(t, s.Values)
-	got := classify.Suggest(classify.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"}, s, classify.Options{})
-	require.Equal(t, classify.Suggestion{
+	got := pii.Suggest(pii.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"}, s, pii.Options{})
+	require.Equal(t, pii.Suggestion{
 		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
 		Reason: "SAMPLE:timed out",
 	}, got)
@@ -224,14 +224,14 @@ func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
 	d.Exec(t, `CREATE TABLE public.items (id bigint, label text);
 		INSERT INTO public.items VALUES (1, 'Blue Widget');
 		CREATE VIEW public.bad AS SELECT label::integer AS n FROM public.items`)
-	col := classify.Column{Schema: "public", Table: "bad", Name: "n", DataType: "integer"}
-	s, err := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(), col)
+	col := pii.Column{Schema: "public", Table: "bad", Name: "n", DataType: "integer"}
+	s, err := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(), col)
 	require.NoError(t, err)
-	require.Equal(t, classify.Sample{Unavailable: "error 22P02"}, s)
-	require.Equal(t, classify.Suggestion{
+	require.Equal(t, pii.Sample{Unavailable: "error 22P02"}, s)
+	require.Equal(t, pii.Suggestion{
 		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
 		Reason: "SAMPLE:error 22P02",
-	}, classify.Suggest(col, s, classify.Options{}))
+	}, pii.Suggest(col, s, pii.Options{}))
 }
 
 // TestDomainsAreJudgedByTheirBaseType: a domain over citext, and a domain
@@ -239,8 +239,8 @@ func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
 func TestDomainsAreJudgedByTheirBaseType(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
-	got := map[string]classify.Result{}
-	for _, r := range suggestAll(t, d, classify.Options{}, false) {
+	got := map[string]pii.Result{}
+	for _, r := range suggestAll(t, d, pii.Options{}, false) {
 		got[r.Column.FullName()] = r
 	}
 	require.Equal(t, "public.email_address", got["public.leads.primary_ref"].Column.DataType)
@@ -253,10 +253,10 @@ func TestSampleIsBounded(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.big (v text); INSERT INTO public.big SELECT repeat('x', 5000) FROM generate_series(1, 1500)`)
-	s, err := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(),
-		classify.Column{Schema: "public", Table: "big", Name: "v", DataType: "text"})
+	s, err := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(),
+		pii.Column{Schema: "public", Table: "big", Name: "v", DataType: "text"})
 	require.NoError(t, err)
-	require.Len(t, s.Values, classify.SampleRows)
+	require.Len(t, s.Values, pii.SampleRows)
 	for _, v := range s.Values {
 		require.LessOrEqual(t, len(v), 1024)
 	}
@@ -266,8 +266,8 @@ func TestSampleCutsEachValueToMaxChars(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.wide (v text); INSERT INTO public.wide SELECT repeat('é', 5000) FROM generate_series(1, 5)`)
-	s, err := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second, MaxChars: 256}.Sample(context.Background(),
-		classify.Column{Schema: "public", Table: "wide", Name: "v", DataType: "text"})
+	s, err := pii.Sampler{Conn: d.Admin, Timeout: 5 * time.Second, MaxChars: 256}.Sample(context.Background(),
+		pii.Column{Schema: "public", Table: "wide", Name: "v", DataType: "text"})
 	require.NoError(t, err)
 	require.Len(t, s.Values, 5)
 	for _, v := range s.Values {

@@ -330,7 +330,7 @@ func TestRunStopsWhenNotApproved(t *testing.T) {
 }
 
 // With no passkey given, a setup that needs one is refused in its
-// transaction: nothing changes.
+// transaction, before its script runs: nothing changes.
 func TestRunWithoutTheNeededPasskey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

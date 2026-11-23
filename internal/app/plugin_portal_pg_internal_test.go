@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -237,7 +238,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(filepath.Join(dir, file.Path), file.Data, mode))
 	}
-	uploader := pluginUploader(serveAgentSocket(t, f.base, p, "bot", svc.PluginUploadsServed))
+	uploader := shim.NewPluginUploader(serveAgentSocket(t, f.base, p, "bot", svc.PluginUploadsServed))
 	_, err = uploader(ctx, dir)
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)

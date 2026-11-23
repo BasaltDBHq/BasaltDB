@@ -27,10 +27,10 @@ func ReadFeedRows(ctx context.Context, q Querier, after int64, limit int, f guar
 		From("basalt_meta.agent_ledger").
 		Where(sq.Gt{"seq": after}).
 		Where(sq.Eq{ledgerKind: f.Kinds})
-	if f.AppliedChangesOnly {
+	if !f.IncludeUnappliedChanges {
 		b = b.Where(sq.Expr("(kind <> ? OR detail ->> 'status' = 'APPLIED')", guardmodel.KindChange))
 	}
-	if f.SkipRefusedReads {
+	if !f.IncludeRefusedReads {
 		b = b.Where(sq.Expr("(kind <> ? OR op IS DISTINCT FROM 'SELECT')", guardmodel.KindRefused))
 	}
 	sql, args, err := b.OrderBy("seq").Limit(uint64(limit)).ToSql()

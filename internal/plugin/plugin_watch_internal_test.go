@@ -25,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // writeConfig writes f.cfg as engine.json, as a basalt plugin command
@@ -180,8 +179,8 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), p.ApprovalSettings())
 	require.Eventually(t, func() bool {
-		probs := ep.PluginProblems("product_a")
-		return len(probs) == 1 && probs[0].Code == agent.ProblemPluginAwaitingApproval
+		probs := ep.pluginProblems("product_a")
+		return len(probs) == 1 && probs[0].Code == problemPluginAwaitingApproval
 	}, 10*time.Second, 50*time.Millisecond, "the engine sees the new entry and waits for its approval")
 	require.Empty(t, servedTo(ep, p.Key()))
 
@@ -191,7 +190,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 		return ep.host.State(p.Key()) == StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
 	}, 10*time.Second, 20*time.Millisecond, "served without a restart")
 	require.Less(t, time.Since(signed), 5*time.Second)
-	require.Empty(t, ep.PluginProblems("product_a"))
+	require.Empty(t, ep.pluginProblems("product_a"))
 	require.NoError(t, ep.host.Call(context.Background(), p.Key(), []string{"product_a"}, "feed.observe", nil, nil))
 	kinds := kindsOf(l.events(t, "product_a"))
 	require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED", "PLUGIN_ENABLED"}, kinds)
@@ -223,13 +222,13 @@ func TestDisableStopsWithoutRestart(t *testing.T) {
 	require.Eventually(t, func() bool { return !alive(started[0]) && !alive(started[1]) }, 5*time.Second, 20*time.Millisecond)
 	require.Equal(t, "PLUGIN_DISABLED", lastKind(t, l, "product_a"))
 	require.Equal(t, "PLUGIN_DISABLED", lastKind(t, l, "client_x"))
-	require.Empty(t, lp.ep.PluginProblems("product_a"), "a disabled entry is not a problem")
+	require.Empty(t, lp.ep.pluginProblems("product_a"), "a disabled entry is not a problem")
 
 	// Turned on again by hand: the approval ended, so it stays withheld.
 	f.cfg.Plugins[0].Enabled = true
 	lp.change()
 	require.Empty(t, servedTo(lp.ep, approved.Key()))
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
+	require.Equal(t, problemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
 }
 
 func lastKind(t *testing.T, l pluginLedgers, agentName string) string {
@@ -260,8 +259,8 @@ func TestRemoveStopsWithoutRestart(t *testing.T) {
 	lp.change()
 	lp.requireStopped(p.Key())
 	require.Equal(t, "PLUGIN_DISABLED", lastKind(t, l, "product_a"))
-	require.Empty(t, lp.ep.PluginProblems("product_a"))
-	require.Empty(t, lp.ep.PluginProblems("client_x"))
+	require.Empty(t, lp.ep.pluginProblems("product_a"))
+	require.Empty(t, lp.ep.pluginProblems("client_x"))
 }
 
 // A changed entry (a new copy, opened as a new approval by add) stops the
@@ -285,13 +284,13 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	f.cfg.Plugins[0].ManifestSHA256 = next.ManifestSHA256
 	lp.change()
 	lp.requireStopped(p.Key())
-	require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
+	require.Equal(t, problemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
 	v, err := Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), f.cfg.Plugins[0].ApprovalSettings())
 	lp.poll()
 	require.Empty(t, servedTo(lp.ep, p.Key()), "withheld while the new approval waits")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
+	require.Equal(t, problemPluginAwaitingApproval, problemFor(t, lp.ep, "product_a").Code)
 
 	l.sign(t, pk, "product_a", a)
 	lp.poll()
@@ -329,7 +328,7 @@ func TestMismatchWhileRunningStopsPlugin(t *testing.T) {
 	lp.poll()
 	lp.requireServing(p.Key(), "client_x")
 	prob := problemFor(t, lp.ep, "product_a")
-	require.Equal(t, agent.ProblemPluginApprovalMismatch, prob.Code)
+	require.Equal(t, problemPluginApprovalMismatch, prob.Code)
 	require.Contains(t, prob.Message, "version")
 	require.Equal(t, "PLUGIN_DISABLED", lastKind(t, l, "product_a"))
 
@@ -338,7 +337,7 @@ func TestMismatchWhileRunningStopsPlugin(t *testing.T) {
 	f.cfg.Plugins[0].MinConfidence = &mc
 	lp.change()
 	lp.requireStopped(p.Key())
-	require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "client_x").Code)
+	require.Equal(t, problemPluginApprovalMismatch, problemFor(t, lp.ep, "client_x").Code)
 	require.Contains(t, problemFor(t, lp.ep, "client_x").Message, "settingsSha256")
 }
 
@@ -374,16 +373,16 @@ func TestBadConfigWhileRunningChangesNothing(t *testing.T) {
 		lp.poll()
 		lp.requireServing(p.Key(), "product_a")
 		for _, a := range []string{"product_a", "client_x"} {
-			probs := lp.ep.PluginProblems(a)
+			probs := lp.ep.pluginProblems(a)
 			require.Len(t, probs, 1, a)
-			require.Equal(t, agent.ProblemPluginConfigInvalid, probs[0].Code)
+			require.Equal(t, problemPluginConfigInvalid, probs[0].Code)
 			require.Empty(t, probs[0].Name)
 		}
 	}
 	require.NoError(t, os.Remove(f.configPath))
 	lp.w.step(lp.ctx)
 	lp.requireServing(p.Key(), "product_a")
-	require.Equal(t, agent.ProblemPluginConfigInvalid, lp.ep.PluginProblems("product_a")[0].Code)
+	require.Equal(t, problemPluginConfigInvalid, lp.ep.pluginProblems("product_a")[0].Code)
 	now, _ := f.startedPIDs()
 	require.Equal(t, started, now, "the plugin was never restarted")
 	require.Len(t, l.events(t, "product_a"), events, "nothing recorded")
@@ -395,7 +394,7 @@ func TestBadConfigWhileRunningChangesNothing(t *testing.T) {
 	f.cfg.Plugins[0].Enabled = true
 	lp.change()
 	lp.requireServing(p.Key(), "product_a")
-	require.Empty(t, lp.ep.PluginProblems("product_a"))
+	require.Empty(t, lp.ep.pluginProblems("product_a"))
 	now, _ = f.startedPIDs()
 	require.Equal(t, started, now)
 

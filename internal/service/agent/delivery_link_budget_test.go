@@ -20,7 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -88,89 +87,6 @@ func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) linksvc.He
 	return n
 }
 
-func TestApprovalNoticeHandsOverTheShortLinkFirst(t *testing.T) {
-	t.Parallel()
-	n := approvalNoticeOf(t, noticeService(localPages, 1), 60, linksvc.IssueLink)
-
-	require.Equal(t, n.ShortURL, n.ApprovalURL, "approvalUrl is the link handed over")
-	require.Contains(t, n.ShortURL, "#s=")
-	require.Contains(t, n.PersonMessage, "\n\n"+n.ShortURL+"\n\n")
-	require.NotContains(t, n.PersonMessage, "#2.", "the long link stays out of the message")
-	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.ShortURL}}, n.Links)
-	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
-	require.NotContains(t, n.PersonMessage, "long", "no warning with a short link")
-}
-
-func TestApprovalNoticeHandsOverALongLinkWithinTheBudget(t *testing.T) {
-	t.Parallel()
-	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, linksvc.IssueLink)
-
-	require.Empty(t, n.ShortURL)
-	require.LessOrEqual(t, len(n.LongURL), links.DefaultBudget)
-	require.Equal(t, n.LongURL, n.ApprovalURL)
-	require.Contains(t, n.PersonMessage, "\n\n"+n.LongURL+"\n\n")
-	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.LongURL}}, n.Links)
-	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
-	require.NotContains(t, n.PersonMessage, "may arrive", "no warning within the budget")
-}
-
-func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
-	t.Parallel()
-	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 60, linksvc.IssueLink)
-
-	require.Greater(t, len(n.LongURL), links.DefaultBudget, "the fixture must be over budget")
-	hash, file, err := links.HashLink(n.LongURL, links.ApprovalFile(uuid.MustParse(caseApproval)))
-	require.NoError(t, err)
-	require.Equal(t, hash, n.ApprovalURL, "the hash link stands in for the long link")
-	require.Less(t, len(n.ApprovalURL), 120, "about 110 characters")
-	require.Regexp(t, `/approvals/`+caseApproval+`#h=[A-Za-z0-9_-]{22}$`, n.ApprovalURL)
-	require.Equal(t, &file, n.RequestFile)
-	require.Equal(t, n.LongURL[strings.Index(n.LongURL, "#")+1:], n.RequestFile.Text, "the file carries the long link's request")
-	require.NotEmpty(t, n.RequestFile.Blocks)
-	require.NotContains(t, n.PersonMessage, "#2.", "no result hands over a long link over the budget")
-	require.Contains(t, n.PersonMessage, "open the request file the agent sends you (or paste its text blocks)")
-	require.Contains(t, n.PersonMessage, "\n\n"+n.ApprovalURL+"\n\n")
-	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
-	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.ApprovalURL}}, n.Links)
-}
-
-func TestApprovalNoticeWithinTheBudgetCarriesNoRequestFile(t *testing.T) {
-	t.Parallel()
-	require.Nil(t, approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, linksvc.IssueLink).RequestFile)
-	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, 1), 60, linksvc.IssueLink).RequestFile, "a short link")
-	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, linksvc.KeepLink).RequestFile,
-		"a restated link while the pages are served")
-}
-
-func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
-	t.Parallel()
-	n := approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, linksvc.KeepLink)
-
-	require.Empty(t, n.ShortURL, "the engine keeps only the hash of the link it gave")
-	require.NotContains(t, n.PersonMessage, "http", "the person has the link the agent gave them")
-	require.Empty(t, n.Links)
-	require.Contains(t, n.PersonMessage, "Approve with the link you were given.")
-	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
-}
-
-func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
-	t.Parallel()
-	cmds, err := NewCommands("a_rather_long_agent_name_for_a_bot", "/Users/someone/Library/Application Support/Basalt/with/a/deep/path/engine.json", "darwin", testManager())
-	require.NoError(t, err)
-	lines := make([]string, 0, 40)
-	for i := range 40 { // many cascaded tables with long names make a long headline
-		lines = append(lines, fmt.Sprintf(`{"op": "DELETE", "key": {"id": %d}, "old": {"id": %d}, "set": null, "table": "some_schema_%d.a_table_with_a_long_name_%d", "cascaded": true}`, i, i, i, i))
-	}
-	lines = append(lines, bigLines(3)...)
-	for _, origin := range []string{localPages, ""} {
-		s := noticeService(origin, 1, func(d *Deps) { d.Core.Commands = cmds })
-		n, err := s.approval.ApprovalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: lines},
-			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), linksvc.IssueLink)
-		require.NoError(t, err)
-		stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
-	}
-}
-
 // TestPersonMessagesNameNoCommandWithALongConfigPath builds the
 // personMessages that once offered a command named after --config, with a
 // 252-character path: each stays within the limit and names no basalt
@@ -191,78 +107,12 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	w, err := rls.write.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)
 	messages["rls warning"] = w.PersonMessage
-	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", time.Now().Add(time.Hour))
 
 	for name, m := range messages {
 		require.NoError(t, guidance.CheckPersonMessage(m), "%s: %s", name, m)
 		require.NotContains(t, m, long, name)
 		require.NotContains(t, m, "basalt ", "%s: the person runs no command", name)
 	}
-}
-
-// requireSendRequestFirst checks a result over the budget: requestFile beside
-// the hash link, and SEND_REQUEST first, then the catalog's steps, every
-// step obeying the step rules.
-func requireSendRequestFirst(t *testing.T, steps []toolresult.NextStep, file *links.RequestFile, where string) {
-	t.Helper()
-	require.NotNil(t, file, where)
-	require.NotEmpty(t, steps, where)
-	require.Equal(t, toolresult.ActorAgent, steps[0].Actor, where)
-	require.Equal(t, toolresult.ActionSendRequest, steps[0].Action, where)
-	require.Equal(t, guidance.SendRequestText(file), steps[0].Text, where)
-	for i, st := range steps {
-		stepcatalogtest.RequireStepObeysRules(t, st, stepcatalogtest.Case{Tool: guidance.ToolWrite, Args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
-	}
-	require.NotEqual(t, toolresult.ActionSendRequest, stepcatalogtest.CatalogKinds(steps)[0].Action, "the catalog checks skip it")
-}
-
-// TestHashLinkResultsSendTheRequestFirst: on an engine that serves no pages,
-// every result that hands over a hash link carries requestFile and starts
-// with SEND_REQUEST (CONTRACT.md, The request file and pasted blocks).
-func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
-	t.Parallel()
-	s := noticeService("", links.DefaultBudget)
-
-	n := approvalNoticeOf(t, s, 60, linksvc.IssueLink)
-	te := s.Failure(guidance.ToolWrite, writeArgs0, ApprovalRequiredError(n))
-	require.Same(t, n.RequestFile, te.Approval.RequestFile)
-	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
-
-	item := PendingItem{Notice: n.ApprovalNotice}
-	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
-	_, _, steps, err := s.approval.itemGuidance(item)
-	require.NoError(t, err)
-	requireSendRequestFirst(t, steps, item.Notice.RequestFile, "list_pending approval")
-}
-
-// TestRestatedLinksWhileServingPagesSendNothing: with the pages served, a
-// list_pending item that only restates its link has no requestFile and its
-// OPEN_LINK carries no url, even when the long link is over the budget.
-func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
-	t.Parallel()
-	s := noticeService(localPages, links.DefaultBudget)
-	n := approvalNoticeOf(t, s, 60, linksvc.KeepLink)
-	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
-	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
-	_, _, steps, err := s.approval.itemGuidance(item)
-	require.NoError(t, err)
-	require.Len(t, steps, 1)
-	require.Equal(t, toolresult.ActionOpenLink, steps[0].Action)
-	require.Empty(t, steps[0].URL)
-}
-
-// TestExpiredItemsCarryNoRequestFile: a held write that no longer waits for
-// the person has nothing to send.
-func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
-	t.Parallel()
-	s := noticeService("", links.DefaultBudget)
-	n := approvalNoticeOf(t, s, 60, linksvc.IssueLink)
-	require.NotNil(t, n.RequestFile)
-	item := PendingItem{Notice: n.ApprovalNotice}
-	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)
-	require.False(t, s.approval.waitsForPerson(item))
-	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)
-	require.False(t, s.approval.waitsForPerson(item))
 }
 
 // APPROVAL_INVALID sends the person back to the page the hold handed over:

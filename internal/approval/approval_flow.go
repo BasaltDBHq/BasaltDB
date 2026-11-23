@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 // newly issued short link when this engine serves the pages and issue is
 // set, else the long one) and the message to show
 // verbatim.
-func (ac *approvalCase) ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error) {
+func (ac *Service) ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error) {
 	ids, err := ac.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return linksvc.HeldAnswer{}, err
@@ -152,7 +152,7 @@ func RequestOf(a action.Approval) linksvc.SizedRequest {
 // to 5): a new short link that can carry it when issue is set and there is
 // one; the page's address when a short link given earlier carries it; else
 // REQUEST_TOO_LARGE.
-func (ac *approvalCase) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, summary approval.Summary,
+func (ac *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, summary approval.Summary,
 	expires time.Time, issue, noPasskey bool,
 ) (linksvc.HeldAnswer, error) {
 	lead := "Held for your approval: " + guidance.Shown(summary.Headline(), linksvc.MaxHeadlineChars) + "."
@@ -230,7 +230,3 @@ type PendingItem struct {
 	Links         []toolresult.Link
 	NextSteps     []toolresult.NextStep
 }
-
-// approvalPoll is how often a waiting write checks for the signature.
-// DefaultPoll is how often a waiting call reads whether the person signed.
-const DefaultPoll = time.Second

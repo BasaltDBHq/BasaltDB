@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"errors"
@@ -50,17 +50,17 @@ func TestHoldTooLargeTellsThePerson(t *testing.T) {
 	older := HoldTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLineBytesBefore37+1)}, store.MapError(&pgconn.PgError{Code: "BS008"}))
 	over := HoldTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes+1)}, nil)
 	for _, operatedBy := range []string{"", mcpcontract.OperatedByAgent} {
-		s := operatedService(t, "linux", "", operatedBy)
+		s := newService(t, "linux", "", withOperatedBy(operatedBy))
 
 		b := guidance.NewSteps()
-		msg := s.approval.HoldTooLargeSteps(b, older)
+		msg := s.HoldTooLargeSteps(b, older)
 		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "64 KiB")
 		require.NotContains(t, msg, "basalt ", "the person runs no command: the agent gives a link")
 		require.Contains(t, msg, "update the guard")
 
 		b = guidance.NewSteps()
-		msg = s.approval.HoldTooLargeSteps(b, over)
+		msg = s.HoldTooLargeSteps(b, over)
 		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "Make the change yourself")
 		steps, err := b.Build()

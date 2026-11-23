@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"context"
@@ -20,18 +20,16 @@ import (
 // deliverReissued makes the notices of a list_pending page that issued new
 // links: one per item it issued a link for, each with the link of that
 // item in the answer.
-func (ac *approvalCase) deliverReissued(items []PendingEntry) {
+func (ac *Service) deliverReissued(items []PendingEntry) {
 	for _, e := range items {
 		switch {
 		case e.Approval != nil && e.Approval.issued:
-			d := pendingFromDomain(*e.Approval)
 			ac.delivery.Deliver(linksvc.LinkNotice{
-				Kind: linksvc.NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
+				Kind: linksvc.NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: e.Approval.Notice.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: e.Approval.Notice.ApprovalURL,
 			})
 		case e.Revert != nil && e.Revert.Issued:
-			d := pendingRevertFromDomain(*e.Revert)
 			ac.delivery.Deliver(linksvc.LinkNotice{
-				Kind: linksvc.NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
+				Kind: linksvc.NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: e.Revert.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: e.Revert.RevertURL,
 			})
 		}
 	}
@@ -68,8 +66,8 @@ func (e PendingEntry) id() uuid.UUID {
 // unless p.Reissue is set: then each PENDING item gets a new short link and
 // its earlier one stops working, a widened revert first reset to the
 // agent's proposal (CONTRACT.md, Link secrets).
-func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagination.Page[PendingEntry], error) {
-	if _, err := findRun(ctx, ac.core.Store, p.RunID); err != nil {
+func (ac *Service) ListPending(ctx context.Context, p PendingParams) (pagination.Page[PendingEntry], error) {
+	if err := ac.runs.CheckRun(ctx, p.RunID); err != nil {
 		return pagination.Page[PendingEntry]{}, err
 	}
 	sort, err := p.ParseSort(ac.deps.SortSpec)
@@ -121,7 +119,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 }
 
 // pendingGuidance fills e with its link, message and next steps.
-func (ac *approvalCase) pendingGuidance(ctx context.Context, e PendingEntry, reissue bool) error {
+func (ac *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue bool) error {
 	if a := e.Approval; a != nil {
 		n, err := ac.ApprovalNotice(ctx, a.ID, a.RunID, RequestOf(a.Approval), a.ExpiresAt, reissue)
 		if err != nil {

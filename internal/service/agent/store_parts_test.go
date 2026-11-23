@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/google/uuid"
@@ -35,7 +37,7 @@ type readRecorder interface {
 }
 
 type approvalStore interface {
-	Approvals
+	approvalsvc.Store
 	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
 }
 

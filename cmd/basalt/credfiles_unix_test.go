@@ -34,7 +34,7 @@ func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "agents")
 	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	r, ok := files.(rootCredFiles)
 	require.True(t, ok)
 	me := os.Geteuid()
@@ -60,7 +60,7 @@ func TestRootCredFilesChecksTheOwnersCredential(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "agents")
 	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	r := files.(rootCredFiles)
 	cred := filepath.Join(dir, "bot.url")
 	const refused = "takes from it only a postgres:// or postgresql:// URL"
@@ -91,11 +91,11 @@ func TestRootCredFilesChecksTheOwnersCredential(t *testing.T) {
 		require.NoError(t, os.WriteFile(cred, []byte(tc.dsn+"\n"), config.FileMode))
 
 		r.self = os.Geteuid() // root wrote it: taken as it is
-		_, _, err := r.read(cred)
+		_, _, err := r.Read(cred)
 		require.NoError(t, err, tc.dsn)
 
 		r.self = os.Geteuid() + 1 // the owner of agents/ wrote it
-		got, _, err := r.read(cred)
+		got, _, err := r.Read(cred)
 		if tc.ok {
 			require.NoError(t, err, tc.dsn)
 			require.Equal(t, tc.dsn, got)
@@ -116,10 +116,10 @@ func TestRootCredFilesWriteHandsOver(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "agents")
 	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	r := files.(rootCredFiles)
 	r.owner = os.Geteuid() + 1
-	require.Error(t, r.write(filepath.Join(dir, "bot.url.pending"), []byte("x\n")))
+	require.Error(t, r.Write(filepath.Join(dir, "bot.url.pending"), []byte("x\n")))
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
@@ -134,14 +134,14 @@ func TestRootCredFilesHandsTheFilesToTheDirOwner(t *testing.T) {
 	cred := filepath.Join(dir, "bot.url")
 	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	owner := files.(rootCredFiles).owner
 
-	unlock, err := files.lock(cred + lockSuffix)
+	unlock, err := files.Lock(cred + lockSuffix)
 	require.NoError(t, err)
 	defer unlock()
-	require.NoError(t, files.write(cred, []byte("postgres://basalt_agent_bot:one@db.example.com/crm\n")))
-	require.NoError(t, files.write(cred+pendingSuffix, []byte("postgres://basalt_agent_bot:two@db.example.com/crm\n")))
+	require.NoError(t, files.Write(cred, []byte("postgres://basalt_agent_bot:one@db.example.com/crm\n")))
+	require.NoError(t, files.Write(cred+pendingSuffix, []byte("postgres://basalt_agent_bot:two@db.example.com/crm\n")))
 	for _, p := range []string{cred, cred + pendingSuffix, cred + lockSuffix} {
 		requireOwner(t, p, owner)
 	}
@@ -167,17 +167,17 @@ func TestRootCredFilesHandOverAsRoot(t *testing.T) {
 	require.NoError(t, os.Chown(dir, engineUID, -1))
 	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	cred := filepath.Join(dir, "bot.url")
-	unlock, err := files.lock(cred + lockSuffix)
+	unlock, err := files.Lock(cred + lockSuffix)
 	require.NoError(t, err)
 	unlock()
-	require.NoError(t, files.write(cred+pendingSuffix, []byte("postgres://basalt_agent_bot:two@db.example.com/crm\n")))
-	require.NoError(t, files.rename(cred+pendingSuffix, cred))
+	require.NoError(t, files.Write(cred+pendingSuffix, []byte("postgres://basalt_agent_bot:two@db.example.com/crm\n")))
+	require.NoError(t, files.Rename(cred+pendingSuffix, cred))
 	for _, p := range []string{cred, cred + lockSuffix} {
 		requireOwner(t, p, engineUID)
 	}
-	_, _, err = files.read(cred)
+	_, _, err = files.Read(cred)
 	require.NoError(t, err, "root reads the file it handed over")
 }
 

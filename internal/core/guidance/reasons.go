@@ -50,6 +50,7 @@ const (
 	ToolWrite         = "write"
 	ToolQuery         = "query"
 	ToolListPending   = "list_pending"
+	ToolRequestPlugin = "request_plugin"
 	ToolRunHistory    = "run_history"
 	ToolPreviewRevert = "preview_revert"
 	ArgRunID          = "runId"

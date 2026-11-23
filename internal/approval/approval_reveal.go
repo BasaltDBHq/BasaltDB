@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ import (
 // back, recorded as an apply records it, and reveal_approval_rows reads
 // the rows there, for the page holding secret, the approval's live link
 // secret. The ticket lives in this call only.
-func (ac *approvalCase) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
+func (ac *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	key, err := in.RevealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
@@ -62,7 +62,7 @@ type heldRun struct {
 // heldWrite reads the held write from approval a's binding: the statement,
 // its parameters (numbers kept exact, as the write tool decodes them), and
 // the run it belongs to.
-func heldWrite(a action.Approval, check statementChecker) (heldRun, error) {
+func heldWrite(a action.Approval, check StatementChecker) (heldRun, error) {
 	b, err := approval.ParseBinding(a.BindingText)
 	if err != nil {
 		return heldRun{}, err
@@ -89,7 +89,7 @@ func heldWrite(a action.Approval, check statementChecker) (heldRun, error) {
 }
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.
-func (ac *approvalCase) revealApprovalError(err error, link string) error {
+func (ac *Service) revealApprovalError(err error, link string) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)
 	switch {

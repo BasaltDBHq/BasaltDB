@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -101,9 +103,9 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 		person = s.approval.ApprovalRequiredSteps(b, te)
 	case guidance.CodeApprovalExpired:
 		guidance.ApprovalExpiredSteps(b)
-		person = ApprovalExpiredMessage
+		person = approvalsvc.ApprovalExpiredMessage
 	case guidance.CodeApprovalInvalid:
-		person = ApprovalInvalidSteps(b, te, f.arg(guidance.ArgRunID))
+		person = approvalsvc.ApprovalInvalidSteps(b, te, f.arg(guidance.ArgRunID))
 	case guidance.CodeRevertInvalid:
 		revertsvc.InvalidSteps(b, te, f.arg(guidance.ArgRevertID))
 	case guidance.CodePermissionDenied:
@@ -483,7 +485,7 @@ func (s *Service) openApprovalAgain(b *guidance.Steps, n linksvc.HeldAnswer, tex
 // file the agent already sent).
 func (s *Service) approvalAgainMessage(lead string, n linksvc.HeldAnswer) (string, []toolresult.Link) {
 	if n.ShortHeld {
-		return PointBackMessage(lead)
+		return approvalsvc.PointBackMessage(lead)
 	}
 	return linksvc.ApprovalMessage(lead, linksvc.HandOver{URL: n.Pick.URL, Kind: n.Pick.Kind, File: n.Pick.File, Sent: true})
 }

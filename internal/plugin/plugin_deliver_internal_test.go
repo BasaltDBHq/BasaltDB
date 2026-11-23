@@ -28,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // fastDeliver is the delivery's timing in tests: four tries, shrunk.
@@ -598,10 +597,10 @@ func TestDroppedNoticeShowsInStatus(t *testing.T) {
 	now := func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
 	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), now: now}, slog.New(slog.DiscardHandler))
 	require.NotNil(t, ep)
-	dropped := func(name string) []agent.PluginProblem {
-		var out []agent.PluginProblem
-		for _, pr := range ep.PluginProblems(name) {
-			if pr.Code == agent.ProblemPluginNoticesDropped {
+	dropped := func(name string) []pluginProblem {
+		var out []pluginProblem
+		for _, pr := range ep.pluginProblems(name) {
+			if pr.Code == problemPluginNoticesDropped {
 				out = append(out, pr)
 			}
 		}

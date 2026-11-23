@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -36,7 +37,7 @@ type History = action.History[action.Change, action.RowChange]
 type Deps struct {
 	Core     CoreDeps
 	Write    WriteDeps
-	Approval ApprovalDeps
+	Approval approvalsvc.Deps
 	Revert   revertsvc.Deps
 	Delivery linksvc.Deps
 	Status   StatusDeps
@@ -90,20 +91,6 @@ type WriteDeps struct {
 	// Record is the wire record of one change and its rows, as the ledger
 	// renders it (run_history).
 	Record func(ch action.Change, rows []action.RowChange) any
-}
-
-// ApprovalDeps is what held writes use: the approvals in the store and the
-// ledger's values the agent maps to tool errors.
-type ApprovalDeps struct {
-	Store Approvals
-	// ErrNotFound is the ledger's answer for an approval the role does not
-	// hold.
-	ErrNotFound error
-	// SortSpec whitelists the approval list sort.
-	SortSpec pagination.SortSpec
-	// Columns reads each table's columns in table order for the pages;
-	// optional, and the pages show the order the rows carry when nil.
-	Columns linksvc.ColumnOrder
 }
 
 // StatusDeps is what the status tool reports beyond the database, all
@@ -235,7 +222,7 @@ type Service struct {
 	// delivery is how held actions reach the person.
 	delivery *linksvc.Service
 	// approval is the held writes use case.
-	approval *approvalCase
+	approval *approvalsvc.Service
 	// revert is the revert use case.
 	revert *revertsvc.Service
 	// write is the query and write use case.
@@ -311,11 +298,11 @@ func (s *Service) wire() {
 	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.status.updateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
-	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, nil, nil, liveWrites{&s.deps.Write}, s)
+	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveWrites{&s.deps.Write}, runChecker{s.deps.Core.Store}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
 	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.describe, s)
-	s.approval.delivery = s.delivery
-	s.approval.reverts = s.revert
+	s.approval.SetDelivery(s.delivery)
+	s.approval.SetReverts(s.revert)
 	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
 	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
 }
@@ -324,6 +311,20 @@ func (s *Service) wire() {
 func (s *Service) revertCore() revertsvc.Core {
 	c := s.deps.Core
 	return revertsvc.Core{Name: c.Name, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors, PagesBase: c.PagesBase, LinkBudget: c.LinkBudget}
+}
+
+// approvalCore is the part of the shared settings the approval use case reads.
+func (s *Service) approvalCore() approvalsvc.Core {
+	c := s.deps.Core
+	return approvalsvc.Core{Name: c.Name, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors, PagesBase: c.PagesBase, LinkBudget: c.LinkBudget}
+}
+
+// runChecker answers whether a run is one of the agent's, from its ledger.
+type runChecker struct{ store runFinder }
+
+func (r runChecker) CheckRun(ctx context.Context, id uuid.UUID) error {
+	_, err := findRun(ctx, r.store, id)
+	return err
 }
 
 // linksCore is the part of the shared settings the delivery use case reads.

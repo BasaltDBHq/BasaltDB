@@ -19,7 +19,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const svcCopy = "/opt/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3"
@@ -181,9 +180,9 @@ func TestServiceEngineRefusesWhenAnAgentIsInItsGroup(t *testing.T) {
 	ep.checkServiceAgents(cfg)
 	require.Empty(t, ep.entries, "no local plugin starts")
 	require.Empty(t, ep.targets)
-	probs := ep.PluginProblems("product_a")
+	probs := ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
-	require.Equal(t, agent.ProblemPluginNotTrusted, probs[0].Code)
+	require.Equal(t, problemPluginNotTrusted, probs[0].Code)
 	require.Contains(t, probs[0].Message, "this agent's OS user is in the engine's group")
 }
 
@@ -278,9 +277,9 @@ func TestServiceEngineRefusesAPluginUserInItsGroup(t *testing.T) {
 		"and the engine's config; take it out of that group: sudo gpasswd -d basalt-plugin-acme-ner-default basalt", why)
 	require.NotContains(t, ep.targets, p.Key())
 	ep.refused[p.Key()] = why
-	probs := ep.PluginProblems("product_a")
+	probs := ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
-	require.Equal(t, agent.ProblemPluginUnavailable, probs[0].Code)
+	require.Equal(t, problemPluginUnavailable, probs[0].Code)
 	require.Equal(t, "plugin acme-ner/default was not started: "+why, probs[0].Message)
 }
 
@@ -329,7 +328,7 @@ func TestServiceEngineChecksTheUnitAtEachConnection(t *testing.T) {
 		return err
 	}
 	status := func() string {
-		probs := ep.PluginProblems("product_a")
+		probs := ep.pluginProblems("product_a")
 		if len(probs) == 0 {
 			return ""
 		}
@@ -387,9 +386,9 @@ func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
 	ep.targets[k] = serviceTarget{socket: filepath.Join(dir, "p.sock"), uid: uint32(me), gid: uint32(f.gid)}
 	_, err = ep.dial(context.Background(), e)
 	require.ErrorIs(t, err, dial.ErrNoSocket)
-	probs := ep.PluginProblems("product_a")
+	probs := ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
-	require.Equal(t, agent.ProblemPluginUnavailable, probs[0].Code)
+	require.Equal(t, problemPluginUnavailable, probs[0].Code)
 	require.Contains(t, probs[0].Message, "must listen on the socket BASALT_PLUGIN_SOCKET names")
 
 	// A socket directory opened to others: status names that instead.
@@ -397,7 +396,7 @@ func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
 	ep.first[k] = v
 	_, err = ep.dial(context.Background(), e)
 	require.ErrorIs(t, err, dial.ErrSocketDir)
-	probs = ep.PluginProblems("product_a")
+	probs = ep.pluginProblems("product_a")
 	require.Len(t, probs, 1)
 	require.Contains(t, probs[0].Message, whySocketDir)
 }

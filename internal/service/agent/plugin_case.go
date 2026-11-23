@@ -76,3 +76,8 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 // PluginUploadsServed reports why this engine does not serve the plugin
 // uploads, nil when it does.
 func (s *Service) PluginUploadsServed() error { return s.plugin.PluginUploadsServed() }
+
+// admitter admits a call: the engine is set up and its guard is current.
+type admitter interface {
+	Admit(ctx context.Context) error
+}

@@ -23,7 +23,7 @@ import (
 // plugin approval page, waits once for it, or removes a plugin. The agent
 // never approves: nothing here signs, relays or holds a plugin signature.
 
-const toolRequestPlugin = "request_plugin"
+const toolRequestPlugin = guidance.ToolRequestPlugin
 
 // The states of a request_plugin result.
 const (

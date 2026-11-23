@@ -22,7 +22,6 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
@@ -108,7 +107,7 @@ func (f fixture) classifyWith(t *testing.T, at time.Time, extra map[string]strin
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodeltest.Classification{Columns: cols, At: at})
+		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: at})
 	}))
 }
 
@@ -424,7 +423,7 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodeltest.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 	_, err = m.m.Tick(ctx, f.pool)
 	require.NoError(t, err)
@@ -439,4 +438,142 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 	got, err := m.Resolve(ctx, secrets)
 	require.NoError(t, err)
 	require.Equal(t, guardmodel.ClassSecret, got[0].Class)
+}
+
+func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.classify(t, time.Now())
+	ctx := context.Background()
+	log, _ := newLog()
+	m := NewMap(log)
+	require.NoError(t, m.Load(ctx, f.pool))
+	require.EqualValues(t, 1, m.loads.Load())
+
+	// A table created again after the load has a new oid: the first result
+	// column from it reloads the map, which then knows its class.
+	f.db.Exec(t, `DROP VIEW public.emails_v; DROP TABLE public.nokey;
+		CREATE TABLE public.nokey (email text);
+		CREATE VIEW public.emails_v AS SELECT email AS mail FROM public.customers;
+		GRANT SELECT ON public.nokey, public.emails_v TO `+f.agent.Role)
+	f.classify(t, time.Now())
+	ref := ColumnRef{TableOID: f.oid(t, "public.nokey"), Attnum: 1}
+	got, err := m.Resolve(ctx, f.pool, []ColumnRef{ref})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, m.loads.Load(), "an unknown oid reloads the map")
+	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
+	require.Equal(t, guardmodel.EntityEmail, got[0].EntityType)
+
+	// A table with no classes reloads once per tick, not on every query.
+	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
+	for range 5 {
+		got, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
+		require.NoError(t, err)
+		require.Equal(t, guardmodel.ClassUnclassified, got[0].Class)
+	}
+	require.EqualValues(t, 3, m.loads.Load(), "at most once per oid per tick")
+
+	// The next tick lets it reload once more (the marks are unchanged, so
+	// the tick itself does not reload).
+	reloaded, err := m.Tick(ctx, f.pool)
+	require.NoError(t, err)
+	require.False(t, reloaded)
+	_, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
+	require.NoError(t, err)
+	_, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
+	require.NoError(t, err)
+	require.EqualValues(t, 4, m.loads.Load())
+
+	// A computed column has no source: no reload, no class.
+	got, err = m.Resolve(ctx, f.pool, []ColumnRef{{}})
+	require.NoError(t, err)
+	require.Equal(t, Class{}, got[0])
+	require.EqualValues(t, 4, m.loads.Load())
+}
+
+func TestMapBoundsReloadsAndWarnings(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.classify(t, time.Now())
+	ctx := context.Background()
+	m := NewMap(slog.New(slog.DiscardHandler))
+	require.NoError(t, m.Load(ctx, f.pool))
+
+	// More unknown oids than the bound, in one result: one reload covers
+	// them, and the per-tick sets stop at their bounds.
+	refs := make([]ColumnRef, 0, maxReloadOIDs+100)
+	for i := range maxReloadOIDs + 100 {
+		refs = append(refs, ColumnRef{TableOID: uint32(4_000_000_000 - i), Attnum: 1})
+	}
+	_, err := m.Resolve(ctx, f.pool, refs)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, m.loads.Load())
+	m.mu.Lock()
+	require.Len(t, m.tried, maxReloadOIDs)
+	require.Len(t, m.warned, maxWarnedColumns)
+	m.mu.Unlock()
+
+	// More unknown oids past the bound: no reload until the next tick.
+	_, err = m.Resolve(ctx, f.pool, []ColumnRef{{TableOID: 12345678, Attnum: 1}})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, m.loads.Load())
+}
+
+func TestConcurrentReadsReloadsAndScans(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.classify(t, time.Now())
+	ctx := context.Background()
+	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	classes := NewMap(slog.New(slog.DiscardHandler))
+	obs := NewObserver(classes, dict).On(f.pool)
+	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
+		ScanOptions{}, slog.New(slog.DiscardHandler))
+	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for range 8 {
+		wg.Go(func() {
+			for range 5 {
+				res, err := reader.Read(ctx, `SELECT email, name FROM customers`, nil, action.Statement{})
+				if err == nil {
+					err = obs.Observe(ctx, res.Columns, res.Rows)
+				}
+				if err == nil {
+					_, err = classes.Resolve(ctx, f.pool, []ColumnRef{plain})
+				}
+				if err != nil {
+					errs <- err
+					return
+				}
+			}
+		})
+	}
+	wg.Go(func() {
+		for range 3 {
+			if _, err := s.Cycle(ctx); err != nil {
+				errs <- err
+				return
+			}
+		}
+	})
+	wg.Go(func() {
+		for range 3 {
+			if _, err := classes.Tick(ctx, f.pool); err != nil {
+				errs <- err
+				return
+			}
+		}
+	})
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "ada@corp.ee", "")))
+	// One load at first use, at most one per tick for the classless table,
+	// and the ticks themselves (nothing moved): a handful, never one per read.
+	require.LessOrEqual(t, classes.loads.Load(), int64(6))
 }

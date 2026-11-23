@@ -243,3 +243,28 @@ func TestIssueURLWithinLeavesTheLinkOutWhenNothingFits(t *testing.T) {
 	whole, _ := rep.IssueURL()
 	require.NotEmpty(t, whole, "the CLI link is unchanged")
 }
+
+func TestSaveListAndRetention(t *testing.T) {
+	r := testRecorder(t)
+	ids := make([]string, 0, Keep+5)
+	for range Keep + 5 {
+		rep, err := r.Save(Input{Command: "log", Value: "x"})
+		require.NoError(t, err)
+		ids = append(ids, rep.ID)
+	}
+	listed := List(r.Dir, r.Dir)
+	require.Len(t, listed, Keep)
+	require.Equal(t, ids[len(ids)-1], listed[0].ID, "newest first")
+	require.Equal(t, ids[5], listed[Keep-1].ID, "the oldest five are gone")
+
+	info, err := os.Stat(r.Dir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(dirMode), info.Mode().Perm())
+	info, err = os.Stat(filepath.Join(r.Dir, ids[len(ids)-1]+".json"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(fileMode), info.Mode().Perm())
+
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "stray.json"), []byte("{}"), fileMode))
+	require.Len(t, List(r.Dir), Keep)
+	require.Empty(t, List(filepath.Join(t.TempDir(), "missing")))
+}

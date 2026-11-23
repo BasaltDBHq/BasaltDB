@@ -390,3 +390,26 @@ func fakeMkdir(path string, mode os.FileMode, owner, group string) string {
 	}
 	return fmt.Sprintf("mkdir -m %04o -o %s %s", bits, owner, path)
 }
+
+// The install makes the directories with the modes the unit gives them: the
+// socket directory 0755 and the state directory 0700 on Linux (0750 on
+// macOS).
+func TestEngineDirsMatchTheUnit(t *testing.T) {
+	unit := osservice.SystemdUnit(osservice.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
+	require.Contains(t, unit, "RuntimeDirectory=basalt\nRuntimeDirectoryMode=0755\n")
+	require.Contains(t, unit, "StateDirectory=basalt\nStateDirectoryMode=0700\n")
+
+	sys := newFake()
+	sys.users["_basalt"] = true
+	steps, err := osservice.InstallPlan(context.Background(), sys, darwinSpec())
+	require.NoError(t, err)
+	for _, d := range []struct {
+		path string
+		mode os.FileMode
+	}{
+		{"/Library/Application Support/Basalt/run", 0o755},
+		{"/Library/Application Support/Basalt/state", 0o750},
+	} {
+		require.Contains(t, steps, osservice.Step{Kind: osservice.StepMkdir, Path: d.path, Mode: d.mode, Owner: "_basalt"}, d.path)
+	}
+}

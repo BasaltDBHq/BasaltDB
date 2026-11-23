@@ -10,7 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -94,7 +94,7 @@ func (l *Person) PreviewRevert(ctx context.Context, s action.Scope) ([]string, e
 
 // PrepareRevert is guard.PrepareRevertWithin the CLI's time limit.
 func (l *Person) PrepareRevert(ctx context.Context, s action.Scope, intent string) (action.PreparedRevert, error) {
-	return guard.PrepareRevertWithin(ctx, l.db, s, intent, guardmodeltest.CLIPrepareTimeout)
+	return guard.PrepareRevertWithin(ctx, l.db, s, intent, guardmodel.CLIPrepareTimeout)
 }
 
 // ApplyRevert is guard.ApplyRevert, in its own pinned transaction.

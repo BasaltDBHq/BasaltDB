@@ -16,7 +16,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 )
 
 // piiFixture is the app schema of the PII tests: customers, which bot may
@@ -81,7 +80,7 @@ func (p piiDB) write(t *testing.T, cols []guardmodel.PIIColumn) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, p.Names, guardmodeltest.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 }
 
@@ -349,7 +348,7 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
 		before := [2]string{}
 		before[0], before[1] = settings(tx)
-		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guardmodeltest.Classification{At: time.Now()}))
+		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{At: time.Now()}))
 		after := [2]string{}
 		after[0], after[1] = settings(tx)
 		require.Equal(t, before, after)
@@ -359,7 +358,7 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `SET LOCAL search_path = public, pg_temp; SET LOCAL ROLE `+p.Names.Guard())
 		require.NoError(t, err)
-		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guardmodeltest.Classification{At: time.Now()}))
+		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{At: time.Now()}))
 		role, path := settings(tx)
 		require.Equal(t, p.Names.Guard(), role)
 		require.Equal(t, "public, pg_temp", path)
@@ -389,7 +388,7 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 
 	// The table checks hold: an IDENTIFIER needs an entity type.
 	err = pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, p.Names, guardmodeltest.Classification{At: time.Now(), Columns: []guardmodel.PIIColumn{
+		return guard.WriteClassification(ctx, tx, p.Names, guardmodel.Classification{At: time.Now(), Columns: []guardmodel.PIIColumn{
 			{Schema: "public", Table: "leads", Column: "name", DataType: "text", Class: guardmodel.ClassIdentifier},
 		}})
 	})

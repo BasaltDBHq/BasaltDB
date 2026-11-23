@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel/guardmodeltest"
 )
 
 // piiUpsertBatch is the number of columns per INSERT: at most 13 parameters each,
@@ -23,7 +22,7 @@ const piiUpsertBatch = 1000
 // survives a revoked grant: owner decision OR-1), and sets pii_catalog to
 // pii_fingerprint(). The login role (session_user) must have been granted
 // the guard role, which basalt init does. The caller commits.
-func WriteClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names, c guardmodeltest.Classification) error {
+func WriteClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names, c guardmodel.Classification) error {
 	return asGuard(ctx, tx, n, func() error {
 		for start := 0; start < len(c.Columns); start += piiUpsertBatch {
 			end := min(start+piiUpsertBatch, len(c.Columns))
@@ -68,8 +67,8 @@ func asGuard(ctx context.Context, tx pgx.Tx, n guardmodel.Names, fn func() error
 // ReadClassification reads the classification state in tx as the guard
 // role (the admin may not read basalt_meta's tables or run its functions
 // itself), as WriteClassification writes it.
-func ReadClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names) (guardmodeltest.ClassificationState, error) {
-	st := guardmodeltest.ClassificationState{Stored: map[guardmodel.ColumnKey]guardmodel.PIIColumn{}}
+func ReadClassification(ctx context.Context, tx pgx.Tx, n guardmodel.Names) (guardmodel.ClassificationState, error) {
+	st := guardmodel.ClassificationState{Stored: map[guardmodel.ColumnKey]guardmodel.PIIColumn{}}
 	err := asGuard(ctx, tx, n, func() error {
 		var err error
 		if st.Readable, err = readableColumns(ctx, tx); err != nil {

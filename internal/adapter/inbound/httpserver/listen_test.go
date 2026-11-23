@@ -140,3 +140,15 @@ func TestListenPolicyIgnoresForwardedHeaders(t *testing.T) {
 		t.Fatal("non-loopback bound must refuse regardless of requested host")
 	}
 }
+
+// TestListenHostTakesEveryAddressForm: listenHost accepts every listen
+// address form the server is given (the unspecified-host cases went with
+// hostIsUnspecified).
+func TestListenHostTakesEveryAddressForm(t *testing.T) {
+	t.Parallel()
+	for _, addr := range []string{":8081", "0.0.0.0:8081", "[::]:8081", "127.0.0.1:8081", "[::1]:8081", "localhost:8081", "10.0.0.5:8080"} {
+		if _, ok := listenHost(addr); !ok {
+			t.Fatalf("listenHost(%q)", addr)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package setupcode
 
 import (
 	"bytes"
+	"net/url"
 	"testing"
 	"time"
 
@@ -20,4 +21,17 @@ func TestNewSetupID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, now.Truncate(time.Millisecond), created)
 	require.NoError(t, p.validateExpiry())
+}
+
+// TestTargetOfRefusesTargetParams: a connection URL whose query names the
+// host, port or database is refused, naming the parameter.
+func TestTargetOfRefusesTargetParams(t *testing.T) {
+	t.Parallel()
+	u, err := url.Parse("postgres://app:pw@10.0.0.5/crm?dbname=other")
+	require.NoError(t, err)
+	_, err = TargetOf(u)
+	require.ErrorContains(t, err, "dbname=")
+	var pe *TargetParamError
+	require.ErrorAs(t, err, &pe)
+	require.Equal(t, "dbname", pe.Param)
 }

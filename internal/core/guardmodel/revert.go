@@ -10,6 +10,7 @@ import (
 // the 2 minutes after which Claude Code moves a tool call to the
 // background.
 const (
+	CLIPrepareTimeout = 10 * time.Minute
 	MCPPrepareTimeout = 100 * time.Second
 )
 

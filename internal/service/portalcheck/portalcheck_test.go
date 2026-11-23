@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,10 +16,8 @@ import (
 
 var t0 = time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
 
-// checker has no state directory: the test of saving and loading results
-// went with Load (pilot D7).
-func checker(rep *portalverify.Report, err error) *Checker {
-	c := New(portalverify.Options{Base: "https://portal.example"}, "", slog.New(slog.DiscardHandler), func() time.Time { return t0 })
+func checker(dir string, rep *portalverify.Report, err error) *Checker {
+	c := New(portalverify.Options{Base: "https://portal.example"}, dir, slog.New(slog.DiscardHandler), func() time.Time { return t0 })
 	c.verify = func(context.Context, portalverify.Options) (*portalverify.Report, error) { return rep, err }
 	return c
 }
@@ -29,7 +29,7 @@ func report(files ...portalverify.File) *portalverify.Report {
 func TestEachMismatchStatusIsAMismatch(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{portalverify.StatusDiffers, portalverify.StatusMissing, portalverify.StatusHeader, portalverify.StatusUnexpected} {
-		res := checker(report(
+		res := checker("", report(
 			portalverify.File{Path: "style.css", Status: portalverify.StatusOK},
 			portalverify.File{Path: "lib/x.js", Status: status},
 		), nil).Check(context.Background())
@@ -41,21 +41,21 @@ func TestEachMismatchStatusIsAMismatch(t *testing.T) {
 
 func TestACleanPortalAndAnUncheckedOneAreNoMismatch(t *testing.T) {
 	t.Parallel()
-	clean := checker(report(portalverify.File{Path: "style.css", Status: portalverify.StatusOK}), nil).Check(context.Background())
+	clean := checker("", report(portalverify.File{Path: "style.css", Status: portalverify.StatusOK}), nil).Check(context.Background())
 	require.False(t, clean.Mismatch())
 
-	unchecked := checker(report(portalverify.File{Path: "style.css", Status: portalverify.StatusError, Detail: "timeout"}), nil).Check(context.Background())
+	unchecked := checker("", report(portalverify.File{Path: "style.css", Status: portalverify.StatusError, Detail: "timeout"}), nil).Check(context.Background())
 	require.False(t, unchecked.Mismatch(), "a network error is not a finding")
 	require.Equal(t, 1, unchecked.Unchecked)
 
-	failed := checker(nil, errors.New("boom")).Check(context.Background())
+	failed := checker("", nil, errors.New("boom")).Check(context.Background())
 	require.False(t, failed.Mismatch())
 	require.Equal(t, "boom", failed.Error)
 }
 
 func TestSummaryCountsInAFixedOrder(t *testing.T) {
 	t.Parallel()
-	res := checker(report(
+	res := checker("", report(
 		portalverify.File{Path: "a", Status: portalverify.StatusMissing},
 		portalverify.File{Path: "b", Status: portalverify.StatusDiffers},
 		portalverify.File{Path: "c", Status: portalverify.StatusDiffers},
@@ -69,7 +69,7 @@ func TestFindingsAreCapped(t *testing.T) {
 	for i := range maxFindings + 5 {
 		files = append(files, portalverify.File{Path: string(rune('a'+i%26)) + "/" + time.Duration(i).String(), Status: portalverify.StatusDiffers})
 	}
-	res := checker(report(files...), nil).Check(context.Background())
+	res := checker("", report(files...), nil).Check(context.Background())
 	require.Len(t, res.Findings, maxFindings)
 	require.Equal(t, maxFindings+5, res.Total)
 	require.Contains(t, res.Summary(), "(and 5 more)")
@@ -77,7 +77,7 @@ func TestFindingsAreCapped(t *testing.T) {
 
 func TestLastIsEmptyBeforeTheFirstCheckAndKeepsTheLatest(t *testing.T) {
 	t.Parallel()
-	c := checker(report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil)
+	c := checker("", report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil)
 	_, ok := c.Last()
 	require.False(t, ok)
 	c.Check(context.Background())
@@ -107,4 +107,16 @@ func TestRunChecksAtOnceAndAgainEachInterval(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// TestTheResultIsSavedOwnerOnly: a check saves its result in the state
+// directory, readable by the engine's user only.
+func TestTheResultIsSavedOwnerOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	checker(dir, report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil).Check(context.Background())
+
+	st, err := os.Stat(filepath.Join(dir, FileName))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
 }

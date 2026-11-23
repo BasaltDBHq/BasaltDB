@@ -16,10 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
@@ -725,4 +727,30 @@ func TestDecodeResponseRefuses(t *testing.T) {
 		_, err := revert.DecodeResponse([]byte(body))
 		require.ErrorIs(t, err, approval.ErrInvalid, body)
 	}
+}
+
+// TestDecodeResponseOfASignedRevert signs a revert's challenge with a
+// software passkey and decodes the JSON the page posts, like apply_revert
+// will; an approval's response is not a revert's.
+func TestDecodeResponseOfASignedRevert(t *testing.T) {
+	t.Parallel()
+	binding := bindingText(revertLines())
+	person, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+
+	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	body, err := json.Marshal(reverttest.NewResponse(revertID, as))
+	require.NoError(t, err)
+	resp, err := revert.DecodeResponse(body)
+	require.NoError(t, err)
+	require.Equal(t, revertID, resp.RevertID)
+
+	t.Run("an approval response is not a revert response", func(t *testing.T) {
+		t.Parallel()
+		approvalBody, err := json.Marshal(approvaltest.NewResponse(revertID, as))
+		require.NoError(t, err)
+		_, err = revert.DecodeResponse(approvalBody)
+		require.ErrorIs(t, err, approval.ErrInvalid)
+	})
 }

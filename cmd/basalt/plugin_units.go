@@ -55,7 +55,7 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 		}
 		v, err := plugin.Verify(root, k, p.ManifestSHA256, trust, pluginmodel.ModeService)
 		if err != nil {
-			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: %s\n", k, cli.TerminalText(verifyFailure(err)))
+			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: %s\n", k, cli.TerminalText(plugin.BasaltVerifyFailure(err)))
 			continue
 		}
 		if e, ok := unitEntry(p, v); ok {
@@ -63,14 +63,6 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 		}
 	}
 	return out
-}
-
-// verifyFailure names the failed check of a verification in fixed words.
-func verifyFailure(err error) string {
-	if ve, ok := err.(*pluginmodel.VerifyError); ok { //nolint:errorlint // Verify returns it unwrapped
-		return plugin.VerifyFailure(ve)
-	}
-	return "it could not be verified"
 }
 
 // checkAgentOSUser refuses an agent's OS user that is the engine's own

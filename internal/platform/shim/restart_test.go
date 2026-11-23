@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // dyingEngine accepts one connection, reads n requests, closes it without an
@@ -65,7 +65,7 @@ func TestACallWaitsForARestartingEngine(t *testing.T) {
 	socket := filepath.Join(socketDir(t), "bot.sock")
 	ln, err := net.Listen("unix", socket)
 	require.NoError(t, err)
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.Tool{
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.Tool{
 		Name: "write",
 		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "first"}, nil },
 	})
@@ -130,21 +130,21 @@ func restartingEngine(t *testing.T, socket string, seen *int, mu *sync.Mutex) {
 		if _, err := r.ReadBytes('\n'); err != nil {
 			return
 		}
-		_ = mcp.WriteError(conn, mcp.HelloID, -32601, "method not found")
+		_ = mcpserver.WriteError(conn, mcpserver.HelloID, -32601, "method not found")
 		_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
 		for {
 			line, err := r.ReadBytes('\n')
 			if err != nil {
 				return
 			}
-			req, ok := mcp.RequestOf(line)
+			req, ok := mcpserver.RequestOf(line)
 			if !ok {
 				continue
 			}
 			mu.Lock()
 			*seen++
 			mu.Unlock()
-			_ = mcp.WriteError(conn, req.ID, mcp.ErrCodeRestarting, mcp.RestartingMessage)
+			_ = mcpserver.WriteError(conn, req.ID, mcpserver.ErrCodeRestarting, mcpserver.RestartingMessage)
 		}
 	}()
 }
@@ -182,7 +182,7 @@ func TestACallIsSentAgainForARestartOnlyOnce(t *testing.T) {
 	require.NoError(t, err)
 	line, err := c.out.ReadBytes('\n')
 	require.NoError(t, err)
-	_, restarting := mcp.Restarting(line)
+	_, restarting := mcpserver.Restarting(line)
 	require.True(t, restarting, "the second engine's answer is passed on: %s", line)
 	require.Contains(t, string(line), "Nothing was run")
 	mu.Lock()

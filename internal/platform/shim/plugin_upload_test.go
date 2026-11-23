@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 func readySession(operatedBy, pagesOrigin string) *session {
-	s := &session{ready: make(chan struct{}), engine: mcp.Hello{OperatedBy: operatedBy, PagesOrigin: pagesOrigin}}
+	s := &session{ready: make(chan struct{}), engine: mcpserver.Hello{OperatedBy: operatedBy, PagesOrigin: pagesOrigin}}
 	close(s.ready)
 	return s
 }
@@ -51,15 +51,15 @@ func TestPrepareUploadsTheSource(t *testing.T) {
 func prepareUploads(t *testing.T, sess *session) {
 	t.Helper()
 	var asked []string
-	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(_ context.Context, source string) (mcp.PluginUpload, error) {
+	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
 		asked = append(asked, source)
-		return mcp.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner", Executables: []string{"bin/ner"}}, nil
+		return mcpserver.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner", Executables: []string{"bin/ner"}}, nil
 	}}
 	out, answered := r.prepare(context.Background(), sess, []byte(pluginCall))
 	require.False(t, answered)
 	require.Equal(t, []string{"/home/me/local-ner"}, asked)
 	meta := metaOf(t, out)
-	require.JSONEq(t, `{"uploadId":"0193a4c2-7d1e-7c3a-9f00-0000000000f6","name":"local-ner","executables":["bin/ner"]}`, string(meta[mcp.MetaPluginUpload]))
+	require.JSONEq(t, `{"uploadId":"0193a4c2-7d1e-7c3a-9f00-0000000000f6","name":"local-ner","executables":["bin/ner"]}`, string(meta[mcpserver.MetaPluginUpload]))
 	require.JSONEq(t, `"p1"`, string(meta["progressToken"]))
 }
 
@@ -71,29 +71,29 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 		readySession("", "http://localhost:7878"),
 		readySession(mcpcontract.OperatedByPerson, ""),
 	} {
-		r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcp.PluginUpload, error) {
+		r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcpserver.PluginUpload, error) {
 			t.Fatal("no upload here")
-			return mcp.PluginUpload{}, nil
+			return mcpserver.PluginUpload{}, nil
 		}}
 		out, answered := r.prepare(context.Background(), sess, []byte(pluginCall))
 		require.False(t, answered)
 		meta := metaOf(t, out)
-		require.NotContains(t, meta, mcp.MetaPluginUpload)
+		require.NotContains(t, meta, mcpserver.MetaPluginUpload)
 		require.Contains(t, meta, "progressToken")
 	}
 	// An engine that takes no uploads: forwarded without one.
-	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcp.PluginUpload, error) {
-		return mcp.PluginUpload{}, ErrNoUploads
+	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcpserver.PluginUpload, error) {
+		return mcpserver.PluginUpload{}, ErrNoUploads
 	}}
 	out, answered := r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), []byte(pluginCall))
 	require.False(t, answered)
-	require.NotContains(t, metaOf(t, out), mcp.MetaPluginUpload)
+	require.NotContains(t, metaOf(t, out), mcpserver.MetaPluginUpload)
 
 	// An escaped spelling of the tool's name is the tool: its upload is
 	// stripped too.
 	escaped := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"request\u005fplugin","arguments":{},"_meta":{"dev.basaltdb/upload":{"uploadId":"x"}}}}`)
 	out, _ = r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), escaped)
-	require.NotContains(t, metaOf(t, out), mcp.MetaPluginUpload)
+	require.NotContains(t, metaOf(t, out), mcpserver.MetaPluginUpload)
 
 	// Another tool's line is passed as it is.
 	other := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query","arguments":{"sql":"SELECT 'request_plugin'"},"_meta":{"dev.basaltdb/upload":{}}}}`)
@@ -106,9 +106,9 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 func TestPrepareAnswersAnUnreadableFolder(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	r := &relay{out: &lineWriter{w: &buf}, upload: func(_ context.Context, source string) (mcp.PluginUpload, error) {
+	r := &relay{out: &lineWriter{w: &buf}, upload: func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
 		_, err := ReadPluginSource(source)
-		return mcp.PluginUpload{}, err
+		return mcpserver.PluginUpload{}, err
 	}}
 	_, answered := r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), []byte(pluginCall))
 	require.True(t, answered)

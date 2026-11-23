@@ -24,7 +24,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -37,6 +36,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -153,7 +153,7 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStor
 			}
 			d.Delivery.Notifier, d.Core.PagesOrigin, d.Delivery.Links, d.Delivery.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc
-	e.h = harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(e.svc), agent.WithMeta)...)}
+	e.h = harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(e.svc), agent.WithMeta)...)}
 	e.p = newLocalPages(t, agentEnv{svc: e.svc})
 }
 

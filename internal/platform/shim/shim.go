@@ -19,8 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 const (
@@ -66,7 +66,7 @@ type Fallback interface {
 // it) is waited for, up to DefaultReconnectWait, before the next message
 // falls back; a read-only request the engine dropped unanswered is sent once
 // more to the engine that returns, and so is any request the engine
-// answered as not run because it was restarting (mcp.ErrCodeRestarting).
+// answered as not run because it was restarting (mcpserver.ErrCodeRestarting).
 // Nothing else is ever sent twice.
 func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
 	return ServeWith(ctx, socketPath, fallback, in, out, Options{})
@@ -80,7 +80,7 @@ type Options struct {
 	ReconnectWait time.Duration
 
 	// MinEngineProtocol is the oldest engine protocol this shim works with
-	// (default mcp.MinEngineProtocol); an older engine is refused with the
+	// (default mcpserver.MinEngineProtocol); an older engine is refused with the
 	// message that names the restart.
 	MinEngineProtocol int
 
@@ -121,7 +121,7 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 	}
 	minEngine := opts.MinEngineProtocol
 	if minEngine == 0 {
-		minEngine = mcp.MinEngineProtocol
+		minEngine = mcpserver.MinEngineProtocol
 	}
 	r := &relay{
 		neg:  negotiation{build: buildinfo.Version, minEngine: minEngine},
@@ -447,7 +447,7 @@ type session struct {
 	// nil for a clean close.
 	err error
 
-	// refusal is the engine's refusal of this OS user (mcp.PeerRefusal),
+	// refusal is the engine's refusal of this OS user (mcpserver.PeerRefusal),
 	// "" when it admitted the peer.
 	refusal string
 	// retry takes back an unanswered request that is safe to run again.
@@ -460,7 +460,7 @@ type session struct {
 	beforeWrite func()
 	// engine is the engine's hello answer, read only by copyAnswers;
 	// opener opens the links of its answers (relay.opener).
-	engine mcp.Hello
+	engine mcpserver.Hello
 	opener atomic.Pointer[autoOpener]
 
 	// wmu is held by forward from recording a request as pending until its
@@ -488,7 +488,7 @@ func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, 
 	s := &session{conn: conn, fallback: fallback, files: files, neg: neg, done: make(chan struct{}), ready: make(chan struct{}), pending: map[string][]byte{}}
 	// The first line on every connection: the shim's protocol version. A
 	// write that fails (a refused peer) shows up as the connection ending.
-	_, _ = conn.Write(mcp.HelloLine(neg.build))
+	_, _ = conn.Write(mcpserver.HelloLine(neg.build))
 	go s.copyAnswers(ctx, out)
 	return s, nil
 }
@@ -502,13 +502,13 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	sc := bufio.NewScanner(s.conn)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
 	for sc.Scan() {
-		if msg := mcp.PeerRefusal(sc.Bytes()); msg != "" {
+		if msg := mcpserver.PeerRefusal(sc.Bytes()); msg != "" {
 			// Not a request's answer: the requests left pending get its
 			// message when the engine closes.
 			s.refusal = msg
 			continue
 		}
-		if hello, known, ok := mcp.HelloAnswer(sc.Bytes()); ok {
+		if hello, known, ok := mcpserver.HelloAnswer(sc.Bytes()); ok {
 			if known {
 				s.engine = hello
 			}
@@ -543,12 +543,12 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 // engineTooOld records the refusal for an engine that is older than this
 // shim works with; the pending requests and every later one are answered
 // with it.
-func (s *session) engineTooOld(engine mcp.Hello) bool {
+func (s *session) engineTooOld(engine mcpserver.Hello) bool {
 	if engine.Protocol >= s.neg.minEngine {
 		return false
 	}
-	me := mcp.Hello{Protocol: mcp.ShimProtocol, Build: s.neg.build}
-	s.refusal = mcp.EngineTooOldMessage(me, engine, s.neg.minEngine)
+	me := mcpserver.Hello{Protocol: mcpserver.ShimProtocol, Build: s.neg.build}
+	s.refusal = mcpserver.EngineTooOldMessage(me, engine, s.neg.minEngine)
 	return true
 }
 
@@ -578,11 +578,11 @@ func (s *session) abandon(ctx context.Context, out *lineWriter) {
 // refuse answers a request with the engine's refusal of this OS user; any
 // other message gets no answer.
 func refuse(out io.Writer, line []byte, refusal string) error {
-	req, ok := mcp.RequestOf(line)
+	req, ok := mcpserver.RequestOf(line)
 	if !ok {
 		return nil
 	}
-	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, refusal)
+	return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, refusal)
 }
 
 func (s *session) markReady() { s.readyOnce.Do(func() { close(s.ready) }) }
@@ -642,7 +642,7 @@ func (s *session) forward(line []byte) bool {
 // engine that comes back; false when line is another answer, or the
 // request was already sent once more (the answer is then passed on).
 func (s *session) takeBackRestarting(line []byte) bool {
-	key, ok := mcp.Restarting(line)
+	key, ok := mcpserver.Restarting(line)
 	if !ok {
 		return false
 	}

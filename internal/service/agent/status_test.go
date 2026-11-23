@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -35,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -539,7 +539,7 @@ func TestSetupStates(t *testing.T) {
 // --- degraded mode ---
 
 // degraded is a service whose probe the test changes between calls.
-func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server, []mcp.Tool) {
+func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcpserver.Server, []mcpserver.Tool) {
 	t.Helper()
 	d := deps()
 	d.Status.Probe = probe
@@ -547,10 +547,10 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server,
 	d.Status.Setup = setup
 	d.Core.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
-	return mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(tools, WithMeta)...), mcp.ToolsFrom(tools, WithMeta)
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
 }
 
-func serveCall(t *testing.T, srv *mcp.Server, tool string, args map[string]any) (map[string]any, bool) {
+func serveCall(t *testing.T, srv *mcpserver.Server, tool string, args map[string]any) (map[string]any, bool) {
 	t.Helper()
 	req, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}})
 	require.NoError(t, err)
@@ -582,7 +582,7 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 // requireOnlyStatusServed calls every served tool but status on srv and
 // checks each is refused UNAVAILABLE reason with the catalog's steps, and
 // that status still answers.
-func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, inMessage string) {
+func requireOnlyStatusServed(t *testing.T, srv *mcpserver.Server, tools []mcpserver.Tool, reason, inMessage string) {
 	t.Helper()
 	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeUnavailable, reason, "")
 	require.True(t, ok)
@@ -705,7 +705,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	cmds, err := NewCommands("bot", "/srv/basalt/engine.json", "linux", testManager())
 	require.NoError(t, err)
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), WithMeta)...)
 
 	served := make([]string, 0, len(down.Tools()))
 	for _, tool := range down.Tools() {
@@ -753,7 +753,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), WithMeta)...)
 
 	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)

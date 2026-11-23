@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -29,7 +29,7 @@ const testRefusal = `the basalt engine refused this connection: the socket of ag
 // tool.
 func refusingEngine(t *testing.T, socket string, refused int) {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine"}, mcp.Tool{
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "engine"}, mcpserver.Tool{
 		Name: "query",
 		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil },
 	})
@@ -44,7 +44,7 @@ func refusingEngine(t *testing.T, socket string, refused int) {
 				return
 			}
 			if n < refused {
-				_ = mcp.WritePeerRefused(conn, testRefusal)
+				_ = mcpserver.WritePeerRefused(conn, testRefusal)
 				conn.Close()
 				continue
 			}
@@ -91,9 +91,9 @@ func refusalSocket(t *testing.T) string {
 }
 
 type answer struct {
-	ID     any             `json:"id"`
-	Result json.RawMessage `json:"result"`
-	Error  *mcp.RPCError   `json:"error"`
+	ID     any                 `json:"id"`
+	Result json.RawMessage     `json:"result"`
+	Error  *mcpserver.RPCError `json:"error"`
 }
 
 func answers(t *testing.T, out string) []answer {
@@ -129,7 +129,7 @@ func TestARefusalThatArrivesBeforeTheRequestIsForwardedAnswersIt(t *testing.T) {
 		require.EqualValues(t, i+1, a.ID)
 		require.Nil(t, a.Result, out.String())
 		require.NotNil(t, a.Error, out.String())
-		require.Equal(t, mcp.ErrCodeServer, a.Error.Code)
+		require.Equal(t, mcpserver.ErrCodeServer, a.Error.Code)
 		require.Equal(t, testRefusal, a.Error.Message)
 	}
 	require.EqualError(t, err, testRefusal, "basalt mcp ends with the refusal")

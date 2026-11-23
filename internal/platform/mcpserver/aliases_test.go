@@ -1,4 +1,4 @@
-package mcp_test
+package mcpserver_test
 
 import (
 	"errors"

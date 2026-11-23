@@ -8,9 +8,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
-// Querier is the admin connection or transaction a plan or an apply runs on.
-// It is an alias of the interface itself, so an adapter that cannot import
-// this package still implements Backend.
 // Rows, Row and Result are the parts of a query's answer the setup code
 // reads. They are written as unnamed interfaces so that any adapter's types
 // of the same shape are the same types, with no import of this package.
@@ -26,12 +23,15 @@ type (
 )
 
 // Querier is the admin connection or transaction a plan or an apply runs on.
+// It is an alias of the interface itself, so an adapter that cannot import
+// this package still implements Backend.
 type Querier = interface {
 	Exec(ctx context.Context, sql string, args ...any) (Result, error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) Row
 }
 
+// ActivePasskey is an active passkey as the doctor lists it.
 type ActivePasskey struct {
 	Credential passkey.Credential
 	Label      string

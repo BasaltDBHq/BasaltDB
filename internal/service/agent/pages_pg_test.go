@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -47,7 +48,7 @@ func newLocalPages(t *testing.T, env agentEnv) localPages {
 	t.Helper()
 	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler))
 	site.MountApprovals(approvalpage.NewApprovalHandlers(site))
-	site.MountReverts(pages.NewRevertHandlers(site))
+	site.MountReverts(revertpage.NewRevertHandlers(site))
 	site.MountPlugins(pages.NewPluginHandlers(site))
 	site.MountSetup(pages.NewConfiguredSetupHandlers(pageOrigin))
 	site.Add(env.svc)

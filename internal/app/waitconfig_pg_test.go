@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 )
 
 // agentUsers has the agent's OS user alice (uid 4242) and an engine (uid
@@ -395,7 +396,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	require.NoError(t, err)
 	srv := pages.New(origin, slog.New(slog.DiscardHandler))
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
-	srv.MountReverts(pages.NewRevertHandlers(srv))
+	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewSetupHandlers(origin, jobs, slog.New(slog.DiscardHandler).With("component", "setup")))
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: time.Second}

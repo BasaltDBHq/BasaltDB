@@ -36,12 +36,12 @@ type PluginApprovalStore interface {
 // PluginApprovalRequest is the request of a pending plugin approval this
 // agent's role opened: its binding and settings texts as Postgres built
 // them, and the database's passkeys.
-func (s *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error) {
-	r, err := s.openPluginApproval(ctx, id)
+func (pc *pluginCase) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error) {
+	r, err := pc.openPluginApproval(ctx, id)
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
-	ids, err := s.delivery.credentialIDs(ctx)
+	ids, err := pc.delivery.credentialIDs(ctx)
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
@@ -51,13 +51,13 @@ func (s *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 // RelayPluginApproval relays the person's signature of a plugin approval
 // this agent's role opened to submit_plugin_approval, and returns when
 // Postgres recorded it.
-func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
-	if _, err := s.openPluginApproval(ctx, r.ApprovalID); err != nil {
+func (pc *pluginCase) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
+	if _, err := pc.openPluginApproval(ctx, r.ApprovalID); err != nil {
 		return time.Time{}, err
 	}
-	at, err := s.deps.Plugin.Approvals.SubmitPluginApproval(ctx, guardmodel.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
+	at, err := pc.deps.Approvals.SubmitPluginApproval(ctx, guardmodel.PluginApprovalResponse{ApprovalID: r.ApprovalID, Assertion: r.Assertion()})
 	if err != nil {
-		return time.Time{}, s.pluginRelayError(ctx, r.ApprovalID, err)
+		return time.Time{}, pc.pluginRelayError(ctx, r.ApprovalID, err)
 	}
 	return at, nil
 }
@@ -68,21 +68,21 @@ func (s *Service) RelayPluginApproval(ctx context.Context, r approval.PluginAppr
 // schema version 5 (which cannot hold one), an approval the role cannot
 // see or only sees as a named agent (no binding text, so the opener is
 // asked instead), and a proof that does not match the binding text.
-func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
-	if s.deps.Plugin.Approvals == nil {
+func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
+	if pc.deps.Approvals == nil {
 		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
-	if err := s.Admit(ctx); err != nil {
+	if err := pc.admit.Admit(ctx); err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
-	st, err := s.deps.Status.Probe.GuardStatus(ctx)
+	st, err := pc.status.guardStatus(ctx)
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
-	if !holdsPluginApprovals(st, s.deps.Plugin.ApprovalsVersion) {
+	if !holdsPluginApprovals(st, pc.deps.ApprovalsVersion) {
 		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
-	r, ok, err := s.deps.Plugin.Approvals.ReadPluginApproval(ctx, id)
+	r, ok, err := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
@@ -90,7 +90,7 @@ func (s *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmo
 		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
 	}
 	switch {
-	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !s.deps.Core.Now().Before(r.ExpiresAt)):
+	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !pc.core.Now().Before(r.ExpiresAt)):
 		return r, pluginExpired(r.ApprovalID, r.ExpiresAt)
 	case r.Status == guardmodel.PluginApprovalStatusApproved:
 		return r, pluginAlreadyApproved(r.ApprovalID)
@@ -152,16 +152,16 @@ func pluginCancelled(id uuid.UUID) error {
 // signature of plugin approval id: told apart by the guard's detail, the
 // message carrying it. Any other failure (the database cannot be reached)
 // is returned as it is, for the usual mapping.
-func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error) error {
+func (pc *pluginCase) pluginRelayError(ctx context.Context, id uuid.UUID, err error) error {
 	code, ok := guidance.LedgerCode(err)
 	if !ok {
 		return err
 	}
 	detail := guidance.StoreDetail(err)
-	msg := s.deps.Core.Errors.ToolError(err).Message
+	msg := pc.core.Errors.ToolError(err).Message
 	switch {
 	case code == guardmodel.CodeApprovalExpired:
-		r, found, readErr := s.deps.Plugin.Approvals.ReadPluginApproval(ctx, id)
+		r, found, readErr := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 		if readErr == nil && found {
 			return pluginExpired(id, r.ExpiresAt)
 		}
@@ -176,7 +176,7 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 	case detail == guardmodel.DetailApprovalNotFound:
 		return ErrNotThisAgent
 	}
-	te := s.deps.Core.Errors.ToolError(err)
+	te := pc.core.Errors.ToolError(err)
 	if te.Reason == guidance.ReasonPasskeyRevoked {
 		steps, stepErr := guidance.NewSteps().
 			TellAgent(guidance.AskAgentForRegisterLinkText).

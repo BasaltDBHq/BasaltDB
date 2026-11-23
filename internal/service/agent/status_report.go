@@ -21,8 +21,8 @@ import (
 // with its steps. It never fails on what it reads: an unreachable database
 // or a missing guard is a problem in the result, not an error. It never
 // names the credential file.
-func (s *Service) Status(ctx context.Context) (StatusReport, error) {
-	return s.statusDeps().report(ctx)
+func (sc *statusKeeper) Status(ctx context.Context) (StatusReport, error) {
+	return sc.statusDeps().report(ctx)
 }
 
 // statusDeps are what a status report reads: the Service's own in the
@@ -72,14 +72,14 @@ type statusDeps struct {
 	crashReports func(dirs ...string) []CrashReport
 }
 
-func (s *Service) statusDeps() statusDeps {
+func (sc *statusKeeper) statusDeps() statusDeps {
 	return statusDeps{
-		name: s.deps.Core.Name, operatedBy: s.deps.Status.OperatedBy, build: s.deps.Status.Build, startedBy: s.deps.Status.StartedBy, pagesBase: s.deps.Core.PagesBase, pagesOrigin: s.deps.Core.PagesOrigin,
-		sameUser: s.deps.Status.SameUser, devLocalPages: s.deps.Status.DevLocalPages, connectBudget: s.deps.Status.ConnectBudget, engineReachable: true, vault: s.deps.Status.Vault, portal: s.deps.Status.Portal, plugins: s.deps.Status.Plugins,
-		crashDirs: s.deps.Status.CrashDirs, linkBudget: s.deps.Core.LinkBudget, access: s.deps.Status.Access,
-		engineRecord: s.deps.Status.EngineRecord, trust: s.deps.Status.Trust, database: s.deps.Status.Database, cmds: s.deps.Core.Commands, setup: s.pendingSetup(), probe: s.deps.Status.Probe,
-		errs: s.deps.Core.Errors, latestGuard: s.deps.Status.LatestGuardVersion, crashReports: s.deps.Status.CrashReports,
-		update: s.updateInfo(), finisher: s.deps.Status.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.deps.Status.Passkeys.Passkeys, log: s.deps.Core.Log, now: s.deps.Core.Now,
+		name: sc.core.Name, operatedBy: sc.deps.OperatedBy, build: sc.deps.Build, startedBy: sc.deps.StartedBy, pagesBase: sc.core.PagesBase, pagesOrigin: sc.core.PagesOrigin,
+		sameUser: sc.deps.SameUser, devLocalPages: sc.deps.DevLocalPages, connectBudget: sc.deps.ConnectBudget, engineReachable: true, vault: sc.deps.Vault, portal: sc.deps.Portal, plugins: sc.deps.Plugins,
+		crashDirs: sc.deps.CrashDirs, linkBudget: sc.core.LinkBudget, access: sc.deps.Access,
+		engineRecord: sc.deps.EngineRecord, trust: sc.deps.Trust, database: sc.deps.Database, cmds: sc.core.Commands, setup: sc.pendingSetup(), probe: sc.deps.Probe,
+		errs: sc.core.Errors, latestGuard: sc.deps.LatestGuardVersion, crashReports: sc.deps.CrashReports,
+		update: sc.updateInfo(), finisher: sc.deps.Finisher, finished: sc.setupFinished, notRecorded: &sc.notRecorded, lockTrouble: &sc.lockTrouble, passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
 	}
 }
 

@@ -53,14 +53,14 @@ func TestHoldTooLargeTellsThePerson(t *testing.T) {
 		s := operatedService(t, "linux", "", operatedBy)
 
 		b := guidance.NewSteps()
-		msg := s.holdTooLargeSteps(b, older)
+		msg := s.approval.holdTooLargeSteps(b, older)
 		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "64 KiB")
 		require.NotContains(t, msg, "basalt ", "the person runs no command: the agent gives a link")
 		require.Contains(t, msg, "update the guard")
 
 		b = guidance.NewSteps()
-		msg = s.holdTooLargeSteps(b, over)
+		msg = s.approval.holdTooLargeSteps(b, over)
 		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "Make the change yourself")
 		steps, err := b.Build()

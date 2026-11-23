@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -33,4 +34,13 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 // DescribeSearch finds tables and columns by a word of their names.
 func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (pagination.Page[SearchItem], error) {
 	return s.describe.DescribeSearch(ctx, p)
+}
+
+// statementTimeout is the agent's statement timeout, 0 when the service
+// knows no catalog.
+func (ds *describeCase) statementTimeout() time.Duration {
+	if ds.deps.Catalog == nil {
+		return 0
+	}
+	return ds.deps.Catalog.Limits().StatementTimeout
 }

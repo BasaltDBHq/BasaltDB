@@ -22,28 +22,28 @@ import (
 // back, recorded as an apply records it, and reveal_approval_rows reads
 // the rows there, for the page holding secret, the approval's live link
 // secret. The ticket lives in this call only.
-func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
+func (ac *approvalCase) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
 	key, err := in.revealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
 	defer clear(key)
-	a, err := s.openApproval(ctx, id)
+	a, err := ac.openApproval(ctx, id)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	held, err := heldWrite(a, s.deps.Write.Store)
+	held, err := heldWrite(a, ac.writes)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	ticket, err := s.deps.Approval.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
+	ticket, err := ac.deps.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealApprovalError(err, s.delivery.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.pageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
-	rows, err := s.deps.Approval.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
+	rows, err := ac.deps.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealApprovalError(err, s.delivery.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.pageLink(links.Approval, id, secret))
 	}
 	return checkedAnswer(a.Lines, rows)
 }
@@ -87,7 +87,7 @@ func heldWrite(a action.Approval, check statementChecker) (heldRun, error) {
 }
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.
-func (s *Service) revealApprovalError(err error, link string) error {
+func (ac *approvalCase) revealApprovalError(err error, link string) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)
 	switch {

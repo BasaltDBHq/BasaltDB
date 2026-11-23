@@ -193,12 +193,12 @@ func filterText(scope action.Scope) string {
 
 // longRevertLink is r's long link: it carries the whole request, so the
 // engine can give it again when the short link is gone.
-func (s *Service) longRevertLink(ctx context.Context, r action.Revert) (string, error) {
-	ids, err := s.delivery.credentialIDs(ctx)
+func (rc *revertCase) longRevertLink(ctx context.Context, r action.Revert) (string, error) {
+	ids, err := rc.delivery.credentialIDs(ctx)
 	if err != nil {
 		return "", err
 	}
-	return revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(s.deps.Core.PagesBase)
+	return revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(rc.core.PagesBase)
 }
 
 func revertNotFound(id uuid.UUID) error {
@@ -219,14 +219,14 @@ func revertNotFound(id uuid.UUID) error {
 // whose request file the agent already sent; no requestFile again). A
 // widened revert has no link: its only one is the page the person widened
 // on (the agent cannot read its binding, RS-5).
-func (s *Service) signingLink(ctx context.Context, r action.Revert, text string) (toolresult.NextStep, error) {
+func (rc *revertCase) signingLink(ctx context.Context, r action.Revert, text string) (toolresult.NextStep, error) {
 	switch {
 	case r.Widened:
 		return guidance.OpenLink("", text), nil
-	case s.delivery.shortLinked(r.ID):
+	case rc.delivery.shortLinked(r.ID):
 		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
-	pick, err := s.restatedRevertLink(ctx, r)
+	pick, err := rc.restatedRevertLink(ctx, r)
 	if err != nil {
 		return toolresult.NextStep{}, err
 	}
@@ -248,23 +248,23 @@ func (s *Service) signingLink(ctx context.Context, r action.Revert, text string)
 // A request too large for a long link is restated as the page's address:
 // linkPage when a short link given earlier carries it, else linkNone
 // (CONTRACT.md, Large values, rule 3).
-func (s *Service) restatedRevertLink(ctx context.Context, r action.Revert) (handOver, error) {
+func (rc *revertCase) restatedRevertLink(ctx context.Context, r action.Revert) (handOver, error) {
 	req := revertRequestOf(r)
-	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
+	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
 	if err != nil {
 		return handOver{}, err
 	}
 	if tooLarge {
 		kind := linkNone
-		if s.delivery.carriesLarge(req.Cost) {
+		if rc.delivery.carriesLarge(req.Cost) {
 			kind = linkPage
 		}
-		return handOver{URL: s.delivery.pageAddress(links.Revert, r.ID), Kind: kind}, nil
+		return handOver{URL: rc.delivery.pageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
-	if s.delivery.shortLinked(r.ID) {
+	if rc.delivery.shortLinked(r.ID) {
 		return handOver{URL: long, Kind: linkLong}, nil
 	}
-	return chooseLink("", long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))
+	return chooseLink("", long, rc.core.LinkBudget, links.RevertFile(r.ID))
 }
 
 // revertTitle names revert r for the person, starting lowercase: its scope,
@@ -277,12 +277,12 @@ func revertTitle(r action.Revert) string {
 	return "the revert of " + scopeText(r.Scope, r.ScopeID)
 }
 
-func (s *Service) badSignature(ctx context.Context, r action.Revert, message string) error {
-	open, err := s.signingLink(ctx, r, signAgainText)
+func (rc *revertCase) badSignature(ctx context.Context, r action.Revert, message string) error {
+	open, err := rc.signingLink(ctx, r, signAgainText)
 	if err != nil {
 		return err
 	}
-	return s.badSignatureWith(open, r, message)
+	return rc.badSignatureWith(open, r, message)
 }
 
 // The OPEN_LINK texts of the refusals that send the person back to sign.
@@ -293,7 +293,7 @@ const (
 
 // badSignatureWith is REVERT_INVALID BAD_SIGNATURE with open, the step to
 // the revert page (signingLink).
-func (s *Service) badSignatureWith(open toolresult.NextStep, r action.Revert, message string) error {
+func (rc *revertCase) badSignatureWith(open toolresult.NextStep, r action.Revert, message string) error {
 	return &toolresult.ToolError{
 		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The signature for %s did not verify, so nothing was reverted. Sign again on "+
@@ -305,12 +305,12 @@ func (s *Service) badSignatureWith(open toolresult.NextStep, r action.Revert, me
 	}
 }
 
-func (s *Service) passkeyRevoked(ctx context.Context, r action.Revert) error {
-	open, err := s.signingLink(ctx, r, signRevokedText)
+func (rc *revertCase) passkeyRevoked(ctx context.Context, r action.Revert) error {
+	open, err := rc.signingLink(ctx, r, signRevokedText)
 	if err != nil {
 		return err
 	}
-	return s.passkeyRevokedWith(open, r)
+	return rc.passkeyRevokedWith(open, r)
 }
 
 // requestAgainText is the text of the step that prepares an expired revert
@@ -319,7 +319,7 @@ const requestAgainText = "On yes, call request_revert with these arguments and t
 
 // passkeyRevokedWith is REVERT_INVALID PASSKEY_REVOKED with open, the step
 // to the revert page (signingLink).
-func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) error {
+func (rc *revertCase) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) error {
 	return &toolresult.ToolError{
 		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonPasskeyRevoked,
 		Message: "the revert was signed by a passkey this database does not know or that was revoked; nothing was reverted",
@@ -327,14 +327,14 @@ func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) 
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
 			guidance.Sentence(revertTitle(r))),
 		NextSteps: []toolresult.NextStep{
-			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: guidance.PasskeyInitText, Command: s.deps.Core.Commands.Init()},
+			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: guidance.PasskeyInitText, Command: rc.core.Commands.Init()},
 			open,
 			guidance.AgentStep(toolresult.ActionEndTurn, guidance.StepEndTurnPersonActsNext),
 		},
 	}
 }
 
-func (s *Service) rowsChanged(r action.Revert, detail string) error {
+func (rc *revertCase) rowsChanged(r action.Revert, detail string) error {
 	return &toolresult.ToolError{
 		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonRowsChanged,
 		Message: "the database refused the revert, nothing was reverted: " + detail,
@@ -377,7 +377,7 @@ func alreadySigned(r action.Revert) error {
 	}
 }
 
-func (s *Service) revertExpired(r action.Revert) error {
+func (rc *revertCase) revertExpired(r action.Revert) error {
 	reason, window := guidance.ReasonNotSigned, "was not signed within an hour"
 	if r.SignedAt != nil {
 		reason, window = guidance.ReasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
@@ -398,7 +398,7 @@ func (s *Service) revertExpired(r action.Revert) error {
 // tables) will do; there is no other way to prepare it. The message names
 // the limit the tool ran under: request_revert's prepare has the 100
 // seconds of an MCP call, preview_revert the agent's statement timeout.
-func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
+func (rc *revertCase) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
 	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"A narrower revert, with runs or tables, may fit.",
@@ -408,7 +408,7 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 		what = "preview"
 		te.Message = fmt.Sprintf("previewing the revert of %s %s took longer than %s; nothing was previewed. "+
 			"A narrower revert, with runs or tables, may fit.",
-			strings.ToLower(string(scope.Kind)), scope.ID, statementLimitText(s.statementTimeout()))
+			strings.ToLower(string(scope.Kind)), scope.ID, statementLimitText(rc.describe.statementTimeout()))
 	}
 	te.PersonMessage = fmt.Sprintf("This revert is too large for the agent to %s in one call, so nothing was prepared. "+
 		"The agent can revert a part of it instead: only some runs or tables.", what)
@@ -420,15 +420,6 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 	}
 	te.NextSteps = steps
 	return te
-}
-
-// statementTimeout is the agent's statement timeout, 0 when the service
-// knows no catalog.
-func (s *Service) statementTimeout() time.Duration {
-	if s.deps.Describe.Catalog == nil {
-		return 0
-	}
-	return s.deps.Describe.Catalog.Limits().StatementTimeout
 }
 
 // statementLimitText names the agent's statement timeout d in a message.
@@ -446,20 +437,20 @@ func statementLimitText(d time.Duration) string {
 // nothingToRevert tells the cases of BS009 apart: the scope changed no rows
 // a revert could restore (READS_ONLY), every row was already reverted, or
 // people changed every row since (people win).
-func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, err error) error {
-	detail := s.deps.Core.Errors.ToolError(err).Message
+func (rc *revertCase) nothingToRevert(ctx context.Context, tool string, scope action.Scope, err error) error {
+	detail := rc.core.Errors.ToolError(err).Message
 	if strings.Contains(detail, "changed no rows") {
-		return s.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, detail)
+		return rc.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, detail)
 	}
-	pv, perr := s.deps.Revert.Store.PreviewRevert(ctx, scope, "", 1)
+	pv, perr := rc.deps.Store.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
 		pv = action.PreviewPage{}
 	}
-	return s.nothingToRevertError(ctx, tool, scope, skipReason(pv), detail)
+	return rc.nothingToRevertError(ctx, tool, scope, skipReason(pv), detail)
 }
 
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.
-func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope action.Scope, reason, detail string) error {
+func (rc *revertCase) nothingToRevertError(ctx context.Context, tool string, scope action.Scope, reason, detail string) error {
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
 	te := &toolresult.ToolError{Code: guidance.CodeNothingToRevert, Reason: reason}
 	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
@@ -473,9 +464,9 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope a
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	case guidance.ReasonAlreadyReverted:
-		by, err := s.deps.Revert.Store.RevertedBy(ctx, scope)
+		by, err := rc.deps.Store.RevertedBy(ctx, scope)
 		if err != nil {
-			s.deps.Core.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
+			rc.core.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}
 		args, named := map[string]any{}, ""
 		if by != uuid.Nil {

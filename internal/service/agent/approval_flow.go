@@ -20,13 +20,13 @@ import (
 // newly issued short link when this engine serves the pages and issue is
 // set, else the long one) and the message to show
 // verbatim.
-func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, expires time.Time, issue bool) (heldNotice, error) {
-	ids, err := s.delivery.credentialIDs(ctx)
+func (ac *approvalCase) approvalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, expires time.Time, issue bool) (heldNotice, error) {
+	ids, err := ac.delivery.credentialIDs(ctx)
 	if err != nil {
 		return heldNotice{}, err
 	}
 	long, tooLarge, err := longOrTooLarge(req, func() (string, error) {
-		return approval.Request{ApprovalID: id, Binding: req.Binding, Lines: req.Lines, CredentialIDs: ids}.URL(s.deps.Core.PagesBase)
+		return approval.Request{ApprovalID: id, Binding: req.Binding, Lines: req.Lines, CredentialIDs: ids}.URL(ac.core.PagesBase)
 	})
 	if err != nil {
 		return heldNotice{}, err
@@ -37,13 +37,13 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 		return heldNotice{}, err
 	}
 	if tooLarge {
-		return s.largeApprovalNotice(ctx, id, runID, req, summary, expires, issue, len(ids) == 0)
+		return ac.largeApprovalNotice(ctx, id, runID, req, summary, expires, issue, len(ids) == 0)
 	}
-	short, err := s.delivery.shortLink(ctx, links.Approval, id, expires, issue)
+	short, err := ac.delivery.shortLink(ctx, links.Approval, id, expires, issue)
 	if err != nil {
 		return heldNotice{}, err
 	}
-	pick, err := chooseLink(short, long, s.deps.Core.LinkBudget, links.ApprovalFile(id))
+	pick, err := chooseLink(short, long, ac.core.LinkBudget, links.ApprovalFile(id))
 	if err != nil {
 		return heldNotice{}, err
 	}
@@ -52,7 +52,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	var text string
 	var msgLinks []toolresult.Link
 	switch {
-	case short == "" && s.delivery.shortLinked(id):
+	case short == "" && ac.delivery.shortLinked(id):
 		// A wait or a list that issues no new link: the link already handed
 		// over still works, so the message adds no URL.
 		pick = handOver{URL: long, Kind: linkLong}
@@ -75,7 +75,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 		pick:      pick,
 		longURL:   long,
 		shortURL:  short,
-		shortHeld: s.delivery.shortLinked(id),
+		shortHeld: ac.delivery.shortLinked(id),
 	}, nil
 }
 
@@ -150,7 +150,7 @@ func requestOf(a action.Approval) sizedRequest {
 // to 5): a new short link that can carry it when issue is set and there is
 // one; the page's address when a short link given earlier carries it; else
 // REQUEST_TOO_LARGE.
-func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, summary approval.Summary,
+func (ac *approvalCase) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, summary approval.Summary,
 	expires time.Time, issue, noPasskey bool,
 ) (heldNotice, error) {
 	lead := "Held for your approval: " + guidance.Shown(summary.Headline(), maxHeadlineChars) + "."
@@ -158,13 +158,13 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 		reason: guidance.ReasonHeld,
 		ApprovalNotice: toolresult.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: guidance.TimeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
-			ApprovalURL: s.delivery.pageAddress(links.Approval, id),
+			ApprovalURL: ac.delivery.pageAddress(links.Approval, id),
 		},
 	}
 	short := ""
 	if issue {
 		var err error
-		if short, err = s.delivery.largeShortLink(ctx, links.Approval, id, expires, req.Cost); err != nil {
+		if short, err = ac.delivery.largeShortLink(ctx, links.Approval, id, expires, req.Cost); err != nil {
 			return heldNotice{}, err
 		}
 	}
@@ -172,7 +172,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 	case short != "":
 		n.pick, n.shortURL, n.ApprovalURL = handOver{URL: short, Kind: linkShort}, short, short
 		n.PersonMessage, n.Links = approvalMessage(lead, n.pick, expiryLine(expires))
-	case !issue && s.delivery.carriesLarge(req.Cost):
+	case !issue && ac.delivery.carriesLarge(req.Cost):
 		// The short link handed over still works: the message points back.
 		n.PersonMessage, n.Links = waitMessage(lead, expires)
 	default:
@@ -181,10 +181,10 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 			return heldNotice{}, err
 		}
 		n.reason, n.steps = reasonRequestTooLarge, steps
-		n.PersonMessage = s.delivery.tooLargeMessage("The held write", req.Cost, expires, false)
+		n.PersonMessage = ac.delivery.tooLargeMessage("The held write", req.Cost, expires, false)
 		return n, nil
 	}
-	n.shortHeld = s.delivery.shortLinked(id)
+	n.shortHeld = ac.delivery.shortLinked(id)
 	if noPasskey {
 		n.reason = guidance.ReasonNoPasskey
 	}

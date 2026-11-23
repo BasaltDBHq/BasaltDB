@@ -11,7 +11,7 @@ import (
 // revertReceipt is the receipt of r as Postgres shows it after the
 // person's signature: APPLIED or APPLYING. A widened revert has none: the
 // agent role's view holds no binding of it (RS-5).
-func (s *Service) revertReceipt(r action.Revert) (Receipt, error) {
+func (rc *revertCase) revertReceipt(r action.Revert) (Receipt, error) {
 	if r.Status != revertApplied && r.Status != revertApplying {
 		return Receipt{}, fmt.Errorf("revert %s is %s, not signed", r.ID, r.Status)
 	}
@@ -32,5 +32,5 @@ func (s *Service) revertReceipt(r action.Revert) (Receipt, error) {
 	if r.ChangeID != nil {
 		p.ChangeID = r.ChangeID.String()
 	}
-	return s.delivery.signReceipt(p, "Signed", "revert")
+	return rc.delivery.signReceipt(p, "Signed", "revert")
 }

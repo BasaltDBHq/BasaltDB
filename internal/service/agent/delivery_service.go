@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -35,27 +38,10 @@ type approvalReads interface {
 	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
 }
 
-// liveApprovals reads the approval group as it stands when asked.
-type liveApprovals struct{ d *ApprovalDeps }
-
-func (l liveApprovals) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
-	return l.d.Store.Passkeys(ctx)
-}
-
-func (l liveApprovals) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
-	return l.d.Store.FindApproval(ctx, id)
-}
-
-func (l liveApprovals) hasColumns() bool { return l.d.Columns != nil }
-
-func (l liveApprovals) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
-	return l.d.Columns.ColumnOrder(ctx, tables)
-}
-
-func newDeliveryCase(core *CoreDeps, deps *DeliveryDeps, approvals approvalReads,
+func newDeliveryCase(core *CoreDeps, deps *DeliveryDeps,
 	failure func(tool string, args map[string]any, err error) *toolresult.ToolError,
 ) *deliveryCase {
-	return &deliveryCase{core: core, deps: deps, approvals: approvals, failure: failure}
+	return &deliveryCase{core: core, deps: deps, failure: failure}
 }
 
 // CheckLink reports whether secret is the live link secret of one of this
@@ -69,3 +55,40 @@ func (s *Service) CheckLink(id uuid.UUID, secret string) bool {
 func (s *Service) PageFailure(err error) *toolresult.ToolError {
 	return s.delivery.PageFailure(err)
 }
+
+// The calls the revert use case makes on the links and the relay, which
+// delivery owns.
+
+func (dc *deliveryCase) linkRevoke(id uuid.UUID) error { return dc.deps.Links.RevokeItem(id) }
+
+func (dc *deliveryCase) linkRotate(id uuid.UUID, secret string, expires time.Time) (links.Rotated, error) {
+	return dc.deps.Links.Rotate(id, secret, expires)
+}
+
+func (dc *deliveryCase) linkExtend(id uuid.UUID, expires time.Time) (links.RelayLink, bool, error) {
+	return dc.deps.Links.Extend(id, expires)
+}
+
+func (dc *deliveryCase) linkReset(id uuid.UUID, until time.Time) error {
+	return dc.deps.Links.Reset(id, until)
+}
+
+func (dc *deliveryCase) linkWasReset(id uuid.UUID, secret string) bool {
+	return dc.deps.Links.WasReset(id, secret)
+}
+
+func (dc *deliveryCase) relayRegister(ctx context.Context, token channel.LinkToken, expires time.Time) error {
+	return dc.deps.Relay.Register(ctx, token, expires)
+}
+
+func (dc *deliveryCase) notifyRevertTo(ctx context.Context, n RevertNotice) error {
+	return dc.deps.Notifier.NotifyRevert(ctx, n)
+}
+
+func (dc *deliveryCase) notifyHeldTo(ctx context.Context, n HeldNotice) error {
+	return dc.deps.Notifier.NotifyHeld(ctx, n)
+}
+
+func (dc *deliveryCase) relayConnected() bool { return dc.deps.Relay.Connected() }
+
+func (dc *deliveryCase) pollInterval() time.Duration { return dc.deps.Poll }

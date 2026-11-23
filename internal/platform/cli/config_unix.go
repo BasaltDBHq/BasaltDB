@@ -19,9 +19,7 @@ import (
 // file is reached from / without following one (service.OpenTrustedFile,
 // with the directory's owner as the trusted user) and must be a regular
 // file with one link owned by root or that user, not writable by group or
-// others. trusted is that user: the
-// credential the config names must belong to it (readCredentialAsRoot),
-// so a config the engine's user wrote cannot name a file only root reads.
+// others. trusted is that user.
 func loadConfigAsRoot(sh Host, path string) (cfg config.Config, trusted int, err error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {

@@ -109,7 +109,7 @@ const linkInstructions = "When you show the person a link from Basalt, put it on
 // returns, the engine stops between calls, closes everything Run opened,
 // releases its lock and returns ErrRestart.
 func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger, restart RestartOptions) error {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+	if runtime.GOOS != "linux" && runtime.GOOS != goosDarwin {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
 	// A listener a waiting engine handed on is closed on any return before

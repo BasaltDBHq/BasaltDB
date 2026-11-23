@@ -174,7 +174,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	outR, outW := io.Pipe()
 	done := make(chan int, 1)
 	go func() {
-		done <- enginecli.RunMCPAt(context.Background(), []string{"--agent", "product_a"}, cli.Stdio{In: in, Out: outW, Err: &out}, osHost{}, engineCLIHost{}, cfgPath)
+		done <- enginecli.RunMCPAt(context.Background(), []string{"--agent", "product_a"}, cli.Stdio{In: in, Out: outW, Err: &out}, app.OSHost{}, engineCLIHost{}, cfgPath)
 		_ = outW.Close()
 	}()
 	_, err = fmt.Fprintf(inW, "%s\n%s\n",
@@ -252,7 +252,7 @@ func TestSuperviseBesideAnEngineStartedByHand(t *testing.T) {
 	defer hand.Release()
 	var stderr bytes.Buffer
 
-	code := enginecli.RunSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{}, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
+	code := enginecli.RunSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, app.OSHost{}, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
 
 	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another engine already runs for this config")

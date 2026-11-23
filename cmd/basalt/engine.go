@@ -31,7 +31,7 @@ import (
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
 func runEngine(ctx context.Context, args []string, io cli.Stdio) int {
-	return runEngineOn(ctx, args, io, osHost{})
+	return runEngineOn(ctx, args, io, app.OSHost{})
 }
 
 // runEngineOn is runEngine with the host that tells root and the config dir.
@@ -110,7 +110,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
-	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
+	return enginecli.RunMCPOn(ctx, args, io, app.OSHost{}, engineCLIHost{})
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.

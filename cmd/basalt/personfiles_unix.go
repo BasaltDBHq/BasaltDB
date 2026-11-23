@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -26,7 +24,7 @@ import (
 // others. trusted is that user: the
 // credential the config names must belong to it (readCredentialAsRoot),
 // so a config the engine's user wrote cannot name a file only root reads.
-func loadConfigAsRoot(path string) (cfg config.Config, trusted int, err error) {
+func loadConfigAsRoot(sh shellHost, path string) (cfg config.Config, trusted int, err error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return config.Config{}, 0, err
@@ -36,7 +34,7 @@ func loadConfigAsRoot(path string) (cfg config.Config, trusted int, err error) {
 		return config.Config{}, 0, err
 	}
 	cfg, err = config.LoadOpen(abs, func(p string) (*os.File, error) {
-		f, err := app.OSOpenTrustedFile(p, trusted)
+		f, err := sh.OSOpenTrustedFile(p, trusted)
 		if err != nil {
 			return nil, err
 		}

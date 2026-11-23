@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -29,21 +27,21 @@ const codeTrustRootChanged = "TRUST_ROOT_CHANGED"
 // presents now (read with the TLS handshake alone) is not the pinned one:
 // both fingerprints and where the new one is accepted. Nil
 // otherwise. Never accepted automatically.
-func rootChanged(ctx context.Context, dsn string, err error) error {
-	return rootChangedVia(ctx, dsn, err, nil)
+func rootChanged(ctx context.Context, sh shellHost, dsn string, err error) error {
+	return rootChangedOn(ctx, sh, dsn, err, nil)
 }
 
-// rootChangedVia is rootChanged reaching the host through dial (nil: the
+// rootChangedOn is rootChanged reaching the host through dial (nil: the
 // network).
-func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Dial) error {
-	if !app.CertificateNotVerified(err) {
+func rootChangedOn(ctx context.Context, sh shellHost, dsn string, err error, dial trustpin.Dial) error {
+	if !sh.CertificateNotVerified(err) {
 		return nil
 	}
 	cfg, perr := pgconn.ParseConfig(dsn)
 	if perr != nil {
 		return nil //nolint:nilerr // a string pgx cannot parse has no pinned host to compare
 	}
-	a := trustprofile.Explain(cfg, app.CurrentTrustProfileSet())
+	a := trustprofile.Explain(cfg, sh.CurrentTrustProfileSet())
 	host := trustprofile.NormalizeHost(cfg.Host)
 	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
 		return nil

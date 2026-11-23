@@ -19,8 +19,11 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // host is what basalt init does on the machine beyond Postgres: elevate
@@ -57,7 +60,7 @@ type host interface {
 	// Run runs a command as the person.
 	Run(ctx context.Context, args []string, out, errw io.Writer) error
 	// System runs service install steps in this process (init as root).
-	System(out, errw io.Writer) app.OSSystem
+	System(out, errw io.Writer) system
 	// Probe waits until the engine answers MCP initialize on socket.
 	Probe(ctx context.Context, socket string) error
 	// EngineLog reads the end of the engine service's log on goos, when
@@ -70,6 +73,60 @@ type host interface {
 	// ServiceRuns reads from the service manager how many times the engine
 	// service started and its last exit code (-1 when it never exited).
 	ServiceRuns(ctx context.Context, goos string) (runs, lastExit int, err error)
+}
+
+// system is what the service install steps do on the machine: the
+// operating system's users, groups and files, and the commands it runs. It
+// has the method set of the service install's System, so either is the
+// other.
+type system interface {
+	UserExists(name string) bool
+	// InGroup reports whether an OS user is in a group, as its primary or a
+	// supplementary group; a group that does not exist has no one in it.
+	InGroup(name, group string) (bool, error)
+	// Exists reports whether a file exists (an installed unit).
+	Exists(path string) bool
+	Output(ctx context.Context, args ...string) (string, error)
+	Run(ctx context.Context, args ...string) error
+	// WriteFile writes a file without following links; owner, when set, is
+	// the OS user that owns the new file.
+	WriteFile(path string, data []byte, mode os.FileMode, owner string) error
+	// CreateFile makes an empty file owned by owner with mode when it is
+	// missing and keeps an existing one's content, without following a
+	// link; it refuses a path that is not a plain file.
+	CreateFile(path string, mode os.FileMode, owner string) error
+	// MoveAside renames the directory at path, as a whole and without
+	// following a link, to a new name next to it when the OS user owner
+	// owns it, and returns that name ("" when left as it is).
+	MoveAside(path, owner string) (string, error)
+	// Mkdir makes a directory (or takes over an existing real one) without
+	// following a link; group, when set, is its group instead of owner's.
+	Mkdir(path string, mode os.FileMode, owner, group string) error
+	Remove(path string) error
+	// RemoveTree removes a directory and everything in it without
+	// following a link; a missing one is not an error.
+	RemoveTree(path string) error
+	// CheckBinary refuses a binary anyone but root could change.
+	CheckBinary(path string) error
+}
+
+// appShell is the shell's real host: the adapters, reached through app.
+type appShell struct{}
+
+func (appShell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
+	return app.Connect(ctx, dsn)
+}
+
+func (appShell) WithCertificateHint(dsn string, err error) error {
+	return app.WithCertificateHint(dsn, err)
+}
+
+func (appShell) CertificateNotVerified(err error) bool { return app.CertificateNotVerified(err) }
+
+func (appShell) CurrentTrustProfileSet() *trustprofile.Set { return app.CurrentTrustProfileSet() }
+
+func (appShell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
+	return app.OSOpenTrustedFile(path, owner)
 }
 
 // osHost is the real machine.
@@ -266,7 +323,7 @@ func (osHost) PagesUp(ctx context.Context, origin string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func (osHost) System(out, errw io.Writer) app.OSSystem {
+func (osHost) System(out, errw io.Writer) system {
 	return app.OSExecSystem{Stdout: out, Stderr: errw}
 }
 

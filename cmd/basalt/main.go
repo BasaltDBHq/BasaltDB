@@ -49,7 +49,7 @@ func commands() []command {
 		{"engine", "Run the engine service in the foreground", runEngine, true},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP, false},
 		{"service", "Install the engine service (install)", runService, false},
-		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(runInit), false},
+		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(newIO, runInit), false},
 		{"version", "Print the version", runVersion, false},
 		{"help", "Show this help", nil, false},
 	}

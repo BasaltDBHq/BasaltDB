@@ -194,7 +194,7 @@ func filterText(scope action.Scope) string {
 // longRevertLink is r's long link: it carries the whole request, so the
 // engine can give it again when the short link is gone.
 func (s *Service) longRevertLink(ctx context.Context, r action.Revert) (string, error) {
-	ids, err := s.credentialIDs(ctx)
+	ids, err := s.delivery.credentialIDs(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +223,7 @@ func (s *Service) signingLink(ctx context.Context, r action.Revert, text string)
 	switch {
 	case r.Widened:
 		return guidance.OpenLink("", text), nil
-	case s.shortLinked(r.ID):
+	case s.delivery.shortLinked(r.ID):
 		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	pick, err := s.restatedRevertLink(ctx, r)
@@ -256,12 +256,12 @@ func (s *Service) restatedRevertLink(ctx context.Context, r action.Revert) (hand
 	}
 	if tooLarge {
 		kind := linkNone
-		if s.carriesLarge(req.Cost) {
+		if s.delivery.carriesLarge(req.Cost) {
 			kind = linkPage
 		}
-		return handOver{URL: s.pageAddress(links.Revert, r.ID), Kind: kind}, nil
+		return handOver{URL: s.delivery.pageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
-	if s.shortLinked(r.ID) {
+	if s.delivery.shortLinked(r.ID) {
 		return handOver{URL: long, Kind: linkLong}, nil
 	}
 	return chooseLink("", long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))

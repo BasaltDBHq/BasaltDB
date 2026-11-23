@@ -85,7 +85,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 	p.PersonMessage = fmt.Sprintf("%s It waits for your passkey at the link the agent gave you, until %s. If you lost it, "+
 		"ask the agent for a new one.", headline, expires)
 	open := p.RevertURL
-	if s.shortLinked(p.ID) || pick.Kind == linkPage {
+	if s.delivery.shortLinked(p.ID) || pick.Kind == linkPage {
 		open = "" // the person has the short link the agent handed over
 	}
 	p.NextSteps = guidance.WithSendRequest(pendingRevertSteps(p.ID, open,
@@ -106,7 +106,7 @@ func (s *Service) pendingRevertTooLarge(p *PendingRevert, r action.Revert, addre
 		return err
 	}
 	p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.Links = r, headline, address, nil, nil
-	p.PersonMessage = s.tooLargeMessage(guidance.Sentence(revertTitle(r)), cost, r.ExpiresAt, true)
+	p.PersonMessage = s.delivery.tooLargeMessage(guidance.Sentence(revertTitle(r)), cost, r.ExpiresAt, true)
 	p.NextSteps = steps
 	return nil
 }

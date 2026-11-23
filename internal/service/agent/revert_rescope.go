@@ -191,7 +191,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return ScopeResponse{}, s.rescopeError(ctx, r, err)
 	}
-	ids, err := s.credentialIDs(ctx)
+	ids, err := s.delivery.credentialIDs(ctx)
 	if err != nil {
 		return ScopeResponse{}, err
 	}
@@ -207,7 +207,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	}
 	s.rescopes.put(id, next)
 	resp := next.request
-	resp.Columns = s.columnsOf(ctx, resp.Lines)
+	resp.Columns = s.delivery.columnsOf(ctx, resp.Lines)
 	return ScopeResponse{Request: resp, Catalog: out.Catalog}, nil
 }
 

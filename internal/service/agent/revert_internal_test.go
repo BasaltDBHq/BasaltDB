@@ -84,6 +84,7 @@ func (c limitsCatalog) Limits() action.Limits { return c.limits }
 func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	t.Parallel()
 	s := &Service{deps: Deps{Describe: DescribeDeps{Catalog: limitsCatalog{limits: action.Limits{StatementTimeout: 5 * time.Second}}}}}
+	s.wire()
 	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())}
 
 	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))

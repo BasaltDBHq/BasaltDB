@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
 // Result is one column's suggestion. It may hold the column's sampled
@@ -104,7 +104,7 @@ func Check(results []Result, target func(Result) (CheckTarget, bool)) (map[strin
 	if _, err := rand.Read(master); err != nil {
 		return nil, err
 	}
-	keys, err := pii.NewKeys(master)
+	keys, err := corepii.NewKeys(master)
 	if err != nil {
 		return nil, err
 	}
@@ -121,20 +121,20 @@ func Check(results []Result, target func(Result) (CheckTarget, bool)) (map[strin
 		}
 		todo = append(todo, checked{r, t})
 		for _, v := range r.values {
-			dict.add(keys, pii.EntityType(t.EntityType), v, t.PhoneRegion)
+			dict.add(keys, corepii.EntityType(t.EntityType), v, t.PhoneRegion)
 		}
 	}
 	out := map[string]CheckResult{}
 	for _, c := range todo {
-		dd := pii.NewDictionaryDetector(keys, dict, c.t.PhoneRegion)
-		tz := pii.NewTokenizer(keys, c.t.PhoneRegion, append(pii.PatternDetectors(), dd)...)
+		dd := corepii.NewDictionaryDetector(keys, dict, c.t.PhoneRegion)
+		tz := corepii.NewTokenizer(keys, c.t.PhoneRegion, append(corepii.PatternDetectors(), dd)...)
 		res := CheckResult{Sampled: len(c.r.values)}
 		for _, v := range c.r.values {
-			if roundTrips(keys, tz, pii.EntityType(c.t.EntityType), v, c.t.PhoneRegion) {
+			if roundTrips(keys, tz, corepii.EntityType(c.t.EntityType), v, c.t.PhoneRegion) {
 				continue
 			}
 			res.RoundTripFailures++
-			if len(strings.Fields(v)) == 1 && pii.IsCommonWord(v) {
+			if len(strings.Fields(v)) == 1 && corepii.IsCommonWord(v) {
 				res.CommonWordRule++
 			}
 		}
@@ -145,7 +145,7 @@ func Check(results []Result, target func(Result) (CheckTarget, bool)) (map[strin
 
 // roundTrips reports whether value, restored into text from its token,
 // tokenizes back to exactly that token.
-func roundTrips(keys *pii.Keys, tz *pii.Tokenizer, t pii.EntityType, value, region string) bool {
+func roundTrips(keys *corepii.Keys, tz *corepii.Tokenizer, t corepii.EntityType, value, region string) bool {
 	want, err := keys.MakeToken(t, value, region)
 	if err != nil {
 		return false
@@ -157,32 +157,32 @@ func roundTrips(keys *pii.Keys, tz *pii.Tokenizer, t pii.EntityType, value, regi
 	return strings.TrimSpace(value[:reps[0].Start]) == "" && strings.TrimSpace(value[reps[0].End:]) == ""
 }
 
-// memDict is an exact in-memory pii.Dictionary of the checked values: the
+// memDict is an exact in-memory corepii.Dictionary of the checked values: the
 // same hashes the engine's dictionary holds.
 type memDict struct {
-	generic map[pii.Hash]pii.EntityType
-	typed   map[pii.EntityType]map[pii.Hash]bool
+	generic map[corepii.Hash]corepii.EntityType
+	typed   map[corepii.EntityType]map[corepii.Hash]bool
 }
 
 func newMemDict() *memDict {
-	return &memDict{generic: map[pii.Hash]pii.EntityType{}, typed: make(map[pii.EntityType]map[pii.Hash]bool)}
+	return &memDict{generic: map[corepii.Hash]corepii.EntityType{}, typed: make(map[corepii.EntityType]map[corepii.Hash]bool)}
 }
 
-func (d *memDict) add(k *pii.Keys, t pii.EntityType, value, region string) {
+func (d *memDict) add(k *corepii.Keys, t corepii.EntityType, value, region string) {
 	for _, h := range k.GenericHashes(t, value) {
 		if _, ok := d.generic[h]; !ok {
 			d.generic[h] = t
 		}
 	}
 	if d.typed[t] == nil {
-		d.typed[t] = map[pii.Hash]bool{}
+		d.typed[t] = map[corepii.Hash]bool{}
 	}
 	d.typed[t][k.TypedHash(t, value, region)] = true
 }
 
-func (d *memDict) Lookup(h pii.Hash) (pii.EntityType, bool) {
+func (d *memDict) Lookup(h corepii.Hash) (corepii.EntityType, bool) {
 	t, ok := d.generic[h]
 	return t, ok
 }
 
-func (d *memDict) Contains(t pii.EntityType, h pii.Hash) bool { return d.typed[t][h] }
+func (d *memDict) Contains(t corepii.EntityType, h corepii.Hash) bool { return d.typed[t][h] }

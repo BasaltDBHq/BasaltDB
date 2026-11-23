@@ -10,12 +10,12 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
-// Adder takes values into the dictionary's delta (pii.FuseDictionary).
+// Adder takes values into the dictionary's delta (corepii.FuseDictionary).
 type Adder interface {
-	Add(t pii.EntityType, value, phoneRegion string) error
+	Add(t corepii.EntityType, value, phoneRegion string) error
 }
 
 // Observer adds the values of IDENTIFIER columns the agent is about to get
@@ -55,7 +55,7 @@ func (o *Observer) Observe(ctx context.Context, db PiidictQuerier, cols []action
 // an engine failure, not the agent's SQL, so the tool answers INTERNAL even
 // when a Postgres error (a map reload) caused it. It does not unwrap, so the
 // tool's error mapping never sees that Postgres error; errors.Is still finds
-// the cause (pii.ErrDeltaFull).
+// the cause (corepii.ErrDeltaFull).
 type DictionaryError struct{ err error }
 
 func (e *DictionaryError) Error() string { return "pii dictionary: " + e.err.Error() }
@@ -84,7 +84,7 @@ func (o *Observer) observe(ctx context.Context, db PiidictQuerier, cols []action
 }
 
 func (o *Observer) addColumn(c Class, key string, rows []map[string]any) error {
-	t := pii.EntityType(c.EntityType)
+	t := corepii.EntityType(c.EntityType)
 	for _, row := range rows {
 		v, ok := valueText(row[key])
 		if !ok {

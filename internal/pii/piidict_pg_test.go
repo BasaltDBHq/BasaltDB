@@ -22,7 +22,7 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
@@ -130,10 +130,10 @@ func (f fixture) attnum(t *testing.T, table, column string) int16 {
 // dictDirs remembers each test dictionary's state directory.
 var dictDirs sync.Map
 
-func newDict(t *testing.T, opts pii.DictionaryOptions) (*pii.FuseDictionary, *pii.Keys) {
+func newDict(t *testing.T, opts corepii.DictionaryOptions) (*corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	dir := t.TempDir()
-	keys, err := dictfile.LoadKeys(dir+"/"+pii.KeyFileName, rand.Reader)
+	keys, err := dictfile.LoadKeys(dir+"/"+corepii.KeyFileName, rand.Reader)
 	require.NoError(t, err)
 	dict, err := dictfile.Open(dir, keys, opts)
 	require.NoError(t, err)
@@ -142,7 +142,7 @@ func newDict(t *testing.T, opts pii.DictionaryOptions) (*pii.FuseDictionary, *pi
 	return dict, keys
 }
 
-func dict2Dir(t *testing.T, dict *pii.FuseDictionary) string {
+func dict2Dir(t *testing.T, dict *corepii.FuseDictionary) string {
 	t.Helper()
 	dir, ok := dictDirs.Load(dict)
 	require.True(t, ok)
@@ -251,34 +251,34 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(f.pool)
 
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
 	require.NoError(t, err)
-	require.False(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "ada@corp.ee", "")))
+	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
 	require.NoError(t, obs.Observe(ctx, res.Columns, res.Rows))
 
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "ada@corp.ee", "")))
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "bob@corp.ee", "")))
-	require.True(t, dict.Contains(pii.EntityPhone, keys.TypedHash(pii.EntityPhone, "5551234", "EE")), "the column's phone region normalizes it")
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "bob@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityPhone, keys.TypedHash(corepii.EntityPhone, "5551234", "EE")), "the column's phone region normalizes it")
 	typ, ok := dict.Lookup(keys.GenericHash("Ada Lovelace"))
 	require.True(t, ok)
-	require.Equal(t, pii.EntityPersonName, typ)
+	require.Equal(t, corepii.EntityPersonName, typ)
 	_, ok = dict.Lookup(keys.GenericHash("hi"))
 	require.False(t, ok, "a PUBLIC column is not added")
 	require.Equal(t, 7, dict.Status().DeltaValues, "two emails, one phone, two two-word names stored both ways; NULL and empty skipped")
 
 	// A value read is now found in free text, with the same token each time.
-	tz := pii.NewTokenizer(keys, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(keys, dict, ""))...)
+	tz := corepii.NewTokenizer(keys, "", append(corepii.PatternDetectors(), corepii.NewDictionaryDetector(keys, dict, ""))...)
 	first, _, err := tz.Tokenize("Please call Ada Lovelace today.")
 	require.NoError(t, err)
 	require.NotContains(t, first, "Ada Lovelace")
 	second, _, err := tz.Tokenize("Please call Ada Lovelace today.")
 	require.NoError(t, err)
 	require.Equal(t, first, second)
-	tok, err := keys.MakeToken(pii.EntityPersonName, "Ada Lovelace", "")
+	tok, err := keys.MakeToken(corepii.EntityPersonName, "Ada Lovelace", "")
 	require.NoError(t, err)
 	require.Contains(t, first, tok.Surface())
 }
@@ -286,14 +286,14 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 // refusingDict fails every add, as a full delta does.
 type refusingDict struct{}
 
-func (refusingDict) Add(pii.EntityType, string, string) error { return pii.ErrDeltaFull }
+func (refusingDict) Add(corepii.EntityType, string, string) error { return corepii.ErrDeltaFull }
 
 func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
 	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
@@ -302,14 +302,14 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 		`INSERT INTO customers (id, email, name) VALUES (10, 'cy@corp.ee', 'Cy Young') RETURNING id, email, name`, nil)
 	require.NoError(t, err)
 	require.Len(t, res.Returning, 1)
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "cy@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "cy@corp.ee", "")))
 
 	// A value the dictionary cannot take rolls the write back.
 	refusing := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).
 		WithReturned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{}).Returned)
 	_, err = refusing.Write(ctx, in, action.OpInsert,
 		`INSERT INTO customers (id, email) VALUES (11, 'dee@corp.ee') RETURNING email`, nil)
-	require.ErrorIs(t, err, pii.ErrDeltaFull)
+	require.ErrorIs(t, err, corepii.ErrDeltaFull)
 	require.NotContains(t, err.Error(), "dee@corp.ee", "errors name no value")
 	var n int
 	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT count(id) FROM customers WHERE id = 11`).Scan(&n))
@@ -321,7 +321,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	log, out := newLog()
 	var slept time.Duration
@@ -338,7 +338,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	require.False(t, dict.NeedsBuild())
 	require.Zero(t, dict.Status().DeltaValues)
 	for _, v := range []string{"ada@corp.ee", "bob@corp.ee", "nk1@corp.ee", "nk2@corp.ee", "order1@corp.ee", "order7@corp.ee"} {
-		require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, v, "")), v)
+		require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, v, "")), v)
 	}
 	_, ok := dict.Lookup(keys.GenericHash("Bob Stone"))
 	require.True(t, ok)
@@ -357,7 +357,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	f.db.Exec(t, `DELETE FROM public.nokey WHERE email = 'nk2@corp.ee'`)
 	_, err = s.Cycle(ctx)
 	require.NoError(t, err)
-	require.False(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "nk2@corp.ee", "")))
+	require.False(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "nk2@corp.ee", "")))
 }
 
 func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
@@ -365,19 +365,19 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	src := []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}}
 	_, err := NewScanner(dict, src, ScanOptions{}, slog.New(slog.DiscardHandler)).Cycle(ctx)
 	require.NoError(t, err)
-	require.NoError(t, dict.Add(pii.EntityEmail, "delta@corp.ee", ""))
+	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
 
 	// A budget for 3 values: the cycle stops, the base and delta stay.
 	tiny := NewScanner(dict, src, ScanOptions{MaxMemoryBytes: 3 * bytesPerAddBound}, slog.New(slog.DiscardHandler))
 	_, err = tiny.Cycle(ctx)
 	require.ErrorIs(t, err, ErrScanOverBudget)
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "order7@corp.ee", "")))
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "delta@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "order7@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "delta@corp.ee", "")))
 	require.Equal(t, 1, dict.Status().DeltaValues)
 }
 
@@ -524,7 +524,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	f := newFixture(t)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict).On(f.pool)
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
@@ -572,7 +572,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "ada@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "ada@corp.ee", "")))
 	// One load at first use, at most one per tick for the classless table,
 	// and the ticks themselves (nothing moved): a handful, never one per read.
 	require.LessOrEqual(t, classes.loads.Load(), int64(6))

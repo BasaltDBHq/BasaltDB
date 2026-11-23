@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
@@ -63,9 +63,9 @@ const (
 // budget can hold even at 16-bit fingerprints; the previous base stays.
 var ErrScanOverBudget = errors.New("pii: the scan found more values than pii.maxMemoryMB can hold; the previous dictionary stays")
 
-// Builder is the dictionary the scan rebuilds (pii.FuseDictionary).
+// Builder is the dictionary the scan rebuilds (corepii.FuseDictionary).
 type Builder interface {
-	StartBuild() (*pii.DictionaryBuild, error)
+	StartBuild() (*corepii.DictionaryBuild, error)
 	RebuildNeeded() <-chan struct{}
 }
 
@@ -109,7 +109,7 @@ func (o ScanOptions) withDefaults() ScanOptions {
 		o.RowsPerSecond = DefaultScanRowsPerSecond
 	}
 	if o.MaxMemoryBytes <= 0 {
-		o.MaxMemoryBytes = pii.DefaultMaxMemoryMB * bytesPerMB
+		o.MaxMemoryBytes = corepii.DefaultMaxMemoryMB * bytesPerMB
 	}
 	if o.LoadTimeout <= 0 {
 		o.LoadTimeout = DefaultLoadTimeout
@@ -223,7 +223,7 @@ func (s *Scanner) cycle(ctx context.Context) (ScanResult, error) {
 			return run.res, err
 		}
 	}
-	if err := b.Commit(pii.ScanStats{At: start, Columns: run.res.Columns, Rows: run.res.Rows}); err != nil {
+	if err := b.Commit(corepii.ScanStats{At: start, Columns: run.res.Columns, Rows: run.res.Rows}); err != nil {
 		return run.res, err
 	}
 	s.log.Info("pii: dictionary scan", "columns", run.res.Columns, "rows", run.res.Rows,
@@ -234,7 +234,7 @@ func (s *Scanner) cycle(ctx context.Context) (ScanResult, error) {
 // scanRun is one cycle in progress.
 type scanRun struct {
 	s         *Scanner
-	b         *pii.DictionaryBuild
+	b         *corepii.DictionaryBuild
 	limit     limiter
 	maxValues int64
 	res       ScanResult
@@ -550,7 +550,7 @@ func (r *scanRun) add(c Class, typeOID uint32, raw []byte) error {
 	if r.res.Values >= r.maxValues {
 		return ErrScanOverBudget
 	}
-	if err := r.b.Add(pii.EntityType(c.EntityType), v, c.PhoneRegion); err != nil {
+	if err := r.b.Add(corepii.EntityType(c.EntityType), v, c.PhoneRegion); err != nil {
 		return fmt.Errorf("add a value of %s (%s): %w", c.Name(), c.EntityType, err)
 	}
 	r.res.Values++

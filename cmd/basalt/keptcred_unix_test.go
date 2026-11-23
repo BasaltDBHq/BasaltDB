@@ -42,7 +42,7 @@ func TestReadKeptCredentialRefusesAHardlink(t *testing.T) {
 	path := filepath.Join(dir, "bot.url")
 	require.NoError(t, os.Link(secret, path))
 
-	got, err := readKeptCredential(path, me(t))
+	got, err := readKeptCredential(appSetupHost{}, path, me(t))
 
 	require.ErrorContains(t, err, "hard link")
 	require.Empty(t, got)
@@ -50,7 +50,7 @@ func TestReadKeptCredentialRefusesAHardlink(t *testing.T) {
 
 func TestReadKeptCredentialRefusesADirectory(t *testing.T) {
 	t.Parallel()
-	_, err := readKeptCredential(t.TempDir(), me(t))
+	_, err := readKeptCredential(appSetupHost{}, t.TempDir(), me(t))
 	require.Error(t, err)
 }
 
@@ -59,15 +59,15 @@ func TestReadKeptCredentialChecksTheOpenFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bot.url")
 	require.NoError(t, os.WriteFile(path, []byte("postgres://r:p@h/d\n"), 0o600))
-	got, err := readKeptCredential(path, me(t))
+	got, err := readKeptCredential(appSetupHost{}, path, me(t))
 	require.NoError(t, err)
 	require.Equal(t, "postgres://r:p@h/d", got)
 
 	require.NoError(t, os.Chmod(path, 0o644))
-	_, err = readKeptCredential(path, me(t))
+	_, err = readKeptCredential(appSetupHost{}, path, me(t))
 	require.Error(t, err, "a file others can read is refused")
 	require.NoError(t, os.Chmod(path, 0o600))
-	_, err = readKeptCredential(path, "nobody-such-user")
+	_, err = readKeptCredential(appSetupHost{}, path, "nobody-such-user")
 	require.Error(t, err, "a file owned by someone else is refused")
 }
 
@@ -96,7 +96,7 @@ func TestCredentialOpensRefuseAFIFOWithoutBlocking(t *testing.T) {
 	require.NoError(t, syscall.Mkfifo(path, 0o600))
 
 	err := withinFIFOWait(t, func() error {
-		_, err := readKeptCredential(path, me(t))
+		_, err := readKeptCredential(appSetupHost{}, path, me(t))
 		return err
 	})
 	require.ErrorContains(t, err, "not a regular file")
@@ -151,7 +151,7 @@ func TestReadKeptCredentialRefusesASymlinkedDirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(elsewhere, "bot.url"), []byte("PRIVATE KEY\n"), 0o600))
 	require.NoError(t, os.Symlink(elsewhere, filepath.Join(dir, "agents")))
 
-	got, err := readKeptCredential(filepath.Join(dir, "agents", "bot.url"), me(t))
+	got, err := readKeptCredential(appSetupHost{}, filepath.Join(dir, "agents", "bot.url"), me(t))
 
 	require.ErrorContains(t, err, "a symlink is refused")
 	require.Empty(t, got)
@@ -167,7 +167,7 @@ func TestReadKeptCredentialRefusesARootOwnedFile(t *testing.T) {
 	path, err := filepath.EvalSymlinks("/etc/hosts")
 	require.NoError(t, err)
 
-	got, err := readKeptCredential(path, me(t))
+	got, err := readKeptCredential(appSetupHost{}, path, me(t))
 
 	require.ErrorContains(t, err, "owned by uid 0, not "+me(t))
 	require.Empty(t, got)

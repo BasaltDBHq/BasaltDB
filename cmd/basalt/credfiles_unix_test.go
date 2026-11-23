@@ -31,7 +31,7 @@ func TestCredentialOwner(t *testing.T) {
 func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
-	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
+	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	r, ok := files.(rootCredFiles)
@@ -57,7 +57,7 @@ func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 func TestRootCredFilesChecksTheOwnersCredential(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
-	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
+	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	r := files.(rootCredFiles)
@@ -113,7 +113,7 @@ func TestRootCredFilesWriteHandsOver(t *testing.T) {
 		t.Skip("root may give a file away")
 	}
 	dir := filepath.Join(t.TempDir(), "agents")
-	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
+	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	r := files.(rootCredFiles)
@@ -131,7 +131,7 @@ func TestRootCredFilesHandsTheFilesToTheDirOwner(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
 	cred := filepath.Join(dir, "bot.url")
-	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
+	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	owner := files.(rootCredFiles).owner
@@ -164,7 +164,7 @@ func TestRootCredFilesHandOverAsRoot(t *testing.T) {
 	dir := filepath.Join(base, "agents")
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	require.NoError(t, os.Chown(dir, engineUID, -1))
-	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
+	files, err := openRootCredFiles(appSetupHost{}, dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	cred := filepath.Join(dir, "bot.url")
@@ -208,7 +208,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(dir, trusted)
+	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.close()
 
@@ -221,7 +221,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.Empty(t, entries)
 	require.FileExists(t, filepath.Join(dir+".moved", "engine.json"))
 
-	_, err = openRootConfigDir(dir, trusted)
+	_, err = openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.ErrorContains(t, err, "a symlink is refused")
 }
 
@@ -238,17 +238,17 @@ func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
 	dir := filepath.Join(root, "basalt")
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(dir, trusted)
+	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.close()
-	_, err = rootEngineKey("/usr", runtime.GOOS, d, time.Now)
+	_, err = rootEngineKey(appSetupHost{}, "/usr", runtime.GOOS, d, time.Now)
 	require.ErrorContains(t, err, fmt.Sprintf("the state directory /usr is owned by uid 0, not uid %d (the owner of the config directory %s)", os.Geteuid(), dir))
 	require.NoFileExists(t, filepath.Join("/usr", channel.KeyFileName))
 
 	// Its own state directory: the key is made there.
 	state := filepath.Join(dir, "state")
 	require.NoError(t, os.Mkdir(state, 0o700))
-	spki, err := rootEngineKey(state, runtime.GOOS, d, time.Now)
+	spki, err := rootEngineKey(appSetupHost{}, state, runtime.GOOS, d, time.Now)
 	require.NoError(t, err)
 	require.NotEmpty(t, spki)
 }
@@ -275,7 +275,7 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(dir, trusted)
+	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.close()
 	var stderr bytes.Buffer

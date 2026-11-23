@@ -10,8 +10,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
@@ -26,13 +24,14 @@ const (
 // and the open descriptor must be a regular file with one link owned by
 // exactly the engine's user: not root, since a hardlink to an old root-only
 // file keeps root as its owner. Checks and reads use the same descriptor.
-func openEngineFile(path, engineUser string) (*os.File, error) {
-	return openOwnedFile(path, app.OSLookupUID(engineUser), engineUser)
+// h reaches the file and the user's uid.
+func openEngineFile(h setupFilesHost, path, engineUser string) (*os.File, error) {
+	return openOwnedFile(h, path, h.OSLookupUID(engineUser), engineUser)
 }
 
 // openOwnedFile is openEngineFile for the user uid, named who in errors.
-func openOwnedFile(path string, uid int, who string) (*os.File, error) {
-	f, err := app.OSOpenTrustedFile(path, uid)
+func openOwnedFile(h setupFilesHost, path string, uid int, who string) (*os.File, error) {
+	f, err := h.OSOpenTrustedFile(path, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -67,14 +66,14 @@ func checkEngineFile(f *os.File, uid int, engineUser string) error {
 // install when the role kept its password. Root only writes it back into
 // the unit's files, owned by that user again, and never connects with it,
 // so it takes no pgdial.CheckForeignDSN (TestRootCredentialReadsAreChecked).
-func readKeptCredential(path, engineUser string) (string, error) {
-	return readOwnedCredential(path, app.OSLookupUID(engineUser), engineUser)
+func readKeptCredential(h setupFilesHost, path, engineUser string) (string, error) {
+	return readOwnedCredential(h, path, h.OSLookupUID(engineUser), engineUser)
 }
 
 // readOwnedCredential is readKeptCredential for the user uid, named who in
 // errors.
-func readOwnedCredential(path string, uid int, who string) (string, error) {
-	f, err := openOwnedFile(path, uid, who)
+func readOwnedCredential(h setupFilesHost, path string, uid int, who string) (string, error) {
+	f, err := openOwnedFile(h, path, uid, who)
 	if err != nil {
 		return "", err
 	}

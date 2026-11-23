@@ -159,6 +159,20 @@ func (appSetupHost) TrustProfileFor(configPath, host string) *trustprofile.Profi
 	return app.TrustProfileFor(configPath, host)
 }
 
+func (appSetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error) {
+	d, err := app.OSOpenTrustedDir(dir, owner, create)
+	if err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func (appSetupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
+	return app.OSOpenTrustedFile(path, owner)
+}
+
+func (appSetupHost) OSLookupUID(name string) int { return app.OSLookupUID(name) }
+
 // osHost is the real machine.
 type osHost struct{}
 

@@ -16,3 +16,63 @@ type Querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
+
+// Rows, Row and Result are the answers of a driver-free query, written as
+// unnamed interfaces so every package's types of the same shape are the same
+// types.
+type (
+	Rows = interface {
+		Close()
+		Err() error
+		Next() bool
+		Scan(dest ...any) error
+	}
+	Row    = interface{ Scan(dest ...any) error }
+	Result = interface{ RowsAffected() int64 }
+)
+
+// Port is the driver-free query port a service declares for itself (setuprun
+// Querier): the same interface, so Neutral implements it and so does
+// anything else of the same shape.
+type Port = interface {
+	Exec(ctx context.Context, sql string, args ...any) (Result, error)
+	Query(ctx context.Context, sql string, args ...any) (Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) Row
+}
+
+// Neutral is a Querier seen through driver-free types: what a service that
+// names no driver declares as its own query port (the Querier of setuprun).
+// It runs every call on the Querier it wraps, on the same connection or
+// transaction, and passes every error through unchanged.
+type Neutral struct{ q Querier }
+
+// Neutralize wraps q.
+func Neutralize(q Querier) Neutral { return Neutral{q: q} }
+
+// Pgx returns the Querier n wraps.
+func (n Neutral) Pgx() Querier { return n.q }
+
+func (n Neutral) Exec(ctx context.Context, sql string, args ...any) (Result, error) {
+	return n.q.Exec(ctx, sql, args...)
+}
+
+func (n Neutral) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
+	rows, err := n.q.Query(ctx, sql, args...) //nolint:sqlclosecheck // the caller closes the rows it is handed
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func (n Neutral) QueryRow(ctx context.Context, sql string, args ...any) Row {
+	return n.q.QueryRow(ctx, sql, args...)
+}
+
+// Unwrap returns the Querier inside q, which must come from Neutralize.
+func Unwrap(q any) Querier {
+	n, ok := q.(Neutral)
+	if !ok {
+		panic("pgquerier: Unwrap of a query port that did not come from Neutralize")
+	}
+	return n.Pgx()
+}

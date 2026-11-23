@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // maxDatabaseName bounds a typed database name: Postgres names are at most
@@ -80,7 +81,7 @@ func (p RemovePlan) Lines() []string {
 // changes nothing. prefix is the roles' prefix when no guard is installed
 // (guard.DefaultPrefix outside tests); a guard installed with another
 // prefix is refused PREFIX_MISMATCH.
-func PlanRemove(ctx context.Context, b Backend, q Querier, prefix string) (RemovePlan, error) {
+func PlanRemove(ctx context.Context, b SetuprunBackend, q Querier, prefix string) (RemovePlan, error) {
 	database, err := b.CurrentDatabase(ctx, q)
 	if err != nil {
 		return RemovePlan{}, err
@@ -90,7 +91,7 @@ func PlanRemove(ctx context.Context, b Backend, q Querier, prefix string) (Remov
 		return RemovePlan{}, err
 	}
 	if installed != "" && installed != prefix {
-		return RemovePlan{}, refuse(string(setupcode.RefusalPrefixMismatch),
+		return RemovePlan{}, setuprunRefuse(string(setupcode.RefusalPrefixMismatch),
 			fmt.Sprintf("This database's BasaltDB uses the prefix %s, not %s. Nothing changed.", installed, prefix))
 	}
 	names := guardmodel.Names{Prefix: prefix}
@@ -120,7 +121,7 @@ func PlanRemove(ctx context.Context, b Backend, q Querier, prefix string) (Remov
 // that is not exactly <prefix>_guard with a valid prefix is refused
 // PREFIX_MISMATCH: that schema is not BasaltDB's, and its owner's name must
 // never pick the roles a removal drops.
-func InstalledRemovalPrefix(ctx context.Context, b Backend, q Querier, def string) (string, error) {
+func InstalledRemovalPrefix(ctx context.Context, b SetuprunBackend, q Querier, def string) (string, error) {
 	owner, err := b.MetaOwner(ctx, q)
 	if err != nil {
 		return "", err
@@ -130,7 +131,7 @@ func InstalledRemovalPrefix(ctx context.Context, b Backend, q Querier, def strin
 	}
 	prefix, ok := strings.CutSuffix(owner, "_guard")
 	if !ok || (guardmodel.Names{Prefix: prefix}).Validate() != nil {
-		return "", refuse(string(setupcode.RefusalPrefixMismatch),
+		return "", setuprunRefuse(string(setupcode.RefusalPrefixMismatch),
 			"The schema basalt_meta in this database is not owned by a BasaltDB guard role, so it is not BasaltDB's. Nothing changed.")
 	}
 	return prefix, nil
@@ -140,23 +141,23 @@ func InstalledRemovalPrefix(ctx context.Context, b Backend, q Querier, def strin
 // any connection is used.
 func CheckDatabaseName(confirmName string) error {
 	if confirmName == "" || len(confirmName) > maxDatabaseName {
-		return refuse(CodeAnswersInvalid, WrongDatabaseName)
+		return setuprunRefuse(SetuprunCodeAnswersInvalid, WrongDatabaseName)
 	}
 	return nil
 }
 
 // CheckTypedName refuses, in tx, a confirmName that is not
 // current_database(): the first thing a removal's transaction reads.
-func CheckTypedName(ctx context.Context, b Backend, tx pgx.Tx, confirmName string) error {
+func CheckTypedName(ctx context.Context, b SetuprunBackend, tx pgx.Tx, confirmName string) error {
 	if err := CheckDatabaseName(confirmName); err != nil {
 		return err
 	}
-	database, err := b.CurrentDatabase(ctx, tx)
+	database, err := b.CurrentDatabase(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return err
 	}
 	if confirmName != database {
-		return refuse(CodeAnswersInvalid, WrongDatabaseName)
+		return setuprunRefuse(SetuprunCodeAnswersInvalid, WrongDatabaseName)
 	}
 	return nil
 }
@@ -166,17 +167,17 @@ func CheckTypedName(ctx context.Context, b Backend, tx pgx.Tx, confirmName strin
 // runs the drops. demoKept reports a sample schema another object depends
 // on, which stays. A failed drop refuses SETUP_FAILED; the caller rolls
 // tx back.
-func RunRemove(ctx context.Context, b Backend, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
+func RunRemove(ctx context.Context, b SetuprunBackend, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
 	if err := CheckTypedName(ctx, b, tx, confirmName); err != nil {
 		return RemovePlan{}, false, err
 	}
-	if p, err = PlanRemove(ctx, b, tx, prefix); err != nil {
+	if p, err = PlanRemove(ctx, b, pgquerier.Neutralize(tx), prefix); err != nil {
 		return RemovePlan{}, false, err
 	}
 	for _, sql := range p.Drops {
-		if err := b.Run(ctx, tx, sql); err != nil {
-			return RemovePlan{}, false, &RefusalError{
-				Code:    CodeSetupFailed,
+		if err := b.Run(ctx, pgquerier.Neutralize(tx), sql); err != nil {
+			return RemovePlan{}, false, &SetuprunRefusalError{
+				Code:    SetuprunCodeSetupFailed,
 				Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed.", Err: err,
 			}
 		}

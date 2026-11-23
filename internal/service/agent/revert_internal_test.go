@@ -10,12 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // slowPrepare is a revert store whose prepare runs into its time limit,
@@ -84,6 +84,7 @@ func (c limitsCatalog) Limits() action.Limits { return c.limits }
 func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	t.Parallel()
 	s := &Service{deps: Deps{Describe: DescribeDeps{Catalog: limitsCatalog{limits: action.Limits{StatementTimeout: 5 * time.Second}}}}}
+	s.wire()
 	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())}
 
 	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))

@@ -301,9 +301,9 @@ func (s *Service) noPortalLink() string {
 // withheld, and the name form opens a new approval later.
 func (s *Service) pluginLink(ctx context.Context, o PluginOpened) (string, error) {
 	if !s.portalPluginLinks() {
-		return s.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
+		return s.delivery.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
 	}
-	if link := s.relayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
+	if link := s.delivery.relayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
 		return link, nil
 	}
 	why := s.noPortalLink()
@@ -360,7 +360,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 	}
 	var lines []string
 	steps := guidance.NewSteps()
-	if ids, err := s.credentialIDs(ctx); err == nil && len(ids) == 0 {
+	if ids, err := s.delivery.credentialIDs(ctx); err == nil && len(ids) == 0 {
 		lines = append(lines, "Nobody can approve this yet: no passkey is registered for this database.")
 		noPasskeySteps(steps, s.deps.Core.Commands)
 	}

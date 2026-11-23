@@ -91,7 +91,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		// waits would otherwise keep the person from hearing of it until it
 		// answers. Its link is the hold's own answer's, which is the answer
 		// the agent gets unless the person signs first.
-		s.deliverHeld(id, expires, err)
+		s.delivery.deliverHeld(id, expires, err)
 		if p.Wait == 0 {
 			return WriteOutcome{}, err
 		}

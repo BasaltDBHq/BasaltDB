@@ -9,14 +9,14 @@ import (
 // describeCase is the describe use case: it reads the database's
 // structure through its own port and holds only the dependencies it uses.
 type describeCase struct {
-	core CoreDeps
-	deps DescribeDeps
+	core *CoreDeps
+	deps *DescribeDeps
 	// update is the newer release the engine knows of, as describe's overview
 	// reports it; the status use case owns it and hands it in.
 	update func() *UpdateInfo
 }
 
-func newDescribeCase(core CoreDeps, deps DescribeDeps, update func() *UpdateInfo) *describeCase {
+func newDescribeCase(core *CoreDeps, deps *DescribeDeps, update func() *UpdateInfo) *describeCase {
 	return &describeCase{core: core, deps: deps, update: update}
 }
 

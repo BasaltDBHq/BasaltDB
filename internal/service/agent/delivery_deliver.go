@@ -83,13 +83,13 @@ func standaloneLink(link string) string {
 // nothing after it issues another link for the item in this call. A
 // deliverer that panics is logged and costs the agent nothing: the answer
 // is returned as it was built.
-func (s *Service) deliver(n LinkNotice) {
-	if s.deps.Delivery.Deliverer == nil {
+func (dc *deliveryCase) deliver(n LinkNotice) {
+	if dc.deps.Deliverer == nil {
 		return
 	}
 	defer func() {
 		if v := recover(); v != nil {
-			s.deps.Core.Log.Error("approval notice not made: the deliverer panicked", "kind", string(n.Kind))
+			dc.core.Log.Error("approval notice not made: the deliverer panicked", "kind", string(n.Kind))
 		}
 	}()
 	n.Headline = NoticeHeadline(n.Headline)
@@ -97,19 +97,19 @@ func (s *Service) deliver(n LinkNotice) {
 	if n.Headline == "" || n.ExpiresAt.IsZero() || (n.ApprovalID == uuid.Nil) == (n.RevertID == uuid.Nil) {
 		return
 	}
-	s.deps.Delivery.Deliverer.DeliverLink(n)
+	dc.deps.Deliverer.DeliverLink(n)
 }
 
 // deliverHeld makes the notice of answer, the APPROVAL_REQUIRED answer of
 // a write this call held: its link is that answer's approval.approvalUrl.
 // Write calls it once, when the write is held, also when the call then
 // waits for the person.
-func (s *Service) deliverHeld(id uuid.UUID, expires time.Time, answer error) {
+func (dc *deliveryCase) deliverHeld(id uuid.UUID, expires time.Time, answer error) {
 	var te *toolresult.ToolError
 	if !errors.As(answer, &te) || te.Code != guidance.CodeApprovalRequired || te.Approval == nil {
 		return
 	}
-	s.deliver(LinkNotice{
+	dc.deliver(LinkNotice{
 		Kind: NoticeApprovalRequested, ApprovalID: id, Headline: te.Approval.Headline, ExpiresAt: expires, Link: te.Approval.ApprovalURL,
 	})
 }

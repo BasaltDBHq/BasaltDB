@@ -19,12 +19,12 @@ import (
 // files. The engine wires it (internal/app); each method is the call it
 // is named after, unchanged.
 // Backend is what the local setup needs from its adapters, beyond what
-// setup.Backend gives the shared run: the admin connection and its trust,
+// setup.SetuprunBackend gives the shared run: the admin connection and its trust,
 // the credential files, and the guard's reads and writes of one install.
 // ReadCredential is not a plain read: it refuses a connection string that
 // makes the driver read a file (passfile, sslrootcert).
 type Backend interface {
-	setup.Backend
+	setup.SetuprunBackend
 	// Connections and their trust.
 	Connect(ctx context.Context, dsn string) (*pgx.Conn, error)
 	Trust() *trustprofile.Set

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // storeClasses is the agent's PII classification read on its credential

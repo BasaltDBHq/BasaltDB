@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 // MaxRunTables is how many tables a run summary names (list_runs); a run

@@ -13,13 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // fakeCatalog is a Catalog over fixed relations and details.
@@ -804,7 +804,8 @@ func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
 	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
 	require.NoError(t, err)
 	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds}}}
-	msg := newDescribeCase(s.deps.Core, DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
+	s.wire()
+	msg := newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	require.Contains(t, msg, "another database needs its own agent")
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
 	require.NoError(t, guidance.CheckPersonMessage(msg))

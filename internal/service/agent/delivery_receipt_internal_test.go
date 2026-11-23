@@ -9,18 +9,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 func receiptService(t *testing.T, keys *channel.EngineKeys) *Service {
 	t.Helper()
 	now := time.Date(2026, 11, 14, 9, 30, 0, 500, time.UTC)
 	s := &Service{deps: Deps{Core: CoreDeps{Name: "bot", Now: func() time.Time { return now }}}}
+	s.wire()
 	if keys != nil {
 		s.deps.Delivery.Receipts = keys
 	}

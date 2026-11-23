@@ -32,7 +32,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // keptWait bounds a wait on the running engine: a cold start of the test
@@ -112,18 +111,18 @@ func runSource(t *testing.T, report, hooks string) ([]shim.PluginFile, []string)
 }
 
 // add uploads the running source and opens it for agents.
-func (r *keptRun) add(agents ...string) person.PluginOpenResult {
+func (r *keptRun) add(agents ...string) plugin.PluginOpenResult {
 	r.t.Helper()
 	return r.addWith(feedHooks, agents...)
 }
 
 // addWith is add for a plugin that declares hooks.
-func (r *keptRun) addWith(hooks string, agents ...string) person.PluginOpenResult {
+func (r *keptRun) addWith(hooks string, agents ...string) plugin.PluginOpenResult {
 	r.t.Helper()
 	files, exec := runSource(r.t, r.report, hooks)
 	id, err := r.f.client.PluginUpload(context.Background(), files)
 	require.NoError(r.t, err)
-	res, err := r.f.client.PluginOpen(context.Background(), person.PluginOpenParams{
+	res, err := r.f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{
 		UploadID: &id, Name: "acme-ner", Instance: "default", Agents: agents, Executables: exec,
 	})
 	require.NoError(r.t, err)
@@ -134,7 +133,7 @@ var keptKey = pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
 
 // requireServed waits until the engine serves keptKey READY to agents, on
 // approval, and PLUGIN_LIST says so.
-func (r *keptRun) requireServed(approval person.PluginOpenedApproval, agents ...string) {
+func (r *keptRun) requireServed(approval plugin.PluginOpenedApproval, agents ...string) {
 	r.t.Helper()
 	require.Eventually(r.t, func() bool {
 		got := servedTo(r.ep, keptKey)
@@ -146,7 +145,7 @@ func (r *keptRun) requireServed(approval person.PluginOpenedApproval, agents ...
 	requireSchema(r.t, "listResult", list)
 	require.Len(r.t, list.Plugins, 1)
 	require.Len(r.t, list.Plugins[0].Serving, len(agents))
-	require.Equal(r.t, person.HealthReady, list.Plugins[0].Health, "the engine started it and it answers")
+	require.Equal(r.t, plugin.HealthReady, list.Plugins[0].Health, "the engine started it and it answers")
 	for _, sv := range list.Plugins[0].Serving {
 		require.Equal(r.t, *approval.ApprovalID, *sv.ApprovalID)
 	}
@@ -233,14 +232,14 @@ func TestServiceModeStartsWithoutRestart(t *testing.T) {
 	starts := len(reportedFiles(t, r.report, ".start"))
 	require.Positive(t, starts)
 
-	_, err := f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	_, err := f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
 	require.NoError(t, err)
 	// The disable answers once the plugin has stopped.
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.NotContains(t, r.ep.sup.Supervised(), keptKey)
 	require.Equal(t, "ENDED", f.state0("product_a", keptKey))
 
-	again, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: keptKey.Name, Instance: keptKey.Instance, Agents: []string{"product_a"}})
+	again, err := f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: keptKey.Name, Instance: keptKey.Instance, Agents: []string{"product_a"}})
 	require.NoError(t, err)
 	time.Sleep(3 * pluginWaitingPoll)
 	require.Empty(t, servedTo(r.ep, keptKey), "the old approval never serves it again")
@@ -249,7 +248,7 @@ func TestServiceModeStartsWithoutRestart(t *testing.T) {
 	f.sign(again.Approvals[0])
 	r.requireServed(again.Approvals[0], "product_a")
 
-	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	_, err = f.client.PluginRemove(context.Background(), plugin.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
 	require.NoError(t, err)
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
@@ -284,7 +283,7 @@ func TestFeedFollowsEngineKeptEntries(t *testing.T) {
 	require.Eventually(t, func() bool { return slices.Contains(fed.fedSeqs(sch, "product_b"), seq) }, keptWait, 20*time.Millisecond,
 		"the agent's ledger events reach the engine-kept entry")
 
-	_, err := f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	_, err := f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
 	require.NoError(t, err)
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.Eventually(t, func() bool { return r.ep.senders.sender(keptKey) == nil }, keptWait, 20*time.Millisecond,
@@ -330,7 +329,7 @@ func TestDeliveryReachesEngineKeptEntries(t *testing.T) {
 	require.Equal(t, "urn:uuid:"+install.String(), got[0].Event.Source, "the install id, read through the agent's own connection")
 	require.NotContains(t, string(got[0].raw), "product_a")
 
-	_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	_, err = f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
 	require.NoError(t, err)
 	r.ep.DeliverLinks("product_b").DeliverLink(notice)
 	time.Sleep(3 * fastDeliver.tries[3])
@@ -442,8 +441,8 @@ func TestNameClashBothHeldServesConfig(t *testing.T) {
 	list, err := r.f.client.PluginList(context.Background())
 	require.NoError(t, err)
 	for _, l := range list.Plugins {
-		if l.Source == person.SourceEngine {
-			require.Equal(t, person.HealthNotStarted, l.Health)
+		if l.Source == plugin.SourceEngine {
+			require.Equal(t, plugin.HealthNotStarted, l.Health)
 		}
 	}
 }
@@ -556,7 +555,7 @@ func TestAgentOperatedEngineKeepsPlugins(t *testing.T) {
 	require.NoError(t, config.WriteFile(f.configPath, []byte("{")))
 	r.ep.applyNow(context.Background())
 	require.ElementsMatch(t, []string{"product_a"}, servedTo(r.ep, keptKey), "a bad engine.json changes nothing that runs")
-	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	_, err = f.client.PluginRemove(context.Background(), plugin.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
 	require.NoError(t, err)
 	require.Empty(t, servedTo(r.ep, keptKey), "stopped when the removal answers")
 	r.requireNotRunning()

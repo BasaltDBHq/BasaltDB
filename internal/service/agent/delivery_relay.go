@@ -29,36 +29,36 @@ type LinkRelay interface {
 // over, and the caller falls back (CONTRACT.md: the short link is not
 // issued). Issuing revokes the item's earlier link, whose token the link
 // store's OnDrop unregisters; so does revoking this one.
-func (s *Service) relayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string {
-	if !s.deps.Delivery.Relay.Connected() {
+func (dc *deliveryCase) relayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string {
+	if !dc.deps.Relay.Connected() {
 		return ""
 	}
-	secret, token, err := s.deps.Delivery.Links.IssueRelay(id, expires)
+	secret, token, err := dc.deps.Links.IssueRelay(id, expires)
 	if err != nil {
-		s.deps.Core.Log.Error("issue a portal short link; handing over the long link", "id", id, "err", err)
+		dc.core.Log.Error("issue a portal short link; handing over the long link", "id", id, "err", err)
 		return ""
 	}
-	err = s.deps.Delivery.Relay.Register(ctx, token, expires)
+	err = dc.deps.Relay.Register(ctx, token, expires)
 	if err == nil {
-		return links.WithSecret(page(s.deps.Core.PagesBase, id), secret)
+		return links.WithSecret(page(dc.core.PagesBase, id), secret)
 	}
 	msg := "the Vault did not register the short link; handing over the long link"
 	var rerr error
 	switch {
-	case s.deps.Delivery.VaultConflict(err):
+	case dc.deps.VaultConflict(err):
 		// VC-42: another engine holds this token. The link is revoked, and
 		// the item's next link has a new secret whose token nobody else
 		// knows. No UNREGISTER: the token is not this engine's.
 		msg = "another engine registered this link's token at the Vault; the link is revoked and the long link handed over"
-		_, rerr = s.deps.Delivery.Links.RevokeToken(token)
+		_, rerr = dc.deps.Links.RevokeToken(token)
 	default:
 		// The registration may still land late: revoking unregisters it.
-		rerr = s.deps.Delivery.Links.Revoke(id, token)
+		rerr = dc.deps.Links.Revoke(id, token)
 	}
 	if rerr != nil {
-		s.deps.Core.Log.Error("revoke an unregistered short link", "id", id, "err", rerr)
+		dc.core.Log.Error("revoke an unregistered short link", "id", id, "err", rerr)
 	}
-	s.deps.Core.Log.Warn(msg, "id", id, "err", err)
+	dc.core.Log.Warn(msg, "id", id, "err", err)
 	return ""
 }
 
@@ -66,8 +66,8 @@ func (s *Service) relayLink(ctx context.Context, page func(string, uuid.UUID) st
 // still works: the engine serves its own pages, or the item has a live
 // portal short link the relay carries. A result that issues no new link then
 // points back to that link, never to the long one.
-func (s *Service) shortLinked(id uuid.UUID) bool {
-	return s.deps.Core.PagesOrigin != "" || (s.deps.Delivery.Links != nil && s.deps.Delivery.Links.HasRelay(id))
+func (dc *deliveryCase) shortLinked(id uuid.UUID) bool {
+	return dc.core.PagesOrigin != "" || (dc.deps.Links != nil && dc.deps.Links.HasRelay(id))
 }
 
 // noRelay is LinkRelay with the Vault off: never connected.

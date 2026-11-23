@@ -32,5 +32,5 @@ func (s *Service) revertReceipt(r action.Revert) (Receipt, error) {
 	if r.ChangeID != nil {
 		p.ChangeID = r.ChangeID.String()
 	}
-	return s.signReceipt(p, "Signed", "revert")
+	return s.delivery.signReceipt(p, "Signed", "revert")
 }

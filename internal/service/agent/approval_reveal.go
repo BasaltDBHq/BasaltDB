@@ -38,12 +38,12 @@ func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret strin
 	}
 	ticket, err := s.deps.Approval.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealApprovalError(err, s.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, s.revealApprovalError(err, s.delivery.pageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
 	rows, err := s.deps.Approval.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealApprovalError(err, s.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, s.revealApprovalError(err, s.delivery.pageLink(links.Approval, id, secret))
 	}
 	return checkedAnswer(a.Lines, rows)
 }

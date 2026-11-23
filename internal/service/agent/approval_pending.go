@@ -20,12 +20,12 @@ func (s *Service) deliverReissued(items []PendingEntry) {
 		switch {
 		case e.Approval != nil && e.Approval.issued:
 			d := pendingFromDomain(*e.Approval)
-			s.deliver(LinkNotice{
+			s.delivery.deliver(LinkNotice{
 				Kind: NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
 			})
 		case e.Revert != nil && e.Revert.issued:
 			d := pendingRevertFromDomain(*e.Revert)
-			s.deliver(LinkNotice{
+			s.delivery.deliver(LinkNotice{
 				Kind: NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
 			})
 		}
@@ -129,7 +129,7 @@ func (s *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue b
 			return err
 		}
 		a.Notice = n.ApprovalNotice
-		a.Restated = !reissue && (s.shortLinked(a.ID) || isPageAddress(n.ApprovalURL))
+		a.Restated = !reissue && (s.delivery.shortLinked(a.ID) || isPageAddress(n.ApprovalURL))
 		if n.reason == reasonRequestTooLarge {
 			a.tooLargeSteps = n.steps
 		}

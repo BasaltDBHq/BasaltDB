@@ -50,7 +50,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 	}
 	out, err := s.deps.Revert.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealRevertError(r, err, s.pageLink(links.Revert, id, secret))
+		return approval.RevealAnswer{}, s.revealRevertError(r, err, s.delivery.pageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
 		return approval.RevealAnswer{}, revealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")

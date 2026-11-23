@@ -13,12 +13,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -267,6 +267,7 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	cmds, err := NewCommands("pbot", long, "linux", testManager())
 	require.NoError(t, err)
 	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
+	s.wire()
 	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
 
 	messages := map[string]string{}
@@ -283,9 +284,10 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	for _, st := range te.NextSteps {
 		require.Empty(t, st.Command, "no command for other agents' changes in the task")
 	}
-	messages["not granted"] = newDescribeCase(s.deps.Core, DescribeDeps{}, nil).notGrantedSteps(guidance.NewSteps(), 12)
-	messages["describe not found"] = newDescribeCase(s.deps.Core, DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
+	messages["not granted"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).notGrantedSteps(guidance.NewSteps(), 12)
+	messages["describe not found"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
+	rls.wire()
 	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)
 	messages["rls warning"] = w.PersonMessage

@@ -45,7 +45,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
@@ -124,14 +123,14 @@ func (f *portalFixture) upload(ctx context.Context, files []shim.PluginFile) (uu
 	part := begun.MaxPartBytes
 	for _, file := range files {
 		if len(file.Data) == 0 {
-			if _, err := f.s.UploadPart(ctx, portalPerson, person.PluginUploadPartParams{UploadID: begun.UploadID, Path: file.Path}); err != nil {
+			if _, err := f.s.UploadPart(ctx, portalPerson, plugin.PluginUploadPartParams{UploadID: begun.UploadID, Path: file.Path}); err != nil {
 				return uuid.Nil, err
 			}
 			continue
 		}
 		for off := 0; off < len(file.Data); off += part {
 			chunk := file.Data[off:min(off+part, len(file.Data))]
-			if _, err := f.s.UploadPart(ctx, portalPerson, person.PluginUploadPartParams{
+			if _, err := f.s.UploadPart(ctx, portalPerson, plugin.PluginUploadPartParams{
 				UploadID: begun.UploadID, Path: file.Path, Offset: int64(off), Data: base64.RawURLEncoding.EncodeToString(chunk),
 			}); err != nil {
 				return uuid.Nil, err

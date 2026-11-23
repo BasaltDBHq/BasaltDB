@@ -15,7 +15,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 
 	"github.com/stretchr/testify/require"
@@ -74,7 +73,7 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	r := &relay{
-		path: socket, fallback: app.NewEngineDownServer(down),
+		path: socket, fallback: newDownServer(down),
 		out: &lineWriter{w: outW}, files: defaultRequestFiles(),
 		reconnectWait: 5 * time.Second, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
 	}

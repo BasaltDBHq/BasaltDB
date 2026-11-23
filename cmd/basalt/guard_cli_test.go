@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
@@ -24,7 +25,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cache := t.TempDir()
-	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(stdin), Out: &stdout, Err: &stderr},
+	c := app.NewIO(context.Background(), cli.Stdio{In: strings.NewReader(stdin), Out: &stdout, Err: &stderr},
 		func(k string) string {
 			if v, ok := env[k]; ok || k != envCacheDir {
 				return v
@@ -62,3 +63,6 @@ func runGuard(c *cli.IO, args []string) int {
 	cmd := guardCommands[args[0]]
 	return cmd(c, takePathFlags(c, cmd, args[1:]))
 }
+
+// envCacheDir is the update check's cache directory override.
+const envCacheDir = "BASALT_CACHE_DIR"

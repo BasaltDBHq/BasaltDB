@@ -19,7 +19,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	std := cli.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
-	note := startUpdateNotice(ctx, os.Args[1:], std, os.Getenv)
+	note := app.StartUpdateNotice(ctx, os.Args[1:], std, os.Getenv)
 	code := runGuarded(ctx, os.Args[1:], std)
 	note()
 	stop()
@@ -31,7 +31,7 @@ func commands() []cli.Command {
 		{Name: "engine", Summary: "Run the engine service in the foreground", Run: runEngine, Hidden: true},
 		{Name: "mcp", Summary: "MCP server for an agent: relays stdio to the engine", Run: runMCP},
 		{Name: "service", Summary: "Install the engine service (install)", Run: runService},
-		{Name: "init", Summary: "Start setup: install the engine service when needed, then print and open the setup link", Run: cli.WithIO(newIO, runInitCommand)},
+		{Name: "init", Summary: "Start setup: install the engine service when needed, then print and open the setup link", Run: cli.WithIO(app.NewIO, runInitCommand)},
 		{Name: "version", Summary: "Print the version", Run: statuscli.RunVersion},
 		{Name: "help", Summary: "Show this help"},
 	}
@@ -39,7 +39,7 @@ func commands() []cli.Command {
 
 // runInitCommand is basalt init for the command table: init --remote
 // reaches the adapters through app.SetupHost.
-func runInitCommand(c *cli.IO, args []string) int { return runInit(c, app.SetupHost{}, args) }
+func runInitCommand(c *cli.IO, args []string) int { return app.RunInit(c, app.SetupHost{}, args) }
 
 func run(ctx context.Context, args []string, io cli.Stdio) int {
 	if len(args) == 0 {
@@ -53,7 +53,7 @@ func run(ctx context.Context, args []string, io cli.Stdio) int {
 	case "--version":
 		return statuscli.RunVersion(ctx, nil, io)
 	}
-	useTrustDir(args[1:])
+	app.UseTrustDirFor(args[1:])
 	for _, cmd := range commands() {
 		if cmd.Name == args[0] && cmd.Run != nil {
 			return cmd.Run(ctx, args[1:], io)

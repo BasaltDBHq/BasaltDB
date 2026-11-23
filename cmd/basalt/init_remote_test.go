@@ -88,7 +88,7 @@ func withDB(t *testing.T) remoteEnv {
 
 // io is the cli.IO of a run in e, writing to stdout and stderr.
 func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cli.IO {
-	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: stdout, Err: stderr},
+	c := app.NewIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: stdout, Err: stderr},
 		func(k string) string {
 			if k == setup.EnvAdminURL {
 				return "postgres://admin:" + adminSecret + "@db.example.com/postgres"
@@ -115,7 +115,7 @@ func (e remoteEnv) cli(t *testing.T, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	code := runInit(c, app.SetupHost{}, takePathFlags(c, runInit, args))
+	code := app.RunInit(c, app.SetupHost{}, takePathFlags(c, app.RunInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -161,7 +161,7 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 	all = append(all, args...)
 	var stdout, stderr bytes.Buffer
 	c := e.io(&stdout, &stderr)
-	res, err := setupcli.InitRemote(c, app.SetupHost{}, takePathFlags(c, runInit, all))
+	res, err := setupcli.InitRemote(c, app.SetupHost{}, takePathFlags(c, app.RunInit, all))
 	require.NoError(t, err, stderr.String())
 	require.NoError(t, setupcli.PrintRemoteResult(c, res))
 	r := remoteRun{result: result{cli.ExitOK, stdout.String(), stderr.String()}, res: res}

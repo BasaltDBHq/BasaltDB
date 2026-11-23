@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
@@ -68,7 +66,7 @@ func relayLosingRace(t *testing.T, socket string, out *strings.Builder, late int
 	dials := 0
 	return &relay{
 		path:     socket,
-		fallback: app.NewEngineDownServer(down),
+		fallback: newDownServer(down),
 		out:      &lineWriter{w: out},
 		files:    defaultRequestFiles(),
 		dial: func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles, neg negotiation) (*session, error) {

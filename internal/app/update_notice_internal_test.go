@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bytes"
@@ -16,6 +16,25 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/status"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
+
+// fakeMachine is the machine of a person who is not root, with a config
+// directory of its own; the rest of cli.Machine is not used.
+type fakeMachine struct {
+	cli.Machine
+	configDir string
+}
+
+func newFakeMachine(t *testing.T) *fakeMachine {
+	// A short directory: the socket path under it must fit a Unix socket,
+	// which t.TempDir on macOS does not.
+	dir, err := os.MkdirTemp("/tmp", "bt")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return &fakeMachine{configDir: dir}
+}
+
+func (h *fakeMachine) Euid() int                      { return 501 }
+func (h *fakeMachine) UserConfigDir() (string, error) { return h.configDir, nil }
 
 // The command table hands the update check's notice to statuscli as the
 // line it prints and its security flag (statuscli tests the printing).
@@ -42,7 +61,7 @@ func TestStartUpdateNoticeSkips(t *testing.T) {
 	}
 	var e bytes.Buffer
 	for _, args := range [][]string{nil, {"engine"}, {"mcp"}, {"status", "--json"}, {"version"}} {
-		startUpdateNotice(context.Background(), args, cli.Stdio{Err: &e}, getenv)()
+		StartUpdateNotice(context.Background(), args, cli.Stdio{Err: &e}, getenv)()
 	}
 	if e.Len() != 0 {
 		t.Errorf("printed %q", e.String())
@@ -51,7 +70,7 @@ func TestStartUpdateNoticeSkips(t *testing.T) {
 
 // writeUserConfig saves an engine.json where a person without the system
 // config reads it, with the given mode.
-func writeUserConfig(t *testing.T, h *fakeHost, body string, mode os.FileMode) {
+func writeUserConfig(t *testing.T, h *fakeMachine, body string, mode os.FileMode) {
 	t.Helper()
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
@@ -80,17 +99,17 @@ func releaseBuild(t *testing.T) {
 func TestUpdateOffFollowsAReadableConfig(t *testing.T) {
 	releaseBuild(t)
 	getenv := func(string) string { return "" }
-	h := newFakeHost(t)
+	h := newFakeMachine(t)
 	writeUserConfig(t, h, configWith("OFF"), 0o600)
 	require.True(t, status.UpdateOff(getenv, appUpdateHost{h}, appUpdateHost{h}))
-	h = newFakeHost(t)
+	h = newFakeMachine(t)
 	writeUserConfig(t, h, configWith("ON"), 0o600)
 	require.False(t, status.UpdateOff(getenv, appUpdateHost{h}, appUpdateHost{h}))
 }
 
 func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
 	releaseBuild(t)
-	h := newFakeHost(t)
+	h := newFakeMachine(t)
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
 	}

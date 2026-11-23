@@ -1,12 +1,16 @@
-package agent
+// Package approvalmcp serves the approval tools over MCP: list_pending, the
+// held writes and open reverts of the agent. Handlers parse, validate, make
+// one call to the approval use case and render.
+package approvalmcp
 
 import (
 	"context"
 	"encoding/json"
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 
-	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
@@ -14,6 +18,15 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
+
+// Pending is the approval use case as the approval tools call it.
+type Pending interface {
+	ListPending(ctx context.Context, p approvalsvc.PendingParams) (pagination.Page[approvalsvc.PendingEntry], error)
+}
+
+type handlers struct {
+	svc Pending
+}
 
 // --- list_pending ---
 
@@ -69,49 +82,6 @@ func pendingFromDomain(p approvalsvc.PendingItem) pendingDTO {
 	return d
 }
 
-// pendingRevertDTO is a list_pending revert item (list_pending.json,
-// kind REVERT). A widened revert has no scope and no link (RS-5).
-type pendingRevertDTO struct {
-	Kind          string                `json:"kind"`
-	RevertID      string                `json:"revertId"`
-	Status        string                `json:"status"`
-	Scope         string                `json:"scope,omitempty"`
-	ScopeID       string                `json:"scopeId,omitempty"`
-	Intent        string                `json:"intent"`
-	Rows          int                   `json:"rows"`
-	Skipped       int                   `json:"skipped"`
-	Batched       bool                  `json:"batched"`
-	Widened       bool                  `json:"widened"`
-	CreatedAt     string                `json:"createdAt"`
-	ExpiresAt     string                `json:"expiresAt"`
-	ApplyBy       string                `json:"applyBy,omitempty"`
-	Progress      *revertProgressDTO    `json:"progress,omitempty"`
-	Headline      string                `json:"headline"`
-	RevertURL     string                `json:"revertUrl,omitempty"`
-	RequestFile   *links.RequestFile    `json:"requestFile,omitempty"`
-	PersonMessage string                `json:"personMessage"`
-	Links         []toolresult.Link     `json:"links,omitempty"`
-	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
-}
-
-func pendingRevertFromDomain(p revertsvc.PendingRevert) pendingRevertDTO {
-	d := pendingRevertDTO{
-		Kind: guidance.KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
-		Batched: p.Batched, Widened: p.Widened, CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt),
-		Headline: p.Headline, RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
-	}
-	if !p.Widened {
-		d.Scope, d.ScopeID = p.Scope, p.ScopeID.String()
-	}
-	if p.ApplyBy != nil {
-		d.ApplyBy = guidance.TimeText(*p.ApplyBy)
-	}
-	if p.Batched && p.SignedAt != nil {
-		d.Progress = &revertProgressDTO{Restored: p.Progress.Restored, Skipped: p.Progress.Skipped, Pending: p.Progress.Pending, Batches: p.Batches}
-	}
-	return d
-}
-
 func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args listPendingArgs
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
@@ -129,13 +99,23 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 			items = append(items, pendingFromDomain(*e.Approval))
 			continue
 		}
-		items = append(items, pendingRevertFromDomain(*e.Revert))
+		items = append(items, revertmcp.PendingRevert(*e.Revert))
 	}
 	return pagination.ToMCP(pagination.Page[any]{Items: items, NextCursor: page.NextCursor}), nil
 }
 
-// ApprovalTools are the tools that read held writes.
-func ApprovalTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+// optionalID parses an optional uuid argument already validated by tags.
+func optionalID(s string) uuid.UUID {
+	if s == "" {
+		return uuid.Nil
+	}
+	return uuid.MustParse(s)
+}
+
+// Tools are the tools that read held writes. mount lists a tool under its
+// contract, around the agent's admission and error mapping; the tool list's
+// composer supplies it.
+func Tools(svc Pending, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
 		mount("list_pending", h.listPending),

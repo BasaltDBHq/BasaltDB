@@ -3,16 +3,16 @@ package pii
 import (
 	"context"
 
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 )
 
 // Querier is the connection, pool or transaction a sample is read with,
 // seen through driver-free types (pgquerier.Port). A pgx handle is handed
 // over through pgquerier.Neutralize.
-type Querier = pgquerier.Port
+type Querier = sqlport.Port
 
 // Rows is a query's answer as this package reads it.
-type Rows = pgquerier.Rows
+type Rows = sqlport.Rows
 
 // ReadOnlyTx runs fn in a read-only transaction that is always rolled back
 // (a sample changes nothing, so nothing is committed), and returns fn's

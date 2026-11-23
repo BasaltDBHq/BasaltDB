@@ -63,11 +63,10 @@ func (h handlers) listRuns(ctx context.Context, raw json.RawMessage) (any, error
 	return pagination.ToMCP(pagination.Page[runSummaryDTO]{Items: items, NextCursor: page.NextCursor}), nil
 }
 
-// RunTools are the tools that read the agent's runs.
+// RunTools are the tools that list the agent's runs.
 func RunTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
-		mount("run_history", h.runHistory),
 		mount("list_runs", h.listRuns),
 	}
 }

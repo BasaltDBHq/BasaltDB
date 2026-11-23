@@ -63,27 +63,27 @@ type WriteOutcome struct {
 
 // Write checks sql against the policy and runs it through the guard with
 // the intent. A refused or failed write is recorded as a REFUSED change.
-func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error) {
+func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.ApprovalID != uuid.Nil {
-		return s.applyApproved(ctx, p)
+		return wc.applyApproved(ctx, p)
 	}
-	run, err := s.writeRun(ctx, p)
+	run, err := wc.writeRun(ctx, p)
 	if err != nil {
 		return WriteOutcome{}, err
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
-	start := s.deps.Core.Now()
-	stmt, err := s.deps.Write.Store.Check(p.SQL, action.ToolWrite)
+	start := wc.core.Now()
+	stmt, err := wc.deps.Store.Check(p.SQL, action.ToolWrite)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.deps.Write.Store.Write(ctx, in, op, p.SQL, p.Params)
+	res, err := wc.deps.Store.Write(ctx, in, op, p.SQL, p.Params)
 	if errors.Is(err, action.ErrApprovalRequired) {
-		id, expires, err := s.hold(ctx, in, p, stmt, start)
+		id, expires, err := wc.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil {
 			return WriteOutcome{}, err
 		}
@@ -91,7 +91,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		// waits would otherwise keep the person from hearing of it until it
 		// answers. Its link is the hold's own answer's, which is the answer
 		// the agent gets unless the person signs first.
-		s.delivery.deliverHeld(id, expires, err)
+		wc.delivery.deliverHeld(id, expires, err)
 		if p.Wait == 0 {
 			return WriteOutcome{}, err
 		}
@@ -99,7 +99,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		// the repeat with approvalId would. On timeout the answer is the
 		// hold's own, which carries the link just issued.
 		p.ApprovalID, p.RunID = id, run.ID
-		out, waitErr := s.applyApproved(ctx, p)
+		out, waitErr := wc.applyApproved(ctx, p)
 		var te *toolresult.ToolError
 		if errors.As(waitErr, &te) && te.Code == guidance.CodeApprovalRequired {
 			return WriteOutcome{}, err
@@ -107,17 +107,17 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		return out, waitErr
 	}
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
+	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
 
 // writeRun finds the named run, or starts a one-write run.
-func (s *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
+func (wc *writeCase) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
-		return findRun(ctx, s.deps.Core.Store, p.RunID)
+		return findRun(ctx, wc.core.Store, p.RunID)
 	}
-	info, err := s.startRun(ctx, p.Intent, uuid.Nil)
+	info, err := wc.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {
 		return action.Run{}, err
 	}

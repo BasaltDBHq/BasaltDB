@@ -103,3 +103,19 @@ func (ac *approvalCase) hasColumns() bool { return ac.deps.Columns != nil }
 func (ac *approvalCase) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
 	return ac.deps.Columns.ColumnOrder(ctx, tables)
 }
+
+// The calls the write use case makes to hold a write.
+
+func (ac *approvalCase) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
+	return ac.deps.Store.HoldColumns(ctx, sql, params)
+}
+
+func (ac *approvalCase) Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
+	return ac.deps.Store.Preview(ctx, in, sql, params, assigned)
+}
+
+func (ac *approvalCase) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+	return ac.deps.Store.Hold(ctx, in, r)
+}
+
+func (ac *approvalCase) notFound() error { return ac.deps.ErrNotFound }

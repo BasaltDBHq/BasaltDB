@@ -288,6 +288,8 @@ type Service struct {
 	approval *approvalCase
 	// revert is the revert use case.
 	revert *revertCase
+	// write is the query and write use case.
+	write *writeCase
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -356,6 +358,7 @@ func (s *Service) wire() {
 	s.revert = newRevertCase(&s.deps.Core, &s.deps.Revert, s.delivery, s.describe, s)
 	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, s.revert, liveWrites{&s.deps.Write}, s)
 	s.delivery.approvals = s.approval
+	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s, s)
 }
 
 // missing names the required ports d lacks.
@@ -405,23 +408,23 @@ type RunInfo struct {
 
 // StartRun starts a run with intent. taskID joins a task another agent
 // started; uuid.Nil starts a new task.
-func (s *Service) StartRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
-	run, err := s.startRun(ctx, intent, taskID)
+func (wc *writeCase) StartRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
+	run, err := wc.startRun(ctx, intent, taskID)
 	if err != nil {
 		return RunInfo{}, err
 	}
-	run.Warnings = s.upgradeWarnings(ctx)
+	run.Warnings = wc.upgrade.upgradeWarnings(ctx)
 	return run, nil
 }
 
 // startRun is StartRun without the setup warnings, for the run a write
 // starts for itself.
-func (s *Service) startRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
+func (wc *writeCase) startRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
 	if taskID == uuid.Nil {
 		taskID = newID()
 	}
-	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: s.deps.Core.Now().UTC()}
-	if err := s.deps.Core.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
+	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: wc.core.Now().UTC()}
+	if err := wc.core.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
 		return RunInfo{}, err
 	}
 	return run, nil
@@ -446,54 +449,54 @@ type QueryOutcome struct {
 // refused or failed statement is recorded as a REFUSED change. A read that
 // cannot be recorded is not returned: the ledger must know what the agent
 // saw.
-func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
-	run, err := findRun(ctx, s.deps.Core.Store, p.RunID)
+func (wc *writeCase) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
+	run, err := findRun(ctx, wc.core.Store, p.RunID)
 	if err != nil {
 		return QueryOutcome{}, err
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
-	start := s.deps.Core.Now()
-	stmt, err := s.deps.Write.Store.Check(p.SQL, action.ToolQuery)
+	start := wc.core.Now()
+	stmt, err := wc.deps.Store.Check(p.SQL, action.ToolQuery)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
 	if err != nil {
-		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.deps.Write.Store.Read(ctx, p.SQL, p.Params, stmt)
+	res, err := wc.deps.Store.Read(ctx, p.SQL, p.Params, stmt)
 	if err != nil {
-		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
 	// keeps the rows from the agent.
-	if err := s.deps.Write.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
-		s.deps.Core.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
+	if err := wc.deps.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
+		wc.core.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
 		// An engine failure, not the agent's SQL: INTERNAL even when a
 		// Postgres error (a map reload) caused it. The cause is logged above.
 		return QueryOutcome{}, &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
 	}
-	change, err := s.deps.Core.Store.RecordRead(ctx, action.Read{
+	change, err := wc.core.Store.RecordRead(ctx, action.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
 		Rows: len(res.Rows), Duration: res.Duration, Versions: res.Versions,
 	})
 	if err != nil {
 		return QueryOutcome{}, fmt.Errorf("record read: %w", err)
 	}
-	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: s.rlsWarnings(ctx, stmt.Tables, len(res.Rows))}, nil
+	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: wc.rlsWarnings(ctx, stmt.Tables, len(res.Rows))}, nil
 }
 
 // History returns one page of a run's change records.
-func (s *Service) History(ctx context.Context, p action.ChangeListParams) (History, error) {
-	if _, err := findRun(ctx, s.deps.Core.Store, p.RunID); err != nil {
+func (wc *writeCase) History(ctx context.Context, p action.ChangeListParams) (History, error) {
+	if _, err := findRun(ctx, wc.core.Store, p.RunID); err != nil {
 		return History{}, err
 	}
-	return s.deps.Core.Store.History(ctx, p)
+	return wc.core.Store.History(ctx, p)
 }
 
 // ListRuns returns one page of the agent's own runs with what each did.
-func (s *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return s.deps.Core.Store.ListRuns(ctx, p)
+func (wc *writeCase) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
+	return wc.core.Store.ListRuns(ctx, p)
 }
 
 // runFinder is the ledger lookup of one run of the agent.
@@ -528,17 +531,17 @@ func recorded(code string) bool {
 // refused records a REFUSED change for err when it is an action the ledger
 // keeps, and returns err. A failure to record is logged; the agent still
 // gets the original refusal.
-func (s *Service) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
-	te := guidance.MessageTooLarge(actionTool(op), err, s.deps.Core.Errors.ToolError(err))
+func (wc *writeCase) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
+	te := guidance.MessageTooLarge(actionTool(op), err, wc.core.Errors.ToolError(err))
 	if !recorded(te.Code) {
 		return err
 	}
 	r := action.Refusal{
 		Intent: in, Op: refusalOp(op), Statement: sql, Params: params,
-		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: s.deps.Core.Now().Sub(start),
+		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
 	}
-	if recErr := s.deps.Core.Store.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
-		s.deps.Core.Log.Error("record refusal", "code", te.Code, "err", recErr)
+	if recErr := wc.core.Store.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
+		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err
 }

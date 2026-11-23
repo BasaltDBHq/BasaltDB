@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 

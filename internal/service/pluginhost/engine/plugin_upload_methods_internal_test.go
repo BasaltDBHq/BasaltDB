@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )

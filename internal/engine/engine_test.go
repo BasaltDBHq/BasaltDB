@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 // shortDir is a socket directory short enough for macOS's ~104-byte Unix

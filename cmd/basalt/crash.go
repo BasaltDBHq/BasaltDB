@@ -27,7 +27,7 @@ func guarded(args []string, std cli.Stdio, f func() int) (code int) {
 			return
 		}
 		code = cli.ExitError
-		engine.ReportPanic(crashHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
+		engine.ReportPanic(engineHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
 	}()
 	return f()
 }
@@ -46,10 +46,12 @@ func commandName(args []string) string {
 	return ""
 }
 
-// crashHost is the crash use case's engine.Host.
-type crashHost struct{ osHost }
+// engineHost is engine.Host through app and the machine.
+type engineHost struct{ osHost }
 
-func (crashHost) NewRecorder() engine.Recorder { return newRecorder() }
+func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
+
+func (engineHost) LastStopHashEngineJSON(path string) string { return app.LastStopHashEngineJSON(path) }
 
 // engineTerminal is engine.Terminal on the CLI shell.
 type engineTerminal struct{}
@@ -57,6 +59,14 @@ type engineTerminal struct{}
 func (engineTerminal) TerminalText(s string) string { return cli.TerminalText(s) }
 
 func (engineTerminal) InfoOwnerUID(fi os.FileInfo) (int, bool) { return cli.InfoOwnerUID(fi) }
+
+func (engineTerminal) WriteFileAtomic(path string, data []byte) error {
+	return cli.WriteFileAtomic(path, data)
+}
+
+func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
+	return cli.HeldAtEveryLook(held, sleep)
+}
 
 // newRecorder is the crash recorder for this process.
 func newRecorder() engine.Recorder {

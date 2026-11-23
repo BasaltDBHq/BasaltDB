@@ -16,20 +16,6 @@ import (
 // make for themselves.
 const PrivateDirMode = 0o700
 
-// SuperviseHost is what the supervisor's file use cases reach outside the
-// engine.
-type SuperviseHost interface {
-	// LastStopHashEngineJSON is the hash of the engine config at path that
-	// a give-up records.
-	LastStopHashEngineJSON(path string) string
-	// WriteFileAtomic writes data to path so a reader sees the old file or
-	// the new one, never part of it.
-	WriteFileAtomic(path string, data []byte) error
-	// HeldAtEveryLook is true when held is true at every one of a few looks,
-	// sleep apart.
-	HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool
-}
-
 // ResolveSuperviseBinary looks up startedFrom again; a missing file is
 // BinaryGoneError.
 func ResolveSuperviseBinary(startedFrom string) (string, error) {
@@ -43,13 +29,13 @@ func ResolveSuperviseBinary(startedFrom string) (string, error) {
 }
 
 // WriteLastStop records in stateDir why the supervisor gave up, at at.
-func WriteLastStop(h SuperviseHost, stateDir, reason, configPath string, at time.Time, log *slog.Logger) {
+func WriteLastStop(h Host, t Terminal, stateDir, reason, configPath string, at time.Time, log *slog.Logger) {
 	raw, err := json.Marshal(servicespec.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: h.LastStopHashEngineJSON(configPath)})
 	if err == nil {
 		err = os.MkdirAll(stateDir, PrivateDirMode)
 	}
 	if err == nil {
-		err = h.WriteFileAtomic(filepath.Join(stateDir, LastStopFile), raw)
+		err = t.WriteFileAtomic(filepath.Join(stateDir, LastStopFile), raw)
 	}
 	if err != nil {
 		log.Warn("could not record why the engine stopped", "err", err)
@@ -67,8 +53,8 @@ func ClearLastStop(stateDir string, log *slog.Logger) {
 // few looks. A real engine holds it all the time; a probe by someone else
 // (basalt status, a starting basalt mcp) holds it for a moment and reads as
 // a holder, so one look that finds it free means no engine runs.
-func AnotherEngineRuns(h SuperviseHost, lockPath string) bool {
-	return h.HeldAtEveryLook(func() bool {
+func AnotherEngineRuns(t Terminal, lockPath string) bool {
+	return t.HeldAtEveryLook(func() bool {
 		_, up, _ := pidlock.Running(lockPath)
 		return up
 	}, time.Sleep)

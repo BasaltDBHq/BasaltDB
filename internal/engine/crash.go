@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -27,6 +28,9 @@ type Host interface {
 	CrashDirHost
 	// NewRecorder is the crash recorder for this process.
 	NewRecorder() Recorder
+	// LastStopHashEngineJSON is the hash of the engine config at path that
+	// a give-up records.
+	LastStopHashEngineJSON(path string) string
 }
 
 // Terminal is what the engine's use cases read from the CLI shell.
@@ -36,6 +40,12 @@ type Terminal interface {
 	// InfoOwnerUID is the owner of the file fi describes; false where the
 	// platform has no owners.
 	InfoOwnerUID(fi os.FileInfo) (int, bool)
+	// WriteFileAtomic writes data to path so a reader sees the old file or
+	// the new one, never part of it.
+	WriteFileAtomic(path string, data []byte) error
+	// HeldAtEveryLook is true when held is true at every one of a few looks,
+	// sleep apart.
+	HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool
 }
 
 // CrashDirHost is the machine's per-user config directory.

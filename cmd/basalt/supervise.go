@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
@@ -60,7 +59,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 		Now:            time.Now,
 		Log:            log,
 		LastStop: func(reason string) {
-			engine.WriteLastStop(superviseHost{}, stateDir, reason, configPath, time.Now(), log)
+			engine.WriteLastStop(engineHost{}, engineTerminal{}, stateDir, reason, configPath, time.Now(), log)
 		},
 	}
 	if err := engine.Supervise(ctx, o); err != nil {
@@ -116,26 +115,11 @@ func childStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Std
 			stable.Stop()
 			if err != nil && ctx.Err() == nil {
 				// The child has exited, so a live holder is another engine.
-				if engine.AnotherEngineRuns(superviseHost{}, lockPath) {
+				if engine.AnotherEngineRuns(engineTerminal{}, lockPath) {
 					return engine.ErrAnotherEngine
 				}
 			}
 			return err
 		}, nil
 	}
-}
-
-// superviseHost is engine.SuperviseHost through app and the CLI shell.
-type superviseHost struct{}
-
-func (superviseHost) LastStopHashEngineJSON(path string) string {
-	return app.LastStopHashEngineJSON(path)
-}
-
-func (superviseHost) WriteFileAtomic(path string, data []byte) error {
-	return cli.WriteFileAtomic(path, data)
-}
-
-func (superviseHost) HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
-	return cli.HeldAtEveryLook(held, sleep)
 }

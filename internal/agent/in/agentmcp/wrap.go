@@ -23,20 +23,20 @@ type Gate interface {
 	DevLocalPages() bool
 }
 
-type handlers struct {
+type gate struct {
 	svc Gate
 }
 
 // Wrap is wrap for the tool list's composer: every served tool's call goes
 // through it.
 func Wrap(svc Gate, tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
-	return handlers{svc: svc}.wrap(tool, call)
+	return gate{svc: svc}.wrap(tool, call)
 }
 
 // wrap admits the call (every tool but status, see Service.Admit) and maps
 // every error to the contract's error body, logging the ones that are the
 // engine's fault.
-func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
+func (h gate) wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
 	return func(ctx context.Context, args json.RawMessage) (any, error) {
 		// Before anything else: the call is not admitted, decoded, recorded
 		// or logged, and its arguments are not echoed into the error.
@@ -62,7 +62,7 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 	}
 }
 
-func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessage, call func(context.Context, json.RawMessage) (any, error)) (any, error) {
+func (h gate) admitted(ctx context.Context, tool string, args json.RawMessage, call func(context.Context, json.RawMessage) (any, error)) (any, error) {
 	// status always answers; confirm_database answers INVALID_ARGUMENT
 	// here, where no connect-only database waits (ConnectOnly serves it
 	// while one does).

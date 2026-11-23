@@ -28,10 +28,10 @@ func agentTools(svc *agent.Service) []guidance.Tool {
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
 		return contractTool(name, agentmcp.Wrap(svc, name, call))
 	}
-	tools := agent.RunStartTools(svc, mount)
+	tools := agentmcp.RunStartTools(svc, mount)
 	for _, list := range [][]guidance.Tool{
-		agent.WriteTools(svc, mount), ledgermcp.Tools(svc, mount), agent.RunTools(svc, mount), approvalmcp.Tools(svc, mount), revertmcp.Tools(svc, mount),
-		pluginmcp.Tools(svc, mount), agent.DescribeTools(svc, mount), statusmcp.Tools(svc, mount), handoffmcp.Tools(mount),
+		agentmcp.WriteTools(svc, mount), ledgermcp.Tools(svc, mount), agentmcp.RunTools(svc, mount), approvalmcp.Tools(svc, mount), revertmcp.Tools(svc, mount),
+		pluginmcp.Tools(svc, mount), agentmcp.DescribeTools(svc, mount), statusmcp.Tools(svc, mount), handoffmcp.Tools(mount),
 	} {
 		tools = append(tools, list...)
 	}

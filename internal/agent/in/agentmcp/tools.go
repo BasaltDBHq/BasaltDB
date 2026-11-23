@@ -1,4 +1,4 @@
-package agent
+package agentmcp
 
 import (
 	"context"
@@ -12,12 +12,28 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
+// Agent is the agent use case as its tools call it: runs, reads, writes and
+// the database's description, the kind of store it serves, and describe's
+// own error mapping.
+type Agent interface {
+	StoreKind() action.StoreKind
+	StartRun(ctx context.Context, intent string, taskID uuid.UUID) (agentsvc.RunInfo, error)
+	Query(ctx context.Context, p agentsvc.QueryParams) (agentsvc.QueryOutcome, error)
+	Write(ctx context.Context, p agentsvc.WriteParams) (agentsvc.WriteOutcome, error)
+	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
+	DescribeOverview(ctx context.Context) (agentsvc.Overview, error)
+	DescribeResource(ctx context.Context, resource, ifFingerprint string) (agentsvc.Resource, error)
+	DescribeSearch(ctx context.Context, p agentsvc.DescribeSearchParams) (pagination.Page[agentsvc.SearchItem], error)
+	DescribeError(err error) error
+}
+
 // RunStartTools are the tools that start a run. mount lists a tool under its
-// contract, around agentmcp.Wrap; the tool list's composer supplies it.
+// contract, around Wrap; the tool list's composer supplies it.
 // Handlers parse, validate, make one service call and render.
-func RunStartTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func RunStartTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{mount("run_start", h.runStart)}
 }
@@ -29,12 +45,8 @@ func speaksSQL(kind action.StoreKind) bool {
 }
 
 type handlers struct {
-	svc *Service
+	svc Agent
 }
-
-// DevLocalPages reports whether engine.json sets devLocalPages: every
-// personMessage then starts with the DEV_LOCAL_PAGES warning.
-func (s *Service) DevLocalPages() bool { return s.deps.Status.DevLocalPages }
 
 // optionalID parses an optional uuid argument already validated by tags.
 func optionalID(s string) uuid.UUID {

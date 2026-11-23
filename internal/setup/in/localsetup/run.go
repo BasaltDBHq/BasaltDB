@@ -534,8 +534,8 @@ func inTx(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback):
-		return err
+	case errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback), pgconn.SafeToRetry(err):
+		return err // answered, rolled back, or never sent
 	}
 	return &unknownOutcomeError{err: err}
 }

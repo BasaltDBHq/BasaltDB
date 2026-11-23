@@ -320,31 +320,45 @@ type RowSecurityQuestion struct {
 	Text string
 }
 
+// rollbackTimeout bounds the rollback of a failed setup, which runs even
+// when the caller's context is done.
+const rollbackTimeout = 5 * time.Second
+
 // adminTx runs the setup's transaction on the admin connection conn. A
 // commit that fails without the database's answer is a
 // setuprun.UnconfirmedError; one the database answered (an error of its
-// own, or a commit that became a rollback) is a known failure, and so is
-// fn's.
+// own, or a commit that became a rollback), one never sent, and fn's
+// error are known failures. The transaction rolls back on any of them, and
+// on a panic in fn.
 func adminTx(conn *pgx.Conn) setuprun.TxRunner {
 	return func(ctx context.Context, fn func(setuprun.Querier) error) error {
 		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}
+		defer rollback(ctx, tx) // after a commit, a no-op
 		if err := fn(pgquerier.Neutralize(tx)); err != nil {
-			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return err
 		}
 		return commitOutcome(tx.Commit(ctx))
 	}
 }
 
+// rollback rolls tx back, within rollbackTimeout of now whatever ctx says.
+func rollback(ctx context.Context, tx pgx.Tx) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
+	_ = tx.Rollback(rctx)
+}
+
 // commitOutcome is err from a commit, as a setuprun.UnconfirmedError when
-// the database did not answer it.
+// the database may have applied it without answering: not one it
+// answered, not one that became a rollback, and not one the driver never
+// sent (pgconn.SafeToRetry).
 func commitOutcome(err error) error {
 	var pg *pgconn.PgError
 	switch {
-	case err == nil, errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback):
+	case err == nil, errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback), pgconn.SafeToRetry(err):
 		return err
 	}
 	return &setuprun.UnconfirmedError{Err: err}

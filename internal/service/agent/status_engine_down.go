@@ -156,7 +156,7 @@ func (d EngineDown) commands() guidance.Commands {
 func (d EngineDown) invalidArgument(err error) *toolresult.ToolError {
 	te := &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: err.Error()}
 	b := guidance.NewSteps()
-	invalidArgumentSteps(b, te, failure{tool: guidance.ToolStatus})
+	invalidArgumentSteps(b, te, guidance.Failure{Tool: guidance.ToolStatus})
 	te.NextSteps, _ = b.Build() // one fixed step: it cannot fail
 	return te
 }

@@ -23,18 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 )
 
-// failure is the call an error answers: the tool and its arguments.
-type failure struct {
-	tool string
-	args map[string]any
-	err  error
-}
-
-func (f failure) arg(name string) string {
-	s, _ := f.args[name].(string)
-	return s
-}
-
 // Failure maps err, raised by a call of tool with args, to the contract's
 // error body (CONTRACT.md, Error codes and Next steps): code and reason,
 // the message, the next steps and the person's message the catalog
@@ -49,7 +37,7 @@ func (s *Service) Failure(tool string, args map[string]any, err error) *toolresu
 		}
 		s.deps.Core.Log.Error("tool failed", "tool", tool, "code", te.Code, "reason", te.Reason, "error_id", te.ErrorID, "err", err)
 	}
-	s.addGuidance(te, failure{tool: tool, args: args, err: err})
+	s.addGuidance(te, guidance.Failure{Tool: tool, Args: args, Err: err})
 	return te
 }
 
@@ -57,16 +45,16 @@ func (s *Service) Failure(tool string, args map[string]any, err error) *toolresu
 // entry for its code, reason and tool. A missing entry or a body that
 // disagrees with it is a defect: it is logged here, and the catalog test
 // fails on it.
-func (s *Service) addGuidance(te *toolresult.ToolError, f failure) {
-	entry, ok := guidance.Catalog().ErrorEntry(te.Code, te.Reason, f.tool)
+func (s *Service) addGuidance(te *toolresult.ToolError, f guidance.Failure) {
+	entry, ok := guidance.Catalog().ErrorEntry(te.Code, te.Reason, f.Tool)
 	if !ok {
-		s.deps.Core.Log.Error("no catalog entry for the error", "code", te.Code, "reason", te.Reason, "tool", f.tool)
+		s.deps.Core.Log.Error("no catalog entry for the error", "code", te.Code, "reason", te.Reason, "tool", f.Tool)
 		return
 	}
 	if len(te.NextSteps) == 0 {
 		steps, person, err := s.errorGuidance(te, f)
 		if err != nil {
-			s.deps.Core.Log.Error("cannot build next steps", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
+			s.deps.Core.Log.Error("cannot build next steps", "code", te.Code, "reason", te.Reason, "tool", f.Tool, "err", err)
 			return
 		}
 		te.NextSteps = steps
@@ -75,19 +63,19 @@ func (s *Service) addGuidance(te *toolresult.ToolError, f failure) {
 		}
 	}
 	if err := guidance.CheckPersonMessage(te.PersonMessage); err != nil {
-		s.deps.Core.Log.Error("person message breaks its limit", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
+		s.deps.Core.Log.Error("person message breaks its limit", "code", te.Code, "reason", te.Reason, "tool", f.Tool, "err", err)
 	}
 	if entry.PersonMessage != (te.PersonMessage != "") {
-		s.deps.Core.Log.Error("person message disagrees with the catalog", "code", te.Code, "reason", te.Reason, "tool", f.tool)
+		s.deps.Core.Log.Error("person message disagrees with the catalog", "code", te.Code, "reason", te.Reason, "tool", f.Tool)
 	}
 }
 
 // errorGuidance builds the steps and the person message for te, by code.
-func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresult.NextStep, string, error) {
+func (s *Service) errorGuidance(te *toolresult.ToolError, f guidance.Failure) ([]toolresult.NextStep, string, error) {
 	b, person := guidance.NewSteps(), ""
 	switch te.Code {
 	case guidance.CodeIntentRequired:
-		b.ReviseCall(f.tool, nil, "Add an intent, one sentence saying why the change is made, then call write again.")
+		b.ReviseCall(f.Tool, nil, "Add an intent, one sentence saying why the change is made, then call write again.")
 	case guidance.CodeStaleRead:
 		s.staleReadSteps(b, te, f)
 	case guidance.CodeStatementRefused:
@@ -106,14 +94,14 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 		guidance.ApprovalExpiredSteps(b)
 		person = approvalsvc.ApprovalExpiredMessage
 	case guidance.CodeApprovalInvalid:
-		person = approvalsvc.ApprovalInvalidSteps(b, te, f.arg(guidance.ArgRunID))
+		person = approvalsvc.ApprovalInvalidSteps(b, te, f.Arg(guidance.ArgRunID))
 	case guidance.CodeRevertInvalid:
-		revertsvc.InvalidSteps(b, te, f.arg(guidance.ArgRevertID))
+		revertsvc.InvalidSteps(b, te, f.Arg(guidance.ArgRevertID))
 	case guidance.CodePermissionDenied:
 		person = s.permissionDeniedSteps(b, te, f)
 	case guidance.CodeNotFound:
-		if f.tool == toolDescribe {
-			person = s.describe.describeNotFoundSteps(b, f)
+		if f.Tool == guidance.ToolDescribe {
+			person = s.describe.DescribeNotFoundSteps(b, f)
 			break
 		}
 		person = notFoundSteps(b, te, f)
@@ -140,8 +128,8 @@ var staleDetail = regexp.MustCompile(`^STALE_READ: (.+?) (\{.*\}) read at xmin \
 // the step is the query that reads that row. Decided here, provisionally:
 // the engine parses the detail, whose format a test against a real guard
 // pins, instead of a guard migration to a JSON detail.
-func (s *Service) staleReadSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) {
-	args, err := staleReadQuery(te.Message, f.arg(guidance.ArgRunID))
+func (s *Service) staleReadSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) {
+	args, err := staleReadQuery(te.Message, f.Arg(guidance.ArgRunID))
 	if err != nil {
 		// A detail the engine cannot read: the catalog's query step cannot be
 		// filled in, so the agent stops and asks instead of guessing a row.
@@ -200,7 +188,7 @@ var refusedText = map[string]string{
 
 // refusedSteps: most refusals are fixed by rewriting the statement; DDL and
 // the guard's own refusals are not the agent's to get around.
-func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
+func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	switch te.Reason {
 	case string(action.ReasonDDL):
 		b.Stop("Do not retry and do not look for another way to change the schema.")
@@ -214,10 +202,10 @@ func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string
 		b.Stop("The database refused this action for the agent: do not retry or work around it.")
 		return ""
 	}
-	tool := f.tool
+	tool := f.Tool
 	if te.Reason == string(action.ReasonWrongTool) {
 		tool = guidance.ToolQuery // the statement went to write: it reads
-		if f.tool == guidance.ToolQuery {
+		if f.Tool == guidance.ToolQuery {
 			tool = guidance.ToolWrite
 		}
 	}
@@ -248,34 +236,34 @@ func rowLimitSteps(b *guidance.Steps) string {
 // describeTimeoutText is the revision a describe that ran out of time asks
 // for, by form: a narrower search, or a search in place of the whole
 // overview or table.
-func describeTimeoutText(f failure) string {
+func describeTimeoutText(f guidance.Failure) string {
 	switch {
-	case f.arg(argQuery) != "":
+	case f.Arg(guidance.ArgQuery) != "":
 		return "Search with a longer, more specific query so the catalog answers in time, then call describe again."
-	case f.arg(argResource) != "":
+	case f.Arg(guidance.ArgResource) != "":
 		return "The catalog was slow: call describe for this table once more, or search with a query for the columns you need."
 	}
 	return "The catalog was slow: call describe once more, or search with a query for the tables you need."
 }
 
-func queryTimeoutSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) {
-	if f.tool == toolDescribe {
-		b.ReviseCall(f.tool, nil, describeTimeoutText(f))
+func queryTimeoutSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) {
+	if f.Tool == guidance.ToolDescribe {
+		b.ReviseCall(f.Tool, nil, describeTimeoutText(f))
 		return
 	}
 	switch te.Reason {
 	case guidance.ReasonRowLimit:
-		b.ReviseCall(f.tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
+		b.ReviseCall(f.Tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
 		return
 	case guidance.ReasonSizeLimit:
-		b.ReviseCall(f.tool, nil, sizeLimitText(f.tool))
+		b.ReviseCall(f.Tool, nil, sizeLimitText(f.Tool))
 		return
 	case guidance.ReasonRowTooLarge:
-		b.ReviseCall(f.tool, nil, "One row is too large to read whole: select fewer columns, the size of a large one "+
+		b.ReviseCall(f.Tool, nil, "One row is too large to read whole: select fewer columns, the size of a large one "+
 			"(length(col)) or a slice of it (substr(col, 1, 100000)), then call it again.")
 		return
 	}
-	b.ReviseCall(f.tool, nil, "Narrow the statement (a tighter WHERE, fewer joins, a LIMIT) so it finishes in time, then call it again.")
+	b.ReviseCall(f.Tool, nil, "Narrow the statement (a tighter WHERE, fewer joins, a LIMIT) so it finishes in time, then call it again.")
 }
 
 // rowTooLargeTools are the tools whose own statement's rows the agent
@@ -319,10 +307,10 @@ var deniedTable = regexp.MustCompile(`permission denied for (?:table|relation) (
 // to add the access, in a later turn, runs basalt init, whose link opens the
 // page where the person grants it (RI-16). The message names the table
 // Postgres named, never a command.
-func (s *Service) permissionDeniedSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
+func (s *Service) permissionDeniedSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	b.Stop("The agent role may not do this: do not retry or look for another route.")
 	access := "write"
-	if f.tool == guidance.ToolQuery {
+	if f.Tool == guidance.ToolQuery {
 		access = "read"
 	}
 	what := "access to what it asked for"
@@ -336,12 +324,12 @@ func (s *Service) permissionDeniedSteps(b *guidance.Steps, te *toolresult.ToolEr
 	return fmt.Sprintf("The agent was denied %s. If it should have it, tell the agent: it gives you a link where you grant it.", what)
 }
 
-func notFoundSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
+func notFoundSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	switch te.Reason {
 	case guidance.ReasonRun:
 		b.CallTool(guidance.ToolListRuns, map[string]any{}, "List your runs, or start a new one with run_start.")
 	case guidance.ReasonChange:
-		if id := f.arg(guidance.ArgRunID); id != "" {
+		if id := f.Arg(guidance.ArgRunID); id != "" {
 			b.CallTool(guidance.ToolRunHistory, map[string]any{guidance.ArgRunID: id}, "Read the run's history to find the id of the change you mean.")
 			return ""
 		}
@@ -362,61 +350,61 @@ func notFoundSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) strin
 	return ""
 }
 
-func sqlErrorSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) {
+func sqlErrorSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) {
 	if te.Reason == guidance.ReasonNoRowsNow {
-		b.ReviseCall(f.tool, nil, "The write now changes no rows: read the rows again with query and decide before writing.")
+		b.ReviseCall(f.Tool, nil, "The write now changes no rows: read the rows again with query and decide before writing.")
 		return
 	}
-	b.ReviseCall(f.tool, nil, "Fix the statement as the database's message says, then call again.")
+	b.ReviseCall(f.Tool, nil, "Fix the statement as the database's message says, then call again.")
 }
 
-func invalidArgumentSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
+func invalidArgumentSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	switch te.Reason {
 	case guidance.ReasonStaleCursor:
-		b.RepeatCall(f.tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
+		b.RepeatCall(f.Tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
 		return ""
 	case guidance.ReasonScopeFilter:
-		b.ReviseCall(f.tool, nil, "Call again without the refused entries the message names, or without that filter.")
-		if id := f.arg(guidance.ArgRunID); id != "" {
+		b.ReviseCall(f.Tool, nil, "Call again without the refused entries the message names, or without that filter.")
+		if id := f.Arg(guidance.ArgRunID); id != "" {
 			b.CallTool(guidance.ToolRunHistory, map[string]any{guidance.ArgRunID: id}, "Read the run's history to see the tables you wrote in it.")
 			return ""
 		}
 		b.CallTool(guidance.ToolListRuns, map[string]any{}, "List your runs to see your own runs in the task; run_history shows the tables each one wrote.")
 		return ""
 	case guidance.ReasonScopeFilterCap:
-		b.ReviseCall(f.tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
+		b.ReviseCall(f.Tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
 			"can narrow it on the signing page.", revert.MaxFilter, revert.MaxFilter))
 		return ""
 	case ReasonAdminCredential:
 		b.AskPerson(adminCredentialAsk)
-		b.ReviseCall(f.tool, nil, adminCredentialRevise)
+		b.ReviseCall(f.Tool, nil, adminCredentialRevise)
 		return adminCredentialPerson
 	}
-	b.ReviseCall(f.tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
+	b.ReviseCall(f.Tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
 	return ""
 }
 
 // unavailableSteps: a database the engine cannot reach is retried once; the
 // machine problems are the person's to fix, with the command for it.
-func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
+func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	switch te.Reason {
 	case guidance.ReasonDatabaseUnreachable:
-		b.RepeatCall(f.tool, nil, 0, "Try the same call once more, in case the database was only briefly busy.")
+		b.RepeatCall(f.Tool, nil, 0, "Try the same call once more, in case the database was only briefly busy.")
 		b.AskPerson("Then tell the person the database cannot be reached and ask them to check that Postgres is running.")
 		return guidance.DatabaseUnreachableMessage
 	case guidance.ReasonTooManyConnections:
-		b.RepeatCall(f.tool, nil, 0, "Try the same call once more: a connection may have closed since.")
+		b.RepeatCall(f.Tool, nil, 0, "Try the same call once more: a connection may have closed since.")
 		b.AskPerson(guidance.TooManyConnectionsAsk)
 		return guidance.TooManyConnectionsMessage(s.deps.Core.Commands)
 	case guidance.ReasonCredentialRejected, guidance.ReasonGuardMissing, guidance.ReasonGuardOutdated:
 		return guidance.FixSteps(b, s.deps.Core.Commands, te.Reason)
 	case guidance.ReasonEngineUnreachable:
-		return guidance.EngineUnreachableSteps(b, s.deps.Core.Commands, f.tool)
+		return guidance.EngineUnreachableSteps(b, s.deps.Core.Commands, f.Tool)
 	case guidance.ReasonSetupPending, guidance.ReasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case guidance.ReasonDatabaseNotConfirmed:
 		var dn *guidance.DatabaseNotConfirmedError
-		if !errors.As(f.err, &dn) {
+		if !errors.As(f.Err, &dn) {
 			b.Fail(errors.New("a database waiting for confirmation needs its setup and address"))
 			return ""
 		}
@@ -493,12 +481,12 @@ func (s *Service) approvalAgainMessage(lead string, n linksvc.HeldAnswer) (strin
 
 // setupSteps: a pending setup is run by the person on their own computer;
 // an expired one is renewed on the engine's machine (an OPERATOR step).
-func (s *Service) setupSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
+func (s *Service) setupSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	if te.Reason == guidance.ReasonSetupExpired {
 		return guidance.SetupExpiredSteps(b, s.deps.Core.Commands)
 	}
 	var se *guidance.SetupError
-	if !errors.As(f.err, &se) {
+	if !errors.As(f.Err, &se) {
 		b.Fail(errors.New("a pending setup needs its code"))
 		return ""
 	}

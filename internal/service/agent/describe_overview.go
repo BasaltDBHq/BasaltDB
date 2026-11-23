@@ -101,7 +101,7 @@ func overviewLargeSteps(b *guidance.Steps, schemas []SchemaCount) {
 			largest = sc
 		}
 	}
-	b.CallTool(toolDescribe, map[string]any{argQuery: firstRunes(largest.Schema, describeQueryMax)},
+	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: firstRunes(largest.Schema, describeQueryMax)},
 		"Find tables with describe and a query: a word of a table, column or schema name. These arguments list the largest schema.")
 }
 
@@ -130,11 +130,11 @@ func describeNotFound(resource string) error {
 		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, guidance.MaxTableChars))}
 }
 
-// describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
+// DescribeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
-func (ds *describeCase) describeNotFoundSteps(b *guidance.Steps, f failure) string {
-	b.CallTool(toolDescribe, map[string]any{argQuery: searchTerm(f.arg(argResource))},
+func (ds *describeCase) DescribeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
+	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: searchTerm(f.Arg(guidance.ArgResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the table once you decide it should have it, or which table to use instead.")

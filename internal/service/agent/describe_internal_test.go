@@ -187,7 +187,7 @@ func callDescribe(t *testing.T, s *Service, args map[string]any) (string, bool) 
 	t.Helper()
 	var describe guidance.Tool
 	for _, tool := range Tools(s) {
-		if tool.Name == toolDescribe {
+		if tool.Name == guidance.ToolDescribe {
 			describe = tool
 		}
 	}
@@ -364,7 +364,7 @@ func TestOverviewLargeListsSchemas(t *testing.T) {
 	}, m["schemas"])
 	require.Equal(t, []string{"AGENT CALL_TOOL"}, stepKinds(t, m))
 	step := m["nextSteps"].([]any)[0].(map[string]any)
-	require.Equal(t, toolDescribe, step["tool"])
+	require.Equal(t, guidance.ToolDescribe, step["tool"])
 	require.Equal(t, map[string]any{"query": "app"}, step["arguments"], "the largest schema")
 }
 
@@ -588,7 +588,7 @@ func TestDescribeSearchPagesAndExcludesSecrets(t *testing.T) {
 // tests and accepted here.
 func outputSchema(t *testing.T) map[string]any {
 	t.Helper()
-	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), toolDescribe)
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolDescribe)
 	require.True(t, ok)
 	raw, err := json.Marshal(tool.OutputSchema)
 	require.NoError(t, err)
@@ -806,7 +806,7 @@ func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
 	require.NoError(t, err)
 	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds}}}
 	s.wire()
-	msg := newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
+	msg := newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
 	require.Contains(t, msg, "another database needs its own agent")
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
 	require.NoError(t, guidance.CheckPersonMessage(msg))

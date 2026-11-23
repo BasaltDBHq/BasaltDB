@@ -4,11 +4,10 @@
 # Format: "shard <name>" starts a shard; one package path per line below it.
 
 shard 1
-cmd/basalt
+internal/app
 
 shard 2
 internal/service/agent
-internal/app
 
 shard 3
 internal/core/pii

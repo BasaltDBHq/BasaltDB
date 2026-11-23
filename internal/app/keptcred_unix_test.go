@@ -43,7 +43,9 @@ func TestMain(m *testing.M) {
 		Main()
 	}
 	if fi, err := os.Stat(os.TempDir()); err == nil && fi.Mode()&os.ModeSticky != 0 {
-		dir, err := os.MkdirTemp(".", ".tmp-test-")
+		// A short name: socket tests build their paths below this directory,
+		// and a Unix socket path holds 108 bytes on Linux.
+		dir, err := os.MkdirTemp(".", ".t-")
 		if err != nil {
 			panic(err)
 		}

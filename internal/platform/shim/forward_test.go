@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 
@@ -135,8 +137,8 @@ func testServiceManager() guidance.ServiceManager {
 }
 
 // testEngineHost is what the engine-down status reads from the host, fixed.
-func testEngineHost() agent.EngineHost {
-	return agent.EngineHost{
+func testEngineHost() status.EngineHost {
+	return status.EngineHost{
 		LatestGuardVersion: func() int { return 1 },
 		StartHoldOffUntil:  func(guidance.LastStop, string, time.Time) (time.Time, bool) { return time.Time{}, false },
 	}

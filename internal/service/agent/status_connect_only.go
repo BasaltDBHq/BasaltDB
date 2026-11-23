@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -42,7 +44,7 @@ type ConnectOnly struct {
 	// PagesOrigin is the origin of the local pages when served.
 	PagesOrigin   string
 	ConnectBudget int
-	Vault         VaultReporter
+	Vault         statussvc.VaultReporter
 	Handoff       handoff.Handoff
 	Log           *slog.Logger
 	Now           func() time.Time
@@ -56,7 +58,7 @@ type ConnectOnly struct {
 func (c ConnectOnly) guide() *Service {
 	s := &Service{deps: Deps{
 		Core:   CoreDeps{Name: c.Name, Commands: c.Commands.OperatedBy(c.OperatedBy), Log: c.Log, Now: c.Now, Errors: c.Errors},
-		Status: StatusDeps{ConnectBudget: c.ConnectBudget},
+		Status: statussvc.Deps{ConnectBudget: c.ConnectBudget},
 	}}
 	s.wire()
 	return s
@@ -135,8 +137,8 @@ func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) 
 		base = links.DefaultLocal
 	}
 	r := guidance.StatusReport{
-		Agent: c.Name, OperatedBy: operatedBy(c.OperatedBy), Enforcement: enforcement(c.OperatedBy, c.SameUser),
-		Engine: guidance.EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: startedByEnum(c.StartedBy)},
+		Agent: c.Name, OperatedBy: statussvc.OperatedBy(c.OperatedBy), Enforcement: statussvc.Enforcement(c.OperatedBy, c.SameUser),
+		Engine: guidance.EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: statussvc.StartedByEnum(c.StartedBy)},
 		Guard:  guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: c.LatestGuardVersion()},
 		Pages:  guidance.PagesStatus{Served: c.PagesOrigin != "", URL: base},
 	}
@@ -150,7 +152,7 @@ func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) 
 	if err != nil {
 		return guidance.StatusReport{}, err
 	}
-	r.Problems, r.Ready = list, ready(list)
+	r.Problems, r.Ready = list, statussvc.Ready(list)
 	return r, nil
 }
 

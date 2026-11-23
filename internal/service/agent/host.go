@@ -4,32 +4,6 @@ import (
 	"time"
 )
 
-// CrashReport is a crash report the engine saved: what status shows of it.
-type CrashReport struct {
-	ID      string
-	Time    time.Time
-	Version string
-	Command string
-	// IssueURL is the link that opens a prefilled issue, at most limit
-	// characters long; "" when none fits.
-	IssueURL func(limit int) string
-}
-
-// ReleaseNotice is a newer release the engine knows of.
-type ReleaseNotice struct {
-	Current  string
-	Latest   string
-	Security bool
-	URL      string
-}
-
-// EngineRecord is this engine's row in the agent's database: its identity
-// and whether it was revoked.
-type EngineRecord struct {
-	RecordedAt time.Time
-	RevokedAt  *time.Time
-}
-
 // The Vault connection's states in status.vault.state.
 const (
 	vaultStateOff       = "OFF"
@@ -154,12 +128,4 @@ type CatalogSearchCursor struct {
 type CatalogColumnKey struct {
 	OID    uint32
 	Attnum int16
-}
-
-// CatalogAccess is what the agent's role can read and write, as quoted
-// table names.
-type CatalogAccess struct {
-	Read       []string
-	Write      []string
-	NotGranted []string
 }

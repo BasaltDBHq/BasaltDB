@@ -1,4 +1,4 @@
-package agent
+package status
 
 import "github.com/basaltdbhq/basaltdb/internal/core/guidance"
 

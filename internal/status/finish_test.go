@@ -1,4 +1,4 @@
-package agent
+package status
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // This file tests finishing a setup from the laptop on the engine
@@ -64,13 +63,12 @@ func (f *fakeFinisher) finished() []finishCall {
 // finishing is a service with a pending setup, the probe and finisher given
 // and n passkeys.
 func finishing(probe *fakeProbe, fin *fakeFinisher, setup *config.Setup, passkeys int) *Service {
-	d := deps()
-	d.Status.Probe = probe
-	d.Status.Finisher = fin
-	setApprovals(&d, keys{n: passkeys})
-	d.Status.Setup = setup
-	d.Core.Now = func() time.Time { return statusNow }
-	return NewService(d)
+	return newService(func(c *Core, d *Deps) {
+		d.Probe = probe
+		d.Finisher = fin
+		d.Passkeys = keys{n: passkeys}
+		d.Setup = setup
+	})
 }
 
 func pendingInstall() *config.Setup {
@@ -89,7 +87,7 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 		held bool
 	}{
 		{"the role cannot log in yet", &fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{}, true},
-		{"the role logs in but the setup is not recorded", &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, &fakeFinisher{}, true},
+		{"the role logs in but the setup is not recorded", &fakeProbe{st: currentGuard()}, &fakeFinisher{}, true},
 		{"the database cannot be reached", &fakeProbe{err: context.DeadlineExceeded, recordedErr: context.DeadlineExceeded}, &fakeFinisher{}, false},
 		{
 			"the pending credential is refused and the engine's finds nothing",
@@ -117,7 +115,7 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "PENDING", r.Setup.State)
 			require.Empty(t, tc.fin.finished(), "nothing is cleared")
-			require.NotNil(t, svc.status.setupWatch().Pending(), "the setup stays pending")
+			require.NotNil(t, svc.setupWatch().Pending(), "the setup stays pending")
 		})
 	}
 }
@@ -132,27 +130,28 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 	probe := &fakeProbe{err: errNoRole, recordedErr: errNoRole}
 	fin := &fakeFinisher{}
 	svc := finishing(probe, fin, setup, 0)
-	srv, tools := serverOf(svc)
-	requireOnlyStatusServed(t, srv, tools, guidance.ReasonSetupPending, testFingerprint)
+	// Every call but status is held until the setup is recorded.
+	var held *guidance.SetupError
+	require.ErrorAs(t, svc.Admit(context.Background()), &held)
+	require.Equal(t, testFingerprint, held.Fingerprint)
 
 	// The person ran the code on their computer.
 	id := uuid.MustParse(setup.SetupID)
 	probe.err, probe.recordedErr, probe.recorded = nil, nil, true
-	probe.st = guardAt(guardmodel.GuardOK, nil, nil)
+	probe.st = currentGuard()
 	probe.latest = &guardmodel.AgentSetup{SetupID: id, Kind: guardmodel.SetupInstall}
 
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, guidance.SetupStatus{State: handoff.SetupDone, SetupID: setup.SetupID, Kind: guardmodel.SetupInstall}, r.Setup)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: false}}, fin.finished())
-	require.Nil(t, svc.status.setupWatch().Pending(), "forgotten in memory too")
-	p := findProblem(t, r, problemNoPasskey)
+	require.Nil(t, svc.setupWatch().Pending(), "forgotten in memory too")
+	p := findProblem(t, r, "NO_PASSKEY")
 	require.Equal(t, mcpcontract.SeverityError, p.Severity)
 	require.False(t, r.Ready, "nothing held can be approved yet")
 	// Not ready holds no tool: reads and writes under the hold limit run.
 
-	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
-	require.False(t, isError, "served with no restart: %v", body)
+	require.NoError(t, svc.Admit(context.Background()), "served with no restart")
 
 	// Once cleared, a call reads no setup and clears nothing more.
 	probe.recorded = false
@@ -166,14 +165,14 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 func TestAPendingCredentialThatFindsTheSetupIsPromoted(t *testing.T) {
 	t.Parallel()
 	setup := pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
-	probe := &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recordedErr: errNoRole}
+	probe := &fakeProbe{st: currentGuard(), recordedErr: errNoRole}
 	fin := &fakeFinisher{pendingRecorded: true, has: true}
 	svc := finishing(probe, fin, setup, 1)
 
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: true}}, fin.finished())
-	require.Nil(t, svc.status.setupWatch().Pending())
+	require.Nil(t, svc.setupWatch().Pending())
 	require.NotEqual(t, "PENDING", r.Setup.State)
 }
 
@@ -190,17 +189,17 @@ func TestAFailedFinishIsTriedAgainWhenItCanStillWork(t *testing.T) {
 		"promotion failed": {pendingRecorded: true, has: true, finishErr: errors.New("the .pending file changed")},
 		"lock held":        {finishErr: config.ErrLocked},
 	} {
-		svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
+		svc := finishing(&fakeProbe{st: currentGuard(), recorded: true}, fin, pendingInstall(), 1)
 		require.NoError(t, svc.Admit(ctx), "%s: recorded, so served", name)
-		require.NotNil(t, svc.status.setupWatch().Pending(), name)
+		require.NotNil(t, svc.setupWatch().Pending(), name)
 		require.NoError(t, svc.Admit(ctx), name)
 		require.Len(t, fin.finished(), 2, "%s: tried again", name)
 	}
 
 	fin := &fakeFinisher{finishErr: errors.New("read-only file system")}
-	svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
+	svc := finishing(&fakeProbe{st: currentGuard(), recorded: true}, fin, pendingInstall(), 1)
 	require.NoError(t, svc.Admit(ctx))
-	require.Nil(t, svc.status.setupWatch().Pending())
+	require.Nil(t, svc.setupWatch().Pending())
 	require.NoError(t, svc.Admit(ctx))
 	require.Len(t, fin.finished(), 1)
 }
@@ -211,7 +210,7 @@ func TestTheHeartbeatFinishesAChangeSetup(t *testing.T) {
 	t.Parallel()
 	setup := pendingSetup(guardmodel.SetupUpgrade, statusNow.Add(time.Hour))
 	fin := &fakeFinisher{}
-	svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, setup, 1)
+	svc := finishing(&fakeProbe{st: currentGuard(), recorded: true}, fin, setup, 1)
 	require.NoError(t, svc.Admit(context.Background()))
 	require.Empty(t, fin.finished(), "a call does not look for a change setup")
 	require.NoError(t, svc.AdmitTick(context.Background()))
@@ -245,11 +244,10 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 	ctx := context.Background()
 	probe := &countingProbe{fakeProbe: &fakeProbe{err: errNoRole, recordedErr: errNoRole}}
 	now := statusNow
-	d := deps()
-	d.Status.Probe, d.Status.Finisher, d.Status.Setup = probe, &fakeFinisher{}, pendingInstall()
-	setApprovals(&d, keys{n: 1})
-	d.Core.Now = func() time.Time { return now }
-	svc := NewService(d)
+	svc := newService(func(c *Core, d *Deps) {
+		d.Probe, d.Finisher, d.Setup = probe, &fakeFinisher{}, pendingInstall()
+		c.Now = func() time.Time { return now }
+	})
 
 	for range 5 {
 		require.Error(t, svc.Admit(ctx))
@@ -265,32 +263,24 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 	require.Equal(t, 3, probe.count(), "read again once the answer is old")
 }
 
-// serverOf is svc's MCP server and tools.
-func serverOf(svc *Service) (*mcpserver.Server, []mcpserver.Tool) {
-	tools := Tools(svc)
-	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
-}
-
 // A lock file the engine cannot open is reported, not retried in silence,
 // and the setup stays pending until a try opens it (CONTRACT.md, Lock
 // files).
 func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	t.Parallel()
 	const lock = "/etc/basalt/engine.json.lock"
-	d := deps()
-	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}
-	setApprovals(&d, keys{n: 1})
-	d.Status.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
-	d.Core.Now = func() time.Time { return statusNow }
 	fin := &fakeFinisher{finishErr: &config.LockUnusableError{Path: lock, Err: os.ErrPermission}}
-	d.Status.Finisher = fin
-	svc := NewService(d)
+	svc := newService(func(c *Core, d *Deps) {
+		d.Probe = &fakeProbe{st: currentGuard(), recorded: true}
+		d.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
+		d.Finisher = fin
+	})
 
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	var found *guidance.Problem
 	for i := range r.Problems {
-		if r.Problems[i].Code == problemLockFileUnusable {
+		if r.Problems[i].Code == "LOCK_FILE_UNUSABLE" {
 			found = &r.Problems[i]
 		}
 	}
@@ -298,7 +288,7 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	require.Contains(t, found.PersonMessage, lock)
 	require.Equal(t, "sudo chown "+engineUserNameOf()+" "+lock, found.NextSteps[0].Command)
 	require.Equal(t, toolresult.ActorPerson, found.NextSteps[0].Actor)
-	require.NotNil(t, svc.status.setupWatch().Pending(), "still pending: the next call tries again")
+	require.NotNil(t, svc.setupWatch().Pending(), "still pending: the next call tries again")
 
 	fin.mu.Lock()
 	fin.finishErr = nil
@@ -306,9 +296,9 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	r, err = svc.Status(context.Background())
 	require.NoError(t, err)
 	for _, p := range r.Problems {
-		require.NotEqual(t, problemLockFileUnusable, p.Code, "fixed: no problem")
+		require.NotEqual(t, "LOCK_FILE_UNUSABLE", p.Code, "fixed: no problem")
 	}
-	require.Nil(t, svc.status.setupWatch().Pending(), "finished once the lock opens")
+	require.Nil(t, svc.setupWatch().Pending(), "finished once the lock opens")
 	require.Len(t, fin.finished(), 2)
 }
 

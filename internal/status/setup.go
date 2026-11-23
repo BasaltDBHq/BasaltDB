@@ -1,8 +1,7 @@
-package agent
+package status
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -66,16 +65,6 @@ func versions(vs []int) string {
 	return strings.Join(parts, ", ")
 }
 
-// --- the tool ---
-
-func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) {
-	var args struct{}
-	if err := guidance.DecodeArgs(raw, &args); err != nil {
-		return nil, err
-	}
-	return h.svc.Status(ctx)
-}
-
 // --- admission ---
 
 // Admit refuses a tool call the agent cannot be served yet (CONTRACT.md,
@@ -83,7 +72,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // the guard is not installed or misses a breaking migration. It reads the
 // guard on every call, so a guard update needs no engine restart. status is
 // never refused.
-func (sc *statusKeeper) Admit(ctx context.Context) error {
+func (sc *Service) Admit(ctx context.Context) error {
 	if v, known := sc.setupWatch().Gate(ctx); known && v.Blocks() {
 		return &guidance.SetupError{Code: v.Code, Fingerprint: v.Fingerprint, Expired: v.Status.State == handoff.SetupExpired, ConnectOnly: v.Status.ConnectOnly}
 	}
@@ -114,13 +103,4 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return st.State == guardmodel.GuardUpgradeAvailable, nil
-}
-
-// statusTools are the tools that report the agent's state and confirm the
-// collected database.
-func (h handlers) statusTools() []guidance.Tool {
-	return []guidance.Tool{
-		contractTool(guidance.ToolStatus, h.wrap(guidance.ToolStatus, h.status)),
-		contractTool(guidance.ToolConfirmDatabase, h.wrap(guidance.ToolConfirmDatabase, h.confirmDatabase)),
-	}
 }

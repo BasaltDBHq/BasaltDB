@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -40,17 +42,7 @@ type EngineDown struct {
 	ConfigPath string
 	// Host is what the status of an engine that is down reads from the
 	// host.
-	Host EngineHost
-}
-
-// EngineHost is what the status of an engine that is down reads from the
-// host: the guard version this build installs, why the supervisor gave up
-// (last-stop.json in the state directory), and when it tries the engine
-// again after that.
-type EngineHost struct {
-	LatestGuardVersion func() int
-	ReadLastStop       func(stateDir string) (guidance.LastStop, bool)
-	StartHoldOffUntil  func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
+	Host statussvc.EngineHost
 }
 
 func (d EngineDown) startFailure() string {
@@ -73,7 +65,7 @@ func (d EngineDown) gaveUpMessage() string {
 	if _, holding := d.Host.StartHoldOffUntil(stop, d.ConfigPath, d.Now()); !holding {
 		return ""
 	}
-	return engineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
+	return statussvc.EngineGaveUpMessage(d.Host, stop, d.ConfigPath, d.Now())
 }
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
@@ -102,7 +94,7 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
-	return EngineDownStatusAfterStart(d.Host, d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
+	return statussvc.EngineDownStatusAfterStart(d.Host, d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure(), d.ConfigPath)
 }
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {

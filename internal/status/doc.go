@@ -1,4 +1,7 @@
-// Package status holds the engine's daily check of the hosted portal
+// Package status is the engine's status use case: the status tool's report
+// for an agent, the admission of each tool call against the guard and the
+// pending setup, and the warnings that come from the guard's state. It also
+// holds the engine's daily check of the hosted portal
 // (CONTRACT.md, CLI, `basalt portal verify`; Next steps, PORTAL_MISMATCH).
 // Once a day the engine runs the same comparison as `basalt portal verify`
 // against the portal in its config and keeps the answer: in memory for the

@@ -1,4 +1,4 @@
-package agent
+package status
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 )
 
 // UpdateInfo is the Service's newer release, or nil.
-func (sc *statusKeeper) UpdateInfo() *guidance.UpdateInfo {
+func (sc *Service) UpdateInfo() *guidance.UpdateInfo {
 	if sc.deps.Update == nil {
 		return nil
 	}
@@ -27,7 +27,7 @@ func NewUpdateInfo(n ReleaseNotice, exe string, message func(n ReleaseNotice, ex
 
 // UpdateNotice is the text the MCP server appends to a connection's first
 // tool result: the update notice for the agent, "" when none.
-func (sc *statusKeeper) UpdateNotice() string {
+func (sc *Service) UpdateNotice() string {
 	if u := sc.UpdateInfo(); u != nil {
 		return u.Message
 	}

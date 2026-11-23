@@ -1,4 +1,4 @@
-package agent
+package status
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 // with its steps. It never fails on what it reads: an unreachable database
 // or a missing guard is a problem in the result, not an error. It never
 // names the credential file.
-func (sc *statusKeeper) Status(ctx context.Context) (guidance.StatusReport, error) {
+func (sc *Service) Status(ctx context.Context) (guidance.StatusReport, error) {
 	return sc.statusDeps().report(ctx)
 }
 
@@ -62,7 +62,7 @@ type statusDeps struct {
 	crashReports func(dirs ...string) []CrashReport
 }
 
-func (sc *statusKeeper) statusDeps() statusDeps {
+func (sc *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: sc.core.Name, operatedBy: sc.deps.OperatedBy, build: sc.deps.Build, startedBy: sc.deps.StartedBy, pagesBase: sc.core.PagesBase, pagesOrigin: sc.core.PagesOrigin,
 		sameUser: sc.deps.SameUser, devLocalPages: sc.deps.DevLocalPages, connectBudget: sc.deps.ConnectBudget, engineReachable: true, vault: sc.deps.Vault, portal: sc.deps.Portal, plugins: sc.deps.Plugins,
@@ -140,8 +140,8 @@ func (l LocalStatus) Report(ctx context.Context) (guidance.StatusReport, error) 
 func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	s.cmds = s.cmds.OperatedBy(s.operatedBy)
 	r := guidance.StatusReport{
-		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
-		Engine: guidance.EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: startedByEnum(s.startedBy)},
+		Agent: s.name, OperatedBy: OperatedBy(s.operatedBy), Enforcement: Enforcement(s.operatedBy, s.sameUser),
+		Engine: guidance.EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: StartedByEnum(s.startedBy)},
 		Pages:  guidance.PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
 		Update: s.update,
 	}
@@ -214,7 +214,7 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	if err != nil {
 		return guidance.StatusReport{}, err
 	}
-	r.Problems, r.Ready = list, ready(list)
+	r.Problems, r.Ready = list, Ready(list)
 	return r, nil
 }
 
@@ -227,23 +227,25 @@ func configAgent(cfg *config.Config, name string) (config.Agent, bool) {
 	return config.Agent{}, false
 }
 
-func operatedBy(v string) string {
+// OperatedBy is the status enum of an engine.json operatedBy value: PERSON unless it is AGENT.
+func OperatedBy(v string) string {
 	if v == mcpcontract.OperatedByAgent {
 		return v
 	}
 	return mcpcontract.OperatedByPerson
 }
 
-// enforcement is GUARD_ONLY when the agent could use its credential
+// Enforcement is GUARD_ONLY when the agent could use its credential
 // directly: it operates the machine, or the engine runs as the person.
-func enforcement(operated string, sameUser bool) string {
+func Enforcement(operated string, sameUser bool) string {
 	if operated == mcpcontract.OperatedByAgent || sameUser {
 		return EnforcementGuardOnly
 	}
 	return EnforcementEngineAndGuard
 }
 
-func ready(list []guidance.Problem) bool {
+// Ready is whether no problem of the list is an error.
+func Ready(list []guidance.Problem) bool {
 	for _, p := range list {
 		if p.Severity == mcpcontract.SeverityError {
 			return false
@@ -370,17 +372,17 @@ func noPasskeyProblemSteps(b *guidance.Steps, cmds guidance.Commands) string {
 		b.EndTurn("End your turn; the person adds the passkey on that page.")
 		return nothingSignableLead + " Open the link the agent gives you and add a passkey there."
 	}
-	return noPasskeySteps(b, cmds)
+	return NoPasskeySteps(b, cmds)
 }
 
 // nothingSignableLead says why nothing the agent holds can be approved yet.
 const nothingSignableLead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
 
-// noPasskeySteps: the agent runs basalt init, whose link opens the page
+// NoPasskeySteps: the agent runs basalt init, whose link opens the page
 // where the person registers a passkey; on an agent-operated engine the
 // connect page (RI-6: the person's computer registers a portal passkey when
 // none is active).
-func noPasskeySteps(b *guidance.Steps, cmds guidance.Commands) string {
+func NoPasskeySteps(b *guidance.Steps, cmds guidance.Commands) string {
 	const lead = nothingSignableLead
 	if cmds.AgentOperated() {
 		return guidance.RemoteSetupSteps(b, cmds, lead)

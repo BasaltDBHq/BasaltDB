@@ -68,7 +68,7 @@ func (c *setupCache) remember(id string, now time.Time) {
 	c.id, c.at = id, now
 }
 
-// SetupKeeper owns the agent's pending setup: StatusDeps.Setup until the
+// SetupKeeper owns the agent's pending setup: Deps.Setup of the status use case until the
 // database shows it recorded, the held calls' cache of a setup not recorded
 // yet, and the lock file the engine could not open while finishing one
 // (problem LOCK_FILE_UNUSABLE).

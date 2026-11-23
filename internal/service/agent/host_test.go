@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 
 	"github.com/stretchr/testify/require"
@@ -39,11 +41,11 @@ func testDeps() Deps {
 	d.Revert.RotateSession = vault.RotateSession
 	d.Delivery.VaultConflict = vault.IsConflict
 	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
-	d.Status.CrashReports = func(dirs ...string) []CrashReport {
+	d.Status.CrashReports = func(dirs ...string) []statussvc.CrashReport {
 		reports := crash.List(dirs...)
-		out := make([]CrashReport, 0, len(reports))
+		out := make([]statussvc.CrashReport, 0, len(reports))
 		for _, r := range reports {
-			out = append(out, CrashReport{
+			out = append(out, statussvc.CrashReport{
 				ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
 				IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
 			})
@@ -51,7 +53,7 @@ func testDeps() Deps {
 		return out
 	}
 	d.Status.LatestGuardVersion = guard.LatestVersion
-	d.Status.UpdateMessage = func(n ReleaseNotice, exe string) string {
+	d.Status.UpdateMessage = func(n statussvc.ReleaseNotice, exe string) string {
 		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 	}
 	d.Status.StartHoldOffUntil = testEngineHost().StartHoldOffUntil
@@ -82,8 +84,8 @@ func testErrors() guidance.ErrorMap {
 	}
 }
 
-func testEngineHost() EngineHost {
-	return EngineHost{
+func testEngineHost() statussvc.EngineHost {
+	return statussvc.EngineHost{
 		LatestGuardVersion: guard.LatestVersion,
 		ReadLastStop:       engine.ReadLastStop,
 		StartHoldOffUntil: func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {

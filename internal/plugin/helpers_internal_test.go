@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -171,18 +173,18 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	d.Status.StartHoldOffUntil = func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 		return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 	}
-	d.Status.CrashReports = func(dirs ...string) []agent.CrashReport {
+	d.Status.CrashReports = func(dirs ...string) []status.CrashReport {
 		reports := crash.List(dirs...)
-		out := make([]agent.CrashReport, 0, len(reports))
+		out := make([]status.CrashReport, 0, len(reports))
 		for _, r := range reports {
-			out = append(out, agent.CrashReport{
+			out = append(out, status.CrashReport{
 				ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
 				IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
 			})
 		}
 		return out
 	}
-	d.Status.UpdateMessage = func(n agent.ReleaseNotice, exe string) string {
+	d.Status.UpdateMessage = func(n status.ReleaseNotice, exe string) string {
 		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 	}
 	d.Plugin.ApprovalsVersion = guard.PluginApprovalsVersion

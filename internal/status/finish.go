@@ -1,4 +1,4 @@
-package agent
+package status
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 // AdmitTick is the heartbeat's gate: it first looks for a pending setup of
 // any kind in the database, so a rotated credential is picked up and
 // engine.json cleared even when nobody calls status, then admits as Admit.
-func (sc *statusKeeper) AdmitTick(ctx context.Context) error {
+func (sc *Service) AdmitTick(ctx context.Context) error {
 	if w := sc.setupWatch(); w.Pending() != nil && w.Pending().Kind != guardmodel.SetupInstall {
 		w.PendingRecorded(ctx)
 	}
@@ -30,6 +30,6 @@ func (sc *statusKeeper) AdmitTick(ctx context.Context) error {
 }
 
 // setupWatch is the pending setup as a call reads it now.
-func (sc *statusKeeper) setupWatch() handoff.SetupWatch {
+func (sc *Service) setupWatch() handoff.SetupWatch {
 	return sc.pending.Watch(sc.deps.Database, sc.deps.Probe, sc.deps.Finisher, sc.core.Log, sc.core.Now)
 }

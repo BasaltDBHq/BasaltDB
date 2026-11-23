@@ -97,10 +97,10 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			setApprovals(&d, keys{n: 1})
 			d.Status.Setup = pendingSetup(tc.kind, soon)
 			d.Core.Now = func() time.Time { return statusNow }
-			cmds, err := NewCommands("bot", "", "linux", testManager())
+			cmds, err := newCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			d.Core.Commands = cmds
-			r, err := NewService(d).Status(context.Background())
+			r, err := NewService(d).status.Status(context.Background())
 			require.NoError(t, err)
 			p := findProblem(t, r, tc.problem)
 			requireConnectPending(t, mcpcontract.VariantProblem, tc.problem, "", p.PersonMessage, p.Links, p.NextSteps)
@@ -109,7 +109,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 
 			// With no connect budget the agent's basalt init comes first.
 			d.Status.ConnectBudget = 0
-			r, err = NewService(d).Status(context.Background())
+			r, err = NewService(d).status.Status(context.Background())
 			require.NoError(t, err)
 			p = findProblem(t, r, tc.problem)
 			require.Empty(t, p.Links)

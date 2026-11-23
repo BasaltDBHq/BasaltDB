@@ -39,7 +39,7 @@ func pluginStatus(t *testing.T, r statussvc.PluginReporter) guidance.StatusRepor
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
-	rep, err := NewService(d).Status(context.Background())
+	rep, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return rep
 }

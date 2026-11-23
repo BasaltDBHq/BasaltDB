@@ -35,7 +35,7 @@ var statusNow = time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 const statusCredential = "/etc/basalt/agents/bot.url"
 
 // newCommands are the commands the engine builds for agent bot on linux
-// (app.NewCommands, which this package cannot import): the inputs pass its
+// (app's newCommands, which this package cannot reach): the inputs pass its
 // checks, a valid agent name and an absolute or empty config path, so its
 // result is guidance.NewCommands' own.
 func newCommands(t *testing.T, configPath string) guidance.Commands {
@@ -93,7 +93,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	t.Parallel()
 	cmds := newCommands(t, "/srv/basalt/engine.json")
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
 
 	served := make([]string, 0, len(down.Tools()))
 	for _, tool := range down.Tools() {
@@ -140,7 +140,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, down.Tools()...)
 
 	v, ok := stepcatalogtest.CatalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, guidance.CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)
@@ -176,7 +176,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Equal(t, guidance.ReasonEngineUnreachable, r.Problems[1].Code, "the manual step stays")
 	require.False(t, r.Ready)
 
-	var query guidance.Tool
+	var query mcpserver.Tool
 	for _, tool := range down.Tools() {
 		if tool.Name == "query" {
 			query = tool

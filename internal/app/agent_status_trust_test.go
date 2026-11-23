@@ -32,10 +32,10 @@ func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep status
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
 	d.Status.Trust = rep
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }

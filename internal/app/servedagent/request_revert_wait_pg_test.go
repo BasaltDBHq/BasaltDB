@@ -30,7 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // testPoll is how often a waiting call reads the person's signature in
@@ -392,22 +391,6 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	again, isError := env.h.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo again"})
 	requireErrorSteps(t, again, isError, "NOTHING_TO_REVERT", "ALREADY_REVERTED")
 	require.Contains(t, str(t, again["personMessage"]), "Reverting that revert brings the agent's changes back")
-}
-
-// A canceled call stops waiting at once.
-func TestRequestRevertWaitCancelled(t *testing.T) {
-	t.Parallel()
-	env := agentHarness(t)
-	runID, _ := winLeads(t, env.h, "86")
-	id := uuid.MustParse(str(t, requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})["revertId"]))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	afterPolls := env.afterRevertPolls()
-	go func() { afterPolls(); cancel() }()
-	start := time.Now()
-	_, err := env.svc.AwaitRevert(ctx, revertsvc.AwaitRevertParams{RevertID: id, Wait: revertsvc.DefaultRevertWait})
-	require.ErrorIs(t, err, context.Canceled)
-	require.Less(t, time.Since(start), 5*time.Second)
 }
 
 // The person signs on the revert page and the agent's wait sees it

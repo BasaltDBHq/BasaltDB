@@ -11,13 +11,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
-	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
-	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
-	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
-	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginmcp"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
-	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -53,8 +47,8 @@ func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) 
 	return action.WriteResult{}, nil
 }
 func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }
-func (nopStore) History(context.Context, action.ChangeListParams) (History, error) {
-	return History{}, nil
+func (nopStore) History(context.Context, action.ChangeListParams) (changeHistory, error) {
+	return changeHistory{}, nil
 }
 
 func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {
@@ -70,28 +64,6 @@ func deps() Deps {
 		Store:         struct{ revertsvc.Store }{},
 	})
 	return d
-}
-
-// servedTools are s's tools as the engine lists them (app's agentTools,
-// whose tests pin the list and its order): each group's tools under their
-// contracts, around agentmcp.Wrap. It copies app's composer: a layer app
-// adds around Wrap, or a group it adds or reorders, must be added here too.
-func servedTools(s *Service) []guidance.Tool {
-	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
-		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
-		if !ok {
-			panic("no contract for tool " + name)
-		}
-		return guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: agentmcp.Wrap(s, name, call)}
-	}
-	tools := agentmcp.RunStartTools(s, mount)
-	for _, list := range [][]guidance.Tool{
-		agentmcp.WriteTools(s, mount), ledgermcp.Tools(s, mount), agentmcp.RunTools(s, mount), approvalmcp.Tools(s, mount), revertmcp.Tools(s, mount),
-		pluginmcp.Tools(s, mount), agentmcp.DescribeTools(s, mount), statusmcp.Tools(s, mount), handoffmcp.Tools(mount),
-	} {
-		tools = append(tools, list...)
-	}
-	return tools
 }
 
 // TestHeldWriteDescriptionsWaitOnce: after handing over a link (write's

@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // --- the served agent's confirm_database ---
@@ -26,8 +27,8 @@ func confirmDatabase(_ context.Context, raw json.RawMessage) (any, error) {
 // with no connect-only setup waiting. mount lists a tool under its contract,
 // around the agent's admission and error mapping; the tool list's composer
 // supplies it.
-func Tools(mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
-	return []guidance.Tool{
+func Tools(mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
+	return []mcpserver.Tool{
 		mount(guidance.ToolConfirmDatabase, confirmDatabase),
 	}
 }

@@ -167,10 +167,10 @@ func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, ope
 		d.Core.Now = func() time.Time { return statusNow }
 		// The credential file is at init's default, so no saved flag names it
 		// (a saved --credential-file stays in init commands, AE-15).
-		cmds, err := NewCommands("bot", configPath, "linux", testManager())
+		cmds, err := newCommands("bot", configPath, "linux", testManager())
 		require.NoError(t, err)
 		d.Core.Commands = cmds
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		return r
 	}
@@ -189,7 +189,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 	cases := map[string]statusCase{
 		guidance.ReasonEngineUnreachable: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux", testManager())
+			cmds, err := newCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow, "", "")
@@ -198,7 +198,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		}},
 		"ENGINE_START_FAILED": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux", testManager())
+			cmds, err := newCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
@@ -207,7 +207,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		}},
 		"ENGINE_GAVE_UP": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
-			cmds, err := NewCommands("bot", "", "linux", testManager())
+			cmds, err := newCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
@@ -397,7 +397,7 @@ func TestStatusVaultHook(t *testing.T) {
 	d := deps()
 	setApprovals(&d, keys{n: 1})
 	d.Status.Vault = fixedVault{guidance.VaultStatus{State: "KEY_ERROR"}}
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, &guidance.VaultStatus{State: "KEY_ERROR"}, r.Vault)
 	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
@@ -457,8 +457,8 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcpserver.S
 	setApprovals(&d, keys{n: 1})
 	d.Status.Setup = setup
 	d.Core.Now = func() time.Time { return statusNow }
-	tools := servedTools(NewService(d))
-	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, nil)...), mcpserver.ToolsFrom(tools, nil)
+	tools := AgentTools(NewService(d))
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, tools...), tools
 }
 
 func serveCall(t *testing.T, srv *mcpserver.Server, tool string, args map[string]any) (map[string]any, bool) {
@@ -650,10 +650,10 @@ func lockTroubleStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	d.Status.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
 	d.Core.Now = func() time.Time { return statusNow }
 	d.Status.Finisher = failingFinisher{&config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }
@@ -683,10 +683,10 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read statussvc.Engine
 	d.Core.Now = func() time.Time { return statusNow }
 	d.Status.Vault = fixedVault{guidance.VaultStatus{State: "OFF", EngineID: testEngineID}}
 	d.Status.EngineRecord = read
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }
@@ -733,7 +733,7 @@ func TestStatusEngineRecord(t *testing.T) {
 		setApprovals(&d, keys{n: 1})
 		d.Status.Vault = fixedVault{guidance.VaultStatus{State: "KEY_ERROR"}}
 		d.Status.EngineRecord = recordOf(true)
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, &guidance.EngineRecordStatus{State: "UNKNOWN"}, r.EngineRecord)
 		require.Empty(t, r.Problems)
@@ -742,7 +742,7 @@ func TestStatusEngineRecord(t *testing.T) {
 		t.Parallel()
 		d := deps()
 		setApprovals(&d, keys{n: 1})
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		require.Nil(t, r.EngineRecord)
 	})
@@ -865,10 +865,10 @@ func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...strin
 	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, originKeys{origins: origins})
 	d.Core.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds.UpdateLink(update)
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }
@@ -880,7 +880,7 @@ func TestStatusStartedBy(t *testing.T) {
 		d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
 		d.Status.StartedBy = in
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, want, r.Engine.StartedBy, in)
 		require.Nil(t, r.Engine.LastStop, "a running engine reports no last stop")
@@ -889,8 +889,8 @@ func TestStatusStartedBy(t *testing.T) {
 
 // serverOf is svc's MCP server and tools.
 func serverOf(svc *Service) (*mcpserver.Server, []mcpserver.Tool) {
-	tools := servedTools(svc)
-	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, nil)...), mcpserver.ToolsFrom(tools, nil)
+	tools := AgentTools(svc)
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, tools...), tools
 }
 
 // failingFinisher is a finisher whose Finish fails with the error it holds.

@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
@@ -159,7 +160,7 @@ func ordersDetail() agentsvc.CatalogDetail {
 func describeService(t *testing.T, cat agentsvc.Catalog, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy
@@ -201,8 +202,8 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 // would, and returns the JSON it gets: the result or the error body.
 func callDescribe(t *testing.T, s *Service, args map[string]any) (string, bool) {
 	t.Helper()
-	var describe guidance.Tool
-	for _, tool := range servedTools(s) {
+	var describe mcpserver.Tool
+	for _, tool := range AgentTools(s) {
 		if tool.Name == guidance.ToolDescribe {
 			describe = tool
 		}

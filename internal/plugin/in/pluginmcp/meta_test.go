@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
@@ -39,10 +38,10 @@ func TestRequestPluginGetsTheRequestMeta(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			p := &metaPlugins{}
-			mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
-				return guidance.Tool{Name: name, InputSchema: map[string]any{"type": "object"}, Call: call}
+			mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool {
+				return mcpserver.Tool{Name: name, InputSchema: map[string]any{"type": "object"}, Call: call}
 			}
-			srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(Tools(p, mount), nil)...)
+			srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, Tools(p, mount)...)
 			line := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"request_plugin","arguments":{"source":"/p"}` + tc.meta + `}}`
 			var out strings.Builder
 			require.NoError(t, srv.ServeLine(context.Background(), &out, []byte(line)))

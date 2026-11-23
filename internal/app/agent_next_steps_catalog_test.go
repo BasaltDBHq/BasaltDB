@@ -307,7 +307,7 @@ func serviceFor(t *testing.T, goos, configPath string, opts ...func(*Deps)) *Ser
 // operatedService is serviceFor on an engine whose operatedBy is operatedBy.
 func operatedService(t *testing.T, goos, configPath, operatedBy string, opts ...func(*Deps)) *Service {
 	t.Helper()
-	cmds, err := NewCommands("bot", configPath, goos, testManager())
+	cmds, err := newCommands("bot", configPath, goos, testManager())
 	require.NoError(t, err)
 	d := deps()
 	d.Core.Commands = cmds

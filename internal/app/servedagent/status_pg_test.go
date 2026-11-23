@@ -1,7 +1,6 @@
 package servedagent_test
 
 import (
-	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
@@ -151,8 +150,13 @@ func TestStatusOnAFullGuard(t *testing.T) {
 	svc := agenttest.PgService(t, agentURL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Status.Probe = app.NewAgentProbe(store.Probe{Q: pool, Migrations: guard.Migrations()})
 	})).Svc
-	r, err := svc.Status(context.Background())
+	// The report as the status tool serves it.
+	body, isError := servedHarness(svc).call(t, "status", map[string]any{})
+	require.False(t, isError, "%v", body)
+	raw, err := json.Marshal(body)
 	require.NoError(t, err)
+	var r guidance.StatusReport
+	require.NoError(t, json.Unmarshal(raw, &r))
 	require.Equal(t, guardmodel.GuardOK, r.Guard.State)
 	require.Equal(t, guard.LatestVersion(), *r.Guard.Installed)
 	require.False(t, r.Passkeys.Registered)

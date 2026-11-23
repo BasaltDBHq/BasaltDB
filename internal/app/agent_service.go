@@ -24,15 +24,16 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
-// History is one page of a run's change records with the rows each wrote.
-type History = action.History[action.Change, action.RowChange]
+// changeHistory is one page of a run's change records with the rows each
+// wrote.
+type changeHistory = action.History[action.Change, action.RowChange]
 
 // Deps are a Service's dependencies, grouped by use case so each use case
 // reads only its own group and can be lifted out with it. Core is shared by
 // all of them. A port documented as optional may be nil; every other port
 // is required and NewService refuses a Deps without it.
 type Deps struct {
-	Core     CoreDeps
+	Core     coreDeps
 	Write    agentsvc.WriteDeps
 	Approval approvalsvc.Deps
 	Revert   revertsvc.Deps
@@ -42,14 +43,14 @@ type Deps struct {
 	Plugin   pluginsvc.Deps
 }
 
-// CoreDeps is what every use case shares: who the agent is, the ledger kept
+// coreDeps is what every use case shares: who the agent is, the ledger kept
 // next to its store, the log and clock, the commands the person runs, how
 // errors map to the contract, and where the pages are.
-type CoreDeps struct {
+type coreDeps struct {
 	Name string
 	// Store is the agent's store, as far as every use case needs it: its
 	// kind, what it can do, and its runs.
-	Store Store
+	Store agentStore
 	Log   *slog.Logger
 	Now   func() time.Time
 	// Commands builds the commands the person runs for this agent; the
@@ -112,14 +113,14 @@ func NewService(d Deps) *Service {
 	}
 	if d.Core.Commands.AgentName() == "" {
 		// A name and no config path cannot fail.
-		d.Core.Commands, _ = NewCommands(d.Core.Name, "", "", d.Core.ServiceManager)
+		d.Core.Commands, _ = newCommands(d.Core.Name, "", "", d.Core.ServiceManager)
 	}
 	d.Core.Commands = d.Core.Commands.OperatedBy(d.Status.OperatedBy)
 	if d.Core.LinkBudget <= 0 {
 		d.Core.LinkBudget = links.DefaultBudget
 	}
 	if d.Delivery.Poll <= 0 {
-		d.Delivery.Poll = DefaultPoll
+		d.Delivery.Poll = defaultPoll
 	}
 	s := &Service{deps: d}
 	s.wire()
@@ -174,7 +175,7 @@ func (s *Service) approvalCore() approvalsvc.Core {
 }
 
 // runChecker answers whether a run is one of the agent's, from its ledger.
-type runChecker struct{ store Store }
+type runChecker struct{ store agentStore }
 
 func (r runChecker) CheckRun(ctx context.Context, id uuid.UUID) error {
 	_, err := ledgersvc.FindRun(ctx, r.store, id)

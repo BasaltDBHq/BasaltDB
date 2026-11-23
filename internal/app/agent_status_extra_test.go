@@ -27,7 +27,7 @@ func extraStatus(t *testing.T, edit func(*Deps)) (guidance.StatusReport, string)
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
 	edit(&d)
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	tool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	return r, requireStatusSchema(t, tool, r)

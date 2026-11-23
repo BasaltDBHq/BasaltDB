@@ -50,6 +50,27 @@ func TestServedToolListOrder(t *testing.T) {
 	require.Equal(t, want, names)
 }
 
+// driveStore is a store of kind DRIVE, which does not speak SQL.
+type driveStore struct{ agent.SQLStore }
+
+func (driveStore) Kind() action.StoreKind { return action.StoreDrive }
+
+// TestServedToolListOrderWithoutSQL pins the tool list of a store that does
+// not speak SQL: the same order, without query and write.
+func TestServedToolListOrderWithoutSQL(t *testing.T) {
+	t.Parallel()
+	tools := agentTools(agent.NewService(testAgentDeps("bot", driveStore{})))
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	want := []string{
+		"run_start", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
+		"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
+	}
+	require.Equal(t, want, names)
+}
+
 // TestAgentToolsNeedAService: the tool list of no service is a wiring
 // defect.
 func TestAgentToolsNeedAService(t *testing.T) {

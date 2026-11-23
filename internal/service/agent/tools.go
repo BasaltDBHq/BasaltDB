@@ -14,7 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // RunStartTools are the tools that start a run. mount lists a tool under its
@@ -181,34 +180,6 @@ func intentMissing(raw json.RawMessage) bool {
 		return false
 	}
 	return probe.Intent == nil || *probe.Intent == ""
-}
-
-// --- run_history ---
-
-// runHistoryArgs is the run_history tool's input
-// (api/mcp/tools/run_history.json): the list params struct embeds
-// pagination.Params, as every list does.
-type runHistoryArgs struct {
-	pagination.Params
-	RunID string `json:"runId" validate:"required,uuid"`
-}
-
-func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, error) {
-	var args runHistoryArgs
-	if err := guidance.DecodeArgs(raw, &args); err != nil {
-		return nil, err
-	}
-	params := action.ChangeListParams{Params: args.Params, RunID: uuid.MustParse(args.RunID)}
-	params.ApplyDefaultsAndClamp()
-	hist, err := h.svc.History(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]any, 0, len(hist.Page.Items))
-	for _, ch := range hist.Page.Items {
-		items = append(items, h.svc.deps.Write.Record(ch, hist.Rows[ch.ID]))
-	}
-	return pagination.ToMCP(pagination.Page[any]{Items: items, NextCursor: hist.Page.NextCursor}), nil
 }
 
 // paramValues converts JSON-decoded parameters for the store's driver: integral numbers

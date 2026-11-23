@@ -21,7 +21,7 @@ type handoffFiles struct {
 
 func (f handoffFiles) secretPath() string { return config.SecretPath(f.credFile, f.agent) }
 
-func (f handoffFiles) Lock() (func(), error) { return config.LockFile(f.credFile + lockSuffix) }
+func (f handoffFiles) Lock() (func(), error) { return config.LockFile(f.credFile + handoff.LockSuffix) }
 
 func (f handoffFiles) PendingSetup() (config.Setup, bool, error) {
 	c, err := config.LoadNoFollow(f.configPath)

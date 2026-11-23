@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
 // These tests run the engine's agent runtime against a real Postgres
@@ -149,7 +150,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	pw2 := guard.NewPassword()
 	pending, err := guard.AgentConnString(d.URL, a.Role, pw2)
 	require.NoError(t, err)
-	require.NoError(t, config.WriteFile(r.credFile+pendingSuffix, []byte(pending+"\n")))
+	require.NoError(t, config.WriteFile(r.credFile+handoff.PendingSuffix, []byte(pending+"\n")))
 	rt := r.start(t)
 
 	st, err := rt.svc.Status(ctx)
@@ -170,7 +171,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	got, err := os.ReadFile(r.credFile)
 	require.NoError(t, err)
 	require.Equal(t, pending+"\n", string(got))
-	_, err = os.Lstat(r.credFile + pendingSuffix)
+	_, err = os.Lstat(r.credFile + handoff.PendingSuffix)
 	require.True(t, os.IsNotExist(err), "moved over the credential file")
 	require.Nil(t, r.configSetup(t))
 	_, err = rt.svc.StartRun(ctx, "check the leads", uuid.Nil)
@@ -191,7 +192,7 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 		guardmodel.Setup{ID: r.setupID, Kind: guardmodel.SetupUpgrade, GuardVersion: guard.LatestVersion(), ExpiresAt: r.expires})
 	require.NoError(t, err)
 
-	unlock, err := config.LockFile(r.credFile + lockSuffix)
+	unlock, err := config.LockFile(r.credFile + handoff.LockSuffix)
 	require.NoError(t, err)
 	_, err = rt.svc.Status(ctx)
 	require.NoError(t, err)

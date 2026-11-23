@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
 // rootFiles reaches the files of an engine started as root
@@ -75,8 +76,8 @@ func (r *rootFiles) readCredential() (string, error) {
 	return dsn, err
 }
 
-func (r *rootFiles) readPending() (string, os.FileInfo, error) {
-	return r.read(r.name + pendingSuffix)
+func (r *rootFiles) ReadPending() (string, os.FileInfo, error) {
+	return r.read(r.name + handoff.PendingSuffix)
 }
 
 // read reads the credential file name in agents/ (config.ReadCredentialAt:
@@ -98,16 +99,18 @@ func (r *rootFiles) read(name string) (string, os.FileInfo, error) {
 	return dsn, fi, nil
 }
 
-func (r *rootFiles) promote(pending os.FileInfo) error {
-	if err := config.SameFileAt(r.agentsDir, r.name+pendingSuffix, pending); err != nil {
+func (r *rootFiles) Promote(pending os.FileInfo) error {
+	if err := config.SameFileAt(r.agentsDir, r.name+handoff.PendingSuffix, pending); err != nil {
 		return err
 	}
-	return r.agentsDir.Rename(r.name+pendingSuffix, r.name)
+	return r.agentsDir.Rename(r.name+handoff.PendingSuffix, r.name)
 }
 
-func (r *rootFiles) lock() (func(), error) { return config.LockAt(r.agentsDir, r.name+lockSuffix) }
+func (r *rootFiles) Lock() (func(), error) {
+	return config.LockAt(r.agentsDir, r.name+handoff.LockSuffix)
+}
 
-func (r *rootFiles) clearSetup(agent, id string) (bool, error) {
+func (r *rootFiles) ClearSetup(agent, id string) (bool, error) {
 	owner, err := r.configDir.Owner()
 	if err != nil {
 		return false, err

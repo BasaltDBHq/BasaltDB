@@ -51,12 +51,6 @@ func (noFinisher) PendingRecorded(context.Context, uuid.UUID) (bool, bool, error
 
 func (noFinisher) Finish(context.Context, string, bool) error { return nil }
 
-// LoginRefused reports whether err is the database refusing a login (the
-// role does not exist, or has another password).
-func LoginRefused(err error) bool {
-	return err != nil && ErrorMap{}.ToolError(err).Reason == guidance.ReasonCredentialRejected
-}
-
 // notRecordedFor is how long a held call trusts an earlier call that found
 // the pending setup not recorded, so a burst of calls while the person runs
 // the code costs one login, not one each. status always reads afresh: it is

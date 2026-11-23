@@ -17,7 +17,19 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
+
+// recordingPassword records the passwords the pool is switched to.
+type recordingPassword struct{ set []string }
+
+func (p *recordingPassword) Set(pw string) { p.set = append(p.set, pw) }
+
+// recordedLogin is an agent login that finds every setup recorded.
+type recordedLogin struct{}
+
+func (recordedLogin) SetupRecorded(context.Context, uuid.UUID) (bool, error) { return true, nil }
+func (recordedLogin) Close(context.Context) error                            { return nil }
 
 // rootLayout is a config directory as basalt init writes it: engine.json
 // with agent bot and its pending setup, and agents/bot.url.
@@ -35,6 +47,19 @@ func rootLayout(t *testing.T, id uuid.UUID) (cfgPath, credFile string) {
 		},
 	}))
 	return cfgPath, credFile
+}
+
+// Hand-off item 7: the engine's root adapter opens agents/ and never makes
+// it; only basalt init may create it.
+func TestRootEngineNeverCreatesTheAgentsDirectory(t *testing.T) {
+	t.Parallel()
+	cfgPath, credFile := rootLayout(t, uuid.Must(uuid.NewV7()))
+	agents := filepath.Dir(credFile)
+	require.NoError(t, os.RemoveAll(agents))
+	_, err := openRootFiles(cfgPath, "bot", credFile)
+	require.Error(t, err)
+	_, err = os.Lstat(agents)
+	require.ErrorIs(t, err, os.ErrNotExist, "agents/ is not created")
 }
 
 // As root the engine reads only agents/<agent>.url next to its config: a
@@ -91,21 +116,27 @@ func TestRootEngineReachesItsFilesThroughTheOpenedDirectories(t *testing.T) {
 	files, err := openRootFiles(cfgPath, "bot", credFile)
 	require.NoError(t, err)
 	defer files.close()
-	require.NoError(t, config.WriteFile(credFile+pendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
+	require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	swap()
 
 	pw := &recordingPassword{}
-	f := &setupFinisher{
-		configPath: cfgPath, agent: "bot", credFile: credFile, files: files,
-		login: loginTarget{host: "db", port: 5432, database: "app", user: "bt_agent_bot"}, password: pw, reset: func() {},
-		log: slog.New(slog.DiscardHandler),
+	var dialed string
+	f := &handoff.Finisher{
+		ConfigPath: cfgPath, Agent: "bot", CredFile: credFile, Files: files,
+		Login: handoff.LoginTarget{Host: "db", Port: 5432, Database: "app", User: "bt_agent_bot"}, Parse: parseLogin,
+		Connect: func(_ context.Context, dsn string) (handoff.AgentLogin, error) {
+			dialed = dsn
+			return recordedLogin{}, nil
+		},
+		Password: pw, Reset: func() {}, Log: slog.New(slog.DiscardHandler),
 	}
-	// What PendingRecorded keeps once the .pending login finds the setup
-	// recorded, read through the opened agents/.
-	dsn, fi, err := files.readPending()
+	// The .pending login, read through the opened agents/, finds the setup
+	// recorded.
+	recorded, has, err := f.PendingRecorded(context.Background(), id)
 	require.NoError(t, err)
-	require.Equal(t, "postgres://bt_agent_bot:new@db:5432/app", dsn)
-	f.pending = &pendingCredential{setupID: id.String(), file: fi, password: "new"}
+	require.True(t, recorded)
+	require.True(t, has)
+	require.Equal(t, "postgres://bt_agent_bot:new@db:5432/app", dialed)
 	require.NoError(t, f.Finish(context.Background(), id.String(), true))
 	require.Equal(t, []string{"new"}, pw.set)
 
@@ -120,10 +151,10 @@ func TestRootEngineReachesItsFilesThroughTheOpenedDirectories(t *testing.T) {
 	require.Nil(t, c.Agents[0].Setup, "the setup is cleared through the opened config directory")
 
 	unswap()
-	require.NoError(t, os.Symlink(filepath.Join(agents, "x"), credFile+lockSuffix+".tmp"))
-	require.NoError(t, os.Remove(credFile+lockSuffix))
-	require.NoError(t, os.Rename(credFile+lockSuffix+".tmp", credFile+lockSuffix))
-	_, err = files.lock()
+	require.NoError(t, os.Symlink(filepath.Join(agents, "x"), credFile+handoff.LockSuffix+".tmp"))
+	require.NoError(t, os.Remove(credFile+handoff.LockSuffix))
+	require.NoError(t, os.Rename(credFile+handoff.LockSuffix+".tmp", credFile+handoff.LockSuffix))
+	_, err = files.Lock()
 	var unusable *config.LockUnusableError
 	require.True(t, errors.As(err, &unusable), err)
 }
@@ -143,7 +174,7 @@ func TestRootEngineClearsTheSetupInTheOpenedConfigDirectory(t *testing.T) {
 	require.NoError(t, os.Rename(dir, dir+".moved"))
 	require.NoError(t, os.Symlink(elsewhere, dir))
 
-	cleared, err := files.clearSetup("bot", id.String())
+	cleared, err := files.ClearSetup("bot", id.String())
 	require.NoError(t, err)
 	require.True(t, cleared)
 	entries, err := os.ReadDir(elsewhere)
@@ -179,12 +210,12 @@ func TestRootEngineChecksTheOwnersCredential(t *testing.T) {
 		{dsn: "postgres://bt_agent_bot@db.example.com:5432/app"},
 		{dsn: "host=db.example.com user=bt_agent_bot password=pw sslkey=/root/k"},
 	} {
-		for _, name := range []string{credFile, credFile + pendingSuffix} {
+		for _, name := range []string{credFile, credFile + handoff.PendingSuffix} {
 			require.NoError(t, os.WriteFile(name, []byte(tc.dsn+"\n"), config.FileMode))
 		}
 		read := func() []error {
 			_, err := files.readCredential()
-			_, _, perr := files.readPending()
+			_, _, perr := files.ReadPending()
 			return []error{err, perr}
 		}
 		r.self = os.Geteuid() // root wrote them: taken as they are

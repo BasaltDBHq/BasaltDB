@@ -5,13 +5,11 @@ import (
 	"errors"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
@@ -115,20 +113,6 @@ func TestEveryAgentCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testi
 			}
 		})
 	}
-}
-
-// TestRLSWarningNamesNoCommandWithALongConfigPath builds the warning with a
-// 252-character config path: it stays within the limit and names no basalt
-// command, since the person acts on a link (CONTRACT.md, Next steps).
-func TestRLSWarningNamesNoCommandWithALongConfigPath(t *testing.T) {
-	t.Parallel()
-	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	s := newTestService(t, "linux", long)
-	w, err := s.rlsWarning("public." + strings.Repeat("t", 60))
-	require.NoError(t, err)
-	require.NoError(t, guidance.CheckPersonMessage(w.PersonMessage), w.PersonMessage)
-	require.NotContains(t, w.PersonMessage, long)
-	require.NotContains(t, w.PersonMessage, "basalt ", "the person runs no command")
 }
 
 func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {

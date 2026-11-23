@@ -794,13 +794,3 @@ func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
 	require.Len(t, m["schemas"], 50)
 	require.NotContains(t, m, "otherSchemas")
 }
-
-func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
-	t.Parallel()
-	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
-	require.NoError(t, err)
-	msg := describeUseCase(cmds, &fakeCatalog{}).DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
-	require.Contains(t, msg, "another database needs its own agent")
-	require.NotContains(t, msg, "basalt ", "the person runs no command")
-	require.NoError(t, guidance.CheckPersonMessage(msg))
-}

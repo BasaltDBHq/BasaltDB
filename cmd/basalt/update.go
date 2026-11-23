@@ -74,7 +74,7 @@ func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv
 	if len(args) == 0 || slices.Contains(status.NoUpdateLine, args[0]) || cli.WantsJSON(args) {
 		return nothing
 	}
-	if status.UpdateOff(getenv, appUpdateHost{osHost{}}, appUpdateHost{osHost{}}) {
+	if status.UpdateOff(getenv, appUpdateHost{app.OSHost{}}, appUpdateHost{app.OSHost{}}) {
 		return nothing
 	}
 	ck, err := updateChecker(getenv)

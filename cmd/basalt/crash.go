@@ -68,7 +68,7 @@ func commandName(args []string) string {
 }
 
 // engineHost is engine.Host through app and the machine.
-type engineHost struct{ osHost }
+type engineHost struct{ app.OSHost }
 
 func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
 

@@ -177,7 +177,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 	defer release()
 	var stderr bytes.Buffer
 
-	code := enginecli.RunSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{}, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
+	code := enginecli.RunSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, app.OSHost{}, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
 
 	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another basalt engine --supervise runs")
@@ -186,7 +186,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 func TestStartedByRefusesUnknownValue(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
-	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
+	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, app.OSHost{})
 	require.Equal(t, cli.ExitUsage, code)
 }
 

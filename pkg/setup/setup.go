@@ -38,7 +38,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // Request is what every step is given.

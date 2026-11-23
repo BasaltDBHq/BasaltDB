@@ -1,4 +1,4 @@
-// Package setuprun runs a setup code as the database's admin: the checks,
+// Package setup runs a setup code as the database's admin: the checks,
 // the questions, the one transaction and record_setup (CONTRACT.md, Setup
 // from your laptop). The connect service, through the public package
 // pkg/setup, uses it, so the setup has one implementation; pkg/setup is
@@ -7,7 +7,7 @@
 // It takes a connection its caller opened and reads no environment
 // variable, terminal or file. Its messages name databases, hosts, roles and
 // tables, never a password or a connection string's parameters.
-package setuprun
+package setup
 
 import (
 	"context"

@@ -11,7 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The Update check on the connect page (CONTRACT.md, Connect, Update on the

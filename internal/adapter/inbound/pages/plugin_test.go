@@ -189,7 +189,7 @@ func TestPluginRoutesInASession(t *testing.T) {
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	a := &pluginAgent{plugin: id, at: time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)}
 	a.secrets, a.origin = secrets, origin
-	srv := pages.New(origin, slog.New(slog.DiscardHandler))
+	srv := mounted(pages.New(origin, slog.New(slog.DiscardHandler)))
 	srv.Add(a)
 	secret, err := secrets.Issue(id, time.Now().Add(time.Hour))
 	require.NoError(t, err)

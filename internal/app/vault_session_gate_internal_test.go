@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -67,7 +66,7 @@ func TestVaultSessionOnAnUnsafeGuardAnswersAsLoopback(t *testing.T) {
 	id := uuid.Must(uuid.NewV7())
 	s := serveOverVault(t, &wire{}, svc, store, id)
 
-	loopback := pages.New(links.Portal, quietLog())
+	loopback := newPages(links.Portal, quietLog())
 	loopback.Add(svc)
 	h := loopback.Handler()
 	viaLoopback := func(method, path string, headers map[string]string, body string) (int, string) {

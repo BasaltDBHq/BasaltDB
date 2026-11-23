@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -167,7 +166,7 @@ func TestRevealRoutes(t *testing.T) {
 	t.Parallel()
 	e := newRevealEnv(t)
 	ctx := context.Background()
-	loopback := pages.New(links.Portal, slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	loopback := newPages(links.Portal, slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	loopback.Add(e.svc)
 	viaLoopback := func(method, path, secret, body string) (int, string) {
 		t.Helper()

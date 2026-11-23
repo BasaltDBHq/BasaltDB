@@ -31,7 +31,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
@@ -252,7 +251,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)
 	live := newRelayLinks(quietLog())
-	site := pages.New(links.Portal, quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
 	require.NotNil(t, ev.client)

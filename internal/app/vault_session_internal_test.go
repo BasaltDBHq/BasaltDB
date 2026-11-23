@@ -192,7 +192,7 @@ func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.A
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
 	relay := newRelayLinks(quietLog())
-	site := pages.New(links.Portal, quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, sessionDispatcher{site})

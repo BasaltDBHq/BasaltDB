@@ -98,6 +98,64 @@ type Server struct {
 	// setup runs the setup page's UPDATE and REMOVE (SetSetup); nil
 	// refuses every setup request JOB_UNAVAILABLE without reading it.
 	setup SetupJobs
+	// The handlers app mounts on the API routes, one set per page
+	// (MountApprovals, MountReverts, MountPlugins). Handler and Dispatch
+	// need all three.
+	approvals ApprovalHandlers
+	reverts   RevertHandlers
+	plugins   PluginHandlers
+}
+
+// ApprovalHandlers serve the approval page's API routes: GET the request,
+// POST …/approve and POST …/reveal.
+type ApprovalHandlers struct {
+	Get, Approve, Reveal http.HandlerFunc
+}
+
+// RevertHandlers serve the revert page's API routes: GET the request, POST
+// …/apply, …/scope, …/reject and …/reveal.
+type RevertHandlers struct {
+	Get, Apply, Scope, Reject, Reveal http.HandlerFunc
+}
+
+// PluginHandlers serve the plugin approval page's API routes: GET the
+// request and POST …/approve.
+type PluginHandlers struct {
+	Get, Approve http.HandlerFunc
+}
+
+// MountApprovals serves h on the approval routes. Call it before Handler
+// or Dispatch.
+func (s *Server) MountApprovals(h ApprovalHandlers) {
+	if h.Get == nil || h.Approve == nil || h.Reveal == nil {
+		panic("pages: every approval handler required")
+	}
+	s.approvals = h
+}
+
+// MountReverts serves h on the revert routes. Call it before Handler or
+// Dispatch.
+func (s *Server) MountReverts(h RevertHandlers) {
+	if h.Get == nil || h.Apply == nil || h.Scope == nil || h.Reject == nil || h.Reveal == nil {
+		panic("pages: every revert handler required")
+	}
+	s.reverts = h
+}
+
+// MountPlugins serves h on the plugin approval routes. Call it before
+// Handler or Dispatch.
+func (s *Server) MountPlugins(h PluginHandlers) {
+	if h.Get == nil || h.Approve == nil {
+		panic("pages: every plugin approval handler required")
+	}
+	s.plugins = h
+}
+
+// mounted panics unless app mounted every page's handlers.
+func (s *Server) mounted() {
+	if s.approvals.Get == nil || s.reverts.Get == nil || s.plugins.Get == nil {
+		panic("pages: mount the approval, revert and plugin handlers first")
+	}
 }
 
 // New returns the pages for origin, the approval page's origin, which a
@@ -124,6 +182,7 @@ func (s *Server) SetSetup(jobs SetupJobs) { s.setup = jobs }
 
 // Handler routes the pages, their files and the relay.
 func (s *Server) Handler() http.Handler {
+	s.mounted()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -142,14 +201,14 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("GET "+r.Path, s.static(r.File))
 		}
 	}
-	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.getApproval)
-	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
-	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.postRevert)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/scope", s.postScope)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.postReject)
-	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/reveal", s.postApprovalReveal)
-	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.postRevertReveal)
+	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.approvals.Get)
+	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.approvals.Approve)
+	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.reverts.Get)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.reverts.Apply)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/scope", s.reverts.Scope)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.reverts.Reject)
+	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/reveal", s.approvals.Reveal)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.reverts.Reveal)
 	mux.HandleFunc("GET "+SetupPagePath+"{$}", serveSetupPage)
 	if s.setup != nil {
 		st := setupRoutes{origin: s.origin, jobs: s.setup, log: s.log.With("component", "setup")}
@@ -165,8 +224,8 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST "+SetupEnginePath, s.configuredSetup)
 		mux.HandleFunc("POST "+SetupNotMinePath, s.configuredSetup)
 	}
-	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
-	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
+	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.plugins.Get)
+	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.plugins.Approve)
 	return refuseDatabaseURL(s.origin, mux)
 }
 
@@ -218,216 +277,40 @@ func (s *Server) page(name string) http.HandlerFunc {
 	}
 }
 
-func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, approvalParam)
-	if !ok {
-		return
-	}
-	req, err := find(r.Context(), s, func(ctx context.Context, a Agent) (approval.Request, error) { return a.ApprovalRequest(ctx, id) })
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, req)
-}
-
-func (s *Server) postApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, approvalParam)
-	if !ok {
-		return
-	}
-	body, ok := s.body(w, r)
-	if !ok {
-		return
-	}
-	resp, err := approval.DecodeResponse(body)
-	if err != nil || resp.ApprovalID != id {
-		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
-		return
-	}
-	receipt, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.Receipt, error) { return a.RelayApproval(ctx, resp) })
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, approvedDTO{ApprovalID: id.String(), Status: "APPROVED", Receipt: receipt.Token, NoReceipt: receipt.Missing})
-}
-
-// approvedDTO is the relay's answer for an approval, with the engine's
-// receipt or why there is none.
-type approvedDTO struct {
-	ApprovalID string `json:"approvalId"`
-	Status     string `json:"status"`
-	Receipt    string `json:"receipt,omitempty"`
-	NoReceipt  string `json:"noReceipt,omitempty"`
-}
-
-// appliedDTO is the relay's answer for a revert: the applied revert, with
-// the engine's receipt or why there is none.
-type appliedDTO struct {
-	action.AppliedRevert
-	Receipt   string `json:"receipt,omitempty"`
-	NoReceipt string `json:"noReceipt,omitempty"`
-}
-
-// relayedRevert is what RelayRevert returns, for find.
-type relayedRevert struct {
-	applied action.AppliedRevert
-	receipt agent.Receipt
-}
-
-func (s *Server) getRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, revertParam)
-	if !ok {
-		return
-	}
-	secret := r.Header.Get(links.SecretHeader)
-	req, err := find(r.Context(), s, func(ctx context.Context, a Agent) (revert.Request, error) { return a.RevertRequest(ctx, id, secret) })
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, req)
-}
-
-func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, revertParam)
-	if !ok {
-		return
-	}
-	body, ok := s.body(w, r)
-	if !ok {
-		return
-	}
-	resp, err := revert.DecodeResponse(body)
-	if err != nil || resp.RevertID != id {
-		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
-		return
-	}
-	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (relayedRevert, error) {
-		applied, receipt, err := a.RelayRevert(ctx, resp)
-		return relayedRevert{applied: applied, receipt: receipt}, err
-	})
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, appliedDTO{AppliedRevert: out.applied, Receipt: out.receipt.Token, NoReceipt: out.receipt.Missing})
-}
-
-// postScope narrows or widens a revert's scope for the page (CONTRACT.md,
-// Local pages, POST …/scope). The body is decoded strictly: an unknown key
-// (the reserved store included) or a proof without its new secret is
-// refused on its shape, before anything is looked up. Postgres checks the
-// rest in the contract's order.
-func (s *Server) postScope(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, revertParam)
-	if !ok {
-		return
-	}
-	body, ok := s.body(w, r)
-	if !ok {
-		return
-	}
-	var in agent.ScopeRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
-		s.fail(w, &toolresult.ToolError{
-			Code:    agent.CodeInvalidArgument,
-			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together",
-		})
-		return
-	}
-	secret := r.Header.Get(links.SecretHeader)
-	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.ScopeResponse, error) {
-		return a.RescopeRevert(ctx, id, secret, in)
-	})
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, out)
-}
-
-// postReject rejects a revert for the page (CONTRACT.md, Local pages, POST
-// …/reject). The body is decoded strictly, { "note"? }; the note's length is
-// the service's to check. Postgres decides the rest.
-func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, revertParam)
-	if !ok {
-		return
-	}
-	body, ok := s.body(w, r)
-	if !ok {
-		return
-	}
-	var in agent.RejectRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil || dec.More() {
-		s.fail(w, &toolresult.ToolError{
-			Code:    agent.CodeInvalidArgument,
-			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)",
-		})
-		return
-	}
-	secret := r.Header.Get(links.SecretHeader)
-	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.RejectResponse, error) {
-		return a.RejectRevert(ctx, id, secret, in)
-	})
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, out)
-}
-
-// postApprovalReveal and postRevertReveal show the person the values of
-// the item's redacted lines (CONTRACT.md, Local pages, POST …/reveal). The
-// body is decoded strictly, { "proof", "revealSecret" }; Postgres checks
-// the proof. The answer is sent with Cache-Control: no-store (writeJSON)
-// and kept nowhere.
-func (s *Server) postApprovalReveal(w http.ResponseWriter, r *http.Request) {
-	s.reveal(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
-		return a.RevealApproval(ctx, id, secret, in)
-	})
-}
-
-func (s *Server) postRevertReveal(w http.ResponseWriter, r *http.Request) {
-	s.reveal(w, r, revertParam, func(ctx context.Context, a Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
-		return a.RevealRevert(ctx, id, secret, in)
-	})
-}
-
-func (s *Server) reveal(w http.ResponseWriter, r *http.Request, name string,
+// Reveal shows the person the values of the redacted lines of the item
+// named by the path parameter name, as ask returns them (CONTRACT.md, Local
+// pages, POST …/reveal): the approval and revert pages share it. The body
+// is decoded strictly, { "proof", "revealSecret" }; Postgres checks the
+// proof. The answer is sent with Cache-Control: no-store (writeJSON) and
+// kept nowhere.
+func (s *Server) Reveal(w http.ResponseWriter, r *http.Request, name string,
 	ask func(context.Context, Agent, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error),
 ) {
-	id, ok := s.linkedID(w, r, name)
+	id, ok := s.LinkedID(w, r, name)
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r)
+	body, ok := s.Body(w, r)
 	if !ok {
 		return
 	}
 	in, ok := revealBody(body)
 	if !ok {
-		s.fail(w, &toolresult.ToolError{
+		s.Fail(w, &toolresult.ToolError{
 			Code:    agent.CodeInvalidArgument,
 			Message: "the body must be {\"proof\", \"revealSecret\"} (reveal-request.schema.json)",
 		})
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
-	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (approval.RevealAnswer, error) {
+	out, err := Find(r.Context(), s, func(ctx context.Context, a Agent) (approval.RevealAnswer, error) {
 		return ask(ctx, a, id, secret, in)
 	})
 	if err != nil {
-		s.fail(w, err)
+		s.Fail(w, err)
 		return
 	}
-	s.reply(w, out)
+	s.Reply(w, out)
 }
 
 // revealBody decodes a reveal body strictly: no unknown key, every proof
@@ -444,81 +327,18 @@ func revealBody(body []byte) (agent.RevealRequest, bool) {
 	return in, complete && in.RevealSecret != ""
 }
 
-// The plugin approval routes (CONTRACT.md, Local pages): the same link
-// secret, origin, content type and size checks as the approval routes. The
-// relay decides nothing: submit_plugin_approval verifies the signature.
-
-// pluginApprovedDTO is the relay's answer for a plugin approval: no
-// receipt.
-type pluginApprovedDTO struct {
-	ApprovalID string    `json:"approvalId"`
-	Status     string    `json:"status"`
-	ApprovedAt time.Time `json:"approvedAt"`
-}
-
-// asPlugins asks an agent's plugin approvals; an agent that serves none
-// answers as one that does not know the id.
-func asPlugins[T any](ask func(context.Context, PluginApprovals) (T, error)) func(context.Context, Agent) (T, error) {
-	return func(ctx context.Context, a Agent) (T, error) {
-		p, ok := a.(PluginApprovals)
-		if !ok {
-			var zero T
-			return zero, agent.ErrNotThisAgent
-		}
-		return ask(ctx, p)
-	}
-}
-
-func (s *Server) getPlugin(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, approvalParam)
-	if !ok {
-		return
-	}
-	req, err := find(r.Context(), s, asPlugins(func(ctx context.Context, p PluginApprovals) (approval.PluginRequest, error) {
-		return p.PluginApprovalRequest(ctx, id)
-	}))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, req)
-}
-
-func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, approvalParam)
-	if !ok {
-		return
-	}
-	body, ok := s.body(w, r)
-	if !ok {
-		return
-	}
-	resp, err := approval.DecodePluginResponse(body)
-	if err != nil || resp.ApprovalID != id {
-		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
-		return
-	}
-	at, err := find(r.Context(), s, asPlugins(func(ctx context.Context, p PluginApprovals) (time.Time, error) {
-		return p.RelayPluginApproval(ctx, resp)
-	}))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.reply(w, pluginApprovedDTO{ApprovalID: id.String(), Status: "APPROVED", ApprovedAt: at.UTC()})
-}
-
-// linkedID is the path's id when the request carries that item's live link
-// secret (CONTRACT.md, Link secrets). A missing, wrong or revoked secret
-// is answered exactly as an unknown id, before any lookup.
-func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
+// LinkedID is the id in the path parameter name when the request carries
+// that item's live link secret (CONTRACT.md, Link secrets). A missing,
+// wrong or revoked secret is answered exactly as an unknown id, before any
+// lookup; false means the answer is written.
+func (s *Server) LinkedID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	id, ok := s.pathID(w, r, name)
 	if !ok {
 		return uuid.Nil, false
 	}
 	secret := r.Header.Get(links.SecretHeader)
 	if !s.linkLive(id, secret) {
-		s.fail(w, s.deadLink(id, secret))
+		s.Fail(w, s.deadLink(id, secret))
 		return uuid.Nil, false
 	}
 	return id, true
@@ -559,10 +379,10 @@ func (s *Server) linkLive(id uuid.UUID, secret string) bool {
 	return live
 }
 
-// find asks each agent in turn and answers with the first that knows the
-// id; none does: NOT_FOUND, reason LINK, the same as a link without its
-// secret: the two are told apart by nothing.
-func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent) (T, error)) (T, error) {
+// Find asks each of s's agents in turn and answers with the first that
+// knows the id; none does: NOT_FOUND, reason LINK, the same as a link
+// without its secret: the two are told apart by nothing.
+func Find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent) (T, error)) (T, error) {
 	s.mu.RLock()
 	agents := s.agents
 	s.mu.RUnlock()
@@ -612,16 +432,16 @@ func unknownLink() error {
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(r.PathValue(name))
 	if err != nil {
-		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: name + " must be a uuid"})
+		s.Fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: name + " must be a uuid"})
 		return uuid.Nil, false
 	}
 	return id, true
 }
 
-// body reads a posted body: only from the page's own origin, only JSON, at most
+// Body reads a posted body: only from the page's own origin, only JSON, at most
 // maxBody bytes. With no CORS headers on this listener, another site's
-// page can make none of these posts.
-func (s *Server) body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+// page can make none of these posts. False means the answer is written.
+func (s *Server) Body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Header.Get("Origin") != s.origin {
 		writeError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the approval page")
 		return nil, false
@@ -656,9 +476,9 @@ var statuses = map[string]int{
 	agent.CodeQueryTimeout:               http.StatusGatewayTimeout,
 }
 
-// fail answers err as the contract's error body. Unexpected errors are
+// Fail answers err as the contract's error body. Unexpected errors are
 // logged and answered INTERNAL without their text.
-func (s *Server) fail(w http.ResponseWriter, err error) {
+func (s *Server) Fail(w http.ResponseWriter, err error) {
 	// Every failure here is the pages' own or the agent's PageFailure, so it
 	// is already the contract's error body; anything else is the engine's.
 	var te *toolresult.ToolError
@@ -711,7 +531,8 @@ func personSteps(steps []toolresult.NextStep) []toolresult.NextStep {
 	return out
 }
 
-func (s *Server) reply(w http.ResponseWriter, v any) {
+// Reply answers v as JSON, 200.
+func (s *Server) Reply(w http.ResponseWriter, v any) {
 	writeJSON(w, http.StatusOK, v)
 }
 

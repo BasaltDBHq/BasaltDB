@@ -2,12 +2,23 @@ package app
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 )
+
+// newPages is the pages for origin with every page's handlers mounted: the
+// approval, revert and plugin approval routes.
+func newPages(origin string, log *slog.Logger) *pages.Server {
+	srv := pages.New(origin, log)
+	srv.MountApprovals(pages.NewApprovalHandlers(srv))
+	srv.MountReverts(pages.NewRevertHandlers(srv))
+	srv.MountPlugins(pages.NewPluginHandlers(srv))
+	return srv
+}
 
 // sessionDispatcher gives the pages to the Vault channel: it turns the
 // channel's link, request and response into the pages' own types and back.

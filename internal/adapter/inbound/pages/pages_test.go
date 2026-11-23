@@ -125,6 +125,14 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 	return serveAgents(t, all...)
 }
 
+// mounted mounts every page's handlers on p, as app does.
+func mounted(p *pages.Server) *pages.Server {
+	p.MountApprovals(pages.NewApprovalHandlers(p))
+	p.MountReverts(pages.NewRevertHandlers(p))
+	p.MountPlugins(pages.NewPluginHandlers(p))
+	return p
+}
+
 func serveAgents(t *testing.T, agents ...testAgent) site {
 	t.Helper()
 	// Bind first to learn the port, which is part of the page origin.
@@ -137,7 +145,7 @@ func serveAgents(t *testing.T, agents ...testAgent) site {
 	origin := "http://localhost:" + port
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	p := pages.New(origin, slog.New(slog.DiscardHandler))
+	p := mounted(pages.New(origin, slog.New(slog.DiscardHandler)))
 	for _, a := range agents {
 		a.wire(secrets, origin)
 		p.Add(a)

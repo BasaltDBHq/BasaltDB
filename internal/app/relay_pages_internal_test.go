@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
@@ -86,7 +85,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
 	live := newRelayLinks(quietLog())
-	site := pages.New(links.Portal, quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})

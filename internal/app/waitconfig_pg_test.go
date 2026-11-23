@@ -393,6 +393,9 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	srv := pages.New(origin, slog.New(slog.DiscardHandler))
+	srv.MountApprovals(pages.NewApprovalHandlers(srv))
+	srv.MountReverts(pages.NewRevertHandlers(srv))
+	srv.MountPlugins(pages.NewPluginHandlers(srv))
 	srv.SetSetup(jobs)
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: time.Second}
 	served := make(chan struct{})

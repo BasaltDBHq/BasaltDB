@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,7 +111,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
 
 	p := &pluginPages{t: t, origin: "http://localhost:8787", secrets: links.NewSecrets(time.Now, rand.Reader)}
-	p.srv = pages.New(p.origin, quietLog())
+	p.srv = newPages(p.origin, quietLog())
 	clock := func() time.Time { return time.Now().Add(time.Duration(p.offset.Load())) }
 	// The agents that cannot answer are added first, so a lookup that
 	// stopped at them would never reach the opener.
@@ -213,7 +214,7 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	restore()
 	pg := newPGAgent(t, old.URL, 2)
 	origin := "http://localhost:8787"
-	srv := pages.New(origin, quietLog())
+	srv := newPages(origin, quietLog())
 	pool, err := store.NewPool(context.Background(), old.URL, 1)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
@@ -245,4 +246,14 @@ func theirsRequestedBy(t *testing.T, binding string) string {
 	b, err := approval.ParsePluginBinding(binding)
 	require.NoError(t, err)
 	return b.RequestedBy
+}
+
+// newPages is the pages for origin with every page's handlers mounted, as
+// app mounts them.
+func newPages(origin string, log *slog.Logger) *pages.Server {
+	srv := pages.New(origin, log)
+	srv.MountApprovals(pages.NewApprovalHandlers(srv))
+	srv.MountReverts(pages.NewRevertHandlers(srv))
+	srv.MountPlugins(pages.NewPluginHandlers(srv))
+	return srv
 }

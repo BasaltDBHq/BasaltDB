@@ -9,6 +9,7 @@ import (
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 
+	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -78,7 +79,7 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
-	run, err := findRun(ctx, wc.core.Store, p.RunID)
+	run, err := ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
 	if err != nil {
 		return WriteOutcome{}, err
 	}

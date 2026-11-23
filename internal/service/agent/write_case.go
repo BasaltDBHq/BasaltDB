@@ -78,9 +78,8 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 }
 
 // History returns one page of a run's change records.
-// History is the write use case's History.
 func (s *Service) History(ctx context.Context, p action.ChangeListParams) (History, error) {
-	return s.write.History(ctx, p)
+	return s.ledger.History(ctx, p)
 }
 
 // ListRuns returns one page of the agent's own runs with what each did.

@@ -458,7 +458,7 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcpserver.S
 	d.Status.Setup = setup
 	d.Core.Now = func() time.Time { return statusNow }
 	tools := servedTools(NewService(d))
-	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, nil)...), mcpserver.ToolsFrom(tools, nil)
 }
 
 func serveCall(t *testing.T, srv *mcpserver.Server, tool string, args map[string]any) (map[string]any, bool) {
@@ -890,7 +890,7 @@ func TestStatusStartedBy(t *testing.T) {
 // serverOf is svc's MCP server and tools.
 func serverOf(svc *Service) (*mcpserver.Server, []mcpserver.Tool) {
 	tools := servedTools(svc)
-	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, nil)...), mcpserver.ToolsFrom(tools, nil)
 }
 
 // failingFinisher is a finisher whose Finish fails with the error it holds.

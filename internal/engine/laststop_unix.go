@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // maxLastStopBytes bounds what is read of it; maxReasonRunes what is shown.
@@ -34,7 +34,7 @@ func ReadLastStop(dir string) (guidance.LastStop, bool) {
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return guidance.LastStop{}, false
 	}
-	var rec lastStopJSON
+	var rec servicespec.LastStopFileRecord
 	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&rec); err != nil || rec.Reason == "" {
 		return guidance.LastStop{}, false
 	}
@@ -48,12 +48,4 @@ func ReadLastStop(dir string) (guidance.LastStop, bool) {
 		return ' '
 	}, rec.Reason)
 	return guidance.LastStop{Reason: rec.Reason, At: rec.At.UTC(), EngineSHA256: rec.EngineSHA256}, true
-}
-
-// lastStopJSON is last-stop.json: why the supervisor gave up, when, and the
-// SHA-256 of engine.json at that moment.
-type lastStopJSON struct {
-	Reason       string    `json:"reason"`
-	At           time.Time `json:"at"`
-	EngineSHA256 string    `json:"engineSha256,omitempty"`
 }

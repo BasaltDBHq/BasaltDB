@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
@@ -780,7 +779,7 @@ func TestProbeCacheAcrossProcesses(t *testing.T) {
 func probeAt(t *testing.T, a setupcode.Address, certHost string) error {
 	t.Helper()
 	ca, cert := trustprofiletest.Chain(t, certHost)
-	p := Prober{ConnConfig: pgdial.ConnConfigTrusting, Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
+	p := Prober{Login: pgdial.Login, Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
 	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole, Pin{})
 	return err
 }
@@ -813,19 +812,10 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	a := setupcode.Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 	login := func(certHost string) error {
 		ca, cert := trustprofiletest.Chain(t, certHost)
-		cfg, err := pgdial.ConnConfigTrusting(ConnString(a, setupcode.LoginUser(a, fixtureRole), "pw", true), trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}))
-		require.NoError(t, err)
-		require.Equal(t, host, cfg.TLSConfig.ServerName)
-		require.False(t, cfg.TLSConfig.InsecureSkipVerify)
-		cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
-		cfg.DialFunc = trustprofiletest.Serve(t, cert)
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
-		conn, err := pgx.ConnectConfig(ctx, cfg)
-		if err == nil {
-			_ = conn.Close(ctx)
-		}
-		return err
+		return pgdial.Login(ctx, ConnString(a, setupcode.LoginUser(a, fixtureRole), "pw", true),
+			trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}), "127.0.0.1", trustprofiletest.Serve(t, cert), nil)
 	}
 	var pg *pgconn.PgError
 	require.ErrorAs(t, login(host), &pg)

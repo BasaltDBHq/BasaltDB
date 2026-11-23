@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
@@ -234,7 +235,7 @@ func catalogCases() map[string]catalogCase {
 			map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
 			plainFunc(revertsvc.ScopeFilterCapped),
 		},
-		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "ADMIN_CREDENTIAL", ""): {"query", queryArgs0, plain(adminCredentialError())},
+		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "ADMIN_CREDENTIAL", ""): {"query", queryArgs0, plain(mcpserver.AdminCredentialError())},
 
 		stepcatalogtest.CaseKey("UNAVAILABLE", "DATABASE_UNREACHABLE", ""): {"query", queryArgs0, plain(context.DeadlineExceeded)},
 		stepcatalogtest.CaseKey("UNAVAILABLE", "TOO_MANY_CONNECTIONS", ""): {"query", queryArgs0, pgFail("53300", `too many connections for role "basalt_agent_bot"`, "")},

@@ -31,15 +31,15 @@ const (
 
 // StarterDeps are the starter's reach into the machine; tests replace them.
 type StarterDeps struct {
-	// owner is the uid that owns path.
+	// Owner is the uid that owns path.
 	Owner func(path string) (int, error)
-	// launch runs exe with args detached, its output to logFile.
+	// Launch runs exe with args detached, its output to logFile.
 	Launch func(exe string, args []string, logFile *os.File) error
-	// answers reports whether the socket answers.
+	// Answers reports whether the socket answers.
 	Answers func(socket string) bool
-	// wait is how long start waits for the socket to answer.
+	// Wait is how long start waits for the socket to answer.
 	Wait time.Duration
-	// now is the clock for the start hold-off; tests replace it.
+	// Now is the clock for the start hold-off; tests replace it.
 	Now func() time.Time
 }
 

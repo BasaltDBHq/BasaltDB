@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/jackc/pgx/v5"
@@ -121,11 +122,12 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	if err != nil {
 		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)
 	}
-	co := agent.ConnectOnly{
+	co := handoffmcp.ConnectOnly{
 		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(), StartedBy: env.startedBy,
 		PagesBase: env.pagesBase, PagesOrigin: env.pagesOrigin, ConnectBudget: env.cfg.ConnectLinkBudget(),
 		Vault: env.vault, Handoff: pending, Log: log, Now: env.handoff.now(),
 		Errors: AgentErrors(), LatestGuardVersion: AgentEngineHost().LatestGuardVersion,
+		Guide: connectOnlyGuide,
 	}
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{

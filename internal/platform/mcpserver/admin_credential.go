@@ -1,4 +1,4 @@
-package agent
+package mcpserver
 
 import (
 	"bytes"
@@ -50,7 +50,10 @@ var (
 	keyValueKeys = regexp.MustCompile(keyValuePair)
 )
 
-func holdsAdminCredential(raw json.RawMessage) bool {
+// HoldsAdminCredential reports whether a tool call's raw arguments hold a
+// database connection string with a password, in any spelling: the call is
+// then refused before it is admitted, decoded, recorded or logged.
+func HoldsAdminCredential(raw json.RawMessage) bool {
 	if postgresPassword.Match(raw) {
 		return true
 	}
@@ -175,7 +178,10 @@ func isHex(c byte) bool {
 	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
 }
 
-func adminCredentialError() error {
+// AdminCredentialError is the refusal of a call that holds an admin
+// connection string, as an argument error the agent's error presenter
+// renders. It names nothing of the arguments.
+func AdminCredentialError() error {
 	return &guidance.ArgumentError{Reason: guidance.ReasonAdminCredential, Message: adminCredentialMessage}
 }
 
@@ -192,7 +198,7 @@ func adminCredentialToolError(tool string) *toolresult.ToolError {
 // RefuseAdminCredential runs call, after refusing a call that holds one.
 func RefuseAdminCredential(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
 	return func(ctx context.Context, raw json.RawMessage) (any, error) {
-		if holdsAdminCredential(raw) {
+		if HoldsAdminCredential(raw) {
 			return nil, adminCredentialToolError(tool)
 		}
 		return call(ctx, raw)

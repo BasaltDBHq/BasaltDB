@@ -87,8 +87,8 @@ const (
 	storeCallsOnly = "Check CheckRepeatable WithRowVersions"
 )
 
-// storePkgs is the Postgres store, at its old and its new path.
-var storePkgs = []string{"internal/adapter/outbound/postgres/store", "internal/platform/postgres/store"}
+// storePkgs is the Postgres store.
+var storePkgs = []string{"internal/platform/postgres/store"}
 
 // domains are the domain folders of the new tree (DESIGN-RESULTS, option B).
 var domains = []string{"agent", "approval", "engine", "handoff", "ledger", "links", "pii", "plugin", "revert", "setup", "status"}
@@ -137,7 +137,6 @@ var testHelpers = []string{
 	"internal/testkit/connecttest",
 	"internal/testkit/stepcatalogtest",
 	"internal/core/passkey/passkeytest",
-	"internal/adapter/outbound/plugintransport/adaptertest",
 	"pkg/trustprofile/trustprofiletest",
 	// the core test oracles (D-CORE-DEAD): signing and parsing clients
 	// other packages' tests use
@@ -414,9 +413,8 @@ func localNames(f *ast.File) map[string]string {
 	return m
 }
 
-// pluginhostPkgs is the plugin host, whose path rule only the app installs,
-// at its old and its new path.
-var pluginhostPkgs = []string{modulePath + "/internal/service/pluginhost", modulePath + "/internal/plugin"}
+// pluginhostPkgs is the plugin host, whose path rule only the app installs.
+var pluginhostPkgs = []string{modulePath + "/internal/plugin"}
 
 // appPkg is the package that wires everything.
 const appPkg = "internal/app"

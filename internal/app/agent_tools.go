@@ -5,33 +5,44 @@ import (
 	"encoding/json"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
 	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginmcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
 // agentTools returns the MCP tools served to one agent: every contract in
 // api/mcp that is IMPLEMENTED, each listed with the contract's description
 // and input schema, and query and write only for a store that speaks SQL
-// (CONTRACT.md, Stores). Each tool's call goes through svc.Wrap; the lists
+// (CONTRACT.md, Stores). Each tool's call goes through agentmcp.Wrap; the lists
 // join in the served order.
 func agentTools(svc *agent.Service) []guidance.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
-		return contractTool(name, svc.Wrap(name, call))
+		return contractTool(name, agentmcp.Wrap(svc, name, call))
 	}
 	tools := agent.RunStartTools(svc, mount)
 	for _, list := range [][]guidance.Tool{
 		agent.WriteTools(svc, mount), ledgermcp.Tools(svc, mount), agent.RunTools(svc, mount), approvalmcp.Tools(svc, mount), revertmcp.Tools(svc, mount),
-		agent.PluginTools(svc, mount), agent.DescribeTools(svc, mount), agent.StatusTools(svc, mount),
+		pluginmcp.Tools(svc, mount), agent.DescribeTools(svc, mount), statusmcp.Tools(svc, mount), handoffmcp.Tools(mount),
 	} {
 		tools = append(tools, list...)
 	}
 	return tools
+}
+
+// connectOnlyGuide is the error presenter of the connect-only agent c: an
+// agent service with only what the error guidance reads, built for each
+// failure.
+func connectOnlyGuide(c handoffmcp.ConnectOnly) handoffmcp.Failures {
+	return agent.NewGuide(c.Name, c.Commands.OperatedBy(c.OperatedBy), c.Log, c.Now, c.Errors, c.ConnectBudget)
 }
 
 // contractTool builds a tool from its contract. A missing contract is a

@@ -1,4 +1,4 @@
-package agent
+package handoffmcp
 
 import (
 	"context"
@@ -7,12 +7,14 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
@@ -22,10 +24,6 @@ import (
 // database the engine collected, the agent is served by ConnectOnly: it
 // holds no credential and no connection, status and confirm_database
 // answer, and every other tool is refused.
-
-const (
-	answerNo = "NO"
-)
 
 // --- the result of confirm_database ---
 
@@ -52,16 +50,21 @@ type ConnectOnly struct {
 	// is the basalt_meta version this build installs.
 	Errors             guidance.ErrorMap
 	LatestGuardVersion func() int
+	// Guide builds the agent's error presenter with only what the error
+	// guidance reads, from c: built again for each failure.
+	Guide func(c ConnectOnly) Failures
 }
 
-// guide is a Service with only what the error guidance reads.
-func (c ConnectOnly) guide() *Service {
-	s := &Service{deps: Deps{
-		Core:   CoreDeps{Name: c.Name, Commands: c.Commands.OperatedBy(c.OperatedBy), Log: c.Log, Now: c.Now, Errors: c.Errors},
-		Status: statussvc.Deps{ConnectBudget: c.ConnectBudget},
-	}}
-	s.wire()
-	return s
+// Failures is the agent's error presenter as a connect-only agent calls
+// it: each failure as the contract's error body, with its next steps.
+type Failures interface {
+	Failure(tool string, args map[string]any, err error) *toolresult.ToolError
+}
+
+// guide is the agent's error presenter with only what the error guidance
+// reads.
+func (c ConnectOnly) guide() Failures {
+	return c.Guide(c)
 }
 
 // Tools are every IMPLEMENTED tool of the contracts: status and
@@ -69,6 +72,9 @@ func (c ConnectOnly) guide() *Service {
 func (c ConnectOnly) Tools() []guidance.Tool {
 	if c.Handoff == nil || c.Log == nil || c.Now == nil || c.LatestGuardVersion == nil {
 		panic("agent: a connect-only agent needs its hand-off, a logger, a clock and the guard version")
+	}
+	if c.Guide == nil {
+		panic("agent: a connect-only agent needs its error guide")
 	}
 	contracts := mcpcontract.MustLoad()
 	out := make([]guidance.Tool, 0, len(contracts))
@@ -85,7 +91,7 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 		default:
 			call = c.refused(ct.Name)
 		}
-		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: RefuseAdminCredential(ct.Name, call)})
+		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: mcpserver.RefuseAdminCredential(ct.Name, call)})
 	}
 	return out
 }
@@ -154,16 +160,4 @@ func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) 
 	}
 	r.Problems, r.Ready = list, statussvc.Ready(list)
 	return r, nil
-}
-
-// --- the served agent's confirm_database ---
-
-// confirmDatabase answers confirm_database on an agent with no connect-only
-// setup waiting: INVALID_ARGUMENT.
-func (h handlers) confirmDatabase(_ context.Context, raw json.RawMessage) (any, error) {
-	var args handoff.ConfirmArgs
-	if err := guidance.DecodeArgs(raw, &args); err != nil {
-		return nil, err
-	}
-	return nil, &guidance.ArgumentError{Message: handoff.ErrNotWaiting.Error()}
 }

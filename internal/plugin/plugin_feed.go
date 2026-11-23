@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -262,7 +261,7 @@ func (r *feedReader) round(ctx context.Context) roundResult {
 		if ctx.Err() != nil {
 			return roundIdle
 		}
-		return r.failed("the agent's ledger could not be read", dbFailure(err))
+		return r.failed("the agent's ledger could not be read", dbFailure(r.ledger.ports.Guard, err))
 	}
 	if len(b.events) == 0 {
 		return r.ok(roundIdle)
@@ -356,12 +355,11 @@ func callFailure(err error) *string {
 
 // dbFailure is a failed read's class: whether the database answered, and
 // its SQLSTATE when it did. Never its message, which can quote a value.
-func dbFailure(err error) *string {
+func dbFailure(g Guard, err error) *string {
 	c := "NO_ANSWER"
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) {
-		c = "SQLSTATE " + pg.Code
-	} else if !transientErr(err) {
+	if code, _, _, ok := g.DBError(err); ok {
+		c = "SQLSTATE " + code
+	} else if !transientErr(g, err) {
 		c = "UNREADABLE"
 	}
 	return &c

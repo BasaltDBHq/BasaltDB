@@ -269,7 +269,7 @@ func TestHeldEntryOfRemovedKeyGetsDisabled(t *testing.T) {
 	rows := l.events(t, "product_a")
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED", "PLUGIN_TRUST_REMOVED", "PLUGIN_DISABLED"}, kindsOf(rows))
 	require.JSONEq(t, rows[1].Detail, rows[3].Detail, "PLUGIN_DISABLED carries what was last recorded")
-	recs, err := guard.ReadPluginRecords(context.Background(), l.dbs["product_a"].db)
+	recs, err := guard.ReadPluginRecords(context.Background(), pgxOf(l.dbs["product_a"].db))
 	require.NoError(t, err)
 	require.Empty(t, ledgerTrustedKeys(recs.LatestTrustEvents))
 	for _, r := range recs.Entries {
@@ -541,7 +541,7 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 	require.NotEqual(t, v.SignerKeyID, w.SignerKeyID)
 
 	ledgers := map[string]AgentLedger{
-		"product_a": {ports: testPorts, db: refuseTrustKey{Querier: l.dbs["product_a"].db, keyID: v.SignerKeyID}},
+		"product_a": {ports: testPorts, db: refuseTrustKey{Querier: pgxOf(l.dbs["product_a"].db), keyID: v.SignerKeyID}},
 		"client_x":  l.dbs["client_x"],
 	}
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
@@ -618,18 +618,18 @@ func TestForgedTrustEventIsCorrected(t *testing.T) {
 	require.Len(t, held, 1)
 	agentConn := l.dbs["product_a"].db
 
-	require.NoError(t, guard.RecordPluginTrustAdded(context.Background(), agentConn, forgedKey), "the agent's role can write it")
+	require.NoError(t, guard.RecordPluginTrustAdded(context.Background(), pgxOf(agentConn), forgedKey), "the agent's role can write it")
 	for range 2 {
 		l.record(t, f, f.plugins(nil))
 	}
 	require.Equal(t, [][2]string{
 		{"PLUGIN_TRUST_ADDED", held[0]}, {"PLUGIN_TRUST_ADDED", forgedKey}, {"PLUGIN_TRUST_REMOVED", forgedKey},
 	}, l.trustRows(t, "product_a"))
-	recs, err := guard.ReadPluginRecords(context.Background(), agentConn)
+	recs, err := guard.ReadPluginRecords(context.Background(), pgxOf(agentConn))
 	require.NoError(t, err)
 	require.Equal(t, []string{held[0]}, ledgerTrustedKeys(recs.LatestTrustEvents))
 
-	require.NoError(t, guard.RecordPluginTrustRemoved(context.Background(), agentConn, held[0]))
+	require.NoError(t, guard.RecordPluginTrustRemoved(context.Background(), pgxOf(agentConn), held[0]))
 	ep := f.plugins(nil)
 	l.record(t, f, ep)
 	rows := l.trustRows(t, "product_a")
@@ -646,11 +646,11 @@ func TestTrustRemovedOnVersion3IsOnlyLogged(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
 	l := newPluginLedgers(t, f)
-	require.NoError(t, guard.RecordPluginTrustAdded(context.Background(), l.dbs["product_a"].db, forgedKey))
+	require.NoError(t, guard.RecordPluginTrustAdded(context.Background(), pgxOf(l.dbs["product_a"].db), forgedKey))
 	ep := f.plugins(nil)
 	// The guard refuses the kind as version 3's record_plugin_event does.
 	v3 := map[string]AgentLedger{
-		"product_a": {ports: testPorts, db: refuseKind{Querier: l.dbs["product_a"].db, kind: guardmodel.PluginTrustRemoved}},
+		"product_a": {ports: testPorts, db: refuseKind{Querier: pgxOf(l.dbs["product_a"].db), kind: guardmodel.PluginTrustRemoved}},
 		"client_x":  l.dbs["client_x"],
 	}
 	RecordEvents(context.Background(), f.cfg, f.configPath, ep, v3, slog.New(slog.DiscardHandler))

@@ -125,7 +125,7 @@ func registerPerson(t *testing.T, d *guardtest.DB) *passkeytest.Authenticator {
 // open opens a plugin approval on opener's connection.
 func (l pluginLedgers) open(t *testing.T, opener string, d guardmodel.PluginApprovalDetail, s guardmodel.PluginSettings) guardmodel.PluginApproval {
 	t.Helper()
-	a, err := guard.OpenPluginApproval(context.Background(), l.dbs[opener].db, d, s)
+	a, err := guard.OpenPluginApproval(context.Background(), pgxOf(l.dbs[opener].db), d, s)
 	require.NoError(t, err)
 	return a
 }
@@ -136,7 +136,7 @@ func (l pluginLedgers) sign(t *testing.T, pk *passkeytest.Authenticator, relay s
 	t.Helper()
 	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs[relay].db, guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
+	_, err = guard.SubmitPluginApproval(context.Background(), pgxOf(l.dbs[relay].db), guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.NoError(t, err)
 }
 
@@ -283,7 +283,7 @@ func TestExpiredPendingIsReported(t *testing.T) {
 	prob := problemFor(t, ep, "product_a")
 	require.Equal(t, problemPluginApprovalExpired, prob.Code)
 	require.Contains(t, prob.Message, "expired")
-	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs["product_a"].db, guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
+	_, err = guard.SubmitPluginApproval(context.Background(), pgxOf(l.dbs["product_a"].db), guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.Error(t, err, "the signature comes too late")
 	l.record(t, f, f.plugins(nil))
 	require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING"}, kindsOf(l.events(t, "product_a")))

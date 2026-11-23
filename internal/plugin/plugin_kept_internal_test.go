@@ -501,7 +501,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		f.sign(res.Approvals[0])
 		fail := &atomic.Bool{}
 		a := f.agents["product_a"]
-		a.db = failingDB{Querier: a.db, fail: fail}
+		a.db = failingDB{Querier: pgxOf(a.db), fail: fail}
 		f.agents["product_a"] = a
 		fail.Store(true)
 		_, err = f.client.PluginDisable(context.Background(), PluginEntryParams{Name: k.Name, Instance: k.Instance})
@@ -532,7 +532,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		f.sign(res.Approvals[0])
 		fail := &atomic.Bool{}
 		a := f.agents["product_a"]
-		a.db = failingDB{Querier: a.db, fail: fail}
+		a.db = failingDB{Querier: pgxOf(a.db), fail: fail}
 		f.agents["product_a"] = a
 		fail.Store(true)
 		_, err = f.client.PluginDisable(context.Background(), PluginEntryParams{Name: k.Name, Instance: k.Instance})
@@ -657,7 +657,7 @@ func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 	// Widened again while the open fails after the write.
 	fail := &atomic.Bool{}
 	a := f.agents["product_a"]
-	a.db = failingOpen{Querier: a.db, fail: fail}
+	a.db = failingOpen{Querier: pgxOf(a.db), fail: fail}
 	f.agents["product_a"] = a
 	fail.Store(true)
 	widened, err := open(f, "product_a", "product_b")
@@ -685,7 +685,7 @@ func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	f.sign(res.Approvals[0])
 	fail := &atomic.Bool{}
 	b := f.agents["product_b"]
-	b.db = failingDB{Querier: b.db, fail: fail}
+	b.db = failingDB{Querier: pgxOf(b.db), fail: fail}
 	f.agents["product_b"] = b
 	fail.Store(true)
 	_, err = f.client.PluginRemove(context.Background(), PluginEntryParams{Name: k.Name, Instance: k.Instance})
@@ -699,7 +699,7 @@ func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	// the agent it adds keeps the old approval from serving it.
 	failOpen := &atomic.Bool{}
 	a := f.agents["product_a"]
-	a.db = failingOpen{Querier: a.db, fail: failOpen}
+	a.db = failingOpen{Querier: pgxOf(a.db), fail: failOpen}
 	f.agents["product_a"] = a
 	failOpen.Store(true)
 	widened, err := f.client.PluginOpen(context.Background(), PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a", "product_b"}})

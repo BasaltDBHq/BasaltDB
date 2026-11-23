@@ -28,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // fastDeliver is the delivery's timing in tests: four tries, shrunk.
@@ -658,14 +657,14 @@ func TestListHealthFollowsTheEngine(t *testing.T) {
 	ep.sup = plugin.NewSupervisor(e.host, func(context.Context, pluginmodel.Entry) (pluginmodel.Transport, error) {
 		return nil, errors.New("the plugin does not start")
 	}, plugin.RealClock())
-	require.Equal(t, person.HealthNotStarted, ep.healthOf(k, true))
+	require.Equal(t, plugin.HealthNotStarted, ep.healthOf(k, true))
 
 	e.serve(k.Name, "product_a")
-	require.Equal(t, person.HealthReady, ep.healthOf(k, true))
-	require.Equal(t, person.HealthNotStarted, ep.healthOf(k, false),
+	require.Equal(t, plugin.HealthReady, ep.healthOf(k, true))
+	require.Equal(t, plugin.HealthNotStarted, ep.healthOf(k, false),
 		"an entry of engine.json with the name of the engine-kept one that runs is not the one running")
 	e.host.SetState(k, plugin.StateUnavailable)
-	require.Equal(t, person.HealthUnavailable, ep.healthOf(k, true))
+	require.Equal(t, plugin.HealthUnavailable, ep.healthOf(k, true))
 
 	// An entry whose start fails is never registered: the engine keeps
 	// trying, and until it answers it is UNAVAILABLE, as status says.
@@ -676,8 +675,8 @@ func TestListHealthFollowsTheEngine(t *testing.T) {
 	})
 	m := feedManifest(failing.Name)
 	require.NoError(t, ep.sup.Start(ctx, []pluginmodel.Entry{{Key: failing, Manifest: m, Agents: []string{"product_a"}, Timeout: time.Second}}))
-	require.Equal(t, person.HealthUnavailable, ep.healthOf(failing, true))
+	require.Equal(t, plugin.HealthUnavailable, ep.healthOf(failing, true))
 
 	var none *Plugins
-	require.Equal(t, person.HealthNotStarted, none.healthOf(k, true), "an engine that runs no plugin")
+	require.Equal(t, plugin.HealthNotStarted, none.healthOf(k, true), "an engine that runs no plugin")
 }

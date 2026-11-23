@@ -55,7 +55,7 @@ func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 func requireRefused(t *testing.T, err error, kind plugin.Kind, reason string) {
 	t.Helper()
-	var ke *plugin.Error
+	var ke *plugin.PluginhostError
 	require.True(t, errors.As(err, &ke), "a store refusal: %v", err)
 	require.Equal(t, kind, ke.Kind, ke.Message)
 	if reason != "" {

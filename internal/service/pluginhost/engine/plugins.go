@@ -20,7 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // Options are how the engine reaches its plugins.
@@ -685,25 +684,25 @@ const kickWait = 30 * time.Second
 // one it does not run is NOT_STARTED. It says nothing of any agent.
 func (ep *Plugins) healthOf(k pluginmodel.EntryKey, kept bool) string {
 	if ep == nil || ep.host == nil || ep.isKept(k) != kept {
-		return person.HealthNotStarted
+		return plugin.HealthNotStarted
 	}
 	if ep.host.State(k) == plugin.StateReady {
-		return person.HealthReady
+		return plugin.HealthReady
 	}
 	if _, ok := ep.host.Registration(k); ok {
-		return person.HealthUnavailable
+		return plugin.HealthUnavailable
 	}
 	// Not registered: a start or an initialize that fails registers
 	// nothing, and the supervisor tries again.
 	if ep.sup != nil && slices.Contains(ep.sup.Supervised(), k) {
-		return person.HealthUnavailable
+		return plugin.HealthUnavailable
 	}
-	return person.HealthNotStarted
+	return plugin.HealthNotStarted
 }
 
 // servingOf is what the running engine serves of engine-kept entry k: each
 // agent, the approval it is served on and whether the plugin answers READY.
-func (ep *Plugins) servingOf(k pluginmodel.EntryKey) []person.PluginServing {
+func (ep *Plugins) servingOf(k pluginmodel.EntryKey) []plugin.PluginServing {
 	if ep == nil {
 		return nil
 	}
@@ -712,13 +711,13 @@ func (ep *Plugins) servingOf(k pluginmodel.EntryKey) []person.PluginServing {
 	if !ep.keptKeys[k] {
 		return nil
 	}
-	var out []person.PluginServing
+	var out []plugin.PluginServing
 	for _, e := range ep.serving.Entries {
 		if e.Name != k.Name || e.Instance != k.Instance {
 			continue
 		}
 		for _, a := range e.Agents {
-			sv := person.PluginServing{Agent: a.Agent, Ready: e.Ready}
+			sv := plugin.PluginServing{Agent: a.Agent, Ready: e.Ready}
 			if id, err := uuid.Parse(a.ApprovalID); err == nil {
 				sv.ApprovalID = &id
 			}

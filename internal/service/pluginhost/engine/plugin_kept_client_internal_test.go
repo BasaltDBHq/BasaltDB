@@ -17,8 +17,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // keptClient calls the engine-kept plugin methods in process, as the OS
@@ -26,34 +26,34 @@ import (
 type keptClient struct {
 	s     *KeptPlugins
 	uid   func() uint32
-	scope person.Scope
+	scope plugin.Scope
 }
 
-func (c keptClient) PluginUploadBegin(ctx context.Context) (person.PluginUploadBeginResult, error) {
+func (c keptClient) PluginUploadBegin(ctx context.Context) (plugin.PluginUploadBeginResult, error) {
 	return c.s.UploadBegin(ctx, c.uid())
 }
 
-func (c keptClient) PluginUploadPart(ctx context.Context, p person.PluginUploadPartParams) (person.PluginUploadPartResult, error) {
+func (c keptClient) PluginUploadPart(ctx context.Context, p plugin.PluginUploadPartParams) (plugin.PluginUploadPartResult, error) {
 	return c.s.UploadPart(ctx, c.uid(), p)
 }
 
-func (c keptClient) PluginOpen(ctx context.Context, p person.PluginOpenParams) (person.PluginOpenResult, error) {
+func (c keptClient) PluginOpen(ctx context.Context, p plugin.PluginOpenParams) (plugin.PluginOpenResult, error) {
 	return c.s.Open(ctx, c.uid(), c.scope, p)
 }
 
-func (c keptClient) PluginList(ctx context.Context) (person.PluginListResult, error) {
+func (c keptClient) PluginList(ctx context.Context) (plugin.PluginListResult, error) {
 	return c.s.List(ctx, c.scope)
 }
 
-func (c keptClient) PluginApprove(ctx context.Context, p person.PluginApproveParams) (person.PluginApproveResult, error) {
+func (c keptClient) PluginApprove(ctx context.Context, p plugin.PluginApproveParams) (plugin.PluginApproveResult, error) {
 	return c.s.Approve(ctx, p)
 }
 
-func (c keptClient) PluginDisable(ctx context.Context, p person.PluginEntryParams) (person.PluginEntryResult, error) {
+func (c keptClient) PluginDisable(ctx context.Context, p plugin.PluginEntryParams) (plugin.PluginEntryResult, error) {
 	return c.s.Disable(ctx, c.scope, p)
 }
 
-func (c keptClient) PluginRemove(ctx context.Context, p person.PluginEntryParams) (person.PluginEntryResult, error) {
+func (c keptClient) PluginRemove(ctx context.Context, p plugin.PluginEntryParams) (plugin.PluginEntryResult, error) {
 	return c.s.Remove(ctx, c.scope, p)
 }
 
@@ -70,14 +70,14 @@ func (c keptClient) PluginUpload(ctx context.Context, files []shim.PluginFile) (
 	}
 	for _, f := range files {
 		if len(f.Data) == 0 {
-			if _, err := c.PluginUploadPart(ctx, person.PluginUploadPartParams{UploadID: begun.UploadID, Path: f.Path}); err != nil {
+			if _, err := c.PluginUploadPart(ctx, plugin.PluginUploadPartParams{UploadID: begun.UploadID, Path: f.Path}); err != nil {
 				return uuid.Nil, err
 			}
 			continue
 		}
 		for off := 0; off < len(f.Data); off += part {
 			chunk := f.Data[off:min(off+part, len(f.Data))]
-			if _, err := c.PluginUploadPart(ctx, person.PluginUploadPartParams{
+			if _, err := c.PluginUploadPart(ctx, plugin.PluginUploadPartParams{
 				UploadID: begun.UploadID, Path: f.Path, Offset: int64(off), Data: base64.RawURLEncoding.EncodeToString(chunk),
 			}); err != nil {
 				return uuid.Nil, err

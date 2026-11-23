@@ -38,7 +38,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // Uids of the kept-plugin cases: the person, and an agent's own OS user.
@@ -146,24 +145,24 @@ func source(version string) ([]shim.PluginFile, []string) {
 }
 
 // add uploads source("1.0.0") and opens it for agents.
-func (f *keptFixture) add(instance string, agents ...string) (person.PluginOpenResult, error) {
+func (f *keptFixture) add(instance string, agents ...string) (plugin.PluginOpenResult, error) {
 	f.t.Helper()
 	files, exec := source("1.0.0")
 	id, err := f.client.PluginUpload(context.Background(), files)
 	require.NoError(f.t, err)
-	return f.client.PluginOpen(context.Background(), person.PluginOpenParams{
+	return f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{
 		UploadID: &id, Name: "acme-ner", Instance: instance, Agents: agents, Executables: exec,
 	})
 }
 
 // sign signs approval a with the person's passkey and relays it over the
 // socket.
-func (f *keptFixture) sign(a person.PluginOpenedApproval) {
+func (f *keptFixture) sign(a plugin.PluginOpenedApproval) {
 	f.t.Helper()
 	require.NotNil(f.t, a.ApprovalID, a.Refused)
 	as, err := f.pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(f.t, err)
-	res, err := f.client.PluginApprove(context.Background(), person.PluginApproveParams{ApprovalID: *a.ApprovalID, Assertion: as})
+	res, err := f.client.PluginApprove(context.Background(), plugin.PluginApproveParams{ApprovalID: *a.ApprovalID, Assertion: as})
 	require.NoError(f.t, err)
 	require.Equal(f.t, "APPROVED", res.Status)
 }
@@ -181,9 +180,9 @@ func (f *keptFixture) state0(agentName string, k pluginmodel.EntryKey) string {
 	return r.stateOf(agentName, k).State
 }
 
-func requirePersonError(t *testing.T, err error, code person.Code, reason string) {
+func requirePersonError(t *testing.T, err error, code plugin.Code, reason string) {
 	t.Helper()
-	var pe *person.Error
+	var pe *plugin.PersonError
 	require.True(t, errors.As(err, &pe), "an engine-kept plugin error: %v", err)
 	require.Equal(t, code, pe.Code, pe.Message)
 	require.Equal(t, reason, pe.Reason, pe.Message)
@@ -289,10 +288,10 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	require.NoError(t, err)
 	requireSchema(t, "listResult", list)
 	require.Len(t, list.Plugins, 1)
-	require.Equal(t, person.SourceEngine, list.Plugins[0].Source)
+	require.Equal(t, plugin.SourceEngine, list.Plugins[0].Source)
 	require.True(t, list.Plugins[0].Approval.Required)
 	require.Equal(t, "PENDING", list.Plugins[0].Approval.Agents[0].State)
-	require.Equal(t, person.HealthNotStarted, list.Plugins[0].Health, "not approved yet, so the engine has not started it")
+	require.Equal(t, plugin.HealthNotStarted, list.Plugins[0].Health, "not approved yet, so the engine has not started it")
 	require.JSONEq(t, `{"files":"NONE","network":"NOT_ENFORCED"}`, string(list.Plugins[0].Isolation))
 
 	f.sign(a)
@@ -311,17 +310,17 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 		return r.UploadID
 	}
 	part := func(id uuid.UUID, p string, off int64, n int) error {
-		_, err := f.client.PluginUploadPart(context.Background(), person.PluginUploadPartParams{UploadID: id, Path: p, Offset: off, Data: b64(bytes.Repeat([]byte("x"), n))})
+		_, err := f.client.PluginUploadPart(context.Background(), plugin.PluginUploadPartParams{UploadID: id, Path: p, Offset: off, Data: b64(bytes.Repeat([]byte("x"), n))})
 		return err
 	}
 	tooLarge := func(err error) {
 		t.Helper()
-		requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonTooLarge)
+		requirePersonError(t, err, plugin.CodePluginRefused, plugin.ReasonTooLarge)
 	}
 
 	id := begin()
 	tooLarge(part(id, "a", 0, 17))
-	requirePersonError(t, part(id, "a", 0, 1), person.CodeNotFound, "")
+	requirePersonError(t, part(id, "a", 0, 1), plugin.CodeNotFound, "")
 
 	id = begin()
 	for _, p := range []string{"a", "b", "c"} {
@@ -335,7 +334,7 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	tooLarge(part(id, "a", 32, 9))
 
 	id, id2 := begin(), begin()
-	requirePersonError(t, func() error { _, err := f.client.PluginUploadBegin(context.Background()); return err }(), person.CodePluginRefused, plugin.ReasonTooManyUploads)
+	requirePersonError(t, func() error { _, err := f.client.PluginUploadBegin(context.Background()); return err }(), plugin.CodePluginRefused, plugin.ReasonTooManyUploads)
 	require.NoError(t, part(id, "a", 0, 16))
 	require.NoError(t, part(id, "a", 16, 16))
 	require.NoError(t, part(id2, "a", 0, 16))
@@ -380,13 +379,13 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.NoError(t, os.WriteFile(f.configPath, raw, 0o600))
 
 	_, err = f.add("default", "product_a")
-	requirePersonError(t, err, person.CodePluginRefused, reasonNameTaken)
-	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
-	requirePersonError(t, err, person.CodePluginRefused, reasonConfigEntry)
-	_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: "acme-ner", Instance: "default"})
-	requirePersonError(t, err, person.CodePluginRefused, reasonConfigEntry)
-	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: "acme-ner", Instance: "default"})
-	requirePersonError(t, err, person.CodePluginRefused, reasonConfigEntry)
+	requirePersonError(t, err, plugin.CodePluginRefused, reasonNameTaken)
+	_, err = f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
+	requirePersonError(t, err, plugin.CodePluginRefused, reasonConfigEntry)
+	_, err = f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: "acme-ner", Instance: "default"})
+	requirePersonError(t, err, plugin.CodePluginRefused, reasonConfigEntry)
+	_, err = f.client.PluginRemove(context.Background(), plugin.PluginEntryParams{Name: "acme-ner", Instance: "default"})
+	requirePersonError(t, err, plugin.CodePluginRefused, reasonConfigEntry)
 	require.Empty(t, f.entries())
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
 
@@ -398,9 +397,9 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	// Each row's health is asked of the engine for that row's own kind.
 	f.s.health = func(_ pluginmodel.EntryKey, kept bool) string {
 		if kept {
-			return person.HealthUnavailable
+			return plugin.HealthUnavailable
 		}
-		return person.HealthReady
+		return plugin.HealthReady
 	}
 	list, err := f.client.PluginList(context.Background())
 	require.NoError(t, err)
@@ -418,9 +417,9 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 // and can neither disable, remove nor widen an entry the person made for more.
 func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	f2 := newKeptFixture(t, []string{"product_a", "product_b"}, "product_a")
-	srvScoped := keptClient{s: f2.s, uid: func() uint32 { return keptAgentUID }, scope: person.Scope{"product_a": true}}
+	srvScoped := keptClient{s: f2.s, uid: func() uint32 { return keptAgentUID }, scope: plugin.Scope{"product_a": true}}
 	_, err := f2.addVia(srvScoped, "1.0.0", "default", "product_a", "product_b")
-	requirePersonError(t, err, person.CodeAgentNotAllowed, "")
+	requirePersonError(t, err, plugin.CodeAgentNotAllowed, "")
 	require.Empty(t, f2.entries(), "nothing was written")
 	require.Equal(t, 1, f2.s.store.Open(), "a request refused for its scope does not use up its upload")
 
@@ -428,12 +427,12 @@ func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	// remove it, nor enable it, and sees only its own agent.
 	_, err = f2.add("default", "product_a", "product_b")
 	require.NoError(t, err)
-	_, err = srvScoped.PluginDisable(context.Background(), person.PluginEntryParams{Name: "acme-ner", Instance: "default"})
-	requirePersonError(t, err, person.CodeAgentNotAllowed, "")
-	_, err = srvScoped.PluginRemove(context.Background(), person.PluginEntryParams{Name: "acme-ner", Instance: "default"})
-	requirePersonError(t, err, person.CodeAgentNotAllowed, "")
-	_, err = srvScoped.PluginOpen(context.Background(), person.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
-	requirePersonError(t, err, person.CodeAgentNotAllowed, "")
+	_, err = srvScoped.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: "acme-ner", Instance: "default"})
+	requirePersonError(t, err, plugin.CodeAgentNotAllowed, "")
+	_, err = srvScoped.PluginRemove(context.Background(), plugin.PluginEntryParams{Name: "acme-ner", Instance: "default"})
+	requirePersonError(t, err, plugin.CodeAgentNotAllowed, "")
+	_, err = srvScoped.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
+	requirePersonError(t, err, plugin.CodeAgentNotAllowed, "")
 	list, err := srvScoped.PluginList(context.Background())
 	require.NoError(t, err)
 	require.Len(t, list.Plugins, 1)
@@ -446,12 +445,12 @@ func TestScopedCallerReachesOnlyItsOwnAgents(t *testing.T) {
 	require.Len(t, res.Approvals, 1)
 }
 
-func (f *keptFixture) addVia(c keptClient, version, instance string, agents ...string) (person.PluginOpenResult, error) {
+func (f *keptFixture) addVia(c keptClient, version, instance string, agents ...string) (plugin.PluginOpenResult, error) {
 	f.t.Helper()
 	files, exec := source(version)
 	id, err := c.PluginUpload(context.Background(), files)
 	require.NoError(f.t, err)
-	return c.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: instance, Agents: agents, Executables: exec})
+	return c.PluginOpen(context.Background(), plugin.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: instance, Agents: agents, Executables: exec})
 }
 
 // failingDB fails every exec of record_plugin_event while fail is set: a
@@ -474,8 +473,8 @@ func (d failingDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Co
 // it still cannot, the enable is refused with nothing written.
 func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 	k := pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
-	enable := func(f *keptFixture) (person.PluginOpenResult, error) {
-		return f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a"}})
+	enable := func(f *keptFixture) (plugin.PluginOpenResult, error) {
+		return f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a"}})
 	}
 
 	t.Run("disable ends the signed approval", func(t *testing.T) {
@@ -484,7 +483,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		require.NoError(t, err)
 		f.sign(res.Approvals[0])
 		require.Equal(t, "APPROVED", f.state0("product_a", k))
-		off, err := f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+		off, err := f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 		require.NoError(t, err)
 		requireSchema(t, "disableResult", off)
 		require.Equal(t, "ENDED", f.state0("product_a", k), "signed, never served, and ended at once")
@@ -507,13 +506,13 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		a.db = failingDB{Querier: a.db, fail: fail}
 		f.agents["product_a"] = a
 		fail.Store(true)
-		_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+		_, err = f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 		require.NoError(t, err, "the disable answers; its end is owed")
 		require.Equal(t, "APPROVED", f.state0("product_a", k), "the end could not be written")
 
 		// Still failing: the enable is refused, the entry stays off.
 		_, err = enable(f)
-		requirePersonError(t, err, person.CodePluginRefused, reasonDatabaseUnreachable)
+		requirePersonError(t, err, plugin.CodePluginRefused, reasonDatabaseUnreachable)
 		require.False(t, f.entries()[0].Enabled)
 		require.Equal(t, "APPROVED", f.state0("product_a", k))
 
@@ -538,7 +537,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		a.db = failingDB{Querier: a.db, fail: fail}
 		f.agents["product_a"] = a
 		fail.Store(true)
-		_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+		_, err = f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 		require.NoError(t, err)
 		require.Equal(t, "APPROVED", f.state0("product_a", k))
 		fail.Store(false)
@@ -551,7 +550,7 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		res, err := f.add("default", "product_a")
 		require.NoError(t, err)
 		f.sign(res.Approvals[0])
-		gone, err := f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+		gone, err := f.client.PluginRemove(context.Background(), plugin.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 		require.NoError(t, err)
 		requireSchema(t, "removeResult", gone)
 		require.Empty(t, f.entries())
@@ -567,35 +566,35 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 func TestKeptOpenRefusals(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
 	_, err := f.add("default", "nobody")
-	requirePersonError(t, err, person.CodePluginRefused, reasonUnknownAgent)
-	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
-	requirePersonError(t, err, person.CodeNotFound, "")
+	requirePersonError(t, err, plugin.CodePluginRefused, reasonUnknownAgent)
+	_, err = f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}})
+	requirePersonError(t, err, plugin.CodeNotFound, "")
 
 	// The manifest's name, an unlisted file, a missing one.
 	files, exec := source("1.0.0")
 	id, err := f.client.PluginUpload(context.Background(), files)
 	require.NoError(t, err)
-	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "other-name", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonBadManifest)
+	_, err = f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{UploadID: &id, Name: "other-name", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
+	requirePersonError(t, err, plugin.CodePluginRefused, plugin.ReasonBadManifest)
 	id, err = f.client.PluginUpload(context.Background(), append(slices.Clone(files), shim.PluginFile{Path: "extra", Data: []byte("x")}))
 	require.NoError(t, err)
-	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonBadManifest)
+	_, err = f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
+	requirePersonError(t, err, plugin.CodePluginRefused, plugin.ReasonBadManifest)
 	id, err = f.client.PluginUpload(context.Background(), files[:2])
 	require.NoError(t, err)
-	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonBadManifest)
+	_, err = f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
+	requirePersonError(t, err, plugin.CodePluginRefused, plugin.ReasonBadManifest)
 	// A file whose hash is not the manifest's.
 	bad := slices.Clone(files)
 	bad[2] = shim.PluginFile{Path: "share/model.txt", Data: []byte("other")}
 	id, err = f.client.PluginUpload(context.Background(), bad)
 	require.NoError(t, err)
-	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonNotTrusted)
+	_, err = f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
+	requirePersonError(t, err, plugin.CodePluginRefused, plugin.ReasonNotTrusted)
 	// An engine running as root refuses a local plugin.
 	f.s.euid = 0
 	_, err = f.add("default", "product_a")
-	requirePersonError(t, err, person.CodePluginRefused, reasonEngineIsRoot)
+	requirePersonError(t, err, plugin.CodePluginRefused, reasonEngineIsRoot)
 	f.s.euid = os.Geteuid()
 
 	require.Empty(t, f.entries())
@@ -611,7 +610,7 @@ func TestKeptOpenRefusals(t *testing.T) {
 	files[0].Data = []byte(manifest)
 	id, err = f.client.PluginUpload(context.Background(), append(files, shim.PluginFile{Path: "pkg/__init__.py"}))
 	require.NoError(t, err)
-	res, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
+	res, err := f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
 	require.FileExists(t, filepath.Join(f.state, "plugins", "acme-ner", "default", f.entries()[0].ManifestSHA256, "pkg", "__init__.py"))
@@ -640,8 +639,8 @@ func (errRow) Scan(...any) error { return errors.New("the database does not answ
 // old signed approval, even when the new approval cannot be opened.
 func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 	k := pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}
-	open := func(f *keptFixture, agents ...string) (person.PluginOpenResult, error) {
-		return f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: agents})
+	open := func(f *keptFixture, agents ...string) (plugin.PluginOpenResult, error) {
+		return f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: agents})
 	}
 	f := newKeptFixture(t, []string{"product_a", "product_b"})
 	res, err := f.add("default", "product_a", "product_b")
@@ -670,7 +669,7 @@ func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
 
 	// A disabled entry is never narrowed: turning it on opens an approval.
 	fail.Store(false)
-	_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+	_, err = f.client.PluginDisable(context.Background(), plugin.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 	require.NoError(t, err)
 	again, err := open(f, "product_a")
 	require.NoError(t, err)
@@ -691,7 +690,7 @@ func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	b.db = failingDB{Querier: b.db, fail: fail}
 	f.agents["product_b"] = b
 	fail.Store(true)
-	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+	_, err = f.client.PluginRemove(context.Background(), plugin.PluginEntryParams{Name: k.Name, Instance: k.Instance})
 	require.NoError(t, err)
 	require.Equal(t, "APPROVED", f.state0("product_b", k), "its end could not be written")
 	fail.Store(false)
@@ -705,7 +704,7 @@ func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	a.db = failingOpen{Querier: a.db, fail: failOpen}
 	f.agents["product_a"] = a
 	failOpen.Store(true)
-	widened, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a", "product_b"}})
+	widened, err := f.client.PluginOpen(context.Background(), plugin.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a", "product_b"}})
 	require.NoError(t, err)
 	require.NotNil(t, widened.Approvals[0].Refused)
 	require.Equal(t, "ENDED", f.state0("product_b", k), "the old approval ended before product_b was added")

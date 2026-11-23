@@ -13,8 +13,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // Requests serve the agents' request_plugin calls with the
@@ -46,7 +46,7 @@ const reasonUnsafePath = "UNSAFE_PATH"
 
 // reach is the caller's OS user and the agents that user runs: what the
 // person socket would let that user change.
-func (p *Requests) reach(caller string) (*KeptPlugins, uint32, person.Scope, error) {
+func (p *Requests) reach(caller string) (*KeptPlugins, uint32, plugin.Scope, error) {
 	k := p.kept.Load()
 	if k == nil {
 		return nil, 0, nil, errNoKept
@@ -59,7 +59,7 @@ func (p *Requests) reach(caller string) (*KeptPlugins, uint32, person.Scope, err
 		return nil, 0, nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
 			"agent %s runs as an OS user (uid %d) the engine does not let change plugins: only the person's own users may. Nothing was written", caller, uid)}
 	}
-	scope := person.Scope{}
+	scope := plugin.Scope{}
 	for name, u := range p.uids {
 		if u == uid {
 			scope[name] = true
@@ -87,7 +87,7 @@ func (p *Requests) OpenPlugin(ctx context.Context, caller string, o agent.Plugin
 		k.dropUpload(uid, o.UploadID)
 		return agent.PluginOpened{}, err
 	}
-	res, err := k.Open(ctx, uid, scope, person.PluginOpenParams{
+	res, err := k.Open(ctx, uid, scope, plugin.PluginOpenParams{
 		UploadID: o.UploadID, Name: o.Name, Instance: o.Instance, Agents: agents, Executables: o.Executables,
 	})
 	if err != nil {
@@ -130,7 +130,7 @@ func (p *Requests) RemovePlugin(ctx context.Context, caller, name, instance stri
 	if err != nil {
 		return err
 	}
-	if _, err := k.Remove(ctx, scope, person.PluginEntryParams{Name: name, Instance: instance}); err != nil {
+	if _, err := k.Remove(ctx, scope, plugin.PluginEntryParams{Name: name, Instance: instance}); err != nil {
 		return requestError(err, false)
 	}
 	return nil
@@ -151,7 +151,7 @@ func (p *Requests) PluginApproval(ctx context.Context, caller string, id uuid.UU
 		return agent.PluginApprovalState{}, requestError(err, false)
 	}
 	for _, l := range list.Plugins {
-		if l.Source != person.SourceEngine {
+		if l.Source != plugin.SourceEngine {
 			continue
 		}
 		if st, ok := approvalStateOf(l, id); ok {
@@ -163,7 +163,7 @@ func (p *Requests) PluginApproval(ctx context.Context, caller string, id uuid.UU
 
 // approvalStateOf is id's state in entry l; false when no agent of l has
 // id as its newest approval.
-func approvalStateOf(l person.PluginListed, id uuid.UUID) (agent.PluginApprovalState, bool) {
+func approvalStateOf(l plugin.PluginListed, id uuid.UUID) (agent.PluginApprovalState, bool) {
 	st := agent.PluginApprovalState{Name: l.Name, Instance: l.Instance, State: agent.PluginStateApproved}
 	unread := false
 	for _, a := range l.Approval.Agents {
@@ -195,9 +195,9 @@ func approvalStateOf(l person.PluginListed, id uuid.UUID) (agent.PluginApprovalS
 
 // servedOn: the engine serves l, READY, to every one of agents on approval
 // id.
-func servedOn(l person.PluginListed, id uuid.UUID, agents []string) bool {
+func servedOn(l plugin.PluginListed, id uuid.UUID, agents []string) bool {
 	for _, name := range agents {
-		if !slices.ContainsFunc(l.Serving, func(s person.PluginServing) bool {
+		if !slices.ContainsFunc(l.Serving, func(s plugin.PluginServing) bool {
 			return s.Agent == name && s.Ready && s.ApprovalID != nil && *s.ApprovalID == id
 		}) {
 			return false
@@ -261,23 +261,23 @@ func (s *KeptPlugins) dropUpload(uid uint32, id *uuid.UUID) {
 // NOT_FOUND upload is gone (the engine dropped it, or it expired): call
 // again with source.
 func requestError(err error, upload bool) error {
-	var pe *person.Error
+	var pe *plugin.PersonError
 	if !errors.As(err, &pe) {
 		return err
 	}
 	switch pe.Code {
-	case person.CodePluginRefused:
+	case plugin.CodePluginRefused:
 		return &agent.PluginRefusedError{Reason: pe.Reason, Message: pe.Message}
-	case person.CodeAgentNotAllowed:
+	case plugin.CodeAgentNotAllowed:
 		return &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: pe.Message}
-	case person.CodeNotFound:
+	case plugin.CodeNotFound:
 		if upload {
 			return &guidance.ArgumentError{Message: "the plugin's files are no longer on the engine (it restarted, or 15 minutes passed): call request_plugin again with source"}
 		}
 		return agent.ErrPluginNotFound
-	case person.CodeInvalidArgument:
+	case plugin.CodeInvalidArgument:
 		return &guidance.ArgumentError{Message: pe.Message}
-	case person.CodeUIDNotAllowed, person.CodeUnknownAgent, person.CodeUnknownMethod, person.CodeRefused, person.CodeInternal:
+	case plugin.CodeUIDNotAllowed, plugin.CodeUnknownAgent, plugin.CodeUnknownMethod, plugin.CodeRefused, plugin.CodeInternal:
 	}
 	return err
 }
@@ -289,34 +289,34 @@ func requestError(err error, upload bool) error {
 // request_plugin refuses an install (served, then reach) before anything is
 // written. The errors are the request's (agent.PluginRefusedError and the
 // like); the transport maps them.
-func (p *Requests) UploadBegin(ctx context.Context, caller string, served func() error) (person.PluginUploadBeginResult, error) {
+func (p *Requests) UploadBegin(ctx context.Context, caller string, served func() error) (plugin.PluginUploadBeginResult, error) {
 	k, uid, err := p.admitUpload(caller, served)
 	if err != nil {
-		return person.PluginUploadBeginResult{}, err
+		return plugin.PluginUploadBeginResult{}, err
 	}
 	out, err := k.UploadBegin(ctx, uid)
 	if err != nil {
-		return person.PluginUploadBeginResult{}, requestError(err, false)
+		return plugin.PluginUploadBeginResult{}, requestError(err, false)
 	}
 	return out, nil
 }
 
 // UploadPart is the upload method that adds a part of a file to an upload;
 // raw is its parameters, which are decoded strictly.
-func (p *Requests) UploadPart(ctx context.Context, caller string, served func() error, raw json.RawMessage) (person.PluginUploadPartResult, error) {
+func (p *Requests) UploadPart(ctx context.Context, caller string, served func() error, raw json.RawMessage) (plugin.PluginUploadPartResult, error) {
 	k, uid, err := p.admitUpload(caller, served)
 	if err != nil {
-		return person.PluginUploadPartResult{}, err
+		return plugin.PluginUploadPartResult{}, err
 	}
-	var in person.PluginUploadPartParams
+	var in plugin.PluginUploadPartParams
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if dec.Decode(&in) != nil || in.UploadID == uuid.Nil || in.Path == "" {
-		return person.PluginUploadPartResult{}, &guidance.ArgumentError{Message: "a part needs uploadId, path, offset and data, and nothing else"}
+		return plugin.PluginUploadPartResult{}, &guidance.ArgumentError{Message: "a part needs uploadId, path, offset and data, and nothing else"}
 	}
 	out, err := k.UploadPart(ctx, uid, in)
 	if err != nil {
-		return person.PluginUploadPartResult{}, requestError(err, false)
+		return plugin.PluginUploadPartResult{}, requestError(err, false)
 	}
 	return out, nil
 }

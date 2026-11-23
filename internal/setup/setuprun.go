@@ -45,6 +45,9 @@ const (
 	// SetuprunCodeGuardUnusable: the database has a basalt_meta this build
 	// can neither install over nor update; nothing changed.
 	SetuprunCodeGuardUnusable = "GUARD_UNUSABLE"
+	// SetuprunCodeSetupUnconfirmed: the setup's commit got no answer from
+	// the database, so whether it ran is not known.
+	SetuprunCodeSetupUnconfirmed = "SETUP_UNCONFIRMED"
 )
 
 // SetuprunRefusalError is a refused setup: a code and the sentence the person reads.
@@ -702,10 +705,25 @@ func ApplySetupWith(ctx context.Context, b SetuprunBackend, run TxRunner, script
 	return WithGuardDetail(b, err)
 }
 
+// UnconfirmedError is a commit whose answer was lost: whether it took
+// effect is not known. A TxRunner returns it for such a commit only, not
+// for one the database answered with an error or turned into a rollback.
+type UnconfirmedError struct{ Err error }
+
+func (u *UnconfirmedError) Error() string { return "the commit's outcome is unknown: " + u.Err.Error() }
+
+func (u *UnconfirmedError) Unwrap() error { return u.Err }
+
 // Refused turns a failed transaction into what the person reads. Nothing
-// changed: the transaction rolled back. A refusal by record_setup gets the
-// contract's words (USED and SUPERSEDED with the time, read again with q).
+// changed: the transaction rolled back, except for a commit with no
+// answer (SETUP_UNCONFIRMED), which may have run. A refusal by
+// record_setup gets the contract's words (USED and SUPERSEDED with the
+// time, read again with q).
 func Refused(ctx context.Context, b SetuprunBackend, q Querier, p setupcode.Payload, err error) error {
+	var unconfirmed *UnconfirmedError
+	if errors.As(err, &unconfirmed) {
+		return &SetuprunRefusalError{Code: SetuprunCodeSetupUnconfirmed, Err: err, Message: "the database did not confirm the setup, so it may or may not have run. Check the setup again to see which"}
+	}
 	agent := AgentWord(p)
 	detail, ok := b.SetupRefusal(err)
 	if !ok {

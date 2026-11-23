@@ -93,6 +93,7 @@ A refusal is a ConnectRPC error whose detail is a `basalt.connect.v1.Refusal`: `
 | `PASSKEY_REQUIRED` | `failed_precondition` | `RunSetup` only. Nothing changed |
 | `CHALLENGE_EXPIRED`, `CHALLENGE_INVALID`, `PASSKEY_INVALID` | `invalid_argument` | `RunSetup` only ([The passkey challenge](#the-passkey-challenge)) |
 | `SETUP_FAILED` | `failed_precondition` | Reading the database or the transaction failed, the passkey's registration included: nothing changed. The message is fixed per kind of failure (for example, the admin role lacks a privilege) |
+| `SETUP_UNCONFIRMED` | `failed_precondition` | `RunSetup` only: the setup's `COMMIT` got no answer from the database (the connection dropped), so the setup may or may not have run. Not "nothing changed": checking the setup again tells which (`USED` when it ran). A commit the database answered with an error, or turned into a rollback, is `SETUP_FAILED` |
 | `TIME_LIMIT` | `deadline_exceeded` | The call ran past 60 seconds; the transaction rolled back |
 | `RATE_LIMITED`, `BUSY` | `resource_exhausted` | [Connect limits](#connect-limits). Always with `retryAfterSeconds` |
 | `REQUEST_TOO_LARGE` | `resource_exhausted` | A body over 16 KiB |

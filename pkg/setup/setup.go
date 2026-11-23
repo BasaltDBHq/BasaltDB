@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -319,11 +320,34 @@ type RowSecurityQuestion struct {
 	Text string
 }
 
-// adminTx runs the setup's transaction on the admin connection conn.
+// adminTx runs the setup's transaction on the admin connection conn. A
+// commit that fails without the database's answer is a
+// setuprun.UnconfirmedError; one the database answered (an error of its
+// own, or a commit that became a rollback) is a known failure, and so is
+// fn's.
 func adminTx(conn *pgx.Conn) setuprun.TxRunner {
 	return func(ctx context.Context, fn func(setuprun.Querier) error) error {
-		return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return fn(pgquerier.Neutralize(tx)) })
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		if err := fn(pgquerier.Neutralize(tx)); err != nil {
+			_ = tx.Rollback(context.WithoutCancel(ctx))
+			return err
+		}
+		return commitOutcome(tx.Commit(ctx))
 	}
+}
+
+// commitOutcome is err from a commit, as a setuprun.UnconfirmedError when
+// the database did not answer it.
+func commitOutcome(err error) error {
+	var pg *pgconn.PgError
+	switch {
+	case err == nil, errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback):
+		return err
+	}
+	return &setuprun.UnconfirmedError{Err: err}
 }
 
 // pgxTx is the transaction adminTx handed the setup, for the writes in it
@@ -798,6 +822,9 @@ const (
 	// version can neither install over nor update: remove it first, as the
 	// message's link says. Nothing changed.
 	CodeGuardUnusable = setuprun.SetuprunCodeGuardUnusable
+	// CodeSetupUnconfirmed is a setup whose commit got no answer from the
+	// database: it may or may not have run. Check tells which.
+	CodeSetupUnconfirmed = setuprun.SetuprunCodeSetupUnconfirmed
 	// CodeSetupFailed is any other failure: the database or its driver.
 	// Nothing changed. Its Message may carry the database's own words; a
 	// service that shows fixed messages maps it to one.
@@ -814,6 +841,7 @@ var codes = []string{
 	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
 	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
+	CodeSetupUnconfirmed,
 }
 
 // Codes is every Error.Code this package returns: the setup code's

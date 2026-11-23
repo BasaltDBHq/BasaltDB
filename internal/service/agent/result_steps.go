@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -53,13 +54,13 @@ func (ac *approvalCase) openHeldLink(b *guidance.Steps, n *toolresult.ApprovalNo
 
 // expired reports whether a held write ran out before it was approved.
 func (ac *approvalCase) expired(p PendingItem) bool {
-	return p.Status == approvalExpired || !ac.core.Now().Before(p.ExpiresAt)
+	return p.Status == action.ApprovalExpired || !ac.core.Now().Before(p.ExpiresAt)
 }
 
 // waitsForPerson reports whether a held write still waits for the person's
 // passkey: only then does it need its request sent.
 func (ac *approvalCase) waitsForPerson(p PendingItem) bool {
-	return p.Status == approvalPending && !ac.expired(p)
+	return p.Status == action.ApprovalPending && !ac.expired(p)
 }
 
 const approvalExpiredMessage = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."

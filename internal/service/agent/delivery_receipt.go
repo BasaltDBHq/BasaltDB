@@ -61,7 +61,7 @@ func (dc *deliveryCase) approvalReceipt(ctx context.Context, id uuid.UUID) (Rece
 }
 
 func (dc *deliveryCase) approvalReceiptOf(a action.Approval) (Receipt, error) {
-	if a.Status != approvalApproved && a.Status != approvalApplied {
+	if a.Status != action.ApprovalApproved && a.Status != action.ApprovalApplied {
 		return Receipt{}, fmt.Errorf("approval %s is %s, not signed", a.ID, a.Status)
 	}
 	b, err := approval.ParseBinding(a.BindingText)
@@ -123,7 +123,7 @@ func withReceiptLine(line, message string) string {
 // see, and what to do if the person did not widen it.
 func widenedReceiptLine(r action.Revert) string {
 	what := fmt.Sprintf("%d rows restored", r.Rows)
-	if r.Status == revertApplying {
+	if r.Status == action.RevertApplying {
 		what = fmt.Sprintf("%d rows to restore in batches", r.Rows)
 	}
 	return "No receipt: the revert's scope was changed on the signing page (" + what + "). If you did not change it, tell the agent at once."

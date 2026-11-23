@@ -98,9 +98,9 @@ func (rc *revertCase) openRevert(ctx context.Context, id uuid.UUID) (action.Reve
 		return action.Revert{}, err
 	}
 	switch {
-	case r.Status == revertExpired || (r.Status == revertPending && !rc.core.Now().Before(r.ExpiresAt)):
+	case r.Status == action.RevertExpired || (r.Status == action.RevertPending && !rc.core.Now().Before(r.ExpiresAt)):
 		return r, rc.revertExpired(r)
-	case r.Status != revertPending:
+	case r.Status != action.RevertPending:
 		return r, alreadySigned(r)
 	}
 	return r, nil

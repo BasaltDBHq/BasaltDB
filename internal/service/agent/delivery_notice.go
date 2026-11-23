@@ -126,7 +126,7 @@ func (dc *deliveryCase) credentialIDs(ctx context.Context) ([]passkey.Bytes, err
 	if err != nil {
 		return nil, err
 	}
-	keys, _ := pagesPasskeys(all, dc.core.PagesBase)
+	keys, _ := passkey.OnPagesOrigin(all, dc.core.PagesBase)
 	ids := make([]passkey.Bytes, 0, len(keys))
 	for _, k := range keys {
 		ids = append(ids, k.ID)

@@ -52,7 +52,7 @@ type pendingDTO struct {
 
 func pendingFromDomain(p PendingItem) pendingDTO {
 	d := pendingDTO{
-		Kind:       KindApproval,
+		Kind:       guidance.KindApproval,
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
 		CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile,
@@ -92,7 +92,7 @@ type pendingRevertDTO struct {
 
 func pendingRevertFromDomain(p PendingRevert) pendingRevertDTO {
 	d := pendingRevertDTO{
-		Kind: KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
+		Kind: guidance.KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
 		Batched: p.Batched, Widened: p.Widened, CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt),
 		Headline: p.Headline, RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}

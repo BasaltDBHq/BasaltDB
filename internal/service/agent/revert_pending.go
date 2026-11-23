@@ -34,7 +34,7 @@ type PendingRevert struct {
 // link on reissue, at its long link otherwise, and on the page they
 // widened on for a widened revert.
 func (rc *revertCase) pendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
-	if p.Status == revertApplying {
+	if p.Status == action.RevertApplying {
 		headline, err := revertHeadline(p.Revert)
 		if err != nil {
 			return err

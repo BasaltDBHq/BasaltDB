@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"time"
 
@@ -317,7 +316,7 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, se
 		s.log.Error("status: count passkeys", "err", err)
 		return PasskeysStatus{}
 	}
-	keys, origin := pagesPasskeys(all, s.pagesBase)
+	keys, origin := passkey.OnPagesOrigin(all, s.pagesBase)
 	n := len(keys)
 	if n == 0 {
 		msg := "no passkey is registered, so held writes and reverts cannot be signed"
@@ -340,25 +339,6 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, se
 		out.Summary = passkeySummary(out.Keys)
 	}
 	return out
-}
-
-// pagesPasskeys keeps the passkeys registered on the origin of the pages
-// at base, and returns that origin. A passkey signs only on the origin it
-// was registered on, so a localhost one cannot sign an agent's portal
-// links. A base with no origin keeps every passkey.
-func pagesPasskeys(keys []passkey.Credential, base string) ([]passkey.Credential, string) {
-	u, err := url.Parse(base)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return keys, ""
-	}
-	origin := u.Scheme + "://" + u.Host
-	out := make([]passkey.Credential, 0, len(keys))
-	for _, k := range keys {
-		if k.Relying.Origin == origin {
-			out = append(out, k)
-		}
-	}
-	return out, origin
 }
 
 // passkeySummary says in words how many passkeys are registered and the

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -31,12 +32,6 @@ func (ac *approvalCase) deliverReissued(items []PendingEntry) {
 		}
 	}
 }
-
-// Kinds of list_pending items (owner decision LP-1).
-const (
-	KindApproval = "APPROVAL"
-	KindRevert   = "REVERT"
-)
 
 // PendingParams are list_pending's validated arguments: one page over held
 // writes and reverts, keyset on the id (UUIDv7, so time order). RunID
@@ -79,7 +74,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 	}
 	var entries []PendingEntry
 	more := false
-	if p.Kind != KindRevert && p.Status != revertApplying {
+	if p.Kind != guidance.KindRevert && p.Status != action.RevertApplying {
 		page, err := ac.deps.Store.ListApprovals(ctx, action.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
@@ -89,7 +84,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 		}
 		more = page.NextCursor != ""
 	}
-	if p.Kind != KindApproval && p.Status != approvalApproved && p.RunID == uuid.Nil {
+	if p.Kind != guidance.KindApproval && p.Status != action.ApprovalApproved && p.RunID == uuid.Nil {
 		page, err := ac.reverts.ListOpenReverts(ctx, action.RevertListParams{Params: p.Params, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err

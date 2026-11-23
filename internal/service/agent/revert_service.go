@@ -138,7 +138,7 @@ func (rc *revertCase) RevertPlan(ctx context.Context, p action.RevertLineParams)
 		return RevertPlan{}, err
 	}
 	out := RevertPlan{Revert: r, Page: pagination.Page[RevertPlanLine]{NextCursor: page.NextCursor}}
-	if r.Status == revertPending && !r.Widened {
+	if r.Status == action.RevertPending && !r.Widened {
 		// A widened plan issues no link: the person signs on the page they
 		// widened on (RS-5).
 		n, err := rc.revertNotice(ctx, r)
@@ -320,7 +320,7 @@ func (rc *revertCase) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Req
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	if p.Reissue && r.Status == revertPending {
+	if p.Reissue && r.Status == action.RevertPending {
 		r, err = rc.prepareReissue(ctx, r)
 		if err != nil {
 			return RequestedRevert{}, err
@@ -331,7 +331,7 @@ func (rc *revertCase) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Req
 		}
 		return out, err
 	}
-	err = rc.delivery.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
+	err = rc.delivery.awaitWhile(ctx, p.Wait, func() bool { return r.Status == action.RevertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
 		next, err := rc.deps.Store.FindRevert(budget.With(ctx), r.ID)
@@ -385,7 +385,7 @@ func (rc *revertCase) revertState(ctx context.Context, r action.Revert) (Request
 	if r.Widened {
 		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
-	if r.Status != revertApplied && r.Status != revertApplying {
+	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
 		return out, nil
 	}
 	// A signed revert: its receipt, from Postgres's record, the line first
@@ -402,17 +402,17 @@ func (rc *revertCase) revertState(ctx context.Context, r action.Revert) (Request
 func (rc *revertCase) revertStateOf(ctx context.Context, r action.Revert) (RequestedRevert, error) {
 	out := RequestedRevert{Revert: r}
 	switch r.Status {
-	case revertApplied:
+	case action.RevertApplied:
 		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = appliedSteps()
-	case revertApplying:
+	case action.RevertApplying:
 		// Nothing for the person yet: the agent restores the rest, and the
 		// last batch tells them (CONTRACT.md, Next steps, APPLYING).
 		out.NextSteps = applyingSteps(r.ID)
-	case revertExpired:
+	case action.RevertExpired:
 		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = expiredSteps(r)
-	case revertRejected:
+	case action.RevertRejected:
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:

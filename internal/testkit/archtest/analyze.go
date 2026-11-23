@@ -379,6 +379,10 @@ func checkLayer(v violations, rel, layer, target string) {
 	}
 	extra := pkgExtra[rel]
 	tl := layerOf(target)
+	if layer == lInbound && tl == lService && strings.HasPrefix(rel, "internal/platform/") {
+		v.add(rel, "imports "+target+" (an internal/platform package imports no domain service)")
+		return
+	}
 	if in(ok, tl) || in(extra, tl) {
 		return
 	}

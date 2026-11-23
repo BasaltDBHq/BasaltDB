@@ -233,7 +233,7 @@ func (r rootCredFiles) name(path string) (string, error) {
 	return filepath.Base(path), nil
 }
 
-func (r rootCredFiles) lock(path string) (func(), error) {
+func (r rootCredFiles) Lock(path string) (func(), error) {
 	name, err := r.name(path)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func (r rootCredFiles) open(path string) (*os.File, error) {
 	return r.dir.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 }
 
-func (r rootCredFiles) read(path string) (string, os.FileInfo, error) {
+func (r rootCredFiles) Read(path string) (string, os.FileInfo, error) {
 	f, err := r.open(path)
 	if err != nil {
 		return "", nil, err
@@ -274,7 +274,7 @@ func (r rootCredFiles) read(path string) (string, os.FileInfo, error) {
 	return dsn, fi, nil
 }
 
-func (r rootCredFiles) stat(path string) (os.FileInfo, error) {
+func (r rootCredFiles) Stat(path string) (os.FileInfo, error) {
 	f, err := r.open(path)
 	if err != nil {
 		return nil, err
@@ -283,7 +283,7 @@ func (r rootCredFiles) stat(path string) (os.FileInfo, error) {
 	return f.Stat()
 }
 
-func (r rootCredFiles) write(path string, data []byte) error {
+func (r rootCredFiles) Write(path string, data []byte) error {
 	name, err := r.name(path)
 	if err != nil {
 		return err
@@ -291,7 +291,7 @@ func (r rootCredFiles) write(path string, data []byte) error {
 	return r.dir.WriteFile(name, data, config.FileMode, r.owner)
 }
 
-func (r rootCredFiles) rename(from, to string) error {
+func (r rootCredFiles) Rename(from, to string) error {
 	a, err := r.name(from)
 	if err != nil {
 		return err
@@ -303,7 +303,7 @@ func (r rootCredFiles) rename(from, to string) error {
 	return r.dir.Rename(a, b)
 }
 
-func (r rootCredFiles) remove(path string) error {
+func (r rootCredFiles) Remove(path string) error {
 	name, err := r.name(path)
 	if err != nil {
 		return err
@@ -311,4 +311,4 @@ func (r rootCredFiles) remove(path string) error {
 	return r.dir.Remove(name)
 }
 
-func (r rootCredFiles) close() { _ = r.dir.Close() }
+func (r rootCredFiles) Close() { _ = r.dir.Close() }

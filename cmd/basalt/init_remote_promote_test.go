@@ -128,7 +128,7 @@ func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
 			t.Helper()
 			files, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
 			require.NoError(t, err)
-			t.Cleanup(files.close)
+			t.Cleanup(files.Close)
 			return files
 		},
 	}
@@ -182,7 +182,7 @@ func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
 	require.NoError(t, config.WriteFile(credFile+pendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
 	files, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
 	require.NoError(t, err)
-	t.Cleanup(files.close)
+	t.Cleanup(files.Close)
 	r := &remoteInit{credFile: credFile, files: files}
 	pending, err := readCredentialIfAny(r.files, credFile+pendingSuffix)
 	require.NoError(t, err)
@@ -190,7 +190,7 @@ func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
 	elsewhere := filepath.Join(dir, "elsewhere.url")
 	require.NoError(t, os.Rename(credFile+pendingSuffix, elsewhere))
 	require.NoError(t, os.Symlink(elsewhere, credFile+pendingSuffix))
-	_, want := files.stat(credFile + pendingSuffix)
+	_, want := files.Stat(credFile + pendingSuffix)
 	require.Error(t, want)
 	err = r.promote(pending)
 	require.Equal(t, want.Error(), err.Error(), "the open error itself")
@@ -212,10 +212,10 @@ func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {
 	defer unlock()
 	root, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
 	require.NoError(t, err)
-	defer root.close()
+	defer root.Close()
 	want := fmt.Sprintf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
 	for name, files := range map[string]credFiles{"path": pathCredFiles{}, "root": root} {
-		_, err := files.lock(path)
+		_, err := files.Lock(path)
 		require.ErrorIs(t, err, config.ErrLocked, name)
 		require.EqualError(t, err, want, name)
 	}

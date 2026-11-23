@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
 // OS is the real System.

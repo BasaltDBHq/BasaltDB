@@ -30,7 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -48,6 +47,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
 const lockFileName = "engine.lock"

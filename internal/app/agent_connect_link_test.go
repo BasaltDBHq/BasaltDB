@@ -97,7 +97,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			setApprovals(&d, keys{n: 1})
 			d.Status.Setup = pendingSetup(tc.kind, soon)
 			d.Core.Now = func() time.Time { return statusNow }
-			cmds, err := NewCommands("bot", "", "linux", testManager())
+			cmds, err := newCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			d.Core.Commands = cmds
 			r, err := NewService(d).status.Status(context.Background())

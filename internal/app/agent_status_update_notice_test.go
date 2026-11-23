@@ -22,7 +22,7 @@ func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
 		d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
 		d.Core.Now = func() time.Time { return statusNow }
-		cmds, err := NewCommands("bot", "", "linux", testManager())
+		cmds, err := newCommands("bot", "", "linux", testManager())
 		require.NoError(t, err)
 		d.Core.Commands = cmds
 		s := NewService(d)

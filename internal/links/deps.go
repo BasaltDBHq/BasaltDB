@@ -48,7 +48,7 @@ type Deps struct {
 	VaultConflict        func(err error) bool
 	ErrVaultNotConnected error
 	// Poll is how often a waiting call reads whether the person signed;
-	// DefaultPoll when zero.
+	// the agent service's default (one second) when zero.
 	Poll time.Duration
 	// Receipts is the engine's signing key, which signs the receipt of
 	// every signature the engine relays (CONTRACT.md, Vault channel,

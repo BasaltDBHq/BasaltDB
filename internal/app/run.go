@@ -563,7 +563,7 @@ type agentEnv struct {
 // is no service, and the setup page's UPDATE link for a when the engine
 // serves the setup jobs (setupOrigin).
 func (env agentEnv) commands(a config.Agent) (guidance.Commands, error) {
-	cmds, err := NewCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
+	cmds, err := newCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil {
 		return guidance.Commands{}, err
 	}

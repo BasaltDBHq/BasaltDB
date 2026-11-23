@@ -37,5 +37,5 @@ func (l liveWrites) Check(sql string, tool action.Tool) (action.Statement, error
 	return l.d.Store.Check(sql, tool)
 }
 
-// DefaultPoll is how often a waiting call reads whether the person signed.
-const DefaultPoll = time.Second
+// defaultPoll is how often a waiting call reads whether the person signed.
+const defaultPoll = time.Second

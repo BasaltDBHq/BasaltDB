@@ -387,7 +387,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 		SetupID: p.SetupID, Kind: "INSTALL", GuardVersion: guard.LatestVersion(),
 		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,
 	}, a.Setup)
-	_, err = NewCommands(a.Name, cfg, "linux", AgentServiceManager())
+	_, err = newCommands(a.Name, cfg, "linux", AgentServiceManager())
 	require.NoError(t, err, "the agent's entry is one the engine accepts")
 	pages, err := r.cfg.Pages()
 	require.NoError(t, err)

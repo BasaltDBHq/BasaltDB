@@ -160,7 +160,7 @@ func ordersDetail() agentsvc.CatalogDetail {
 func describeService(t *testing.T, cat agentsvc.Catalog, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy

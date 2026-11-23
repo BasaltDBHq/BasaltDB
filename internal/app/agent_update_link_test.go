@@ -41,7 +41,7 @@ func hasStep(steps []toolresult.NextStep, actor, action, value string) bool {
 
 func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "darwin", testManager())
+	cmds, err := newCommands("bot", "", "darwin", testManager())
 	require.NoError(t, err)
 	with := cmds.UpdateLink(testUpdateLink)
 
@@ -73,7 +73,7 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 // agent runs basalt init once, which removes the engine service.
 func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "darwin", testManager())
+	cmds, err := newCommands("bot", "", "darwin", testManager())
 	require.NoError(t, err)
 	gone := false
 	removed := cmds.UpdateLink(testUpdateLink).Removed(func() bool { return gone })

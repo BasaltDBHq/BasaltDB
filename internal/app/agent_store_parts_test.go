@@ -28,7 +28,7 @@ type runStore interface {
 	StartRun(ctx context.Context, in action.Intent) error
 	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
-	History(ctx context.Context, p action.ChangeListParams) (History, error)
+	History(ctx context.Context, p action.ChangeListParams) (changeHistory, error)
 	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
 }
 

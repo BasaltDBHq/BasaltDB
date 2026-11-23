@@ -1,0 +1,2 @@
+imports internal/links (an internal/platform package imports no domain service)
+imports internal/revert (an internal/platform package imports no domain service)

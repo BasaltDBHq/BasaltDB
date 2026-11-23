@@ -22,13 +22,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
-// Code prefixes (CONTRACT.md, Approvals, Codes).
-const (
-	// RequestPrefix starts the approval link's fragment: format 2, the
-	// compact request. The pages also read format 1 (linkcodec).
-	RequestPrefix = linkcodec.Format2
-)
-
 // KindApprove is the binding kind of an approval; M3 adds REVERT.
 const KindApprove = "APPROVE"
 

@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 const (
@@ -134,7 +133,7 @@ func (s *starter) now() time.Time {
 
 // holdOff reports whether last-stop.json still holds off a new start.
 func (s *starter) holdOff() (until time.Time, stop guidance.LastStop, ok bool) {
-	stop, ok = agent.ReadLastStop(s.stateDir())
+	stop, ok = engine.ReadLastStop(s.stateDir())
 	if !ok {
 		return time.Time{}, guidance.LastStop{}, false
 	}

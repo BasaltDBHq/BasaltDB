@@ -15,9 +15,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
@@ -210,7 +211,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			dir := t.TempDir()
-			require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
 			cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
@@ -1151,7 +1152,7 @@ func TestEngineDownStatusLastStop(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, r.Engine.LastStop, "no file, no last stop")
 
-	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte("{\"reason\":\"the engine crashed 5 times within 10s; last: exit status 1\\u0007\",\"at\":\"2026-11-20T01:02:03Z\"}"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte("{\"reason\":\"the engine crashed 5 times within 10s; last: exit status 1\\u0007\",\"at\":\"2026-11-20T01:02:03Z\"}"), 0o600))
 	r, err = EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.NotNil(t, r.Engine.LastStop)
@@ -1162,24 +1163,10 @@ func TestEngineDownStatusLastStop(t *testing.T) {
 	findProblem(t, r, problemEngineUnreachable)
 
 	// A file that is not a record shows nothing.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte("not json"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte("not json"), 0o600))
 	r, err = EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Nil(t, r.Engine.LastStop)
-}
-
-func TestReadLastStopRefusesASymlinkAndAFifo(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	target := filepath.Join(dir, "target.json")
-	require.NoError(t, os.WriteFile(target, []byte(`{"reason":"x","at":"2026-11-20T01:02:03Z"}`), 0o600))
-	require.NoError(t, os.Symlink(target, filepath.Join(dir, lastStopFile)))
-	_, ok := ReadLastStop(dir)
-	require.False(t, ok, "a symlink is not the record")
-	require.NoError(t, os.Remove(filepath.Join(dir, lastStopFile)))
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, lastStopFile), 0o600))
-	_, ok = ReadLastStop(dir)
-	require.False(t, ok, "a pipe is not the record and does not block")
 }
 
 func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
@@ -1195,7 +1182,7 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 		At:     at, EngineSHA256: laststop.HashEngineJSON(cfgPath),
 	})
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), rec, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), rec, 0o600))
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 	now := at.Add(30 * time.Second)
 
@@ -1236,7 +1223,7 @@ func TestEngineDownToolNamesHoldOff(t *testing.T) {
 		At:     at, EngineSHA256: laststop.HashEngineJSON(cfgPath),
 	})
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), rec, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), rec, 0o600))
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 	now := at.Add(30 * time.Second)
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, ConfigPath: cfgPath, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}

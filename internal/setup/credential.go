@@ -31,12 +31,12 @@ const sqlstateInvalidPassword = "28P01"
 
 // The connection string parameters init --remote hardens.
 const (
-	ParamSSLMode        = "sslmode"
-	ParamChannelBinding = "channel_binding"
+	paramSSLMode        = "sslmode"
+	paramChannelBinding = "channel_binding"
 	paramHost           = "host"
 	sslDisable          = "disable"
 	sslVerifyCA         = "verify-ca"
-	SSLVerifyFull       = "verify-full"
+	sslVerifyFull       = "verify-full"
 	sslRequire          = "require"
 	sslDefault          = "prefer"
 	bindingRequire      = "require"
@@ -90,9 +90,9 @@ func HardenedCredential(ctx context.Context, dial func(context.Context, string) 
 		return dsn, Protection{mode: sslDefault, skip: "the connection string could not be read"}
 	}
 	q := u.Query()
-	mode := q.Get(ParamSSLMode)
+	mode := q.Get(paramSSLMode)
 	p := Protection{
-		mode: mode, binding: q.Get(ParamChannelBinding) == bindingRequire,
+		mode: mode, binding: q.Get(paramChannelBinding) == bindingRequire,
 		pooler: supabase.PoolerHost(u.Hostname()), // no channel binding there
 	}
 	if p.mode == "" {
@@ -112,9 +112,9 @@ func HardenedCredential(ctx context.Context, dial func(context.Context, string) 
 	p.probed = true
 	for _, c := range tlsCandidates(mode) {
 		cq := u.Query()
-		cq.Set(ParamSSLMode, c.mode)
+		cq.Set(paramSSLMode, c.mode)
 		if c.binding {
-			cq.Set(ParamChannelBinding, bindingRequire)
+			cq.Set(paramChannelBinding, bindingRequire)
 		}
 		v := *u
 		v.RawQuery = strings.ReplaceAll(cq.Encode(), "+", "%20")
@@ -136,12 +136,12 @@ func HardenedCredential(ctx context.Context, dial func(context.Context, string) 
 // than the admin's mode (see HardenedCredential).
 func tlsCandidates(mode string) []tlsCandidate {
 	switch mode {
-	case SSLVerifyFull:
-		return []tlsCandidate{{SSLVerifyFull, true}}
+	case sslVerifyFull:
+		return []tlsCandidate{{sslVerifyFull, true}}
 	case sslVerifyCA:
-		return []tlsCandidate{{SSLVerifyFull, true}, {SSLVerifyFull, false}, {sslVerifyCA, true}}
+		return []tlsCandidate{{sslVerifyFull, true}, {sslVerifyFull, false}, {sslVerifyCA, true}}
 	}
-	return []tlsCandidate{{SSLVerifyFull, true}, {SSLVerifyFull, false}, {sslRequire, true}}
+	return []tlsCandidate{{sslVerifyFull, true}, {sslVerifyFull, false}, {sslRequire, true}}
 }
 
 // proves reports whether a probe's error confirms candidate c (see
@@ -158,7 +158,7 @@ func proves(e DBErrors, c tlsCandidate, err error) bool {
 		return code == sqlstateInvalidPassword
 	}
 	message, _ := e.ServerMessage(err)
-	return c.mode == SSLVerifyFull && (strings.HasPrefix(code, SQLStateClassAuth) ||
+	return c.mode == sslVerifyFull && (strings.HasPrefix(code, SQLStateClassAuth) ||
 		(code == SQLStateInternal && strings.Contains(message, SupavisorNoTenant)))
 }
 
@@ -194,13 +194,13 @@ func (p Protection) Line() string {
 	switch {
 	case p.skip != "":
 		return fmt.Sprintf("basalt: connection not protected further: %s (sslmode=%s kept)\n", p.skip, p.mode)
-	case p.mode == SSLVerifyFull && p.binding:
+	case p.mode == sslVerifyFull && p.binding:
 		return prefix + "database identity verified, channel binding on\n"
-	case p.mode == SSLVerifyFull && p.pooler:
+	case p.mode == sslVerifyFull && p.pooler:
 		return prefix + "database identity verified (channel binding not available through the Supabase pooler)\n"
-	case p.mode == SSLVerifyFull && p.changed:
+	case p.mode == sslVerifyFull && p.changed:
 		return prefix + "database identity verified (the server offers no channel binding)\n"
-	case p.mode == SSLVerifyFull:
+	case p.mode == sslVerifyFull:
 		return prefix + "database identity verified (sslmode=verify-full as given; channel binding could not be confirmed)\n"
 	case p.mode == sslVerifyCA && p.binding:
 		return prefix + "database certificate checked against its CA (host name not checked), channel binding on\n"

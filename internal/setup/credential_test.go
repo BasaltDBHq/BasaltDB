@@ -34,7 +34,7 @@ func fakeProbe(t *testing.T, answers map[string]error, seen *[]string) func(cont
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
 		q := u.Query()
-		key := q.Get(ParamSSLMode) + "/" + q.Get(ParamChannelBinding)
+		key := q.Get(paramSSLMode) + "/" + q.Get(paramChannelBinding)
 		*seen = append(*seen, key)
 		if err := answers[key]; err != nil {
 			return err
@@ -194,8 +194,8 @@ func TestHardenedCredentialProbesOnWhenOneAddressIsReached(t *testing.T) {
 	got, p := HardenedCredential(context.Background(), loopbackProbe, pgErrors{}, dsn)
 	u, err := url.Parse(got)
 	require.NoError(t, err)
-	require.Equal(t, sslRequire, u.Query().Get(ParamSSLMode), got)
-	require.Equal(t, bindingRequire, u.Query().Get(ParamChannelBinding), got)
+	require.Equal(t, sslRequire, u.Query().Get(paramSSLMode), got)
+	require.Equal(t, bindingRequire, u.Query().Get(paramChannelBinding), got)
 	require.Contains(t, p.Line(), "encrypted with channel binding")
 }
 
@@ -336,15 +336,15 @@ func TestHardenedCredentialOverTLS(t *testing.T) {
 	}{
 		{
 			name: "Postgres with channel binding and a verified certificate", host: "db.example.test", params: rootcert,
-			kind: postgresPlus, mode: SSLVerifyFull, binding: bindingRequire, line: "database identity verified, channel binding on",
+			kind: postgresPlus, mode: sslVerifyFull, binding: bindingRequire, line: "database identity verified, channel binding on",
 		},
 		{
 			name: "PgBouncer: verified certificate, no channel binding", host: "db.example.test", params: rootcert,
-			kind: pgbouncer, mode: SSLVerifyFull, line: "(the server offers no channel binding)",
+			kind: pgbouncer, mode: sslVerifyFull, line: "(the server offers no channel binding)",
 		},
 		{
 			name: "Supabase pooler: verified certificate, answers before SASL", host: poolerHost, user: ".abcdefghijklmnopqrst", params: rootcert,
-			kind: supavisor, mode: SSLVerifyFull, line: "(channel binding not available through the Supabase pooler)",
+			kind: supavisor, mode: sslVerifyFull, line: "(channel binding not available through the Supabase pooler)",
 		},
 		{
 			name: "channel binding, certificate not trusted", host: "db.example.test", params: "sslmode=prefer",
@@ -371,8 +371,8 @@ func TestHardenedCredentialOverTLS(t *testing.T) {
 			}
 			u, err := url.Parse(got)
 			require.NoError(t, err)
-			require.Equal(t, tc.mode, u.Query().Get(ParamSSLMode), got)
-			require.Equal(t, tc.binding, u.Query().Get(ParamChannelBinding), got)
+			require.Equal(t, tc.mode, u.Query().Get(paramSSLMode), got)
+			require.Equal(t, tc.binding, u.Query().Get(paramChannelBinding), got)
 			// The credential written gets as far as the probe did.
 			var pg *pgconn.PgError
 			require.ErrorAs(t, loopbackProbe(context.Background(), got), &pg)

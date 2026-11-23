@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -46,34 +45,6 @@ func (o HandoffOptions) now() func() time.Time {
 		return o.Now
 	}
 	return time.Now
-}
-
-// errNoEngineKey is a collect while the engine key file is refused: the
-// request cannot be signed.
-var errNoEngineKey = errors.New("the engine key file is refused (vault.state KEY_ERROR): the address cannot be collected until it is fixed")
-
-// rootCollector is the collector of an engine started as root: root trusts nothing the agent's OS user could redirect, and the
-// YES would write that user's credential, so it never collects. The agent
-// is served degraded with the problem ENGINE_AS_ROOT; the engine's other
-// agents are served as usual.
-type rootCollector struct{}
-
-func (rootCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
-	return handoff.Collected{}, handoff.ErrEngineAsRoot
-}
-
-func (rootCollector) Report(context.Context, string, string, setupcode.Address, handoff.Reach) error {
-	return handoff.ErrEngineAsRoot
-}
-
-type noKeyCollector struct{}
-
-func (noKeyCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
-	return handoff.Collected{}, errNoEngineKey
-}
-
-func (noKeyCollector) Report(context.Context, string, string, setupcode.Address, handoff.Reach) error {
-	return errNoEngineKey
 }
 
 // connectOnlyAgent says whether a's pending setup is a connect-only one the
@@ -125,10 +96,10 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	var collector handoff.Collector = noKeyCollector{}
+	var collector handoff.Collector = handoff.NoKeyCollector{}
 	switch {
 	case env.asRoot:
-		collector = rootCollector{}
+		collector = handoff.RootCollector{}
 		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine as the agent's OS user")
 	case env.keys != nil:
 		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now())

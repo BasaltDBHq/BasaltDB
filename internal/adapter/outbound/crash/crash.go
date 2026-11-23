@@ -269,21 +269,6 @@ func (l *limitedReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// ErrNotFound is what Find returns for an id that matches no report.
-var ErrNotFound = errors.New("no crash report has that id")
-
-// Find returns the report whose id is id. (Ids are UUIDv7, whose leading
-// characters are the time, so a prefix would rarely be unique.)
-func Find(id string, dirs ...string) (Report, error) {
-	id = strings.ToLower(strings.TrimSpace(id))
-	for _, rep := range List(dirs...) {
-		if rep.ID == id {
-			return rep, nil
-		}
-	}
-	return Report{}, ErrNotFound
-}
-
 // Show is the report's JSON, indented: all that its issue link carries.
 func (rep Report) Show() string {
 	raw, err := json.MarshalIndent(rep, "", "  ")

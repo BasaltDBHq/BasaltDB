@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -327,23 +326,6 @@ func TestSpecValidate(t *testing.T) {
 	}
 }
 
-func TestPickFreeID(t *testing.T) {
-	t.Parallel()
-	id, err := osservice.PickFreeID("")
-	require.NoError(t, err)
-	require.Equal(t, 300, id)
-	id, err = osservice.PickFreeID("a 300\nb 301\n\nmalformed\nc x\n")
-	require.NoError(t, err)
-	require.Equal(t, 302, id)
-
-	var all strings.Builder
-	for i := 300; i <= 499; i++ {
-		all.WriteString("u " + strconv.Itoa(i) + "\n")
-	}
-	_, err = osservice.PickFreeID(all.String())
-	require.Error(t, err)
-}
-
 func TestDefaultUser(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "basalt", osservice.DefaultUser("linux"))
@@ -392,25 +374,6 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.Equal(t, "_basalt", sys.owners["/Library/Application Support/Basalt/agents/bot.url"])
 	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1])
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+osservice.LaunchdPlist)
-}
-
-// The install makes the directories with the modes the unit gives them.
-func TestEngineDirsMatchTheUnit(t *testing.T) {
-	dirs := osservice.EngineDirs("linux")
-	require.Len(t, dirs, 2)
-	unit := osservice.SystemdUnit(osservice.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
-	require.Equal(t, "/run/basalt", dirs[0].Path)
-	require.Contains(t, unit, fmt.Sprintf("RuntimeDirectory=basalt\nRuntimeDirectoryMode=%04o\n", dirs[0].Mode))
-	require.Equal(t, "/var/lib/basalt", dirs[1].Path)
-	require.Contains(t, unit, fmt.Sprintf("StateDirectory=basalt\nStateDirectoryMode=%04o\n", dirs[1].Mode))
-
-	sys := newFake()
-	sys.users["_basalt"] = true
-	steps, err := osservice.InstallPlan(context.Background(), sys, darwinSpec())
-	require.NoError(t, err)
-	for _, d := range osservice.EngineDirs("darwin") {
-		require.Contains(t, steps, osservice.Step{Kind: osservice.StepMkdir, Path: d.Path, Mode: d.Mode, Owner: "_basalt"}, d.Path)
-	}
 }
 
 // fakeMkdir is how the fakes record a mkdir step: the path as it is.

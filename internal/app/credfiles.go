@@ -26,12 +26,12 @@ type pathFiles struct{ configPath, credFile string }
 
 func (p pathFiles) readCredential() (string, error) { return config.ReadCredential(p.credFile) }
 
-func (p pathFiles) ReadPending() (string, os.FileInfo, error) {
+func (p pathFiles) ReadPending(limit int) (string, os.FileInfo, error) {
 	path := p.credFile + handoff.PendingSuffix
 	if _, err := os.Lstat(path); err != nil {
 		return "", nil, err
 	}
-	return config.ReadOwnCredential(path)
+	return config.ReadOwnCredentialLimit(path, limit)
 }
 
 func (p pathFiles) Promote(pending os.FileInfo) error {

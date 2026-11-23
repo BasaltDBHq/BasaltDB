@@ -47,5 +47,8 @@ func (e *LockUnusableError) Unwrap() error { return e.Err }
 // ReadOwnCredential: see lock_unix.go.
 func ReadOwnCredential(string) (string, os.FileInfo, error) { return "", nil, errNoLock }
 
+// ReadOwnCredentialLimit: see lock_unix.go.
+func ReadOwnCredentialLimit(string, int) (string, os.FileInfo, error) { return "", nil, errNoLock }
+
 // SameCredentialFile: see lock_unix.go.
 func SameCredentialFile(string, os.FileInfo) error { return errNoLock }

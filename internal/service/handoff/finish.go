@@ -24,16 +24,17 @@ const (
 // pendingLoginTimeout bounds the login with the .pending credential.
 const pendingLoginTimeout = 15 * time.Second
 
-// maxPendingBytes bounds a .pending credential, as basalt init --remote
-// bounds the one it reads.
+// maxPendingBytes bounds a .pending credential as stored, surrounding space
+// included, as basalt init --remote bounds the one it reads.
 const maxPendingBytes = 4096
 
 // FinishFiles reaches an agent's .pending credential, its credential file,
 // its .lock and the engine config the finisher clears the setup from.
 type FinishFiles interface {
-	// ReadPending reads the .pending credential: an error wrapping
-	// fs.ErrNotExist when there is none.
-	ReadPending() (string, os.FileInfo, error)
+	// ReadPending reads the .pending credential, trimmed: an error wrapping
+	// fs.ErrNotExist when there is none, and an error when the file holds
+	// more than limit bytes.
+	ReadPending(limit int) (string, os.FileInfo, error)
 	// Promote moves the .pending credential over the credential file, once
 	// .pending still names the file read (pending).
 	Promote(pending os.FileInfo) error
@@ -103,14 +104,12 @@ var errInvalidCredential = errors.New("the credential is not a valid Postgres UR
 // 0600, when it names the same database and role as the engine's own.
 func (f *Finisher) PendingRecorded(ctx context.Context, id uuid.UUID) (recorded, has bool, err error) {
 	path := f.CredFile + PendingSuffix
-	dsn, fi, err := f.Files.ReadPending()
+	dsn, fi, err := f.Files.ReadPending(maxPendingBytes)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return false, false, nil
 	case err != nil:
 		return false, false, err
-	case len(dsn) > maxPendingBytes:
-		return false, false, fmt.Errorf("%s is over %d bytes", path, maxPendingBytes)
 	}
 	target, password, err := f.Parse(dsn)
 	if err != nil {

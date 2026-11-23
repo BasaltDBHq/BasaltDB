@@ -72,21 +72,31 @@ func ownerOf(path string) (int, error) {
 }
 
 func (r *rootFiles) readCredential() (string, error) {
-	dsn, _, err := r.read(r.name)
+	dsn, _, err := r.read(r.name, 0)
 	return dsn, err
 }
 
-func (r *rootFiles) ReadPending() (string, os.FileInfo, error) {
-	return r.read(r.name + handoff.PendingSuffix)
+func (r *rootFiles) ReadPending(limit int) (string, os.FileInfo, error) {
+	return r.read(r.name+handoff.PendingSuffix, limit)
 }
 
 // read reads the credential file name in agents/ (config.ReadCredentialAt:
-// root's or the owner of agents/'s). Root connects with what it reads, and
-// pgx reads files for the caller from some parameters, so a file the owner
-// of agents/ wrote must pass pgdial.CheckForeignDSN, as basalt init
-// --remote's read as root does.
-func (r *rootFiles) read(name string) (string, os.FileInfo, error) {
-	dsn, fi, err := config.ReadCredentialAt(r.agentsDir, name)
+// root's or the owner of agents/'s), of at most limit bytes, or for limit 0
+// config's own limit. Root connects with what it reads, and pgx reads files
+// for the caller from some parameters, so a file the owner of agents/ wrote
+// must pass pgdial.CheckForeignDSN, as basalt init --remote's read as root
+// does.
+func (r *rootFiles) read(name string, limit int) (string, os.FileInfo, error) {
+	var (
+		dsn string
+		fi  os.FileInfo
+		err error
+	)
+	if limit > 0 {
+		dsn, fi, err = config.ReadCredentialAtLimit(r.agentsDir, name, limit)
+	} else {
+		dsn, fi, err = config.ReadCredentialAt(r.agentsDir, name)
+	}
 	if err != nil {
 		return "", nil, err
 	}

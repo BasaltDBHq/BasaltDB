@@ -32,12 +32,12 @@ func (p *recordingPassword) Set(pw string) { p.set = append(p.set, pw) }
 // non-root adapter reaches them.
 type pathFinishFiles struct{ configPath, credFile string }
 
-func (p pathFinishFiles) ReadPending() (string, os.FileInfo, error) {
+func (p pathFinishFiles) ReadPending(limit int) (string, os.FileInfo, error) {
 	path := p.credFile + PendingSuffix
 	if _, err := os.Lstat(path); err != nil {
 		return "", nil, err
 	}
-	return config.ReadOwnCredential(path)
+	return config.ReadOwnCredentialLimit(path, limit)
 }
 
 func (p pathFinishFiles) Promote(pending os.FileInfo) error {
@@ -102,8 +102,8 @@ func fileFinisher(t *testing.T, id uuid.UUID) (*Finisher, *recordingPassword, *b
 	return f, pw, logs
 }
 
-// Hand-off item 8: a .pending credential for another database is logged
-// once per setup, not on every call.
+// A .pending credential for another database is logged once per setup, not
+// on every call.
 func TestAPendingCredentialForAnotherDatabaseIsLoggedOncePerSetup(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
@@ -182,9 +182,9 @@ func TestARefusedPendingLoginIsNotAnError(t *testing.T) {
 	require.False(t, has)
 }
 
-// Hand-off item 2: Supabase's pooler not knowing the role (XX000 "Tenant
-// or user not found") is a refused login, as basalt init --remote reads
-// it, not an error on every status call.
+// Supabase's pooler not knowing the role (XX000 "Tenant or user not
+// found") is a refused login, as basalt init --remote reads it, not an
+// error on every status call.
 func TestThePoolerNotKnowingTheRoleIsARefusedLogin(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
@@ -206,23 +206,28 @@ func TestThePoolerNotKnowingTheRoleIsARefusedLogin(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Hand-off item 5: a .pending credential over 4096 bytes is refused
-// before anything logs in with it, as basalt init --remote refuses it.
+// A .pending file over 4096 bytes as stored, its newline included, is
+// refused before anything logs in with it, as basalt init --remote refuses
+// it.
 func TestAPendingCredentialOver4096BytesIsRefused(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	f, _, _ := fileFinisher(t, id)
-	long := "postgres://bt_agent_bot:" + strings.Repeat("p", 5<<10) + "@db:5432/app"
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte(long+"\n")))
+	f.Connect = func(context.Context, string) (AgentLogin, error) { return fakeLogin{recorded: true}, nil }
+	pw := func(n int) string { return strings.Repeat("p", n-len("postgres://bt_agent_bot:@db:5432/app")) }
+
+	// 4096 bytes of URL and a newline: 4097 bytes stored.
+	over := "postgres://bt_agent_bot:" + pw(4096) + "@db:5432/app\n"
+	require.Len(t, over, 4097)
+	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte(over)))
 	_, _, err := f.PendingRecorded(context.Background(), id)
-	require.ErrorContains(t, err, "over 4096 bytes")
+	require.ErrorContains(t, err, "too large")
 	require.NotContains(t, err.Error(), "ppp", "the credential is not echoed")
 
-	// At the limit it is read, and logs in.
-	exact := "postgres://bt_agent_bot:" + strings.Repeat("p", 4096-len("postgres://bt_agent_bot:@db:5432/app")) + "@db:5432/app"
+	// 4096 bytes stored, its newline included: read, and logs in.
+	exact := "postgres://bt_agent_bot:" + pw(4095) + "@db:5432/app\n"
 	require.Len(t, exact, 4096)
-	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte(exact+"\n")))
-	f.Connect = func(context.Context, string) (AgentLogin, error) { return fakeLogin{recorded: true}, nil }
+	require.NoError(t, config.WriteFile(f.CredFile+PendingSuffix, []byte(exact)))
 	recorded, has, err := f.PendingRecorded(context.Background(), id)
 	require.NoError(t, err)
 	require.True(t, recorded)

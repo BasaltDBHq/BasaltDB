@@ -58,7 +58,7 @@ type Spec struct {
 	MemoryMB int
 	// Plugins are the config's local plugin entries: install makes each
 	// one's OS user, socket directory and unit, uninstall removes them.
-	Plugins []PluginEntry
+	Plugins []servicespec.PluginEntry
 	// StateDir and SocketDir are the engine's, from its config (the
 	// defaults when empty), and CredentialFiles every agent's and plugin's
 	// credential file: a plugin's unit makes them inaccessible.
@@ -68,8 +68,8 @@ type Spec struct {
 
 // pluginHost is what s's plugin units hide and who reaches their sockets.
 // It is HostFor's, from the fields withPluginUnits copied out of it.
-func (s Spec) pluginHost() PluginHost {
-	h := PluginHost{
+func (s Spec) pluginHost() servicespec.PluginHost {
+	h := servicespec.PluginHost{
 		GOOS: s.GOOS, EngineUser: s.User, ConfigDir: filepath.Dir(s.ConfigPath),
 		StateDir: s.StateDir, SocketDir: s.SocketDir, CredentialFiles: s.CredentialFiles,
 	}

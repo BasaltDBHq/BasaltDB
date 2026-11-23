@@ -10,7 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
@@ -60,7 +60,7 @@ func TestPluginUnitEntries(t *testing.T) {
 	}
 	e, ok := unitEntry(config.Plugin{Name: "acme-ner", Enabled: true}, local)
 	require.True(t, ok)
-	require.Equal(t, osservice.PluginEntry{
+	require.Equal(t, servicespec.PluginEntry{
 		Name: "acme-ner", Instance: "default", Dir: local.Dir, Command: "bin/acme", Args: []string{"--serve"},
 		Egress: []string{"hooks.slack.com:443"}, MemoryMB: 256, Enabled: true,
 	}, e)
@@ -81,7 +81,7 @@ func TestPluginUnitEntries(t *testing.T) {
 		},
 	}
 	h := servicePluginHost(cfg, "linux", "/etc/basalt/engine.json", "basalt")
-	require.Equal(t, osservice.PluginHost{
+	require.Equal(t, servicespec.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: config.DefaultStateDir("linux"), SocketDir: "/run/basalt",
 		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url"},
 	}, h)

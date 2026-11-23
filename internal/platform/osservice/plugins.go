@@ -2,8 +2,6 @@ package osservice
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -29,19 +27,11 @@ import (
 // from the entry's (name, instance), so two entries share none of them.
 const (
 	// pluginUnitPrefix starts every plugin unit's name and the Linux plugin
-	// user's; darwinPluginUserPrefix is the macOS user's (system accounts
-	// start with '_').
-	pluginUnitPrefix       = "basalt-plugin-"
-	darwinPluginUserPrefix = "_basalt-plugin-"
+	// user's; darwinPluginUserPrefix is the macOS user's
+	// (servicespec.PluginUser).
+	pluginUnitPrefix       = servicespec.PluginUnitPrefix
+	darwinPluginUserPrefix = servicespec.DarwinPluginUserPrefix
 	pluginLabelPrefix      = "dev.basaltdb.plugin-"
-
-	// maxPluginUser is the longest plugin user name Basalt makes, on both
-	// OSes: useradd's limit on Linux, and a cap well inside what macOS tools
-	// show in full.
-	maxPluginUser = 32
-	// pluginNameHashHex is how many hex digits of the entry's hash a
-	// shortened user name keeps.
-	pluginNameHashHex = 12
 
 	// PluginSocketName is the socket's file name in the entry's directory.
 	PluginSocketName = "p.sock"
@@ -93,28 +83,6 @@ var (
 	safePathPattern = regexp.MustCompile(`^/[A-Za-z0-9._/-]*$`)
 )
 
-// PluginNames are the names and paths of one local entry's unit, user and
-// socket.
-type PluginNames struct {
-	// Unit is the systemd unit (basalt-plugin-<name>-<instance>.service) on
-	// Linux and the launchd label (dev.basaltdb.plugin-<name>-<instance>) on
-	// macOS. It is never shortened, so it records the entry's real name.
-	Unit string
-	// UnitPath is the unit file or the launch daemon's plist.
-	UnitPath string
-	// User is the entry's OS user and group: basalt-plugin-<name>-<instance>
-	// on Linux, _basalt-plugin-<name>-<instance> on macOS, shortened by
-	// PluginUser when longer than 32 characters.
-	User string
-	// SocketDir is <base>/run/<User>; Socket is the socket in it.
-	SocketDir string
-	Socket    string
-	// Log is the file the plugin's stderr goes to and LogRule the newsyslog
-	// rule that caps it: on macOS only, empty on Linux, where stderr goes to
-	// the journal under the unit.
-	Log, LogRule string
-}
-
 // PluginBase is the service-mode plugin base directory on goos:
 // /opt/basalt on Linux, /Library/Basalt on macOS. It holds the
 // installed copies, the trust store and the plugins' socket directories.
@@ -140,19 +108,19 @@ func PluginRunDir(goos string) (string, error) {
 var errPluginKey = errors.New("plugin name or instance is not valid")
 
 // NamesFor are the names of entry (name, instance) on goos.
-func NamesFor(goos, name, instance string) (PluginNames, error) {
+func NamesFor(goos, name, instance string) (servicespec.PluginNames, error) {
 	if !pluginNamePattern.MatchString(name) || !pluginInstancePattern.MatchString(instance) {
-		return PluginNames{}, errPluginKey
+		return servicespec.PluginNames{}, errPluginKey
 	}
 	if goos != goosLinux && goos != goosDarwin {
-		return PluginNames{}, fmt.Errorf("plugin units install on linux and darwin, not %s", goos)
+		return servicespec.PluginNames{}, fmt.Errorf("plugin units install on linux and darwin, not %s", goos)
 	}
 	run, err := PluginRunDir(goos)
 	if err != nil {
-		return PluginNames{}, err
+		return servicespec.PluginNames{}, err
 	}
 	full := name + "-" + instance
-	n := PluginNames{User: PluginUser(goos, name, instance)}
+	n := servicespec.PluginNames{User: servicespec.PluginUser(goos, name, instance)}
 	if goos == goosDarwin {
 		n.Unit = pluginLabelPrefix + full
 		n.UnitPath = launchDaemonsDir + n.Unit + ".plist"
@@ -167,69 +135,13 @@ func NamesFor(goos, name, instance string) (PluginNames, error) {
 	return n, nil
 }
 
-// PluginUser is the OS user of entry (name, instance) on goos: the prefix,
-// the name, '-', the instance. When that is longer than 32 characters it is
-// shortened to the prefix, the start of "<name>-<instance>", '-', '0' and
-// the first 12 hex digits of the SHA-256 of "<name>/<instance>". An
-// unshortened name always ends in its instance, which starts with a letter,
-// so a shortened one (ending in '0' and hex digits after the last '-') never
-// equals one.
-func PluginUser(goos, name, instance string) string {
-	prefix := pluginUnitPrefix
-	if goos == goosDarwin {
-		prefix = darwinPluginUserPrefix
-	}
-	full := name + "-" + instance
-	if len(prefix)+len(full) <= maxPluginUser {
-		return prefix + full
-	}
-	sum := sha256.Sum256([]byte(name + "/" + instance))
-	tail := "-0" + hex.EncodeToString(sum[:])[:pluginNameHashHex]
-	keep := maxPluginUser - len(prefix) - len(tail)
-	return prefix + full[:keep] + tail
-}
-
-// PluginEntry is one local plugin entry its unit runs: the installed copy
-// it runs from and what its manifest says to run.
-type PluginEntry struct {
-	Name, Instance string
-	// Dir is the installed copy's directory, absolute; the command runs
-	// there and finds its files there.
-	Dir string
-	// Command is the manifest's endpoint.local.command, relative to Dir;
-	// Args are its endpoint.local.args.
-	Command string
-	Args    []string
-	// Egress is the manifest's network.egress: empty runs the plugin without
-	// network on Linux (network: ENFORCED).
-	Egress []string
-	// MemoryMB is the manifest's resources.memoryMB; 0 is 1024.
-	MemoryMB int
-	// Enabled starts the unit; a disabled entry's unit is written and
-	// stays stopped.
-	Enabled bool
-}
-
-// PluginHost is what a plugin's unit keeps from the plugin, and who may
-// reach its socket.
-type PluginHost struct {
-	GOOS string
-	// EngineUser is the engine's OS user; its group, of the same name, is
-	// the socket directory's group.
-	EngineUser string
-	// Hidden are the paths the plugin can never reach on Linux: the config
-	// directory, the engine's state and socket directories and every
-	// credential file.
-	ConfigDir, StateDir, SocketDir string
-	CredentialFiles                []string
-}
-
-// commandPath is the command's absolute path inside the copy.
-func (p PluginEntry) commandPath() string {
+// commandPath is p's command's absolute path inside the copy.
+func commandPath(p servicespec.PluginEntry) string {
 	return filepath.Join(p.Dir, filepath.FromSlash(p.Command))
 }
 
-func (p PluginEntry) memoryMB() int {
+// memoryMB is p's memory limit: its manifest's, or the default.
+func memoryMB(p servicespec.PluginEntry) int {
 	if p.MemoryMB > 0 {
 		return p.MemoryMB
 	}
@@ -240,7 +152,8 @@ func (p PluginEntry) memoryMB() int {
 // it (a line break, another control character, invalid UTF-8, a lone ';').
 var errUnsafeArg = errors.New("holds a character a service unit cannot carry safely")
 
-func (p PluginEntry) validate() error {
+// validateEntry refuses an entry whose names or paths a unit cannot carry.
+func validateEntry(p servicespec.PluginEntry) error {
 	if !pluginNamePattern.MatchString(p.Name) || !pluginInstancePattern.MatchString(p.Instance) {
 		return errPluginKey
 	}
@@ -293,11 +206,12 @@ func systemdPath(prefix, p string) string {
 	return `"` + prefix + r.Replace(p) + `"`
 }
 
-func (h PluginHost) validate() error {
+// validateHost refuses a host whose user or paths a unit cannot carry.
+func validateHost(h servicespec.PluginHost) error {
 	if h.EngineUser == "" || h.EngineUser == rootUser {
 		return errors.New("plugin units need the engine's own OS user, not root")
 	}
-	for _, p := range h.hidden() {
+	for _, p := range hidden(h) {
 		if !filepath.IsAbs(p) {
 			return fmt.Errorf("%s is not an absolute path", p)
 		}
@@ -308,12 +222,12 @@ func (h PluginHost) validate() error {
 	return nil
 }
 
-// hidden are the paths a plugin unit makes inaccessible.
-func (h PluginHost) hidden() []string { return append(h.hiddenDirs(), h.hiddenFiles()...) }
+// hidden are the paths h's plugin units make inaccessible.
+func hidden(h servicespec.PluginHost) []string { return append(hiddenDirs(h), hiddenFiles(h)...) }
 
 // hiddenDirs are the config directory and the engine's state and socket
 // directories, each once.
-func (h PluginHost) hiddenDirs() []string {
+func hiddenDirs(h servicespec.PluginHost) []string {
 	return uniquePaths(nil, h.ConfigDir, h.StateDir, h.SocketDir)
 }
 
@@ -321,8 +235,8 @@ func (h PluginHost) hiddenDirs() []string {
 // each once. A file inside the config directory is hidden with it, so no
 // agent's name is written into a unit (units are world-readable), and an
 // agent added there leaves every plugin's unit as it is.
-func (h PluginHost) hiddenFiles() []string {
-	dirs := h.hiddenDirs()
+func hiddenFiles(h servicespec.PluginHost) []string {
+	dirs := hiddenDirs(h)
 	var files []string
 	for _, f := range h.CredentialFiles {
 		if !slices.ContainsFunc(dirs, func(d string) bool { return within(d, f) }) {
@@ -366,18 +280,18 @@ func PluginNetwork(goos string, egress []string) string {
 // writable, without the config directory, the engine's state and socket
 // directories and every credential file, and, with an empty egress,
 // without network.
-func SystemdPluginUnit(h PluginHost, p PluginEntry) (string, error) {
-	if err := p.validate(); err != nil {
+func SystemdPluginUnit(h servicespec.PluginHost, p servicespec.PluginEntry) (string, error) {
+	if err := validateEntry(p); err != nil {
 		return "", err
 	}
-	if err := h.validate(); err != nil {
+	if err := validateHost(h); err != nil {
 		return "", err
 	}
 	n, err := NamesFor(goosLinux, p.Name, p.Instance)
 	if err != nil {
 		return "", err
 	}
-	argv := []string{systemdExecWord(p.commandPath())}
+	argv := []string{systemdExecWord(commandPath(p))}
 	for _, a := range p.Args {
 		argv = append(argv, systemdExecWord(a))
 	}
@@ -422,12 +336,12 @@ SystemCallErrorNumber=EPERM
 RestrictAddressFamilies=%[12]s
 ReadWritePaths=%[9]s
 `, p.Name, p.Instance, n.User, strings.Join(argv, " "), p.Dir,
-		SocketEnv, pluginUmask, p.memoryMB(), n.SocketDir, n.Socket, servicespec.SystemdUnitName, addressFamilies(p.Egress))
-	for _, dir := range h.hiddenDirs() {
+		SocketEnv, pluginUmask, memoryMB(p), n.SocketDir, n.Socket, servicespec.SystemdUnitName, addressFamilies(p.Egress))
+	for _, dir := range hiddenDirs(h) {
 		// The directories always exist; a missing one stops the unit.
 		fmt.Fprintf(&b, "InaccessiblePaths=%s\n", systemdPath("", dir))
 	}
-	for _, f := range h.hiddenFiles() {
+	for _, f := range hiddenFiles(h) {
 		// A missing credential file has nothing to hide.
 		fmt.Fprintf(&b, "InaccessiblePaths=%s\n", systemdPath("-", f))
 	}
@@ -459,7 +373,7 @@ func UserClash(name, instance string, others []pluginmodel.EntryKey) *pluginmode
 			continue
 		}
 		for _, goos := range []string{goosLinux, goosDarwin} {
-			if PluginUser(goos, o.Name, o.Instance) == PluginUser(goos, name, instance) {
+			if servicespec.PluginUser(goos, o.Name, o.Instance) == servicespec.PluginUser(goos, name, instance) {
 				return &o
 			}
 		}
@@ -469,14 +383,14 @@ func UserClash(name, instance string, others []pluginmodel.EntryKey) *pluginmode
 
 // LaunchdPluginDaemon renders entry p's macOS launch daemon. The plugin runs
 // as its own user from its installed copy; macOS file modes keep it from the
-// engine's files. Its stderr goes to its own log (PluginNames.Log), which
+// engine's files. Its stderr goes to its own log (servicespec.PluginNames.Log), which
 // the install makes before the daemon loads, and its network is not
 // enforced.
-func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
-	if err := p.validate(); err != nil {
+func LaunchdPluginDaemon(h servicespec.PluginHost, p servicespec.PluginEntry) (string, error) {
+	if err := validateEntry(p); err != nil {
 		return "", err
 	}
-	if err := h.validate(); err != nil {
+	if err := validateHost(h); err != nil {
 		return "", err
 	}
 	n, err := NamesFor(goosDarwin, p.Name, p.Instance)
@@ -484,7 +398,7 @@ func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 		return "", err
 	}
 	var args strings.Builder
-	for _, a := range append([]string{p.commandPath()}, p.Args...) {
+	for _, a := range append([]string{commandPath(p)}, p.Args...) {
 		args.WriteString("\n\t\t<string>" + xmlEscape(a) + "</string>")
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -523,7 +437,7 @@ func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 </dict>
 </plist>
 `, n.Unit, args.String(), n.User, xmlEscape(p.Dir), SocketEnv, xmlEscape(n.Socket), pluginUmask,
-		int64(p.memoryMB())*bytesPerMB, xmlEscape(n.Log)), nil
+		int64(memoryMB(p))*bytesPerMB, xmlEscape(n.Log)), nil
 }
 
 // NewsyslogPluginRule renders the newsyslog rule that caps macOS entry
@@ -548,8 +462,8 @@ func NewsyslogPluginRule(name, instance string) (string, error) {
 
 // HostFor is the plugin host of the engine configured by cfg (at
 // configPath, on goos), run as engineUser: what its plugin units hide.
-func HostFor(cfg config.Config, goos, configPath, engineUser string) PluginHost {
-	h := PluginHost{
+func HostFor(cfg config.Config, goos, configPath, engineUser string) servicespec.PluginHost {
+	h := servicespec.PluginHost{
 		GOOS: goos, EngineUser: engineUser, ConfigDir: filepath.Dir(configPath),
 		StateDir: cfg.StateDirFor(goos), SocketDir: cfg.SocketDir,
 	}
@@ -568,13 +482,13 @@ func HostFor(cfg config.Config, goos, configPath, engineUser string) PluginHost 
 
 // EntryFor is config entry p, its installed copy verified as v, as its
 // unit runs it; false for a remote entry, which has no unit.
-func EntryFor(p config.Plugin, v pluginmodel.Verified) (PluginEntry, bool) {
+func EntryFor(p config.Plugin, v pluginmodel.Verified) (servicespec.PluginEntry, bool) {
 	l := v.Manifest.Endpoint.Local
 	if l == nil {
-		return PluginEntry{}, false
+		return servicespec.PluginEntry{}, false
 	}
 	k := p.Key()
-	e := PluginEntry{
+	e := servicespec.PluginEntry{
 		Name: k.Name, Instance: k.Instance, Dir: v.Dir, Command: l.Command, Args: l.Args,
 		Egress: v.Manifest.Network.Egress, Enabled: p.Enabled,
 	}
@@ -587,10 +501,12 @@ func EntryFor(p config.Plugin, v pluginmodel.Verified) (PluginEntry, bool) {
 // PluginUnit is the unit p's entry needs on h.GOOS, byte for byte: what
 // install writes, and what the engine compares the installed unit with
 // before it connects.
-func PluginUnit(h PluginHost, p PluginEntry) (string, error) { return pluginUnit(h, p) }
+func PluginUnit(h servicespec.PluginHost, p servicespec.PluginEntry) (string, error) {
+	return pluginUnit(h, p)
+}
 
 // pluginUnit renders p's unit on h.GOOS.
-func pluginUnit(h PluginHost, p PluginEntry) (string, error) {
+func pluginUnit(h servicespec.PluginHost, p servicespec.PluginEntry) (string, error) {
 	if h.GOOS == goosDarwin {
 		return LaunchdPluginDaemon(h, p)
 	}
@@ -672,7 +588,7 @@ func PluginUserInGroup(goos, pluginUser, engineGroup string) string {
 // log (the user's, 0600, kept when it exists) and the newsyslog rule that
 // caps it, and its unit, then start it when it is enabled and stop it when
 // it is not. ids, on macOS, hands out the new user's id.
-func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocator) ([]Step, error) {
+func pluginInstallSteps(sys System, h servicespec.PluginHost, p servicespec.PluginEntry, ids *idAllocator) ([]Step, error) {
 	unit, err := pluginUnit(h, p)
 	if err != nil {
 		return nil, err
@@ -738,7 +654,7 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 // directories (on macOS after the log directory's steps too): what basalt
 // plugin add, enable and disable run in service mode for one entry, and
 // service install for every local entry.
-func PluginInstallPlan(ctx context.Context, sys System, h PluginHost, ps []PluginEntry) ([]Step, error) {
+func PluginInstallPlan(ctx context.Context, sys System, h servicespec.PluginHost, ps []servicespec.PluginEntry) ([]Step, error) {
 	if len(ps) == 0 {
 		return nil, nil
 	}
@@ -763,7 +679,7 @@ func PluginInstallPlan(ctx context.Context, sys System, h PluginHost, ps []Plugi
 	return append(steps, more...), nil
 }
 
-func pluginEntriesSteps(sys System, h PluginHost, ps []PluginEntry, ids *idAllocator) ([]Step, error) {
+func pluginEntriesSteps(sys System, h servicespec.PluginHost, ps []servicespec.PluginEntry, ids *idAllocator) ([]Step, error) {
 	var steps []Step
 	seen := map[string]bool{}
 	for _, p := range ps {
@@ -856,7 +772,7 @@ func PluginRemoveSteps(sys System, goos, name, instance string) ([]Step, error) 
 
 // hasLog reports whether a macOS entry's log, its moved copy or its rule is
 // on the machine; a Linux entry has none.
-func hasLog(sys System, n PluginNames) bool {
+func hasLog(sys System, n servicespec.PluginNames) bool {
 	if n.Log == "" {
 		return false
 	}

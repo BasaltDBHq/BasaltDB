@@ -24,7 +24,7 @@ const maxMapSize = math.MaxInt
 const DictionaryArrayAlign = dictArrayAlign
 
 // DictionaryFiles keeps a FuseDictionary's files, dictionary.bin and
-// status.json (statefile/dictfile, in <stateDir>/pii). The file checks (no
+// status.json (pii/out/dictfile, in <stateDir>/pii). The file checks (no
 // link, the engine user's, the modes) are its own.
 type DictionaryFiles interface {
 	// Prepare creates the files' directory when missing and checks it. It

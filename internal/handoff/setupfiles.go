@@ -15,7 +15,7 @@ import (
 // AgentFiles reaches an agent's credential file, and for the setup
 // finisher its .pending, its .lock and the engine config the finisher
 // clears the setup from (FinishFiles): by path (PathFiles) or, started as
-// root, through opened directories.
+// root, through opened directories (the engine's rootFiles).
 type AgentFiles interface {
 	FinishFiles
 	ReadCredential() (string, error)

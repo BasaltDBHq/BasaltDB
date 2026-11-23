@@ -125,7 +125,7 @@ func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
 		return err
 	}
 	if need {
-		return &setuprun.RefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
+		return &setuprun.SetuprunRefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
 	}
 	return nil
 }

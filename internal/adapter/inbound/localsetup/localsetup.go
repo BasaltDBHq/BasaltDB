@@ -680,7 +680,7 @@ func (s *Service) currentDatabase(ctx context.Context, tx pgx.Tx) (string, error
 
 // passkeyNeeded: the database has no active passkey for origin (none at
 // all on a fresh database, whose passkeys table does not exist yet).
-func passkeyNeeded(ctx context.Context, b setup.Backend, tx pgx.Tx, origin string) (bool, error) {
+func passkeyNeeded(ctx context.Context, b setup.SetuprunBackend, tx pgx.Tx, origin string) (bool, error) {
 	// A savepoint: on a fresh database the lookup fails and must not abort tx.
 	sub, err := tx.Begin(ctx)
 	if err != nil {

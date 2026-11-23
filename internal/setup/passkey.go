@@ -41,7 +41,7 @@ func VerifyRegistrationCode(code string, req passkey.RegistrationRequest, rp pas
 // PasskeyNeeded is whether the setup registers a portal passkey (step 7):
 // when no active one is registered, or add asks for another. Before the
 // setup ran, a database without the guard has none.
-func PasskeyNeeded(ctx context.Context, b Backend, q Querier, add bool) (bool, error) {
+func PasskeyNeeded(ctx context.Context, b SetuprunBackend, q Querier, add bool) (bool, error) {
 	if add {
 		return true, nil
 	}
@@ -55,7 +55,7 @@ func PasskeyNeeded(ctx context.Context, b Backend, q Querier, add bool) (bool, e
 // PasskeyFailed is the refusal when the setup ran and its passkey step
 // failed with err.
 func PasskeyFailed(p setupcode.Payload, err error) error {
-	return &RefusalError{Code: CodePasskeyMissing, Err: err, Message: fmt.Sprintf("the setup ran but no passkey was registered: %s. Ask %s for a new code; running it registers the passkey",
+	return &SetuprunRefusalError{Code: CodePasskeyMissing, Err: err, Message: fmt.Sprintf("the setup ran but no passkey was registered: %s. Ask %s for a new code; running it registers the passkey",
 		err.Error(), AgentWord(p))}
 }
 

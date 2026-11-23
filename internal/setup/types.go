@@ -24,7 +24,7 @@ type (
 
 // Querier is the admin connection or transaction a plan or an apply runs on.
 // It is an alias of the interface itself, so an adapter that cannot import
-// this package still implements Backend.
+// this package still implements SetuprunBackend.
 type Querier = interface {
 	Exec(ctx context.Context, sql string, args ...any) (Result, error)
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)

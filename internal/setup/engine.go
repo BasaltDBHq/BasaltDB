@@ -9,10 +9,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-// EngineState is what the database records about the code's engine
+// SetuprunEngineState is what the database records about the code's engine
 // (CONTRACT.md, Setup from your laptop, "The engine key and address"): read
 // before the summary, with the admin connection.
-type EngineState struct {
+type SetuprunEngineState struct {
 	// Key is the code's engine key (SPKI DER), nil when the code has none.
 	Key []byte
 	ID  string
@@ -26,21 +26,21 @@ type EngineState struct {
 // one, and refuses a revoked engine (step 4, ENGINE_REVOKED). A guard
 // without the engines table records none yet: this setup's migrations add
 // it.
-func (s *Setup) readEngine(ctx context.Context, q Querier) (EngineState, error) {
+func (s *Setup) readEngine(ctx context.Context, q Querier) (SetuprunEngineState, error) {
 	if s.P.Engine == nil {
-		return EngineState{}, nil
+		return SetuprunEngineState{}, nil
 	}
 	key, err := s.P.Engine.Key()
 	if err != nil {
-		return EngineState{}, err
+		return SetuprunEngineState{}, err
 	}
-	st := EngineState{Key: key, ID: channel.EngineIDOf(key)}
+	st := SetuprunEngineState{Key: key, ID: channel.EngineIDOf(key)}
 	engines, err := s.be.Engines(ctx, q, true)
 	if isUndefinedTable(err) {
 		return st, nil
 	}
 	if err != nil {
-		return EngineState{}, err
+		return SetuprunEngineState{}, err
 	}
 	for i := range engines {
 		e := engines[i]
@@ -52,7 +52,7 @@ func (s *Setup) readEngine(ctx context.Context, q Querier) (EngineState, error) 
 		}
 	}
 	if r := st.Recorded; r != nil && r.RevokedAt != nil {
-		return EngineState{}, refuse(CodeEngineRevoked, fmt.Sprintf("ENGINE_REVOKED: engine %s was revoked in this database on %s. A revoked engine is never recorded again: "+
+		return SetuprunEngineState{}, setuprunRefuse(CodeEngineRevoked, fmt.Sprintf("ENGINE_REVOKED: engine %s was revoked in this database on %s. A revoked engine is never recorded again: "+
 			"ask %s to set the engine up again from the start and make a new code", channel.FingerprintOf(st.ID), UTCMinute(*r.RevokedAt), AgentWord(s.P)))
 	}
 	return st, nil

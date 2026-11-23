@@ -22,7 +22,7 @@ func CheckTarget(p setupcode.Payload, got setupcode.Target) error {
 	msg := fmt.Sprintf("This setup code is for database %s of %s (the agent connects there). Your admin connection string points at database %s of %s. "+
 		"Either run this command with the admin connection string of %s, or ask %s for a new code for the database you meant",
 		p.Target.Database, want, got.Database, TargetWords(got), want, AgentWord(p))
-	return refuse(CodeTargetMismatch, msg+".")
+	return setuprunRefuse(SetuprunCodeTargetMismatch, msg+".")
 }
 
 // CheckConnTarget is CheckTarget for an open connection's configuration:
@@ -32,7 +32,7 @@ func CheckTarget(p setupcode.Payload, got setupcode.Target) error {
 func CheckConnTarget(p setupcode.Payload, cfg *pgx.ConnConfig) error {
 	for _, fb := range cfg.Fallbacks {
 		if !strings.EqualFold(fb.Host, cfg.Host) || fb.Port != cfg.Port {
-			return refuse(CodeTargetMismatch, "the admin connection names several hosts; connect to the database's one host")
+			return setuprunRefuse(SetuprunCodeTargetMismatch, "the admin connection names several hosts; connect to the database's one host")
 		}
 	}
 	return CheckTarget(p, setupcode.ConnTarget(cfg.Host, int(cfg.Port), cfg.Database, cfg.User))

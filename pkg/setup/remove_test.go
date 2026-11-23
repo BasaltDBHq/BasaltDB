@@ -134,7 +134,7 @@ func TestRemovePlanRefusesAnotherPrefix(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = setuprun.PlanRemove(ctx, setupstore.New(), pgquerier.Neutralize(tx), d.Names.Prefix+"x")
-	var r *setuprun.RefusalError
+	var r *setuprun.SetuprunRefusalError
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, "PREFIX_MISMATCH", r.Code)
 }

@@ -10,11 +10,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
-// Backend is what a setup reads and writes in the database: the guard's SQL
+// SetuprunBackend is what a setup reads and writes in the database: the guard's SQL
 // functions and the sample schema. An outbound adapter implements it; the
 // program that runs a setup (internal/app, or pkg/setup for a program that
-// calls it directly) builds one and passes it to New and the functions here.
-type Backend interface {
+// calls it directly) builds one and passes it to NewSetuprun and the functions here.
+type SetuprunBackend interface {
 	LatestVersion() int
 	Migrations() []guardmodel.Migration
 	StatusAt(installed int, migs []guardmodel.Migration) guardmodel.Status

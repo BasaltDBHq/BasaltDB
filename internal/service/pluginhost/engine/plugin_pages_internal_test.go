@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -254,7 +255,7 @@ func theirsRequestedBy(t *testing.T, binding string) string {
 func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv := pages.New(origin, log)
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
-	srv.MountReverts(pages.NewRevertHandlers(srv))
+	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))
 	return srv

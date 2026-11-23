@@ -63,7 +63,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 		wg.Go(func() {
 			octx, ocancel := context.WithTimeout(ctx, 10*time.Second)
 			defer ocancel()
-			errs <- obs.Returned(octx, tx, []action.Column{label}, rows)
+			errs <- obs.Returned(octx, pgquerier.Neutralize(tx), []action.Column{label}, rows)
 		})
 	}
 	wg.Wait()

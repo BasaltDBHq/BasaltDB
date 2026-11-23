@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -123,7 +124,7 @@ func TestInitRemoteIgnoresACredentialForAnotherRole(t *testing.T) {
 func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
 	t.Parallel()
 	adapters := map[string]func(t *testing.T, dir string) credFiles{
-		"path": func(*testing.T, string) credFiles { return pathCredFiles{} },
+		"path": func(*testing.T, string) credFiles { return app.PathCredFiles{} },
 		"root": func(t *testing.T, dir string) credFiles {
 			t.Helper()
 			files, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
@@ -214,7 +215,7 @@ func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {
 	require.NoError(t, err)
 	defer root.Close()
 	want := fmt.Sprintf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
-	for name, files := range map[string]credFiles{"path": pathCredFiles{}, "root": root} {
+	for name, files := range map[string]credFiles{"path": app.PathCredFiles{}, "root": root} {
 		_, err := files.Lock(path)
 		require.ErrorIs(t, err, config.ErrLocked, name)
 		require.EqualError(t, err, want, name)

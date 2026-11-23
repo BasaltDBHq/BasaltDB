@@ -22,23 +22,19 @@ const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/platform/postgres/
 const appImport = "github.com/basaltdbhq/basaltdb/internal/app"
 
 // credentialReaders are the functions that read an agent's credential file:
-// the config package's, and this package's own. A new reader must be added
-// here, or the guard cannot see its callers. The guard works per function:
-// one CheckForeignDSN call in a function marks every read in it checked.
+// the config package's, and the credential file adapter's (credfiles). A
+// new reader must be added here, or the guard cannot see its callers
+// (TestCredentialReaderTableIsReal holds every name to a real function). The
+// guard works per function: one CheckForeignDSN call in a function marks
+// every read in it checked.
 var (
 	configCredentialReaders = map[string]bool{
 		"ReadCredential": true, "ReadCredentialAt": true, "ReadCredentialAtLimit": true,
 		"ReadOwnCredential": true, "ReadOwnCredentialLimit": true,
 	}
-	localCredentialReaders = map[string]bool{
-		"readOwnedCredential": true, "readCredentialFrom": true, "readCredentialFile": true,
-		"readOwnCredential": true, "readKeptCredential": true,
-	}
 	credfilesCredentialReaders = map[string]bool{
 		"readOwnedCredential": true, "readCredentialFrom": true, "readCredentialFile": true,
-		"readOwnCredential": true, "readKeptCredential": true,
-		"ReadOwnedCredential": true, "ReadCredentialFrom": true, "ReadCredentialFile": true,
-		"ReadOwnCredential": true, "ReadKeptCredential": true,
+		"readOwnCredential": true, "ReadKeptCredential": true,
 	}
 )
 
@@ -60,7 +56,6 @@ type readerPkg struct {
 // forwards credfiles' readers to cmd, which may not import an adapter: a
 // call through app is a read too.
 var readerPkgs = map[string]readerPkg{
-	"github.com/basaltdbhq/basaltdb/cmd/basalt": {name: "main", folder: "cmd/basalt", readers: localCredentialReaders},
 	credfilesImport: {name: "credfiles", folder: "internal/setup/out/credfiles", readers: credfilesCredentialReaders},
 	appImport:       {name: "app", folder: "internal/app", readers: map[string]bool{"ReadKeptCredential": true}},
 }
@@ -79,22 +74,25 @@ func folderReaders(folder string) map[string]bool {
 // call pgdial.CheckForeignDSN, each with why root never connects with a
 // string another user wrote there. Every other read must call it.
 var uncheckedCredentialReads = map[string]string{
-	"cmd/basalt/keptcred_unix.go:readKeptCredential:readOwnedCredential":                "service install writes it back for the engine's user and never connects with it",
-	"cmd/basalt/engine.go:keptCredentialSpec:readKeptCredential":                        "service install writes it back for the engine's user and never connects with it",
-	"cmd/basalt/keptcred_unix.go:readOwnCredential:readCredentialFile":                  "only a file this process's user owns (ownedByThisUser): root's own as root",
-	"cmd/basalt/keptcred_unix.go:readCredentialFile:readCredentialFrom":                 "its owner rule is its caller's, and its callers are listed here",
-	"cmd/basalt/init_remote.go:pathCredFiles.Read:readOwnCredential":                    "init --remote not as root",
-	"internal/handoff/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":      "an engine not running as root (agentFilesFor)",
-	"internal/handoff/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit": "an engine not running as root (agentFilesFor)",
-	"internal/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":                 "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
-	"internal/setup/in/localsetup/agentjobs.go:credentialTarget:config.ReadCredential":  "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
-	"internal/app/handoff_files.go:handoffFiles.ReadSecret:config.ReadOwnCredential":    "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
+	"internal/setup/out/credfiles/keptcred_unix.go:ReadKeptCredential:readOwnedCredential": "service install writes it back for the engine's user and never connects with it",
+	"cmd/basalt/engine.go:keptCredentialSpec:app.ReadKeptCredential":                       "service install writes it back for the engine's user and never connects with it",
+	// app forwards credfiles.ReadKeptCredential to cmd, which may not import
+	// an adapter: a read site of its own, added with the move.
+	"internal/app/setupfiles.go:ReadKeptCredential:credfiles.ReadKeptCredential":          "a one-line forward for cmd; its one caller, keptCredentialSpec, is listed above",
+	"internal/setup/out/credfiles/keptcred_unix.go:readOwnCredential:readCredentialFile":  "only a file this process's user owns (ownedByThisUser): root's own as root",
+	"internal/setup/out/credfiles/keptcred_unix.go:readCredentialFile:readCredentialFrom": "its owner rule is its caller's, and its callers are listed here",
+	"internal/setup/out/credfiles/pathfiles.go:PathCredFiles.Read:readOwnCredential":      "init --remote not as root",
+	"internal/handoff/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":        "an engine not running as root (agentFilesFor)",
+	"internal/handoff/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit":   "an engine not running as root (agentFilesFor)",
+	"internal/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":                   "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
+	"internal/setup/in/localsetup/agentjobs.go:credentialTarget:config.ReadCredential":    "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
+	"internal/app/handoff_files.go:handoffFiles.ReadSecret:config.ReadOwnCredential":      "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
 }
 
 // checkedCredentialReads are root's reads of another user's file, which call
 // pgdial.CheckForeignDSN. Listed so the scan is seen to find them.
 var checkedCredentialReads = []string{
-	"cmd/basalt/credfiles_unix.go:rootCredFiles.Read:readCredentialFrom",
+	"internal/setup/out/credfiles/credfiles_unix.go:RootCredFiles.Read:readCredentialFrom",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAt",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAtLimit",
 	"internal/app/setupbackend/setupbackend.go:Backend.ReadCredential:config.ReadCredential",
@@ -301,7 +299,7 @@ func a() { config.ReadCredential("p") }
 func (r *t) b() { s, _, _ := config.ReadCredentialAt(d, "n"); pgdial.CheckForeignDSN(s) }
 func c() { f := readOwnedCredential; f("p", 0, "") }
 var g = config.ReadOwnCredential
-`), "cmd/basalt"))
+`), "internal/setup/out/credfiles"))
 	require.Equal(t, map[string]bool{"x.go:a:config.ReadCredential": true}, credentialReadsIn("x.go", parse(`package main
 import (
 	cfg "`+configImport+`"
@@ -336,7 +334,7 @@ func a() { s, _ := config.ReadCredential("p"); app.CheckForeignDSN(s) }
 `), "internal/x"), "another package's app.CheckForeignDSN is not the engine's")
 	require.Empty(t, credentialReadsIn("x.go", parse(`package main
 func a() { var m reader; m.ReadCredential("p"); x.readOwnCredential("p") }
-`), "cmd/basalt"))
+`), "internal/setup/out/credfiles"), "a method or another package's field is not a reader")
 }
 
 // The guard follows credfiles' readers: qualified from any package, under
@@ -350,17 +348,17 @@ func TestCredentialReadGuardSeesCredfilesReaders(t *testing.T) {
 		return f
 	}
 	require.Equal(t, map[string]bool{
-		"x.go:a:credfiles.ReadKeptCredential":        false,
-		"x.go:b:credfiles.ReadOwnCredential":         true,
-		"x.go:<package>:credfiles.ReadOwnCredential": false,
+		"x.go:a:credfiles.ReadKeptCredential":         false,
+		"x.go:b:credfiles.ReadKeptCredential":         true,
+		"x.go:<package>:credfiles.ReadKeptCredential": false,
 	}, credentialReadsIn("x.go", parse(`package handoff
 import (
 	"`+credfilesImport+`"
 	"`+pgdialImport+`"
 )
 func a() { credfiles.ReadKeptCredential(h, "p", "u") }
-func b() { s, _, _ := credfiles.ReadOwnCredential("p"); pgdial.CheckForeignDSN(s) }
-var g = credfiles.ReadOwnCredential
+func b() { s, _ := credfiles.ReadKeptCredential(h, "p", "u"); pgdial.CheckForeignDSN(s) }
+var g = credfiles.ReadKeptCredential
 `), "internal/handoff"))
 	require.Equal(t, map[string]bool{"x.go:a:credfiles.ReadKeptCredential": false}, credentialReadsIn("x.go", parse(`package handoff
 import sc "`+credfilesImport+`"
@@ -393,4 +391,58 @@ func a() { app.ReadKeptCredential(h, "p", "u") }
 import "`+appImport+`"
 func a() { app.ReadOwnCredential("p") }
 `), "cmd/basalt"), "app forwards only ReadKeptCredential")
+}
+
+// The reader table names real code: each package's folder holds Go files of
+// that package, and each reader is a function declared there. A reader that
+// moves or is renamed fails here instead of leaving the guard blind to its
+// callers.
+func TestCredentialReaderTableIsReal(t *testing.T) {
+	t.Parallel()
+	const module = "github.com/basaltdbhq/basaltdb/"
+	for path, p := range readerPkgs {
+		require.Equal(t, module+p.folder, path, "the folder of %s", path)
+		files, err := filepath.Glob(filepath.Join("..", "..", p.folder, "*.go"))
+		require.NoError(t, err)
+		funcs := map[string]bool{}
+		sources := 0
+		for _, name := range files {
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+			require.NoError(t, err)
+			require.Equal(t, p.name, f.Name.Name, "%s is package %s", name, p.name)
+			sources++
+			for _, decl := range f.Decls {
+				if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil {
+					funcs[fn.Name.Name] = true
+				}
+			}
+		}
+		require.NotZero(t, sources, "%s has Go files to scan", p.folder)
+		for r := range p.readers {
+			require.True(t, funcs[r], "%s is a function in %s", r, p.folder)
+		}
+	}
+	// cmd/basalt has no readers of its own (they live in credfiles): a
+	// reader-named function here would be called unqualified, unseen.
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		require.NoError(t, err)
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil {
+				continue
+			}
+			for _, p := range readerPkgs {
+				require.False(t, p.readers[fn.Name.Name], "cmd/basalt/%s declares %s, a reader name: read credentials through credfiles (app's forwarder)", name, fn.Name.Name)
+			}
+		}
+	}
 }

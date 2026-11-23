@@ -864,7 +864,7 @@ func TestInitRemoteRunsOneAtATime(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
 	first := seedCredential(t, noDB(t), cfg, "bot", supabaseDSN(t))
-	unlock, err := lockFile(first.credFile + lockSuffix)
+	unlock, err := app.PathCredFiles{}.Lock(first.credFile + lockSuffix)
 	require.NoError(t, err)
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
 	require.Equal(t, cli.ExitError, r.code)

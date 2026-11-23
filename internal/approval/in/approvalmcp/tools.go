@@ -8,10 +8,9 @@ import (
 	"encoding/json"
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
-
-	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
@@ -88,7 +87,7 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	params := approvalsvc.PendingParams{Params: args.Params, Kind: args.Kind, RunID: optionalID(args.RunID), Status: args.Status, Reissue: args.ReissueLink}
+	params := approvalsvc.PendingParams{Params: args.Params, Kind: args.Kind, RunID: uniqueid.Optional(args.RunID), Status: args.Status, Reissue: args.ReissueLink}
 	params.ApplyDefaultsAndClamp()
 	page, err := h.svc.ListPending(ctx, params)
 	if err != nil {
@@ -103,14 +102,6 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 		items = append(items, revertmcp.PendingRevert(*e.Revert))
 	}
 	return pagination.ToMCP(pagination.Page[any]{Items: items, NextCursor: page.NextCursor}), nil
-}
-
-// optionalID parses an optional uuid argument already validated by tags.
-func optionalID(s string) uuid.UUID {
-	if s == "" {
-		return uuid.Nil
-	}
-	return uuid.MustParse(s)
 }
 
 // Tools are the tools that read held writes. mount lists a tool under its

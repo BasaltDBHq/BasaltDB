@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/google/uuid"
@@ -49,14 +50,6 @@ type handlers struct {
 	svc Agent
 }
 
-// optionalID parses an optional uuid argument already validated by tags.
-func optionalID(s string) uuid.UUID {
-	if s == "" {
-		return uuid.Nil
-	}
-	return uuid.MustParse(s)
-}
-
 // --- run_start ---
 
 // runStartArgs is the run_start tool's input (api/mcp/tools/run_start.json).
@@ -78,7 +71,7 @@ func (h handlers) runStart(ctx context.Context, raw json.RawMessage) (any, error
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	run, err := h.svc.StartRun(ctx, args.Intent, optionalID(args.TaskID))
+	run, err := h.svc.StartRun(ctx, args.Intent, uniqueid.Optional(args.TaskID))
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +125,7 @@ func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
-	res, err := h.svc.Query(ctx, agentsvc.QueryParams{SQL: args.SQL, Params: params, RunID: optionalID(args.RunID)})
+	res, err := h.svc.Query(ctx, agentsvc.QueryParams{SQL: args.SQL, Params: params, RunID: uniqueid.Optional(args.RunID)})
 	if err != nil {
 		return nil, err
 	}

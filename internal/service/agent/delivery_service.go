@@ -88,3 +88,7 @@ func (dc *deliveryCase) notifyRevertTo(ctx context.Context, n RevertNotice) erro
 func (dc *deliveryCase) notifyHeldTo(ctx context.Context, n HeldNotice) error {
 	return dc.deps.Notifier.NotifyHeld(ctx, n)
 }
+
+func (dc *deliveryCase) relayConnected() bool { return dc.deps.Relay.Connected() }
+
+func (dc *deliveryCase) pollInterval() time.Duration { return dc.deps.Poll }

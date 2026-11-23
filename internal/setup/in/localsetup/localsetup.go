@@ -550,18 +550,10 @@ func (s *Service) usable(ctx context.Context, tx pgx.Tx) error {
 // Cause carries the redacted message for the engine's log.
 func setupFailed(step string, err error) *RefusalError {
 	c := causeOf(step, err)
-	r := refuse(CodeSetupFailed, "Reading the database or running the setup failed; nothing changed.")
-	switch {
-	case c.SQLState == sqlstateInsufficientPrivilege:
-		r.Message = fmt.Sprintf("The admin role lacks a privilege the setup needs (Postgres error %s, %s); nothing changed.", c.SQLState, c.Step)
-	case c.SQLState != "":
-		r.Message = fmt.Sprintf("Reading the database or running the setup failed (Postgres error %s, %s); nothing changed.", c.SQLState, c.Step)
-	}
+	r := refuse(CodeSetupFailed, setup.FailedMessage(c.Step, c.SQLState))
 	r.Cause = c
 	return r
 }
-
-const sqlstateInsufficientPrivilege = "42501"
 
 // Check reads what an install would do. It changes nothing.
 func (s *Service) Check(ctx context.Context, req Request) (CheckAnswer, error) {

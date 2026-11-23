@@ -17,10 +17,10 @@
 //
 // The package takes a connection its caller opened as the database's admin.
 // It reads no environment variable, terminal or file. Its messages name
-// databases, hosts, roles and tables, never a connection string. Some
-// carry the database's or the driver's own words (see Error and
-// Result.Warnings). A caller behind a transaction pooler opens the
-// connection with pgx.QueryExecModeExec, as basalt does.
+// databases, hosts, roles and tables, never a connection string. An
+// Error's Message never carries the database's or the driver's own words
+// (see Error). A caller behind a transaction pooler opens the connection
+// with pgx.QueryExecModeExec, as basalt does.
 package setup
 
 import (
@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -319,11 +320,48 @@ type RowSecurityQuestion struct {
 	Text string
 }
 
-// adminTx runs the setup's transaction on the admin connection conn.
+// rollbackTimeout bounds the rollback of a failed setup, which runs even
+// when the caller's context is done.
+const rollbackTimeout = 5 * time.Second
+
+// adminTx runs the setup's transaction on the admin connection conn. A
+// commit that fails without the database's answer is a
+// setuprun.UnconfirmedError; one the database answered (an error of its
+// own, or a commit that became a rollback), one never sent, and fn's
+// error are known failures. The transaction rolls back on any of them, and
+// on a panic in fn.
 func adminTx(conn *pgx.Conn) setuprun.TxRunner {
 	return func(ctx context.Context, fn func(setuprun.Querier) error) error {
-		return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return fn(pgquerier.Neutralize(tx)) })
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer rollback(ctx, tx) // after a commit, a no-op
+		if err := fn(pgquerier.Neutralize(tx)); err != nil {
+			return err
+		}
+		return commitOutcome(tx.Commit(ctx))
 	}
+}
+
+// rollback rolls tx back, within rollbackTimeout of now whatever ctx says.
+func rollback(ctx context.Context, tx pgx.Tx) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
+	_ = tx.Rollback(rctx)
+}
+
+// commitOutcome is err from a commit, as a setuprun.UnconfirmedError when
+// the database may have applied it without answering: not one it
+// answered, not one that became a rollback, and not one the driver never
+// sent (pgconn.SafeToRetry).
+func commitOutcome(err error) error {
+	var pg *pgconn.PgError
+	switch {
+	case err == nil, errors.As(err, &pg), errors.Is(err, pgx.ErrTxCommitRollback), pgconn.SafeToRetry(err):
+		return err
+	}
+	return &setuprun.UnconfirmedError{Err: err}
 }
 
 // pgxTx is the transaction adminTx handed the setup, for the writes in it
@@ -577,8 +615,7 @@ type Result struct {
 	// EngineRecorded is whether the code's engine key was recorded.
 	EngineRecorded bool
 	// Warnings are for the person after the run: tables whose rows the
-	// agent cannot see, or that the check failed, with the database's own
-	// words.
+	// agent cannot see, or that the check failed, with its Postgres error.
 	Warnings []string
 	// Passkey is the passkey this run registered, nil when none.
 	Passkey *RegisteredPasskey
@@ -713,7 +750,11 @@ func recordTrustPinAlone(ctx context.Context, conn *pgx.Conn, t *TrustPin) error
 }
 
 // writeLabels writes in.ColumnClasses and in.RestPublic in the setup's
-// transaction.
+// transaction. Its tables are the agent role's (setuprun.Setup.AgentTables): for an
+// AGENT code that keeps the role's grants, the grants it holds, since such
+// a code names no tables; otherwise the code's tables. An UPGRADE code
+// names no agent, so its tables are the readable ones, read after the
+// migrations. The local setup page takes the person's picks instead.
 func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput, now time.Time) error {
 	if len(in.ColumnClasses) == 0 && !in.RestPublic {
 		return nil
@@ -744,11 +785,10 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 	return err
 }
 
-// Error is a refused or failed step. Message is what the person reads.
-// With CodeSetupFailed, and with CodePasskeyNotRegistered (after "the setup
-// ran but no passkey was registered: "), it may carry the database's or
-// the driver's own words; the other codes' messages are this package's
-// sentences.
+// Error is a refused or failed step. Message is what the person reads:
+// this package's sentences, which name a Postgres error by its SQLSTATE
+// and never carry the database's or the driver's own words. Those stay in
+// the error Unwrap returns, for a log.
 type Error struct {
 	// Code is one of Codes().
 	Code    string
@@ -798,9 +838,12 @@ const (
 	// version can neither install over nor update: remove it first, as the
 	// message's link says. Nothing changed.
 	CodeGuardUnusable = setuprun.SetuprunCodeGuardUnusable
+	// CodeSetupUnconfirmed is a setup whose commit got no answer from the
+	// database: it may or may not have run. Check tells which.
+	CodeSetupUnconfirmed = setuprun.SetuprunCodeSetupUnconfirmed
 	// CodeSetupFailed is any other failure: the database or its driver.
-	// Nothing changed. Its Message may carry the database's own words; a
-	// service that shows fixed messages maps it to one.
+	// Nothing changed. Its Message names the Postgres error and the step,
+	// never the database's own words.
 	CodeSetupFailed = "SETUP_FAILED"
 )
 
@@ -814,6 +857,7 @@ var codes = []string{
 	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
 	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
+	CodeSetupUnconfirmed,
 }
 
 // Codes is every Error.Code this package returns: the setup code's
@@ -837,5 +881,11 @@ func asError(err error) error {
 	if !slices.Contains(codes, code) {
 		code = CodeSetupFailed
 	}
-	return &Error{Code: code, Message: err.Error(), err: err}
+	msg := err.Error()
+	if code == CodeSetupFailed && (r == nil || r.Code != CodeSetupFailed) {
+		// A failure of the database or the driver: a fixed sentence with
+		// the Postgres error and the step; their words stay in the error.
+		msg = setuprun.FailedMessage(setuprun.FailedStep("setup", err), setuprun.SQLStateOf(err))
+	}
+	return &Error{Code: code, Message: msg, err: err}
 }

@@ -19,7 +19,7 @@ import (
 // (handoff.Prober.Login); a refusal comes back as pgx's error, which carries
 // the SQLSTATE.
 func Login(ctx context.Context, dsn string, set *trustprofile.Set, ip string, dial func(ctx context.Context, network, addr string) (net.Conn, error), roots *x509.CertPool) error {
-	cfg, err := ConnConfigTrusting(dsn, set)
+	cfg, err := connConfigTrusting(dsn, set)
 	if err != nil {
 		return err
 	}

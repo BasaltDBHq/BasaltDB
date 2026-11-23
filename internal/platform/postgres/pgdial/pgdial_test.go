@@ -93,24 +93,16 @@ func TestBuiltInRootsForTheirHosts(t *testing.T) {
 	require.Nil(t, poolTLS(t, pool).RootCAs)
 }
 
-// A login through pgdial to a Supabase host whose chain ends at the
+// A login through pgdial.Login to a Supabase host whose chain ends at the
 // (stand-in) Supabase root verifies; the same chain on another host does not.
-func TestConnConfigTrustingVerifiesASupabaseChain(t *testing.T) {
+func TestLoginVerifiesASupabaseChain(t *testing.T) {
 	t.Parallel()
 	login := func(host string) error {
 		ca, cert := trustprofiletest.Chain(t, host)
-		cfg, err := pgdial.ConnConfigTrusting("postgres://u:p@"+host+":5432/postgres?sslmode=verify-full",
-			trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}))
-		require.NoError(t, err)
-		cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
-		cfg.DialFunc = trustprofiletest.Serve(t, cert)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		conn, err := pgx.ConnectConfig(ctx, cfg)
-		if err == nil {
-			_ = conn.Close(ctx)
-		}
-		return err
+		return pgdial.Login(ctx, "postgres://u:p@"+host+":5432/postgres?sslmode=verify-full",
+			trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}), "127.0.0.1", trustprofiletest.Serve(t, cert), nil)
 	}
 	var pg *pgconn.PgError
 	require.ErrorAs(t, login("db.abcdefghijklmnopqrst.supabase.co"), &pg)

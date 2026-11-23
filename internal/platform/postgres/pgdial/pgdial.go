@@ -71,12 +71,12 @@ const DefaultMode = pgx.QueryExecModeExec
 // ConnConfig parses dsn, applies DefaultMode and trusts the roots of the
 // profile that matches each host (Trust).
 func ConnConfig(dsn string) (*pgx.ConnConfig, error) {
-	return ConnConfigTrusting(dsn, nil)
+	return connConfigTrusting(dsn, nil)
 }
 
-// ConnConfigTrusting is ConnConfig with set's profiles in place of Trust's;
+// connConfigTrusting is ConnConfig with set's profiles in place of Trust's;
 // nil is Trust's. Tests give test CAs to stand in for a provider's roots.
-func ConnConfigTrusting(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, error) {
+func connConfigTrusting(dsn string, set *trustprofile.Set) (*pgx.ConnConfig, error) {
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, err

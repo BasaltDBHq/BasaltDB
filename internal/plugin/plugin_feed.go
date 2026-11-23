@@ -436,7 +436,7 @@ func (r *feedReader) readIn(ctx context.Context, tx guardmodel.FeedSnapshot) (fe
 	case r.cur.InstallID != install:
 		// The guard was installed afresh and seqs began again: the record
 		// that serves the entry in the new ledger, else the head.
-		from, ok, err := tx.ServedFrom(ctx, k.Name, k.Instance, 0)
+		from, ok, err := servedFrom(ctx, tx, k.Name, k.Instance, 0)
 		if err != nil {
 			return out, err
 		}
@@ -446,7 +446,7 @@ func (r *feedReader) readIn(ctx context.Context, tx guardmodel.FeedSnapshot) (fe
 		r.startAt(install, from)
 	default:
 		// Served again since the cursor: the record that began it.
-		from, ok, err := tx.ServedFrom(ctx, k.Name, k.Instance, r.cur.Seq)
+		from, ok, err := servedFrom(ctx, tx, k.Name, k.Instance, r.cur.Seq)
 		if err != nil {
 			return out, err
 		}
@@ -542,4 +542,44 @@ func (r *feedReader) load() {
 
 func (r *feedReader) cursorDir() string {
 	return filepath.Join(r.f.dir, r.pair.key.Name, r.pair.key.Instance)
+}
+
+// servedFrom is the seq of the newest record in the calling agent's ledger
+// after seq after that begins serving entry (name, instance) to it: a
+// PLUGIN_ENABLED, or a PLUGIN_CHANGED that adds an egress host or moves the
+// endpoint (CONTRACT.md, Notifier messages, The cursor). False when there is
+// none.
+func servedFrom(ctx context.Context, tx guardmodel.FeedSnapshot, name, instance string, after int64) (int64, bool, error) {
+	recs, err := tx.PluginEntryEvents(ctx, name, instance)
+	if err != nil {
+		return 0, false, err
+	}
+	var from int64
+	found := false
+	for i, r := range recs {
+		if r.Seq <= after {
+			continue
+		}
+		starts := r.Kind == string(guardmodel.PluginEnabled)
+		if r.Kind == string(guardmodel.PluginChanged) && i > 0 {
+			starts = widens(recs[i-1], r)
+		}
+		if starts {
+			from, found = r.Seq, true
+		}
+	}
+	return from, found, nil
+}
+
+// widens reports whether a plugin record's egress and endpoint, after the
+// one before, add an egress host or move the endpoint. A detail that does
+// not decode counts as a change: starting again at it only skips events.
+func widens(prev, cur guardmodel.PluginEntryEvent) bool {
+	if prev.DecodeErr || cur.DecodeErr {
+		return true
+	}
+	if prev.Endpoint != cur.Endpoint {
+		return true
+	}
+	return slices.ContainsFunc(cur.Egress, func(h string) bool { return !slices.Contains(prev.Egress, h) })
 }

@@ -31,7 +31,7 @@ func devLocalStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }

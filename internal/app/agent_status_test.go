@@ -170,7 +170,7 @@ func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, ope
 		cmds, err := NewCommands("bot", configPath, "linux", testManager())
 		require.NoError(t, err)
 		d.Core.Commands = cmds
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		return r
 	}
@@ -397,7 +397,7 @@ func TestStatusVaultHook(t *testing.T) {
 	d := deps()
 	setApprovals(&d, keys{n: 1})
 	d.Status.Vault = fixedVault{guidance.VaultStatus{State: "KEY_ERROR"}}
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, &guidance.VaultStatus{State: "KEY_ERROR"}, r.Vault)
 	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
@@ -653,7 +653,7 @@ func lockTroubleStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }
@@ -686,7 +686,7 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read statussvc.Engine
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }
@@ -733,7 +733,7 @@ func TestStatusEngineRecord(t *testing.T) {
 		setApprovals(&d, keys{n: 1})
 		d.Status.Vault = fixedVault{guidance.VaultStatus{State: "KEY_ERROR"}}
 		d.Status.EngineRecord = recordOf(true)
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, &guidance.EngineRecordStatus{State: "UNKNOWN"}, r.EngineRecord)
 		require.Empty(t, r.Problems)
@@ -742,7 +742,7 @@ func TestStatusEngineRecord(t *testing.T) {
 		t.Parallel()
 		d := deps()
 		setApprovals(&d, keys{n: 1})
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		require.Nil(t, r.EngineRecord)
 	})
@@ -868,7 +868,7 @@ func pagesStatus(t *testing.T, operatedBy, base, update string, origins ...strin
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds.UpdateLink(update)
-	r, err := NewService(d).Status(context.Background())
+	r, err := NewService(d).status.Status(context.Background())
 	require.NoError(t, err)
 	return r
 }
@@ -880,7 +880,7 @@ func TestStatusStartedBy(t *testing.T) {
 		d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
 		d.Status.StartedBy = in
-		r, err := NewService(d).Status(context.Background())
+		r, err := NewService(d).status.Status(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, want, r.Engine.StartedBy, in)
 		require.Nil(t, r.Engine.LastStop, "a running engine reports no last stop")

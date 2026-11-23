@@ -114,7 +114,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 	// Before the person's laptop: every tool but status is held.
 	var se *guidance.SetupError
 	require.ErrorAs(t, rt.svc.Admit(ctx), &se)
-	st, err := rt.svc.Status(ctx)
+	st, err := rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", st.Setup.State)
 	require.Equal(t, []string{"SETUP_NOT_RUN"}, problemCodes(st))
@@ -127,7 +127,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 
 	// The laptop records the code in the install's transaction.
 	r.record(t, d, guardmodel.SetupInstall)
-	st, err = rt.svc.Status(ctx)
+	st, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, guidance.SetupStatus{State: "DONE", SetupID: r.setup.SetupID, Kind: guardmodel.SetupInstall}, st.Setup)
 	require.Equal(t, []string{"NO_PASSKEY"}, problemCodes(st), "no passkey yet: a usual problem, not an unfinished setup")
@@ -137,7 +137,7 @@ func TestALaptopInstallIsFinishedByStatusWithoutARestart(t *testing.T) {
 
 	// Served, with no restart.
 	require.NoError(t, rt.svc.Admit(ctx))
-	_, err = rt.svc.StartRun(ctx, "check the leads", uuid.Nil)
+	_, err = rt.svc.agent.StartRun(ctx, "check the leads", uuid.Nil)
 	require.NoError(t, err)
 }
 
@@ -153,7 +153,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	require.NoError(t, config.WriteFile(r.credFile+handoff.PendingSuffix, []byte(pending+"\n")))
 	rt := r.start(t)
 
-	st, err := rt.svc.Status(ctx)
+	st, err := rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "PENDING", st.Setup.State)
 	require.Contains(t, problemCodes(st), "SETUP_CHANGE_PENDING")
@@ -163,7 +163,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	d.Init(t, guardmodel.AgentSpec{Name: "bot", Verifier: verifierOf(t, pw2), Write: demoTables, Read: demoTables})
 	r.record(t, d, guardmodel.SetupAgent)
 
-	st, err = rt.svc.Status(ctx)
+	st, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "DONE", st.Setup.State)
 	require.NotContains(t, problemCodes(st), "CREDENTIAL_REJECTED", "the pool logs in with the promoted password")
@@ -174,7 +174,7 @@ func TestARotatedCredentialIsPromotedWhenItsSetupIsRecorded(t *testing.T) {
 	_, err = os.Lstat(r.credFile + handoff.PendingSuffix)
 	require.True(t, os.IsNotExist(err), "moved over the credential file")
 	require.Nil(t, r.configSetup(t))
-	_, err = rt.svc.StartRun(ctx, "check the leads", uuid.Nil)
+	_, err = rt.svc.agent.StartRun(ctx, "check the leads", uuid.Nil)
 	require.NoError(t, err)
 }
 
@@ -194,7 +194,7 @@ func TestTheSetupIsNotClearedWhileInitHoldsTheLock(t *testing.T) {
 
 	unlock, err := config.LockFile(r.credFile + handoff.LockSuffix)
 	require.NoError(t, err)
-	_, err = rt.svc.Status(ctx)
+	_, err = rt.svc.status.Status(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, r.configSetup(t), "locked: nothing cleared")
 	unlock()

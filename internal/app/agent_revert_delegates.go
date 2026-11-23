@@ -71,12 +71,3 @@ func (s *Service) CheckResetLink(id uuid.UUID, secret string) bool {
 func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return s.revert.RevealRevert(ctx, id, secret, in)
 }
-
-// AwaitRevert returns the state of a revert this agent requested. With
-// Reissue on a PENDING revert it issues a new link and returns at once;
-// otherwise it reads the revert about every s.deps.Delivery.Poll until it is not PENDING
-// or Wait is over. It never signs: the person signs on the revert page.
-// AwaitRevert is the revert use case's AwaitRevert.
-func (s *Service) AwaitRevert(ctx context.Context, p revertsvc.AwaitRevertParams) (revertsvc.RequestedRevert, error) {
-	return s.revert.AwaitRevert(ctx, p)
-}

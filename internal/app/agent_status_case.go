@@ -2,18 +2,7 @@ package app
 
 import (
 	"context"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
-
-// Status is the status tool: whether the agent is served and each problem
-// with its steps. It never fails on what it reads: an unreachable database
-// or a missing guard is a problem in the result, not an error. It never
-// names the credential file.
-// Status is the status use case's Status.
-func (s *Service) Status(ctx context.Context) (guidance.StatusReport, error) {
-	return s.status.Status(ctx)
-}
 
 // Admit refuses a tool call the agent cannot be served yet (CONTRACT.md,
 // Next steps, Startup failures): its INSTALL setup code has not run, or

@@ -26,7 +26,7 @@ func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
 		require.NoError(t, err)
 		d.Core.Commands = cmds
 		s := NewService(d)
-		r, err := s.Status(context.Background())
+		r, err := s.status.Status(context.Background())
 		require.NoError(t, err)
 		return r, s
 	}

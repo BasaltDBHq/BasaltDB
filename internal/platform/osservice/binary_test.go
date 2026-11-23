@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -106,7 +107,7 @@ func TestCheckBinaryMissingOrRelative(t *testing.T) {
 // The install checks the binary before it plans a single step.
 func TestInstallPlanRefusesUnprotectedBinary(t *testing.T) {
 	t.Parallel()
-	for _, spec := range []osservice.Spec{linuxSpec(), darwinSpec()} {
+	for _, spec := range []servicespec.Spec{linuxSpec(), darwinSpec()} {
 		sys := newFake()
 		sys.binaryErr = os.ErrPermission
 		steps, err := osservice.InstallPlan(t.Context(), sys, spec)

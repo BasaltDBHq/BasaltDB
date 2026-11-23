@@ -123,8 +123,8 @@ func UnitPath(goos string) string {
 
 // SystemSpec is the engine service every first install starts with: the
 // system config path, the engine's own user and the default memory limit.
-func SystemSpec(goos, binary string) Spec {
-	return Spec{GOOS: goos, Binary: binary, ConfigPath: config.DefaultPath(goos), User: DefaultUser(goos)}
+func SystemSpec(goos, binary string) servicespec.Spec {
+	return servicespec.Spec{GOOS: goos, Binary: binary, ConfigPath: config.DefaultPath(goos), User: DefaultUser(goos)}
 }
 
 // InstallScript is the script the administrator dialog runs on a first
@@ -141,7 +141,7 @@ func InstallScript(goos, binary string) (string, error) {
 		return "", fmt.Errorf("the basalt binary's path %q has characters the service install does not take; install basalt at a plain path such as /usr/local/bin/basalt", binary)
 	}
 	spec := SystemSpec(goos, binary)
-	if err := spec.Validate(); err != nil {
+	if err := validateSpec(spec); err != nil {
 		return "", err
 	}
 	var b strings.Builder
@@ -304,7 +304,7 @@ func shellCheck(user, shellCmd string) string {
 // SYS_UID_MAX, and no login shell; no group of that name without the user)
 // and every folder the script writes in. A user whose group is missing gets
 // it back with the user's own gid, when no other group holds that gid.
-func linuxPreflight(s Spec) string {
+func linuxPreflight(s servicespec.Spec) string {
 	u := s.User
 	return fmt.Sprintf(`engine_uid=
 make_group=
@@ -339,7 +339,7 @@ check_dir %[8]s ""
 // whose group is missing (a removal that could not delete the user) gets
 // its group back with the user's own gid, when that gid is a system id no
 // other group holds.
-func darwinPreflight(s Spec) string {
+func darwinPreflight(s servicespec.Spec) string {
 	u := s.User
 	return fmt.Sprintf(`engine_uid=
 make_group=
@@ -376,7 +376,7 @@ no_link %[11]s
 
 // linuxScript creates the engine's user and its config directory; systemd
 // makes the runtime and state directories from the unit.
-func linuxScript(s Spec) string {
+func linuxScript(s servicespec.Spec) string {
 	u := s.User
 	return fmt.Sprintf(`if [ -z "$engine_uid" ]; then
 	useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin %[1]s
@@ -394,7 +394,7 @@ make_root_dir %[6]s %04[5]o
 // darwinScript creates the engine's hidden system account with the lowest
 // free id from 300 to 499, picked as root when the script runs, then its
 // directories and its log.
-func darwinScript(s Spec) string {
+func darwinScript(s servicespec.Spec) string {
 	u := s.User
 	configDir := filepath.Dir(s.ConfigPath)
 	return fmt.Sprintf(`if [ -z "$engine_uid" ]; then

@@ -463,7 +463,7 @@ func TestSudoInstalledPluginStillIsolated(t *testing.T) {
 	require.Empty(t, ep.localRefusal(kept, v), "an engine-kept local entry runs as the engine's child")
 
 	cfg.Plugins = append(cfg.Plugins, kept)
-	want := wantedFrom(cfg, func(pluginmodel.EntryKey) (pluginmodel.Verified, bool) { return v, true }, pluginmodel.ModeService, "linux", testPorts.Network, trustWant{}, ep.isKept)
+	want := wantedFrom(cfg, func(pluginmodel.EntryKey) (pluginmodel.Verified, bool) { return v, true }, pluginmodel.ModeService, "linux", PluginNetwork, trustWant{}, ep.isKept)
 	require.Equal(t, guardmodel.PluginFilesOSUser, want.served["product_a"][p.Key()].Isolation.Files)
 	require.Equal(t, guardmodel.PluginFilesNone, want.served["product_a"][kept.Key()].Isolation.Files)
 	require.True(t, want.approval[kept.Key()])

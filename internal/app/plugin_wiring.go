@@ -40,7 +40,6 @@ func init() {
 // pluginPorts are the adapters the plugin feature is built on.
 var pluginPorts = plugin.Ports{
 	Guard:            pluginledger.Ledger{},
-	Network:          osservice.PluginNetwork,
 	InGroup:          osservice.InGroup,
 	SystemdOverrides: osservice.SystemdOverridesOnMachine,
 	NewUnitHost: func(host servicespec.PluginHost) plugin.UnitHost {

@@ -58,9 +58,6 @@ type Guard interface {
 // missing one is refused when the host is built.
 type Ports struct {
 	Guard Guard
-	// Network is how a local entry's network access is enforced on goos for
-	// the egress it declares (guardmodel.PluginNetwork*).
-	Network func(goos string, egress []string) string
 	// InGroup is whether an OS user is in a group.
 	InGroup func(user, group string) (bool, error)
 	// SystemdOverrides are the drop-ins systemd reads for a unit on this
@@ -101,8 +98,6 @@ func (p Ports) check() string {
 	switch {
 	case p.Guard == nil:
 		return "Guard"
-	case p.Network == nil:
-		return "Network"
 	case p.InGroup == nil:
 		return "InGroup"
 	case p.SystemdOverrides == nil:

@@ -261,19 +261,6 @@ func uniquePaths(have []string, more ...string) []string {
 	return out
 }
 
-// PluginNetwork is how a local entry's network is recorded on goos in
-// service mode: ENFORCED with an empty egress on Linux (it runs without
-// network), DECLARED with a non-empty one, NOT_ENFORCED on macOS.
-func PluginNetwork(goos string, egress []string) string {
-	switch {
-	case goos == goosDarwin:
-		return "NOT_ENFORCED"
-	case len(egress) == 0:
-		return "ENFORCED"
-	}
-	return "DECLARED"
-}
-
 // SystemdPluginUnit renders entry p's Linux unit. The plugin runs as its
 // own user from its installed copy, with only its socket directory
 // writable, without the config directory, the engine's state and socket

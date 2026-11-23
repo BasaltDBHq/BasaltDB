@@ -127,7 +127,6 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 // testPorts are the real adapters, as the app builds them.
 var testPorts = Ports{
 	Guard:            pluginledger.Ledger{},
-	Network:          osservice.PluginNetwork,
 	InGroup:          osservice.InGroup,
 	SystemdOverrides: osservice.SystemdOverridesOnMachine,
 	NewUnitHost: func(host servicespec.PluginHost) UnitHost {

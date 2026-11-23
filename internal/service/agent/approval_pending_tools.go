@@ -134,9 +134,10 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 	return pagination.ToMCP(pagination.Page[any]{Items: items, NextCursor: page.NextCursor}), nil
 }
 
-// approvalTools are the tools that read held writes.
-func (h handlers) approvalTools() []guidance.Tool {
+// ApprovalTools are the tools that read held writes.
+func ApprovalTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+	h := handlers{svc: svc}
 	return []guidance.Tool{
-		contractTool("list_pending", h.wrap("list_pending", h.listPending)),
+		mount("list_pending", h.listPending),
 	}
 }

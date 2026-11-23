@@ -266,7 +266,7 @@ func statusToolContract(t *testing.T) mcpcontract.Tool {
 func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 	t.Parallel()
 	s := NewService(deps())
-	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(Tools(s), WithMeta)...)
+	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(servedTools(s), WithMeta)...)
 	body, isError := serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": handoff.AnswerYes})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])

@@ -457,7 +457,7 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcpserver.S
 	setApprovals(&d, keys{n: 1})
 	d.Status.Setup = setup
 	d.Core.Now = func() time.Time { return statusNow }
-	tools := Tools(NewService(d))
+	tools := servedTools(NewService(d))
 	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
 }
 
@@ -889,7 +889,7 @@ func TestStatusStartedBy(t *testing.T) {
 
 // serverOf is svc's MCP server and tools.
 func serverOf(svc *Service) (*mcpserver.Server, []mcpserver.Tool) {
-	tools := Tools(svc)
+	tools := servedTools(svc)
 	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
 }
 

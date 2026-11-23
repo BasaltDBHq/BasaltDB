@@ -106,7 +106,7 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	})
 	require.Eventually(t, ev.Client.Connected, 5*time.Second, 5*time.Millisecond)
 	relay.c.Store(ev.Client)
-	return &relayEnv{d: d, person: person, server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...), svc: svc, v: v, keys: keys, relay: relay}
+	return &relayEnv{d: d, person: person, server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, AgentTools(svc)...), svc: svc, v: v, keys: keys, relay: relay}
 }
 
 // call runs one tools/call as the agent would and returns its body and

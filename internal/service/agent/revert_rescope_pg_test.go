@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
@@ -156,7 +157,7 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStor
 			}
 			d.Delivery.Notifier, d.Core.PagesOrigin, d.Delivery.Links, d.Delivery.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc
-	e.h = harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(e.svc), agent.WithMeta)...)}
+	e.h = harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(e.svc)...)}
 	e.p = newLocalPages(t, agentEnv{svc: e.svc})
 }
 

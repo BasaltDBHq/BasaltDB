@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
 	"github.com/jackc/pgx/v5"
@@ -24,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // testDB creates a database with the guard installed (the Postgres
@@ -66,7 +66,7 @@ func newHarnessConns(t *testing.T, agentURL string, limits sqlguard.Limits, conn
 	t.Helper()
 	env := agenttest.PgService(t, agentURL, agenttest.WithLimits(limits), agenttest.WithConns(conns))
 	return harness{
-		server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(env.Svc), agent.WithMeta)...),
+		server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(env.Svc)...),
 		reader: env.Reader,
 	}
 }

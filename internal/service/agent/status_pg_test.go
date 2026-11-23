@@ -38,7 +38,7 @@ func guardWithout(t *testing.T, version int, migs []guardmodel.Migration) (harne
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		d.Status.Probe = app.NewAgentProbe(store.Probe{Q: pool, Migrations: migs})
 	})).Svc
-	return harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, d
+	return harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, d
 }
 
 // nextBuild is this build's migrations and one more version, the one a

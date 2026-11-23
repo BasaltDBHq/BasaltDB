@@ -61,9 +61,10 @@ func (a requestPluginArgs) check() error {
 	return nil
 }
 
-// pluginTools are the tools that ask for a plugin.
-func (h handlers) pluginTools() []guidance.Tool {
+// PluginTools are the tools that ask for a plugin.
+func PluginTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+	h := handlers{svc: svc}
 	return []guidance.Tool{
-		contractTool(toolRequestPlugin, h.wrap(toolRequestPlugin, h.requestPlugin)),
+		mount(toolRequestPlugin, h.requestPlugin),
 	}
 }

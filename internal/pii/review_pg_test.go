@@ -1,4 +1,4 @@
-package piidict
+package pii
 
 import (
 	"context"

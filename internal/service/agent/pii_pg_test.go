@@ -22,15 +22,15 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
 // the engine wires it: query rows through the service, RETURNING rows inside
 // the write's transaction.
-func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc) (*agent.Service, *guardtest.DB, *pii.FuseDictionary, *pii.Keys) {
+func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc) (*agent.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, city text);
@@ -52,14 +52,14 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 		return guard.WriteClassification(context.Background(), tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 	dir := t.TempDir()
-	keys, err := dictfile.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)
+	keys, err := dictfile.LoadKeys(filepath.Join(dir, corepii.KeyFileName), rand.Reader)
 	require.NoError(t, err)
-	dict, err := dictfile.Open(dir, keys, pii.DefaultDictionaryOptions(time.Now))
+	dict, err := dictfile.Open(dir, keys, corepii.DefaultDictionaryOptions(time.Now))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
 	env := agenttest.PgService(t, a.URL, agenttest.WithReturned(returned), agenttest.WithDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
 		if obs == nil {
-			obs = piidict.NewObserver(piidict.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
+			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
 		}
 		deps.Write.PII = obs
 	}))
@@ -73,7 +73,7 @@ func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, out.Rows, 2)
 	for _, v := range []string{"ann@corp.ee", "ben@corp.ee"} {
-		require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, v, "")), v)
+		require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, v, "")), v)
 	}
 	_, ok := dict.Lookup(keys.GenericHash("Tartu"))
 	require.False(t, ok, "a PUBLIC column is not added")
@@ -100,12 +100,12 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()
-	refuse := func(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return pii.ErrDeltaFull }
+	refuse := func(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return corepii.ErrDeltaFull }
 	svc, d, _, _ := piiService(t, failingObserver{}, refuse)
 	_, err := svc.Write(context.Background(), agent.WriteParams{
 		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",
 	})
-	require.ErrorIs(t, err, pii.ErrDeltaFull)
+	require.ErrorIs(t, err, corepii.ErrDeltaFull)
 	var city string
 	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT city FROM people WHERE id = 1`).Scan(&city))
 	require.Equal(t, "Tartu", city, "the write was rolled back")

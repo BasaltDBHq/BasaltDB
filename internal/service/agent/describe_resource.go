@@ -15,7 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // DescribeResource returns one table as the agent may see it, or only its
@@ -40,9 +40,9 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 	if err != nil {
 		return Resource{}, err
 	}
-	refs := make([]piidict.ColumnRef, len(d.Columns))
+	refs := make([]pii.ColumnRef, len(d.Columns))
 	for i, c := range d.Columns {
-		refs[i] = piidict.ColumnRef{TableOID: d.OID, Attnum: c.Attnum}
+		refs[i] = pii.ColumnRef{TableOID: d.OID, Attnum: c.Attnum}
 	}
 	classes, err := s.deps.Describe.Classes.Resolve(ctx, refs)
 	if err != nil {
@@ -79,7 +79,7 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 // and columns): a column the agent cannot SELECT or classed SECRET is not
 // listed, and every index, key and expression that touches one is left out
 // whole and counted. classes are the columns' classes, in column order.
-func hideColumns(d CatalogDetail, classes []piidict.Class) ResourceDetail {
+func hideColumns(d CatalogDetail, classes []pii.Class) ResourceDetail {
 	hidden := map[int16]bool{}
 	names := map[int16]string{}
 	for i, c := range d.Columns {
@@ -133,14 +133,14 @@ func hideColumns(d CatalogDetail, classes []piidict.Class) ResourceDetail {
 	return out
 }
 
-func classAt(classes []piidict.Class, i int) piidict.Class {
+func classAt(classes []pii.Class, i int) pii.Class {
 	if i < len(classes) && classes[i].Class != "" {
 		return classes[i]
 	}
-	return piidict.Unclassified
+	return pii.Unclassified
 }
 
-func visibleField(c CatalogColumn, class piidict.Class, expressionHidden bool) Field {
+func visibleField(c CatalogColumn, class pii.Class, expressionHidden bool) Field {
 	f := Field{
 		Name: c.Name, Type: c.Type, Nullable: c.Nullable, Generated: c.Generated,
 		Comment: trimComment(c.Comment, resourceCommentMax), PII: FieldPII{Class: class.Class, EntityType: class.EntityType},

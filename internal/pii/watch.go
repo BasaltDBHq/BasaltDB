@@ -1,4 +1,4 @@
-package piidict
+package pii
 
 import (
 	"context"
@@ -26,13 +26,13 @@ const TickTimeout = time.Minute
 type Watch struct {
 	agent   string
 	classes *Map
-	db      Querier
+	db      PiidictQuerier
 	log     *slog.Logger
 }
 
 // NewWatch returns the check for agent's map on db. It panics on a missing
 // dependency.
-func NewWatch(agent string, classes *Map, db Querier, log *slog.Logger) *Watch {
+func NewWatch(agent string, classes *Map, db PiidictQuerier, log *slog.Logger) *Watch {
 	if agent == "" || classes == nil || db == nil || log == nil {
 		panic("piidict: agent, classes, db and logger required")
 	}
@@ -84,7 +84,7 @@ func nameList(names []string) string {
 }
 
 // unclassified reads basalt_meta.pii_unclassified() as the login role.
-func unclassified(ctx context.Context, db Querier) ([]guardmodel.UnclassifiedColumn, error) {
+func unclassified(ctx context.Context, db PiidictQuerier) ([]guardmodel.UnclassifiedColumn, error) {
 	rows, err := db.Query(ctx, "SELECT table_schema, table_name, column_name, data_type, why FROM basalt_meta.pii_unclassified()")
 	if err != nil {
 		return nil, err

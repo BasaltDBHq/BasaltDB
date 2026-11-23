@@ -1,4 +1,4 @@
-package piidict
+package pii
 
 import (
 	"context"
@@ -47,10 +47,10 @@ const (
 // out of the next base, as values the agent cannot read should. A statement
 // timeout skips only a relation read in one pass (slowRelationError).
 const (
-	sqlStateUndefinedTable  = "42P01"
-	sqlStateUndefinedColumn = "42703"
-	sqlStateInsufficient    = "42501"
-	sqlStateQueryCanceled   = "57014"
+	sqlStateUndefinedTable       = "42P01"
+	sqlStateUndefinedColumn      = "42703"
+	sqlStateInsufficient         = "42501"
+	piidictSqlStateQueryCanceled = "57014"
 )
 
 // Relation kinds (pg_class.relkind) that have a ctid to page by.
@@ -71,7 +71,7 @@ type Builder interface {
 
 // Pool is an agent's connection pool.
 type Pool interface {
-	Querier
+	PiidictQuerier
 	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
 }
 
@@ -324,7 +324,7 @@ func (r *scanRun) table(ctx context.Context, src ScanSource, t scanTable) error 
 	if len(keys) == 0 && relkind != relkindTable && relkind != relkindMaterialized {
 		err := r.pageAll(ctx, src, onePassPager(t))
 		var pe *pgconn.PgError
-		if errors.As(err, &pe) && pe.Code == sqlStateQueryCanceled {
+		if errors.As(err, &pe) && pe.Code == piidictSqlStateQueryCanceled {
 			return &slowRelationError{err: err}
 		}
 		return err
@@ -362,8 +362,8 @@ func (k keyColumn) sql() string {
 
 // keysetOf reads a table's relkind and its primary key columns with their
 // types; no key when any key column is not readable by the agent.
-func keysetOf(ctx context.Context, db Querier, oid uint32) ([]keyColumn, string, error) {
-	q, args, err := psql.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
+func keysetOf(ctx context.Context, db PiidictQuerier, oid uint32) ([]keyColumn, string, error) {
+	q, args, err := piidictPsql.Select("relkind::text").From("pg_catalog.pg_class").Where(sq.Eq{"oid": oid}).ToSql()
 	if err != nil {
 		return nil, "", err
 	}
@@ -435,7 +435,7 @@ func rowPager(t scanTable, keys []keyColumn) func(page int) pager {
 		return pager{
 			keyCols: len(keys), cols: t.cols,
 			query: func(cursor []string) (string, []any, error) {
-				b := psql.Select(sel...).From(from).OrderBy(order...).Limit(uint64(page))
+				b := piidictPsql.Select(sel...).From(from).OrderBy(order...).Limit(uint64(page))
 				if cursor != nil {
 					b = b.Where(sq.Expr(tuple, toArgs(cursor)...))
 				}
@@ -459,7 +459,7 @@ func onePassPager(t scanTable) func(page int) pager {
 		return pager{
 			cols: t.cols, onePass: true,
 			query: func([]string) (string, []any, error) {
-				return psql.Select(sel...).From(from).ToSql()
+				return piidictPsql.Select(sel...).From(from).ToSql()
 			},
 		}
 	}
@@ -510,7 +510,7 @@ func (r *scanRun) page(ctx context.Context, src ScanSource, p pager, cursor []st
 		return nil, 0, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	timeout, targs, err := psql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", src.Limits.StatementTimeoutSetting())).ToSql()
+	timeout, targs, err := piidictPsql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", src.Limits.StatementTimeoutSetting())).ToSql()
 	if err != nil {
 		return nil, 0, err
 	}

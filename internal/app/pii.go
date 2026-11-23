@@ -16,7 +16,7 @@ import (
 )
 
 // memLimitFactor sizes GOMEMLIMIT from pii.maxMemoryMB: a dictionary build
-// holds up to the budget in hashes (piidict), and the rest of the engine
+// holds up to the budget in hashes (internal/pii), and the rest of the engine
 // gets as much again. The mapped dictionary file is page cache, not heap.
 const memLimitFactor = 2
 

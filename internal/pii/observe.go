@@ -1,4 +1,4 @@
-package piidict
+package pii
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func NewObserver(classes *Map, dict Adder) *Observer {
 // no source and is not added (rule 2 refuses those on PII columns from
 // M5.2). An error means a value could not be added or a column not
 // classified, and the caller must not return the rows. Errors name no value.
-func (o *Observer) Observe(ctx context.Context, db Querier, cols []action.Column, rows []map[string]any) error {
+func (o *Observer) Observe(ctx context.Context, db PiidictQuerier, cols []action.Column, rows []map[string]any) error {
 	if len(rows) == 0 || len(cols) == 0 {
 		return nil
 	}
@@ -63,7 +63,7 @@ func (e *DictionaryError) Error() string { return "pii dictionary: " + e.err.Err
 // Is reports whether the cause is target.
 func (e *DictionaryError) Is(target error) bool { return errors.Is(e.err, target) }
 
-func (o *Observer) observe(ctx context.Context, db Querier, cols []action.Column, rows []map[string]any) error {
+func (o *Observer) observe(ctx context.Context, db PiidictQuerier, cols []action.Column, rows []map[string]any) error {
 	refs := make([]ColumnRef, len(cols))
 	for i, c := range cols {
 		refs[i] = ColumnRef{TableOID: c.TableOID, Attnum: c.Attnum}
@@ -121,7 +121,7 @@ func valueText(v any) (string, bool) {
 
 // On is the observer reading the map through db (the agent's pool), as the
 // query tool calls it.
-func (o *Observer) On(db Querier) BoundObserver {
+func (o *Observer) On(db PiidictQuerier) BoundObserver {
 	return BoundObserver{o: o, db: db}
 }
 
@@ -134,7 +134,7 @@ func (o *Observer) Returned(ctx context.Context, tx pgx.Tx, cols []action.Column
 // BoundObserver is an Observer with its database (agent.PIIObserver).
 type BoundObserver struct {
 	o  *Observer
-	db Querier
+	db PiidictQuerier
 }
 
 // Observe is Observer.Observe through the bound database.

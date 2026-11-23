@@ -38,13 +38,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
 )
@@ -309,7 +309,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 			plugins.Serve(ctx, cfg, configPath, pluginLedgers(srv.pluginLedgers))
 		}
 	})
-	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{
+	scanner := pii.NewScanner(dict, srv.scans, pii.ScanOptions{
 		RowsPerSecond: piiCfg.ScanRowsPerSecond, MaxMemoryBytes: piiCfg.MaxMemoryBytes(),
 	}, piiLog)
 	wg.Go(func() { scanner.Run(ctx) })
@@ -422,7 +422,7 @@ type startedAgents struct {
 	agents   []Agent
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
-	scans    []piidict.ScanSource
+	scans    []pii.ScanSource
 	// pluginLedgers are the agents' own ledgers, for their plugin events.
 	pluginLedgers map[string]pluginLedger
 	// kept are the agents as the plugin methods reach them.
@@ -590,7 +590,7 @@ type agentRuntime struct {
 	svc    *agent.Service
 	upkeep *upkeep.Upkeep
 	// scan is what the engine's PII scan reads for this agent.
-	scan piidict.ScanSource
+	scan pii.ScanSource
 	// db is the agent's own connection pool, outside any tool call.
 	db guard.Querier
 	// kept is how the person socket's plugin methods reach the agent.
@@ -641,7 +641,7 @@ type agentEnv struct {
 	relay      *vault.Client
 	relayLinks *relayLinks
 	// dict is the engine's PII dictionary, shared by every agent.
-	dict *pii.FuseDictionary
+	dict *corepii.FuseDictionary
 	// asRoot: the engine runs as root; it then
 	// reaches each agent's files through openRootFiles.
 	asRoot bool
@@ -752,8 +752,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
 	// rows in the service, RETURNING rows inside the write's transaction.
-	classes := piidict.NewMap(log.With("component", "pii"))
-	observer := piidict.NewObserver(classes, env.dict)
+	classes := pii.NewMap(log.With("component", "pii"))
+	observer := pii.NewObserver(classes, env.dict)
 	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	readRecord := func(ctx context.Context, id string) (*agent.EngineRecord, error) {
@@ -809,8 +809,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		run: repin,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
-			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
-		scan: piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
+			WithPII(pii.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
+		scan: pii.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
 		db:   pool,
 		kept: keptAgent{
 			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,

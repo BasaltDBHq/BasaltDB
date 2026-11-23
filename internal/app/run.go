@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
 
 	"github.com/basaltdbhq/basaltdb/internal/ledger/out/pinfile"
 

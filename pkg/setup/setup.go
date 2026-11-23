@@ -528,6 +528,9 @@ type RunInput struct {
 	AddPasskey bool
 	// Approve, when set, is shown the SQL before it runs. An error stops
 	// the run with nothing changed, and Run returns that error as it is.
+	// It runs inside the setup's open transaction, which holds locks on the
+	// agent's row-level security tables and its snapshot, so a caller must
+	// not wait on a person there.
 	Approve func(Plan) error
 	// Committed, when set, is called once the setup's transaction
 	// committed, before AskPasskey.

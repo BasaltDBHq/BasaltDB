@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/service/classify"
@@ -864,7 +865,7 @@ func TestRealInstallFailsTheCheckWhenTheColumnsCannotBeRead(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.db.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text)`)
-	f.db.Init(t, guard.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
+	f.db.Init(t, guardmodel.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
 	f.db.Exec(t, `REVOKE ALL ON basalt_meta.pii_columns FROM `+f.db.Names.Guard())
 	req := f.real()
 	req.Tables = []localsetup.TablePick{{Table: "public.people", Access: localsetup.AccessRead}}
@@ -1175,7 +1176,7 @@ func TestRealInstallDeletesTheCredentialWhenTheCommitKnownlyFails(t *testing.T) 
 	f := newFixture(t)
 	ctx := context.Background()
 	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
-	f.db.Init(t, guard.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
+	f.db.Init(t, guardmodel.AgentSpec{Name: "first", Password: guard.NewPassword(), CreateOnly: true})
 	// A deferred constraint that fails when the transaction commits.
 	f.db.Exec(t, `CREATE FUNCTION public.refuse_at_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused at commit'; END $$;
 CREATE CONSTRAINT TRIGGER refuse_at_commit AFTER INSERT ON basalt_meta.passkeys DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.refuse_at_commit()`)

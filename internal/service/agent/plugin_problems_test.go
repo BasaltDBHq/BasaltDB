@@ -7,7 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // fakePlugins reports problems per agent, as the engine's reporter does:
@@ -21,7 +22,7 @@ func pluginStatus(t *testing.T, operatedBy, configPath string, foreground bool, 
 	d := deps()
 	d.Status.OperatedBy = operatedBy
 	d.Status.Plugins = r
-	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", configPath, "linux", testManager())
@@ -43,7 +44,7 @@ func samplePluginProblem(code string) fakePlugins {
 }
 
 // requireRequestPlugin checks st calls request_plugin for acme-ner/client_x.
-func requireRequestPlugin(t *testing.T, st NextStep, remove bool) {
+func requireRequestPlugin(t *testing.T, st toolresult.NextStep, remove bool) {
 	t.Helper()
 	require.Equal(t, "AGENT", st.Actor)
 	require.Equal(t, "CALL_TOOL", st.Action)

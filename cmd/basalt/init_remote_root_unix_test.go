@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // requireEmptyDir fails when dir holds anything: root wrote nothing there.
@@ -63,7 +63,7 @@ func TestInitRemoteAsRootRefusesASymlinkedAgentsDir(t *testing.T) {
 func TestInitRemoteAsRootUsesTheComputedCredentialPath(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
-	first := seedCredential(t, noDB(t), cfg, testAgentKey, agentDSN(t, supabaseURL, guard.DefaultPrefix, testAgentKey, "0123abcd"))
+	first := seedCredential(t, noDB(t), cfg, testAgentKey, agentDSN(t, supabaseURL, guardmodel.DefaultPrefix, testAgentKey, "0123abcd"))
 	want := filepath.Join(filepath.Dir(cfg), "agents", testAgentKey+".url")
 	require.Equal(t, want, first.credFile)
 

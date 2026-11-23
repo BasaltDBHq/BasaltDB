@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -228,7 +229,7 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 	if name == "" {
 		name = app.DemoAgent
 	}
-	if !localsetup.ValidAgentName(name) {
+	if !guardmodel.ValidAgentName(name) {
 		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", errUsage, name)
 	}
 	return localsetup.Job{Job: localsetup.JobInstall, Agent: name, Demo: *demoFlag}, nil
@@ -269,11 +270,20 @@ const (
 	engineResetAsked                    // the person said the database is not theirs
 )
 
+// crashLoops: the service manager started the engine again after it
+// exited with an error, so waiting longer for its page shows nothing new.
+func crashLoops(runs, lastExit int) bool {
+	return runs >= 2 && lastExit > 0
+}
+
 // waitForSetupPage waits until the engine answers its setup routes, and
-// reads from the answer whether it is waiting for its config.
+// reads from the answer whether it is waiting for its config. An engine
+// service the service manager started again during the wait, after an exit
+// with an error, ends the wait at once, naming its log.
 func waitForSetupPage(c *cliIO) (engineState, error) {
 	ctx, cancel := context.WithTimeout(c.ctx, setupWait)
 	defer cancel()
+	firstRuns := -1
 	for {
 		code, err := c.host.SetupState(ctx, app.SetupOrigin)
 		switch {
@@ -287,6 +297,16 @@ func waitForSetupPage(c *cliIO) (engineState, error) {
 			return engineSetUp, nil
 		case err == nil:
 			return engineWaiting, nil
+		}
+		if runs, last, err := c.host.ServiceRuns(ctx, c.goos); err == nil {
+			// The counters are the service's whole life: only a start during
+			// this wait counts.
+			if firstRuns < 0 {
+				firstRuns = runs
+			}
+			if runs > firstRuns && crashLoops(runs, last) {
+				return 0, fmt.Errorf("the engine service keeps stopping: it started %d times and last exited with code %d. See %s for why", runs, last, engineLogHint(c.goos))
+			}
 		}
 		select {
 		case <-ctx.Done():

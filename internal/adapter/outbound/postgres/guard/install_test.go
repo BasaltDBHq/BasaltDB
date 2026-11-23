@@ -22,11 +22,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 func TestNamesValidate(t *testing.T) {
 	t.Parallel()
-	n := guard.Names{Prefix: guard.DefaultPrefix}
+	n := guardmodel.Names{Prefix: guardmodel.DefaultPrefix}
 	require.NoError(t, n.Validate())
 	require.Equal(t, "basalt_guard", n.Guard())
 	require.Equal(t, "basalt_agents", n.Agents())
@@ -36,10 +38,10 @@ func TestNamesValidate(t *testing.T) {
 
 	for _, bad := range []string{"Bad", "a-b", "1a", "", "x;drop", strings.Repeat("a", 60)} {
 		_, err := n.Agent(bad)
-		require.ErrorIs(t, err, guard.ErrInvalidName, bad)
+		require.ErrorIs(t, err, guardmodel.ErrInvalidName, bad)
 	}
-	require.ErrorIs(t, guard.Names{Prefix: "Basalt"}.Validate(), guard.ErrInvalidName)
-	require.ErrorIs(t, guard.Names{Prefix: strings.Repeat("p", 21)}.Validate(), guard.ErrInvalidName)
+	require.ErrorIs(t, guardmodel.Names{Prefix: "Basalt"}.Validate(), guardmodel.ErrInvalidName)
+	require.ErrorIs(t, guardmodel.Names{Prefix: strings.Repeat("p", 21)}.Validate(), guardmodel.ErrInvalidName)
 }
 
 func TestAgentConnString(t *testing.T) {
@@ -219,8 +221,8 @@ func TestPlanInitRedactsPassword(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	pw := guard.NewPassword()
-	s, err := guard.PlanInit(context.Background(), d.Admin, guard.InitOptions{
-		Names: d.Names, Agent: guard.AgentSpec{Name: "bot", Password: pw, Write: []string{"public.leads"}},
+	s, err := guard.PlanInit(context.Background(), d.Admin, guardmodel.InitOptions{
+		Names: d.Names, Agent: guardmodel.AgentSpec{Name: "bot", Password: pw, Write: []string{"public.leads"}},
 	})
 	require.NoError(t, err)
 	shown := s.SQL()
@@ -229,12 +231,12 @@ func TestPlanInitRedactsPassword(t *testing.T) {
 	require.Contains(t, shown, "CREATE TABLE basalt_meta.ledger")
 	require.Contains(t, shown, `GRANT SELECT, INSERT, UPDATE, DELETE ON "public"."leads"`)
 
-	_, err = guard.PlanInit(context.Background(), d.Admin, guard.InitOptions{
-		Names: d.Names, Agent: guard.AgentSpec{Name: "bot", Password: "x'; DROP", Write: []string{"public.leads"}},
+	_, err = guard.PlanInit(context.Background(), d.Admin, guardmodel.InitOptions{
+		Names: d.Names, Agent: guardmodel.AgentSpec{Name: "bot", Password: "x'; DROP", Write: []string{"public.leads"}},
 	})
-	require.ErrorIs(t, err, guard.ErrInvalidAgent)
-	_, err = guard.PlanInit(context.Background(), d.Admin, guard.InitOptions{
-		Names: d.Names, Agent: guard.AgentSpec{Name: "bot", Password: pw, Write: []string{"public.nope"}},
+	require.ErrorIs(t, err, guardmodel.ErrInvalidAgent)
+	_, err = guard.PlanInit(context.Background(), d.Admin, guardmodel.InitOptions{
+		Names: d.Names, Agent: guardmodel.AgentSpec{Name: "bot", Password: pw, Write: []string{"public.nope"}},
 	})
 	require.ErrorContains(t, err, "nope")
 }
@@ -292,7 +294,7 @@ func TestInstallIdempotent(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	other := d.NewAgent(t, "bot", []string{"public.leads"}, nil) // rotates the password
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	ctx := context.Background()
 
 	var versions, triggers int
@@ -306,15 +308,15 @@ func TestInstallIdempotent(t *testing.T) {
 
 // initAs plans and applies basalt init for spec as the admin connection c,
 // again on a deadlock on the shared role catalog (guardtest.TryInit).
-func initAs(t *testing.T, c *pgx.Conn, n guard.Names, spec guard.AgentSpec) {
+func initAs(t *testing.T, c *pgx.Conn, n guardmodel.Names, spec guardmodel.AgentSpec) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, guardtest.RetryDeadlock(func() error {
-		s, err := guard.PlanInit(ctx, c, guard.InitOptions{Names: n, Agent: spec})
+		s, err := guard.PlanInit(ctx, c, guardmodel.InitOptions{Names: n, Agent: spec})
 		if err != nil {
 			return err
 		}
-		return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+		return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
 	}))
 }
 
@@ -330,25 +332,25 @@ func TestAgentRoleHasConnectionLimit(t *testing.T) {
 		name   string
 		exists bool // the role exists before init, at CONNECTION LIMIT start
 		start  int
-		spec   func(t *testing.T) guard.AgentSpec
+		spec   func(t *testing.T) guardmodel.AgentSpec
 	}{
-		{name: "fresh", spec: func(*testing.T) guard.AgentSpec {
-			return guard.AgentSpec{Password: guard.NewPassword()}
+		{name: "fresh", spec: func(*testing.T) guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{Password: guard.NewPassword()}
 		}},
-		{name: "keeper", exists: true, start: -1, spec: func(*testing.T) guard.AgentSpec {
-			return guard.AgentSpec{}
+		{name: "keeper", exists: true, start: -1, spec: func(*testing.T) guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{}
 		}},
-		{name: "rotator", exists: true, start: 100, spec: func(*testing.T) guard.AgentSpec {
-			return guard.AgentSpec{Password: guard.NewPassword()}
+		{name: "rotator", exists: true, start: 100, spec: func(*testing.T) guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{Password: guard.NewPassword()}
 		}},
-		{name: "installer", spec: func(t *testing.T) guard.AgentSpec {
-			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), CreateOnly: true}
+		{name: "installer", spec: func(t *testing.T) guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), CreateOnly: true}
 		}},
-		{name: "changer", exists: true, start: -1, spec: func(t *testing.T) guard.AgentSpec {
-			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Change: true}
+		{name: "changer", exists: true, start: -1, spec: func(t *testing.T) guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Change: true}
 		}},
-		{name: "changer100", exists: true, start: 100, spec: func(t *testing.T) guard.AgentSpec {
-			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Change: true}
+		{name: "changer100", exists: true, start: 100, spec: func(t *testing.T) guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Change: true}
 		}},
 	}
 	admins := map[string]func(t *testing.T, d *guardtest.DB) *pgx.Conn{
@@ -367,14 +369,14 @@ func TestAgentRoleHasConnectionLimit(t *testing.T) {
 					role, err := d.Names.Agent(c.name)
 					require.NoError(t, err)
 					if c.exists {
-						initAs(t, admin, d.Names, guard.AgentSpec{Name: c.name, Password: guard.NewPassword(), Write: appLeads})
+						initAs(t, admin, d.Names, guardmodel.AgentSpec{Name: c.name, Password: guard.NewPassword(), Write: appLeads})
 						_, err := admin.Exec(context.Background(), fmt.Sprintf(`ALTER ROLE %s CONNECTION LIMIT %d`, role, c.start))
 						require.NoError(t, err)
 					}
 					spec := c.spec(t)
 					spec.Name, spec.Write, spec.Read = c.name, appLeads, appLeads
 					initAs(t, admin, d.Names, spec)
-					require.Equal(t, int32(guard.AgentConnectionLimit), scalarOf[int32](t, admin,
+					require.Equal(t, int32(setupcode.AgentConnectionLimit), scalarOf[int32](t, admin,
 						`SELECT rolconnlimit FROM pg_catalog.pg_roles WHERE rolname = $1`, role))
 				})
 			}
@@ -394,10 +396,10 @@ func TestAgentCannotGetPastItsConnectionLimit(t *testing.T) {
 	require.Equal(t, "42501", guardtest.SQLState(err), "insufficient privilege")
 	_, err = a.Conn.Exec(ctx, `ALTER ROLE `+a.Role+` CONNECTION LIMIT 100`)
 	require.Equal(t, "42501", guardtest.SQLState(err), "insufficient privilege")
-	require.Equal(t, int32(guard.AgentConnectionLimit), scalarOf[int32](t, a.Conn,
+	require.Equal(t, int32(setupcode.AgentConnectionLimit), scalarOf[int32](t, a.Conn,
 		`SELECT rolconnlimit FROM pg_catalog.pg_roles WHERE rolname = current_user`))
 
-	for range guard.AgentConnectionLimit - 1 { // a.Conn is the first
+	for range setupcode.AgentConnectionLimit - 1 { // a.Conn is the first
 		a.Connect(t)
 	}
 	c, err := pgdial.Connect(ctx, a.URL)
@@ -420,7 +422,7 @@ func TestInitPicksUpNewCascade(t *testing.T) {
 	require.Equal(t, "lead_files", uncovered[0].Table)
 	require.Contains(t, uncovered[0].Why, "CASCADE_TARGET via public.leads -> public.lead_files")
 
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	uncovered, err = guard.UncoveredTables(ctx, a.Conn)
 	require.NoError(t, err)
 	require.Empty(t, uncovered)
@@ -430,7 +432,7 @@ func TestAttachRefusesTableWithoutPrimaryKey(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.nokey (a int, b text)`)
-	err := d.TryInit(guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: []string{"nokey"}})
+	err := d.TryInit(guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: []string{"nokey"}})
 	require.Error(t, err)
 	require.Equal(t, "BS007", guardtest.SQLState(err))
 	require.ErrorContains(t, err, "NOT_ALLOWED")

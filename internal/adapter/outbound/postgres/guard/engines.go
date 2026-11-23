@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // maxEngines bounds an engine list: a database records a handful.
@@ -20,16 +21,6 @@ const (
 	EngineRefusedRevoked = "ENGINE_REVOKED"
 	EngineRefusedUnknown = "ENGINE_UNKNOWN"
 )
-
-// RecordedEngine is a row of basalt_meta.engines: an engine's public
-// identity and whether it is revoked. Never key material beyond the public
-// key.
-type RecordedEngine struct {
-	ID         string
-	PublicKey  []byte
-	RecordedAt time.Time
-	RevokedAt  *time.Time
-}
 
 // RecordEngine records an engine's signing key (its SPKI DER) with the
 // admin connection and returns its engine id. Postgres refuses a malformed
@@ -63,7 +54,7 @@ func RevokeEngine(ctx context.Context, q Querier, engineID string) (int, error) 
 // Engines lists the recorded engines, newest first, at most maxEngines:
 // with the admin connection from basalt_meta.engines, with an agent's
 // connection from basalt_meta.agent_engines (the same columns).
-func Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, error) {
+func Engines(ctx context.Context, q Querier, admin bool) ([]guardmodel.RecordedEngine, error) {
 	from := "basalt_meta.agent_engines"
 	if admin {
 		from = "basalt_meta.engines"
@@ -80,8 +71,8 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, erro
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (RecordedEngine, error) {
-		var e RecordedEngine
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.RecordedEngine, error) {
+		var e guardmodel.RecordedEngine
 		err := row.Scan(&e.ID, &e.PublicKey, &e.RecordedAt, &e.RevokedAt)
 		return e, err
 	})
@@ -90,19 +81,19 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, erro
 // RecordEngineStatement is record_engine as a statement of the install
 // transaction a setup runs (before record_setup), for a
 // guard migrated up to guardVersion.
-func RecordEngineStatement(publicKey []byte, guardVersion int) Statement {
+func RecordEngineStatement(publicKey []byte, guardVersion int) guardmodel.Statement {
 	key := hex.EncodeToString(publicKey)
 	if guardVersion < EngineAddressRemovedVersion {
 		// A guard installed only up to an earlier version still has the
 		// two-argument function; NULL records no address.
-		return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea, NULL::text);", key)}
+		return guardmodel.Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea, NULL::text);", key)}
 	}
-	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea);", key)}
+	return guardmodel.Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea);", key)}
 }
 
 // EngineRecord is engineID's row in basalt_meta.agent_engines, read with an
 // agent's connection: nil when the database does not record it.
-func EngineRecord(ctx context.Context, q Querier, engineID string) (*RecordedEngine, error) {
+func EngineRecord(ctx context.Context, q Querier, engineID string) (*guardmodel.RecordedEngine, error) {
 	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From("basalt_meta.agent_engines").
 		Where(sq.Eq{"engine_id": engineID}).
@@ -114,8 +105,8 @@ func EngineRecord(ctx context.Context, q Querier, engineID string) (*RecordedEng
 	if err != nil {
 		return nil, err
 	}
-	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RecordedEngine, error) {
-		var e RecordedEngine
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.RecordedEngine, error) {
+		var e guardmodel.RecordedEngine
 		err := row.Scan(&e.ID, &e.PublicKey, &e.RecordedAt, &e.RevokedAt)
 		return e, err
 	})

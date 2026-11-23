@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -26,7 +27,7 @@ func receiptService(t *testing.T, keys *channel.EngineKeys) *Service {
 }
 
 // signedRevert is a revert of run as Postgres shows it once signed.
-func signedRevert(t *testing.T, status string, widened bool) ledger.Revert {
+func signedRevert(t *testing.T, status string, widened bool) action.Revert {
 	t.Helper()
 	id, run, change := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
 	b := revert.Binding{
@@ -37,7 +38,7 @@ func signedRevert(t *testing.T, status string, widened bool) ledger.Revert {
 	}
 	text, err := json.Marshal(b)
 	require.NoError(t, err)
-	r := ledger.Revert{ID: id, Status: status, Rows: 1500, BindingText: string(text), ChangeID: &change, Batched: true}
+	r := action.Revert{ID: id, Status: status, Rows: 1500, BindingText: string(text), ChangeID: &change, Batched: true}
 	if widened {
 		r.Widened, r.BindingText = true, ""
 	}

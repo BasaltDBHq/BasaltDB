@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
@@ -156,7 +157,7 @@ func answersKey(answers []Answer) string {
 }
 
 // allRows answers every question ALL_ROWS, the page's answer.
-func allRows(blind []setuprun.BlindTable) []Answer {
+func allRows(blind []guardmodel.BlindTable) []Answer {
 	out := make([]Answer, len(blind))
 	for i, b := range blind {
 		out[i] = Answer{Table: b.Table, Choice: ChoiceAllRows}
@@ -240,7 +241,7 @@ func (l listing) access(picks []TablePick) (write, read []string, err error) {
 }
 
 // questions are the row-level security questions of the blind tables.
-func questions(blind []setuprun.BlindTable, agent string) []Question {
+func questions(blind []guardmodel.BlindTable, agent string) []Question {
 	out := make([]Question, 0, len(blind))
 	for _, b := range blind {
 		out = append(out, Question{Kind: "ROW_LEVEL_SECURITY", Table: b.Table, Text: setuprun.RLSQuestion(b, agent), Choices: []string{ChoiceAllRows, ChoiceNone}})
@@ -250,7 +251,7 @@ func questions(blind []setuprun.BlindTable, agent string) []Question {
 
 // policies are the blind tables the person let the agent see every row of.
 // One answer per question, no other: ANSWERS_INVALID otherwise.
-func policies(blind []setuprun.BlindTable, answers []Answer) ([]setuprun.BlindTable, error) {
+func policies(blind []guardmodel.BlindTable, answers []Answer) ([]guardmodel.BlindTable, error) {
 	bad := refuse(CodeAnswersInvalid, "The answers do not match the questions this setup asks: answer each question once. Check the setup again.")
 	if len(answers) != len(blind) {
 		return nil, bad
@@ -258,13 +259,13 @@ func policies(blind []setuprun.BlindTable, answers []Answer) ([]setuprun.BlindTa
 	choice := map[string]string{}
 	for _, a := range answers {
 		_, dup := choice[a.Table]
-		if dup || (a.Choice != ChoiceAllRows && a.Choice != ChoiceNone) || !slices.ContainsFunc(blind, func(b setuprun.BlindTable) bool { return b.Table == a.Table }) {
+		if dup || (a.Choice != ChoiceAllRows && a.Choice != ChoiceNone) || !slices.ContainsFunc(blind, func(b guardmodel.BlindTable) bool { return b.Table == a.Table }) {
 			return nil, bad
 		}
 		choice[a.Table] = a.Choice
 	}
 	// In the order of the questions, not of the answers.
-	var out []setuprun.BlindTable
+	var out []guardmodel.BlindTable
 	for _, b := range blind {
 		if choice[b.Table] == ChoiceAllRows {
 			out = append(out, b)

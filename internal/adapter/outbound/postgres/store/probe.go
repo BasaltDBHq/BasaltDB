@@ -7,20 +7,21 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // Probe is the guard probe (agent.Probe) on an agent connection or pool, against the build's
 // migrations (guard.Migrations outside tests).
 type Probe struct {
 	Q          guard.Querier
-	Migrations []guard.Migration
+	Migrations []guardmodel.Migration
 	// Kept is the engine's kept copy of the pins it set aside (its pin
 	// file's setAside); nil when there is none to read.
 	Kept func() []action.SetAside
 }
 
 // guardStatusRaw is GuardStatus before MapError.
-func (p Probe) guardStatusRaw(ctx context.Context) (guard.Status, error) {
+func (p Probe) guardStatusRaw(ctx context.Context) (guardmodel.Status, error) {
 	return guard.AgentStatus(ctx, p.Q, p.Migrations)
 }
 
@@ -30,7 +31,7 @@ func (p Probe) setupRecordedRaw(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
 // latestSetupRaw is LatestSetup before MapError.
-func (p Probe) latestSetupRaw(ctx context.Context) (guard.AgentSetup, bool, error) {
+func (p Probe) latestSetupRaw(ctx context.Context) (guardmodel.AgentSetup, bool, error) {
 	return guard.LatestAgentSetup(ctx, p.Q)
 }
 

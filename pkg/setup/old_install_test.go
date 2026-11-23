@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
@@ -19,7 +20,7 @@ func TestCheckRefusesAnOlderInstall(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	d.Init(t, guard.AgentSpec{Name: "other", Password: guard.NewPassword(), Write: []string{"public.leads"}})
+	d.Init(t, guardmodel.AgentSpec{Name: "other", Password: guard.NewPassword(), Write: []string{"public.leads"}})
 	d.Exec(t, `SET ROLE `+d.Names.Guard()+`;
 		DROP TABLE basalt_meta.installs CASCADE;
 		INSERT INTO basalt_meta.schema_version (version) VALUES (30);

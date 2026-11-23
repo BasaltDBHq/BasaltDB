@@ -1,32 +1,24 @@
 package setuprun
 
 import (
+	"context"
 	"errors"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 )
 
-// The types this package's functions take and return, under names an
-// adapter can use without importing the database packages.
-type (
-	// Querier is the admin connection or transaction a plan or an apply runs on.
-	Querier = guard.Querier
-	// Script is the ordered SQL an install, a repair or a removal runs.
-	Script = guard.Script
-	// Statement is one step of a Script.
-	Statement = guard.Statement
-	// InitOptions configures planning an install.
-	InitOptions = guard.InitOptions
-	// BlindTable is a table whose row-level security hides every row from the agent.
-	BlindTable = guard.BlindTable
-	// RegisteredPasskey is an active passkey as the setup page lists it.
-	RegisteredPasskey = guard.RegisteredPasskey
-	// DemoPlan is what seeding the sample schema runs.
-	DemoPlan = demo.Plan
-)
+// Querier is the admin connection or transaction a plan or an apply runs on.
+// It is an alias of the interface itself, so an adapter that cannot import
+// this package still implements Backend.
+type Querier = interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // ActivePasskey is an active passkey as the doctor lists it.
 type ActivePasskey struct {

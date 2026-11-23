@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
@@ -106,10 +107,10 @@ func TestLabelsOnAnAgentCodeAfterInstall(t *testing.T) {
 	require.NotEmpty(t, checked.Columns)
 	for _, c := range checked.Columns {
 		require.Equal(t, "public.leads", c.Table)
-		require.Equal(t, guard.ClassUnclassified, c.Class)
+		require.Equal(t, guardmodel.ClassUnclassified, c.Class)
 	}
-	unlabeled := setup.Label{Class: guard.ClassUnclassified}
-	name := setup.Label{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName}
+	unlabeled := setup.Label{Class: guardmodel.ClassUnclassified}
+	name := setup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPersonName}
 	const pin = "5f9b77951a7aa1303f9b58eea9bfa89e5f9b77951a7aa1303f9b58eea9bfa89e"
 	res, err := setup.Run(ctx, d.Admin, req, setup.RunInput{
 		ColumnClasses: []setup.ColumnClass{{Table: "public.leads", Column: "name", Label: name, Was: unlabeled}},
@@ -121,9 +122,9 @@ func TestLabelsOnAnAgentCodeAfterInstall(t *testing.T) {
 	got, err := guard.ReadLabels(ctx, d.Admin, d.Names, leads)
 	require.NoError(t, err)
 	for _, c := range got {
-		want := guard.Label{Class: guard.ClassPublic}
+		want := guardmodel.Label{Class: guardmodel.ClassPublic}
 		if c.Column == "name" {
-			want = guard.Label(name)
+			want = guardmodel.Label(name)
 		}
 		require.Equal(t, want, c.Label, c.Column)
 	}

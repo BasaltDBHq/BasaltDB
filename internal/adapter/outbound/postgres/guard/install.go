@@ -16,12 +16,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 // Querier is the part of a pgx connection, pool or transaction this
-// package needs.
-type Querier interface {
+// package needs. It is an alias of the interface itself, so the setup
+// service's port, which cannot import this package, names the same type.
+type Querier = interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -33,50 +35,8 @@ const (
 	redacted      = "********"
 )
 
-// InitOptions configures PlanInit. Agent is optional: an empty Name
-// installs or upgrades basalt_meta only.
-type InitOptions struct {
-	Names Names
-	Agent AgentSpec
-	// AgentPolicies are the agent's tables the person confirmed the agent
-	// may see every row of (from AgentBlindTables). Each gets a policy
-	// named after the agent role and a ledger row; nothing else does.
-	AgentPolicies []BlindTable
-	// UpTo stops the migrations at this version (a setup code's guard.to);
-	// 0 applies every migration this build has.
-	UpTo int
-}
-
-// Statement is one step of a Script. Shown is what the person sees when it
-// differs from SQL (a password redacted).
-type Statement struct {
-	SQL   string
-	Shown string
-}
-
-// Script is the ordered SQL basalt init runs, in one transaction.
-type Script struct {
-	Statements []Statement
-	// Warnings are for the person, shown before the script runs; none
-	// stops it.
-	Warnings []string
-}
-
-// SQL renders the script for the person to read, secrets redacted.
-func (s Script) SQL() string {
-	parts := make([]string, 0, len(s.Statements))
-	for _, st := range s.Statements {
-		text := st.SQL
-		if st.Shown != "" {
-			text = st.Shown
-		}
-		parts = append(parts, strings.TrimSpace(text))
-	}
-	return strings.Join(parts, "\n\n") + "\n"
-}
-
-// Apply runs the script on tx. The caller commits.
-func (s Script) Apply(ctx context.Context, tx pgx.Tx) error {
+// ApplyScript runs the script on tx. The caller commits.
+func ApplyScript(ctx context.Context, tx pgx.Tx, s guardmodel.Script) error {
 	for i, st := range s.Statements {
 		if _, err := tx.Exec(ctx, st.SQL); err != nil {
 			return fmt.Errorf("init step %d: %w", i+1, err)
@@ -115,34 +75,34 @@ func InstalledVersion(ctx context.Context, q Querier) (int, error) {
 // creates or rotates the agent role, grants its tables and attaches the
 // guard. It reads the database (installed version, table sequences) but
 // changes nothing.
-func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) {
+func PlanInit(ctx context.Context, q Querier, opts guardmodel.InitOptions) (guardmodel.Script, error) {
 	n := opts.Names
 	if err := n.Validate(); err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	// An install over a basalt_meta this build cannot use would fail midway
 	// (for one from before the versions started again, on 42P01 relation
 	// "basalt_meta.installs" does not exist): refuse it before any SQL.
 	if err := CheckUsable(ctx, q); err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	// Before anything else, so a missing table fails init with one message.
 	if err := checkTablesExist(ctx, q, opts.Agent); err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	version, err := InstalledVersion(ctx, q)
 	if err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
-	var s Script
+	var s guardmodel.Script
 	warning, err := replicationRoleWarning(ctx, q)
 	if err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	if warning != "" {
 		s.Warnings = append(s.Warnings, warning)
 	}
-	add := func(sql string) { s.Statements = append(s.Statements, Statement{SQL: renderSQL(n, sql)}) }
+	add := func(sql string) { s.Statements = append(s.Statements, guardmodel.Statement{SQL: renderSQL(n, sql)}) }
 	add(installRoles)
 	add(installSchema)
 	for _, m := range migrations {
@@ -155,12 +115,12 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 	if opts.Agent.Name != "" {
 		agent, err := planAgent(ctx, q, n, opts.Agent)
 		if err != nil {
-			return Script{}, err
+			return guardmodel.Script{}, err
 		}
 		s.Statements = append(s.Statements, agent...)
 		role, err := n.Agent(opts.Agent.Name)
 		if err != nil {
-			return Script{}, err
+			return guardmodel.Script{}, err
 		}
 		for _, b := range opts.AgentPolicies {
 			s.Statements = append(s.Statements, agentPolicy(role, b))
@@ -203,7 +163,7 @@ RESET ROLE;`
 const attachAll = `
 SELECT count(1) FROM basalt_meta.attach_all();`
 
-func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]Statement, error) {
+func planAgent(ctx context.Context, q Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]guardmodel.Statement, error) {
 	role, err := n.Agent(spec.Name)
 	if err != nil {
 		return nil, err
@@ -213,7 +173,7 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 	}
 	timeout := spec.StatementTimeout
 	if timeout <= 0 {
-		timeout = DefaultStatementTimeout
+		timeout = guardmodel.DefaultStatementTimeout
 	}
 	grants, err := planGrants(ctx, q, role, spec)
 	if err != nil {
@@ -227,12 +187,12 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 	if err != nil {
 		return nil, err
 	}
-	out := []Statement{adopt}
+	out := []guardmodel.Statement{adopt}
 	switch {
 	case spec.Change && spec.KeepGrants:
-		out = append(out, Statement{SQL: renderSQL(n, fmt.Sprintf(agentMemberSQL, role))})
+		out = append(out, guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentMemberSQL, role))})
 	case spec.Change:
-		out = append(out, Statement{SQL: renderSQL(n, fmt.Sprintf(agentChangeSQL, role))})
+		out = append(out, guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentChangeSQL, role))})
 	}
 	return append(append(out, st), grants...), nil
 }
@@ -282,16 +242,16 @@ END $$;`
 
 // checkAgentPassword accepts at most one of a generated password and a
 // verifier, and CreateOnly only with one of them.
-func checkAgentPassword(spec AgentSpec) error {
+func checkAgentPassword(spec guardmodel.AgentSpec) error {
 	switch {
 	case spec.Password != "" && spec.Verifier != "":
-		return fmt.Errorf("%w: give a password or a verifier, not both", ErrInvalidAgent)
+		return fmt.Errorf("%w: give a password or a verifier, not both", guardmodel.ErrInvalidAgent)
 	case spec.Password != "" && !isHex(spec.Password):
-		return fmt.Errorf("%w: password must be generated by NewPassword", ErrInvalidAgent)
+		return fmt.Errorf("%w: password must be generated by NewPassword", guardmodel.ErrInvalidAgent)
 	case spec.Verifier != "":
 		return CheckVerifier(spec.Verifier)
 	case spec.CreateOnly && spec.Password == "":
-		return fmt.Errorf("%w: a new role needs a password or a verifier", ErrInvalidAgent)
+		return fmt.Errorf("%w: a new role needs a password or a verifier", guardmodel.ErrInvalidAgent)
 	}
 	return nil
 }
@@ -302,9 +262,9 @@ func checkAgentPassword(spec AgentSpec) error {
 // (log_statement, log_min_error_statement) cannot reveal it. What the person
 // sees shows a generated password's verifier redacted, and a setup code's
 // verifier as is.
-func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (Statement, error) {
+func agentRoleStatement(n guardmodel.Names, role string, spec guardmodel.AgentSpec, timeoutMs int64) (guardmodel.Statement, error) {
 	if spec.Password == "" && spec.Verifier == "" {
-		return Statement{SQL: renderSQL(n, fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, AgentConnectionLimit))}, nil
+		return guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, setupcode.AgentConnectionLimit))}, nil
 	}
 	tmpl := agentRoleSQL
 	switch {
@@ -314,16 +274,16 @@ func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (
 		tmpl = agentAlterRoleSQL
 	}
 	render := func(verifier string) string {
-		return renderSQL(n, fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, AgentConnectionLimit))
+		return renderSQL(n, fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, setupcode.AgentConnectionLimit))
 	}
 	if spec.Verifier != "" {
-		return Statement{SQL: render(spec.Verifier)}, nil
+		return guardmodel.Statement{SQL: render(spec.Verifier)}, nil
 	}
 	verifier, err := setupcode.NewVerifier(spec.Password)
 	if err != nil {
-		return Statement{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
+		return guardmodel.Statement{}, fmt.Errorf("%w: %w", guardmodel.ErrInvalidAgent, err)
 	}
-	return Statement{SQL: render(verifier), Shown: render(redacted)}, nil
+	return guardmodel.Statement{SQL: render(verifier), Shown: render(redacted)}, nil
 }
 
 // quoteLiteral renders s as a SQL string literal (standard_conforming_strings).
@@ -331,7 +291,7 @@ func quoteLiteral(s string) string { return "'" + strings.ReplaceAll(s, "'", "''
 
 // AgentRoleExists reports whether the agent's role exists, so init can keep
 // its password.
-func AgentRoleExists(ctx context.Context, q Querier, n Names, agent string) (bool, error) {
+func AgentRoleExists(ctx context.Context, q Querier, n guardmodel.Names, agent string) (bool, error) {
 	role, err := n.Agent(agent)
 	if err != nil {
 		return false, err
@@ -417,17 +377,17 @@ BEGIN
 END $$;`
 
 // agentAdoptStatement is agentAdoptSQL for role and spec's tables.
-func agentAdoptStatement(n Names, role string, spec AgentSpec) (Statement, error) {
+func agentAdoptStatement(n guardmodel.Names, role string, spec guardmodel.AgentSpec) (guardmodel.Statement, error) {
 	names := append(append([]string{}, spec.Write...), spec.Read...)
 	tables := make([]string, 0, len(names))
 	for _, name := range names {
 		t, err := parseTable(name)
 		if err != nil {
-			return Statement{}, err
+			return guardmodel.Statement{}, err
 		}
 		tables = append(tables, quoteLiteral(t.ident()))
 	}
-	return Statement{SQL: renderSQL(n, fmt.Sprintf(agentAdoptSQL, role, strings.Join(tables, ", ")))}, nil
+	return guardmodel.Statement{SQL: renderSQL(n, fmt.Sprintf(agentAdoptSQL, role, strings.Join(tables, ", ")))}, nil
 }
 
 // agentKeepRoleSQL updates an agent role that exists without touching its
@@ -499,7 +459,7 @@ func parseTable(s string) (tableRef, error) {
 	case len(parts) == 2 && parts[0] != "" && parts[1] != "":
 		return tableRef{parts[0], parts[1]}, nil
 	default:
-		return tableRef{}, fmt.Errorf("%w: table %q must be schema.table", ErrInvalidAgent, s)
+		return tableRef{}, fmt.Errorf("%w: table %q must be schema.table", guardmodel.ErrInvalidAgent, s)
 	}
 }
 
@@ -516,7 +476,7 @@ func (e *MissingTablesError) Error() string {
 
 // checkTablesExist returns a MissingTablesError naming every table of spec
 // that does not exist. It only reads the catalog.
-func checkTablesExist(ctx context.Context, q Querier, spec AgentSpec) error {
+func checkTablesExist(ctx context.Context, q Querier, spec guardmodel.AgentSpec) error {
 	var missing []string
 	for _, name := range append(append([]string{}, spec.Write...), spec.Read...) {
 		t, err := parseTable(name)
@@ -538,9 +498,9 @@ func checkTablesExist(ctx context.Context, q Querier, spec AgentSpec) error {
 	return nil
 }
 
-func planGrants(ctx context.Context, q Querier, role string, spec AgentSpec) ([]Statement, error) {
+func planGrants(ctx context.Context, q Querier, role string, spec guardmodel.AgentSpec) ([]guardmodel.Statement, error) {
 	ident := pgx.Identifier{role}.Sanitize()
-	var out []Statement
+	var out []guardmodel.Statement
 	grant := func(privs string, tables []string) error {
 		for _, name := range tables {
 			t, err := parseTable(name)
@@ -556,7 +516,7 @@ func planGrants(ctx context.Context, q Querier, role string, spec AgentSpec) ([]
 			if privs != "SELECT" && len(seqs) > 0 {
 				sql += fmt.Sprintf("\nGRANT USAGE, SELECT ON SEQUENCE %s TO %s;", strings.Join(seqs, ", "), ident)
 			}
-			out = append(out, Statement{SQL: sql})
+			out = append(out, guardmodel.Statement{SQL: sql})
 		}
 		return nil
 	}
@@ -598,7 +558,7 @@ func isHex(s string) bool {
 // DROP SCHEMA leaves behind; DROP OWNED BY revokes their grants in this
 // database. A role with privileges in another database fails to drop.
 // It runs what PlanUninstall plans, in order.
-func Uninstall(ctx context.Context, q Querier, n Names) error {
+func Uninstall(ctx context.Context, q Querier, n guardmodel.Names) error {
 	drops, err := PlanUninstall(ctx, q, n)
 	if err != nil {
 		return err
@@ -617,7 +577,7 @@ func Uninstall(ctx context.Context, q Querier, n Names) error {
 // those roles, the group and the owner that exists, its DROP OWNED and
 // DROP ROLE. It always drops basalt_meta (IF EXISTS), so a plan on a
 // database without Basalt still ends with that statement.
-func PlanUninstall(ctx context.Context, q Querier, n Names) ([]string, error) {
+func PlanUninstall(ctx context.Context, q Querier, n guardmodel.Names) ([]string, error) {
 	if err := n.Validate(); err != nil {
 		return nil, err
 	}
@@ -651,13 +611,13 @@ func PlanUninstall(ctx context.Context, q Querier, n Names) ([]string, error) {
 // named with its agent infix. Only agent roles: from Postgres 16 an admin
 // with CREATEROLE is also a member of the group (ADMIN, no INHERIT), and
 // must never be dropped.
-func AgentRoles(ctx context.Context, q Querier, n Names) ([]string, error) {
+func AgentRoles(ctx context.Context, q Querier, n guardmodel.Names) ([]string, error) {
 	// Plain SQL: catalog join over role memberships.
 	rows, err := q.Query(ctx, `SELECT r.rolname::text FROM pg_catalog.pg_auth_members m
 		JOIN pg_catalog.pg_roles r ON r.oid = m.member
 		JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
 		WHERE g.rolname = $1 AND pg_catalog.pg_has_role(m.member, m.roleid, 'USAGE')
-		  AND starts_with(r.rolname::text, $2) ORDER BY 1`, n.Agents(), n.Prefix+agentInfix)
+		  AND starts_with(r.rolname::text, $2) ORDER BY 1`, n.Agents(), n.AgentPrefix())
 	if err != nil {
 		return nil, err
 	}

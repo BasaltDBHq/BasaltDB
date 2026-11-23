@@ -405,7 +405,7 @@ func (h handlers) revertPlan(ctx context.Context, raw json.RawMessage) (any, err
 	if args.Sort != "" {
 		return nil, &ArgumentError{Message: "invalid arguments: revert_plan has no sort; lines come in execution order"}
 	}
-	params := RevertPlanParams{Params: args.Params, RevertID: uuid.MustParse(args.RevertID)}
+	params := action.RevertLineParams{Params: args.Params, RevertID: uuid.MustParse(args.RevertID)}
 	if args.Pending {
 		params.Outcome = guardmodel.OutcomePending
 	}

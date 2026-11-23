@@ -154,10 +154,10 @@ func (s *Store) recordRefusalRaw(ctx context.Context, r action.Refusal) error {
 }
 
 // historyRaw is History before MapError.
-func (s *Store) historyRaw(ctx context.Context, p ledger.ChangeListParams) (action.History[ledger.Change, ledger.RowChange], error) {
+func (s *Store) historyRaw(ctx context.Context, p action.ChangeListParams) (action.History[action.Change, action.RowChange], error) {
 	page, err := ledger.ListChangesMarked(ctx, s.db, p)
 	if err != nil {
-		return action.History[ledger.Change, ledger.RowChange]{}, err
+		return action.History[action.Change, action.RowChange]{}, err
 	}
 	ids := make([]uuid.UUID, 0, len(page.Items))
 	for _, ch := range page.Items {
@@ -165,7 +165,7 @@ func (s *Store) historyRaw(ctx context.Context, p ledger.ChangeListParams) (acti
 	}
 	rows, err := ledger.RowChangesMarked(ctx, s.db, ids)
 	if err != nil {
-		return action.History[ledger.Change, ledger.RowChange]{}, err
+		return action.History[action.Change, action.RowChange]{}, err
 	}
-	return action.History[ledger.Change, ledger.RowChange]{Page: page, Rows: rows}, nil
+	return action.History[action.Change, action.RowChange]{Page: page, Rows: rows}, nil
 }

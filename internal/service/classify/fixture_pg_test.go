@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/classify"
 )
 
@@ -21,14 +22,14 @@ type want struct {
 }
 
 var (
-	public      = want{class: guard.ClassPublic}
-	secret      = want{class: guard.ClassSecret}
-	freeText    = want{class: guard.ClassFreeText}
-	email       = want{class: guard.ClassIdentifier, entity: guard.EntityEmail}
-	idPhone     = want{class: guard.ClassIdentifier, entity: guard.EntityPhone, region: "ID"}
-	personName  = want{class: guard.ClassIdentifier, entity: guard.EntityPersonName}
-	other       = want{class: guard.ClassIdentifier, entity: guard.EntityOther}
-	reviewPhone = want{class: guard.ClassIdentifier, entity: guard.EntityPhone, region: "ID", needsReview: true}
+	public      = want{class: guardmodel.ClassPublic}
+	secret      = want{class: guardmodel.ClassSecret}
+	freeText    = want{class: guardmodel.ClassFreeText}
+	email       = want{class: guardmodel.ClassIdentifier, entity: guardmodel.EntityEmail}
+	idPhone     = want{class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPhone, region: "ID"}
+	personName  = want{class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPersonName}
+	other       = want{class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther}
+	reviewPhone = want{class: guardmodel.ClassIdentifier, entity: guardmodel.EntityPhone, region: "ID", needsReview: true}
 )
 
 // fixtureWant is the expected suggestion of every column of
@@ -39,7 +40,7 @@ var fixtureWant = map[string]want{
 	"public.customers.email":        email,
 	"public.customers.phone":        idPhone,
 	"public.customers.full_name":    personName,
-	"public.customers.address":      {class: guard.ClassIdentifier, entity: guard.EntityAddress},
+	"public.customers.address":      {class: guardmodel.ClassIdentifier, entity: guardmodel.EntityAddress},
 	"public.customers.dob":          other,
 	"public.customers.iban":         other,
 	"public.customers.description":  freeText,
@@ -54,7 +55,7 @@ var fixtureWant = map[string]want{
 	"public.customers.phone_intl":   idPhone,
 	"public.customers.phone_local":  idPhone,
 	"public.customers.msisdn":       idPhone,
-	"public.customers.member_code":  {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
+	"public.customers.member_code":  {class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther, needsReview: true},
 	"public.customers.table_name":   public,
 	"public.customers.product_name": public,
 	"public.customers.mail_count":   public,
@@ -75,7 +76,7 @@ var fixtureWant = map[string]want{
 	"public.leads.reach_text":       reviewPhone,
 	"public.leads.mobile_updated":   idPhone,
 	"public.leads.email_status":     public,
-	"public.leads.ref_value":        {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
+	"public.leads.ref_value":        {class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther, needsReview: true},
 	"public.leads.call_notes":       freeText,
 	"public.leads.mixed_ref":        reviewPhone,
 	"public.leads.pin":              secret,
@@ -89,10 +90,10 @@ var fixtureWant = map[string]want{
 	"public.sessions.id":            reviewPhone,
 	"public.sessions.user_ref":      reviewPhone,
 	"public.sessions.seq":           reviewPhone,
-	"public.accounts.account_no":    {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
+	"public.accounts.account_no":    {class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther, needsReview: true},
 	"public.accounts.owner_id":      public,
 	"public.bad_cast.id":            public,
-	"public.bad_cast.n":             {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
+	"public.bad_cast.n":             {class: guardmodel.ClassIdentifier, entity: guardmodel.EntityOther, needsReview: true},
 }
 
 // fixtureDB loads the fixture schema and an agent that reads both tables.
@@ -113,7 +114,7 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool) []classify.Result {
 	t.Helper()
 	ctx := context.Background()
-	var st guard.ClassificationState
+	var st guardmodel.ClassificationState
 	require.NoError(t, pgx.BeginTxFunc(ctx, d.Admin, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		var err error
 		st, err = guard.ReadClassification(ctx, tx, d.Names)
@@ -171,7 +172,7 @@ func TestFixtureSchemaFixedPhoneRegion(t *testing.T) {
 	t.Parallel()
 	d := fixtureDB(t)
 	for _, r := range suggestAll(t, d, classify.Options{PhoneRegion: "ID"}, false) {
-		if r.Suggestion.EntityType == guard.EntityPhone {
+		if r.Suggestion.EntityType == guardmodel.EntityPhone {
 			require.Equal(t, "ID", r.Suggestion.PhoneRegion, r.Column.FullName())
 		}
 	}
@@ -183,12 +184,12 @@ func TestFixtureSchemaRoundTrip(t *testing.T) {
 	results := suggestAll(t, d, classify.Options{}, true)
 	checks, err := classify.Check(results, func(r classify.Result) (classify.CheckTarget, bool) {
 		s := r.Suggestion
-		return classify.CheckTarget{EntityType: s.EntityType, PhoneRegion: s.PhoneRegion}, s.Class == guard.ClassIdentifier
+		return classify.CheckTarget{EntityType: s.EntityType, PhoneRegion: s.PhoneRegion}, s.Class == guardmodel.ClassIdentifier
 	})
 	require.NoError(t, err)
 	for name, w := range fixtureWant {
 		ck, ok := checks[name]
-		require.Equal(t, w.class == guard.ClassIdentifier, ok, name)
+		require.Equal(t, w.class == guardmodel.ClassIdentifier, ok, name)
 		if !ok || name == "public.customers.dob" || name == "public.bad_cast.n" {
 			continue
 		}
@@ -209,7 +210,7 @@ func TestSampleTimesOutAndIsReviewed(t *testing.T) {
 	require.Empty(t, s.Values)
 	got := classify.Suggest(classify.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"}, s, classify.Options{})
 	require.Equal(t, classify.Suggestion{
-		Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
 		Reason: "SAMPLE:timed out",
 	}, got)
 }
@@ -228,7 +229,7 @@ func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, classify.Sample{Unavailable: "error 22P02"}, s)
 	require.Equal(t, classify.Suggestion{
-		Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityOther, NeedsReview: true,
 		Reason: "SAMPLE:error 22P02",
 	}, classify.Suggest(col, s, classify.Options{}))
 }
@@ -245,7 +246,7 @@ func TestDomainsAreJudgedByTheirBaseType(t *testing.T) {
 	require.Equal(t, "public.email_address", got["public.leads.primary_ref"].Column.DataType)
 	require.Equal(t, "citext", got["public.leads.primary_ref"].Column.BaseType)
 	require.Equal(t, "text", got["public.leads.alt_line"].Column.BaseType)
-	require.Equal(t, guard.EntityEmail, got["public.leads.primary_ref"].Suggestion.EntityType)
+	require.Equal(t, guardmodel.EntityEmail, got["public.leads.primary_ref"].Suggestion.EntityType)
 }
 
 func TestSampleIsBounded(t *testing.T) {

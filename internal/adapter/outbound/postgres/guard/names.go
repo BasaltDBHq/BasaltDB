@@ -8,9 +8,11 @@ package guard
 
 import (
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // renderSQL substitutes the validated role names of n into install SQL.
-func renderSQL(n Names, sql string) string {
+func renderSQL(n guardmodel.Names, sql string) string {
 	return strings.NewReplacer("{{guard}}", n.Guard(), "{{agents}}", n.Agents()).Replace(sql)
 }

@@ -19,14 +19,15 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -92,7 +93,7 @@ type finds struct {
 	n atomic.Int64
 }
 
-func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	f.n.Add(1)
 	return f.SQLStore.FindApproval(ctx, id)
 }
@@ -103,7 +104,7 @@ type revertFinds struct {
 	n atomic.Int64
 }
 
-func (f *revertFinds) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (f *revertFinds) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	f.n.Add(1)
 	return f.SQLStore.FindRevert(ctx, id)
 }
@@ -260,7 +261,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 			link+"\n\nExpires "),
 		"without local pages and within the budget the message carries the long link: %v", ap["personMessage"])
 	mcptest.Require(t, str(t, ap["personMessage"]), mcptest.LinksOf(t, ap))
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
 	require.Equal(t, "open", leadStatus(t, d, 21), "a held write changes nothing")
 	require.Len(t, sent.sent, 1)
 	require.Equal(t, link, sent.sent[0].ApprovalURL)

@@ -11,15 +11,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 func rejectPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() + "/reject" }
 
-func requireGuardCode(t *testing.T, err error, want guard.Code) {
+func requireGuardCode(t *testing.T, err error, want guardmodel.Code) {
 	t.Helper()
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
@@ -69,7 +71,7 @@ func (e *rescopeEnv) requireRejectedWait(t *testing.T, id uuid.UUID, out agent.R
 	require.Len(t, steps, 1)
 	step, ok := steps[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, string(mcp.ActionStop), step["action"])
+	require.Equal(t, string(toolresult.ActionStop), step["action"])
 }
 
 // Before a widen the page rejects under the agent's link (LINK_OR_AGENT):
@@ -86,7 +88,7 @@ func TestRejectRouteBeforeAWiden(t *testing.T) {
 	applyBody := e.p.signRevertPage(id.String(), secret, e.person)
 
 	var perr pageError
-	tooLong := strings.Repeat("x", guard.MaxRejectNote+1)
+	tooLong := strings.Repeat("x", guardmodel.MaxRejectNote+1)
 	empty := ""
 	for name, body := range map[string][]byte{
 		"a note over 500 characters": rejectBody(t, &tooLong),
@@ -107,7 +109,7 @@ func TestRejectRouteBeforeAWiden(t *testing.T) {
 	at, err := time.Parse(time.RFC3339, out.RejectedAt)
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), at, time.Minute)
-	require.Equal(t, []string{guard.RejectViaLinkOrAgent}, e.rejectVia(t))
+	require.Equal(t, []string{guardmodel.RejectViaLinkOrAgent}, e.rejectVia(t))
 
 	// The link is revoked: read, apply and reject read as an unknown id.
 	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), secret, &perr))
@@ -119,7 +121,7 @@ func TestRejectRouteBeforeAWiden(t *testing.T) {
 
 	// The signature the person made before the reject applies nothing.
 	_, err = guard.ApplyRevert(context.Background(), e.bot.Conn, id, signed)
-	requireGuardCode(t, err, guard.CodeRevertInvalid)
+	requireGuardCode(t, err, guardmodel.CodeRevertInvalid)
 	var status string
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT status FROM public.leads WHERE id = 30`).Scan(&status))
 	require.Equal(t, "bot", status, "nothing was reverted")
@@ -143,7 +145,7 @@ func TestRejectRouteAfterAWiden(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, e.p.post(rejectPath(id), pageOrigin, agentSecret, rejectBody(t, nil), &perr),
 		"the agent's old link cannot reject")
 	_, err := guard.RejectRevert(ctx, e.bot.Conn, id, "", nil)
-	requireGuardCode(t, err, guard.CodeRevertInvalid)
+	requireGuardCode(t, err, guardmodel.CodeRevertInvalid)
 	require.ErrorContains(t, err, "REVERT_INVALID")
 
 	// The engine restarts: the person's link still opens, but the token is
@@ -163,7 +165,7 @@ func TestRejectRouteAfterAWiden(t *testing.T) {
 	var out agent.RejectResponse
 	require.Equal(t, http.StatusOK, e.p.post(rejectPath(id), pageOrigin, again, rejectBody(t, nil), &out))
 	require.Equal(t, "REJECTED", out.Status)
-	require.Equal(t, []string{guard.RejectViaScopeToken}, e.rejectVia(t))
+	require.Equal(t, []string{guardmodel.RejectViaScopeToken}, e.rejectVia(t))
 	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), again, &perr), "the rejected revert's link is revoked")
 	e.requireRejectedWait(t, id, out, "")
 }
@@ -175,7 +177,7 @@ func TestRejectRouteOthersRevertsReadAsUnknown(t *testing.T) {
 	e := newRescopeEnv(t)
 	ctx := context.Background()
 	_, secret := e.request(t)
-	theirs, err := guard.PrepareRevert(ctx, e.helper.Conn, guard.RevertScope{Kind: revert.ScopeTask, ID: e.task}, "x")
+	theirs, err := guard.PrepareRevert(ctx, e.helper.Conn, action.Scope{Kind: revert.ScopeTask, ID: e.task}, "x")
 	require.NoError(t, err)
 	unknown := uuid.Must(uuid.NewV7())
 

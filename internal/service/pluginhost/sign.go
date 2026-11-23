@@ -13,6 +13,8 @@ import (
 	"errors"
 	"math/big"
 	"regexp"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // ManifestSigContext is the context line a manifest signature covers before
@@ -211,7 +213,7 @@ func manifestDigest(manifest []byte) [sha256.Size]byte {
 // unused bits). It returns the key id and the 64-byte signature.
 func parseSignatureFile(b []byte) (string, []byte, error) {
 	bad := func(why string) error {
-		return &VerifyError{Reason: RefusedNotTrusted, File: SignatureFile, Why: why}
+		return &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: SignatureFile, Why: why}
 	}
 	if len(b) > MaxSignatureFileBytes {
 		return "", nil, bad("the signature file is larger than 4 KiB")

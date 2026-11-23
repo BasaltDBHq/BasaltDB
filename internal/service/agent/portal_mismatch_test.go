@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 type fakePortal struct {
@@ -23,7 +23,7 @@ func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusRepor
 	d := deps()
 	d.Status.OperatedBy = operatedBy
 	d.Status.Portal = p
-	d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Core.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux", testManager())
@@ -51,7 +51,7 @@ func TestAMismatchingPortalIsAWarningToSignNothingThere(t *testing.T) {
 	require.True(t, r.Ready, "a warning does not stop the tools")
 	require.Contains(t, p.Message, "2 DIFFERS, 1 MISSING")
 	require.Len(t, p.NextSteps, 1)
-	require.Equal(t, mcp.ActionAskPerson, p.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionAskPerson, p.NextSteps[0].Action)
 	require.Empty(t, p.NextSteps[0].Command)
 	require.Contains(t, p.PersonMessage, "Do not sign anything on it")
 }

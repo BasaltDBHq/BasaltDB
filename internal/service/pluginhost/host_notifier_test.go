@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
-func notifierEntry(agents ...string) Entry {
+func notifierEntry(agents ...string) pluginmodel.Entry {
 	e := entry("notify", "default", agents...)
 	e.Manifest.Hooks = map[string]pluginproto.HookDecl{
 		string(HookFeedObserve):     {Contract: "feed/1"},
@@ -59,8 +60,8 @@ func TestObserveFeedTakesOnlyASeqOfTheBatch(t *testing.T) {
 	for _, bad := range []int64{0, 11, 16, -1} {
 		f.answer = answerSeq(bad, &sent)
 		_, err := h.ObserveFeed(context.Background(), e.Key, "product_a", batch(10, 12, 15))
-		var ce *CallError
-		if !errors.As(err, &ce) || ce.Class != ClassBadResponse {
+		var ce *pluginmodel.CallError
+		if !errors.As(err, &ce) || ce.Class != pluginmodel.ClassBadResponse {
 			t.Fatalf("lastSeq %d: %v", bad, err)
 		}
 	}
@@ -77,7 +78,7 @@ func TestObserveFeedRefusesABatchBeforeSending(t *testing.T) {
 	f.answer = answerSeq(1, &sent)
 	before := len(f.methods())
 
-	if _, err := h.ObserveFeed(context.Background(), e.Key, "client_x", batch(1)); !errors.Is(err, ErrAgentNotListed) {
+	if _, err := h.ObserveFeed(context.Background(), e.Key, "client_x", batch(1)); !errors.Is(err, pluginmodel.ErrAgentNotListed) {
 		t.Fatalf("unlisted agent: %v", err)
 	}
 	seqs := make([]int64, pluginproto.MaxFeedEvents+1)
@@ -126,7 +127,7 @@ func TestDeliverApprovalSendsTheNotice(t *testing.T) {
 	if sent.Agent != "product_a" || string(sent.Event) != string(notice) {
 		t.Fatalf("sent %+v", sent)
 	}
-	if err := h.DeliverApproval(context.Background(), e.Key, "client_x", notice); !errors.Is(err, ErrAgentNotListed) {
+	if err := h.DeliverApproval(context.Background(), e.Key, "client_x", notice); !errors.Is(err, pluginmodel.ErrAgentNotListed) {
 		t.Fatalf("unlisted agent: %v", err)
 	}
 	if err := h.DeliverApproval(context.Background(), e.Key, "product_a", json.RawMessage(`[]`)); err == nil {

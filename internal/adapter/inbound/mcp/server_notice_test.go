@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 func TestNoticeOncePerConnectionAndNotOnErrors(t *testing.T) {
@@ -18,7 +19,7 @@ func TestNoticeOncePerConnectionAndNotOnErrors(t *testing.T) {
 	srv := mcp.NewServer(mcp.Info{Name: "t", Notice: func() string { return notice }},
 		mcp.Tool{Name: "ok", Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"a": "b"}, nil }},
 		mcp.Tool{Name: "bad", Call: func(context.Context, json.RawMessage) (any, error) {
-			return nil, &mcp.ToolError{Code: "X", Message: "m"}
+			return nil, &toolresult.ToolError{Code: "X", Message: "m"}
 		}},
 	)
 	call := func(name string) string {

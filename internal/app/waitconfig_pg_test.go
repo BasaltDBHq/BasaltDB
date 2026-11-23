@@ -49,6 +49,10 @@ func (agentUsers) LookupID(uid string) (*user.User, error) {
 func (agentUsers) GroupIDs(*user.User) ([]string, error) { return nil, nil }
 func (agentUsers) Self() int                             { return 4000 }
 
+// noKeepAlive: the engine and the program take turns on one port, so a
+// connection kept from the first server must not be reused for the second.
+var noKeepAlive = &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+
 func postJSON(t *testing.T, base, origin, path string, body any) (int, []byte) {
 	t.Helper()
 	raw, err := json.Marshal(body)
@@ -57,7 +61,7 @@ func postJSON(t *testing.T, base, origin, path string, body any) (int, []byte) {
 	require.NoError(t, err)
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noKeepAlive.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	var out bytes.Buffer

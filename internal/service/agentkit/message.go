@@ -114,7 +114,7 @@ func fitMessage(message string, commands ...string) string {
 }
 
 // FitToSteps is fitMessage with the commands of steps.
-func FitToSteps(message string, steps []NextStep) string {
+func FitToSteps(message string, steps []toolresult.NextStep) string {
 	commands := make([]string, 0, len(steps))
 	for _, st := range steps {
 		commands = append(commands, st.Command)

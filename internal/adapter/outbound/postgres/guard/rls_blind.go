@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // rlsBlindSQL lists the tables where row-level security filters role $1
@@ -80,24 +82,13 @@ func listedBlind(ctx context.Context, q Querier, role, group string, tables []st
 	return rlsBlind(ctx, q, role, group, tables)
 }
 
-// BlindTable is one of an agent's tables where row-level security hides
-// every row from the agent role.
-type BlindTable struct {
-	// Table is schema.table.
-	Table string
-	// Rows is how many rows the table holds, counted by the admin.
-	Rows int64
-	// Write is true for a --write table: its agent policy is FOR ALL.
-	Write bool
-}
-
 // AgentBlindTables lists the agent's --write and --read tables where
 // row-level security would hide every row from its role, before or after
 // init creates the role. Missing tables fail as in PlanInit. Only the
 // tables in those lists count: an empty list adds none, never every table
 // the role can already SELECT (a PUBLIC or agents-group grant), so an agent
 // policy is never offered on a table the agent was not given.
-func AgentBlindTables(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]BlindTable, error) {
+func AgentBlindTables(ctx context.Context, q Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]guardmodel.BlindTable, error) {
 	if err := checkTablesExist(ctx, q, spec); err != nil {
 		return nil, err
 	}
@@ -113,16 +104,16 @@ func AgentBlindTables(ctx context.Context, q Querier, n Names, spec AgentSpec) (
 	if err != nil {
 		return nil, err
 	}
-	out := make([]BlindTable, 0, len(writes)+len(reads))
+	out := make([]guardmodel.BlindTable, 0, len(writes)+len(reads))
 	for _, table := range append(writes, reads...) {
-		if slices.ContainsFunc(out, func(b BlindTable) bool { return b.Table == table }) {
+		if slices.ContainsFunc(out, func(b guardmodel.BlindTable) bool { return b.Table == table }) {
 			continue // a --write table listed in --read too
 		}
 		count, _, err := psql.Select("count(1)").From(table).ToSql()
 		if err != nil {
 			return nil, err
 		}
-		b := BlindTable{Table: table, Write: slices.Contains(writes, table)}
+		b := guardmodel.BlindTable{Table: table, Write: slices.Contains(writes, table)}
 		if err := q.QueryRow(ctx, count).Scan(&b.Rows); err != nil {
 			return nil, fmt.Errorf("count rows of %s: %w", table, err)
 		}
@@ -140,11 +131,11 @@ CREATE POLICY %[1]s ON %[2]s AS PERMISSIVE FOR %[3]s TO %[1]s USING (true)%[5]s;
 SELECT basalt_meta.record_agent_policy('%[1]s', %[4]s::regclass, '%[3]s');`
 
 // agentPolicy is the statement for one BlindTable the person confirmed.
-func agentPolicy(role string, b BlindTable) Statement {
+func agentPolicy(role string, b guardmodel.BlindTable) guardmodel.Statement {
 	command, check := "SELECT", ""
 	if b.Write {
 		command, check = "ALL", " WITH CHECK (true)"
 	}
 	literal := "'" + strings.ReplaceAll(b.Table, "'", "''") + "'"
-	return Statement{SQL: fmt.Sprintf(agentPolicySQL, role, b.Table, command, literal, check)}
+	return guardmodel.Statement{SQL: fmt.Sprintf(agentPolicySQL, role, b.Table, command, literal, check)}
 }

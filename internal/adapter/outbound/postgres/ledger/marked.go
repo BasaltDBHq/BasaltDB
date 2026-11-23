@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -72,10 +73,10 @@ func markedPage(page, id, order string, limit int, cols ...string) string {
 // ListChangesMarked is ListChanges for an agent: a statement or params
 // that is too large is left out (empty Statement, nil Params) and named in
 // LargeValues.
-func ListChangesMarked(ctx context.Context, q guard.Querier, p ChangeListParams) (pagination.Page[Change], error) {
+func ListChangesMarked(ctx context.Context, q guard.Querier, p action.ChangeListParams) (pagination.Page[action.Change], error) {
 	page, args, desc, err := changePage(p)
 	if err != nil {
-		return pagination.Page[Change]{}, err
+		return pagination.Page[action.Change]{}, err
 	}
 	order := colChangeID
 	if desc {
@@ -84,7 +85,7 @@ func ListChangesMarked(ctx context.Context, q guard.Querier, p ChangeListParams)
 	sql := markedPage(page, colChangeID, order, p.Limit, "p.change_id", "p.at", "p.agent", "p.run_id", "p.task_id", "p.intent", "p.op",
 		"p.table_name", markedStatement, markedParams, "p.rows", "p.cascaded_rows", "p.duration_ms", "p.status", "p.code",
 		"p.reason", "p.actor_kind", "p.revert_id", "p.reverted_by", markedLarge)
-	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *Change) error {
+	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *action.Change) error {
 		var large []byte
 		if err := row.Scan(append(changeDest(c), &large)...); err != nil {
 			return err
@@ -96,8 +97,8 @@ func ListChangesMarked(ctx context.Context, q guard.Querier, p ChangeListParams)
 // RowChangesMarked is RowChanges for an agent: each change is one item
 // (its statement, params, then each row's key, before and after by seq),
 // with the values and images too large left out and named.
-func RowChangesMarked(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (map[uuid.UUID][]RowChange, error) {
-	out := make(map[uuid.UUID][]RowChange, len(changeIDs))
+func RowChangesMarked(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (map[uuid.UUID][]action.RowChange, error) {
+	out := make(map[uuid.UUID][]action.RowChange, len(changeIDs))
 	if len(changeIDs) == 0 {
 		return out, nil
 	}
@@ -131,7 +132,7 @@ func RowChangesMarked(ctx context.Context, q guard.Querier, changeIDs []uuid.UUI
 	defer rows.Close()
 	for rows.Next() {
 		var id uuid.UUID
-		var r RowChange
+		var r action.RowChange
 		var large []byte
 		if err := rows.Scan(&id, &r.Seq, &r.Table, &r.Op, &r.Key, &r.KeyLeftOut, &r.Before, &r.BeforeLeftOut,
 			&r.After, &r.AfterLeftOut, &r.Cascaded, &r.Redacted, &r.Pruned, &r.BasedOn, &r.BlindWrite, &large); err != nil {

@@ -12,6 +12,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -19,17 +22,17 @@ import (
 
 // prepareSigned prepares a revert as the agent (the CLI's relay) and signs
 // its binding with the person's passkey, as the revert page does.
-func prepareSigned(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticator, kind revert.Scope, id uuid.UUID) (guard.PreparedRevert, passkey.Assertion) {
+func prepareSigned(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticator, kind revert.Scope, id uuid.UUID) (action.PreparedRevert, passkey.Assertion) {
 	t.Helper()
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: kind, ID: id}, "Undo a bad run")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: kind, ID: id}, "Undo a bad run")
 	require.NoError(t, err)
-	as, err := p.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := p.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	return prep, as
 }
 
 // revertRun prepares, signs and applies a revert of scope.
-func revertScope(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticator, kind revert.Scope, id uuid.UUID) guard.AppliedRevert {
+func revertScope(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticator, kind revert.Scope, id uuid.UUID) action.AppliedRevert {
 	t.Helper()
 	prep, as := prepareSigned(t, a, p, kind, id)
 	out, err := guard.ApplyRevert(context.Background(), a.Conn, prep.RevertID, as)
@@ -39,7 +42,7 @@ func revertScope(t *testing.T, a *guardtest.Agent, p *passkeytest.Authenticator,
 
 func requireRevertInvalid(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guard.CodeRevertInvalid)
+	requireCode(t, err, guardmodel.CodeRevertInvalid)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
 	require.Contains(t, pg.Detail, detail)
@@ -212,13 +215,13 @@ func TestApplyRefusals(t *testing.T) {
 		forger, err := passkeytest.New(passkey.Production)
 		require.NoError(t, err)
 		forger.ID = p.ID
-		forged, err := forger.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+		forged, err := forger.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, forged)
 		requireRevertInvalid(t, err, "bad passkey signature")
 	})
 	t.Run("a signature over another binding", func(t *testing.T) {
-		other, err := p.Sign(revert.Challenge(prep.BindingText+" "), passkeytest.FlagsUPUV, nil)
+		other, err := p.Sign(approval.Challenge(prep.BindingText+" "), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = guard.ApplyRevert(ctx, a.Conn, prep.RevertID, other)
 		requireRevertInvalid(t, err, "client data does not match")
@@ -229,7 +232,7 @@ func TestApplyRefusals(t *testing.T) {
 	})
 	t.Run("a superuser relay", func(t *testing.T) {
 		_, err := guard.ApplyRevert(ctx, d.Admin, prep.RevertID, as)
-		requireCode(t, err, guard.CodeNotAllowed)
+		requireCode(t, err, guardmodel.CodeNotAllowed)
 	})
 
 	_, err := guard.ApplyRevert(ctx, a.Conn, prep.RevertID, as)
@@ -242,7 +245,7 @@ func TestApplyRefusals(t *testing.T) {
 		scalarOf[uuid.UUID](t, a.Conn, `SELECT change_id FROM basalt_meta.agent_changes WHERE op = 'UPDATE' ORDER BY change_id DESC LIMIT 1`))
 	d.Exec(t, `UPDATE basalt_meta.reverts SET expires_at = now() - interval '1 second' WHERE revert_id = $1`, late.RevertID)
 	_, err = guard.ApplyRevert(ctx, a.Conn, late.RevertID, lateAs)
-	requireCode(t, err, guard.CodeRevertExpired)
+	requireCode(t, err, guardmodel.CodeRevertExpired)
 }
 
 func TestRevertOfRevert(t *testing.T) {
@@ -260,8 +263,8 @@ func TestRevertOfRevert(t *testing.T) {
 	for _, l := range again {
 		require.Equal(t, revert.ConflictAlreadyReverted, conflictOf(l))
 	}
-	_, err := guard.PrepareRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo again")
-	requireCode(t, err, guard.CodeNothingToRevert)
+	_, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo again")
+	requireCode(t, err, guardmodel.CodeNothingToRevert)
 
 	undo := revertScope(t, a, p, revert.ScopeChange, first.ChangeID)
 	require.Equal(t, 2, undo.Rows)
@@ -282,7 +285,7 @@ func TestStaleReadAfterRevert(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 140`))
 	revertScope(t, a, p, revert.ScopeRun, in.RunID)
 	err := guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won again' WHERE id = 140`)
-	requireCode(t, err, guard.CodeStaleRead)
+	requireCode(t, err, guardmodel.CodeStaleRead)
 }
 
 func TestAppTriggerRunsOnRevert(t *testing.T) {
@@ -309,7 +312,7 @@ func TestPruneRevertValues(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 	in := newRun(t, a, "Win a lead")
 	require.NoError(t, guardtest.Guarded(context.Background(), a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 150`))
-	_, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
+	_, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
 	require.NoError(t, err)
 	d.Exec(t, `SELECT basalt_meta._prune(now() + interval '31 days')`)
 	require.Zero(t, count(t, d.Admin, `SELECT count(revert_id)::int FROM basalt_meta.reverts WHERE lines IS NOT NULL OR binding_text IS NOT NULL`))

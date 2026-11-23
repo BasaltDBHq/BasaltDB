@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -102,18 +103,18 @@ func classifyDescribe(t *testing.T, d *guardtest.DB) {
 	ctx := context.Background()
 	rows, err := d.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type FROM basalt_meta.pii_readable_columns()`)
 	require.NoError(t, err)
-	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
-		var c guard.PIIColumn
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.PIIColumn, error) {
+		var c guardmodel.PIIColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
-		c.Class = guard.ClassPublic
+		c.Class = guardmodel.ClassPublic
 		if c.Column == "card_token" {
-			c.Class = guard.ClassSecret
+			c.Class = guardmodel.ClassSecret
 		}
 		return c, err
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, d.Names, guard.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/wiretime"
 )
@@ -109,7 +110,7 @@ func (r RecordRow) MarshalJSON() ([]byte, error) {
 }
 
 // RecordFromDomain maps a change and its rows to the wire record.
-func RecordFromDomain(ch Change, rows []RowChange) Record {
+func RecordFromDomain(ch action.Change, rows []action.RowChange) Record {
 	rec := Record{
 		ChangeID: ch.ID.String(), At: ch.At.UTC().Format(time.RFC3339),
 		Actor:  RecordActor{Kind: actorKind(ch.ActorKind), Name: ch.Agent},
@@ -152,7 +153,7 @@ func RecordFromDomain(ch Change, rows []RowChange) Record {
 	return rec
 }
 
-func basedOnFromDomain(b *BasedOn) *RecordBasedOn {
+func basedOnFromDomain(b *action.BasedOn) *RecordBasedOn {
 	if b == nil {
 		return nil
 	}
@@ -172,7 +173,7 @@ func actorKind(kind string) string {
 }
 
 // leftOutImages are the JSON names of r's images left out whole.
-func leftOutImages(r RowChange) []string {
+func leftOutImages(r action.RowChange) []string {
 	var out []string
 	for _, img := range []struct {
 		name string

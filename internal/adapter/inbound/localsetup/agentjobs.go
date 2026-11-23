@@ -295,7 +295,7 @@ type agentPlan struct {
 	lines []string
 	notes []string
 	// UPDATE
-	script            setuprun.Script
+	script            guardmodel.Script
 	installed, latest int
 	// REMOVE
 	remove  setuprun.RemovePlan
@@ -385,7 +385,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	if err := s.agentRole(ctx, tx, j, database); err != nil {
 		return agentPlan{}, err
 	}
-	script, err := s.be.PlanInit(ctx, tx, setuprun.InitOptions{Names: j.names})
+	script, err := s.be.PlanInit(ctx, tx, guardmodel.InitOptions{Names: j.names})
 	if err != nil {
 		return agentPlan{}, setupFailed("plan the update", err)
 	}
@@ -404,7 +404,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 // (a removal whose engine.json write failed) plans only IF EXISTS drops,
 // and the run finishes the removal on this engine.
 func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob) (agentPlan, error) {
-	rp, err := setuprun.PlanRemove(ctx, tx, s.opts.Prefix)
+	rp, err := setuprun.PlanRemove(ctx, s.be, tx, s.opts.Prefix)
 	if err != nil {
 		return agentPlan{}, err
 	}
@@ -449,7 +449,7 @@ func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, 
 		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	database, err := currentDatabase(ctx, tx)
+	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -490,14 +490,14 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	var database string
 	demoKept := false
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		if database, err = currentDatabase(ctx, tx); err != nil {
+		if database, err = s.currentDatabase(ctx, tx); err != nil {
 			return err
 		}
 		if req.Job == JobRemove {
 			// The typed name is read against the database inside the
 			// transaction, before anything is planned or dropped
 			// (setuprun.RunRemove, as the connect page's removal).
-			rp, kept, err := setuprun.RunRemove(ctx, tx, s.opts.Prefix, req.ConfirmName)
+			rp, kept, err := setuprun.RunRemove(ctx, s.be, tx, s.opts.Prefix, req.ConfirmName)
 			if err != nil {
 				return removeRefusal(err)
 			}
@@ -507,7 +507,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err
 		}
-		if err := setuprun.ApplyInitTx(ctx, tx, p.script); err != nil {
+		if err := setuprun.ApplyInitTx(ctx, s.be, tx, p.script); err != nil {
 			return setupFailed("update script", err)
 		}
 		return nil

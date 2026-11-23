@@ -315,7 +315,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 	var warnings, lines []string
 	wrote := false
 	err = inTx(ctx, conn, func(tx pgx.Tx) error {
-		database, err := currentDatabase(ctx, tx)
+		database, err := s.currentDatabase(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -329,14 +329,14 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			return err
 		}
 		script, keep := p.script, p.keep
-		needed, err := passkeyNeeded(ctx, tx, s.opts.Origin)
+		needed, err := passkeyNeeded(ctx, s.be, tx, s.opts.Origin)
 		if err != nil {
 			return setupFailed("read the passkeys", err)
 		}
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
-		if err := setuprun.ApplyInitTx(ctx, tx, script); err != nil {
+		if err := setuprun.ApplyInitTx(ctx, s.be, tx, script); err != nil {
 			return setupFailed("install script", err)
 		}
 		if !req.Demo {

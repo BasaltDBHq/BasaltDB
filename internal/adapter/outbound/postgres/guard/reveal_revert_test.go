@@ -13,7 +13,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -47,7 +49,7 @@ type revealEnv struct {
 	a    *guardtest.Agent
 	p    *passkeytest.Authenticator
 	in   guard.Intent
-	prep guard.PreparedRevert
+	prep action.PreparedRevert
 }
 
 func newRevealEnv(t *testing.T) revealEnv {
@@ -59,7 +61,7 @@ func newRevealEnv(t *testing.T) revealEnv {
 	// The person's passkey is a synced one from here on: its counter stays
 	// 0, so only the nonce stops a replay.
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
 	require.NoError(t, err)
 	e.prep = prep
 	require.Len(t, redactedLines(t, prep.Lines), 4)
@@ -171,7 +173,7 @@ func TestRevealRevertRows(t *testing.T) {
 	require.Equal(t, ledger, agentLedger(t, e.a), "the agent's ledger is unchanged but for ROWS_REVEALED")
 
 	// The revert still applies with the person's signature.
-	sig, err := e.p.Sign(revert.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	applied, err := guard.ApplyRevert(ctx, e.a.Conn, id, sig)
 	require.NoError(t, err)
@@ -179,7 +181,7 @@ func TestRevealRevertRows(t *testing.T) {
 	require.Nil(t, guardVerify(t, e.d))
 }
 
-func rowsText(out guard.RevealedRevert) string {
+func rowsText(out action.RevealedRevert) string {
 	parts := make([]string, 0, len(out.Rows))
 	for _, r := range out.Rows {
 		parts = append(parts, r.Row)
@@ -204,7 +206,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	}
 	valid := sign(revealChallenge(t, approval.KindRevert, id, nonce, key, hash))
 	otherHash := sha256.Sum256([]byte("another rowsHash"))
-	other, err := guard.PrepareRevert(ctx, e.a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}, "again")
+	other, err := guard.PrepareRevert(ctx, e.a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "again")
 	require.NoError(t, err)
 	widenKey, err := revert.RescopeKey([]byte("secret"))
 	require.NoError(t, err)
@@ -222,7 +224,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 		"a proof over another nonce":    {sign(revealChallenge(t, approval.KindRevert, id, make([]byte, 16), key, hash)), key},
 		"a proof over another rowsHash": {sign(revealChallenge(t, approval.KindRevert, id, nonce, key, otherHash[:])), key},
 		"a proof of the APPROVE kind":   {sign(revealChallenge(t, approval.KindApprove, id, nonce, key, hash)), key},
-		"the revert signature":          {sign(revert.Challenge(e.prep.BindingText)), key},
+		"the revert signature":          {sign(approval.Challenge(e.prep.BindingText)), key},
 		"an approval signature":         {sign(sha256Of(held.BindingText)), key},
 		"a widen proof":                 {sign(revert.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
 		"a crafted signature, s = n":    {withSig(valid, derSig([]byte{1}, p256Order)), key},
@@ -232,7 +234,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	var text string
 	for name, c := range cases {
 		_, err := guard.RevealRevertRows(ctx, e.a.Conn, id, c.proof, c.key)
-		requireRevertInvalid(t, err, guard.RevealRefused)
+		requireRevertInvalid(t, err, guardmodel.RevealRefused)
 		got := scopeErrorText(t, err)
 		if text == "" {
 			text = got
@@ -246,7 +248,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	_, err = guard.RevealRevertRows(ctx, e.a.Conn, id, valid, key)
 	require.NoError(t, err)
 	_, err = guard.RevealRevertRows(ctx, e.a.Conn, id, valid, key)
-	requireRevertInvalid(t, err, guard.RevealRefused)
+	requireRevertInvalid(t, err, guardmodel.RevealRefused)
 	require.Equal(t, text, scopeErrorText(t, err), "a replay reads like any other refusal")
 
 	// Another agent's revert and an unknown one read alike.
@@ -258,7 +260,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	_, err = guard.RevealNonce(ctx, helper.Conn, approval.KindRevert, id)
 	requireRevertInvalid(t, err, "no such revert")
 	_, err = guard.RevealNonce(ctx, e.a.Conn, "OTHER", id)
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 }
 
 func sha256Of(s string) []byte {
@@ -290,7 +292,7 @@ func TestRevealRevertRowsChanged(t *testing.T) {
 	require.Len(t, details, 1)
 	require.Equal(t, true, details[0]["rowsChanged"])
 	_, err = guard.RevealRevertRows(ctx, e.a.Conn, id, as, key)
-	requireRevertInvalid(t, err, guard.RevealRefused)
+	requireRevertInvalid(t, err, guardmodel.RevealRefused)
 }
 
 // A SECRET column comes back null and named; the rest of the row is real.
@@ -340,7 +342,7 @@ func TestRevealRevertRowsGrantsAndState(t *testing.T) {
 		`SELECT has_function_privilege($1, 'basalt_meta._reveal_row(oid, jsonb, jsonb, jsonb)', 'EXECUTE')`, e.a.Role))
 
 	as, key := e.proof(t, e.prep.RevertID, "secret")
-	sig, err := e.p.Sign(revert.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := e.p.Sign(approval.Challenge(e.prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, e.prep.RevertID, sig)
 	require.NoError(t, err)
@@ -376,7 +378,7 @@ func TestEveryApprovalAndRevertHasItsOwnRevealNonce(t *testing.T) {
 	t.Parallel()
 	e := newRevealEnv(t)
 	before := revertRevealNonce(t, e.d, e.prep.RevertID)
-	e.d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
+	e.d.Init(t, guardmodel.AgentSpec{Name: "bot", Write: leads, Read: leads})
 	require.Equal(t, before, revertRevealNonce(t, e.d, e.prep.RevertID))
 	require.Zero(t, count(t, e.d.Admin, `SELECT count(approval_id)::int FROM basalt_meta.approvals
 		WHERE octet_length(reveal_nonce) <> 16`))
@@ -407,7 +409,7 @@ func TestRevealRevertRowsMatchTheTable(t *testing.T) {
 	e := revealEnv{d: d, a: a, p: person(t, d), in: newRun(t, a, "Drop parent 1")}
 	approvedWrite(t, a, e.p, e.in, `DELETE FROM public.parents WHERE id = $1`, []any{1}, []string{})
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
-	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, action.Scope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
 	require.NoError(t, err)
 	e.prep = prep
 	want := redactedLines(t, prep.Lines)

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -29,7 +29,7 @@ func TooManyConnectionsMessage(cmds Commands) string {
 	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
-		cmds.agent, guardmodel.AgentConnectionLimit)
+		cmds.agent, setupcode.AgentConnectionLimit)
 }
 
 // fixes are what the person is told for the machine problems of the guard

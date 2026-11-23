@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -36,8 +38,8 @@ func revertSelect(ctx context.Context) sq.SelectBuilder {
 		From("basalt_meta.agent_reverts"))
 }
 
-func scanRevert(row pgx.CollectableRow) (Revert, error) {
-	var r Revert
+func scanRevert(row pgx.CollectableRow) (action.Revert, error) {
+	var r action.Revert
 	err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
 		&r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
 		&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened,
@@ -46,18 +48,18 @@ func scanRevert(row pgx.CollectableRow) (Revert, error) {
 }
 
 // FindRevert returns a revert the calling role prepared.
-func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, error) {
+func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (action.Revert, error) {
 	sql, args, err := revertSelect(ctx).Where(sq.Eq{colRevertID: id.String()}).ToSql()
 	if err != nil {
-		return Revert{}, err
+		return action.Revert{}, err
 	}
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return Revert{}, err
+		return action.Revert{}, err
 	}
 	r, err := pgx.CollectExactlyOneRow(rows, scanRevert)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Revert{}, ErrRevertNotFound
+		return action.Revert{}, ErrRevertNotFound
 	}
 	return r, err
 }
@@ -69,32 +71,25 @@ const colRevertID = "revert_id"
 // for the person's signature (PENDING, not expired) or for the role's
 // batches (APPLYING), keyset on the revert id as held writes are, so the
 // two lists merge in one order (list_pending, LP-1).
-func ListOpenReverts(ctx context.Context, q guard.Querier, p RevertListParams) (pagination.Page[Revert], error) {
+func ListOpenReverts(ctx context.Context, q guard.Querier, p action.RevertListParams) (pagination.Page[action.Revert], error) {
 	switch p.Status {
 	case "", RevertPending, RevertApplying:
 	default:
-		return pagination.Page[Revert]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
+		return pagination.Page[action.Revert]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
 	}
-	l := openList[Revert]{
+	l := openList[action.Revert]{
 		selectAll: revertSelect(ctx), idColumn: colRevertID, statuses: []string{RevertPending, RevertApplying},
-		scan: scanRevert, id: func(r Revert) uuid.UUID { return r.ID },
+		scan: scanRevert, id: func(r action.Revert) uuid.UUID { return r.ID },
 	}
 	return l.page(ctx, q, p.Params, p.Status)
 }
 
-// Outcomes of a batched plan's lines.
-const (
-	OutcomePending  = guard.OutcomePending
-	OutcomeRestored = guard.OutcomeRestored
-	OutcomeSkipped  = guard.OutcomeSkipped
-)
-
 // ListRevertLines returns one page of the lines of a batched plan the
 // calling role prepared, keyset on the line number.
-func ListRevertLines(ctx context.Context, q guard.Querier, p RevertLineParams) (pagination.Page[RevertLine], error) {
+func ListRevertLines(ctx context.Context, q guard.Querier, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	sql, args, err := revertLinePage(p)
 	if err != nil {
-		return pagination.Page[RevertLine]{}, err
+		return pagination.Page[action.RevertLine]{}, err
 	}
 	return collectRevertLines(ctx, q, p, sql, args)
 }
@@ -103,10 +98,10 @@ func ListRevertLines(ctx context.Context, q guard.Querier, p RevertLineParams) (
 // line's values and images too large for the agent are left out and named
 // in its largeValues, and its changeIds cut to the first
 // largevalue.MaxChangeIDs (CONTRACT.md, Large values).
-func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p RevertLineParams) (pagination.Page[RevertLine], error) {
+func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	page, args, err := revertLinePage(p)
 	if err != nil {
-		return pagination.Page[RevertLine]{}, err
+		return pagination.Page[action.RevertLine]{}, err
 	}
 	// Plain SQL: a recursive CTE over the page (largevalue.ElideLines).
 	// The line past the limit only tells that another page follows: its
@@ -122,7 +117,7 @@ func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p RevertLinePar
 
 // revertLinePage is the SQL of one page of a plan's lines, one more than
 // the limit.
-func revertLinePage(p RevertLineParams) (string, []any, error) {
+func revertLinePage(p action.RevertLineParams) (string, []any, error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
 		return "", nil, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
 	}
@@ -135,7 +130,7 @@ func revertLinePage(p RevertLineParams) (string, []any, error) {
 		OrderBy("line_no").Limit(uint64(p.Limit) + 1)
 	switch p.Outcome {
 	case "":
-	case OutcomePending, OutcomeRestored, OutcomeSkipped:
+	case guardmodel.OutcomePending, guardmodel.OutcomeRestored, guardmodel.OutcomeSkipped:
 		b = b.Where(sq.Eq{"outcome": p.Outcome})
 	default:
 		return "", nil, fmt.Errorf("%w: outcome %q", ErrInvalidParams, p.Outcome)
@@ -148,20 +143,20 @@ func revertLinePage(p RevertLineParams) (string, []any, error) {
 }
 
 // collectRevertLines runs sql and returns its rows as one page of p.
-func collectRevertLines(ctx context.Context, q guard.Querier, p RevertLineParams, sql string, args []any) (pagination.Page[RevertLine], error) {
+func collectRevertLines(ctx context.Context, q guard.Querier, p action.RevertLineParams, sql string, args []any) (pagination.Page[action.RevertLine], error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return pagination.Page[RevertLine]{}, err
+		return pagination.Page[action.RevertLine]{}, err
 	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RevertLine, error) {
-		var l RevertLine
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (action.RevertLine, error) {
+		var l action.RevertLine
 		err := row.Scan(&l.No, &l.Text, &l.Outcome, &l.Conflict, &l.SQLState, &l.Batch)
 		return l, err
 	})
 	if err != nil {
-		return pagination.Page[RevertLine]{}, err
+		return pagination.Page[action.RevertLine]{}, err
 	}
-	page := pagination.Page[RevertLine]{Items: items}
+	page := pagination.Page[action.RevertLine]{Items: items}
 	if len(items) > p.Limit {
 		page.Items = items[:p.Limit]
 		page.NextCursor = pagination.EncodeSeqCursor(int64(page.Items[p.Limit-1].No))

@@ -6,7 +6,6 @@ package setupbackend
 import (
 	"context"
 	"crypto/x509"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -23,8 +23,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Backend implements the setup's Backend with the engine's adapters.
-type Backend struct{}
+// Backend implements localsetup's Backend: the setup store (which is also
+// setuprun's backend) and the connection, trust and passkey calls localsetup
+// makes itself.
+type Backend struct{ setupstore.Store }
 
 // Connections and their trust.
 
@@ -63,41 +65,15 @@ func (Backend) PinFileNew(configPath, host string, cert *x509.Certificate, caOnl
 
 // The guard's install.
 
-func (Backend) InstalledPrefix(ctx context.Context, q setuprun.Querier) (string, error) {
-	return guard.InstalledPrefix(ctx, q)
-}
-
-func (Backend) InstalledVersion(ctx context.Context, q setuprun.Querier) (int, error) {
-	return guard.InstalledVersion(ctx, q)
-}
-func (Backend) LatestVersion() int                 { return guard.LatestVersion() }
-func (Backend) Migrations() []guardmodel.Migration { return guard.Migrations() }
 func (Backend) AgentStatus(ctx context.Context, q setuprun.Querier, migs []guardmodel.Migration) (guardmodel.Status, error) {
 	return guard.AgentStatus(ctx, q, migs)
 }
 
-func (Backend) AgentRoleExists(ctx context.Context, q setuprun.Querier, n guardmodel.Names, agent string) (bool, error) {
-	return guard.AgentRoleExists(ctx, q, n, agent)
-}
-
-func (Backend) AgentBlindTables(ctx context.Context, q setuprun.Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]setuprun.BlindTable, error) {
-	return guard.AgentBlindTables(ctx, q, n, spec)
-}
-
-func (Backend) PlanInit(ctx context.Context, q setuprun.Querier, opts setuprun.InitOptions) (setuprun.Script, error) {
-	return guard.PlanInit(ctx, q, opts)
-}
-
-func (Backend) RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (setuprun.Script, error) {
+func (Backend) RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (guardmodel.Script, error) {
 	return guard.RepairScript(n, agent, password, timeoutMs)
 }
 
-func (Backend) CheckUsable(ctx context.Context, q setuprun.Querier) error {
-	return guard.CheckUsable(ctx, q)
-}
-func (Backend) UnusableInstall(err error) bool { return errors.Is(err, guard.ErrUnusableInstall) }
-func (Backend) RemoveOldInstallDoc() string    { return guard.RemoveOldInstallDoc }
-func (Backend) NewPassword() string            { return guard.NewPassword() }
+func (Backend) NewPassword() string { return guard.NewPassword() }
 func (Backend) AgentConnString(adminURL, role, password string) (string, error) {
 	return guard.AgentConnString(adminURL, role, password)
 }
@@ -140,7 +116,7 @@ func (Backend) WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Nam
 
 // Passkeys.
 
-func (Backend) ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.RegisteredPasskey, error) {
+func (Backend) ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]guardmodel.RegisteredPasskey, error) {
 	return guard.ActivePasskeys(ctx, q)
 }
 
@@ -166,9 +142,9 @@ func (Backend) ListPasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun
 
 // The sample schema.
 
-func (Backend) DemoSchema() string   { return demo.Schema }
 func (Backend) DemoTables() []string { return demo.Tables }
-func (Backend) SeedDemo(ctx context.Context, tx pgx.Tx) (setuprun.DemoPlan, error) {
+
+func (Backend) SeedDemo(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, error) {
 	return demo.Seed(ctx, tx)
 }
 

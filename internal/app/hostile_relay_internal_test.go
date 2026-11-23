@@ -168,7 +168,7 @@ func TestRelayChannelCannotSignWithoutThePerson(t *testing.T) {
 	require.NoError(t, err)
 	var rreq revert.Request
 	require.NoError(t, json.Unmarshal([]byte(rr.Body), &rreq))
-	asR, err := forger.Sign(revert.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
+	asR, err := forger.Sign(approval.Challenge(rreq.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	apply, err := json.Marshal(revert.NewResponse(uuid.MustParse(revertID), asR))
 	require.NoError(t, err)

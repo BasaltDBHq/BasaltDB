@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 func engineKey(t *testing.T) []byte {
@@ -24,7 +25,7 @@ func engineKey(t *testing.T) []byte {
 
 func requireEngineRefused(t *testing.T, err error, detail string) {
 	t.Helper()
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
 	require.Equal(t, detail, pg.Detail)

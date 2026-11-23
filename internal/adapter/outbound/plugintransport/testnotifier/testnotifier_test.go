@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
 	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -46,17 +47,17 @@ func TestMain(m *testing.M) {
 
 const timeout = 300 * time.Millisecond
 
-func entry(hooks ...string) pluginhost.Entry {
+func entry(hooks ...string) pluginmodel.Entry {
 	decl := map[string]pluginproto.HookDecl{}
 	for _, h := range hooks {
 		decl[h] = pluginproto.HookDecl{Contract: map[string]string{tn.HookFeedObserve: "feed/1", tn.HookApprovalDeliver: "deliver/1"}[h]}
 	}
-	return pluginhost.Entry{
-		Key: pluginhost.EntryKey{Name: tn.Name, Instance: "default"},
-		Manifest: pluginhost.Manifest{
+	return pluginmodel.Entry{
+		Key: pluginmodel.EntryKey{Name: tn.Name, Instance: "default"},
+		Manifest: pluginmodel.Manifest{
 			ManifestVersion: 1, Name: tn.Name, Version: tn.Version, Publisher: "t",
 			Protocol: []string{pluginproto.Version1}, Hooks: decl,
-			Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/" + tn.Binary}},
+			Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/" + tn.Binary}},
 		},
 		Agents: []string{"product_a"}, Timeout: timeout,
 	}
@@ -64,7 +65,7 @@ func entry(hooks ...string) pluginhost.Entry {
 
 type started struct {
 	h       *pluginhost.Host
-	key     pluginhost.EntryKey
+	key     pluginmodel.EntryKey
 	record  string
 	control string
 }
@@ -114,8 +115,8 @@ func (s *started) records(t *testing.T) []tn.Record {
 	return r
 }
 
-func classOf(err error) pluginhost.FailureClass {
-	var c *pluginhost.CallError
+func classOf(err error) pluginmodel.FailureClass {
+	var c *pluginmodel.CallError
 	if errors.As(err, &c) {
 		return c.Class
 	}
@@ -147,13 +148,13 @@ func TestOKRecordsWhatItReceived(t *testing.T) {
 func TestFaultModes(t *testing.T) {
 	for _, tc := range []struct {
 		mode tn.Mode
-		feed pluginhost.FailureClass
-		dlvr pluginhost.FailureClass // "" when deliver succeeds
+		feed pluginmodel.FailureClass
+		dlvr pluginmodel.FailureClass // "" when deliver succeeds
 	}{
-		{tn.ModeLate, pluginhost.ClassTimeout, pluginhost.ClassTimeout},
-		{tn.ModeHang, pluginhost.ClassTimeout, pluginhost.ClassTimeout},
-		{tn.ModeBadSeq, pluginhost.ClassBadResponse, ""},
-		{tn.ModeBadJSON, pluginhost.ClassBadResponse, pluginhost.ClassBadResponse},
+		{tn.ModeLate, pluginmodel.ClassTimeout, pluginmodel.ClassTimeout},
+		{tn.ModeHang, pluginmodel.ClassTimeout, pluginmodel.ClassTimeout},
+		{tn.ModeBadSeq, pluginmodel.ClassBadResponse, ""},
+		{tn.ModeBadJSON, pluginmodel.ClassBadResponse, pluginmodel.ClassBadResponse},
 	} {
 		t.Run(string(tc.mode), func(t *testing.T) {
 			o := tn.Options{Mode: tc.mode, Delay: 2 * timeout}
@@ -181,7 +182,7 @@ func TestFaultModes(t *testing.T) {
 	t.Run("crash", func(t *testing.T) {
 		s := start(t, tn.Options{Mode: tn.ModeCrash})
 		_, err := s.observe(5)
-		require.Equal(t, pluginhost.ClassExited, classOf(err), "%v", err)
+		require.Equal(t, pluginmodel.ClassExited, classOf(err), "%v", err)
 		require.Len(t, s.records(t), 1)
 		require.Equal(t, pluginhost.StateUnavailable, s.h.State(s.key))
 	})
@@ -201,7 +202,7 @@ func TestControlFileSwitchesModesWhileItRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tn.SetMode(s.control, tn.ModeLate))
 	_, err = s.observe(2)
-	require.Equal(t, pluginhost.ClassTimeout, classOf(err))
+	require.Equal(t, pluginmodel.ClassTimeout, classOf(err))
 	require.NoError(t, tn.SetMode(s.control, tn.ModeOK))
 	// The late call's handler still holds a slot for its delay (5s by
 	// default here); the next call takes another.
@@ -273,7 +274,7 @@ func TestRawModeOverAUnixSocket(t *testing.T) {
 	s := &started{h: h, key: e.Key, record: rec}
 
 	_, err = s.observe(4)
-	require.Equal(t, pluginhost.ClassBadResponse, classOf(err), "%v", err)
+	require.Equal(t, pluginmodel.ClassBadResponse, classOf(err), "%v", err)
 	require.NoError(t, s.deliver())
 	r := s.records(t)
 	require.Len(t, r, 2)
@@ -302,11 +303,11 @@ func TestManifestMatchesTheOptions(t *testing.T) {
 // at once. The suite sends more at a time than the engine ever does, and an
 // SDK plugin answers calls past its waiting cap busy instead of queueing them.
 type capped struct {
-	pluginhost.Transport
+	pluginmodel.Transport
 	slots chan struct{}
 }
 
-func engineCapped(tr pluginhost.Transport) pluginhost.Transport {
+func engineCapped(tr pluginmodel.Transport) pluginmodel.Transport {
 	return capped{Transport: tr, slots: make(chan struct{}, pluginproto.MaxInFlight)}
 }
 
@@ -327,7 +328,7 @@ func (c capped) Call(ctx context.Context, method string, params, result any) err
 // fails here.
 func TestSDKNotifierPassesTheNotifierSuite(t *testing.T) {
 	t.Run("jsonrpc-stdio", func(t *testing.T) {
-		adaptertest.RunNotifier(t, func(t *testing.T) pluginhost.Transport {
+		adaptertest.RunNotifier(t, func(t *testing.T) pluginmodel.Transport {
 			tr, err := jsonrpc.Spawn(context.Background(), child.Spec{Path: bin, Dir: t.TempDir()})
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = tr.Close() })
@@ -337,13 +338,13 @@ func TestSDKNotifierPassesTheNotifierSuite(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		opts tn.Options
-		dial func(context.Context, string) (pluginhost.Transport, error)
+		dial func(context.Context, string) (pluginmodel.Transport, error)
 	}{
 		{"jsonrpc-unix", tn.Options{}, jsonrpc.Dial},
 		{"connectrpc", tn.Options{Transport: "connectrpc"}, connect.DialLocal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adaptertest.RunNotifier(t, func(t *testing.T) pluginhost.Transport {
+			adaptertest.RunNotifier(t, func(t *testing.T) pluginmodel.Transport {
 				dir, err := os.MkdirTemp("", "tn")
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = os.RemoveAll(dir) })

@@ -10,6 +10,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -132,7 +134,7 @@ func TestPrepareRevertStoresBinding(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id IN (82, 83)`))
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 83`)
 
-	p, err := guard.PrepareRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
+	p, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo the bulk update")
 	require.NoError(t, err)
 	req := revert.Request{RevertID: p.RevertID, Binding: p.BindingText, Lines: p.Lines}
 	b, err := req.Check()
@@ -159,10 +161,10 @@ func TestPrepareNothingToRevert(t *testing.T) {
 	in := newRun(t, a, "One change")
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 84`))
 	d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 84`)
-	_, err := guard.PrepareRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
-	requireCode(t, err, guard.CodeNothingToRevert)
-	_, err = guard.PrepareRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "")
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	_, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Undo")
+	requireCode(t, err, guardmodel.CodeNothingToRevert)
+	_, err = guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "")
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 }
 
 // TestPrepareBatchedAboveOneCall: up to revert.MaxLines lines a revert is
@@ -181,7 +183,7 @@ func TestPrepareBatchedAboveOneCall(t *testing.T) {
 		stmts = append(stmts, fmt.Sprintf(`INSERT INTO public.items SELECT g, 'v' FROM generate_series(%d, %d) g`, i+1, i+10))
 	}
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, stmts...))
-	scope := guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
+	scope := action.Scope{Kind: revert.ScopeRun, ID: in.RunID}
 	oneCall, err := guard.PrepareRevert(ctx, a.Conn, scope, "Undo")
 	require.NoError(t, err)
 	require.False(t, oneCall.Batched)
@@ -236,5 +238,5 @@ func TestAgentCannotUseRevertPath(t *testing.T) {
 	// can set turns its own write into a revert write.
 	in := newRun(t, a, "Try a big write")
 	err := guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET score = 1 WHERE id BETWEEN 1 AND 12`)
-	requireCode(t, err, guard.CodeApprovalRequired)
+	requireCode(t, err, guardmodel.CodeApprovalRequired)
 }

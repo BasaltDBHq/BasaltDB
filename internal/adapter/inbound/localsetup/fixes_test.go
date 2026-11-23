@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -180,11 +181,11 @@ func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {
 		}
 	}
 	require.NotNil(t, mobile)
-	require.Equal(t, guard.ClassUnclassified, mobile.Class)
+	require.Equal(t, guardmodel.ClassUnclassified, mobile.Class)
 	require.Len(t, checked.Columns, before)
 
 	run := f.fix(localsetup.JobLabels)
-	label := localsetup.ColumnClass{Table: "basalt_demo.leads", Column: "mobile", Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: "US", Was: localsetup.Label{Class: guard.ClassUnclassified}}
+	label := localsetup.ColumnClass{Table: "basalt_demo.leads", Column: "mobile", Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "US", Was: localsetup.Label{Class: guardmodel.ClassUnclassified}}
 	run.ColumnClasses = []localsetup.ColumnClass{label}
 	done, err := svc.Run(ctx, run)
 	require.NoError(t, err)
@@ -192,18 +193,18 @@ func TestLabelsFixLabelsAColumnAddedAfterTheInstall(t *testing.T) {
 	var class, entity, region string
 	require.NoError(t, f.db.Admin.QueryRow(ctx, `SELECT class, entity_type, phone_region FROM basalt_meta.pii_columns
 		WHERE table_schema = 'basalt_demo' AND table_name = 'leads' AND column_name = 'mobile'`).Scan(&class, &entity, &region))
-	require.Equal(t, []string{guard.ClassIdentifier, guard.EntityPhone, "US"}, []string{class, entity, region})
+	require.Equal(t, []string{guardmodel.ClassIdentifier, guardmodel.EntityPhone, "US"}, []string{class, entity, region})
 
 	// The same label again: the column's class is no longer the one shown.
 	_, err = svc.Run(ctx, run)
 	refusal(t, err, localsetup.CodeClassesChanged)
 	// A column the agent cannot read, and a column with a class, are not listed.
 	hidden := run
-	hidden.ColumnClasses = []localsetup.ColumnClass{{Table: "public.hidden", Column: "secret", Class: guard.ClassSecret, Was: localsetup.Label{Class: guard.ClassUnclassified}}}
+	hidden.ColumnClasses = []localsetup.ColumnClass{{Table: "public.hidden", Column: "secret", Class: guardmodel.ClassSecret, Was: localsetup.Label{Class: guardmodel.ClassUnclassified}}}
 	_, err = svc.Run(ctx, hidden)
 	refusal(t, err, localsetup.CodeAnswersInvalid)
 	labeled := run
-	labeled.ColumnClasses = []localsetup.ColumnClass{{Table: "basalt_demo.leads", Column: "mobile", Class: guard.ClassSecret, Was: localsetup.Label{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: "US"}}}
+	labeled.ColumnClasses = []localsetup.ColumnClass{{Table: "basalt_demo.leads", Column: "mobile", Class: guardmodel.ClassSecret, Was: localsetup.Label{Class: guardmodel.ClassIdentifier, EntityType: guardmodel.EntityPhone, PhoneRegion: "US"}}}
 	_, err = svc.Run(ctx, labeled)
 	refusal(t, err, localsetup.CodeAnswersInvalid)
 

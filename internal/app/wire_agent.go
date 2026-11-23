@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -215,7 +216,7 @@ func agentAccess(ctx context.Context, db pgcatalog.Querier) (agent.CatalogAccess
 }
 
 // agentEngineRecord is the engine's row as the agent reads it.
-func agentEngineRecord(r *guard.RecordedEngine) *agent.EngineRecord {
+func agentEngineRecord(r *guardmodel.RecordedEngine) *agent.EngineRecord {
 	if r == nil {
 		return nil
 	}

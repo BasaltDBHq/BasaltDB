@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 const scramPrefix = "SCRAM-SHA-256$4096:"
@@ -19,10 +20,10 @@ const scramPrefix = "SCRAM-SHA-256$4096:"
 // requireSentAsVerifier plans init for spec and checks that no statement
 // Postgres would receive (or log) holds the plaintext password, and that
 // the role's password is set from a SCRAM verifier. It applies the plan.
-func requireSentAsVerifier(t *testing.T, d *guardtest.DB, spec guard.AgentSpec) {
+func requireSentAsVerifier(t *testing.T, d *guardtest.DB, spec guardmodel.AgentSpec) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec})
+	s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names, Agent: spec})
 	require.NoError(t, err)
 	var sent strings.Builder
 	for _, st := range s.Statements {
@@ -35,7 +36,7 @@ func requireSentAsVerifier(t *testing.T, d *guardtest.DB, spec guard.AgentSpec) 
 	require.NotContains(t, s.SQL(), scramPrefix)
 	// Roles are cluster-wide: a parallel test can deadlock the role catalog.
 	require.NoError(t, guardtest.RetryDeadlock(func() error {
-		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) })
 	}))
 }
 
@@ -50,21 +51,21 @@ func TestInitSendsVerifierNotPassword(t *testing.T) {
 
 	// A new role.
 	pw := guard.NewPassword()
-	requireSentAsVerifier(t, d, guard.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
+	requireSentAsVerifier(t, d, guardmodel.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
 	require.True(t, strings.HasPrefix(stored(), scramPrefix), "Postgres stored the verifier as given")
 	requireLogin(t, d, pw)
 
 	// --rotate-password on the role that exists.
 	pw2 := guard.NewPassword()
 	before := stored()
-	requireSentAsVerifier(t, d, guard.AgentSpec{Name: "bot", Password: pw2, Write: leads, Read: leads})
+	requireSentAsVerifier(t, d, guardmodel.AgentSpec{Name: "bot", Password: pw2, Write: leads, Read: leads})
 	require.NotEqual(t, before, stored())
 	requireLogin(t, d, pw2)
 	requireNoLogin(t, d, "bot", pw)
 
 	// CreateOnly with a generated password.
 	pw3 := guard.NewPassword()
-	requireSentAsVerifier(t, d, guard.AgentSpec{Name: "other", Password: pw3, CreateOnly: true, Write: leads})
+	requireSentAsVerifier(t, d, guardmodel.AgentSpec{Name: "other", Password: pw3, CreateOnly: true, Write: leads})
 	c, err := connectAs(context.Background(), d, "other", pw3)
 	require.NoError(t, err)
 	require.NoError(t, c.Close(context.Background()))
@@ -129,11 +130,11 @@ func TestInitRefusesToAdoptAnElevatedRole(t *testing.T) {
 	d.NewAgent(t, "bot", leads, leads) // the guard and the guard role exist
 	names := elevatedRoles(t, d)
 
-	paths := map[string]func() guard.AgentSpec{
-		"keep the password":   func() guard.AgentSpec { return guard.AgentSpec{Write: leads} },
-		"rotate the password": func() guard.AgentSpec { return guard.AgentSpec{Password: guard.NewPassword(), Write: leads} },
-		"setup code with a verifier": func() guard.AgentSpec {
-			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Write: leads}
+	paths := map[string]func() guardmodel.AgentSpec{
+		"keep the password":   func() guardmodel.AgentSpec { return guardmodel.AgentSpec{Write: leads} },
+		"rotate the password": func() guardmodel.AgentSpec { return guardmodel.AgentSpec{Password: guard.NewPassword(), Write: leads} },
+		"setup code with a verifier": func() guardmodel.AgentSpec {
+			return guardmodel.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Write: leads}
 		},
 	}
 	for path, spec := range paths {
@@ -150,7 +151,7 @@ func TestInitRefusesToAdoptAnElevatedRole(t *testing.T) {
 				s := spec()
 				s.Name = name
 				err = d.TryInit(s)
-				requireCode(t, err, guard.CodeLedgerInputInvalid)
+				requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 				require.Equal(t, before, state(), "nothing changed")
 			})
 		}
@@ -160,16 +161,16 @@ func TestInitRefusesToAdoptAnElevatedRole(t *testing.T) {
 func TestInitAdoptsAPlainExistingRole(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	role, err := d.Names.Agent("bot")
 	require.NoError(t, err)
 	// A role the person made by hand, with no rights of note.
 	d.Exec(t, `CREATE ROLE `+role+` NOLOGIN`)
 	pw := guard.NewPassword()
-	d.Init(t, guard.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
 	requireLogin(t, d, pw)
 	// Re-running init keeps the password and still passes the check.
-	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Write: leads, Read: leads})
 	requireLogin(t, d, pw)
 }
 
@@ -222,11 +223,11 @@ func TestInitRefusesAnAgentThatOwns(t *testing.T) {
 			role, err := d.Names.Agent("bot")
 			require.NoError(t, err)
 			own(t, d, role)
-			for _, spec := range []guard.AgentSpec{
+			for _, spec := range []guardmodel.AgentSpec{
 				{Name: "bot", Write: leads, Read: leads},
 				{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: leads},
 			} {
-				requireCode(t, d.TryInit(spec), guard.CodeLedgerInputInvalid)
+				requireCode(t, d.TryInit(spec), guardmodel.CodeLedgerInputInvalid)
 			}
 		})
 	}
@@ -236,7 +237,7 @@ func TestInitResetsTheRoleSettings(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	role, err := d.Names.Agent("bot")
 	require.NoError(t, err)
 	// A superuser once set replica mode on the role: the guard's triggers
@@ -247,18 +248,18 @@ func TestInitResetsTheRoleSettings(t *testing.T) {
 		` SET session_replication_role = replica`)
 
 	pw := guard.NewPassword()
-	d.Init(t, guard.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
 	require.Equal(t, []string{"statement_timeout=30000"}, scalarOf[[]string](t, d.Admin,
 		`SELECT array_agg(c ORDER BY c) FROM pg_db_role_setting s, unnest(s.setconfig) c
 		WHERE s.setrole = $1::regrole`, role))
 	bot := requireLogin(t, d, pw)
 	require.Equal(t, "origin", scalarOf[string](t, bot, `SHOW session_replication_role`))
 	_, err = bot.Exec(ctx, `UPDATE public.leads SET status = 'merged' WHERE id = 4`)
-	requireCode(t, err, guard.CodeIntentRequired)
+	requireCode(t, err, guardmodel.CodeIntentRequired)
 
 	// Keeping the password resets them too.
 	d.Exec(t, `ALTER ROLE `+role+` SET session_replication_role = replica`)
-	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Write: leads, Read: leads})
 	require.Zero(t, count(t, d.Admin, `SELECT count(1)::int FROM pg_db_role_setting s, unnest(s.setconfig) c
 		WHERE s.setrole = $1::regrole AND c LIKE 'session_replication_role%'`, role))
 }
@@ -267,7 +268,7 @@ func TestInitRefusesSettingsTheAdminCannotReset(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	// An admin that is not a superuser (as on a hosted Postgres) created the
 	// agent role; a superuser then set a setting only a superuser may set.
 	admin := d.Names.Prefix + "_admin"
@@ -284,10 +285,10 @@ func TestInitRefusesSettingsTheAdminCannotReset(t *testing.T) {
 	require.NoError(t, err)
 	d.Exec(t, `ALTER ROLE `+role+` SET session_replication_role = replica`)
 
-	sql, err := guard.AgentAdoptSQL(d.Names, "bot", guard.AgentSpec{Write: leads})
+	sql, err := guard.AgentAdoptSQL(d.Names, "bot", guardmodel.AgentSpec{Write: leads})
 	require.NoError(t, err)
 	_, err = c.Exec(ctx, sql)
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM pg_db_role_setting s, unnest(s.setconfig) c
 		WHERE s.setrole = $1::regrole AND c = 'session_replication_role=replica'`, role))
 }

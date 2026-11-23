@@ -83,7 +83,7 @@ type Revoked struct {
 // active passkey is ANSWERS_INVALID, nothing changed. A refusal is an
 // *Error.
 func RevokePasskey(ctx context.Context, conn *pgx.Conn, req Request, credentialID []byte) (Revoked, error) {
-	s, err := setuprun.New(req.Code, req.Now, true)
+	s, err := setuprun.New(store, req.Code, req.Now, true)
 	if err != nil {
 		return Revoked{}, asError(err)
 	}

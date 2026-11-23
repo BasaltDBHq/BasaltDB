@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -291,7 +292,7 @@ func TestAgentCannotRevealHiddenRows(t *testing.T) {
 			require.Equal(t, c.status, status, "%s %s: %v", it.kind, name, out)
 			require.NotContains(t, out, "rows", name)
 			if c.status == http.StatusConflict {
-				require.Equal(t, guard.RevealRefused, out["reason"], "%s %s", it.kind, name)
+				require.Equal(t, guardmodel.RevealRefused, out["reason"], "%s %s", it.kind, name)
 			}
 			again, _ := it.state(t)
 			require.Equal(t, nonce, again, "%s %s: the nonce is unchanged", it.kind, name)
@@ -304,7 +305,7 @@ func TestAgentCannotRevealHiddenRows(t *testing.T) {
 		require.NotEqual(t, nonce, used, "%s: a valid use replaces the nonce", it.kind)
 		var replay map[string]any
 		require.Equal(t, http.StatusConflict, s.pages.post(it.path, pageOrigin, it.secret, valid, &replay))
-		require.Equal(t, guard.RevealRefused, replay["reason"])
+		require.Equal(t, guardmodel.RevealRefused, replay["reason"])
 		after, _ := it.state(t)
 		require.Equal(t, used, after, "%s: a replay changes nothing", it.kind)
 		for _, r := range answer.Rows {
@@ -415,15 +416,15 @@ func TestAgentRoleCannotRevealDirectly(t *testing.T) {
 	made := passkey.Assertion{CredentialID: []byte("x"), AuthenticatorData: make([]byte, 37), ClientDataJSON: []byte("{}"), Signature: []byte{0x30, 0}}
 
 	_, err = guard.RevealRevertRows(ctx, conn, uuid.MustParse(s.revertID), made, key)
-	requireRevealRefused(t, err, guard.CodeRevertInvalid)
+	requireRevealRefused(t, err, guardmodel.CodeRevertInvalid)
 	_, err = guard.OpenReveal(ctx, conn, uuid.MustParse(s.approval), made, key)
-	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
+	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
 
 	// A preview of the held write with a ticket the agent guessed.
 	store := agenttest.PgService(t, s.env.a.URL, agenttest.WithConns(1)).Store
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
 	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, uuid.MustParse(s.approval), make([]byte, 16))
-	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
+	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
 }
 
 // An approval reveal answers ROWS_CHANGED when a hidden row changed since
@@ -449,9 +450,9 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	require.NoError(t, err)
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
 	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("21")}, id, ticket)
-	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
+	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
 	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead+" AND status IS NOT NULL", []any{json.Number("20")}, id, ticket)
-	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
+	requireRevealRefused(t, err, guardmodel.CodeApprovalInvalid)
 	rows, err := store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, id, ticket)
 	require.NoError(t, err, "the held statement with its parameters")
 	require.Len(t, rows, 2)
@@ -469,12 +470,12 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 }
 
 // requireRevealRefused checks err is code with detail REVEAL_REFUSED.
-func requireRevealRefused(t *testing.T, err error, code guard.Code) {
+func requireRevealRefused(t *testing.T, err error, code guardmodel.Code) {
 	t.Helper()
 	got, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
 	require.Equal(t, code, got)
 	var pe *pgconn.PgError
 	require.ErrorAs(t, err, &pe)
-	require.Equal(t, guard.RevealRefused, pe.Detail)
+	require.Equal(t, guardmodel.RevealRefused, pe.Detail)
 }

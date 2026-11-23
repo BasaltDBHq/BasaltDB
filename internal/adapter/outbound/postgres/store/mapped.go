@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -66,7 +66,7 @@ func (c *ColumnOrder) ColumnOrder(ctx context.Context, tables []string) (map[str
 }
 
 // GuardStatus reads schema_version.
-func (p Probe) GuardStatus(ctx context.Context) (guard.Status, error) {
+func (p Probe) GuardStatus(ctx context.Context) (guardmodel.Status, error) {
 	r0, err := p.guardStatusRaw(ctx)
 	return r0, MapError(err)
 }
@@ -78,7 +78,7 @@ func (p Probe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) {
 }
 
 // LatestSetup is the agent's newest recorded setup.
-func (p Probe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error) {
+func (p Probe) LatestSetup(ctx context.Context) (guardmodel.AgentSetup, bool, error) {
 	r0, r1, err := p.latestSetupRaw(ctx)
 	return r0, r1, MapError(err)
 }
@@ -157,33 +157,33 @@ func (s *Store) SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Asse
 
 // ReadPluginApproval returns one plugin approval the agent's role may see
 // (basalt_meta.agent_plugin_approvals), and false when there is none.
-func (s *Store) ReadPluginApproval(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+func (s *Store) ReadPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	r0, r1, err := s.readPluginApprovalRaw(ctx, id)
 	return r0, r1, MapError(err)
 }
 
 // SubmitPluginApproval relays the person's signed plugin approval to
 // Postgres (basalt_meta.submit_plugin_approval).
-func (s *Store) SubmitPluginApproval(ctx context.Context, r guard.PluginApprovalResponse) (time.Time, error) {
+func (s *Store) SubmitPluginApproval(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error) {
 	r0, err := s.submitPluginApprovalRaw(ctx, r)
 	return r0, MapError(err)
 }
 
 // FindApproval returns one of the agent's approvals.
-func (s *Store) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+func (s *Store) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	r0, err := s.findApprovalRaw(ctx, id)
 	return r0, MapError(err)
 }
 
 // ListApprovals returns one page of the agent's open approvals.
-func (s *Store) ListApprovals(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error) {
+func (s *Store) ListApprovals(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	r0, err := s.listApprovalsRaw(ctx, p)
 	return r0, MapError(err)
 }
 
 // ListOpenReverts returns one page of the agent's reverts waiting for the
 // person's signature or for its batches (ledger.ListOpenReverts).
-func (s *Store) ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error) {
+func (s *Store) ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error) {
 	r0, err := s.listOpenRevertsRaw(ctx, p)
 	return r0, MapError(err)
 }
@@ -257,14 +257,14 @@ func (s *Store) RevertedBy(ctx context.Context, scope action.Scope) (uuid.UUID, 
 }
 
 // FindRevert returns a revert the agent's role prepared.
-func (s *Store) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (s *Store) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	r0, err := s.findRevertRaw(ctx, id)
 	return r0, MapError(err)
 }
 
 // RevertLines returns one page of a batched plan's lines, with values too
 // large for the agent left out (CONTRACT.md, Large values).
-func (s *Store) RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
+func (s *Store) RevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	r0, err := s.revertLinesRaw(ctx, p)
 	return r0, MapError(err)
 }
@@ -323,7 +323,7 @@ func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passke
 // ListRuns returns one page of the agent's own runs, read through the
 // guard's agent views (agent_runs filters on session_user in Postgres).
 // Keyset on run_id; the time filters narrow the same keyset.
-func (s *Store) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (s *Store) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	r0, err := s.listRunsRaw(ctx, p)
 	return r0, MapError(err)
 }
@@ -377,7 +377,7 @@ func (s *Store) RecordRefusal(ctx context.Context, r action.Refusal) error {
 
 // History reads one page of change records through the agent views, with
 // values too large for the agent left out (CONTRACT.md, Large values).
-func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (action.History[ledger.Change, ledger.RowChange], error) {
+func (s *Store) History(ctx context.Context, p action.ChangeListParams) (action.History[action.Change, action.RowChange], error) {
 	r0, err := s.historyRaw(ctx, p)
 	return r0, MapError(err)
 }

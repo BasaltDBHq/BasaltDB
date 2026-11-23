@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // setDatabaseDefault sets session_replication_role for every new session
@@ -35,14 +36,14 @@ func TestGuardTriggersFireUnderReplicaRole(t *testing.T) {
 	require.Equal(t, "replica", scalarOf[string](t, c, `SHOW session_replication_role`))
 
 	_, err := c.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 4`)
-	requireCode(t, err, guard.CodeIntentRequired)
+	requireCode(t, err, guardmodel.CodeIntentRequired)
 
 	in := newRun(t, a, "Under replica")
 	err = guardtest.Guarded(ctx, c, in, `UPDATE public.leads SET status = 'lost' WHERE id <= 25`)
-	requireCode(t, err, guard.CodeApprovalRequired)
+	requireCode(t, err, guardmodel.CodeApprovalRequired)
 
 	_, err = c.Exec(ctx, `TRUNCATE public.scratch`)
-	requireCode(t, err, guard.CodeNotAllowed)
+	requireCode(t, err, guardmodel.CodeNotAllowed)
 
 	err = pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error {
 		if err := guard.BeginPreview(ctx, tx, in, guardtest.Timeout); err != nil {
@@ -51,7 +52,7 @@ func TestGuardTriggersFireUnderReplicaRole(t *testing.T) {
 		_, err := tx.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 5`)
 		return err
 	})
-	requireCode(t, err, guard.CodePreviewCannotCommit)
+	requireCode(t, err, guardmodel.CodePreviewCannotCommit)
 
 	require.NoError(t, guardtest.Guarded(ctx, c, in, `UPDATE public.leads SET status = 'lost' WHERE id = 4`))
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger
@@ -88,7 +89,7 @@ func TestPlanInitWarnsWhenReplicationRoleIsNotOrigin(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	opts := guard.InitOptions{Names: d.Names, Agent: guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: leads}}
+	opts := guardmodel.InitOptions{Names: d.Names, Agent: guardmodel.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: leads}}
 
 	s, err := guard.PlanInit(ctx, d.Admin, opts)
 	require.NoError(t, err)

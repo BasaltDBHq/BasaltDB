@@ -189,6 +189,72 @@ func TestInitSaysWhenTheEngineNeverAnswers(t *testing.T) {
 	require.Empty(t, r.stdout)
 }
 
+// An engine service the service manager starts again during the wait,
+// after it exited with an error, ends the wait at once, naming its log. One
+// that started once and never exited, or whose crashes are all older than
+// the wait, is waited for.
+func TestInitSaysWhenTheEngineServiceKeepsStopping(t *testing.T) {
+	t.Parallel()
+	refused := func() []error {
+		errs := make([]error, 1000)
+		for i := range errs {
+			errs[i] = errors.New("connection refused")
+		}
+		return errs
+	}
+	h := newFakeHost(t)
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupErrs, h.runs, h.lastExit = refused(), []int{3, 3, 4}, 1
+	start := time.Now()
+	r, _ := localInitWithin(t, 5*time.Second, h, "--demo")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "the engine service keeps stopping: it started 4 times and last exited with code 1")
+	require.Contains(t, r.stderr, "journalctl -u "+osservice.SystemdUnitName)
+	require.Less(t, time.Since(start), 2*time.Second, "no wait for the setup page's whole bound")
+	require.Empty(t, r.stdout)
+
+	h = newFakeHost(t)
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupErrs, h.runs, h.lastExit = refused(), []int{1}, -1
+	r, _ = localInitWithin(t, time.Second, h, "--demo")
+	require.Contains(t, r.stderr, "did not answer on", "one run that never exited is still starting")
+
+	h = newFakeHost(t)
+	h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	h.setupErrs, h.runs, h.lastExit = refused(), []int{5}, 1
+	r, _ = localInitWithin(t, time.Second, h, "--demo")
+	require.Contains(t, r.stderr, "did not answer on", "crashes from before this wait are not this wait's")
+}
+
+func TestServiceRunsParse(t *testing.T) {
+	t.Parallel()
+	runs, last, err := parseLaunchdRuns("system/dev.basaltdb.engine = {\n\tactive count = 0\n\tstate = spawn scheduled\n\truns = 4\n\tlast exit code = 1\n}\n")
+	require.NoError(t, err)
+	require.Equal(t, [2]int{4, 1}, [2]int{runs, last})
+	runs, last, err = parseLaunchdRuns("\truns = 2\n\tlast exit code = 78: EX_CONFIG\n")
+	require.NoError(t, err)
+	require.Equal(t, [2]int{2, 78}, [2]int{runs, last})
+	runs, last, err = parseLaunchdRuns("\truns = 3\n\tlast exit code = 1: Operation not permitted\n")
+	require.NoError(t, err)
+	require.Equal(t, [2]int{3, 1}, [2]int{runs, last})
+	runs, last, err = parseLaunchdRuns("\truns = 1\n\tlast exit code = (never exited)\n")
+	require.NoError(t, err)
+	require.Equal(t, [2]int{1, -1}, [2]int{runs, last})
+	_, _, err = parseLaunchdRuns("Bad request.\n")
+	require.Error(t, err)
+
+	runs, last, err = parseSystemdRuns("NRestarts=3\nExecMainStatus=1\n")
+	require.NoError(t, err)
+	require.Equal(t, [2]int{4, 1}, [2]int{runs, last})
+	_, _, err = parseSystemdRuns("")
+	require.Error(t, err)
+
+	require.True(t, crashLoops(2, 1))
+	require.False(t, crashLoops(1, 1), "the first exit: the service manager has not started it again yet")
+	require.False(t, crashLoops(3, 0), "a clean exit, a restart")
+	require.False(t, crashLoops(1, -1))
+}
+
 // After the page's Remove deleted engine.json, basalt init (which the agent
 // runs once more, as the page and its next steps say) goes straight to the
 // administrator dialog with the fixed removal script: no link.

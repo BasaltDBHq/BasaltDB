@@ -7,14 +7,15 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // readPluginApprovalRaw is ReadPluginApproval before MapError.
-func (s *Store) readPluginApprovalRaw(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+func (s *Store) readPluginApprovalRaw(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error) {
 	return guard.ReadPluginApproval(ctx, s.db, id)
 }
 
 // submitPluginApprovalRaw is SubmitPluginApproval before MapError.
-func (s *Store) submitPluginApprovalRaw(ctx context.Context, r guard.PluginApprovalResponse) (time.Time, error) {
+func (s *Store) submitPluginApprovalRaw(ctx context.Context, r guardmodel.PluginApprovalResponse) (time.Time, error) {
 	return guard.SubmitPluginApproval(ctx, s.db, r)
 }

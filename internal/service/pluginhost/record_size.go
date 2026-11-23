@@ -5,6 +5,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Bounds of what an agent's ledger records of an entry (CONTRACT.md,
@@ -35,7 +37,7 @@ const (
 // recordBytes is the largest size, as the guard measures it, that an
 // agent's ledger record of an entry with manifest m can take, whatever its
 // instance, hash, signer and isolation.
-func recordBytes(m Manifest) int {
+func recordBytes(m pluginmodel.Manifest) int {
 	type endpoint struct {
 		Kind string `json:"kind"`
 		Host string `json:"host,omitempty"`

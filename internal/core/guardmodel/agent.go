@@ -3,20 +3,11 @@ package guardmodel
 import (
 	"errors"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 const (
 	// DefaultStatementTimeout is the agent role's query time limit.
 	DefaultStatementTimeout = 30 * time.Second
-	// AgentConnectionLimit is the agent role's CONNECTION LIMIT: the
-	// engine's pool (4), basalt status (1), the setup finisher (1), and 2
-	// spare for sessions a crashed engine leaves open until TCP keepalive
-	// closes them. Postgres enforces it at login, whatever the engine does.
-	// The value lives in setupcode, whose summary states it (setupcode
-	// cannot import guard).
-	AgentConnectionLimit = setupcode.AgentConnectionLimit
 )
 
 // ErrInvalidAgent is returned for an agent spec that cannot be installed.

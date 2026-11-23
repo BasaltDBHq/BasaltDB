@@ -10,9 +10,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -35,7 +35,7 @@ func (s *Store) previewRaw(ctx context.Context, in action.Intent, sql string, pa
 		// DELETE of a row with a large value is held, not refused
 		// (CONTRACT.md, Large values, rule 6).
 		var err error
-		lines, err = guard.PreviewLines(resultsize.Unbudgeted(ctx), tx, assigned)
+		lines, err = guard.PreviewLines(budget.Without(ctx), tx, assigned)
 		if err != nil {
 			return err
 		}
@@ -103,17 +103,17 @@ func (s *Store) submitApprovalRaw(ctx context.Context, id uuid.UUID, a passkey.A
 }
 
 // findApprovalRaw is FindApproval before MapError.
-func (s *Store) findApprovalRaw(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+func (s *Store) findApprovalRaw(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	return ledger.FindApproval(ctx, s.db, id)
 }
 
 // listApprovalsRaw is ListApprovals before MapError.
-func (s *Store) listApprovalsRaw(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error) {
+func (s *Store) listApprovalsRaw(ctx context.Context, p action.ApprovalListParams) (pagination.Page[action.Approval], error) {
 	return ledger.ListOpenApprovals(ctx, s.db, p)
 }
 
 // listOpenRevertsRaw is ListOpenReverts before MapError.
-func (s *Store) listOpenRevertsRaw(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error) {
+func (s *Store) listOpenRevertsRaw(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error) {
 	return ledger.ListOpenReverts(ctx, s.db, p)
 }
 

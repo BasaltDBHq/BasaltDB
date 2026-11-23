@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
@@ -16,7 +16,7 @@ func TestStatusCarriesTheUpdateWhenOneIsKnown(t *testing.T) {
 	status := func(update func() *UpdateNotice) (StatusReport, *Service) {
 		d := deps()
 		d.Status.Update = update
-		d.Status.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+		d.Status.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 		setApprovals(&d, keys{n: 1})
 		d.Core.Now = func() time.Time { return statusNow }
 		cmds, err := NewCommands("bot", "", "linux", testManager())

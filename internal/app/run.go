@@ -36,6 +36,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -206,7 +207,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.deliverer = plugins.DeliverLinks
 	}
 	if keepsPlugins {
-		env.requests = &pluginRequests{uids: agentUIDs, admitted: pluginCallers(cfg, uint32(os.Geteuid()))}
+		env.requests = newPluginRequests(agentUIDs, pluginCallers(cfg, uint32(os.Geteuid())))
 	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
@@ -313,7 +314,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	wg.Go(func() {
 		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
 		if plugins != nil {
-			plugins.serve(ctx, cfg, configPath, srv.pluginLedgers)
+			plugins.Serve(ctx, cfg, configPath, pluginLedgers(srv.pluginLedgers))
 		}
 	})
 	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{
@@ -334,9 +335,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	if keepsPlugins {
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
-			env.requests.kept.Store(kept)
+			env.requests.SetKept(kept)
 			// Ends a disable could not write are tried again now.
-			wg.Go(func() { kept.endDisabled(ctx) })
+			wg.Go(func() { kept.EndDisabled(ctx) })
 		}
 	}
 	if site != nil {
@@ -857,7 +858,7 @@ func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 	case !st.Served():
 		log.Error("the guard cannot serve this agent; only status works until it is installed or upgraded",
 			"guard", st.State, "installed", st.Installed, "build", st.Build, "missingBreaking", st.MissingBreaking)
-	case st.State == guard.GuardUpgradeAvailable:
+	case st.State == guardmodel.GuardUpgradeAvailable:
 		log.Warn("the guard misses non-breaking migrations; the guard update basalt init links to adds them", "missingNonBreaking", st.MissingNonBreaking)
 	}
 }

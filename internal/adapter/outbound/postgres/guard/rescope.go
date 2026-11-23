@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
@@ -25,25 +26,25 @@ type rescopeProof struct {
 // after a widen, needs the person's proof or the scope token, and fails as
 // REVERT_INVALID detail RevertWidenRefused otherwise. Run it in its own
 // transaction.
-func RescopeRevert(ctx context.Context, q Querier, req RescopeRequest) (RescopedRevert, error) {
+func RescopeRevert(ctx context.Context, q Querier, req action.RescopeRequest) (action.RescopedRevert, error) {
 	sel, err := json.Marshal(req.Select)
 	if err != nil {
-		return RescopedRevert{}, err
+		return action.RescopedRevert{}, err
 	}
 	var proof any
 	if req.Proof != nil {
 		b, err := proofJSON(*req.Proof)
 		if err != nil {
-			return RescopedRevert{}, err
+			return action.RescopedRevert{}, err
 		}
 		proof = b
 	}
-	var out RescopedRevert
+	var out action.RescopedRevert
 	// Plain SQL: one function call returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.rescope_revert($1::uuid, $2::jsonb, $3::jsonb, $4::bytea, $5::bytea)`,
 		req.RevertID.String(), string(sel), proof, req.RescopeKey, req.Token).Scan(&out)
 	if err != nil {
-		return RescopedRevert{}, err
+		return action.RescopedRevert{}, err
 	}
 	return out, nil
 }
@@ -54,23 +55,23 @@ func RescopeRevert(ctx context.Context, q Querier, req RescopeRequest) (Rescoped
 // widening it. A select outside the caller's own work, or any rescope of a
 // widened revert, fails as REVERT_INVALID detail RevertWidenRefused. Run it
 // in its own transaction.
-func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s RevertScope) (PreparedRevert, error) {
+func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s action.Scope) (action.PreparedRevert, error) {
 	args, err := scopeArgs(s)
 	if err != nil {
-		return PreparedRevert{}, err
+		return action.PreparedRevert{}, err
 	}
-	var out RescopedRevert
+	var out action.RescopedRevert
 	// Plain SQL: one function call over a built descriptor, returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.rescope_revert($5::uuid, `+ownSelect+`, NULL, NULL, NULL)`,
 		append(args, revertID.String())...).Scan(&out)
 	if err != nil {
-		return PreparedRevert{}, err
+		return action.PreparedRevert{}, err
 	}
 	b, err := revert.ParseBinding(out.BindingText)
 	if err != nil {
-		return PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
+		return action.PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
 	}
-	return PreparedRevert{
+	return action.PreparedRevert{
 		RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
 		Batched: b.Batched,
 	}, nil
@@ -80,12 +81,12 @@ func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s RevertScop
 // (basalt_meta.reset_revert), for the agent's reissueLink on a widened
 // revert: the person's scope, ceiling and token are dropped and the reset
 // is recorded (REVERT_RESET).
-func ResetRevert(ctx context.Context, q Querier, revertID uuid.UUID) (RescopedRevert, error) {
-	var out RescopedRevert
+func ResetRevert(ctx context.Context, q Querier, revertID uuid.UUID) (action.RescopedRevert, error) {
+	var out action.RescopedRevert
 	// Plain SQL: one function call returning jsonb.
 	err := q.QueryRow(ctx, `SELECT basalt_meta.reset_revert($1::uuid)`, revertID.String()).Scan(&out)
 	if err != nil {
-		return RescopedRevert{}, err
+		return action.RescopedRevert{}, err
 	}
 	return out, nil
 }
@@ -109,13 +110,13 @@ func RevertNonce(ctx context.Context, q Querier, revertID uuid.UUID) ([]byte, er
 // before that it is nil. A missing or wrong token is REVERT_INVALID detail
 // RevertWidenRefused; another role's revert, or none, is REVERT_INVALID "no
 // such revert".
-func RejectRevert(ctx context.Context, q Querier, revertID uuid.UUID, note string, token []byte) (RejectedRevert, error) {
-	var out RejectedRevert
+func RejectRevert(ctx context.Context, q Querier, revertID uuid.UUID, note string, token []byte) (action.RejectedRevert, error) {
+	var out action.RejectedRevert
 	// Plain SQL: one function call returning jsonb.
 	err := q.QueryRow(ctx, `SELECT basalt_meta.reject_revert($1::uuid, $2::text, $3::bytea)`,
 		revertID.String(), note, token).Scan(&out)
 	if err != nil {
-		return RejectedRevert{}, err
+		return action.RejectedRevert{}, err
 	}
 	return out, nil
 }

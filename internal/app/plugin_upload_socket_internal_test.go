@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -161,11 +162,11 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 
 	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"x"}`))
 	require.Equal(t, "INVALID_ARGUMENT", te.Code)
-	require.Equal(t, agent.CodeInvalidArgument, te.Code)
+	require.Equal(t, guidance.CodeInvalidArgument, te.Code)
 	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":"","extra":1}`))
 	require.Equal(t, "INVALID_ARGUMENT", te.Code, "an unknown field is refused")
 
 	te = call("bot", mcp.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":""}`))
 	require.Equal(t, "NOT_FOUND", te.Code)
-	require.Equal(t, agent.CodeNotFound, te.Code)
+	require.Equal(t, guidance.CodeNotFound, te.Code)
 }

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // A reject note is text the agent reads and may show the person: newlines
@@ -34,7 +36,7 @@ func TestRejectNoteRefusesControlCharacters(t *testing.T) {
 		"arabic letter mark":      "a\u061cb",
 	} {
 		_, err := rejectNote(&bad)
-		var ae *ArgumentError
+		var ae *guidance.ArgumentError
 		require.ErrorAs(t, err, &ae, name)
 	}
 	got, err := rejectNote(nil)

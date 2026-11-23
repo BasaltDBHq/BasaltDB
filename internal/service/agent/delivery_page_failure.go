@@ -19,7 +19,7 @@ func LinkNotFound() (*toolresult.ToolError, error) {
 		return nil, err
 	}
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: guidance.ReasonLink,
+		Code: guidance.CodeNotFound, Reason: guidance.ReasonLink,
 		Message: "no held write or revert with this id, or the link is incomplete or was replaced by a newer one: " +
 			"ask the agent for the link again",
 		PersonMessage: "This link is incomplete, expired or was replaced by a newer one. Ask the agent for the link again.",
@@ -41,7 +41,7 @@ func LinkReset() (*toolresult.ToolError, error) {
 		return nil, err
 	}
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: guidance.ReasonLinkReset,
+		Code: guidance.CodeNotFound, Reason: guidance.ReasonLinkReset,
 		Message:       "the agent reset this revert to its own work, so this link was replaced: ask the agent for the new link",
 		PersonMessage: linkResetMessage,
 		NextSteps:     steps,
@@ -52,7 +52,7 @@ func LinkReset() (*toolresult.ToolError, error) {
 // the person's message and the steps the catalog gives it. The page shows
 // them to the person, so the caller keeps only the PERSON steps.
 func (s *Service) PageFailure(err error) *toolresult.ToolError {
-	var pe *PageError
+	var pe *guidance.PageError
 	if errors.As(err, &pe) {
 		return pe.ToolError
 	}
@@ -70,7 +70,7 @@ func (s *Service) PageFailure(err error) *toolresult.ToolError {
 func (s *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 	var what, again string
 	switch te.Code {
-	case CodeApprovalInvalid:
+	case guidance.CodeApprovalInvalid:
 		what, again = "approval", "Approve again on this page."
 	case string(guardmodel.CodeRevertInvalid):
 		what, again = "revert", "Sign again on this page."

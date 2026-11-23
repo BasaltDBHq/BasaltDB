@@ -31,7 +31,7 @@ func TestHoldTooLarge(t *testing.T) {
 
 	over := holdTooLarge([]string{strings.Repeat("x", guardmodel.MaxHeldLinesBytes/2), strings.Repeat("y", guardmodel.MaxHeldLinesBytes/2+1)}, nil)
 	require.NotNil(t, over)
-	require.Equal(t, CodeStatementRefused, over.Code)
+	require.Equal(t, guidance.CodeStatementRefused, over.Code)
 	require.Equal(t, action.ReasonHoldTooLarge, over.Reason)
 	require.Contains(t, over.Message, "at most 64.0 MiB")
 	require.NotContains(t, over.Message, olderGuardNote)

@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -87,18 +88,18 @@ func heldWrite(a action.Approval, check statementChecker) (heldRun, error) {
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.
 func (s *Service) revealApprovalError(err error, link string) error {
-	code, _ := ledgerCode(err)
-	detail := storeDetail(err)
+	code, _ := guidance.LedgerCode(err)
+	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRefused:
-		return revealRefused(CodeApprovalInvalid, link)
+		return revealRefused(guidance.CodeApprovalInvalid, link)
 	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRowsChanged:
-		return revealRowsChanged(CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
+		return revealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
 	case code == guardmodel.CodeApprovalInvalid && detail == approvalNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guardmodel.CodeApprovalInvalid:
-		return &PageError{ToolError: &toolresult.ToolError{
-			Code:          CodeApprovalInvalid,
+		return &guidance.PageError{ToolError: &toolresult.ToolError{
+			Code:          guidance.CodeApprovalInvalid,
 			Message:       "the hidden rows cannot be shown: the approval was signed or used meanwhile",
 			PersonMessage: "This approval was signed or used meanwhile, so its hidden rows can no longer be shown.",
 		}}

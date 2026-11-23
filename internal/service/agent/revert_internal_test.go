@@ -50,8 +50,8 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, 100*time.Second, limit, "under Claude Code's 2-minute auto-background")
 	var te *toolresult.ToolError
 	require.True(t, errors.As(err, &te), "%v", err)
-	require.Equal(t, CodeQueryTimeout, te.Code)
-	require.Equal(t, ReasonTimeLimit, te.Reason)
+	require.Equal(t, guidance.CodeQueryTimeout, te.Code)
+	require.Equal(t, guidance.ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
 	require.Contains(t, te.Message, "runs or tables")
 	require.NotContains(t, te.Message, "basalt ", "no person command")
@@ -68,7 +68,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
-	require.Equal(t, CodeUnavailable, testErrors().ToolError(err).Code)
+	require.Equal(t, guidance.CodeUnavailable, testErrors().ToolError(err).Code)
 }
 
 // limitsCatalog is a catalog that only reports the agent's limits.
@@ -87,8 +87,8 @@ func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())}
 
 	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
-	require.Equal(t, CodeQueryTimeout, preview.Code)
-	require.Equal(t, ReasonTimeLimit, preview.Reason)
+	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
+	require.Equal(t, guidance.ReasonTimeLimit, preview.Reason)
 	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
 		"nothing was previewed. A narrower revert, with runs or tables, may fit.", preview.Message)
 	require.NotContains(t, preview.Message, "100")
@@ -142,10 +142,10 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	} {
 		scope := action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
 		_, err := svc.PreviewRevert(ctx, PreviewRevertParams{Scope: scope})
-		require.Equal(t, CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
+		require.Equal(t, guidance.CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
 		require.Equal(t, reason, testErrors().ToolError(err).Reason)
 		_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: scope, Intent: "Undo"})
-		require.Equal(t, CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
+		require.Equal(t, guidance.CodeNotFound, testErrors().ToolError(err).Code, "%v", err)
 		require.Equal(t, reason, testErrors().ToolError(err).Reason)
 	}
 	require.Zero(t, calls, "no guard call for a scope that is not the agent's")

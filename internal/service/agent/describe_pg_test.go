@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -170,7 +171,7 @@ func TestDescribeHidesWhatTheAgentCannotRead(t *testing.T) {
 
 	body, isError := h.describe(t, map[string]any{"resource": "shop.audit"})
 	require.True(t, isError)
-	requireToolError(t, body, isError, agent.CodeNotFound, "", "")
+	requireToolError(t, body, isError, guidance.CodeNotFound, "", "")
 	absent, _ := h.describe(t, map[string]any{"resource": "shop.nosuch"})
 	hiddenRaw, err := json.Marshal(body)
 	require.NoError(t, err)

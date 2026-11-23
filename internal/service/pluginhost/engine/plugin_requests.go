@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
@@ -271,11 +272,11 @@ func requestError(err error, upload bool) error {
 		return &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: pe.Message}
 	case person.CodeNotFound:
 		if upload {
-			return &agent.ArgumentError{Message: "the plugin's files are no longer on the engine (it restarted, or 15 minutes passed): call request_plugin again with source"}
+			return &guidance.ArgumentError{Message: "the plugin's files are no longer on the engine (it restarted, or 15 minutes passed): call request_plugin again with source"}
 		}
 		return agent.ErrPluginNotFound
 	case person.CodeInvalidArgument:
-		return &agent.ArgumentError{Message: pe.Message}
+		return &guidance.ArgumentError{Message: pe.Message}
 	case person.CodeUIDNotAllowed, person.CodeUnknownAgent, person.CodeUnknownMethod, person.CodeRefused, person.CodeInternal:
 	}
 	return err
@@ -311,7 +312,7 @@ func (p *Requests) UploadPart(ctx context.Context, caller string, served func() 
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if dec.Decode(&in) != nil || in.UploadID == uuid.Nil || in.Path == "" {
-		return person.PluginUploadPartResult{}, &agent.ArgumentError{Message: "a part needs uploadId, path, offset and data, and nothing else"}
+		return person.PluginUploadPartResult{}, &guidance.ArgumentError{Message: "a part needs uploadId, path, offset and data, and nothing else"}
 	}
 	out, err := k.UploadPart(ctx, uid, in)
 	if err != nil {

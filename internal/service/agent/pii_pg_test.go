@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -92,7 +93,7 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 	out, err := svc.Query(context.Background(), agent.QueryParams{SQL: `SELECT email FROM people`})
 	require.Error(t, err)
 	require.Empty(t, out.Rows)
-	require.Equal(t, agent.CodeInternal, agenttest.ToolError(err).Code)
+	require.Equal(t, guidance.CodeInternal, agenttest.ToolError(err).Code)
 	var reads int
 	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(change_id) FROM basalt_meta.changes WHERE op = 'SELECT'`).Scan(&reads))
 	require.Zero(t, reads, "a read the agent did not get is not recorded as one")

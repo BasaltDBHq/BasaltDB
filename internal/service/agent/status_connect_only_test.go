@@ -160,7 +160,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 		}
 		body, isError := serveCall(t, srv, tool.Name, map[string]any{})
 		require.True(t, isError, tool.Name)
-		require.Equal(t, CodeUnavailable, body["code"], tool.Name)
+		require.Equal(t, guidance.CodeUnavailable, body["code"], tool.Name)
 		require.Equal(t, guidance.ReasonSetupPending, body["reason"], tool.Name)
 		require.Equal(t, []mcpcontract.StepKind{{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool}}, steps(t, body), tool.Name)
 	}
@@ -168,7 +168,7 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 		argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes,
 	})
 	require.True(t, isError)
-	require.Equal(t, CodeInvalidArgument, body["code"], "nothing waits for confirmation yet")
+	require.Equal(t, guidance.CodeInvalidArgument, body["code"], "nothing waits for confirmation yet")
 	require.Equal(t, []bool{true}, h.asked)
 }
 
@@ -234,10 +234,10 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 	other["database"] = "other"
 	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: other, argAnswer: answerYes})
 	require.True(t, isError)
-	require.Equal(t, CodeInvalidArgument, body["code"])
+	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: "MAYBE"})
 	require.True(t, isError)
-	require.Equal(t, CodeInvalidArgument, body["code"])
+	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 
 	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerNo})
 	require.False(t, isError, "%v", body)
@@ -265,7 +265,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, mcp.ToolsFrom(Tools(s), WithMeta)...)
 	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes})
 	require.True(t, isError)
-	require.Equal(t, CodeInvalidArgument, body["code"])
+	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 }
 
 // The shim reports a refused connect-only setup from engine.json, and a

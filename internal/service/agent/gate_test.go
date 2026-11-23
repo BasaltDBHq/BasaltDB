@@ -31,7 +31,7 @@ func requireGuardOutdated(t *testing.T, err error, path string) {
 	t.Helper()
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te, path)
-	require.Equal(t, CodeUnavailable, te.Code, path)
+	require.Equal(t, guidance.CodeUnavailable, te.Code, path)
 	require.Equal(t, guidance.ReasonGuardOutdated, te.Reason, path)
 }
 

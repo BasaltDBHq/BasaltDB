@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 )
 
@@ -24,7 +25,7 @@ import (
 func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint string) (Resource, error) {
 	schema, name, err := parseResource(resource)
 	if err != nil {
-		return Resource{}, &ArgumentError{Message: "invalid arguments: resource " + err.Error()}
+		return Resource{}, &guidance.ArgumentError{Message: "invalid arguments: resource " + err.Error()}
 	}
 	rel, ok, err := s.deps.Describe.Catalog.Find(ctx, schema, name)
 	if err != nil {
@@ -365,7 +366,7 @@ var quotedKeywords = func() map[string]bool {
 // failure, INTERNAL, logged with its cause and never shown to the agent.
 func (s *Service) describeError(err error) error {
 	switch s.deps.Core.Errors.ToolError(err).Code {
-	case CodeInvalidArgument, CodeNotFound, CodeQueryTimeout, CodeUnavailable, CodeInternal:
+	case guidance.CodeInvalidArgument, guidance.CodeNotFound, guidance.CodeQueryTimeout, guidance.CodeUnavailable, guidance.CodeInternal:
 		return err
 	}
 	return &describeFailureError{err: err}

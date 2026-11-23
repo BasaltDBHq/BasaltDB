@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
@@ -40,7 +41,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
 	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
-	var gone *agent.ArgumentError
+	var gone *guidance.ArgumentError
 	require.ErrorAs(t, err, &gone, "the refused call's upload is gone")
 
 	// A refusal of PLUGIN_OPEN itself drops the upload too: one before it
@@ -97,7 +98,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 
 	// The upload is used: the same id again is gone.
 	_, err = p.OpenPlugin(ctx, "bot", open)
-	var ae *agent.ArgumentError
+	var ae *guidance.ArgumentError
 	require.ErrorAs(t, err, &ae)
 
 	st, err := p.PluginApproval(ctx, "bot", opened.ApprovalID)

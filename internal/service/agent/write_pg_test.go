@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 var leads = []string{"public.leads"}
@@ -155,14 +155,14 @@ func TestWriteRefusalsAreRecorded(t *testing.T) {
 		code, reason, sqlState string
 		op                     string
 	}{
-		{"delete is held", "DELETE FROM leads WHERE id = 1", agent.CodeApprovalRequired, "", "", "DELETE"},
-		{"11 rows are held", "UPDATE leads SET score = 0 WHERE id BETWEEN 10 AND 20", agent.CodeApprovalRequired, "", "", "UPDATE"},
-		{"over 50 rows", "UPDATE leads SET score = 0 WHERE id <= 60", agent.CodeRowLimitExceeded, "", "BS003", "UPDATE"},
-		{"ddl", "DROP TABLE leads", agent.CodeStatementRefused, "DDL_NOT_ALLOWED", "", "OTHER"},
-		{"read sent to write", "SELECT * FROM leads", agent.CodeStatementRefused, "WRONG_TOOL", "", "SELECT"},
-		{"function", "UPDATE leads SET name = pg_sleep(1)::text WHERE id = 1", agent.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", "", "UPDATE"},
-		{"ungranted table", "UPDATE payroll SET amount = 0 WHERE id = 1", agent.CodePermissionDenied, "", "42501", "UPDATE"},
-		{"constraint", "INSERT INTO leads (id, name) VALUES (1, 'dup')", agent.CodeSQLError, "", "23505", "INSERT"},
+		{"delete is held", "DELETE FROM leads WHERE id = 1", guidance.CodeApprovalRequired, "", "", "DELETE"},
+		{"11 rows are held", "UPDATE leads SET score = 0 WHERE id BETWEEN 10 AND 20", guidance.CodeApprovalRequired, "", "", "UPDATE"},
+		{"over 50 rows", "UPDATE leads SET score = 0 WHERE id <= 60", guidance.CodeRowLimitExceeded, "", "BS003", "UPDATE"},
+		{"ddl", "DROP TABLE leads", guidance.CodeStatementRefused, "DDL_NOT_ALLOWED", "", "OTHER"},
+		{"read sent to write", "SELECT * FROM leads", guidance.CodeStatementRefused, "WRONG_TOOL", "", "SELECT"},
+		{"function", "UPDATE leads SET name = pg_sleep(1)::text WHERE id = 1", guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", "", "UPDATE"},
+		{"ungranted table", "UPDATE payroll SET amount = 0 WHERE id = 1", guidance.CodePermissionDenied, "", "42501", "UPDATE"},
+		{"constraint", "INSERT INTO leads (id, name) VALUES (1, 'dup')", guidance.CodeSQLError, "", "23505", "INSERT"},
 	}
 	for _, c := range cases {
 		body, isError := h.call(t, "write", map[string]any{"sql": c.sql, "intent": "test " + c.name, "runId": runID})
@@ -176,7 +176,7 @@ func TestWriteRefusalsAreRecorded(t *testing.T) {
 		rec := recs[len(cases)-1-i]
 		require.Equal(t, c.op, rec["op"], c.name)
 		require.Equal(t, "test "+c.name, rec["intent"], c.name)
-		if c.code == agent.CodeApprovalRequired {
+		if c.code == guidance.CodeApprovalRequired {
 			require.Equal(t, "APPROVAL_PENDING", rec["status"], c.name) // held, not refused (M2)
 			continue
 		}
@@ -196,17 +196,17 @@ func TestWriteArgumentErrors(t *testing.T) {
 		args map[string]any
 		code string
 	}{
-		{"no intent", "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 1"}, agent.CodeIntentRequired},
-		{"empty intent", "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 1", "intent": ""}, agent.CodeIntentRequired},
-		{"unknown run", "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 1", "intent": "x", "runId": "0193a4c2-0000-7000-8000-000000000001"}, agent.CodeNotFound},
-		{"unknown argument", "write", map[string]any{"sql": "UPDATE leads SET score = 1", "intent": "x", "dryRun": true}, agent.CodeInvalidArgument},
-		{"params mismatch", "write", map[string]any{"sql": "UPDATE leads SET score = $1 WHERE id = $2", "intent": "x", "params": []any{1}}, agent.CodeInvalidArgument},
-		{"run_start without intent", "run_start", map[string]any{}, agent.CodeInvalidArgument},
-		{"run_start bad task", "run_start", map[string]any{"intent": "x", "taskId": "task_91c"}, agent.CodeInvalidArgument},
-		{"history of unknown run", "run_history", map[string]any{"runId": "0193a4c2-0000-7000-8000-000000000001"}, agent.CodeNotFound},
-		{"history without run", "run_history", map[string]any{}, agent.CodeInvalidArgument},
-		{"history bad sort", "run_history", map[string]any{"runId": "0193a4c2-0000-7000-8000-000000000001", "sort": "at"}, agent.CodeNotFound},
-		{"query of unknown run", "query", map[string]any{"sql": "SELECT 1", "runId": "0193a4c2-0000-7000-8000-000000000001"}, agent.CodeNotFound},
+		{"no intent", "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 1"}, guidance.CodeIntentRequired},
+		{"empty intent", "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 1", "intent": ""}, guidance.CodeIntentRequired},
+		{"unknown run", "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 1", "intent": "x", "runId": "0193a4c2-0000-7000-8000-000000000001"}, guidance.CodeNotFound},
+		{"unknown argument", "write", map[string]any{"sql": "UPDATE leads SET score = 1", "intent": "x", "dryRun": true}, guidance.CodeInvalidArgument},
+		{"params mismatch", "write", map[string]any{"sql": "UPDATE leads SET score = $1 WHERE id = $2", "intent": "x", "params": []any{1}}, guidance.CodeInvalidArgument},
+		{"run_start without intent", "run_start", map[string]any{}, guidance.CodeInvalidArgument},
+		{"run_start bad task", "run_start", map[string]any{"intent": "x", "taskId": "task_91c"}, guidance.CodeInvalidArgument},
+		{"history of unknown run", "run_history", map[string]any{"runId": "0193a4c2-0000-7000-8000-000000000001"}, guidance.CodeNotFound},
+		{"history without run", "run_history", map[string]any{}, guidance.CodeInvalidArgument},
+		{"history bad sort", "run_history", map[string]any{"runId": "0193a4c2-0000-7000-8000-000000000001", "sort": "at"}, guidance.CodeNotFound},
+		{"query of unknown run", "query", map[string]any{"sql": "SELECT 1", "runId": "0193a4c2-0000-7000-8000-000000000001"}, guidance.CodeNotFound},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -222,7 +222,7 @@ func TestHistoryBadSortOnARealRun(t *testing.T) {
 	run, isError := h.call(t, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "%v", run)
 	body, isError := h.call(t, "run_history", map[string]any{"runId": run["runId"], "sort": "at"})
-	requireToolError(t, body, isError, agent.CodeInvalidArgument, "", "")
+	requireToolError(t, body, isError, guidance.CodeInvalidArgument, "", "")
 }
 
 func TestQueryRefusalInARunIsRecorded(t *testing.T) {
@@ -235,7 +235,7 @@ func TestQueryRefusalInARunIsRecorded(t *testing.T) {
 	body, isError := h.call(t, "query", map[string]any{"sql": "SELECT count(id) AS n FROM leads", "runId": runID})
 	require.False(t, isError, "%v", body)
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT pg_sleep(5)", "runId": runID})
-	requireToolError(t, body, isError, agent.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", "")
+	requireToolError(t, body, isError, guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", "")
 
 	recs := h.history(t, runID)
 	require.Len(t, recs, 2, "the read and the refusal")
@@ -256,7 +256,7 @@ func TestAnotherAgentsRunIsNotFound(t *testing.T) {
 	run, isError := bot.call(t, "run_start", map[string]any{"intent": "Bot's own run"})
 	require.False(t, isError, "%v", run)
 	body, isError := other.call(t, "run_history", map[string]any{"runId": run["runId"]})
-	requireToolError(t, body, isError, agent.CodeNotFound, "", "")
+	requireToolError(t, body, isError, guidance.CodeNotFound, "", "")
 	body, isError = other.call(t, "write", map[string]any{"sql": "UPDATE leads SET score = 1 WHERE id = 2", "intent": "x", "runId": run["runId"]})
-	requireToolError(t, body, isError, agent.CodeNotFound, "", "")
+	requireToolError(t, body, isError, guidance.CodeNotFound, "", "")
 }

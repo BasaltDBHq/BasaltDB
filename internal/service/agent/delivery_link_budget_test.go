@@ -394,7 +394,7 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, links.DefaultBudget)
 		n := approvalNoticeOf(t, s, 60, keepLink)
-		te := s.approvalLinkError(&toolresult.ToolError{Code: CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
+		te := s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
 		requirePersonMessage(t, te.PersonMessage, te.Links)
 		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
 		open := te.NextSteps[0]
@@ -430,7 +430,7 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 			guidance.ReasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
 		} {
 			te := testErrors().ToolError(refuse())
-			require.Equal(t, CodeRevertInvalid, te.Code, name)
+			require.Equal(t, guidance.CodeRevertInvalid, te.Code, name)
 			requirePersonMessage(t, te.PersonMessage, te.Links)
 			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
 			var open *toolresult.NextStep

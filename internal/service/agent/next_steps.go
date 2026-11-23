@@ -35,8 +35,8 @@ func (f failure) arg(name string) string {
 // bare. A body that already carries its steps (built where the engine
 // knows the link or the ledger row) keeps them.
 func (s *Service) Failure(tool string, args map[string]any, err error) *toolresult.ToolError {
-	te := rowTooLargeFor(tool, messageTooLarge(tool, err, s.deps.Core.Errors.ToolError(err)))
-	if te.Code == CodeInternal || te.Code == CodeUnavailable {
+	te := rowTooLargeFor(tool, guidance.MessageTooLarge(tool, err, s.deps.Core.Errors.ToolError(err)))
+	if te.Code == guidance.CodeInternal || te.Code == guidance.CodeUnavailable {
 		if te.ErrorID == "" {
 			te.ErrorID = uniqueid.New()
 		}
@@ -79,44 +79,44 @@ func (s *Service) addGuidance(te *toolresult.ToolError, f failure) {
 func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresult.NextStep, string, error) {
 	b, person := guidance.NewSteps(), ""
 	switch te.Code {
-	case CodeIntentRequired:
+	case guidance.CodeIntentRequired:
 		b.ReviseCall(f.tool, nil, "Add an intent, one sentence saying why the change is made, then call write again.")
-	case CodeStaleRead:
+	case guidance.CodeStaleRead:
 		s.staleReadSteps(b, te, f)
-	case CodeStatementRefused:
+	case guidance.CodeStatementRefused:
 		if te.Reason == action.ReasonHoldTooLarge {
 			person = s.holdTooLargeSteps(b, te)
 			break
 		}
 		person = refusedSteps(b, te, f)
-	case CodeRowLimitExceeded:
+	case guidance.CodeRowLimitExceeded:
 		person = rowLimitSteps(b)
-	case CodeQueryTimeout:
+	case guidance.CodeQueryTimeout:
 		queryTimeoutSteps(b, te, f)
-	case CodeApprovalRequired:
+	case guidance.CodeApprovalRequired:
 		person = s.approvalRequiredSteps(b, te)
-	case CodeApprovalExpired:
+	case guidance.CodeApprovalExpired:
 		approvalExpiredSteps(b)
 		person = approvalExpiredMessage
-	case CodeApprovalInvalid:
+	case guidance.CodeApprovalInvalid:
 		person = approvalInvalidSteps(b, te, f)
-	case CodeRevertInvalid:
+	case guidance.CodeRevertInvalid:
 		revertInvalidSteps(b, te, f)
-	case CodePermissionDenied:
+	case guidance.CodePermissionDenied:
 		person = s.permissionDeniedSteps(b, te, f)
-	case CodeNotFound:
+	case guidance.CodeNotFound:
 		if f.tool == toolDescribe {
 			person = s.describeNotFoundSteps(b, f)
 			break
 		}
 		person = notFoundSteps(b, te, f)
-	case CodeSQLError:
+	case guidance.CodeSQLError:
 		sqlErrorSteps(b, te, f)
-	case CodeInvalidArgument:
+	case guidance.CodeInvalidArgument:
 		person = invalidArgumentSteps(b, te, f)
-	case CodeUnavailable:
+	case guidance.CodeUnavailable:
 		person = s.unavailableSteps(b, te, f)
-	case CodeInternal:
+	case guidance.CodeInternal:
 		b.Stop("Do not retry: the engine failed. Tell the person the error id so they can find it in the engine's log.")
 		person = fmt.Sprintf("Basalt hit an internal error and stopped this action. The engine's log has the details under error id %s.", te.ErrorID)
 	default:
@@ -199,11 +199,11 @@ func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string
 		b.Stop("Do not retry and do not look for another way to change the schema.")
 		b.AskPerson("Tell the person which schema change you need; they make it themselves.")
 		return "The agent tried to change the database schema (DDL). Basalt never lets an agent do that. Make the change yourself if you want it."
-	case ReasonNoPrimaryKey:
+	case guidance.ReasonNoPrimaryKey:
 		b.Stop("The table has no primary key, so its writes cannot be recorded: do not retry or work around it.")
 		return fmt.Sprintf("%s has no primary key, so Basalt cannot guard writes to it and refuses them. Add a primary key to the table, "+
 			"or revoke the agent's write access to it.", guidance.Shown(tableFromDetail(te.Message), maxTableChars))
-	case ReasonNotAllowed:
+	case guidance.ReasonNotAllowed:
 		b.Stop("The database refused this action for the agent: do not retry or work around it.")
 		return ""
 	}
@@ -257,13 +257,13 @@ func queryTimeoutSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) {
 		return
 	}
 	switch te.Reason {
-	case ReasonRowLimit:
+	case guidance.ReasonRowLimit:
 		b.ReviseCall(f.tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
 		return
-	case ReasonSizeLimit:
+	case guidance.ReasonSizeLimit:
 		b.ReviseCall(f.tool, nil, sizeLimitText(f.tool))
 		return
-	case ReasonRowTooLarge:
+	case guidance.ReasonRowTooLarge:
 		b.ReviseCall(f.tool, nil, "One row is too large to read whole: select fewer columns, the size of a large one "+
 			"(length(col)) or a slice of it (substr(col, 1, 100000)), then call it again.")
 		return
@@ -279,10 +279,10 @@ var rowTooLargeTools = map[string]bool{guidance.ToolQuery: true, guidance.ToolWr
 // refuses (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE); any other tool's
 // read too large for the budget is SIZE_LIMIT.
 func rowTooLargeFor(tool string, te *toolresult.ToolError) *toolresult.ToolError {
-	if te.Code == CodeQueryTimeout && te.Reason == ReasonRowTooLarge && !rowTooLargeTools[tool] {
-		te = sizeLimitError()
+	if te.Code == guidance.CodeQueryTimeout && te.Reason == guidance.ReasonRowTooLarge && !rowTooLargeTools[tool] {
+		te = guidance.SizeLimitError()
 	}
-	if te.Code == CodeQueryTimeout && te.Reason == ReasonSizeLimit && pagedTools[tool] {
+	if te.Code == guidance.CodeQueryTimeout && te.Reason == guidance.ReasonSizeLimit && pagedTools[tool] {
 		// A paged tool's message names its step, not the columns of a query.
 		te.Message = budget.ErrSizeLimit.Error() + "; call it again with a smaller limit, down to 1"
 	}
@@ -450,10 +450,10 @@ func sqlErrorSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) {
 
 func invalidArgumentSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
 	switch te.Reason {
-	case ReasonStaleCursor:
+	case guidance.ReasonStaleCursor:
 		b.RepeatCall(f.tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
 		return ""
-	case ReasonScopeFilter:
+	case guidance.ReasonScopeFilter:
 		b.ReviseCall(f.tool, nil, "Call again without the refused entries the message names, or without that filter.")
 		if id := f.arg(guidance.ArgRunID); id != "" {
 			b.CallTool(guidance.ToolRunHistory, map[string]any{guidance.ArgRunID: id}, "Read the run's history to see the tables you wrote in it.")
@@ -461,7 +461,7 @@ func invalidArgumentSteps(b *guidance.Steps, te *toolresult.ToolError, f failure
 		}
 		b.CallTool(guidance.ToolListRuns, map[string]any{}, "List your runs to see your own runs in the task; run_history shows the tables each one wrote.")
 		return ""
-	case ReasonScopeFilterCap:
+	case guidance.ReasonScopeFilterCap:
 		b.ReviseCall(f.tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
 			"can narrow it on the signing page.", revert.MaxFilter, revert.MaxFilter))
 		return ""
@@ -575,7 +575,7 @@ func (s *Service) setupSteps(b *guidance.Steps, te *toolresult.ToolError, f fail
 	if te.Reason == guidance.ReasonSetupExpired {
 		return setupExpiredSteps(b, s.deps.Core.Commands)
 	}
-	var se *SetupError
+	var se *guidance.SetupError
 	if !errors.As(f.err, &se) {
 		b.Fail(errors.New("a pending setup needs its code"))
 		return ""

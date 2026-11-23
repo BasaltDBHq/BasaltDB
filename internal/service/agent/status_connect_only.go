@@ -260,12 +260,12 @@ func (c ConnectOnly) guide() *Service {
 
 // Tools are every IMPLEMENTED tool of the contracts: status and
 // confirm_database answer, every other tool is refused.
-func (c ConnectOnly) Tools() []Tool {
+func (c ConnectOnly) Tools() []guidance.Tool {
 	if c.Handoff == nil || c.Log == nil || c.Now == nil || c.LatestGuardVersion == nil {
 		panic("agent: a connect-only agent needs its hand-off, a logger, a clock and the guard version")
 	}
 	contracts := mcpcontract.MustLoad()
-	out := make([]Tool, 0, len(contracts))
+	out := make([]guidance.Tool, 0, len(contracts))
 	for _, ct := range contracts {
 		if ct.Status != mcpcontract.StatusImplemented {
 			continue
@@ -279,14 +279,14 @@ func (c ConnectOnly) Tools() []Tool {
 		default:
 			call = c.refused(ct.Name)
 		}
-		out = append(out, Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: refuseAdminCredential(ct.Name, call)})
+		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: refuseAdminCredential(ct.Name, call)})
 	}
 	return out
 }
 
 func (c ConnectOnly) status(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args struct{}
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, c.guide().Failure(guidance.ToolStatus, nil, err)
 	}
 	return c.Status(ctx)
@@ -296,11 +296,11 @@ func (c ConnectOnly) status(ctx context.Context, raw json.RawMessage) (any, erro
 func (c ConnectOnly) refused(tool string) func(context.Context, json.RawMessage) (any, error) {
 	return func(_ context.Context, raw json.RawMessage) (any, error) {
 		st := c.Handoff.State()
-		var err error = &SetupError{Code: st.Setup.Code, Fingerprint: st.Setup.Fingerprint, Expired: st.Expired, ConnectOnly: !st.Expired}
+		var err error = &guidance.SetupError{Code: st.Setup.Code, Fingerprint: st.Setup.Fingerprint, Expired: st.Expired, ConnectOnly: !st.Expired}
 		if st.Phase == handoff.PhaseConfirm && st.Database != nil {
 			err = &DatabaseNotConfirmedError{SetupID: st.Setup.SetupID, Database: *st.Database}
 		}
-		return nil, c.guide().Failure(tool, callArgs(raw), err)
+		return nil, c.guide().Failure(tool, guidance.CallArgs(raw), err)
 	}
 }
 
@@ -313,15 +313,15 @@ type confirmArgs struct {
 
 func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args confirmArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, c.guide().Failure(toolConfirmDatabase, nil, err)
 	}
 	ans, err := c.Handoff.Confirm(ctx, args.SetupID, args.Database, args.Answer == answerYes)
 	switch {
 	case errors.Is(err, handoff.ErrNotWaiting):
-		return nil, c.guide().Failure(toolConfirmDatabase, callArgs(raw), &ArgumentError{Message: err.Error()})
+		return nil, c.guide().Failure(toolConfirmDatabase, guidance.CallArgs(raw), &guidance.ArgumentError{Message: err.Error()})
 	case err != nil:
-		return nil, c.guide().Failure(toolConfirmDatabase, callArgs(raw), err)
+		return nil, c.guide().Failure(toolConfirmDatabase, guidance.CallArgs(raw), err)
 	}
 	return confirmResult(ans, c.Commands.OperatedBy(c.OperatedBy))
 }
@@ -423,10 +423,10 @@ func connectOnlyProblems(st handoff.State, ps *Problems, now time.Time) SetupSta
 // setup waiting: INVALID_ARGUMENT.
 func (h handlers) confirmDatabase(_ context.Context, raw json.RawMessage) (any, error) {
 	var args confirmArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	return nil, &ArgumentError{Message: handoff.ErrNotWaiting.Error()}
+	return nil, &guidance.ArgumentError{Message: handoff.ErrNotWaiting.Error()}
 }
 
 // ConnectDatabaseName is how status names the database a credential

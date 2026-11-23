@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 func (h harness) startRun(t *testing.T, intent string) string {
@@ -62,7 +62,7 @@ func TestStaleWriteIsRefusedBeforeItLands(t *testing.T) {
 		"sql": "UPDATE leads SET status = $1 WHERE id = $2", "params": []any{"lost", 42},
 		"intent": "No answer for a week", "runId": runID,
 	})
-	requireToolError(t, body, isError, agent.CodeStaleRead, "", "BS004")
+	requireToolError(t, body, isError, guidance.CodeStaleRead, "", "BS004")
 	require.Contains(t, body["message"], `public.leads {"id": 42} read at xmin `+before+", now "+after)
 	require.Equal(t, "won", leadStatus(t, d, 42), "the person's edit stands")
 
@@ -72,7 +72,7 @@ func TestStaleWriteIsRefusedBeforeItLands(t *testing.T) {
 	require.Equal(t, "UPDATE", recs[0]["op"])
 	reason, ok := recs[0]["reason"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, agent.CodeStaleRead, reason["code"])
+	require.Equal(t, guidance.CodeStaleRead, reason["code"])
 	require.Equal(t, read["changeId"], recs[1]["changeId"])
 	require.Equal(t, "SELECT", recs[1]["op"])
 
@@ -156,7 +156,7 @@ func TestJoinsAndAggregatesAreRecorded(t *testing.T) {
 	body, isError := h.call(t, "write", map[string]any{
 		"sql": "UPDATE lead_notes SET note = 'seen' WHERE id = 2", "intent": "Mark the note seen", "runId": runID,
 	})
-	requireToolError(t, body, isError, agent.CodeStaleRead, "", "BS004")
+	requireToolError(t, body, isError, guidance.CodeStaleRead, "", "BS004")
 	body, isError = h.call(t, "write", map[string]any{
 		"sql": "UPDATE lead_notes SET note = 'seen' WHERE id = 1", "intent": "Mark the note seen", "runId": runID,
 	})
@@ -204,9 +204,9 @@ func TestStaleChecksSurviveAPooledConnection(t *testing.T) {
 	require.False(t, isError, "the first run never read lead 11: a blind write, %v", body)
 
 	body, isError = write(first, 10)
-	requireToolError(t, body, isError, agent.CodeStaleRead, "", "BS004")
+	requireToolError(t, body, isError, guidance.CodeStaleRead, "", "BS004")
 	body, isError = write(second, 11)
-	requireToolError(t, body, isError, agent.CodeStaleRead, "", "BS004")
+	requireToolError(t, body, isError, guidance.CodeStaleRead, "", "BS004")
 
 	// The runs' own writes are what they know now.
 	body, isError = write(second, 10)

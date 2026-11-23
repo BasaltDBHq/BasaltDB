@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -29,12 +30,12 @@ type runSummaryDTO struct {
 
 func runSummaryFromDomain(r action.RunSummary) runSummaryDTO {
 	out := runSummaryDTO{
-		RunID: r.ID.String(), TaskID: r.TaskID.UUID.String(), Intent: r.Intent, StartedAt: timeText(r.StartedAt),
+		RunID: r.ID.String(), TaskID: r.TaskID.UUID.String(), Intent: r.Intent, StartedAt: guidance.TimeText(r.StartedAt),
 		Applied: r.Applied, Held: r.Held, Refused: r.Refused, Reverted: r.Reverted, Reads: r.Reads,
 		RowsWritten: r.RowsWritten, Tables: r.Tables, TablesTruncated: r.TablesTruncated,
 	}
 	if r.LastChangeAt != nil {
-		out.LastChangeAt = timeText(*r.LastChangeAt)
+		out.LastChangeAt = guidance.TimeText(*r.LastChangeAt)
 	}
 	if out.Tables == nil {
 		out.Tables = []string{}
@@ -47,7 +48,7 @@ func runSummaryFromDomain(r action.RunSummary) runSummaryDTO {
 // by its tags.
 func (h handlers) listRuns(ctx context.Context, raw json.RawMessage) (any, error) {
 	var params action.RunListParams
-	if err := decodeArgs(raw, &params); err != nil {
+	if err := guidance.DecodeArgs(raw, &params); err != nil {
 		return nil, err
 	}
 	params.ApplyDefaultsAndClamp()

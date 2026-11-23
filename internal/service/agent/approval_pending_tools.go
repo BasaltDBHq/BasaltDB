@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -54,7 +55,7 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 		Kind:       KindApproval,
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
-		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile,
+		CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile,
 		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 		LargeValues: p.LargeValues,
 	}
@@ -92,14 +93,14 @@ type pendingRevertDTO struct {
 func pendingRevertFromDomain(p PendingRevert) pendingRevertDTO {
 	d := pendingRevertDTO{
 		Kind: KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
-		Batched: p.Batched, Widened: p.Widened, CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt),
+		Batched: p.Batched, Widened: p.Widened, CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt),
 		Headline: p.Headline, RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if !p.Widened {
 		d.Scope, d.ScopeID = p.Scope, p.ScopeID.String()
 	}
 	if p.ApplyBy != nil {
-		d.ApplyBy = timeText(*p.ApplyBy)
+		d.ApplyBy = guidance.TimeText(*p.ApplyBy)
 	}
 	if p.Batched && p.SignedAt != nil {
 		d.Progress = &revertProgressDTO{Restored: p.Progress.Restored, Skipped: p.Progress.Skipped, Pending: p.Progress.Pending, Batches: p.Batches}
@@ -109,7 +110,7 @@ func pendingRevertFromDomain(p PendingRevert) pendingRevertDTO {
 
 func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args listPendingArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	params := PendingParams{Params: args.Params, Kind: args.Kind, RunID: optionalID(args.RunID), Status: args.Status, Reissue: args.ReissueLink}

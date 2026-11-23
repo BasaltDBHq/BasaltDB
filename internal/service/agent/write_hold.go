@@ -36,7 +36,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
-		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
+		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: guidance.CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
 		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
@@ -72,14 +72,14 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 // for it when asked). The guard checks it all again at commit.
 func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.RunID == uuid.Nil {
-		return WriteOutcome{}, &ArgumentError{Message: "approvalId needs the runId the write was held in"}
+		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
 	run, err := s.findRun(ctx, p.RunID)
 	if err != nil {
 		return WriteOutcome{}, err
 	}
 	a, err := s.deps.Approval.Store.FindApproval(ctx, p.ApprovalID)
-	if sentinel(err, s.deps.Approval.ErrNotFound) {
+	if guidance.Sentinel(err, s.deps.Approval.ErrNotFound) {
 		return WriteOutcome{}, approvalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
@@ -127,7 +127,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 // does not accept) the page's link in its steps; any other error passes.
 func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
 	te := s.deps.Core.Errors.ToolError(err)
-	if te.Code != CodeApprovalInvalid || len(te.NextSteps) > 0 {
+	if te.Code != guidance.CodeApprovalInvalid || len(te.NextSteps) > 0 {
 		return err
 	}
 	switch te.Reason {
@@ -148,7 +148,7 @@ func sameAsHeld(a action.Approval, p WriteParams) error {
 	case a.Status == approvalApplied:
 		return approvalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == approvalExpired:
-		return &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, timeText(a.ExpiresAt))}
+		return &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, guidance.TimeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
 		return differentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
 	case a.Statement != p.SQL || !sameParams(a.Params, p.Params):

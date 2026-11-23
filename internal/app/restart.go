@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // RestartOptions turn on the restart onto a new binary.
@@ -76,7 +76,7 @@ func (d gatedDispatcher) Dispatch(ctx context.Context, link vault.SessionLink, r
 // not run because it is restarting.
 func restartingResponse() vault.Response {
 	body, err := json.Marshal(map[string]string{
-		"code":    agent.CodeUnavailable,
+		"code":    guidance.CodeUnavailable,
 		"message": "the basalt engine is restarting onto the upgraded binary and did not run this request; nothing was run: try again in a few seconds",
 	})
 	if err != nil {

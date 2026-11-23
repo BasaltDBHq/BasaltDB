@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -51,19 +52,19 @@ func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Tables != nil }
 // engine maps its refusal (scopeRefused).
 func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 	if a.Runs != nil && scope.Kind != revert.ScopeTask {
-		return action.Scope{}, &ArgumentError{Reason: ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
+		return action.Scope{}, &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
 			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with tables"}
 	}
 	if len(a.Runs) > revert.MaxFilter || len(a.Tables) > revert.MaxFilter {
 		return action.Scope{}, scopeFilterCapped()
 	}
 	if (a.Runs != nil && len(a.Runs) == 0) || (a.Tables != nil && len(a.Tables) == 0) {
-		return action.Scope{}, &ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +
+		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +
 			"a filter out for all of your work in the scope"}
 	}
 	for _, t := range a.Tables {
 		if !filterTable.MatchString(t) {
-			return action.Scope{}, &ArgumentError{Message: "invalid arguments: tables are schema.table names, such as public.leads"}
+			return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: tables are schema.table names, such as public.leads"}
 		}
 	}
 	for _, id := range a.Runs {
@@ -91,7 +92,7 @@ func (a scopeIDs) named() []action.Scope {
 func (a previewRevertArgs) scope() (action.Scope, error) {
 	out := a.named()
 	if len(out) != 1 {
-		return action.Scope{}, &ArgumentError{Message: "name exactly one of changeId, runId, taskId"}
+		return action.Scope{}, &guidance.ArgumentError{Message: "name exactly one of changeId, runId, taskId"}
 	}
 	return a.filtered(out[0])
 }
@@ -148,11 +149,11 @@ func revertLineFromDomain(l revert.Line) revertLineDTO {
 
 func (h handlers) previewRevert(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args previewRevertArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	if args.Sort != "" {
-		return nil, &ArgumentError{Message: "invalid arguments: preview_revert has no sort; lines come in their signed order"}
+		return nil, &guidance.ArgumentError{Message: "invalid arguments: preview_revert has no sort; lines come in their signed order"}
 	}
 	scope, err := args.scope()
 	if err != nil {
@@ -192,16 +193,16 @@ type requestRevertArgs struct {
 // argument combinations the schema cannot express.
 func (a requestRevertArgs) requestScope() (action.Scope, error) {
 	if a.WaitForSignature != nil || a.ReissueLink != nil {
-		return action.Scope{}, &ArgumentError{Message: "invalid arguments: waitForSignature and reissueLink go only with " +
+		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: waitForSignature and reissueLink go only with " +
 			"revertId; a new request returns the link at once, for you to show the person before anyone can sign"}
 	}
 	out := a.named()
 	if len(out) != 1 {
-		return action.Scope{}, &ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId, taskId (with intent), " +
+		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId, taskId (with intent), " +
 			"or only revertId"}
 	}
 	if a.Intent == "" {
-		return action.Scope{}, &ArgumentError{Message: "invalid arguments: intent is required with changeId, runId or taskId: why the person " +
+		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: intent is required with changeId, runId or taskId: why the person " +
 			"reverts, in their words, in 1 to 500 characters; it is shown on the revert page they sign"}
 	}
 	return a.filtered(out[0])
@@ -211,12 +212,12 @@ func (a requestRevertArgs) requestScope() (action.Scope, error) {
 // new link returns at once, so it takes no waitForSignature.
 func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
 	if len(a.named()) > 0 || a.hasFilters() || a.Intent != "" {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
+		return AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
 			"tables or intent; the revert already has them"}
 	}
 	reissue := a.ReissueLink != nil && *a.ReissueLink
 	if a.WaitForSignature != nil && reissue {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: waitForSignature does not go with " +
+		return AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: waitForSignature does not go with " +
 			"reissueLink: a new link returns at once (show it before waiting for it)"}
 	}
 	out := AwaitRevertParams{RevertID: uuid.MustParse(a.RevertID), Wait: DefaultRevertWait, Reissue: reissue}
@@ -263,20 +264,20 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	out := requestRevertResult{
 		RevertID: rv.ID.String(), Status: rv.Status, Scope: rv.Scope, ScopeID: rv.ScopeID.String(),
 		Intent: rv.Intent, Batched: rv.Batched, Rows: rv.Rows, Skipped: rv.Skipped,
-		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, RequestFile: r.RequestFile, PersonMessage: r.PersonMessage, Links: r.Links, NextSteps: r.NextSteps,
+		ExpiresAt: guidance.TimeText(rv.ExpiresAt), RevertURL: r.RevertURL, RequestFile: r.RequestFile, PersonMessage: r.PersonMessage, Links: r.Links, NextSteps: r.NextSteps,
 	}
 	if rv.ChangeID != nil {
 		out.ChangeID = rv.ChangeID.String()
 	}
 	if rv.ApplyBy != nil {
-		out.ApplyBy = timeText(*rv.ApplyBy)
+		out.ApplyBy = guidance.TimeText(*rv.ApplyBy)
 	}
 	if rv.Widened {
 		// Status and totals only: the person's scope is theirs (RS-5).
 		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.RequestFile, out.Links = true, "", "", "", nil, nil
 	}
 	if rv.RejectedAt != nil {
-		out.RejectedAt, out.Note = timeText(*rv.RejectedAt), rv.RejectNote
+		out.RejectedAt, out.Note = guidance.TimeText(*rv.RejectedAt), rv.RejectNote
 	}
 	if r.Receipt != nil {
 		out.Receipt, out.NoReceipt = r.Receipt.Token, r.Receipt.Missing
@@ -296,7 +297,7 @@ func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, 
 
 func (h handlers) requestRevertForm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args requestRevertArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	if args.RevertID != "" {
@@ -374,12 +375,12 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 	out := revertPlanResult{
 		RevertID: r.ID.String(), Status: r.Status, Scope: r.Scope, ScopeID: r.ScopeID.String(),
 		Lines: r.Rows + r.Skipped, Restored: r.Progress.Restored, Skipped: r.Progress.Skipped, Pending: r.Progress.Pending,
-		ExpiresAt: timeText(r.ExpiresAt), MaxBatch: revert.MaxBatch,
+		ExpiresAt: guidance.TimeText(r.ExpiresAt), MaxBatch: revert.MaxBatch,
 		Items: make([]revertPlanItemDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
 		RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if r.ApplyBy != nil {
-		out.ApplyBy = timeText(*r.ApplyBy)
+		out.ApplyBy = guidance.TimeText(*r.ApplyBy)
 	}
 	if r.Widened {
 		// Status and totals only: the person's scope is theirs (RS-5).
@@ -398,11 +399,11 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 
 func (h handlers) revertPlan(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args revertPlanArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	if args.Sort != "" {
-		return nil, &ArgumentError{Message: "invalid arguments: revert_plan has no sort; lines come in execution order"}
+		return nil, &guidance.ArgumentError{Message: "invalid arguments: revert_plan has no sort; lines come in execution order"}
 	}
 	params := action.RevertLineParams{Params: args.Params, RevertID: uuid.MustParse(args.RevertID)}
 	if args.Pending {
@@ -439,7 +440,7 @@ type batchResultDTO struct {
 
 func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args applyRevertBatchArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	res, err := h.svc.ApplyRevertBatch(ctx, ApplyRevertBatchParams{RevertID: uuid.MustParse(args.RevertID), Lines: args.Lines})

@@ -115,7 +115,7 @@ func holdsPluginApprovals(st guardmodel.Status, version int) bool {
 // the plugin approval page.
 
 func pluginPageError(code, reason, message, person string, steps []toolresult.NextStep) error {
-	return &PageError{ToolError: &toolresult.ToolError{Code: code, Reason: reason, Message: message, PersonMessage: person, NextSteps: steps}}
+	return &guidance.PageError{ToolError: &toolresult.ToolError{Code: code, Reason: reason, Message: message, PersonMessage: person, NextSteps: steps}}
 }
 
 // askAgentForLink is the person's step when the page can do nothing more.
@@ -128,21 +128,21 @@ func askAgentForLink() []toolresult.NextStep {
 }
 
 func pluginExpired(id uuid.UUID, at time.Time) error {
-	when := at.UTC().Format(personTime)
-	return pluginPageError(CodeApprovalExpired, "",
+	when := at.UTC().Format(guidance.PersonTime)
+	return pluginPageError(guidance.CodeApprovalExpired, "",
 		fmt.Sprintf("plugin approval %s expired at %s; nothing was approved", id, when),
 		fmt.Sprintf("This plugin approval expired at %s. Nothing was approved; ask the agent for a new link.", when),
 		askAgentForLink())
 }
 
 func pluginAlreadyApproved(id uuid.UUID) error {
-	return pluginPageError(CodeApprovalInvalid, guidance.ReasonAlreadyUsed,
+	return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonAlreadyUsed,
 		fmt.Sprintf("plugin approval %s is already signed", id),
 		"This plugin approval is already signed. The plugin starts within a few seconds of the signature.", nil)
 }
 
 func pluginCancelled(id uuid.UUID) error {
-	return pluginPageError(CodeApprovalInvalid, "",
+	return pluginPageError(guidance.CodeApprovalInvalid, "",
 		fmt.Sprintf("plugin approval %s was cancelled: a newer approval for the same plugin replaced it", id),
 		"A newer approval for this plugin replaced this one, so nothing here can be approved. Ask the agent for the newest link.",
 		askAgentForLink())
@@ -153,11 +153,11 @@ func pluginCancelled(id uuid.UUID) error {
 // message carrying it. Any other failure (the database cannot be reached)
 // is returned as it is, for the usual mapping.
 func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error) error {
-	code, ok := ledgerCode(err)
+	code, ok := guidance.LedgerCode(err)
 	if !ok {
 		return err
 	}
-	detail := storeDetail(err)
+	detail := guidance.StoreDetail(err)
 	msg := s.deps.Core.Errors.ToolError(err).Message
 	switch {
 	case code == guardmodel.CodeApprovalExpired:
@@ -165,7 +165,7 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 		if readErr == nil && found {
 			return pluginExpired(id, r.ExpiresAt)
 		}
-		return pluginPageError(CodeApprovalExpired, "", msg,
+		return pluginPageError(guidance.CodeApprovalExpired, "", msg,
 			"This plugin approval expired. Nothing was approved; ask the agent for a new link.", askAgentForLink())
 	case code != guardmodel.CodeApprovalInvalid:
 		return err
@@ -184,10 +184,10 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 		if stepErr != nil {
 			return errors.Join(err, stepErr)
 		}
-		return pluginPageError(CodeApprovalInvalid, guidance.ReasonPasskeyRevoked, msg,
+		return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonPasskeyRevoked, msg,
 			"The plugin approval was signed with a passkey this database does not accept (unknown or revoked), so nothing was "+
 				"approved. Ask the agent for a link to register the passkey you use, then try again on this page.", steps)
 	}
-	return pluginPageError(CodeApprovalInvalid, guidance.ReasonBadSignature, msg,
+	return pluginPageError(guidance.CodeApprovalInvalid, guidance.ReasonBadSignature, msg,
 		"The plugin approval code did not verify, so nothing was approved. Approve again on this page.", nil)
 }

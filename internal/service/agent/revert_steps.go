@@ -203,7 +203,7 @@ func (s *Service) longRevertLink(ctx context.Context, r action.Revert) (string, 
 
 func revertNotFound(id uuid.UUID) error {
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf(
+		Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf(
 			"no revert %s requested by this agent: request one with request_revert and a changeId or runId of yours", id),
 		NextSteps: []toolresult.NextStep{guidance.AgentStep(toolresult.ActionAskPerson,
 			"Ask the person which revert they mean; this agent prepared no revert with that id.")},
@@ -295,7 +295,7 @@ const (
 // the revert page (signingLink).
 func (s *Service) badSignatureWith(open toolresult.NextStep, r action.Revert, message string) error {
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: guidance.ReasonBadSignature, Message: message,
+		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The signature for %s did not verify, so nothing was reverted. Sign again on "+
 			"the revert page.", revertTitle(r)),
 		NextSteps: []toolresult.NextStep{
@@ -321,7 +321,7 @@ const requestAgainText = "On yes, call request_revert with these arguments and t
 // to the revert page (signingLink).
 func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) error {
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: guidance.ReasonPasskeyRevoked,
+		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonPasskeyRevoked,
 		Message: "the revert was signed by a passkey this database does not know or that was revoked; nothing was reverted",
 		PersonMessage: fmt.Sprintf("%s was signed with a passkey this database does not accept (unknown or "+
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
@@ -336,7 +336,7 @@ func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) 
 
 func (s *Service) rowsChanged(r action.Revert, detail string) error {
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: guidance.ReasonRowsChanged,
+		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonRowsChanged,
 		Message: "the database refused the revert, nothing was reverted: " + detail,
 		PersonMessage: fmt.Sprintf("Rows changed after the preview of %s%s, so nothing was reverted. The agent "+
 			"requests it again for you to sign the current rows.", revertTitle(r), filterText(proposalOf(r))),
@@ -350,7 +350,7 @@ func (s *Service) rowsChanged(r action.Revert, detail string) error {
 // here, without it for a widened revert (RS-5).
 func nothingSigned(r action.Revert) error {
 	te := &toolresult.ToolError{
-		Code: CodeNothingToRevert, Reason: guidance.ReasonReadsOnly,
+		Code: guidance.CodeNothingToRevert, Reason: guidance.ReasonReadsOnly,
 		Message:       fmt.Sprintf("revert %s has no row to restore in the scope that was signed; nothing was reverted", r.ID),
 		PersonMessage: guidance.Sentence(revertTitle(r)) + " has no row to restore in the scope you signed, so nothing was reverted.",
 		NextSteps:     []toolresult.NextStep{guidance.AgentStep(toolresult.ActionStop, "There is nothing to revert; do not retry.")},
@@ -369,7 +369,7 @@ func alreadySigned(r action.Revert) error {
 		msg = fmt.Sprintf("revert %s was rejected by the person on the revert page; nothing was reverted", r.ID)
 	}
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: guidance.ReasonPlanFinished, Message: msg,
+		Code: guidance.CodeRevertInvalid, Reason: guidance.ReasonPlanFinished, Message: msg,
 		NextSteps: []toolresult.NextStep{
 			guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: r.ID.String(), guidance.ArgWaitForSignature: 0}, "See the revert's state."),
 			guidance.AgentStep(toolresult.ActionStop, "Do not ask the person to sign it again."),
@@ -383,8 +383,8 @@ func (s *Service) revertExpired(r action.Revert) error {
 		reason, window = guidance.ReasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
 	}
 	return &toolresult.ToolError{
-		Code: CodeRevertExpired, Reason: reason,
-		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, timeText(r.ExpiresAt)),
+		Code: guidance.CodeRevertExpired, Reason: reason,
+		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, guidance.TimeText(r.ExpiresAt)),
 		PersonMessage: fmt.Sprintf("%s %s, so it expired. To revert it still, ask the agent to prepare it again.", guidance.Sentence(revertTitle(r)), window),
 		NextSteps: []toolresult.NextStep{
 			guidance.AgentStep(toolresult.ActionAskPerson, "Ask the person whether to prepare it again."),
@@ -399,7 +399,7 @@ func (s *Service) revertExpired(r action.Revert) error {
 // the limit the tool ran under: request_revert's prepare has the 100
 // seconds of an MCP call, preview_revert the agent's statement timeout.
 func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
-	te := &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
+	te := &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"A narrower revert, with runs or tables, may fit.",
 		strings.ToLower(string(scope.Kind)), scope.ID, int(guardmodel.MCPPrepareTimeout.Seconds()))}
@@ -461,7 +461,7 @@ func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.
 func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope action.Scope, reason, detail string) error {
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
-	te := &toolresult.ToolError{Code: CodeNothingToRevert, Reason: reason}
+	te := &toolresult.ToolError{Code: guidance.CodeNothingToRevert, Reason: reason}
 	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
 	if tool == guidance.ToolRequestRevert {
 		te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared. preview_revert shows each row and why it is "+

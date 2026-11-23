@@ -34,12 +34,12 @@ func holdTooLarge(lines []string, holdErr error) *toolresult.ToolError {
 		longest = max(longest, len(l))
 	}
 	if total > guardmodel.MaxHeldLinesBytes {
-		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: action.ReasonHoldTooLarge, Message: fmt.Sprintf(
+		return &toolresult.ToolError{Code: guidance.CodeStatementRefused, Reason: action.ReasonHoldTooLarge, Message: fmt.Sprintf(
 			"the write's preview lines are %s; a held write holds at most %s of them, so it cannot be held for approval",
 			largevalue.SizeText(int64(total)), largevalue.SizeText(guardmodel.MaxHeldLinesBytes))}
 	}
-	if code, ok := ledgerCode(holdErr); ok && longest > guardmodel.MaxHeldLineBytesBefore37 && code == guardmodel.CodeLedgerInputInvalid {
-		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: action.ReasonHoldTooLarge, Message: fmt.Sprintf(
+	if code, ok := guidance.LedgerCode(holdErr); ok && longest > guardmodel.MaxHeldLineBytesBefore37 && code == guardmodel.CodeLedgerInputInvalid {
+		return &toolresult.ToolError{Code: guidance.CodeStatementRefused, Reason: action.ReasonHoldTooLarge, Message: fmt.Sprintf(
 			"a preview line of the write is %s, and %s (basalt_meta before version 37): upgrading the guard lets it hold the write",
 			largevalue.SizeText(int64(longest)), olderGuardNote)}
 	}

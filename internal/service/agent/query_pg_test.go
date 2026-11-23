@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -182,16 +183,16 @@ func TestQuerySizeLimit(t *testing.T) {
 		nulls = append(nulls, fmt.Sprintf("NULL c%d", i))
 	}
 	for name, c := range map[string]struct{ sql, reason, names string }{
-		"many rows":   {"SELECT repeat('x', 1048576) FROM generate_series(1, 17) g", agent.ReasonSizeLimit, ""},
-		"wide, NULLs": {"SELECT " + strings.Join(nulls, ", ") + " FROM generate_series(1, 1000) g", agent.ReasonSizeLimit, ""},
-		"one value":   {"SELECT 1 AS id, repeat('x', 20000000) AS big", agent.ReasonRowTooLarge, "its columns: id, big (which is largest is unknown)"},
+		"many rows":   {"SELECT repeat('x', 1048576) FROM generate_series(1, 17) g", guidance.ReasonSizeLimit, ""},
+		"wide, NULLs": {"SELECT " + strings.Join(nulls, ", ") + " FROM generate_series(1, 1000) g", guidance.ReasonSizeLimit, ""},
+		"one value":   {"SELECT 1 AS id, repeat('x', 20000000) AS big", guidance.ReasonRowTooLarge, "its columns: id, big (which is largest is unknown)"},
 		// JSON escapes these, and the MCP text escapes the backslash again:
 		// 2.7 million bytes make an 18 MiB line the shim would refuse.
-		"control bytes":  {"SELECT 1 AS id, repeat(chr(1), 2700000) AS ctl", agent.ReasonRowTooLarge, "its largest columns: ctl (18.0 MiB), id (131 bytes)"},
-		"angle brackets": {"SELECT repeat('<', 2700000) AS lt", agent.ReasonRowTooLarge, "its largest columns: lt (18.0 MiB)"},
+		"control bytes":  {"SELECT 1 AS id, repeat(chr(1), 2700000) AS ctl", guidance.ReasonRowTooLarge, "its largest columns: ctl (18.0 MiB), id (131 bytes)"},
+		"angle brackets": {"SELECT repeat('<', 2700000) AS lt", guidance.ReasonRowTooLarge, "its largest columns: lt (18.0 MiB)"},
 	} {
 		body, isError := h.query(t, map[string]any{"sql": c.sql})
-		requireToolError(t, body, isError, agent.CodeQueryTimeout, c.reason, "")
+		requireToolError(t, body, isError, guidance.CodeQueryTimeout, c.reason, "")
 		require.Contains(t, body["message"], c.names, name)
 		var refused int
 		require.NoError(t, admin.QueryRow(context.Background(),
@@ -212,7 +213,7 @@ func TestRowTooLargeStepsSaySliceOrSize(t *testing.T) {
 	_, agentURL := testDB(t)
 	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
 	body, isError := h.query(t, map[string]any{"sql": "SELECT repeat('<', 2700000) AS lt"})
-	requireToolError(t, body, isError, agent.CodeQueryTimeout, agent.ReasonRowTooLarge, "")
+	requireToolError(t, body, isError, guidance.CodeQueryTimeout, guidance.ReasonRowTooLarge, "")
 	steps, ok := body["nextSteps"].([]any)
 	require.True(t, ok, "%v", body)
 	require.Len(t, steps, 1)
@@ -254,11 +255,11 @@ func TestQueryLimits(t *testing.T) {
 	require.Equal(t, json.Number("5"), body["rowCount"])
 
 	body, isError = h.query(t, map[string]any{"sql": "SELECT g FROM generate_series(1, 1000) g"})
-	requireToolError(t, body, isError, agent.CodeQueryTimeout, agent.ReasonRowLimit, "")
+	requireToolError(t, body, isError, guidance.CodeQueryTimeout, guidance.ReasonRowLimit, "")
 
 	start := time.Now()
 	body, isError = h.query(t, map[string]any{"sql": "SELECT count(g) FROM generate_series(1, 1000000000) g"})
-	requireToolError(t, body, isError, agent.CodeQueryTimeout, agent.ReasonTimeLimit, "57014")
+	requireToolError(t, body, isError, guidance.CodeQueryTimeout, guidance.ReasonTimeLimit, "57014")
 	require.Less(t, time.Since(start), 5*time.Second)
 
 	// The pool still works after a canceled statement.
@@ -276,20 +277,20 @@ func TestQueryErrors(t *testing.T) {
 		args                   map[string]any
 		code, reason, sqlState string
 	}{
-		{"ungranted table", map[string]any{"sql": "SELECT * FROM secrets"}, agent.CodePermissionDenied, "", "42501"},
-		{"unknown column", map[string]any{"sql": "SELECT nope FROM leads"}, agent.CodeSQLError, "", "42703"},
-		{"write sent to query", map[string]any{"sql": "DELETE FROM leads"}, agent.CodeStatementRefused, "WRONG_TOOL", ""},
-		{"sleep", map[string]any{"sql": "SELECT pg_sleep(10)"}, agent.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", ""},
-		{"user function", map[string]any{"sql": "SELECT bump()"}, agent.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", ""},
-		{"two statements", map[string]any{"sql": "SELECT 1; SELECT 2"}, agent.CodeStatementRefused, "MULTIPLE_STATEMENTS", ""},
-		{"ddl", map[string]any{"sql": "DROP TABLE leads"}, agent.CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
-		{"locking read", map[string]any{"sql": "SELECT * FROM leads FOR UPDATE"}, agent.CodeStatementRefused, "LOCKING_READ", ""},
-		{"parse error", map[string]any{"sql": "SELEC 1"}, agent.CodeStatementRefused, "PARSE_ERROR", ""},
-		{"unknown argument", map[string]any{"sql": "SELECT 1", "limit": 5}, agent.CodeInvalidArgument, "", ""},
-		{"missing sql", map[string]any{}, agent.CodeInvalidArgument, "", ""},
-		{"bad run id", map[string]any{"sql": "SELECT 1", "runId": "run_7f3k"}, agent.CodeInvalidArgument, "", ""},
-		{"too few params", map[string]any{"sql": "SELECT * FROM leads WHERE id = $1"}, agent.CodeInvalidArgument, "", ""},
-		{"object param", map[string]any{"sql": "SELECT $1::text", "params": []any{map[string]any{"a": 1}}}, agent.CodeInvalidArgument, "", ""},
+		{"ungranted table", map[string]any{"sql": "SELECT * FROM secrets"}, guidance.CodePermissionDenied, "", "42501"},
+		{"unknown column", map[string]any{"sql": "SELECT nope FROM leads"}, guidance.CodeSQLError, "", "42703"},
+		{"write sent to query", map[string]any{"sql": "DELETE FROM leads"}, guidance.CodeStatementRefused, "WRONG_TOOL", ""},
+		{"sleep", map[string]any{"sql": "SELECT pg_sleep(10)"}, guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", ""},
+		{"user function", map[string]any{"sql": "SELECT bump()"}, guidance.CodeStatementRefused, "FUNCTION_NOT_ALLOWED", ""},
+		{"two statements", map[string]any{"sql": "SELECT 1; SELECT 2"}, guidance.CodeStatementRefused, "MULTIPLE_STATEMENTS", ""},
+		{"ddl", map[string]any{"sql": "DROP TABLE leads"}, guidance.CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
+		{"locking read", map[string]any{"sql": "SELECT * FROM leads FOR UPDATE"}, guidance.CodeStatementRefused, "LOCKING_READ", ""},
+		{"parse error", map[string]any{"sql": "SELEC 1"}, guidance.CodeStatementRefused, "PARSE_ERROR", ""},
+		{"unknown argument", map[string]any{"sql": "SELECT 1", "limit": 5}, guidance.CodeInvalidArgument, "", ""},
+		{"missing sql", map[string]any{}, guidance.CodeInvalidArgument, "", ""},
+		{"bad run id", map[string]any{"sql": "SELECT 1", "runId": "run_7f3k"}, guidance.CodeInvalidArgument, "", ""},
+		{"too few params", map[string]any{"sql": "SELECT * FROM leads WHERE id = $1"}, guidance.CodeInvalidArgument, "", ""},
+		{"object param", map[string]any{"sql": "SELECT $1::text", "params": []any{map[string]any{"a": 1}}}, guidance.CodeInvalidArgument, "", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -308,7 +309,7 @@ func TestReadsRunReadOnly(t *testing.T) {
 	// read: the agent role may INSERT into audit, but not from a read.
 	_, err := h.reader.Read(context.Background(), "SELECT bump()", nil, action.Statement{})
 	te := agenttest.ToolError(err)
-	require.Equal(t, agent.CodeSQLError, te.Code)
+	require.Equal(t, guidance.CodeSQLError, te.Code)
 	require.Equal(t, "25006", te.SQLState, "read_only_sql_transaction")
 
 	db, err := pgdial.Connect(context.Background(), adminURL)
@@ -323,7 +324,7 @@ func TestQueryWhenTheDatabaseIsDown(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "postgres://nobody:x@127.0.0.1:1/none?sslmode=disable&connect_timeout=2", sqlguard.DefaultLimits())
 	body, isError := h.query(t, map[string]any{"sql": "SELECT 1"})
-	requireToolError(t, body, isError, agent.CodeUnavailable, "", "")
+	requireToolError(t, body, isError, guidance.CodeUnavailable, "", "")
 	require.NotContains(t, body["message"], "nobody", "no connection details in the error")
 }
 

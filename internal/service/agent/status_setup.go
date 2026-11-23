@@ -213,7 +213,7 @@ func connectOnlyCode(code string) bool {
 
 func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args struct{}
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	return h.svc.Status(ctx)
@@ -228,7 +228,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
 	if v, known := s.statusDeps().setupGate(ctx); known && v.blocks() {
-		return &SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired, ConnectOnly: v.status.ConnectOnly}
+		return &guidance.SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired, ConnectOnly: v.status.ConnectOnly}
 	}
 	st, err := s.deps.Status.Probe.GuardStatus(ctx)
 	if err != nil {
@@ -236,12 +236,12 @@ func (s *Service) Admit(ctx context.Context) error {
 	}
 	switch st.State {
 	case guardmodel.GuardOutdated:
-		return &toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: fmt.Sprintf(
+		return &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: fmt.Sprintf(
 			"the guard in this database misses breaking migrations %s of this engine; only status works until the person upgrades it",
 			versions(st.MissingBreaking))}
 	case guardmodel.GuardMissing:
 		return &toolresult.ToolError{
-			Code: CodeUnavailable, Reason: guidance.ReasonGuardMissing,
+			Code: guidance.CodeUnavailable, Reason: guidance.ReasonGuardMissing,
 			Message: "the guard is not installed in this database; only status works until the person installs it",
 		}
 	}

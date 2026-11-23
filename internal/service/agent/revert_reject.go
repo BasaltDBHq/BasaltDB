@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -62,7 +63,7 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 	}
 	s.rescopes.drop(id)
 	s.revokeRejected(ctx, id)
-	return RejectResponse{RevertID: out.RevertID.String(), Status: out.Status, RejectedAt: timeText(out.RejectedAt)}, nil
+	return RejectResponse{RevertID: out.RevertID.String(), Status: out.Status, RejectedAt: guidance.TimeText(out.RejectedAt)}, nil
 }
 
 // rejectNote is the person's note as Postgres takes it ("" for none): 1 to
@@ -75,7 +76,7 @@ func rejectNote(note *string) (string, error) {
 	}
 	n := utf8.RuneCountInString(*note)
 	if n == 0 || n > guardmodel.MaxRejectNote || strings.IndexFunc(*note, refusedInNote) >= 0 {
-		return "", &ArgumentError{Message: "note must be 1 to 500 characters of text, with no control characters other than newlines and tabs"}
+		return "", &guidance.ArgumentError{Message: "note must be 1 to 500 characters of text, with no control characters other than newlines and tabs"}
 	}
 	return *note, nil
 }
@@ -118,8 +119,8 @@ func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
 func (s *Service) rejectError(r action.Revert, heldToken bool, err error) error {
-	code, _ := ledgerCode(err)
-	detail := storeDetail(err)
+	code, _ := guidance.LedgerCode(err)
+	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused && heldToken:
 		return s.personScopeGone(r)
@@ -130,8 +131,8 @@ func (s *Service) rejectError(r action.Revert, heldToken bool, err error) error 
 	case code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:
-		return &PageError{ToolError: &toolresult.ToolError{
-			Code:          CodeRevertInvalid,
+		return &guidance.PageError{ToolError: &toolresult.ToolError{
+			Code:          guidance.CodeRevertInvalid,
 			Message:       "the revert can no longer be rejected: it was signed or rejected meanwhile",
 			PersonMessage: "This revert can no longer be rejected: it was signed or rejected meanwhile.",
 		}}
@@ -147,8 +148,8 @@ const revertNotFoundDetail = "no such revert"
 // widen only the page holding the rotated link can reject, and only while
 // the engine holds the token (it lives in memory).
 func rejectRefused() error {
-	return &PageError{ToolError: &toolresult.ToolError{
-		Code:    CodeRevertInvalid,
+	return &guidance.PageError{ToolError: &toolresult.ToolError{
+		Code:    guidance.CodeRevertInvalid,
 		Message: "the reject was refused: after the person widened this revert, only the page that widened it can reject it; nothing changed",
 		PersonMessage: "This reject was refused, and nothing changed. The engine no longer holds the scope you chose (it restarted): " +
 			"include other agents' changes again on this page to reject it, or close the page. Nothing is reverted unless " +

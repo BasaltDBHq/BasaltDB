@@ -57,7 +57,7 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 			t.Parallel()
 			s := operatedService(t, "linux", "", tc.operatedBy)
 			s.deps.Status.ConnectBudget = tc.budget
-			te := s.Failure("query", queryArgs0, &SetupError{Code: testSetupCode, Fingerprint: testFingerprint})
+			te := s.Failure("query", queryArgs0, &guidance.SetupError{Code: testSetupCode, Fingerprint: testFingerprint})
 			if tc.link {
 				requireConnectPending(t, mcpcontract.VariantError, "UNAVAILABLE", guidance.ReasonSetupPending, te.PersonMessage, te.Links, te.NextSteps)
 				return

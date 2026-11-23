@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"os"
-	"runtime/debug"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -16,21 +16,13 @@ import (
 // runGuarded runs the command line and turns a panic into a saved crash
 // report, one line on stderr and exit code 1.
 func runGuarded(ctx context.Context, args []string, std cli.Stdio) int {
-	return guarded(args, std, func() int { return run(ctx, args, std) })
+	return enginecli.Guarded(engineCLIHost{}, engineHost{}, engineTerminal{}, args, std, func() int { return run(ctx, args, std) })
 }
 
-// guarded runs f, which runs the command line args.
-func guarded(args []string, std cli.Stdio, f func() int) (code int) {
-	defer func() {
-		v := recover()
-		if v == nil {
-			return
-		}
-		code = cli.ExitError
-		engine.ReportPanic(engineHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
-	}()
-	return f()
-}
+// engineCLIHost is enginecli.Host for the command table.
+type engineCLIHost struct{}
+
+func (engineCLIHost) CommandName(args []string) string { return commandName(args) }
 
 // commandName is the command a command line runs, for the report: only a
 // name from the command list, never an argument.

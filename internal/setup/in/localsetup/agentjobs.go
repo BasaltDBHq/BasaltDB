@@ -508,7 +508,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 		if p, err = s.planAgentJob(ctx, tx, j, database); err != nil {
 			return err
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, tx, p.script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, pgquerier.Neutralize(tx), p.script); err != nil {
 			return setupFailed("update script", err)
 		}
 		return nil

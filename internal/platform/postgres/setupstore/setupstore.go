@@ -150,6 +150,10 @@ func (Store) Run(ctx context.Context, q pgquerier.Port, sql string) error {
 	return guard.Run(ctx, pgquerier.Unwrap(q), sql)
 }
 
-func (Store) ApplyScript(ctx context.Context, tx pgx.Tx, s guardmodel.Script) error {
+func (Store) ApplyScript(ctx context.Context, q pgquerier.Port, s guardmodel.Script) error {
+	tx, err := unwrapTx(q)
+	if err != nil {
+		return err
+	}
 	return guard.ApplyScript(ctx, tx, s)
 }

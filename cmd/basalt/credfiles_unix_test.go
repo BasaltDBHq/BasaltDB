@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // Root hands the credential files it writes to the owner of agents/, the
@@ -280,7 +281,7 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	defer d.close()
 	var stderr bytes.Buffer
 	r := &remoteInit{
-		c: &cliIO{stderr: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
+		c: &cli.IO{Stderr: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
 		f:        remoteFlags{agent: "bot", configPath: filepath.Join(dir, "engine.json")},
 		settings: config.Settings{SocketDir: "/run/basalt"},
 	}

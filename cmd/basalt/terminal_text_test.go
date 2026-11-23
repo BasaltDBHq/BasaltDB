@@ -32,9 +32,9 @@ func requireTerminalSafe(t *testing.T, out string) {
 func TestFailEscapesControlCharacters(t *testing.T) {
 	t.Parallel()
 	var errOut bytes.Buffer
-	c := &cliIO{ctx: context.Background(), stderr: &errOut}
+	c := &cli.IO{Ctx: context.Background(), Stderr: &errOut}
 	err := errors.New("cannot revert: duplicate key: Key (email)=(" + evil + "\nbasalt: reverted: 3 rows restored, 0 left as they are)")
-	require.Equal(t, cli.ExitError, c.fail(err))
+	require.Equal(t, cli.ExitError, c.Fail(err))
 	out := errOut.String()
 	requireTerminalSafe(t, out)
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")

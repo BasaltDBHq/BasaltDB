@@ -234,6 +234,12 @@ func lockHandOver(procUID, fileUID, dirUID, owner int) (int, bool) {
 // 0600 or tighter. It returns the connection string and the file's info, so
 // a later rename can check the path still names the file read.
 func ReadOwnCredential(path string) (string, os.FileInfo, error) {
+	return ReadOwnCredentialLimit(path, maxConfigBytes)
+}
+
+// ReadOwnCredentialLimit is ReadOwnCredential for a file of at most limit
+// bytes, counted as stored (before the surrounding space is trimmed).
+func ReadOwnCredentialLimit(path string, limit int) (string, os.FileInfo, error) {
 	f, err := openNoFollow(path)
 	if err != nil {
 		return "", nil, err
@@ -253,12 +259,12 @@ func ReadOwnCredential(path string) (string, os.FileInfo, error) {
 	if uint64(st.Uid) != uint64(os.Geteuid()) {
 		return "", nil, fmt.Errorf("%s is owned by uid %d, not this process's user", path, st.Uid)
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, maxConfigBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
 		return "", nil, err
 	}
 	dsn := strings.TrimSpace(string(raw))
-	if dsn == "" || len(raw) > maxConfigBytes {
+	if dsn == "" || len(raw) > limit {
 		return "", nil, fmt.Errorf("%s is empty or too large", path)
 	}
 	return dsn, fi, nil

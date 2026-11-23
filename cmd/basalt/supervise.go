@@ -126,7 +126,7 @@ func runChild(ctx context.Context, o superviseOptions, startedBy string) error {
 
 // runSupervise is basalt engine --supervise: one supervisor per config,
 // restarting the engine as a child of this process.
-func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdio, h host) int {
+func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdio, h cli.Machine) int {
 	cfg, err := superviseConfig(h.Euid(), configPath)
 	if err != nil {
 		return fail(io.Err, "engine", err)
@@ -175,7 +175,7 @@ func superviseConfig(euid int, configPath string) (config.Config, error) {
 			SocketDir: config.DefaultSocketDir(runtime.GOOS), StateDir: config.DefaultStateDir(runtime.GOOS),
 		}, nil
 	}
-	return loadEngineConfigAs(appShell{}, euid, configPath)
+	return cli.LoadEngineConfigAs(appShell{}, euid, configPath)
 }
 
 const privateDirMode = 0o700

@@ -15,7 +15,6 @@ import (
 	"unicode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 )
 
@@ -30,16 +29,16 @@ func run(ctx context.Context, args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	base, err := portalverify.ValidateURL(*rawURL)
+	base, err := status.ValidateURL(*rawURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "portal-verify: --portal-url: %v\n", err)
 		return 2
 	}
-	opts := status.Options(base)
+	opts := status.PortalcheckOptions(base)
 	if *manifestPath != "" {
 		b, err := os.ReadFile(filepath.Clean(*manifestPath))
 		if err == nil {
-			_, err = portalverify.ParseManifest(b)
+			_, err = status.ParseManifest(b)
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "portal-verify: --manifest: %v\n", err)
@@ -47,7 +46,7 @@ func run(ctx context.Context, args []string) int {
 		}
 		opts.Manifest, opts.ManifestSource = b, *manifestPath
 	}
-	report, err := portalverify.Verify(ctx, opts)
+	report, err := status.Verify(ctx, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "portal-verify: %v\n", err)
 		return 1
@@ -69,7 +68,7 @@ func clean(s string) string {
 	}, s)
 }
 
-func printReport(report *portalverify.Report) {
+func printReport(report *status.Report) {
 	problems := 0
 	for _, f := range report.Files {
 		line := fmt.Sprintf("%-10s %s", f.Status, f.Path)
@@ -77,7 +76,7 @@ func printReport(report *portalverify.Report) {
 			line += "  (" + f.Detail + ")"
 		}
 		fmt.Println(clean(line))
-		if f.Status != portalverify.StatusOK {
+		if f.Status != status.StatusOK {
 			problems++
 		}
 	}
@@ -86,7 +85,7 @@ func printReport(report *portalverify.Report) {
 		for _, d := range m.Mismatches {
 			fmt.Printf("           %s\n", clean(d))
 		}
-		if m.Status != portalverify.StatusOK {
+		if m.Status != status.StatusOK {
 			problems++
 		}
 	}

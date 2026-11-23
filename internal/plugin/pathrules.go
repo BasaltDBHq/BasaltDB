@@ -92,9 +92,9 @@ func requiredOwner(mode pluginmodel.Mode) (uint32, error) { return rules().Owner
 // is not used in service mode: it may belong to the engine's OS user, which
 // must not be able to change what is installed or trusted.
 const (
-	linuxServiceBase  = "/opt/basalt"
-	darwinServiceBase = "/Library/Basalt"
-	goosDarwin        = "darwin"
+	linuxServiceBase     = "/opt/basalt"
+	darwinServiceBase    = "/Library/Basalt"
+	pluginhostGoosDarwin = "darwin"
 )
 
 // base is the directory the plugin root and the trust store sit in: the
@@ -103,7 +103,7 @@ const (
 func base(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	switch mode {
 	case pluginmodel.ModeService:
-		if goos == goosDarwin {
+		if goos == pluginhostGoosDarwin {
 			return darwinServiceBase, nil
 		}
 		return linuxServiceBase, nil

@@ -35,7 +35,7 @@ var errNoEngineForTrust = errors.New("the database's certificate changed, and th
 // the person trusts it on the connect page. Nothing is pinned. A chain that
 // cannot be read, or that verifies, says nothing.
 func (r *remoteInit) noteUnknownAuthority() {
-	if r.base == nil || r.c.fetchChain == nil {
+	if r.base == nil || r.c.FetchChain == nil {
 		return
 	}
 	cfg, err := pgconn.ParseConfig(r.base.String())
@@ -46,12 +46,12 @@ func (r *remoteInit) noteUnknownAuthority() {
 	if r.setup.TrustProfileFor(r.f.configPath, host) != nil {
 		return // a profile, a pin included, decides; a changed pin shows at the login
 	}
-	chain, err := r.c.fetchChain(r.c.ctx, host, int(cfg.Port))
+	chain, err := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
 	if err != nil {
 		return
 	}
-	if seen := trustpin.Check(chain, host, r.c.now()); seen.Pinnable() {
-		fmt.Fprintf(r.c.stderr, "basalt: %s presents a certificate authority no authority on this machine verifies: %s\n",
+	if seen := trustpin.Check(chain, host, r.c.Now()); seen.Pinnable() {
+		fmt.Fprintf(r.c.Stderr, "basalt: %s presents a certificate authority no authority on this machine verifies: %s\n",
 			cli.TerminalText(host), connectPageTrust)
 	}
 }
@@ -83,7 +83,7 @@ func (r *remoteInit) pinnedSHA() string {
 // TRUST_ROOT_CHANGED. Never accepted here: the connect page asks the
 // person, and the engine checks its own reading.
 func (r *remoteInit) rootChanged(dsn string, err error) bool {
-	if r.c.fetchChain == nil || !trustprofile.CertificateNotVerified(err) {
+	if r.c.FetchChain == nil || !trustprofile.CertificateNotVerified(err) {
 		return false
 	}
 	cfg, perr := pgconn.ParseConfig(dsn)
@@ -95,7 +95,7 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 	if p == nil {
 		return false
 	}
-	chain, ferr := r.c.fetchChain(r.c.ctx, host, int(cfg.Port))
+	chain, ferr := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
 	if ferr != nil || len(chain) == 0 {
 		return false
 	}

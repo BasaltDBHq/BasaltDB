@@ -80,7 +80,7 @@ type updateHost interface {
 }
 
 // appUpdateHost is updateHost on the machine h, through app.
-type appUpdateHost struct{ h host }
+type appUpdateHost struct{ h cli.Machine }
 
 func (u appUpdateHost) UpdateDisabled(getenv func(string) string) bool {
 	return app.UpdateDisabled(getenv)
@@ -91,11 +91,11 @@ func (u appUpdateHost) UpdateDevVersion() string { return app.UpdateDevVersion }
 func (u appUpdateHost) Euid() int { return u.h.Euid() }
 
 func (u appUpdateHost) DiscoverConfig(system string) (string, error) {
-	return discoverConfig(u.h, system)
+	return cli.DiscoverConfig(u.h, system)
 }
 
 func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return loadEngineConfigAs(appShell{}, euid, path)
+	return cli.LoadEngineConfigAs(appShell{}, euid, path)
 }
 
 // updateNotice is the newer-release notice as the CLI prints it: its line

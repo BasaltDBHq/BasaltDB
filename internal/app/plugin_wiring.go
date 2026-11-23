@@ -21,10 +21,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
-// The plugin host (internal/plugin and internal/service/pluginhost/engine) holds
+// The plugin host (internal/plugin) holds
 // the plugin feature: verifying, running and feeding plugins, and their
 // approvals. This file builds what it reaches the outside world with and
 // hands it over: the path rule, the guard's plugin ledger, the transports,
@@ -38,12 +37,12 @@ func init() {
 }
 
 // pluginPorts are the adapters the plugin feature is built on.
-var pluginPorts = engine.Ports{
+var pluginPorts = plugin.Ports{
 	Guard:            pluginledger.Ledger{},
 	Network:          osservice.PluginNetwork,
 	InGroup:          osservice.InGroup,
 	SystemdOverrides: osservice.SystemdOverridesOnMachine,
-	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) engine.UnitHost {
+	NewUnitHost: func(cfg config.Config, goos, configPath, engineUser string) plugin.UnitHost {
 		return osservice.NewPluginUnitHost(cfg, goos, configPath, engineUser)
 	},
 }
@@ -72,7 +71,7 @@ func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) 
 // engineEUID is the engine's effective user id.
 func engineEUID() int { return os.Geteuid() }
 
-var pluginDebugWriter = engine.DebugWriter
+var pluginDebugWriter = plugin.DebugWriter
 
 // pluginOptions are how the engine reaches its plugins.
 type pluginOptions struct {
@@ -87,41 +86,41 @@ type pluginOptions struct {
 	kept *plugin.Store
 }
 
-func (o pluginOptions) engine() engine.Options {
-	return engine.NewOptions(o.Stderr, o.euid, o.stateDir, o.kept, dial.Dialer{Runs: o.runs}, pluginPorts)
+func (o pluginOptions) engine() plugin.Options {
+	return plugin.NewOptions(o.Stderr, o.euid, o.stateDir, o.kept, dial.Dialer{Runs: o.runs}, pluginPorts)
 }
 
-func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *engine.Plugins {
-	return engine.New(cfg, configPath, o.engine(), log)
+func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {
+	return plugin.New(cfg, configPath, o.engine(), log)
 }
 
-func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *engine.Plugins {
-	return engine.NewFor(cfg, configPath, o.engine(), log)
+func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *plugin.Plugins {
+	return plugin.NewFor(cfg, configPath, o.engine(), log)
 }
 
-var openKeptStore = engine.OpenKeptStore
+var openKeptStore = plugin.OpenKeptStore
 
 // pluginLedger is one agent's ledger as the plugin event writer reaches it:
 // the agent's own connection, and the engine's admission of the agent (nil
 // admits it).
 type pluginLedger struct {
-	db    engine.Querier
+	db    plugin.Querier
 	admit func(context.Context) error
 }
 
-func pluginLedgers(m map[string]pluginLedger) map[string]engine.AgentLedger {
-	out := make(map[string]engine.AgentLedger, len(m))
+func pluginLedgers(m map[string]pluginLedger) map[string]plugin.AgentLedger {
+	out := make(map[string]plugin.AgentLedger, len(m))
 	for name, l := range m {
-		out[name] = engine.NewAgentLedger(l.db, l.admit, pluginPorts)
+		out[name] = plugin.NewAgentLedger(l.db, l.admit, pluginPorts)
 	}
 	return out
 }
 
-func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *engine.Plugins, ledgers map[string]pluginLedger, log *slog.Logger) {
-	engine.RecordEvents(ctx, cfg, configPath, ep, pluginLedgers(ledgers), log)
+func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *plugin.Plugins, ledgers map[string]pluginLedger, log *slog.Logger) {
+	plugin.RecordEvents(ctx, cfg, configPath, ep, pluginLedgers(ledgers), log)
 }
 
-// pluginAdmit is svc's admission for plugin records: engine.ErrNotAdmitted
+// pluginAdmit is svc's admission for plugin records: plugin.ErrNotAdmitted
 // when the agent is served status only (no guard, an outdated one, a pending
 // setup), the probe's error when its database does not answer.
 func pluginAdmit(svc *agent.Service) func(context.Context) error {
@@ -130,7 +129,7 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 		var te *toolresult.ToolError
 		var se *guidance.SetupError
 		if errors.As(err, &te) || errors.As(err, &se) {
-			return fmt.Errorf("%w: %w", engine.ErrNotAdmitted, err)
+			return fmt.Errorf("%w: %w", plugin.ErrNotAdmitted, err)
 		}
 		return err
 	}
@@ -138,29 +137,29 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 
 // keptAgent is an agent as the plugin methods reach it.
 type keptAgent struct {
-	db       engine.Querier
+	db       plugin.Querier
 	host     string
 	port     uint16
 	database string
 	role     string
 }
 
-func openKeptPlugins(cfg config.Config, configPath string, store *plugin.Store, ep *engine.Plugins, agents map[string]keptAgent, log *slog.Logger) *engine.KeptPlugins {
-	kept := make(map[string]engine.KeptAgent, len(agents))
+func openKeptPlugins(cfg config.Config, configPath string, store *plugin.Store, ep *plugin.Plugins, agents map[string]keptAgent, log *slog.Logger) *plugin.KeptPlugins {
+	kept := make(map[string]plugin.KeptAgent, len(agents))
 	for name, a := range agents {
-		kept[name] = engine.NewKeptAgent(a.db, a.host, a.port, a.database, a.role)
+		kept[name] = plugin.NewKeptAgent(a.db, a.host, a.port, a.database, a.role)
 	}
-	return engine.OpenKeptPlugins(cfg, configPath, store, ep, kept, log, pluginPorts)
+	return plugin.OpenKeptPlugins(cfg, configPath, store, ep, kept, log, pluginPorts)
 }
 
 // pluginRequests serve the agents' request_plugin calls with the
 // engine-kept entries, and the upload methods of an agent's own socket.
 type pluginRequests struct {
-	*engine.Requests
+	*plugin.Requests
 }
 
 func newPluginRequests(uids map[string]uint32, admitted []uint32) *pluginRequests {
-	return &pluginRequests{Requests: engine.NewRequests(uids, admitted)}
+	return &pluginRequests{Requests: plugin.NewRequests(uids, admitted)}
 }
 
 // uploadMethods are the methods basalt mcp calls on a second connection to

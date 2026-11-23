@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
 // rootFiles reaches the files of an engine started as root
@@ -71,21 +72,31 @@ func ownerOf(path string) (int, error) {
 }
 
 func (r *rootFiles) readCredential() (string, error) {
-	dsn, _, err := r.read(r.name)
+	dsn, _, err := r.read(r.name, 0)
 	return dsn, err
 }
 
-func (r *rootFiles) readPending() (string, os.FileInfo, error) {
-	return r.read(r.name + pendingSuffix)
+func (r *rootFiles) ReadPending(limit int) (string, os.FileInfo, error) {
+	return r.read(r.name+handoff.PendingSuffix, limit)
 }
 
 // read reads the credential file name in agents/ (config.ReadCredentialAt:
-// root's or the owner of agents/'s). Root connects with what it reads, and
-// pgx reads files for the caller from some parameters, so a file the owner
-// of agents/ wrote must pass pgdial.CheckForeignDSN, as basalt init
-// --remote's read as root does.
-func (r *rootFiles) read(name string) (string, os.FileInfo, error) {
-	dsn, fi, err := config.ReadCredentialAt(r.agentsDir, name)
+// root's or the owner of agents/'s), of at most limit bytes, or for limit 0
+// config's own limit. Root connects with what it reads, and pgx reads files
+// for the caller from some parameters, so a file the owner of agents/ wrote
+// must pass pgdial.CheckForeignDSN, as basalt init --remote's read as root
+// does.
+func (r *rootFiles) read(name string, limit int) (string, os.FileInfo, error) {
+	var (
+		dsn string
+		fi  os.FileInfo
+		err error
+	)
+	if limit > 0 {
+		dsn, fi, err = config.ReadCredentialAtLimit(r.agentsDir, name, limit)
+	} else {
+		dsn, fi, err = config.ReadCredentialAt(r.agentsDir, name)
+	}
 	if err != nil {
 		return "", nil, err
 	}
@@ -98,16 +109,18 @@ func (r *rootFiles) read(name string) (string, os.FileInfo, error) {
 	return dsn, fi, nil
 }
 
-func (r *rootFiles) promote(pending os.FileInfo) error {
-	if err := config.SameFileAt(r.agentsDir, r.name+pendingSuffix, pending); err != nil {
+func (r *rootFiles) Promote(pending os.FileInfo) error {
+	if err := config.SameFileAt(r.agentsDir, r.name+handoff.PendingSuffix, pending); err != nil {
 		return err
 	}
-	return r.agentsDir.Rename(r.name+pendingSuffix, r.name)
+	return r.agentsDir.Rename(r.name+handoff.PendingSuffix, r.name)
 }
 
-func (r *rootFiles) lock() (func(), error) { return config.LockAt(r.agentsDir, r.name+lockSuffix) }
+func (r *rootFiles) Lock() (func(), error) {
+	return config.LockAt(r.agentsDir, r.name+handoff.LockSuffix)
+}
 
-func (r *rootFiles) clearSetup(agent, id string) (bool, error) {
+func (r *rootFiles) ClearSetup(agent, id string) (bool, error) {
 	owner, err := r.configDir.Owner()
 	if err != nil {
 		return false, err

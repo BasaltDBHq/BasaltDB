@@ -34,28 +34,28 @@ const (
 // opens it in the browser. The person does the rest on the page. It asks
 // nothing in the terminal and never reads the admin connection string.
 // The service's fixed scripts and paths come from h.
-func runInitLocal(c *cliIO, h localHost, args []string) int {
+func runInitLocal(c *cli.IO, h localHost, args []string) int {
 	job, err := parseInitLocal(c, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return cli.ExitOK
 	}
 	if err != nil {
-		return c.fail(err)
+		return c.Fail(err)
 	}
-	if c.host.Euid() == 0 {
-		return c.fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", cli.ErrUsage))
+	if c.Host.Euid() == 0 {
+		return c.Fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", cli.ErrUsage))
 	}
 	me, err := user.Current()
 	if err != nil {
-		return c.fail(fmt.Errorf("your OS user cannot be read: %w", err))
+		return c.Fail(fmt.Errorf("your OS user cannot be read: %w", err))
 	}
 	job.OSUser = me.Username
 	if err := ensureEngineService(c, h); err != nil {
-		return c.fail(err)
+		return c.Fail(err)
 	}
 	state, err := waitForSetupPage(c)
 	if err != nil {
-		return c.fail(err)
+		return c.Fail(err)
 	}
 	switch state {
 	case engineSetUp:
@@ -67,10 +67,10 @@ func runInitLocal(c *cliIO, h localHost, args []string) int {
 		// waits for a first install, this init goes on to the install link.
 		next, err := waitForSetupPage(c)
 		if err != nil {
-			return c.fail(err)
+			return c.Fail(err)
 		}
 		if next != engineWaiting {
-			return c.fail(errors.New("the engine was set up again before this init could open the install page; run basalt init again"))
+			return c.Fail(errors.New("the engine was set up again before this init could open the install page; run basalt init again"))
 		}
 	case engineRemoved:
 		return removeEngineService(c, h)
@@ -80,14 +80,14 @@ func runInitLocal(c *cliIO, h localHost, args []string) int {
 	}
 	link, err := localsetup.Link(app.SetupOrigin, job)
 	if err != nil {
-		return c.fail(err)
+		return c.Fail(err)
 	}
-	fmt.Fprintln(c.stdout, link)
-	fmt.Fprintln(c.stdout, "basalt mcp --agent "+job.Agent)
-	if err := c.host.OpenURL(c.ctx, link); err != nil {
-		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
+	fmt.Fprintln(c.Stdout, link)
+	fmt.Fprintln(c.Stdout, "basalt mcp --agent "+job.Agent)
+	if err := c.Host.OpenURL(c.Ctx, link); err != nil {
+		fmt.Fprintln(c.Stderr, "basalt: the browser did not open; open the link above by hand")
 	}
-	fmt.Fprintln(c.stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
+	fmt.Fprintln(c.Stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
 	return cli.ExitOK
 }
 
@@ -98,17 +98,17 @@ func runInitLocal(c *cliIO, h localHost, args []string) int {
 // answered "No, this isn't mine" on the page and reset the engine through
 // the administrator dialog (Not your database), and init goes on to the
 // install.
-func changeLink(c *cliIO, h localHost, job localsetup.Job) (code int, reset bool) {
+func changeLink(c *cli.IO, h localHost, job localsetup.Job) (code int, reset bool) {
 	job.Job, job.Demo = localsetup.JobChange, false
 	link, err := localsetup.Link(app.SetupOrigin, job)
 	if err != nil {
-		return c.fail(err), false
+		return c.Fail(err), false
 	}
-	fmt.Fprintln(c.stdout, link)
-	if err := c.host.OpenURL(c.ctx, link); err != nil {
-		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
+	fmt.Fprintln(c.Stdout, link)
+	if err := c.Host.OpenURL(c.Ctx, link); err != nil {
+		fmt.Fprintln(c.Stderr, "basalt: the browser did not open; open the link above by hand")
 	}
-	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
+	fmt.Fprintln(c.Stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
 	switch waitForRemoval(c) {
 	case engineRemoved:
 		return removeEngineService(c, h), false
@@ -119,7 +119,7 @@ func changeLink(c *cliIO, h localHost, job localsetup.Job) (code int, reset bool
 		return cli.ExitOK, true
 	case engineWaiting, engineSetUp:
 	}
-	fmt.Fprintln(c.stderr, "basalt: after a Remove on that page, run basalt init once more: it removes the engine service.")
+	fmt.Fprintln(c.Stderr, "basalt: after a Remove on that page, run basalt init once more: it removes the engine service.")
 	return cli.ExitOK, false
 }
 
@@ -128,11 +128,11 @@ func changeLink(c *cliIO, h localHost, job localsetup.Job) (code int, reset bool
 // (ENGINE_REMOVED, engineRemoved) or the person answered "No, this isn't
 // mine" (RESET_ASKED, engineResetAsked). Any other answer, an Update
 // included, keeps waiting until the time is up (engineSetUp).
-func waitForRemoval(c *cliIO) engineState {
-	ctx, cancel := context.WithTimeout(c.ctx, removalWait)
+func waitForRemoval(c *cli.IO) engineState {
+	ctx, cancel := context.WithTimeout(c.Ctx, removalWait)
 	defer cancel()
 	for {
-		code, err := c.host.SetupState(ctx, app.SetupOrigin)
+		code, err := c.Host.SetupState(ctx, app.SetupOrigin)
 		switch {
 		case err == nil && code == localsetup.CodeEngineRemoved:
 			return engineRemoved
@@ -152,7 +152,7 @@ func waitForRemoval(c *cliIO) engineState {
 // administrator dialog with its fixed script (service.ResetScript): it
 // deletes the engine's config, credentials and pins and restarts the
 // service. The person's password is the proof the page cannot give.
-func resetEngineService(c *cliIO, h localHost) int {
+func resetEngineService(c *cli.IO, h localHost) int {
 	return runServiceDialog(c, serviceDialog{
 		script:    h.OSResetScript,
 		prompt:    app.OSResetPrompt,
@@ -167,7 +167,7 @@ func resetEngineService(c *cliIO, h localHost) int {
 // removeEngineService removes the engine service after the setup page
 // removed BasaltDB, through the administrator dialog with its fixed
 // script (service.RemoveScript), which refuses while engine.json exists.
-func removeEngineService(c *cliIO, h localHost) int {
+func removeEngineService(c *cli.IO, h localHost) int {
 	return runServiceDialog(c, serviceDialog{
 		script:    h.OSRemoveScript,
 		prompt:    app.OSRemovePrompt,
@@ -203,34 +203,34 @@ type serviceDialog struct {
 	prompt, noDialog, asking, cancelled, failed, done string
 }
 
-func runServiceDialog(c *cliIO, d serviceDialog) int {
-	if err := c.host.DialogAvailable(c.goos); err != nil {
-		return c.fail(fmt.Errorf(d.noDialog, err))
+func runServiceDialog(c *cli.IO, d serviceDialog) int {
+	if err := c.Host.DialogAvailable(c.Goos); err != nil {
+		return c.Fail(fmt.Errorf(d.noDialog, err))
 	}
-	script, err := d.script(c.goos)
+	script, err := d.script(c.Goos)
 	if err != nil {
-		return c.fail(err)
+		return c.Fail(err)
 	}
-	fmt.Fprintln(c.stderr, d.asking)
-	if err := c.host.AdminDialog(c.ctx, c.goos, d.prompt, script, c.stderr); err != nil {
+	fmt.Fprintln(c.Stderr, d.asking)
+	if err := c.Host.AdminDialog(c.Ctx, c.Goos, d.prompt, script, c.Stderr); err != nil {
 		if errors.Is(err, app.ErrOSDialogCancelled) {
-			return c.fail(errors.New(d.cancelled))
+			return c.Fail(errors.New(d.cancelled))
 		}
-		return c.fail(fmt.Errorf(d.failed, err))
+		return c.Fail(fmt.Errorf(d.failed, err))
 	}
-	fmt.Fprintln(c.stderr, d.done)
+	fmt.Fprintln(c.Stderr, d.done)
 	return cli.ExitOK
 }
 
 // parseInitLocal reads basalt init's flags on a person-operated engine:
 // --agent and --demo only. Any other flag is a usage error.
-func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
+func parseInitLocal(c *cli.IO, args []string) (localsetup.Job, error) {
 	fs := cli.NewFlagSet("init")
-	fs.SetOutput(c.stderr)
+	fs.SetOutput(c.Stderr)
 	agent := fs.String("agent", "", "the agent's name (default: "+app.DemoAgent+")")
 	demoFlag := fs.Bool("demo", false, "set up the sample database instead of your own tables")
 	fs.Usage = func() {
-		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--remote] [--demo]\n\n"+
+		fmt.Fprintln(c.Stderr, "usage: basalt init [--agent NAME] [--remote] [--demo]\n\n"+
 			"Installs the engine service when needed, then prints and opens the setup link. Finish the setup on that page:\n"+
 			"the admin connection string is typed there, never here.\n\n"+
 			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n\n"+cli.ManyAgentsHelp)
@@ -257,20 +257,20 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 // ensureEngineService installs the engine service through the system's
 // administrator dialog when it is not installed yet: one password, in the
 // dialog. It never falls back to running the engine as the person.
-func ensureEngineService(c *cliIO, h localHost) error {
-	if c.host.System(io.Discard, io.Discard).Exists(h.OSUnitPath(c.goos)) {
+func ensureEngineService(c *cli.IO, h localHost) error {
+	if c.Host.System(io.Discard, io.Discard).Exists(h.OSUnitPath(c.Goos)) {
 		return nil
 	}
-	if err := c.host.DialogAvailable(c.goos); err != nil {
+	if err := c.Host.DialogAvailable(c.Goos); err != nil {
 		return noDialog(err)
 	}
 	bin, script, err := dialogScript(c, h)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		h.OSDefaultUser(c.goos), cli.ShellJoin(dialogEngineArgs(c.goos, bin)))
-	if err := c.host.AdminDialog(c.ctx, c.goos, app.OSInstallPrompt, script, c.stderr); err != nil {
+	fmt.Fprintf(c.Stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
+		h.OSDefaultUser(c.Goos), cli.ShellJoin(dialogEngineArgs(c.Goos, bin)))
+	if err := c.Host.AdminDialog(c.Ctx, c.Goos, app.OSInstallPrompt, script, c.Stderr); err != nil {
 		if errors.Is(err, app.ErrOSNoDialog) {
 			return noDialog(err)
 		}
@@ -299,12 +299,12 @@ func crashLoops(runs, lastExit int) bool {
 // reads from the answer whether it is waiting for its config. An engine
 // service the service manager started again during the wait, after an exit
 // with an error, ends the wait at once, naming its log.
-func waitForSetupPage(c *cliIO) (engineState, error) {
-	ctx, cancel := context.WithTimeout(c.ctx, setupWait)
+func waitForSetupPage(c *cli.IO) (engineState, error) {
+	ctx, cancel := context.WithTimeout(c.Ctx, setupWait)
 	defer cancel()
 	firstRuns := -1
 	for {
-		code, err := c.host.SetupState(ctx, app.SetupOrigin)
+		code, err := c.Host.SetupState(ctx, app.SetupOrigin)
 		switch {
 		case err == nil && code == localsetup.CodeJobUnavailable:
 			return engineSetUp, nil
@@ -317,19 +317,19 @@ func waitForSetupPage(c *cliIO) (engineState, error) {
 		case err == nil:
 			return engineWaiting, nil
 		}
-		if runs, last, err := c.host.ServiceRuns(ctx, c.goos); err == nil {
+		if runs, last, err := c.Host.ServiceRuns(ctx, c.Goos); err == nil {
 			// The counters are the service's whole life: only a start during
 			// this wait counts.
 			if firstRuns < 0 {
 				firstRuns = runs
 			}
 			if runs > firstRuns && crashLoops(runs, last) {
-				return 0, fmt.Errorf("the engine service keeps stopping: it started %d times and last exited with code %d. See %s for why", runs, last, engineLogHint(c.goos))
+				return 0, fmt.Errorf("the engine service keeps stopping: it started %d times and last exited with code %d. See %s for why", runs, last, engineLogHint(c.Goos))
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return 0, fmt.Errorf("the engine service did not answer on %s within %s; see %s", app.SetupOrigin, setupWait, engineLogHint(c.goos))
+			return 0, fmt.Errorf("the engine service did not answer on %s within %s; see %s", app.SetupOrigin, setupWait, engineLogHint(c.Goos))
 		case <-time.After(setupWaitStep):
 		}
 	}

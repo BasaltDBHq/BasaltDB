@@ -13,18 +13,13 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
-	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
-
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 // resultCase builds one result of the catalog: the person's message and the
@@ -63,47 +58,8 @@ func (f fakeUpgrade) UpgradeAvailable(context.Context) (bool, error) { return f.
 
 func resultKey(tool, kase string) string { return tool + "|" + kase }
 
-func pendingItem(status string, expires time.Time) PendingItem {
-	n := caseNotice(caseShortLink)
-	return PendingItem{
-		Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: status, ExpiresAt: expires},
-		Notice:   n,
-	}
-}
-
 func resultCases() map[string]resultCase {
 	cases := map[string]resultCase{
-		resultKey("list_pending", "REQUEST_TOO_LARGE"): {
-			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				n := tooLargeNotice(t, s, linksvc.KeepLink)
-				item := PendingItem{
-					Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.deps.Core.Now().Add(time.Hour)},
-					Notice:   n.ApprovalNotice, tooLargeSteps: n.Steps,
-				}
-				person, links, steps, err := s.approval.itemGuidance(item)
-				require.NoError(t, err)
-				return person, links, steps
-			},
-		},
-
-		resultKey("list_pending", "PENDING"): {
-			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				person, links, steps, err := s.approval.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)))
-				require.NoError(t, err)
-				return person, links, steps
-			},
-		},
-		resultKey("list_pending", "EXPIRED"): {
-			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				person, links, steps, err := s.approval.itemGuidance(pendingItem(ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)))
-				require.NoError(t, err)
-				return person, links, steps
-			},
-		},
-
 		resultKey("describe", "OVERVIEW_LARGE"): {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
@@ -147,19 +103,19 @@ func TestEveryCatalogResultHasACase(t *testing.T) {
 	for _, e := range stepcatalogtest.CatalogOf(t).Results {
 		key := resultKey(e.Tool, e.Case)
 		seen[key] = true
-		if _, ok := cases[key]; !ok && !slices.Contains(stepcatalogtest.RevertResultKeys(), key) {
+		if _, ok := cases[key]; !ok && !slices.Contains(stepcatalogtest.RevertResultKeys(), key) && !slices.Contains(stepcatalogtest.ApprovalResultKeys(), key) {
 			missing = append(missing, key)
 		}
 	}
-	require.Empty(t, missing, "catalog results without a case in resultCases or in the revert package's")
+	require.Empty(t, missing, "catalog results without a case in resultCases or in the revert or approval package's")
 	var stale []string
 	for k := range cases {
 		if !seen[k] {
 			stale = append(stale, k)
 		}
 	}
-	for _, k := range stepcatalogtest.RevertResultKeys() {
-		require.NotContains(t, cases, k, "a revert result case runs in the revert package only")
+	for _, k := range slices.Concat(stepcatalogtest.RevertResultKeys(), stepcatalogtest.ApprovalResultKeys()) {
+		require.NotContains(t, cases, k, "a revert or approval result case runs in its own package only")
 	}
 	sort.Strings(stale)
 	require.Empty(t, stale, "result cases without a catalog entry")
@@ -177,7 +133,7 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 		for _, entry := range stepcatalogtest.CatalogOf(t).Results {
 			kase, ok := resultCases()[resultKey(entry.Tool, entry.Case)]
 			if !ok {
-				continue // a revert result: it runs in the revert package
+				continue // a revert or approval result: it runs in its own package
 			}
 			t.Run(variant.name+"/"+resultKey(entry.Tool, entry.Case), func(t *testing.T) {
 				t.Parallel()
@@ -188,14 +144,6 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 			})
 		}
 	}
-}
-
-func TestAnApprovedPendingItemNeedsNothingFromThePerson(t *testing.T) {
-	t.Parallel()
-	s := resultService(t, "linux", "")
-	_, _, steps, err := s.approval.itemGuidance(pendingItem(ledger.ApprovalApproved, s.deps.Core.Now().Add(time.Hour)))
-	require.NoError(t, err)
-	require.Empty(t, steps)
 }
 
 // --- warnings ---

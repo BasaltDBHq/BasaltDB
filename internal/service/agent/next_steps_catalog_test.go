@@ -24,7 +24,6 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -123,10 +122,6 @@ func asToolError(te *toolresult.ToolError) func(*testing.T, *Service) error {
 	return func(*testing.T, *Service) error { return te }
 }
 
-func guardApproval(detail string) func(*testing.T, *Service) error {
-	return pgFail("BS005", "APPROVAL_INVALID", detail)
-}
-
 func caseNotice(url string) toolresult.ApprovalNotice {
 	return toolresult.ApprovalNotice{
 		ApprovalID: caseApproval, ExpiresAt: "2026-11-12T10:00:00Z", Rows: 3,
@@ -138,40 +133,11 @@ func caseNotice(url string) toolresult.ApprovalNotice {
 
 const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AAAAAAAAAAAAAAAAAAAAAA"
 
-func held(reason string, url string) func(*testing.T, *Service) error {
-	return func(_ *testing.T, s *Service) error {
-		n := linksvc.HeldAnswer{ApprovalNotice: caseNotice(url), Reason: reason}
-		if reason == guidance.ReasonWaitEnded {
-			return ApprovalStillPendingError(n)
-		}
-		return ApprovalRequiredError(n)
-	}
-}
-
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
 		n := linksvc.HeldAnswer{ApprovalNotice: caseNotice(caseShortLink), LongURL: caseShortLink, Pick: linksvc.HandOver{URL: caseShortLink, Kind: linksvc.LinkLong}}
 		return s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
-}
-
-// tooLargeHeads are the heads of a held write's lines an agent's read left
-// out (ledger.withRequest).
-var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascaded": false}`}
-
-// tooLargeNotice is the notice of a held write whose request no link this
-// engine has can carry: no local pages, no Vault.
-func tooLargeNotice(t *testing.T, s *Service, issue bool) linksvc.HeldAnswer {
-	t.Helper()
-	s = serviceWith(s, withoutLocalPages)
-	if p, _ := s.deps.Core.Store.(parts); p.approvalStore == nil {
-		setApprovals(&s.deps, catalogApprovals{})
-	}
-	req := linksvc.SizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
-	n, err := s.approval.ApprovalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
-		time.Now().Add(time.Hour), issue)
-	require.NoError(t, err)
-	return n
 }
 
 // catalogCases has one case per error entry of the catalog. A new code or
@@ -199,8 +165,7 @@ func catalogCases() map[string]catalogCase {
 			"write", writeArgs0,
 			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it"),
 		},
-		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""):    {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
-		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guardmodel.DetailHoldTooLarge)},
+		stepcatalogtest.CaseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
 
 		stepcatalogtest.CaseKey("ROW_LIMIT_EXCEEDED", "", ""): {
 			"write", writeArgs0,
@@ -222,29 +187,10 @@ func catalogCases() map[string]catalogCase {
 				return s.delivery.RevertTooLargeError(uuid.MustParse(caseRevertID), 2<<20, time.Now().Add(time.Hour))
 			},
 		},
-		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", ""): {"write", writeArgs0, func(t *testing.T, s *Service) error {
-			n := tooLargeNotice(t, s, linksvc.IssueLink)
-			require.Equal(t, linksvc.ReasonRequestTooLarge, n.Reason)
-			return approvalError(n, "")
-		}},
-		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(guidance.ReasonHeld, caseShortLink)},
-		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "HELD_NO_PAGES", ""): {"write", writeArgs0, held(guidance.ReasonHeldNoPages, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
-		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "NO_PASSKEY", ""):    {"write", writeArgs0, held(guidance.ReasonNoPasskey, caseShortLink)},
-		stepcatalogtest.CaseKey("APPROVAL_REQUIRED", "WAIT_ENDED", ""): {
-			"write", withApproval(writeArgs0),
-			held(guidance.ReasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc"),
-		},
 
 		stepcatalogtest.CaseKey("APPROVAL_EXPIRED", "", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: "approval expired"})},
 
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonNotSigned)},
-		stepcatalogtest.CaseKey("APPROVAL_INVALID", "ALREADY_USED", ""):    {"write", withApproval(writeArgs0), guardApproval("approval already used")},
-		stepcatalogtest.CaseKey("APPROVAL_INVALID", "DIFFERENT_WRITE", ""): {"write", withApproval(writeArgs0), guardApproval("the statement or its parameters differ from the approval")},
-		stepcatalogtest.CaseKey("APPROVAL_INVALID", "NOT_THIS_AGENT", ""):  {"write", withApproval(writeArgs0), guardApproval("approval is for another agent")},
-		stepcatalogtest.CaseKey("APPROVAL_INVALID", "ROWS_CHANGED", ""): {
-			"write", withApproval(writeArgs0),
-			guardApproval("rows changed since the preview; a fresh preview and approval are needed"),
-		},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonBadSignature)},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonPasskeyRevoked)},
 
@@ -331,13 +277,13 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 	var missing []string
 	for _, e := range stepcatalogtest.CatalogOf(t).Errors {
 		seen[stepcatalogtest.EntryKey(e)] = true
-		if _, ok := cases[stepcatalogtest.EntryKey(e)]; !ok && !slices.Contains(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.EntryKey(e)) {
+		if _, ok := cases[stepcatalogtest.EntryKey(e)]; !ok && !slices.Contains(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.EntryKey(e)) && !slices.Contains(stepcatalogtest.ApprovalErrorKeys(), stepcatalogtest.EntryKey(e)) {
 			missing = append(missing, stepcatalogtest.EntryKey(e))
 		}
 	}
-	require.Empty(t, missing, "catalog errors without a case in catalogCases or in the revert package's")
-	for _, k := range stepcatalogtest.RevertErrorKeys() {
-		require.NotContains(t, cases, k, "a revert error case runs in the revert package only")
+	require.Empty(t, missing, "catalog errors without a case in catalogCases or in the revert or approval package's")
+	for _, k := range slices.Concat(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.ApprovalErrorKeys()) {
+		require.NotContains(t, cases, k, "a revert or approval error case runs in its own package only")
 	}
 	var stale []string
 	for k := range cases {

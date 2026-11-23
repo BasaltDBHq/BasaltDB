@@ -881,7 +881,7 @@ func TestStatusEngineRecord(t *testing.T) {
 			r := engineRecordStatusOf(t, "", tc.read)
 			require.Equal(t, &tc.want, r.EngineRecord)
 			requireStatusSchema(t, statusTool, r)
-			var codes []string
+			codes := make([]string, 0, len(r.Problems))
 			for _, p := range r.Problems {
 				codes = append(codes, p.Code)
 			}

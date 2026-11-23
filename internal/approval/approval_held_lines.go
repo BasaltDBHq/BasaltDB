@@ -1,4 +1,4 @@
-package agent
+package approval
 
 import (
 	"fmt"
@@ -49,7 +49,7 @@ func HoldTooLarge(lines []string, holdErr error) *toolresult.ToolError {
 // HoldTooLargeSteps: the agent stops and asks. The person makes the change
 // themselves or has the agent write fewer rows per call, each still held;
 // on an older guard, an upgrade lets the same write be held.
-func (ac *approvalCase) HoldTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string {
+func (ac *Service) HoldTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string {
 	b.Stop("Do not retry the write as it is.")
 	if strings.Contains(te.Message, olderGuardNote) {
 		b.AskPerson("Tell the person this database's guard is too old to hold a write with rows this large and needs an upgrade; " +

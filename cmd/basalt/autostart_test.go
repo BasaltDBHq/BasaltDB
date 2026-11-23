@@ -371,7 +371,7 @@ func TestEngineStarterWaitsWhenSupervisorHoldsLock(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
 	require.NoError(t, os.MkdirAll(r.cfg.SocketDir, 0o700))
-	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, superviseLock))
+	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, engine.SuperviseLock))
 	require.NoError(t, err)
 	t.Cleanup(release)
 	go func() {
@@ -404,7 +404,7 @@ func TestEngineStarterStartsAfterSupervisorLockIsReleased(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
 	require.NoError(t, os.MkdirAll(r.cfg.SocketDir, 0o700))
-	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, superviseLock))
+	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, engine.SuperviseLock))
 	require.NoError(t, err)
 	d := r.deps(testEuid, nil)
 	d.wait = 200 * time.Millisecond

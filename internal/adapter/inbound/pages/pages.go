@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -297,7 +298,7 @@ func (s *Server) Reveal(w http.ResponseWriter, r *http.Request, name string,
 	in, ok := revealBody(body)
 	if !ok {
 		s.Fail(w, &toolresult.ToolError{
-			Code:    agent.CodeInvalidArgument,
+			Code:    guidance.CodeInvalidArgument,
 			Message: "the body must be {\"proof\", \"revealSecret\"} (reveal-request.schema.json)",
 		})
 		return
@@ -412,7 +413,7 @@ func (e *nonceError) Unwrap() error { return e.ToolError }
 // pageFailure is a's answer for err, keeping a rescope nonce it carries.
 func pageFailure(a Agent, err error) error {
 	te := a.PageFailure(err)
-	var pe *agent.PageError
+	var pe *guidance.PageError
 	if errors.As(err, &pe) && pe.RescopeNonce != nil {
 		return &nonceError{ToolError: te, nonce: pe.RescopeNonce}
 	}
@@ -432,7 +433,7 @@ func unknownLink() error {
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(r.PathValue(name))
 	if err != nil {
-		s.Fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: name + " must be a uuid"})
+		s.Fail(w, &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: name + " must be a uuid"})
 		return uuid.Nil, false
 	}
 	return id, true
@@ -443,21 +444,21 @@ func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uu
 // page can make none of these posts. False means the answer is written.
 func (s *Server) Body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Header.Get("Origin") != s.origin {
-		writeError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the approval page")
+		writeError(w, http.StatusForbidden, guidance.CodePermissionDenied, "the request does not come from the approval page")
 		return nil, false
 	}
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-		writeError(w, http.StatusUnsupportedMediaType, agent.CodeInvalidArgument, "the body must be application/json")
+		writeError(w, http.StatusUnsupportedMediaType, guidance.CodeInvalidArgument, "the body must be application/json")
 		return nil, false
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, agent.CodeInvalidArgument, "the body is too large")
+		writeError(w, http.StatusRequestEntityTooLarge, guidance.CodeInvalidArgument, "the body is too large")
 		return nil, false
 	case err != nil:
-		writeError(w, http.StatusBadRequest, agent.CodeInvalidArgument, "cannot read the body")
+		writeError(w, http.StatusBadRequest, guidance.CodeInvalidArgument, "cannot read the body")
 		return nil, false
 	}
 	return body, true
@@ -466,14 +467,14 @@ func (s *Server) Body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // statuses maps contract error codes to HTTP statuses (CONTRACT.md, Local
 // pages, Errors).
 var statuses = map[string]int{
-	agent.CodeNotFound:                   http.StatusNotFound,
-	agent.CodeApprovalExpired:            http.StatusGone,
+	guidance.CodeNotFound:                http.StatusNotFound,
+	guidance.CodeApprovalExpired:         http.StatusGone,
 	string(guardmodel.CodeRevertExpired): http.StatusGone,
-	agent.CodeApprovalInvalid:            http.StatusConflict,
+	guidance.CodeApprovalInvalid:         http.StatusConflict,
 	string(guardmodel.CodeRevertInvalid): http.StatusConflict,
-	agent.CodeInvalidArgument:            http.StatusBadRequest,
-	agent.CodeUnavailable:                http.StatusServiceUnavailable,
-	agent.CodeQueryTimeout:               http.StatusGatewayTimeout,
+	guidance.CodeInvalidArgument:         http.StatusBadRequest,
+	guidance.CodeUnavailable:             http.StatusServiceUnavailable,
+	guidance.CodeQueryTimeout:            http.StatusGatewayTimeout,
 }
 
 // Fail answers err as the contract's error body. Unexpected errors are
@@ -483,7 +484,7 @@ func (s *Server) Fail(w http.ResponseWriter, err error) {
 	// is already the contract's error body; anything else is the engine's.
 	var te *toolresult.ToolError
 	if !errors.As(err, &te) {
-		te = &toolresult.ToolError{Code: agent.CodeInternal, Message: "internal engine error"}
+		te = &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
 	}
 	status, ok := statuses[te.Code]
 	if !ok {

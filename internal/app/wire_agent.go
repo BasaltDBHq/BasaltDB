@@ -77,9 +77,9 @@ func AgentErrors() guidance.ErrorMap {
 	}
 }
 
-// AgentEngineHost is what the status of an engine that is down reads from
+// agentEngineHost is what the status of an engine that is down reads from
 // the host.
-func AgentEngineHost() status.EngineHost {
+func agentEngineHost() status.EngineHost {
 	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.ReadLastStop, StartHoldOffUntil: agentStartHoldOffUntil}
 }
 

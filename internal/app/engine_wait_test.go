@@ -35,5 +35,5 @@ func TestProbeWaitsForTheEngine(t *testing.T) {
 		_, _ = bufio.NewReader(conn).ReadString('\n')
 		_, _ = conn.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"basalt","version":"0"}}}` + "\n"))
 	}()
-	require.NoError(t, OSHost{}.Probe(context.Background(), socket))
+	require.NoError(t, osHost{}.Probe(context.Background(), socket))
 }

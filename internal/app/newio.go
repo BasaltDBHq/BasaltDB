@@ -23,16 +23,16 @@ const (
 
 // newIO is the CLI shell over the real machine, for a command line on std.
 func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.IO {
-	shell := Shell{}
+	sh := shell{}
 	c := &cli.IO{
 		Ctx: ctx, Stdin: bufio.NewReader(std.In), Stdout: std.Out, Stderr: std.Err,
-		Getenv: getenv, Now: time.Now, Rand: rand.Reader, Goos: runtime.GOOS, Host: OSHost{},
-		Shell: shell,
+		Getenv: getenv, Now: time.Now, Rand: rand.Reader, Goos: runtime.GOOS, Host: osHost{},
+		Shell: sh,
 		AgentLogin: func(ctx context.Context, dsn string) (cli.AgentConn, error) {
-			return handoffcli.LoginAsAgent(ctx, shell, dsn)
+			return handoffcli.LoginAsAgent(ctx, sh, dsn)
 		},
 		Dial: func(ctx context.Context, dsn string) (*pgx.Conn, error) {
-			return cli.Connect(ctx, shell, dsn)
+			return cli.Connect(ctx, sh, dsn)
 		},
 		FetchChain: cli.FetchChain,
 		Width:      func() int { return cli.TerminalWidth(std.Out) },

@@ -48,7 +48,7 @@ func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (stat
 }
 
 func (engineCLIHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
-	return EngineStarter(engineHost{}, shim.DefaultStartWait, configPath, socket, cfg, euid, exe, log)
+	return engineStarter(engineHost{}, shim.DefaultStartWait, configPath, socket, cfg, euid, exe, log)
 }
 
 func (engineCLIHost) NewEngineDownServer(down statusmcp.EngineDown) shim.Fallback {
@@ -70,7 +70,7 @@ func commandName(args []string) string {
 }
 
 // engineHost is engine.Host through app and the machine.
-type engineHost struct{ OSHost }
+type engineHost struct{ osHost }
 
 func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
 
@@ -96,7 +96,7 @@ func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration
 }
 
 func (engineTerminal) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return cli.LoadEngineConfigAs(Shell{}, euid, path)
+	return cli.LoadEngineConfigAs(shell{}, euid, path)
 }
 
 // newRecorder is the crash recorder for this process.

@@ -36,7 +36,7 @@ var plainConfigLoads = map[string]string{
 	"internal/app/engine_commands.go:engineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
 	// memory limits, refusing a link at the config; the config itself is
-	// read again through OpenEngineFile before anything is written.
+	// read again through openEngineFile before anything is written.
 	"internal/app/engine_commands.go:runServiceAt:LoadNoFollow": "the unit's memory limit only",
 	// basalt mcp reads the socket directory and the agents from the config,
 	// as the agent's OS user.

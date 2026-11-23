@@ -15,12 +15,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// TrustOf is status's TrustReporter for pool: what verifies its database's
+// trustOf is status's TrustReporter for pool: what verifies its database's
 // first host as the trust profiles stand when status asks (CONTRACT.md,
 // Trust profiles), the chain top that host presents now (read with the TLS
 // handshake alone, only for a pinned host whose certificate did not
 // verify), and the pin the ledger records for it. It never writes a pin.
-func TrustOf(pool *pgxpool.Pool) status.TrustReporter {
+func trustOf(pool *pgxpool.Pool) status.TrustReporter {
 	return func() status.TrustReport {
 		cfg := pool.Config().ConnConfig
 		a, refused := pgdial.TrustOfConfig(&cfg.Config)

@@ -21,53 +21,53 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Shell is the shell's real host: the adapters, reached through this
+// shell is the shell's real host: the adapters, reached through this
 // package's own functions.
-type Shell struct{}
+type shell struct{}
 
-func (Shell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
+func (shell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	return pgdial.Connect(ctx, dsn)
 }
 
-func (Shell) WithCertificateHint(dsn string, err error) error {
+func (shell) WithCertificateHint(dsn string, err error) error {
 	return pgdial.WithCertificateHint(dsn, err)
 }
 
-func (Shell) CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }
+func (shell) CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }
 
-func (Shell) CurrentTrustProfileSet() *trustprofile.Set { return pgdial.Trust() }
+func (shell) CurrentTrustProfileSet() *trustprofile.Set { return pgdial.Trust() }
 
-func (Shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
+func (shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return osservice.OpenTrustedFile(path, owner)
 }
 
-// SetupHost is basalt init --remote's real host: the adapters, reached
+// setupHost is basalt init --remote's real host: the adapters, reached
 // through this package's own functions.
-type SetupHost struct{}
+type setupHost struct{}
 
-func (SetupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
+func (setupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
 	return guard.AgentConnString(adminURL, role, password)
 }
 
-func (SetupHost) GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error) {
+func (setupHost) GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error) {
 	return guard.AgentVersion(ctx, q)
 }
 
-func (SetupHost) GuardLatestVersion() int { return guard.LatestVersion() }
+func (setupHost) GuardLatestVersion() int { return guard.LatestVersion() }
 
-func (SetupHost) GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error) {
+func (setupHost) GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error) {
 	return guard.SetupRecorded(ctx, q, id)
 }
 
-func (SetupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
-	return LoadOrCreateEngineKeys(path, now)
+func (setupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
+	return loadOrCreateEngineKeys(path, now)
 }
 
-func (SetupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
+func (setupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
 	return trustdir.Set(configPath).For(host)
 }
 
-func (SetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error) {
+func (setupHost) OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error) {
 	d, err := osservice.OpenTrustedDir(dir, owner, create)
 	if err != nil {
 		return nil, err
@@ -75,25 +75,25 @@ func (SetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDi
 	return d, nil
 }
 
-func (SetupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
+func (setupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 	return osservice.OpenTrustedFile(path, owner)
 }
 
-func (SetupHost) OSLookupUID(name string) int { return osservice.LookupUID(name) }
+func (setupHost) OSLookupUID(name string) int { return osservice.LookupUID(name) }
 
-func (SetupHost) OSInstallScript(goos, binary string) (string, error) {
+func (setupHost) OSInstallScript(goos, binary string) (string, error) {
 	return osservice.InstallScript(goos, binary)
 }
 
-func (SetupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
+func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
 
-func (SetupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
+func (setupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 
-func (SetupHost) OSDefaultUser(goos string) string { return osservice.DefaultUser(goos) }
+func (setupHost) OSDefaultUser(goos string) string { return osservice.DefaultUser(goos) }
 
-func (SetupHost) OSUnitPath(goos string) string { return osservice.UnitPath(goos) }
+func (setupHost) OSUnitPath(goos string) string { return osservice.UnitPath(goos) }
 
-func (SetupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
+func (setupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
 	cfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
 		return setup.ConnTarget{}, err
@@ -101,17 +101,17 @@ func (SetupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
 	return setup.ConnTarget{Host: cfg.Host, Port: int(cfg.Port), SystemRoots: cfg.TLSConfig != nil && cfg.TLSConfig.RootCAs == nil}, nil
 }
 
-func (SetupHost) ServerMessage(err error) (string, bool) { return pgErrors{}.ServerMessage(err) }
+func (setupHost) ServerMessage(err error) (string, bool) { return pgErrors{}.ServerMessage(err) }
 
-func (SetupHost) PathCredFiles() setup.CredFiles { return PathCredFiles{} }
+func (setupHost) PathCredFiles() setup.CredFiles { return pathCredFiles{} }
 
-func (h SetupHost) OpenRootCredFiles(dir string, trusted int) (setup.CredFiles, error) {
+func (h setupHost) OpenRootCredFiles(dir string, trusted int) (setup.CredFiles, error) {
 	return openRootCredFiles(h, dir, trusted)
 }
 
-func (SetupHost) RootTrustedOwner(dir string) (int, error) { return rootTrustedOwner(dir) }
+func (setupHost) RootTrustedOwner(dir string) (int, error) { return rootTrustedOwner(dir) }
 
-func (h SetupHost) OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error) {
+func (h setupHost) OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error) {
 	d, err := openRootConfigDir(h, dir, trusted)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (h SetupHost) OpenRootConfigDir(dir string, trusted int) (setup.RootConfigD
 	return d, nil
 }
 
-func (h SetupHost) RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error) {
+func (h setupHost) RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error) {
 	d, _ := cfg.(*rootConfigDir)
 	return rootEngineKey(h, stateDir, goos, d, now)
 }
@@ -131,7 +131,7 @@ type setupFilesHost interface {
 	// OSOpenTrustedDir opens dir for root, refusing a directory on the way
 	// that someone other than root or owner could swap; create makes it
 	// when missing.
-	OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error)
+	OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error)
 	// OSOpenTrustedFile opens path read-only for root: its directory as
 	// OSOpenTrustedDir does, the file itself never through a symlink.
 	OSOpenTrustedFile(path string, owner int) (*os.File, error)

@@ -32,7 +32,7 @@ import (
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
 func runEngine(ctx context.Context, args []string, io cli.Stdio) int {
-	return runEngineOn(ctx, args, io, OSHost{})
+	return runEngineOn(ctx, args, io, osHost{})
 }
 
 // runEngineOn is runEngine with the host that tells root and the config dir.
@@ -58,7 +58,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// Started as root, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
 	if *supervised {
-		return enginecli.RunSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h, engineCLIHost{}, engineHost{}, engineTerminal{}, BinaryWatch{})
+		return enginecli.RunSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h, engineCLIHost{}, engineHost{}, engineTerminal{}, binaryWatch{})
 	}
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)
@@ -76,30 +76,30 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		}
 		handed = ln
 	}
-	cfg, err := cli.LoadEngineConfigAs(Shell{}, h.Euid(), *configPath)
+	cfg, err := cli.LoadEngineConfigAs(shell{}, h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
 	run := func(ctx context.Context, r engine.Restart) error {
-		o := RestartOptions{Restart: r}
+		o := restartOptions{Restart: r}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		if *pluginDebug {
 			o.PluginStderr = io.Err
 		}
-		return RunWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
+		return runWith(ctx, cfg, engine.EnginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
 	reload := func() error {
-		next, err := cli.LoadEngineConfigAs(Shell{}, h.Euid(), *configPath)
+		next, err := cli.LoadEngineConfigAs(shell{}, h.Euid(), *configPath)
 		if err != nil {
 			return err
 		}
 		cfg = next
 		return nil
 	}
-	if err := engine.ServeRestarting(ctx, run, OSRestart(log), reload, log); err != nil {
+	if err := engine.ServeRestarting(ctx, run, osRestart(log), reload, log); err != nil {
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
@@ -111,7 +111,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
-	return enginecli.RunMCPOn(ctx, args, io, OSHost{}, engineCLIHost{})
+	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.
@@ -136,7 +136,7 @@ func engineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown
 	if err != nil {
 		return statusmcp.EngineDown{}, err
 	}
-	return statusmcp.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: AgentEngineHost()}, nil
+	return statusmcp.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: agentEngineHost()}, nil
 }
 
 func shimCommands(name, configPath string, cfg *config.Config) (guidance.Commands, error) {
@@ -327,7 +327,7 @@ func agentSpecFromStdin(in io.Reader, spec servicespec.Spec, a agentInstall, cre
 	if a.keepCredential {
 		return keptCredentialSpec(spec, a, dryRun)
 	}
-	line, err := bufio.NewReader(io.LimitReader(in, MaxCredentialBytes)).ReadString('\n')
+	line, err := bufio.NewReader(io.LimitReader(in, maxCredentialBytes)).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return spec, err
 	}
@@ -343,13 +343,13 @@ func agentSpecFromStdin(in io.Reader, spec servicespec.Spec, a agentInstall, cre
 // it is owned by the engine's user even when the user changed.
 func keptCredentialSpec(spec servicespec.Spec, a agentInstall, dryRun bool) (servicespec.Spec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
-	raw, err := ReadKeptCredential(SetupHost{}, cred, spec.User)
+	raw, err := readKeptCredential(setupHost{}, cred, spec.User)
 	if err != nil && waitingForAddress(spec, a.name, cred) {
 		// A connect-only setup waits for its address: no credential yet,
 		// and the engine writes it after the person's YES (CONTRACT.md,
 		// Connect-only setup codes), with the password in .secret, which
 		// must be the engine user's own for that.
-		if _, serr := ReadKeptCredential(SetupHost{}, config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
+		if _, serr := readKeptCredential(setupHost{}, config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
 			return spec, fmt.Errorf("agent %s waits for its database's address, but its .secret is not usable by the engine's user %s (%w); run basalt init --remote as that user", a.name, spec.User, serr)
 		}
 		a.keepCredential, a.waiting = true, true
@@ -366,7 +366,7 @@ func keptCredentialSpec(spec servicespec.Spec, a agentInstall, dryRun bool) (ser
 // connect-only setup and no credential file exists at cred: the agent
 // waits for its database's address.
 func waitingForAddress(spec servicespec.Spec, name, cred string) bool {
-	cfg, err := cli.LoadEngineConfigAs(Shell{}, os.Geteuid(), spec.ConfigPath)
+	cfg, err := cli.LoadEngineConfigAs(shell{}, os.Geteuid(), spec.ConfigPath)
 	if err != nil {
 		return false
 	}

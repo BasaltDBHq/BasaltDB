@@ -14,16 +14,17 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/credfiles"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 )
 
 // openRootCredFiles opens dir, the agents directory, as root
-// (OpenRootCredFiles), making it (and the config directory) when
+// (credfiles.OpenRootCredFiles), making it (and the config directory) when
 // missing, through h. trusted is rootTrustedOwner's.
 func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFiles, error) {
-	files, err := OpenRootCredFiles(h, dir, trusted)
+	files, err := credfiles.OpenRootCredFiles(h, dir, trusted)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFil
 // (service.OpenTrustedDir, the trusted owner as openRootCredFiles): it
 // locks, reads and writes engine.json relative to it.
 type rootConfigDir struct {
-	dir     TrustedDir
+	dir     trustedDir
 	trusted int
 }
 
@@ -65,7 +66,7 @@ func (d *rootConfigDir) Upsert(name string, s config.Settings, a config.Agent) (
 	// engine.json goes to the config directory's owner (the engine's user
 	// in service mode), as the files in agents/ do, so the engine can read
 	// it; never to root.
-	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, CredentialOwner(dirUID), s, a)
+	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, credentialOwner(dirUID), s, a)
 }
 
 func (d *rootConfigDir) Close() { _ = d.dir.Close() }
@@ -118,7 +119,7 @@ func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, 
 		if err != nil {
 			return nil, err
 		}
-		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, CredentialOwner(dirUID))
+		err = d.CreateFile(channel.KeyFileName, raw, channel.KeyFileMode, credentialOwner(dirUID))
 		clear(raw)
 		if err == nil {
 			return keys.PublicKeySPKI(), nil
@@ -144,7 +145,7 @@ func missingStateDir(stateDir, goos string, owner int) error {
 
 // readRootKeyFile reads the key file in the state directory d, owned by
 // dirUID: an error wrapping fs.ErrNotExist when there is none.
-func readRootKeyFile(d TrustedDir, dirUID int) (*channel.EngineKeys, error) {
+func readRootKeyFile(d trustedDir, dirUID int) (*channel.EngineKeys, error) {
 	f, err := config.OpenPlainAt(d, channel.KeyFileName, func(f *os.File) error {
 		fi, err := f.Stat()
 		if err != nil {

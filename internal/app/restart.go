@@ -13,14 +13,14 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
-// RestartOptions turn on the restart onto a new binary.
-type RestartOptions struct {
+// restartOptions turn on the restart onto a new binary.
+type restartOptions struct {
 	// Restart is when the engine restarts (Upgrade; nil turns the restart
 	// off) and how long it waits for calls (IdleWait, DrainWait).
 	engine.Restart
 	// Handoff reaches the connect service and the collected database for
 	// a connect-only agent; the zero value is the contract's.
-	Handoff HandoffOptions
+	Handoff handoffOptions
 	// PluginStderr is where local plugins' stderr goes (basalt engine
 	// --plugin-debug), on a foreground engine only; nil discards it. It
 	// rides along with the restart options because both are how
@@ -36,13 +36,13 @@ type RestartOptions struct {
 	// restarted it). It is carried here for the status report.
 	StartedBy string
 	// StableAfter is how long the engine serves before it removes the
-	// supervisor's record of giving up; zero means DefaultStableAfter.
+	// supervisor's record of giving up; zero means defaultStableAfter.
 	StableAfter time.Duration
 }
 
-// DefaultStableAfter is how long an engine serves before an earlier
+// defaultStableAfter is how long an engine serves before an earlier
 // give-up of its supervisor is forgotten (last-stop.json is removed).
-const DefaultStableAfter = 10 * time.Second
+const defaultStableAfter = 10 * time.Second
 
 // gatedDispatcher counts each page-session request (an approval or a revert
 // relayed through the Vault) in the gate, and answers UNAVAILABLE with

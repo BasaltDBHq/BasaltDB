@@ -17,10 +17,10 @@
 //
 // The package takes a connection its caller opened as the database's admin.
 // It reads no environment variable, terminal or file. Its messages name
-// databases, hosts, roles and tables, never a connection string. Some
-// carry the database's or the driver's own words (see Error and
-// Result.Warnings). A caller behind a transaction pooler opens the
-// connection with pgx.QueryExecModeExec, as basalt does.
+// databases, hosts, roles and tables, never a connection string. An
+// Error's Message never carries the database's or the driver's own words
+// (see Error). A caller behind a transaction pooler opens the connection
+// with pgx.QueryExecModeExec, as basalt does.
 package setup
 
 import (
@@ -615,8 +615,7 @@ type Result struct {
 	// EngineRecorded is whether the code's engine key was recorded.
 	EngineRecorded bool
 	// Warnings are for the person after the run: tables whose rows the
-	// agent cannot see, or that the check failed, with the database's own
-	// words.
+	// agent cannot see, or that the check failed, with its Postgres error.
 	Warnings []string
 	// Passkey is the passkey this run registered, nil when none.
 	Passkey *RegisteredPasskey
@@ -786,11 +785,10 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 	return err
 }
 
-// Error is a refused or failed step. Message is what the person reads.
-// With CodeSetupFailed, and with CodePasskeyNotRegistered (after "the setup
-// ran but no passkey was registered: "), it may carry the database's or
-// the driver's own words; the other codes' messages are this package's
-// sentences.
+// Error is a refused or failed step. Message is what the person reads:
+// this package's sentences, which name a Postgres error by its SQLSTATE
+// and never carry the database's or the driver's own words. Those stay in
+// the error Unwrap returns, for a log.
 type Error struct {
 	// Code is one of Codes().
 	Code    string
@@ -844,8 +842,8 @@ const (
 	// database: it may or may not have run. Check tells which.
 	CodeSetupUnconfirmed = setuprun.SetuprunCodeSetupUnconfirmed
 	// CodeSetupFailed is any other failure: the database or its driver.
-	// Nothing changed. Its Message may carry the database's own words; a
-	// service that shows fixed messages maps it to one.
+	// Nothing changed. Its Message names the Postgres error and the step,
+	// never the database's own words.
 	CodeSetupFailed = "SETUP_FAILED"
 )
 
@@ -883,5 +881,11 @@ func asError(err error) error {
 	if !slices.Contains(codes, code) {
 		code = CodeSetupFailed
 	}
-	return &Error{Code: code, Message: err.Error(), err: err}
+	msg := err.Error()
+	if code == CodeSetupFailed && (r == nil || r.Code != CodeSetupFailed) {
+		// A failure of the database or the driver: a fixed sentence with
+		// the Postgres error and the step; their words stay in the error.
+		msg = setuprun.FailedMessage(setuprun.FailedStep("setup", err), setuprun.SQLStateOf(err))
+	}
+	return &Error{Code: code, Message: msg, err: err}
 }

@@ -415,7 +415,9 @@ func TestRunRollsBackWhenThePasskeyIsNotRegistered(t *testing.T) {
 		Passkey: verified(t, give), Committed: func(setup.Result) { committed = true },
 	})
 	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
-	require.Contains(t, err.Error(), "this passkey was revoked")
+	require.Contains(t, err.Error(), "Postgres error", "the person reads the SQLSTATE")
+	require.NotContains(t, err.Error(), "this passkey was revoked", "never the database's words")
+	require.Contains(t, errors.Unwrap(err).Error(), "this passkey was revoked", "they stay in the error, for a log")
 	require.False(t, res.Ran)
 	require.Nil(t, res.Passkey)
 	require.False(t, committed)
@@ -540,7 +542,7 @@ func TestMessagesCarryNoConnectionSecret(t *testing.T) {
 		return nil
 	}, Passkey: verified(t, give)})
 	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
-	require.Contains(t, err.Error(), "already exists")
+	require.Contains(t, errors.Unwrap(err).Error(), "already exists")
 	require.Zero(t, installedVersion(t, other), "the transaction rolled back")
 	note(nil, err)
 

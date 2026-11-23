@@ -20,6 +20,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // Plugin units (CONTRACT.md, Plugins, Isolation and trust): in service mode
@@ -421,7 +422,7 @@ SystemCallErrorNumber=EPERM
 RestrictAddressFamilies=%[12]s
 ReadWritePaths=%[9]s
 `, p.Name, p.Instance, n.User, strings.Join(argv, " "), p.Dir,
-		SocketEnv, pluginUmask, p.memoryMB(), n.SocketDir, n.Socket, SystemdUnitName, addressFamilies(p.Egress))
+		SocketEnv, pluginUmask, p.memoryMB(), n.SocketDir, n.Socket, servicespec.SystemdUnitName, addressFamilies(p.Egress))
 	for _, dir := range h.hiddenDirs() {
 		// The directories always exist; a missing one stops the unit.
 		fmt.Fprintf(&b, "InaccessiblePaths=%s\n", systemdPath("", dir))
@@ -436,7 +437,7 @@ ReadWritePaths=%[9]s
 	// Enabled with the engine: starting the engine starts it, and it stops
 	// and restarts with the engine, so its namespace is built again each
 	// time the engine's socket directory is.
-	b.WriteString("\n[Install]\nWantedBy=" + SystemdUnitName + "\n")
+	b.WriteString("\n[Install]\nWantedBy=" + servicespec.SystemdUnitName + "\n")
 	return b.String(), nil
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
@@ -293,7 +294,7 @@ func TestEngineStarterEngineRunsButNeverServesThisSocket(t *testing.T) {
 func writeGiveUp(t *testing.T, stateDir, configPath, reason string, at time.Time) string {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(stateDir, 0o700))
-	rec := laststop.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: laststop.HashEngineJSON(configPath)}
+	rec := servicespec.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: laststop.HashEngineJSON(configPath)}
 	raw, err := json.Marshal(rec)
 	require.NoError(t, err)
 	path := filepath.Join(stateDir, app.LastStopFile)

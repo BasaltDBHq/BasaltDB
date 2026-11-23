@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
@@ -169,7 +170,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
 	d.Status.LatestGuardVersion = guard.LatestVersion
 	d.Status.StartHoldOffUntil = func(stop agent.LastStop, configPath string, now time.Time) (time.Time, bool) {
-		return laststop.StartHoldOffUntil(laststop.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
+		return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 	}
 	d.Status.CrashReports = func(dirs ...string) []agent.CrashReport {
 		reports := crash.List(dirs...)

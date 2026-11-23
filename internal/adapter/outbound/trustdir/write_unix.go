@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -224,9 +225,6 @@ func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustpr
 	return pf.Profile, replaced, nil
 }
 
-// ErrCovered: PinNew found a trust profile that covers the host already.
-var ErrCovered = errors.New("a trust profile covers this host already")
-
 // PinNew is Pin for a pin that may add trust and never replace it: under
 // the config lock, when a profile covers host (built-in or operator, a pin
 // included), it writes nothing and returns false when that profile is this
@@ -242,7 +240,7 @@ func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool,
 			if cur.Name == pf.Profile.Name && slices.ContainsFunc(cur.Certificates(), cert.Equal) {
 				return nil
 			}
-			return fmt.Errorf("%w: %s covers %s", ErrCovered, cur.Name, host)
+			return fmt.Errorf("%w: %s covers %s", setupcode.ErrCovered, cur.Name, host)
 		}
 		_, err := writePin(d, trusted, pf)
 		wrote = err == nil
@@ -267,7 +265,7 @@ func Repin(configPath, host string, cert *x509.Certificate, caOnly bool) ([]stri
 	var replaced []string
 	err = writeExisting(configPath, func(d *osservice.TrustedDir, trusted int) error {
 		if cur := Set(configPath).For(host); cur == nil || cur.Name != pf.Profile.Name || !cur.Exact() {
-			return fmt.Errorf("%w: the engine's pin %s is not what covers %s now", ErrCovered, pf.Profile.Name, host)
+			return fmt.Errorf("%w: the engine's pin %s is not what covers %s now", setupcode.ErrCovered, pf.Profile.Name, host)
 		}
 		var err error
 		replaced, err = writePin(d, trusted, pf)

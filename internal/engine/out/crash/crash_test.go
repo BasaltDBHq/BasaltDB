@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // leakedConn is built from parts so no secret scanner reads it as a
@@ -36,7 +38,7 @@ var secrets = []string{
 func testRecorder(t *testing.T) Recorder {
 	t.Helper()
 	return Recorder{
-		Dir: filepath.Join(t.TempDir(), DirName), Version: "1.2.3",
+		Dir: filepath.Join(t.TempDir(), servicespec.CrashDirName), Version: "1.2.3",
 		Scrub: NewScrubber("/Users/alice", "my-laptop-hostname", []string{"PGPASSWORD=envsecretvalue99", "SHORT=ab"}),
 		Now:   func() time.Time { return time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC) },
 	}
@@ -84,7 +86,7 @@ func TestPanicValuesAreNeverSaved(t *testing.T) {
 		struct{ Row string }{secrets[3]},
 	}
 	for _, v := range values {
-		rep, err := r.Save(Input{Command: "log", Kind: KindPanic, ErrorCode: "INTERNAL", Value: v, Stack: leak(t, v)})
+		rep, err := r.Save(servicespec.CrashInput{Command: "log", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: leak(t, v)})
 		require.NoError(t, err)
 		requireClean(t, rep)
 		require.True(t, strings.HasPrefix(rep.Message, "panic value of type "), rep.Message)
@@ -100,13 +102,13 @@ func TestRuntimeErrorMessageIsKeptAndScrubbed(t *testing.T) {
 		i := 3
 		_ = xs[:1][i]
 	}()
-	rep := r.Build(Input{Command: "log", Value: rtErr})
+	rep := r.Build(servicespec.CrashInput{Command: "log", Value: rtErr})
 	require.Equal(t, "runtime error: index out of range [3] with length 1", rep.Message)
 
 	// A runtime-error-shaped value that carries a secret is scrubbed.
-	rep = r.Build(Input{Command: "log", Value: fakeRuntimeError(secrets[0])})
+	rep = r.Build(servicespec.CrashInput{Command: "log", Value: fakeRuntimeError(secrets[0])})
 	require.Equal(t, "<redacted>", rep.Message)
-	rep = r.Build(Input{Command: "log", Value: fakeRuntimeError("cannot reach " + secrets[4] + " as " + secrets[3])})
+	rep = r.Build(servicespec.CrashInput{Command: "log", Value: fakeRuntimeError("cannot reach " + secrets[4] + " as " + secrets[3])})
 	for _, s := range secrets {
 		require.NotContains(t, rep.Message, s)
 	}
@@ -119,15 +121,15 @@ func (f fakeRuntimeError) RuntimeError() {}
 
 func TestCommandAndCodeAreAllowlisted(t *testing.T) {
 	r := testRecorder(t)
-	rep := r.Build(Input{Command: secrets[0], ErrorCode: secrets[1], Kind: "x"})
+	rep := r.Build(servicespec.CrashInput{Command: secrets[0], ErrorCode: secrets[1], Kind: "x"})
 	require.Equal(t, "unknown", rep.Command)
 	require.Empty(t, rep.ErrorCode)
-	require.Equal(t, KindPanic, rep.Kind)
+	require.Equal(t, servicespec.CrashKindPanic, rep.Kind)
 
-	rep = r.Build(Input{Command: "run_history", ErrorCode: "INTERNAL", Kind: KindFatal})
+	rep = r.Build(servicespec.CrashInput{Command: "run_history", ErrorCode: "INTERNAL", Kind: servicespec.CrashKindFatal})
 	require.Equal(t, "run_history", rep.Command)
 	require.Equal(t, "INTERNAL", rep.ErrorCode)
-	require.Equal(t, KindFatal, rep.Kind)
+	require.Equal(t, servicespec.CrashKindFatal, rep.Kind)
 }
 
 func TestStackKeepsShapeAndDropsValues(t *testing.T) {
@@ -167,7 +169,7 @@ func TestStackIsBoundedAndIssueLinkFits(t *testing.T) {
 	for i := range 2000 {
 		fmt.Fprintf(&b, "main.f%d(0x1)\n\t/src/pkg/dir/file%d.go:%d +0x1\n", i, i, i)
 	}
-	rep := r.Build(Input{Command: "log", Stack: []byte(b.String())})
+	rep := r.Build(servicespec.CrashInput{Command: "log", Stack: []byte(b.String())})
 	require.LessOrEqual(t, len(rep.Stack), maxStack+len("\n...trimmed..."))
 	link, trimmed := rep.IssueURL()
 	require.True(t, trimmed)
@@ -179,7 +181,7 @@ func TestStackIsBoundedAndIssueLinkFits(t *testing.T) {
 	require.Contains(t, u.Query().Get("body"), "stack trimmed")
 	require.Equal(t, "crash(log): panic in 1.2.3", u.Query().Get("title"))
 
-	short, trimmed := r.Build(Input{Command: "log", Stack: []byte("goroutine 1 [running]:\nmain.x()\n\tf.go:1 +0x1\n")}).IssueURL()
+	short, trimmed := r.Build(servicespec.CrashInput{Command: "log", Stack: []byte("goroutine 1 [running]:\nmain.x()\n\tf.go:1 +0x1\n")}).IssueURL()
 	require.False(t, trimmed)
 	require.Contains(t, short, "title=")
 }
@@ -192,7 +194,7 @@ func TestEnvValuesDoNotMangleFunctionNames(t *testing.T) {
 
 func TestTamperedReportIsSkipped(t *testing.T) {
 	r := testRecorder(t)
-	rep, err := r.Save(Input{Command: "log", Value: "x"})
+	rep, err := r.Save(servicespec.CrashInput{Command: "log", Value: "x"})
 	require.NoError(t, err)
 	rep.Command = "\x1b[31mred"
 	raw := []byte(rep.Show())
@@ -248,7 +250,7 @@ func TestSaveListAndRetention(t *testing.T) {
 	r := testRecorder(t)
 	ids := make([]string, 0, Keep+5)
 	for range Keep + 5 {
-		rep, err := r.Save(Input{Command: "log", Value: "x"})
+		rep, err := r.Save(servicespec.CrashInput{Command: "log", Value: "x"})
 		require.NoError(t, err)
 		ids = append(ids, rep.ID)
 	}

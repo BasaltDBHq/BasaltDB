@@ -18,21 +18,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
-)
-
-// Kinds of crash.
-const (
-	KindPanic = "PANIC"
-	KindFatal = "FATAL"
 )
 
 const (
 	// Keep is how many reports a directory holds: saving one past it
 	// deletes the oldest.
 	Keep = 20
-	// DirName is the directory, under the state directory, that holds them.
-	DirName = "crash"
 
 	dirMode  = 0o700
 	fileMode = 0o600
@@ -68,19 +61,6 @@ type Report struct {
 	Stack   string `json:"stack"`
 }
 
-// Input is what a crash handler knows.
-type Input struct {
-	// Command is the command or tool name; anything not shaped like one is
-	// saved as "unknown".
-	Command   string
-	Kind      string
-	ErrorCode string
-	// Value is the recovered panic value.
-	Value any
-	// Stack is runtime/debug.Stack from the deferred handler.
-	Stack []byte
-}
-
 // Recorder saves reports into Dir.
 type Recorder struct {
 	Dir     string
@@ -103,7 +83,7 @@ const unknown = "unknown"
 // Build makes the scrubbed report for in. It never keeps a panic value's
 // text unless the value is a Go runtime error (an index out of range, a nil
 // dereference), whose message the runtime writes and no one else.
-func (r Recorder) Build(in Input) Report {
+func (r Recorder) Build(in servicespec.CrashInput) Report {
 	rep := Report{
 		ID: uniqueid.New(), Time: r.Now().UTC(), Version: r.Version,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, GoVersion: runtime.Version(),
@@ -112,8 +92,8 @@ func (r Recorder) Build(in Input) Report {
 	if reCommand.MatchString(in.Command) {
 		rep.Command = in.Command
 	}
-	if rep.Kind != KindFatal {
-		rep.Kind = KindPanic
+	if rep.Kind != servicespec.CrashKindFatal {
+		rep.Kind = servicespec.CrashKindPanic
 	}
 	if reCode.MatchString(in.ErrorCode) {
 		rep.ErrorCode = in.ErrorCode
@@ -152,7 +132,7 @@ func clip(s string, n int) string {
 }
 
 // Save builds the report for in, writes it to Dir and keeps the newest Keep.
-func (r Recorder) Save(in Input) (Report, error) {
+func (r Recorder) Save(in servicespec.CrashInput) (Report, error) {
 	rep := r.Build(in)
 	dm, fm := os.FileMode(dirMode), os.FileMode(fileMode)
 	if r.Shared {

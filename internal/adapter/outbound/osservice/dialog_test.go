@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 const dialogBinary = "/usr/local/bin/basalt"
@@ -23,7 +24,7 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 		goos, unitPath, start string
 		want                  []string
 	}{
-		{"linux", osservice.SystemdUnitPath, "systemctl enable --now " + osservice.SystemdUnitName, []string{
+		{"linux", osservice.SystemdUnitPath, "systemctl enable --now " + servicespec.SystemdUnitName, []string{
 			"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
 			"make_dir /etc/basalt 0750 basalt basalt",
 			"make_root_dir /opt/basalt 0755",
@@ -135,18 +136,18 @@ func TestInstallScriptRefusesAnUnsafeBinaryPath(t *testing.T) {
 
 func TestDialogCommand(t *testing.T) {
 	t.Parallel()
-	argv, err := osservice.DialogCommand("darwin", osservice.ResetPrompt, "echo hi")
+	argv, err := osservice.DialogCommand("darwin", servicespec.ResetPrompt, "echo hi")
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"/usr/bin/osascript", "-e", "on run argv", "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges", "-e", "end run", "echo hi", osservice.ResetPrompt,
+		"/usr/bin/osascript", "-e", "on run argv", "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges", "-e", "end run", "echo hi", servicespec.ResetPrompt,
 	}, argv, "the script and the prompt go as arguments, never inside AppleScript text")
 
-	argv, err = osservice.DialogCommand("linux", osservice.ResetPrompt, "echo hi")
+	argv, err = osservice.DialogCommand("linux", servicespec.ResetPrompt, "echo hi")
 	require.NoError(t, err)
 	require.Equal(t, []string{"/usr/bin/pkexec", "--disable-internal-agent", "/bin/sh", "-c", "echo hi"}, argv,
 		"no text prompt: only the desktop's dialog answers")
 
-	_, err = osservice.DialogCommand("windows", osservice.ResetPrompt, "echo hi")
+	_, err = osservice.DialogCommand("windows", servicespec.ResetPrompt, "echo hi")
 	require.Error(t, err)
 }
 
@@ -154,12 +155,12 @@ func TestDialogCommand(t *testing.T) {
 // unexpected dialog reads as one to cancel.
 func TestDialogPromptsNameTheirAction(t *testing.T) {
 	t.Parallel()
-	for prompt, action := range map[string]string{osservice.InstallPrompt: "INSTALL", osservice.RemovePrompt: "REMOVE", osservice.ResetPrompt: "RESET"} {
+	for prompt, action := range map[string]string{servicespec.InstallPrompt: "INSTALL", servicespec.RemovePrompt: "REMOVE", servicespec.ResetPrompt: "RESET"} {
 		require.Contains(t, prompt, "BasaltDB wants to "+action+" ")
 		require.Contains(t, prompt, "Cancel unless you just ")
 		require.NotContainsf(t, prompt, `"`, "the prompt is an AppleScript argument; keep it plain: %s", prompt)
 	}
-	require.Contains(t, osservice.ResetPrompt, "No, this isn't mine")
+	require.Contains(t, servicespec.ResetPrompt, "No, this isn't mine")
 }
 
 func TestDialogError(t *testing.T) {
@@ -172,10 +173,10 @@ func TestDialogError(t *testing.T) {
 		stderr string
 		is     error
 	}{
-		{"linux", 126, "", osservice.ErrDialogCancelled},
-		{"linux", 127, "Error executing command as another user: No authentication agent found.", osservice.ErrNoDialog},
-		{"darwin", 1, "0:58: execution error: User canceled. (-128)", osservice.ErrDialogCancelled},
-		{"darwin", 1, "execution error: No user interaction allowed. (-1713)", osservice.ErrNoDialog},
+		{"linux", 126, "", servicespec.ErrDialogCancelled},
+		{"linux", 127, "Error executing command as another user: No authentication agent found.", servicespec.ErrNoDialog},
+		{"darwin", 1, "0:58: execution error: User canceled. (-128)", servicespec.ErrDialogCancelled},
+		{"darwin", 1, "execution error: No user interaction allowed. (-1713)", servicespec.ErrNoDialog},
 		{"darwin", 1, "execution error: basalt: /etc is owned by uid 501, not root (1)", osservice.ErrDialogScript},
 		{"linux", 1, "basalt: /etc/basalt is writable by group or others", osservice.ErrDialogScript},
 	} {

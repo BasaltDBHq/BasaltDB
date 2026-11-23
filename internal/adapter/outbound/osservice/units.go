@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // Service names and unit locations.
@@ -20,10 +21,8 @@ const (
 	goosLinux  = "linux"
 	goosDarwin = "darwin"
 
-	SystemdUnitName = "basalt-engine.service"
-	SystemdUnitPath = "/etc/systemd/system/" + SystemdUnitName
-	LaunchdLabel    = "dev.basaltdb.engine"
-	LaunchdPlist    = "/Library/LaunchDaemons/" + LaunchdLabel + ".plist"
+	SystemdUnitPath = "/etc/systemd/system/" + servicespec.SystemdUnitName
+	LaunchdPlist    = "/Library/LaunchDaemons/" + servicespec.LaunchdLabel + ".plist"
 
 	linuxUser     = "basalt"
 	darwinUser    = "_basalt" // macOS system accounts start with '_'
@@ -126,18 +125,18 @@ func DefaultUser(goos string) string {
 // and kickstart starts (or restarts) it.
 func StartCommand(goos string) string {
 	if goos == goosDarwin {
-		return "sudo launchctl bootstrap system " + LaunchdPlist + "; sudo launchctl kickstart -k system/" + LaunchdLabel
+		return "sudo launchctl bootstrap system " + LaunchdPlist + "; sudo launchctl kickstart -k system/" + servicespec.LaunchdLabel
 	}
-	return "sudo systemctl start " + SystemdUnitName
+	return "sudo systemctl start " + servicespec.SystemdUnitName
 }
 
 // RestartArgs is the command that restarts the installed engine on goos,
 // so it picks up a changed config.
 func RestartArgs(goos string) []string {
 	if goos == goosDarwin {
-		return []string{"launchctl", "kickstart", "-k", "system/" + LaunchdLabel}
+		return []string{"launchctl", "kickstart", "-k", "system/" + servicespec.LaunchdLabel}
 	}
-	return []string{"systemctl", "restart", SystemdUnitName}
+	return []string{"systemctl", "restart", servicespec.SystemdUnitName}
 }
 
 func (s Spec) args() []string {
@@ -241,7 +240,7 @@ func LaunchdDaemon(s Spec) string {
 	</dict>
 </dict>
 </plist>
-`, LaunchdLabel, args.String(), xmlEscape(s.User), launchdUmask, darwinLogFile, int64(high)*bytesPerMB, int64(hard)*bytesPerMB)
+`, servicespec.LaunchdLabel, args.String(), xmlEscape(s.User), launchdUmask, darwinLogFile, int64(high)*bytesPerMB, int64(hard)*bytesPerMB)
 }
 
 func xmlEscape(s string) string {

@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 )
 
 // IssueBase is the new-issue page of the public repository.
@@ -18,7 +20,7 @@ const trimmedNote = "...stack trimmed to fit the link; the full text is in the s
 // Title is the issue title: the command and what happened.
 func (rep Report) Title() string {
 	what := "panic"
-	if rep.Kind == KindFatal {
+	if rep.Kind == servicespec.CrashKindFatal {
 		what = "fatal error"
 	}
 	t := "crash(" + rep.Command + "): " + what

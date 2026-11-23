@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 )
 
@@ -21,8 +22,8 @@ func TestCrashDirsFindAnEngineProcessPanic(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		cfg = filepath.Join(cfg, "Library", "Application Support")
 	}
-	rec := crash.Recorder{Dir: filepath.Join(cfg, "basalt", crash.DirName), Version: "v1", Scrub: crash.NewScrubber("", "", nil), Now: time.Now}
-	rep, err := rec.Save(crash.Input{Command: "engine", Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte("main.f()\n\t/src/a.go:1 +0x1\n")})
+	rec := crash.Recorder{Dir: filepath.Join(cfg, "basalt", servicespec.CrashDirName), Version: "v1", Scrub: crash.NewScrubber("", "", nil), Now: time.Now}
+	rep, err := rec.Save(servicespec.CrashInput{Command: "engine", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte("main.f()\n\t/src/a.go:1 +0x1\n")})
 	require.NoError(t, err)
 
 	got := crash.List(crashDirs(t.TempDir())...)

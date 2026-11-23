@@ -34,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
@@ -1188,7 +1189,7 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	cfgPath := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
 	at := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
-	rec, err := json.Marshal(laststop.LastStopFileRecord{
+	rec, err := json.Marshal(servicespec.LastStopFileRecord{
 		Reason: "the engine crashed 5 times within 10s; last: exit status 1",
 		At:     at, EngineSHA256: laststop.HashEngineJSON(cfgPath),
 	})
@@ -1229,7 +1230,7 @@ func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	cfgPath := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))
 	at := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
-	rec, err := json.Marshal(laststop.LastStopFileRecord{
+	rec, err := json.Marshal(servicespec.LastStopFileRecord{
 		Reason: "the engine crashed 5 times within 10s; last: exit status 1",
 		At:     at, EngineSHA256: laststop.HashEngineJSON(cfgPath),
 	})

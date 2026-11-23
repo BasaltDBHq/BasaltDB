@@ -25,19 +25,10 @@ const (
 	problemGuardOutdated       = guidance.ReasonGuardOutdated
 	problemUpgradeAvailable    = "GUARD_UPGRADE_AVAILABLE"
 	problemNoPasskey           = "NO_PASSKEY"
-	problemSetupNotRun         = "SETUP_NOT_RUN"
-	problemSetupExpired        = "SETUP_EXPIRED"
-	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
 	problemLockFileUnusable    = "LOCK_FILE_UNUSABLE"
 	problemLedgerReinstalled   = "LEDGER_REINSTALLED"
 	problemPortalMismatch      = "PORTAL_MISMATCH"
 	problemEngineRevoked       = "ENGINE_REVOKED"
-	// The problems of a connect-only setup (CONTRACT.md, The engine and a
-	// connect-only code).
-	problemConfirmDatabase    = "CONFIRM_DATABASE"
-	problemDatabaseRefused    = "DATABASE_REFUSED"
-	problemUnreachableFromBot = "DATABASE_UNREACHABLE_FROM_BOT"
-	problemSetupNotFound      = "SETUP_NOT_FOUND"
 	// problemEngineStartFailed: basalt mcp tried to start the engine and
 	// could not (CONTRACT.md, MCP tools, status).
 	problemEngineStartFailed = "ENGINE_START_FAILED"
@@ -73,19 +64,6 @@ const (
 const (
 	EnforcementEngineAndGuard = "ENGINE_AND_GUARD"
 	EnforcementGuardOnly      = "GUARD_ONLY"
-)
-
-// Setup states of the status tool.
-const (
-	setupNone    = "NONE"
-	setupPending = "PENDING"
-	setupExpired = "EXPIRED"
-	setupDone    = "DONE"
-	// setupConfirmDatabase: a connect-only setup's database was collected
-	// and probed, and waits for the person's confirmation.
-	setupConfirmDatabase = "CONFIRM_DATABASE"
-	// setupRefused: the person said the collected database is not theirs.
-	setupRefused = "REFUSED"
 )
 
 // Probe reads, on the agent's own credential, what status reports from the

@@ -10,6 +10,7 @@ import (
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -208,7 +209,7 @@ func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string
 	case guidance.ReasonNoPrimaryKey:
 		b.Stop("The table has no primary key, so its writes cannot be recorded: do not retry or work around it.")
 		return fmt.Sprintf("%s has no primary key, so Basalt cannot guard writes to it and refuses them. Add a primary key to the table, "+
-			"or revoke the agent's write access to it.", guidance.Shown(tableFromDetail(te.Message), maxTableChars))
+			"or revoke the agent's write access to it.", guidance.Shown(tableFromDetail(te.Message), guidance.MaxTableChars))
 	case guidance.ReasonNotAllowed:
 		b.Stop("The database refused this action for the agent: do not retry or work around it.")
 		return ""
@@ -326,7 +327,7 @@ func (s *Service) permissionDeniedSteps(b *guidance.Steps, te *toolresult.ToolEr
 	}
 	what := "access to what it asked for"
 	if m := deniedTable.FindStringSubmatch(te.Message); m != nil {
-		what = access + " access to " + guidance.Shown(m[1], maxTableChars)
+		what = access + " access to " + guidance.Shown(m[1], guidance.MaxTableChars)
 	}
 	b.AskPerson("Tell the person which access is missing and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the access once you decide it should have it.")
@@ -419,7 +420,7 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 			b.Fail(errors.New("a database waiting for confirmation needs its setup and address"))
 			return ""
 		}
-		return confirmDatabaseSteps(b, dn.SetupID, dn.Database)
+		return handoff.ConfirmDatabaseSteps(b, dn.SetupID, dn.Database)
 	case guidance.ReasonPagesOff:
 		b.CallTool(guidance.ToolListPending, map[string]any{}, "Read the held writes: each has the link the person opens, since this engine serves no pages.")
 		return ""

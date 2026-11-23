@@ -87,14 +87,6 @@ func noFollowFlags() int { return rules().NoFollowFlags() }
 
 func requiredOwner(mode pluginmodel.Mode) (uint32, error) { return rules().Owner(mode) }
 
-// CheckSocketBase applies the path rule to a socket base directory.
-func CheckSocketBase(dir string) error { return rules().CheckSocketBase(dir) }
-
-// CheckSocketBaseInfo is CheckSocketBase's rule for dir alone, judged from fi.
-func CheckSocketBaseInfo(dir string, fi fs.FileInfo) error {
-	return rules().CheckSocketBaseInfo(dir, fi)
-}
-
 // The root-owned base directory of plugins in service mode, per OS. It holds
 // the installed copies and the trust store side by side. The config directory
 // is not used in service mode: it may belong to the engine's OS user, which

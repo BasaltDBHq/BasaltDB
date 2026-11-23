@@ -126,9 +126,6 @@ func NewOptions(stderr io.Writer, euid int, stateDir string, kept *pluginhost.St
 	return Options{Stderr: stderr, euid: euid, stateDir: stateDir, kept: kept, Dialer: dialer, Ports: ports}
 }
 
-// KeptStore is the engine's own entries' store, nil when it keeps none.
-func (o Options) KeptStore() *pluginhost.Store { return o.kept }
-
 // NewAgentLedger is an agent's ledger for the plugin records: its database
 // handle, the engine's admission of the agent (nil admits it) and the ports.
 func NewAgentLedger(db Querier, admit func(context.Context) error, ports Ports) AgentLedger {
@@ -140,9 +137,6 @@ func NewAgentLedger(db Querier, admit func(context.Context) error, ports Ports) 
 func NewKeptAgent(db Querier, host string, port uint16, database, role string) KeptAgent {
 	return KeptAgent{db: db, host: host, port: port, database: database, role: role}
 }
-
-// Reachable reports whether the agent has a database to open approvals in.
-func (k KeptAgent) Reachable() bool { return k.db != nil }
 
 // NewRequests serve the agents' request_plugin calls: uids is every
 // configured agent's OS user id, admitted the OS users that may change

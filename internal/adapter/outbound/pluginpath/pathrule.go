@@ -68,18 +68,6 @@ func Root(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	return filepath.Join(b, pluginmodel.PluginsDirName), nil
 }
 
-// TrustDir is the trust store's directory, next to Root:
-// /opt/basalt/plugin-trust on Linux and
-// /Library/Basalt/plugin-trust on macOS in service mode,
-// <configDir>/plugin-trust in same-user mode.
-func TrustDir(mode pluginmodel.Mode, goos, configDir string) (string, error) {
-	b, err := base(mode, goos, configDir)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(b, pluginmodel.TrustDirName), nil
-}
-
 // RuleRefusal is a refusal for who can write path, a symlink or its owner,
 // with what was found there (pluginmodel.VerifyError.Path).
 func RuleRefusal(path, why string, kind pluginmodel.PathFaultKind, fi fs.FileInfo, owners ...uint32) *pluginmodel.VerifyError {

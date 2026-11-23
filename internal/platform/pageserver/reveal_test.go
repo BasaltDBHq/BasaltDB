@@ -1,4 +1,4 @@
-package pages_test
+package pageserver_test
 
 import (
 	"context"

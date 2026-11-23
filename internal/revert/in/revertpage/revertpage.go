@@ -12,23 +12,23 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // revertPage serves the revert page's API on the server's agents.
-type revertPage struct{ s *pages.Server }
+type revertPage struct{ s *pageserver.Server }
 
 // NewRevertHandlers are the revert routes' handlers on s's agents, for
 // s.MountReverts.
-func NewRevertHandlers(s *pages.Server) pages.RevertHandlers {
+func NewRevertHandlers(s *pageserver.Server) pageserver.RevertHandlers {
 	p := revertPage{s: s}
-	return pages.RevertHandlers{Get: p.getRevert, Apply: p.postRevert, Scope: p.postScope, Reject: p.postReject, Reveal: p.postRevertReveal}
+	return pageserver.RevertHandlers{Get: p.getRevert, Apply: p.postRevert, Scope: p.postScope, Reject: p.postReject, Reveal: p.postRevertReveal}
 }
 
 // appliedDTO is the relay's answer for a revert: the applied revert, with
@@ -46,12 +46,12 @@ type relayedRevert struct {
 }
 
 func (p revertPage) getRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, pages.RevertParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.RevertParam)
 	if !ok {
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
-	req, err := pages.Find(r.Context(), p.s, func(ctx context.Context, a pages.Agent) (revert.Request, error) {
+	req, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (revert.Request, error) {
 		return a.RevertRequest(ctx, id, secret)
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func (p revertPage) getRevert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p revertPage) postRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, pages.RevertParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.RevertParam)
 	if !ok {
 		return
 	}
@@ -75,7 +75,7 @@ func (p revertPage) postRevert(w http.ResponseWriter, r *http.Request) {
 		p.s.Fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
 		return
 	}
-	out, err := pages.Find(r.Context(), p.s, func(ctx context.Context, a pages.Agent) (relayedRevert, error) {
+	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (relayedRevert, error) {
 		applied, receipt, err := a.RelayRevert(ctx, resp)
 		return relayedRevert{applied: applied, receipt: receipt}, err
 	})
@@ -92,7 +92,7 @@ func (p revertPage) postRevert(w http.ResponseWriter, r *http.Request) {
 // refused on its shape, before anything is looked up. Postgres checks the
 // rest in the contract's order.
 func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, pages.RevertParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.RevertParam)
 	if !ok {
 		return
 	}
@@ -111,7 +111,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
-	out, err := pages.Find(r.Context(), p.s, func(ctx context.Context, a pages.Agent) (agent.ScopeResponse, error) {
+	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (agent.ScopeResponse, error) {
 		return a.RescopeRevert(ctx, id, secret, in)
 	})
 	if err != nil {
@@ -125,7 +125,7 @@ func (p revertPage) postScope(w http.ResponseWriter, r *http.Request) {
 // …/reject). The body is decoded strictly, { "note"? }; the note's length is
 // the service's to check. Postgres decides the rest.
 func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, pages.RevertParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.RevertParam)
 	if !ok {
 		return
 	}
@@ -144,7 +144,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
-	out, err := pages.Find(r.Context(), p.s, func(ctx context.Context, a pages.Agent) (agent.RejectResponse, error) {
+	out, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (agent.RejectResponse, error) {
 		return a.RejectRevert(ctx, id, secret, in)
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func (p revertPage) postReject(w http.ResponseWriter, r *http.Request) {
 // postRevertReveal shows the person the values of the revert's redacted
 // lines (Server.Reveal).
 func (p revertPage) postRevertReveal(w http.ResponseWriter, r *http.Request) {
-	p.s.Reveal(w, r, pages.RevertParam, func(ctx context.Context, a pages.Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+	p.s.Reveal(w, r, pageserver.RevertParam, func(ctx context.Context, a pageserver.Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
 		return a.RevealRevert(ctx, id, secret, in)
 	})
 }

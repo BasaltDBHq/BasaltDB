@@ -1,4 +1,4 @@
-package pages_test
+package pageserver_test
 
 import (
 	"context"
@@ -19,13 +19,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/web"
@@ -38,7 +38,7 @@ var updateRoutes = flag.Bool("update-routes", false, "rewrite testdata/routes.go
 // request reached.
 type probeAgent struct{}
 
-var _ pages.PluginApprovals = probeAgent{}
+var _ pageserver.PluginApprovals = probeAgent{}
 
 func (probeAgent) ApprovalRequest(context.Context, uuid.UUID) (approval.Request, error) {
 	return approval.Request{}, errors.New("ApprovalRequest")
@@ -108,7 +108,7 @@ var apiProbes = []struct{ method, path string }{
 
 // setupProbes are the setup routes and the page.
 var setupProbes = []string{
-	pages.SetupCheckPath, pages.SetupRunPath, pages.SetupDoctorPath, pages.SetupEnginePath, pages.SetupNotMinePath,
+	pageserver.SetupCheckPath, pageserver.SetupRunPath, pageserver.SetupDoctorPath, pageserver.SetupEnginePath, pageserver.SetupNotMinePath,
 }
 
 // fileProbes are the pages, their files and what is not served.
@@ -182,14 +182,14 @@ func probeHandler(h http.Handler) []string {
 }
 
 // probeSession runs the API probes through a session on probeID's link.
-func probeSession(t *testing.T, srv *pages.Server) []string {
+func probeSession(t *testing.T, srv *pageserver.Server) []string {
 	t.Helper()
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	secret, err := secrets.Issue(probeID, time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
-	link := pages.SessionLink{Token: keys.Token, Item: probeID}
+	link := pageserver.SessionLink{Token: keys.Token, Item: probeID}
 	paths := make([]string, 0, len(apiProbes)+len(setupProbes)+2)
 	for _, p := range apiProbes {
 		paths = append(paths, fmt.Sprintf(p.path, probeID))
@@ -200,7 +200,7 @@ func probeSession(t *testing.T, srv *pages.Server) []string {
 	for _, path := range paths {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			headers := map[string]string{links.SecretHeader: secret, "origin": setupOrigin, "content-type": "application/json"}
-			got := srv.Dispatch(context.Background(), link, pages.SessionRequest{Method: method, Path: path, Headers: headers, Body: []byte("{}")})
+			got := srv.Dispatch(context.Background(), link, pageserver.SessionRequest{Method: method, Path: path, Headers: headers, Body: []byte("{}")})
 			out = append(out, fmt.Sprintf("SESSION %s %s -> %s", method, strings.ReplaceAll(path, probeID.String(), "{id}"),
 				answer(got.Status, http.Header{"Content-Type": {got.ContentType}}, got.Body)))
 		}

@@ -1,4 +1,4 @@
-package pages_test
+package pageserver_test
 
 import (
 	"context"
@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -33,7 +33,7 @@ type pluginAgent struct {
 	at        time.Time
 }
 
-var _ pages.PluginApprovals = (*pluginAgent)(nil)
+var _ pageserver.PluginApprovals = (*pluginAgent)(nil)
 
 const (
 	pluginBinding  = `{"kind": "PLUGIN", "name": "local-ner"}`
@@ -195,17 +195,17 @@ func TestPluginRoutesInASession(t *testing.T) {
 	require.NoError(t, err)
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
-	link := pages.SessionLink{Token: keys.Token, Item: id}
+	link := pageserver.SessionLink{Token: keys.Token, Item: id}
 	headers := map[string]string{links.SecretHeader: secret, "origin": origin}
 	post := map[string]string{links.SecretHeader: secret, "origin": origin, "content-type": "application/json"}
 
-	got := srv.Dispatch(context.Background(), link, pages.SessionRequest{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
+	got := srv.Dispatch(context.Background(), link, pageserver.SessionRequest{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
 	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
 	var req approval.PluginRequest
 	require.NoError(t, json.Unmarshal(got.Body, &req))
 	require.Equal(t, approval.PluginRequest{ApprovalID: id, Binding: pluginBinding, Settings: pluginSettings}, req)
 
-	got = srv.Dispatch(context.Background(), link, pages.SessionRequest{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))})
+	got = srv.Dispatch(context.Background(), link, pageserver.SessionRequest{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))})
 	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
 	var answer map[string]any
 	require.NoError(t, json.Unmarshal(got.Body, &answer))
@@ -214,7 +214,7 @@ func TestPluginRoutesInASession(t *testing.T) {
 
 	// The plugin link's session reaches no approval or revert route, and
 	// no route the allowlist does not name.
-	for _, req := range []pages.SessionRequest{
+	for _, req := range []pageserver.SessionRequest{
 		{Method: http.MethodGet, Path: "/api/v1/approvals/" + id.String(), Headers: headers},
 		{Method: http.MethodPost, Path: "/api/v1/approvals/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
 		{Method: http.MethodGet, Path: "/api/v1/reverts/" + id.String(), Headers: headers},
@@ -230,9 +230,9 @@ func TestPluginRoutesInASession(t *testing.T) {
 	require.NoError(t, err)
 	otherKeys, err := channel.DeriveLink(otherSecret)
 	require.NoError(t, err)
-	otherLink := pages.SessionLink{Token: otherKeys.Token, Item: other}
+	otherLink := pageserver.SessionLink{Token: otherKeys.Token, Item: other}
 	for _, path := range []string{"/api/v1/plugins/" + id.String(), "/api/v1/plugins/" + other.String()} {
-		got := srv.Dispatch(context.Background(), otherLink, pages.SessionRequest{Method: http.MethodGet, Path: path, Headers: map[string]string{links.SecretHeader: otherSecret, "origin": origin}})
+		got := srv.Dispatch(context.Background(), otherLink, pageserver.SessionRequest{Method: http.MethodGet, Path: path, Headers: map[string]string{links.SecretHeader: otherSecret, "origin": origin}})
 		require.Equal(t, http.StatusNotFound, got.Status, path)
 	}
 	require.Len(t, a.submitted, 1)

@@ -26,7 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -43,6 +42,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -232,7 +232,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// Link sessions through the Vault are answered by the pages API on the
 	// portal's origin (CONTRACT.md, Vault channel, Frames), with no
 	// listener: only the session reaches these handlers.
-	var sessionPages *pages.Server
+	var sessionPages *pageserver.Server
 	var dispatch vault.Dispatcher
 	// gate counts the agent calls, person requests and page sessions
 	// running, so a restart onto an upgraded binary waits for them.
@@ -498,7 +498,7 @@ func (env agentEnv) serverInfo(notice func() string) mcp.Info {
 
 // pagesSite is the bound local pages listener (CONTRACT.md, Local pages).
 type pagesSite struct {
-	pages   *pages.Server
+	pages   *pageserver.Server
 	ln      net.Listener
 	handler http.Handler
 	origin  string

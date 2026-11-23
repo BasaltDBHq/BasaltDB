@@ -24,7 +24,7 @@ person --> approval / revert page (passkey) -----------> engine or relay --> bas
 1. The agent calls the `write` tool. The engine parses the statement (`internal/core/sqlguard`), refuses what the policy does not allow, and runs the rest on the agent's credential through the guard, inside a transaction that carries the agent's stated intent.
 2. The guard's row triggers record old and new rows in the ledger in the same transaction and count rows, cascades included. A write over the row limit, and every `DELETE`, raises an error that the guard turns into a hold instead of a change.
 3. The engine previews the rows, stores the hold, and answers `APPROVAL_REQUIRED` with a link. The agent hands the link to the person (`internal/core/links`, `internal/service/agent`).
-4. The person opens the page and signs with a passkey. The pages are static files in `web/`, served by the engine on a loopback listener (`internal/adapter/inbound/pages`) or by a hosted portal. The page and whatever carries the signed result are not trusted.
+4. The person opens the page and signs with a passkey. The pages are static files in `web/`, served by the engine on a loopback listener (`internal/platform/pageserver`) or by a hosted portal. The page and whatever carries the signed result are not trusted.
 5. Postgres verifies the P-256 signature in `basalt_meta.submit_approval`. Go has a mirror of that check (`internal/core/passkey`) for early feedback, but only Postgres's check counts. `internal/core/approval` encodes the codes that travel between the engine, the page and the relay.
 6. The agent repeats the `write` with the approval id, and the engine applies exactly what was previewed. If the rows changed meanwhile, it is refused.
 

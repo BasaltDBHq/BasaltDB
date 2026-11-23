@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
@@ -25,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -48,7 +48,7 @@ func pluginApprovalDetail(version string, agents ...string) guardmodel.PluginApp
 // has its own. Every service is the engine's own (pgAgent).
 type pluginPages struct {
 	t      *testing.T
-	srv    *pages.Server
+	srv    *pageserver.Server
 	origin string
 	// offset moves the services' clock forward.
 	offset atomic.Int64
@@ -254,8 +254,8 @@ func theirsRequestedBy(t *testing.T, binding string) string {
 
 // newPages is the pages for origin with every page's handlers mounted, as
 // app mounts them.
-func newPages(origin string, log *slog.Logger) *pages.Server {
-	srv := pages.New(origin, log)
+func newPages(origin string, log *slog.Logger) *pageserver.Server {
+	srv := pageserver.New(origin, log)
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))

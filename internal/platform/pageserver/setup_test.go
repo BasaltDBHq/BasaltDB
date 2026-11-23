@@ -1,4 +1,4 @@
-package pages_test
+package pageserver_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -91,7 +91,7 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 	jobs := &fakeJobs{}
 	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
 
-	for _, path := range []string{pages.SetupCheckPath, pages.SetupRunPath} {
+	for _, path := range []string{pageserver.SetupCheckPath, pageserver.SetupRunPath} {
 		w := setupCall{path: path, origin: setupOrigin, body: setupBody("")}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
@@ -104,14 +104,14 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 		call setupCall
 		code int
 	}{
-		{"no Origin", setupCall{path: pages.SetupCheckPath, body: setupBody("")}, http.StatusForbidden},
-		{"a foreign Origin", setupCall{path: pages.SetupCheckPath, origin: "https://evil.example", body: setupBody("")}, http.StatusForbidden},
-		{"the loopback address as Origin", setupCall{path: pages.SetupRunPath, origin: "http://127.0.0.1:8787", body: setupBody("")}, http.StatusForbidden},
-		{"another port", setupCall{path: pages.SetupRunPath, origin: "http://localhost:8788", body: setupBody("")}, http.StatusForbidden},
-		{"not JSON", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, contentType: "text/plain", body: setupBody("")}, http.StatusUnsupportedMediaType},
-		{"an unknown field", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"extra":1`)}, http.StatusBadRequest},
-		{"two bodies", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("") + "{}"}, http.StatusBadRequest},
-		{"too large", setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 257<<10) + `"}]`)}, http.StatusRequestEntityTooLarge},
+		{"no Origin", setupCall{path: pageserver.SetupCheckPath, body: setupBody("")}, http.StatusForbidden},
+		{"a foreign Origin", setupCall{path: pageserver.SetupCheckPath, origin: "https://evil.example", body: setupBody("")}, http.StatusForbidden},
+		{"the loopback address as Origin", setupCall{path: pageserver.SetupRunPath, origin: "http://127.0.0.1:8787", body: setupBody("")}, http.StatusForbidden},
+		{"another port", setupCall{path: pageserver.SetupRunPath, origin: "http://localhost:8788", body: setupBody("")}, http.StatusForbidden},
+		{"not JSON", setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, contentType: "text/plain", body: setupBody("")}, http.StatusUnsupportedMediaType},
+		{"an unknown field", setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"extra":1`)}, http.StatusBadRequest},
+		{"two bodies", setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("") + "{}"}, http.StatusBadRequest},
+		{"too large", setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 257<<10) + `"}]`)}, http.StatusRequestEntityTooLarge},
 	} {
 		w := v.call.do(h)
 		require.Equal(t, v.code, w.Code, v.name)
@@ -121,12 +121,12 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 
 	// The setup routes take up to 256 KiB (500 column labels); the page's
 	// other routes keep 16 KiB.
-	big := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 100<<10) + `"}]`)}.do(h)
+	big := setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody(`,"answers":[{"table":"` + strings.Repeat("x", 100<<10) + `"}]`)}.do(h)
 	require.Equal(t, http.StatusOK, big.Code, big.Body.String())
 	require.Len(t, jobs.got, 3)
 
 	jobs.refusal = &localsetup.RefusalError{Code: localsetup.CodeLoginFailed, Message: "The database refused the login."}
-	w := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	w := setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
@@ -136,7 +136,7 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 		Code: localsetup.CodeCertificateNotVerified, Message: "not verified",
 		TrustRoot: &localsetup.TrustRoot{Subject: "CN=Root", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
 	}
-	w = setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	w = setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	var withRoot struct {
 		Code      string
 		TrustRoot localsetup.TrustRoot
@@ -164,7 +164,7 @@ func TestSetupRefusalStatuses(t *testing.T) {
 	} {
 		jobs := &fakeJobs{refusal: &localsetup.RefusalError{Code: code, Message: "m"}}
 		h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
-		w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
+		w := setupCall{path: pageserver.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 		require.Equal(t, status, w.Code, code)
 	}
 }
@@ -193,7 +193,7 @@ func TestSetupOnlyHandlerServesThePageAndNothingElse(t *testing.T) {
 func TestConfiguredPagesTakeNoAdminString(t *testing.T) {
 	t.Parallel()
 	h := newMounted(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
-	w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	w := setupCall{path: pageserver.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
 
@@ -232,7 +232,7 @@ func TestConfiguredPagesRunTheSetupJobsTheyAreGiven(t *testing.T) {
 	h := srv.Handler()
 	body := `{"job":"UPDATE","agent":"demo_bot","osUser":"alice","demo":false,"databaseUrl":"` + adminString + `"}`
 
-	for _, path := range []string{pages.SetupCheckPath, pages.SetupRunPath} {
+	for _, path := range []string{pageserver.SetupCheckPath, pageserver.SetupRunPath} {
 		w := setupCall{path: path, origin: setupOrigin, body: body}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.NotContains(t, w.Body.String(), adminSecret)
@@ -258,22 +258,22 @@ func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 	srv := newMounted(setupOrigin, slog.New(slog.DiscardHandler))
 	srv.MountSetup(setuppage.NewSetupHandlers(setupOrigin, jobs, slog.New(slog.DiscardHandler)))
 	for _, h := range []http.Handler{srv.Handler(), setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
-		w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
+		w := setupCall{path: pageserver.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), `"database":"app"`)
 		for _, body := range []string{`{"agent":"demo_bot","osUser":"alice","databaseUrl":"` + adminString + `"}`, `{"agent":"a","osUser":"b","extra":1}`} {
-			w = setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: body}.do(h)
+			w = setupCall{path: pageserver.SetupDoctorPath, origin: setupOrigin, body: body}.do(h)
 			require.Equal(t, http.StatusBadRequest, w.Code, body)
 			require.NotContains(t, w.Body.String(), adminSecret)
 		}
-		w = setupCall{path: pages.SetupDoctorPath, origin: "http://localhost:9999", body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
+		w = setupCall{path: pageserver.SetupDoctorPath, origin: "http://localhost:9999", body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 		require.Equal(t, http.StatusForbidden, w.Code)
 	}
 	require.Len(t, jobs.doctors, 2)
 	require.Equal(t, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}, jobs.doctors[0])
 
 	h := newMounted(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
-	w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
+	w := setupCall{path: pageserver.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
 }
@@ -287,12 +287,12 @@ func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
 	srv := newMounted(setupOrigin, slog.New(slog.DiscardHandler))
 	srv.MountSetup(setuppage.NewSetupHandlers(setupOrigin, jobs, slog.New(slog.DiscardHandler)))
 	for _, h := range []http.Handler{srv.Handler(), setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
-		w := setupCall{path: pages.SetupEnginePath, origin: setupOrigin, body: `{}`}.do(h)
+		w := setupCall{path: pageserver.SetupEnginePath, origin: setupOrigin, body: `{}`}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), `"database":"app"`)
-		w = setupCall{path: pages.SetupNotMinePath, origin: setupOrigin, body: `{}`}.do(h)
+		w = setupCall{path: pageserver.SetupNotMinePath, origin: setupOrigin, body: `{}`}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-		for _, path := range []string{pages.SetupEnginePath, pages.SetupNotMinePath} {
+		for _, path := range []string{pageserver.SetupEnginePath, pageserver.SetupNotMinePath} {
 			for _, body := range []string{`{"databaseUrl":"` + adminString + `"}`, `{"run":true}`, `{"agent":"demo_bot"}`} {
 				w = setupCall{path: path, origin: setupOrigin, body: body}.do(h)
 				require.Equal(t, http.StatusBadRequest, w.Code, body)
@@ -310,7 +310,7 @@ func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
 	require.Equal(t, 2, jobs.notMine)
 
 	h := newMounted(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
-	for _, path := range []string{pages.SetupEnginePath, pages.SetupNotMinePath} {
+	for _, path := range []string{pageserver.SetupEnginePath, pageserver.SetupNotMinePath} {
 		w := setupCall{path: path, origin: setupOrigin, body: `{}`}.do(h)
 		require.Equal(t, http.StatusConflict, w.Code)
 		require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
@@ -325,7 +325,7 @@ func TestSetupRefusalCarriesThePinnedCertificate(t *testing.T) {
 		TrustRoot: &localsetup.TrustRoot{Subject: "CN=x", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
 	}}
 	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
-	w := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	w := setupCall{path: pageserver.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), `"pinned":"`+strings.Repeat("b", 64)+`"`)
 	require.Contains(t, w.Body.String(), `"sha256":"`+strings.Repeat("a", 64)+`"`)
@@ -342,7 +342,7 @@ func TestSetupFailedLogsItsCause(t *testing.T) {
 		Cause: &localsetup.Cause{Step: "install script, statement 3", SQLState: "42P01", Message: `relation "basalt_meta.installs" does not exist`},
 	}}
 	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
-	w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
+	w := setupCall{path: pageserver.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.NotContains(t, w.Body.String(), "does not exist", "the cause stays in the log")
 	line := logs.String()

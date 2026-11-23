@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
@@ -30,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
@@ -364,7 +364,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	base := "http://" + addr
 	install := func(job localsetup.Request) {
 		t.Helper()
-		code, raw := postJSON(t, base, origin, pages.SetupCheckPath, job)
+		code, raw := postJSON(t, base, origin, pageserver.SetupCheckPath, job)
 		require.Equal(t, http.StatusOK, code, string(raw))
 		var checked localsetup.CheckAnswer
 		require.NoError(t, json.Unmarshal(raw, &checked))
@@ -373,7 +373,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 		if checked.PasskeyNeeded {
 			run.Passkey = registerFor(t, origin, *checked.Challenge)
 		}
-		code, raw = postJSON(t, base, origin, pages.SetupRunPath, run)
+		code, raw = postJSON(t, base, origin, pageserver.SetupRunPath, run)
 		require.Equal(t, http.StatusOK, code, string(raw))
 	}
 
@@ -396,7 +396,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	srv := pages.New(origin, slog.New(slog.DiscardHandler))
+	srv := pageserver.New(origin, slog.New(slog.DiscardHandler))
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
@@ -413,10 +413,10 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	// Every later install is refused, and the person's link names an agent
 	// this engine does not have.
 	mine := localsetup.Request{Job: localsetup.JobInstall, Agent: "demo_bot", OSUser: "alice"}
-	code, raw := postJSON(t, base, origin, pages.SetupCheckPath, mine)
+	code, raw := postJSON(t, base, origin, pageserver.SetupCheckPath, mine)
 	require.Equal(t, http.StatusConflict, code, string(raw))
 	require.Contains(t, string(raw), localsetup.CodeJobUnavailable)
-	code, raw = postJSON(t, base, origin, pages.SetupDoctorPath, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"})
+	code, raw = postJSON(t, base, origin, pageserver.SetupDoctorPath, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"})
 	require.Equal(t, http.StatusBadRequest, code, string(raw))
 	// A forged request to anything reset-like finds no route.
 	for _, path := range []string{"/api/v1/setup/reset", "/api/v1/setup/forget"} {
@@ -425,7 +425,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	}
 
 	// 3: "Is this your database?" names it from the engine's own file.
-	code, raw = postJSON(t, base, origin, pages.SetupEnginePath, struct{}{})
+	code, raw = postJSON(t, base, origin, pageserver.SetupEnginePath, struct{}{})
 	require.Equal(t, http.StatusOK, code, string(raw))
 	var asked localsetup.EngineAnswer
 	require.NoError(t, json.Unmarshal(raw, &asked))
@@ -436,14 +436,14 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	require.Equal(t, []string{"other_bot"}, asked.Agents)
 
 	// 4: No, this isn't mine: a mark for basalt init, nothing else.
-	code, raw = postJSON(t, base, origin, pages.SetupNotMinePath, struct{}{})
+	code, raw = postJSON(t, base, origin, pageserver.SetupNotMinePath, struct{}{})
 	require.Equal(t, http.StatusOK, code, string(raw))
 	require.Zero(t, dials.Load(), "nothing connects to a database")
 	config1, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	require.Equal(t, config0, config1, "no request without a proof changes the setup")
 	require.FileExists(t, credential)
-	code, raw = postJSON(t, base, origin, pages.SetupCheckPath, struct{}{})
+	code, raw = postJSON(t, base, origin, pageserver.SetupCheckPath, struct{}{})
 	require.Equal(t, http.StatusConflict, code, string(raw))
 	require.Contains(t, string(raw), localsetup.CodeResetAsked, "basalt init's probe reads the No")
 
@@ -459,7 +459,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'basalt_meta')`).Scan(&kept))
 	require.True(t, kept, "the database keeps its guard and ledger")
 	done = wait()
-	code, raw = postJSON(t, base, origin, pages.SetupCheckPath, mine)
+	code, raw = postJSON(t, base, origin, pageserver.SetupCheckPath, mine)
 	require.Equal(t, http.StatusBadRequest, code, string(raw))
 	require.Contains(t, string(raw), localsetup.CodeConnectionStringRefused, "the install gets past the job and asks for the admin string")
 

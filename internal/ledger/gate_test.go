@@ -1,4 +1,4 @@
-package upkeep_test
+package ledger_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
-	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 )
 
 // noDB fails the test on any statement: a gated tick must not reach the
@@ -49,7 +49,7 @@ func TestATickTheGuardRefusesDoesNothing(t *testing.T) {
 	t.Parallel()
 	pins := &savedPins{}
 	refuse := errors.New("the guard misses breaking migrations 18")
-	u := upkeep.New("bot", "test", store.NewUpkeep(noDB{t: t}), slog.New(slog.DiscardHandler), time.Now).
+	u := ledger.New("bot", "test", store.NewUpkeep(noDB{t: t}), slog.New(slog.DiscardHandler), time.Now).
 		WithPins(pins).WithGate(func(context.Context) error { return refuse })
 	err := u.Tick(context.Background())
 	require.ErrorIs(t, err, refuse)

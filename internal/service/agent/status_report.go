@@ -1,0 +1,422 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/url"
+	"strings"
+	"time"
+
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+)
+
+// Status is the status tool: whether the agent is served and each problem
+// with its steps. It never fails on what it reads: an unreachable database
+// or a missing guard is a problem in the result, not an error. It never
+// names the credential file.
+func (s *Service) Status(ctx context.Context) (StatusReport, error) {
+	return s.statusDeps().report(ctx)
+}
+
+// statusDeps are what a status report reads: the Service's own in the
+// engine, LocalStatus's for basalt status on an engine run as the person.
+type statusDeps struct {
+	name, operatedBy, build   string
+	startedBy                 string
+	pagesBase, pagesOrigin    string
+	sameUser, engineReachable bool
+	engineUnknown             bool
+	devLocalPages             bool
+	connectBudget             int
+	vault                     VaultReporter
+	portal                    PortalReporter
+	plugins                   PluginReporter
+	crashDirs                 []string
+	linkBudget                int
+	access                    AccessReader
+	update                    *UpdateInfo
+	// engineKey is the engine id basalt status read from the running
+	// engine's key file ("" when it is refused), nil when it reports no
+	// engine record (LocalStatus.EngineKey); the engine uses vault.
+	engineKey    *string
+	engineRecord EngineRecordReader
+	trust        TrustReporter
+	// database names the credential's database (Deps.Database).
+	database string
+	cmds     Commands
+	setup    *config.Setup
+	probe    Probe
+	finisher SetupFinisher
+	// finished forgets the pending setup once the database shows it
+	// recorded.
+	finished func(id string)
+	// notRecorded remembers, for a few seconds, that a held call found the
+	// pending setup not recorded (setupGate).
+	notRecorded *setupCache
+	// lockTrouble is the lock file finishing a setup could not open.
+	lockTrouble *lockTrouble
+	passkeys    func(context.Context) ([]passkey.Credential, error)
+	log         *slog.Logger
+	now         func() time.Time
+	// The host's: how errors map, the guard version this build installs and
+	// the crash reports.
+	errs         ErrorMap
+	latestGuard  func() int
+	crashReports func(dirs ...string) []CrashReport
+}
+
+func (s *Service) statusDeps() statusDeps {
+	return statusDeps{
+		name: s.deps.Core.Name, operatedBy: s.deps.Status.OperatedBy, build: s.deps.Status.Build, startedBy: s.deps.Status.StartedBy, pagesBase: s.deps.Core.PagesBase, pagesOrigin: s.deps.Core.PagesOrigin,
+		sameUser: s.deps.Status.SameUser, devLocalPages: s.deps.Status.DevLocalPages, connectBudget: s.deps.Status.ConnectBudget, engineReachable: true, vault: s.deps.Status.Vault, portal: s.deps.Status.Portal, plugins: s.deps.Status.Plugins,
+		crashDirs: s.deps.Status.CrashDirs, linkBudget: s.deps.Core.LinkBudget, access: s.deps.Status.Access,
+		engineRecord: s.deps.Status.EngineRecord, trust: s.deps.Status.Trust, database: s.deps.Status.Database, cmds: s.deps.Core.Commands, setup: s.pendingSetup(), probe: s.deps.Status.Probe,
+		errs: s.deps.Core.Errors, latestGuard: s.deps.Status.LatestGuardVersion, crashReports: s.deps.Status.CrashReports,
+		update: s.updateInfo(), finisher: s.deps.Status.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.deps.Status.Passkeys.Passkeys, log: s.deps.Core.Log, now: s.deps.Core.Now,
+	}
+}
+
+// LocalStatus is what basalt status reads for an agent whose engine runs as
+// the person's own OS user (same-user mode): the config, the agent's own
+// credential and whether the engine process runs. Its report is the status
+// tool's, with engine.reachable from the process and ENGINE_UNREACHABLE
+// when it does not run.
+type LocalStatus struct {
+	Name       string
+	Commands   Commands
+	OperatedBy string
+	Setup      *config.Setup
+	// PagesBase is the config's pages base URL; PagesOrigin is the origin
+	// of the local pages when the running engine serves them, else empty.
+	PagesBase, PagesOrigin string
+	EngineRunning          bool
+	// EngineUnknown: whether the engine runs cannot be told, so there is
+	// no ENGINE_UNREACHABLE problem (engine.reachable stays false).
+	EngineUnknown bool
+	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
+	DevLocalPages bool
+	// Collected is, for a connect-only setup, what basalt status collected
+	// while the engine is down (same-user mode); nil reports the setup
+	// from engine.json alone.
+	Collected *handoff.State
+	// ConnectBudget is the config's config.ConnectLinkBudget (0: no connect
+	// link).
+	ConnectBudget int
+	// Portal is the last daily portal check the engine saved (problem
+	// PORTAL_MISMATCH); nil when the config names no portal.
+	Portal PortalReporter
+	// EngineKey, for an engine that runs and whose key file this user
+	// reads, is its engine id ("" when the key file is refused): the report
+	// then has engineRecord, read with EngineRecord, and its problems. Nil
+	// leaves engineRecord out, as for an engine that is down.
+	EngineKey    *string
+	EngineRecord EngineRecordReader
+	// Trust: see Deps.Trust.
+	Trust    TrustReporter
+	Probe    Probe
+	Passkeys func(context.Context) ([]passkey.Credential, error)
+	Log      *slog.Logger
+	Now      func() time.Time
+	// Errors maps a failure to the contract's tool error; LatestGuardVersion
+	// is the basalt_meta version this build installs.
+	Errors             ErrorMap
+	LatestGuardVersion func() int
+}
+
+// Report is the status report. It panics on a missing probe, passkey
+// reader, logger or clock.
+func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
+	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil || l.LatestGuardVersion == nil {
+		panic("agent: local status needs a probe, a passkey reader, a logger, a clock and the guard version")
+	}
+	base := l.PagesBase
+	if base == "" {
+		base = links.DefaultLocal
+	}
+	return statusDeps{
+		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
+		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
+		// basalt status reads; the running engine finishes the setup.
+		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		errs: l.Errors, latestGuard: l.LatestGuardVersion,
+	}.report(ctx)
+}
+
+func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
+	s.cmds = s.cmds.OperatedBy(s.operatedBy)
+	r := StatusReport{
+		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
+		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build, StartedBy: startedByEnum(s.startedBy)},
+		Pages:  PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
+		Update: s.update,
+	}
+	if s.vault != nil {
+		v := s.vault.VaultStatus()
+		r.Vault = &v
+	}
+	ps := Problems{Cmds: s.cmds, ConnectBudget: s.connectBudget}
+	if s.devLocalPages {
+		ps.Add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
+			func(b *Steps) string { return devLocalPagesSteps(b, s.cmds) })
+	}
+	if !s.engineReachable && !s.engineUnknown {
+		ps.Add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
+			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
+	}
+	s.addPortalProblem(&ps)
+	s.addPluginProblems(&ps)
+	var trust *TrustReport
+	r.Trust, trust = s.trustStatus(ctx, &ps)
+	setup, known := s.setupView(ctx)
+	r.Setup = setup.status
+	if path := s.lockTrouble.get(); path != "" {
+		ps.Add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
+			func(b *Steps) string { return lockFileSteps(b, path) })
+	}
+	if known {
+		// A setup whose recorded state could not be read (the database is
+		// down) gets no problem: the code may have been used already.
+		setup.addProblem(&ps)
+	}
+
+	st, err := s.probe.GuardStatus(ctx)
+	// A pending INSTALL code explains a role that cannot log in or a guard
+	// that is not there yet; any other failure is reported as it is.
+	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
+	switch {
+	case err != nil:
+		r.Guard = GuardStatus{State: guardmodel.GuardUnknown, Build: s.latestGuard()}
+		if !explained {
+			s.addUnreachable(ctx, &ps, err, trust)
+		}
+	default:
+		r.Guard = guardStatusDTO(st)
+		if !explained {
+			addGuardProblem(&ps, st)
+		}
+	}
+	if err == nil && st.State != guardmodel.GuardMissing {
+		r.Passkeys = s.countPasskeys(ctx, &ps, setup.status.State == setupDone)
+	}
+	if err == nil {
+		r.Ledger = s.ledgerStatus(ctx, st)
+	}
+	r.Crash, r.Plugins = s.crashStatus(), s.pluginHealth()
+	if err == nil && st.State != guardmodel.GuardMissing {
+		r.Access = s.accessStatus(ctx)
+	}
+	readable := err == nil && st.State != guardmodel.GuardMissing
+	if readable {
+		s.addReinstalled(ctx, &ps)
+	}
+	switch {
+	case s.vault != nil && r.Vault != nil:
+		r.EngineRecord = s.engineRecordStatus(ctx, r.Vault.EngineID, readable, &ps)
+	case s.engineKey != nil:
+		r.EngineRecord = s.engineRecordStatus(ctx, *s.engineKey, readable, &ps)
+	}
+	list, err := ps.Sorted()
+	if err != nil {
+		return StatusReport{}, err
+	}
+	r.Problems, r.Ready = list, ready(list)
+	return r, nil
+}
+
+func configAgent(cfg *config.Config, name string) (config.Agent, bool) {
+	for _, a := range cfg.Agents {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return config.Agent{}, false
+}
+
+func operatedBy(v string) string {
+	if v == mcpcontract.OperatedByAgent {
+		return v
+	}
+	return mcpcontract.OperatedByPerson
+}
+
+// enforcement is GUARD_ONLY when the agent could use its credential
+// directly: it operates the machine, or the engine runs as the person.
+func enforcement(operated string, sameUser bool) string {
+	if operated == mcpcontract.OperatedByAgent || sameUser {
+		return EnforcementGuardOnly
+	}
+	return EnforcementEngineAndGuard
+}
+
+func ready(list []Problem) bool {
+	for _, p := range list {
+		if p.Severity == mcpcontract.SeverityError {
+			return false
+		}
+	}
+	return true
+}
+
+func guardStatusDTO(st guardmodel.Status) GuardStatus {
+	out := GuardStatus{State: st.State, Build: st.Build, MissingBreaking: st.MissingBreaking, MissingNonBreaking: st.MissingNonBreaking}
+	if st.State != guardmodel.GuardMissing {
+		installed := st.Installed
+		out.Installed = &installed
+	}
+	return out
+}
+
+// ledgerStatus is the ledger's size and retention. A missing guard has no
+// ledger, and a size that cannot be read is logged and left out: it is
+// never a problem.
+func (s statusDeps) ledgerStatus(ctx context.Context, st guardmodel.Status) *LedgerStatus {
+	if st.State == guardmodel.GuardMissing {
+		return nil
+	}
+	n, err := s.probe.LedgerBytes(ctx)
+	if err != nil {
+		s.log.Debug("status: read the ledger size", "err", err)
+		return nil
+	}
+	return &LedgerStatus{Bytes: n, ValuesKeptDays: ledgerValuesKeptDays, RecordsKeptDays: ledgerRecordsKeptDays}
+}
+
+// reinstalledAsk is LEDGER_REINSTALLED's ASK_PERSON step.
+const reinstalledAsk = "Show the person this notice and ask whether someone on their team reinstalled Basalt. " +
+	"The tools keep working, and the notice stays until an admin acknowledges it."
+
+// addReinstalled is LEDGER_REINSTALLED when the ledger or the engine's kept
+// copy records a reinstall. A guard older than version 36 records none; a
+// read that fails is logged and adds nothing.
+func (s statusDeps) addReinstalled(ctx context.Context, ps *Problems) {
+	msg, ok, err := s.probe.ReinstallNotice(ctx, MaxPersonMessageLength)
+	if err != nil {
+		s.log.Error("status: read the reinstalls", "err", err)
+		return
+	}
+	if !ok {
+		return
+	}
+	ps.Add(problemLedgerReinstalled, "the guard was installed again and a pin of the old ledger was set aside; the tools keep working",
+		func(b *Steps) string {
+			b.AskPerson(reinstalledAsk)
+			return msg
+		})
+}
+
+// passkeys counts the active passkeys that can sign the agent's links:
+// those registered on the origin of its pages (pagesPasskeys); none is
+// NO_PASSKEY. A count that fails is logged and leaves active out.
+func (s statusDeps) countPasskeys(ctx context.Context, ps *Problems, setupDone bool) PasskeysStatus {
+	all, err := s.passkeys(ctx)
+	if err != nil {
+		s.log.Error("status: count passkeys", "err", err)
+		return PasskeysStatus{}
+	}
+	keys, origin := pagesPasskeys(all, s.pagesBase)
+	n := len(keys)
+	if n == 0 {
+		msg := "no passkey is registered, so held writes and reverts cannot be signed"
+		if len(all) > 0 {
+			msg = "no passkey is registered on " + origin + ", where this agent's links open, so held writes and reverts cannot be signed"
+		}
+		ps.Add(problemNoPasskey, msg, func(b *Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
+	}
+	out := PasskeysStatus{Registered: n > 0, Active: &n}
+	for _, k := range keys {
+		entry := PasskeyStatus{CredentialID: k.ID}
+		code, err := k.CheckCode()
+		if err != nil {
+			s.log.Error("status: passkey check code", "err", err)
+		}
+		entry.CheckCode = code
+		out.Keys = append(out.Keys, entry)
+	}
+	if setupDone {
+		out.Summary = passkeySummary(out.Keys)
+	}
+	return out
+}
+
+// pagesPasskeys keeps the passkeys registered on the origin of the pages
+// at base, and returns that origin. A passkey signs only on the origin it
+// was registered on, so a localhost one cannot sign an agent's portal
+// links. A base with no origin keeps every passkey.
+func pagesPasskeys(keys []passkey.Credential, base string) ([]passkey.Credential, string) {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return keys, ""
+	}
+	origin := u.Scheme + "://" + u.Host
+	out := make([]passkey.Credential, 0, len(keys))
+	for _, k := range keys {
+		if k.Relying.Origin == origin {
+			out = append(out, k)
+		}
+	}
+	return out, origin
+}
+
+// passkeySummary says in words how many passkeys are registered and the
+// check code of each, so the person can compare them with the codes the
+// connect page showed (CONTRACT.md, Connect, The passkey check code).
+func passkeySummary(keys []PasskeyStatus) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	codes := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if k.CheckCode != "" {
+			codes = append(codes, k.CheckCode)
+		}
+	}
+	noun := "passkeys are"
+	if len(keys) == 1 {
+		noun = "passkey is"
+	}
+	msg := fmt.Sprintf("%d %s registered", len(keys), noun)
+	if len(codes) > 0 {
+		msg += ", with check code " + strings.Join(codes, ", check code ")
+	}
+	if len(codes) < len(keys) {
+		msg += fmt.Sprintf(" (the code of %d could not be read)", len(keys)-len(codes))
+	}
+	return msg + ". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it."
+}
+
+// noPasskeyProblemSteps are the NO_PASSKEY problem's steps: the setup
+// page's Update link when the engine serves it (its Update check adds a
+// passkey on the person's device), else noPasskeySteps.
+func noPasskeyProblemSteps(b *Steps, cmds Commands) string {
+	if !cmds.AgentOperated() && cmds.UpdateLinkURL() != "" {
+		// The setup page's Update check adds a passkey on this device.
+		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page adds a passkey on their device.")
+		b.EndTurn("End your turn; the person adds the passkey on that page.")
+		return nothingSignableLead + " Open the link the agent gives you and add a passkey there."
+	}
+	return noPasskeySteps(b, cmds)
+}
+
+// nothingSignableLead says why nothing the agent holds can be approved yet.
+const nothingSignableLead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
+
+// noPasskeySteps: the agent runs basalt init, whose link opens the page
+// where the person registers a passkey; on an agent-operated engine the
+// connect page (RI-6: the person's computer registers a portal passkey when
+// none is active).
+func noPasskeySteps(b *Steps, cmds Commands) string {
+	const lead = nothingSignableLead
+	if cmds.AgentOperated() {
+		return remoteSetupSteps(b, cmds, lead)
+	}
+	b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they register a passkey: held writes and reverts are signed with one.")
+	return lead + " The agent gives you a link to register one."
+}

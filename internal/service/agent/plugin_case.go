@@ -26,11 +26,11 @@ type pluginCase struct {
 
 // pluginDelivery is what the plugin use case asks of the delivery use case.
 type pluginDelivery interface {
-	credentialIDs(ctx context.Context) ([]passkey.Bytes, error)
-	issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error)
-	relayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string
-	relayConnected() bool
-	pollInterval() time.Duration
+	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
+	IssuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error)
+	RelayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string
+	RelayConnected() bool
+	PollInterval() time.Duration
 }
 
 // pluginStatusView is what the plugin use case reads of the status use case.

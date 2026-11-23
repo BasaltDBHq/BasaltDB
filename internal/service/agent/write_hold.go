@@ -48,7 +48,7 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 		}
 		return uuid.Nil, time.Time{}, err
 	}
-	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}
+	req := SizedRequest{Binding: held.BindingText, Lines: lines, Cost: TextsCost(lines)}
 	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
@@ -61,7 +61,7 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
 		ShortURL: notice.shortURL,
 	}
-	if err := wc.delivery.notifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
+	if err := wc.delivery.NotifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
 		wc.core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
 	return held.ApprovalID, held.ExpiresAt, approvalRequiredError(notice)
@@ -99,7 +99,7 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 	}
 	var receipt *Receipt
 	if a.Status == action.ApprovalApproved {
-		r, err := wc.delivery.approvalReceiptOf(a)
+		r, err := wc.delivery.ApprovalReceiptOf(a)
 		if err != nil {
 			return WriteOutcome{}, err
 		}
@@ -182,7 +182,7 @@ func sameParams(held json.RawMessage, params []any) bool {
 }
 
 func (wc *writeCase) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
-	err := wc.delivery.awaitWhile(ctx, wait, func() bool { return a.Status == action.ApprovalPending }, func(ctx context.Context) error {
+	err := wc.delivery.AwaitWhile(ctx, wait, func() bool { return a.Status == action.ApprovalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
 		next, err := wc.approvals.FindApproval(budget.With(ctx), a.ID)

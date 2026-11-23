@@ -40,7 +40,7 @@ func (rc *revertCase) RevertRequest(ctx context.Context, id uuid.UUID, secret st
 	if err != nil {
 		return revert.Request{}, err
 	}
-	ids, err := rc.delivery.credentialIDs(ctx)
+	ids, err := rc.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -48,14 +48,14 @@ func (rc *revertCase) RevertRequest(ctx context.Context, id uuid.UUID, secret st
 	case r.Widened && held:
 		req := st.request
 		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
-		req.Columns = rc.delivery.columnsOf(ctx, req.Lines)
+		req.Columns = rc.delivery.ColumnsOf(ctx, req.Lines)
 		return req, nil
 	case r.Widened:
 		return revert.Request{}, widenAgain(nonce)
 	}
 	return revert.Request{
 		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: rc.delivery.columnsOf(ctx, r.Lines),
+		Columns: rc.delivery.ColumnsOf(ctx, r.Lines),
 	}, nil
 }
 

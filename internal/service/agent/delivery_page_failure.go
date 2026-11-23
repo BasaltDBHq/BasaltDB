@@ -27,9 +27,9 @@ func LinkNotFound() (*toolresult.ToolError, error) {
 	}, nil
 }
 
-// linkResetMessage is what the page tells the person holding a link the
+// LinkResetMessage is what the page tells the person holding a link the
 // agent's reset revoked.
-const linkResetMessage = "The agent reset this revert to its own work. Ask it for the new link, and widen again if you " +
+const LinkResetMessage = "The agent reset this revert to its own work. Ask it for the new link, and widen again if you " +
 	"still want to include other agents."
 
 // LinkReset is the pages' answer for a revert link the agent's reset
@@ -43,7 +43,7 @@ func LinkReset() (*toolresult.ToolError, error) {
 	return &toolresult.ToolError{
 		Code: guidance.CodeNotFound, Reason: guidance.ReasonLinkReset,
 		Message:       "the agent reset this revert to its own work, so this link was replaced: ask the agent for the new link",
-		PersonMessage: linkResetMessage,
+		PersonMessage: LinkResetMessage,
 		NextSteps:     steps,
 	}, nil
 }

@@ -26,16 +26,16 @@ type writeCase struct {
 
 // writeDelivery is what the write use case asks of the delivery use case.
 type writeDelivery interface {
-	approvalReceiptOf(a action.Approval) (Receipt, error)
-	awaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error
-	deliverHeld(id uuid.UUID, expires time.Time, answer error)
-	notifyHeldTo(ctx context.Context, n HeldNotice) error
+	ApprovalReceiptOf(a action.Approval) (Receipt, error)
+	AwaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error
+	DeliverHeld(id uuid.UUID, expires time.Time, answer error)
+	NotifyHeldTo(ctx context.Context, n HeldNotice) error
 }
 
 // writeApprovals is what the write use case asks of the approval use case: to
 // hold a write and to read it back.
 type writeApprovals interface {
-	approvalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, expires time.Time, issue bool) (heldNotice, error)
+	approvalNotice(ctx context.Context, id, runID uuid.UUID, req SizedRequest, expires time.Time, issue bool) (HeldAnswer, error)
 	HoldColumns(ctx context.Context, sql string, params []any) ([]string, error)
 	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
@@ -51,7 +51,7 @@ type upgradeWarner interface {
 
 // approvalLinker puts the link of a held write into an error answer.
 type approvalLinker interface {
-	approvalLinkError(te *toolresult.ToolError, n heldNotice) *toolresult.ToolError
+	approvalLinkError(te *toolresult.ToolError, n HeldAnswer) *toolresult.ToolError
 }
 
 func newWriteCase(core *CoreDeps, deps *WriteDeps, delivery writeDelivery, approvals writeApprovals, upgrade upgradeWarner, next approvalLinker) *writeCase {

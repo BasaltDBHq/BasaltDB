@@ -37,9 +37,9 @@ const (
 	linkNone
 )
 
-// handOver is the link the engine hands over, which of the three it is,
+// HandOver is the link the engine hands over, which of the three it is,
 // and, for a hash link, the request to send beside it.
-type handOver struct {
+type HandOver struct {
 	URL  string
 	Kind linkKind
 	File *links.RequestFile
@@ -48,21 +48,21 @@ type handOver struct {
 	sent bool
 }
 
-// chooseLink picks the link to hand over: short when it is not empty, else
+// ChooseLink picks the link to hand over: short when it is not empty, else
 // long, measured in characters of the whole URL (every link is ASCII) against
 // budget, else the hash link with the request file named fileName.
-func chooseLink(short, long string, budget int, fileName string) (handOver, error) {
+func ChooseLink(short, long string, budget int, fileName string) (HandOver, error) {
 	switch {
 	case short != "":
-		return handOver{URL: short, Kind: linkShort}, nil
+		return HandOver{URL: short, Kind: linkShort}, nil
 	case len(long) <= budget:
-		return handOver{URL: long, Kind: linkLong}, nil
+		return HandOver{URL: long, Kind: linkLong}, nil
 	}
 	hash, file, err := links.HashLink(long, fileName)
 	if err != nil {
-		return handOver{}, err
+		return HandOver{}, err
 	}
-	return handOver{URL: hash, Kind: linkHash, File: &file}, nil
+	return HandOver{URL: hash, Kind: linkHash, File: &file}, nil
 }
 
 // Labels of links next to a personMessage: what opening the link does
@@ -102,13 +102,13 @@ const (
 	maxIntentChars   = 80
 )
 
-// approvalMessage is the personMessage of a held write at the link handed
+// ApprovalMessage is the personMessage of a held write at the link handed
 // over: lead says what happened, tail lines follow the link.
-func approvalMessage(lead string, pick handOver, tail ...string) (string, []toolresult.Link) {
+func ApprovalMessage(lead string, pick HandOver, tail ...string) (string, []toolresult.Link) {
 	return buildApprovalMessage(lead, pick, tail)
 }
 
-func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []toolresult.Link) {
+func buildApprovalMessage(lead string, pick HandOver, tail []string) (string, []toolresult.Link) {
 	msg := guidance.NewMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
@@ -125,9 +125,9 @@ func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []
 	return msg.Build()
 }
 
-// revertMessage is the personMessage of a prepared revert at the link handed
+// RevertMessage is the personMessage of a prepared revert at the link handed
 // over: what it restores, why, and when it expires, then the link.
-func revertMessage(summary string, pick handOver, extra ...string) (string, []toolresult.Link) {
+func RevertMessage(summary string, pick HandOver, extra ...string) (string, []toolresult.Link) {
 	msg := guidance.NewMessage().Text(summary)
 	for _, line := range extra {
 		msg.Text(line)
@@ -143,5 +143,5 @@ func revertMessage(summary string, pick handOver, extra ...string) (string, []to
 	return msg.Text(sign).Link(labelRevert, pick.URL).Build()
 }
 
-// expiryLine states a deadline for a person.
-func expiryLine(t time.Time) string { return "Expires " + t.UTC().Format(guidance.PersonTime) + "." }
+// ExpiryLine states a deadline for a person.
+func ExpiryLine(t time.Time) string { return "Expires " + t.UTC().Format(guidance.PersonTime) + "." }

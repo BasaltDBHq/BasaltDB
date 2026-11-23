@@ -90,12 +90,12 @@ func TestNoWarningWithoutDevLocalPages(t *testing.T) {
 func TestDevLocalErrorWarnsOnACopy(t *testing.T) {
 	t.Parallel()
 	te := &toolresult.ToolError{Code: "APPROVAL_REQUIRED", PersonMessage: "Approve it.", Approval: &toolresult.ApprovalNotice{PersonMessage: "Approve it."}}
-	out := devLocalError(te)
+	out := DevLocalError(te)
 	require.Equal(t, config.DevLocalPagesWarning+"\n\nApprove it.", out.PersonMessage)
 	require.Equal(t, config.DevLocalPagesWarning+"\n\nApprove it.", out.Approval.PersonMessage)
 	require.Equal(t, "Approve it.", te.PersonMessage, "the shared error is left as it is")
 	require.Equal(t, "Approve it.", te.Approval.PersonMessage)
-	require.Empty(t, devLocalError(&toolresult.ToolError{Code: "INVALID_ARGUMENT"}).PersonMessage, "no message gets none")
+	require.Empty(t, DevLocalError(&toolresult.ToolError{Code: "INVALID_ARGUMENT"}).PersonMessage, "no message gets none")
 }
 
 func TestDevLocalResultWarnsAtAnyDepth(t *testing.T) {
@@ -104,7 +104,7 @@ func TestDevLocalResultWarnsAtAnyDepth(t *testing.T) {
 		PersonMessage string `json:"personMessage,omitempty"`
 		Rows          int64  `json:"rows"`
 	}
-	out, err := devLocalResult(map[string]any{
+	out, err := DevLocalResult(map[string]any{
 		"personMessage": "top",
 		"items":         []item{{PersonMessage: "nested", Rows: 9007199254740993}, {Rows: 1}},
 	})

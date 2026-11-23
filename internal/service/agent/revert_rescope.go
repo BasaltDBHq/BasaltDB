@@ -191,7 +191,7 @@ func (rc *revertCase) RescopeRevert(ctx context.Context, id uuid.UUID, secret st
 	if err != nil {
 		return ScopeResponse{}, rc.rescopeError(ctx, r, err)
 	}
-	ids, err := rc.delivery.credentialIDs(ctx)
+	ids, err := rc.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return ScopeResponse{}, err
 	}
@@ -207,7 +207,7 @@ func (rc *revertCase) RescopeRevert(ctx context.Context, id uuid.UUID, secret st
 	}
 	rc.rescopes.put(id, next)
 	resp := next.request
-	resp.Columns = rc.delivery.columnsOf(ctx, resp.Lines)
+	resp.Columns = rc.delivery.ColumnsOf(ctx, resp.Lines)
 	return ScopeResponse{Request: resp, Catalog: out.Catalog}, nil
 }
 
@@ -227,7 +227,7 @@ func (rc *revertCase) moveLink(ctx context.Context, id uuid.UUID, in ScopeReques
 // sessions end, and the new token is registered so a later session can
 // open with the new secret.
 func (rc *revertCase) rotateLink(ctx context.Context, id uuid.UUID, secret string, expires time.Time) error {
-	rot, err := rc.delivery.linkRotate(id, secret, expires)
+	rot, err := rc.delivery.LinkRotate(id, secret, expires)
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func (rc *revertCase) rotateLink(ctx context.Context, id uuid.UUID, secret strin
 // rescope restarts the hour, owner Q12), registering a relay link again
 // with it. A failure only shortens the link: it is logged.
 func (rc *revertCase) extendLink(ctx context.Context, id uuid.UUID, expires time.Time) {
-	l, relay, err := rc.delivery.linkExtend(id, expires)
+	l, relay, err := rc.delivery.LinkExtend(id, expires)
 	if err != nil {
 		rc.core.Log.Warn("extend a rescoped revert's link", "id", id, "err", err)
 		return
@@ -257,7 +257,7 @@ func (rc *revertCase) extendLink(ctx context.Context, id uuid.UUID, expires time
 // leaves the open session working; a new session for it is refused until
 // the engine registers its links again after its next READY.
 func (rc *revertCase) registerRelay(ctx context.Context, id uuid.UUID, token channel.LinkToken, expires time.Time) {
-	if err := rc.delivery.relayRegister(ctx, token, expires); err != nil {
+	if err := rc.delivery.RelayRegister(ctx, token, expires); err != nil {
 		rc.core.Log.Warn("the Vault did not register a rotated revert link", "id", id, "err", err)
 	}
 }
@@ -346,7 +346,7 @@ func (rc *revertCase) heldState(r action.Revert, secret string) (rescoped, bool,
 // LINK_RESET, and the page says the agent reset the revert.
 func (rc *revertCase) personScopeGone(r action.Revert) error {
 	rc.rescopes.drop(r.ID)
-	if err := rc.delivery.linkReset(r.ID, r.ExpiresAt); err != nil {
+	if err := rc.delivery.LinkReset(r.ID, r.ExpiresAt); err != nil {
 		return err
 	}
 	te, err := LinkReset()
@@ -372,7 +372,7 @@ func (rc *revertCase) resetToProposal(ctx context.Context, r action.Revert) (act
 		return action.Revert{}, err
 	}
 	rc.rescopes.drop(r.ID)
-	if err := rc.delivery.linkReset(r.ID, out.ExpiresAt); err != nil {
+	if err := rc.delivery.LinkReset(r.ID, out.ExpiresAt); err != nil {
 		return action.Revert{}, err
 	}
 	return rc.deps.Store.FindRevert(ctx, r.ID)
@@ -393,11 +393,11 @@ func (rc *revertCase) retirePersonScope(ctx context.Context, r action.Revert) er
 		return nil
 	}
 	rc.rescopes.drop(r.ID)
-	return rc.delivery.linkReset(r.ID, r.ExpiresAt)
+	return rc.delivery.LinkReset(r.ID, r.ExpiresAt)
 }
 
 // CheckResetLink reports whether secret is a link of revert id that the
 // agent's reset revoked (NOT_FOUND reason LINK_RESET on the pages).
 func (rc *revertCase) CheckResetLink(id uuid.UUID, secret string) bool {
-	return rc.delivery.linkWasReset(id, secret)
+	return rc.delivery.LinkWasReset(id, secret)
 }

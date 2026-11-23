@@ -50,12 +50,12 @@ func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret str
 	}
 	out, err := rc.deps.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.pageLink(links.Revert, id, secret))
+		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.PageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
-		return approval.RevealAnswer{}, revealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
+		return approval.RevealAnswer{}, RevealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
 	}
-	return checkedAnswer(lines, out.Rows)
+	return CheckedAnswer(lines, out.Rows)
 }
 
 // revealRevertError is the page's answer to a revert reveal Postgres
@@ -65,7 +65,7 @@ func (rc *revertCase) revealRevertError(r action.Revert, err error, link string)
 	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevealRefused:
-		return revealRefused(guidance.CodeRevertInvalid, link)
+		return RevealRefused(guidance.CodeRevertInvalid, link)
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:

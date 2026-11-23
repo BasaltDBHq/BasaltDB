@@ -16,7 +16,7 @@ func (rc *revertCase) revertReceipt(r action.Revert) (Receipt, error) {
 		return Receipt{}, fmt.Errorf("revert %s is %s, not signed", r.ID, r.Status)
 	}
 	if r.Widened {
-		return Receipt{Missing: NoReceiptWidened, Line: widenedReceiptLine(r)}, nil
+		return Receipt{Missing: NoReceiptWidened, Line: WidenedReceiptLine(r)}, nil
 	}
 	b, err := revert.ParseBinding(r.BindingText)
 	if err != nil {
@@ -32,5 +32,5 @@ func (rc *revertCase) revertReceipt(r action.Revert) (Receipt, error) {
 	if r.ChangeID != nil {
 		p.ChangeID = r.ChangeID.String()
 	}
-	return rc.delivery.signReceipt(p, "Signed", "revert")
+	return rc.delivery.SignReceipt(p, "Signed", "revert")
 }

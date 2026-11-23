@@ -275,7 +275,7 @@ func (pc *pluginCase) portalPluginLinks() bool {
 // portal link now, "" when it can (or needs none). A plugin approval has
 // no long link to fall back to.
 func (pc *pluginCase) noPortalLink() string {
-	if !pc.portalPluginLinks() || pc.delivery.relayConnected() {
+	if !pc.portalPluginLinks() || pc.delivery.RelayConnected() {
 		return ""
 	}
 	state := pc.status.vaultState()
@@ -298,9 +298,9 @@ func (pc *pluginCase) noPortalLink() string {
 // withheld, and the name form opens a new approval later.
 func (pc *pluginCase) pluginLink(ctx context.Context, o PluginOpened) (string, error) {
 	if !pc.portalPluginLinks() {
-		return pc.delivery.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
+		return pc.delivery.IssuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
 	}
-	if link := pc.delivery.relayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
+	if link := pc.delivery.RelayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
 		return link, nil
 	}
 	why := pc.noPortalLink()
@@ -357,7 +357,7 @@ func (pc *pluginCase) pluginOpened(ctx context.Context, o PluginOpened) (request
 	}
 	var lines []string
 	steps := guidance.NewSteps()
-	if ids, err := pc.delivery.credentialIDs(ctx); err == nil && len(ids) == 0 {
+	if ids, err := pc.delivery.CredentialIDs(ctx); err == nil && len(ids) == 0 {
 		lines = append(lines, "Nobody can approve this yet: no passkey is registered for this database.")
 		noPasskeySteps(steps, pc.core.Commands)
 	}
@@ -392,13 +392,13 @@ func (pc *pluginCase) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Du
 			return requestPluginResult{}, pc.pluginError(err)
 		}
 		done := st.State == PluginStateRunning || st.State == PluginStateEnded
-		if done || !pc.core.Now().Add(pc.delivery.pollInterval()).Before(deadline) {
+		if done || !pc.core.Now().Add(pc.delivery.PollInterval()).Before(deadline) {
 			return pc.pluginWaited(id, st, wait > 0)
 		}
 		select {
 		case <-ctx.Done():
 			return requestPluginResult{}, ctx.Err()
-		case <-time.After(pc.delivery.pollInterval()):
+		case <-time.After(pc.delivery.PollInterval()):
 		}
 	}
 }

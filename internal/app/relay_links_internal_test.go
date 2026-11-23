@@ -15,9 +15,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
 
-// relayLinks registers every agent's live links again after READY, revokes
+// The links registry registers every agent's live links again after READY, revokes
 // the link of a LINK_CONFLICT, unregisters what rotation revokes, and prunes
 // expired links on a timer.
 func TestRelayLinksAcrossAgents(t *testing.T) {
@@ -25,7 +26,7 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	const wait, tick = 5 * time.Second, 5 * time.Millisecond
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
 	require.NotNil(t, ev.client)
@@ -45,8 +46,8 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 		return now
 	}
 	bot, ops := links.NewSecrets(clock, rand.Reader), links.NewSecrets(clock, rand.Reader)
-	relay.add("bot", bot, ev.client.Unregister)
-	relay.add("ops", ops, ev.client.Unregister)
+	relay.Add("bot", bot, ev.client.Unregister)
+	relay.Add("ops", ops, ev.client.Unregister)
 	_, a, err := bot.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Hour))
 	require.NoError(t, err)
 	_, b, err := ops.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Minute))
@@ -63,7 +64,7 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 		wg.Wait()
 	})
 	wg.Go(func() { _ = ev.client.Run(ctx) })
-	wg.Go(func() { relay.pruneEvery(ctx, tick) })
+	wg.Go(func() { relay.PruneEvery(ctx, tick) })
 
 	// After READY both agents' links are registered, and the one another
 	// engine holds is revoked at this engine (VC-42).
@@ -100,12 +101,12 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	}})
 	t.Cleanup(v.Close)
 	t.Cleanup(func() { close(stall) })
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
 	require.NotNil(t, ev.client)
 	store := links.NewSecrets(time.Now, rand.Reader)
-	relay.add("bot", store, ev.client.Unregister)
+	relay.Add("bot", store, ev.client.Unregister)
 	for range conflicts {
 		_, tok, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 		require.NoError(t, err)

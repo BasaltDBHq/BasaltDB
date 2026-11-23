@@ -42,6 +42,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -250,12 +251,12 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 
 	v := vaulttest.New(vaulttest.Options{})
 	t.Cleanup(v.Close)
-	live := newRelayLinks(quietLog())
+	live := linksvc.NewRegistry(quietLog())
 	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
 	require.NotNil(t, ev.client)
-	live.add("bot", secrets, ev.client.Unregister)
+	live.Add("bot", secrets, ev.client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

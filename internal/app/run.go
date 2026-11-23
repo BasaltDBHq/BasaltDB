@@ -41,6 +41,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -227,7 +228,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 			env.setupOrigin = site.origin
 		}
 	}
-	relay := newRelayLinks(log.With("component", "vault"))
+	relay := linksvc.NewRegistry(log.With("component", "vault"))
 	// Link sessions through the Vault are answered by the pages API on the
 	// portal's origin (CONTRACT.md, Vault channel, Frames), with no
 	// listener: only the session reaches these handlers.
@@ -324,7 +325,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	if ev.client != nil {
 		wg.Go(func() { _ = ev.client.Run(ctx) })
-		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
+		wg.Go(func() { relay.PruneEvery(ctx, pruneInterval) })
 	}
 	if keepsPlugins {
 		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
@@ -639,7 +640,7 @@ type agentEnv struct {
 	// relay and relayLinks are set when the engine dials out to the Vault:
 	// each agent registers its portal short links there.
 	relay      *vault.Client
-	relayLinks *relayLinks
+	relayLinks *linksvc.Registry
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *corepii.FuseDictionary
 	// asRoot: the engine runs as root; it then
@@ -765,7 +766,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		relay = env.relay
 	}
 	if env.relayLinks != nil {
-		env.relayLinks.add(a.Name, secrets, env.dropLink)
+		env.relayLinks.Add(a.Name, secrets, env.dropLink)
 	}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)

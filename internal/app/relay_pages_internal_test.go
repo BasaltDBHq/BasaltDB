@@ -34,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -84,13 +85,13 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
-	live := newRelayLinks(quietLog())
+	live := linksvc.NewRegistry(quietLog())
 	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
 	require.NotNil(t, ev.client)
-	live.add("bot", secrets, ev.client.Unregister)
+	live.Add("bot", secrets, ev.client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

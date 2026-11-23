@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The fixes of the Update check (CONTRACT.md, The Update check): LABELS,
@@ -214,7 +215,7 @@ func checkFixClasses(classes []ColumnClass) error {
 		switch {
 		case seen[key]:
 			return bad("a column given twice")
-		case !plainTable.MatchString(c.Table) || !plainColumn(c.Column) || !guardmodel.ValidLabel(c.label()):
+		case !plainTable.MatchString(c.Table) || !setup.PlainColumn(c.Column) || !guardmodel.ValidLabel(c.label()):
 			return bad("a class, entity type or phone region the page does not set")
 		case c.Was.guard() != (guardmodel.Label{Class: guardmodel.ClassUnclassified}):
 			return bad("a column the check does not list")

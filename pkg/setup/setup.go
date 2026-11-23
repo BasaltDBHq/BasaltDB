@@ -518,6 +518,18 @@ type TrustPin struct {
 // maxColumnClasses bounds RunInput.ColumnClasses.
 const maxColumnClasses = 500
 
+// checkColumnNames refuses, before any read, a column label whose column
+// name is not a plain one (setuprun.PlainColumn: empty, longer than 63
+// bytes, or with a control character), as the local setup page does.
+func checkColumnNames(in RunInput) error {
+	for _, c := range in.ColumnClasses {
+		if !setuprun.PlainColumn(c.Column) {
+			return asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "the column labels: a class, entity type or phone region the page does not set; nothing changed"})
+		}
+	}
+	return nil
+}
+
 // checkColumnClasses applies the rules of ColumnClasses and RestPublic
 // that need no database (ANSWERS_INVALID): at most 500, each on a table the
 // agent gets, at most once per column, with a class the page may set and a
@@ -596,6 +608,9 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	}
 	if in.Passkey != nil && !in.Passkey.verified() {
 		return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
+	}
+	if err := checkColumnNames(in); err != nil {
+		return Result{}, err
 	}
 	p, err := s.Prepare(ctx, pgquerier.Neutralize(conn), adminAt(conn))
 	if err != nil {

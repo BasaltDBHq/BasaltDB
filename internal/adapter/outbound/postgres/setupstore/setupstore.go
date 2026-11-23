@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // Store has no state: it runs on the connection each call is given.
@@ -28,22 +29,22 @@ func (Store) StatusAt(installed int, migs []guardmodel.Migration) guardmodel.Sta
 	return guard.StatusAt(installed, migs)
 }
 
-func (Store) InstalledPrefix(ctx context.Context, q guard.Querier) (string, error) {
-	return guard.InstalledPrefix(ctx, q)
+func (Store) InstalledPrefix(ctx context.Context, q pgquerier.Port) (string, error) {
+	return guard.InstalledPrefix(ctx, pgquerier.Unwrap(q))
 }
 
-func (Store) InstalledVersion(ctx context.Context, q guard.Querier) (int, error) {
-	return guard.InstalledVersion(ctx, q)
+func (Store) InstalledVersion(ctx context.Context, q pgquerier.Port) (int, error) {
+	return guard.InstalledVersion(ctx, pgquerier.Unwrap(q))
 }
 
-func (Store) CheckUsable(ctx context.Context, q guard.Querier) error {
-	return guard.CheckUsable(ctx, q)
+func (Store) CheckUsable(ctx context.Context, q pgquerier.Port) error {
+	return guard.CheckUsable(ctx, pgquerier.Unwrap(q))
 }
 func (Store) UnusableInstall(err error) bool { return errors.Is(err, guard.ErrUnusableInstall) }
 func (Store) RemoveOldInstallDoc() string    { return guard.RemoveOldInstallDoc }
 
-func (Store) SetupsFor(ctx context.Context, q guard.Querier, id uuid.UUID, role string) ([]setupcode.RecordedSetup, error) {
-	return guard.SetupsFor(ctx, q, id, role)
+func (Store) SetupsFor(ctx context.Context, q pgquerier.Port, id uuid.UUID, role string) ([]setupcode.RecordedSetup, error) {
+	return guard.SetupsFor(ctx, pgquerier.Unwrap(q), id, role)
 }
 
 func (Store) RecordSetupStatement(n guardmodel.Names, s guardmodel.Setup) (guardmodel.Statement, error) {
@@ -52,32 +53,32 @@ func (Store) RecordSetupStatement(n guardmodel.Names, s guardmodel.Setup) (guard
 
 func (Store) SetupRefusal(err error) (string, bool) { return guard.SetupRefusal(err) }
 
-func (Store) AgentRoleExists(ctx context.Context, q guard.Querier, n guardmodel.Names, agent string) (bool, error) {
-	return guard.AgentRoleExists(ctx, q, n, agent)
+func (Store) AgentRoleExists(ctx context.Context, q pgquerier.Port, n guardmodel.Names, agent string) (bool, error) {
+	return guard.AgentRoleExists(ctx, pgquerier.Unwrap(q), n, agent)
 }
 
-func (Store) AgentRoles(ctx context.Context, q guard.Querier, n guardmodel.Names) ([]string, error) {
-	return guard.AgentRoles(ctx, q, n)
+func (Store) AgentRoles(ctx context.Context, q pgquerier.Port, n guardmodel.Names) ([]string, error) {
+	return guard.AgentRoles(ctx, pgquerier.Unwrap(q), n)
 }
 
-func (Store) RoleStatementTimeout(ctx context.Context, q guard.Querier, role string) (guardmodel.RoleTimeouts, error) {
-	return guard.RoleStatementTimeout(ctx, q, role)
+func (Store) RoleStatementTimeout(ctx context.Context, q pgquerier.Port, role string) (guardmodel.RoleTimeouts, error) {
+	return guard.RoleStatementTimeout(ctx, pgquerier.Unwrap(q), role)
 }
 
-func (Store) GrantedTables(ctx context.Context, q guard.Querier, role string) ([]string, error) {
-	return guard.GrantedTables(ctx, q, role)
+func (Store) GrantedTables(ctx context.Context, q pgquerier.Port, role string) ([]string, error) {
+	return guard.GrantedTables(ctx, pgquerier.Unwrap(q), role)
 }
 
-func (Store) AllTablesIn(ctx context.Context, q guard.Querier, schema string) (guardmodel.SchemaTables, error) {
-	return guard.AllTablesIn(ctx, q, schema)
+func (Store) AllTablesIn(ctx context.Context, q pgquerier.Port, schema string) (guardmodel.SchemaTables, error) {
+	return guard.AllTablesIn(ctx, pgquerier.Unwrap(q), schema)
 }
 
-func (Store) AgentBlindTables(ctx context.Context, q guard.Querier, n guardmodel.Names, spec guardmodel.AgentSpec) ([]guardmodel.BlindTable, error) {
-	return guard.AgentBlindTables(ctx, q, n, spec)
+func (Store) AgentBlindTables(ctx context.Context, q pgquerier.Port, n guardmodel.Names, spec guardmodel.AgentSpec) ([]guardmodel.BlindTable, error) {
+	return guard.AgentBlindTables(ctx, pgquerier.Unwrap(q), n, spec)
 }
 
-func (Store) RLSBlindTables(ctx context.Context, q guard.Querier, role string, tables []string) ([]string, error) {
-	return guard.RLSBlindTables(ctx, q, role, tables)
+func (Store) RLSBlindTables(ctx context.Context, q pgquerier.Port, role string, tables []string) ([]string, error) {
+	return guard.RLSBlindTables(ctx, pgquerier.Unwrap(q), role, tables)
 }
 
 // MissingTables is the tables of PlanInit's refusal for tables that do not exist.
@@ -89,20 +90,20 @@ func (Store) MissingTables(err error) ([]string, bool) {
 	return missing.Tables, true
 }
 
-func (Store) PlanInit(ctx context.Context, q guard.Querier, opts guardmodel.InitOptions) (guardmodel.Script, error) {
-	return guard.PlanInit(ctx, q, opts)
+func (Store) PlanInit(ctx context.Context, q pgquerier.Port, opts guardmodel.InitOptions) (guardmodel.Script, error) {
+	return guard.PlanInit(ctx, pgquerier.Unwrap(q), opts)
 }
 
-func (Store) PlanUninstall(ctx context.Context, q guard.Querier, n guardmodel.Names) ([]string, error) {
-	return guard.PlanUninstall(ctx, q, n)
+func (Store) PlanUninstall(ctx context.Context, q pgquerier.Port, n guardmodel.Names) ([]string, error) {
+	return guard.PlanUninstall(ctx, pgquerier.Unwrap(q), n)
 }
 
-func (Store) UncoveredTables(ctx context.Context, q guard.Querier) ([]guardmodel.Uncovered, error) {
-	return guard.UncoveredTables(ctx, q)
+func (Store) UncoveredTables(ctx context.Context, q pgquerier.Port) ([]guardmodel.Uncovered, error) {
+	return guard.UncoveredTables(ctx, pgquerier.Unwrap(q))
 }
 
-func (Store) Engines(ctx context.Context, q guard.Querier, admin bool) ([]guardmodel.RecordedEngine, error) {
-	return guard.Engines(ctx, q, admin)
+func (Store) Engines(ctx context.Context, q pgquerier.Port, admin bool) ([]guardmodel.RecordedEngine, error) {
+	return guard.Engines(ctx, pgquerier.Unwrap(q), admin)
 }
 
 func (Store) RecordEngineStatement(publicKey []byte, guardVersion int) guardmodel.Statement {
@@ -111,28 +112,28 @@ func (Store) RecordEngineStatement(publicKey []byte, guardVersion int) guardmode
 
 func (Store) DemoSchema() string { return demo.Schema }
 
-func (Store) DemoPlanDrop(ctx context.Context, q guard.Querier) ([]string, error) {
-	return demo.PlanDrop(ctx, q)
+func (Store) DemoPlanDrop(ctx context.Context, q pgquerier.Port) ([]string, error) {
+	return demo.PlanDrop(ctx, pgquerier.Unwrap(q))
 }
 
 func (Store) DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (bool, error) {
 	return demo.ApplyDrop(ctx, tx, drops)
 }
 
-func (Store) HasPasskeyFor(ctx context.Context, q guard.Querier, origin string) (bool, error) {
-	return guard.HasPasskeyFor(ctx, q, origin)
+func (Store) HasPasskeyFor(ctx context.Context, q pgquerier.Port, origin string) (bool, error) {
+	return guard.HasPasskeyFor(ctx, pgquerier.Unwrap(q), origin)
 }
 
-func (Store) CurrentDatabase(ctx context.Context, q guard.Querier) (string, error) {
-	return guard.CurrentDatabase(ctx, q)
+func (Store) CurrentDatabase(ctx context.Context, q pgquerier.Port) (string, error) {
+	return guard.CurrentDatabase(ctx, pgquerier.Unwrap(q))
 }
 
-func (Store) MetaOwner(ctx context.Context, q guard.Querier) (string, error) {
-	return guard.MetaOwner(ctx, q)
+func (Store) MetaOwner(ctx context.Context, q pgquerier.Port) (string, error) {
+	return guard.MetaOwner(ctx, pgquerier.Unwrap(q))
 }
 
-func (Store) Run(ctx context.Context, q guard.Querier, sql string) error {
-	return guard.Run(ctx, q, sql)
+func (Store) Run(ctx context.Context, q pgquerier.Port, sql string) error {
+	return guard.Run(ctx, pgquerier.Unwrap(q), sql)
 }
 
 func (Store) ApplyScript(ctx context.Context, tx pgx.Tx, s guardmodel.Script) error {

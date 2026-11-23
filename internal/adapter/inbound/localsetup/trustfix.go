@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -266,7 +267,7 @@ func (s *Service) runTrust(ctx context.Context, j agentJob) (RunAnswer, error) {
 			}
 			sha = plan.Pinned
 		}
-		if err := s.be.RecordTrustPin(ctx, tx, tc.host, tc.port, sha); err != nil {
+		if err := s.be.RecordTrustPin(ctx, pgquerier.Neutralize(tx), tc.host, tc.port, sha); err != nil {
 			return setupFailed("record the trust pin", err)
 		}
 		if !tc.changed {

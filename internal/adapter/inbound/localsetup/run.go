@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
@@ -347,13 +348,13 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 			p.labeled = n
 		}
 		if cred != nil {
-			if err := s.be.RegisterPasskey(ctx, tx, *cred, req.Passkey.Label); err != nil {
+			if err := s.be.RegisterPasskey(ctx, pgquerier.Neutralize(tx), *cred, req.Passkey.Label); err != nil {
 				return setupFailed("register the passkey", err)
 			}
 		}
 		warnings = script.Warnings
 		if req.Demo {
-			leads, notes, err := s.be.DemoCounts(ctx, tx)
+			leads, notes, err := s.be.DemoCounts(ctx, pgquerier.Neutralize(tx))
 			if err != nil {
 				return setupFailed("count the sample data", err)
 			}

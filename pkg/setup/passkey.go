@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
@@ -119,7 +120,7 @@ func registerInTx(ctx context.Context, tx pgx.Tx, pk *Passkey) (*RegisteredPassk
 // when the database needs the person's passkey and none was given: the
 // setup rolls back.
 func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
-	need, err := setuprun.PasskeyNeeded(ctx, store, tx, add)
+	need, err := setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(tx), add)
 	if err != nil {
 		return err
 	}
@@ -133,7 +134,7 @@ func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
 // 7): it asks for the person's passkey and stores it when the database has
 // no active portal passkey, or in.AddPasskey asks for another.
 func askPasskey(ctx context.Context, conn *pgx.Conn, in RunInput) (*RegisteredPasskey, error) {
-	need, err := setuprun.PasskeyNeeded(ctx, store, conn, in.AddPasskey)
+	need, err := setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(conn), in.AddPasskey)
 	if err != nil || !need {
 		return nil, err
 	}

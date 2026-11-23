@@ -12,6 +12,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 var piidictPsql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
@@ -367,6 +368,10 @@ type IdentifierColumn struct {
 type snapshotter interface {
 	ReadOnlySnapshot() (func(ctx context.Context, fn func(PiidictQuerier) error) error, bool)
 }
+
+// The handles pii is given are pgquerier.Neutral: a change to its method
+// would otherwise silently stop every snapshot.
+var _ snapshotter = pgquerier.Neutral{}
 
 // snapshotOf is the runner of db's own read-only snapshots, false when db
 // is a transaction (or a handle that cannot open one).

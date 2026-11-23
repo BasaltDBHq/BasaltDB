@@ -5,7 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // plainHandle is a handle that cannot open a snapshot (a transaction).
@@ -60,4 +63,24 @@ func TestWithSnapshot(t *testing.T) {
 	require.False(t, ok)
 	_, ok = snapshotOf(pool)
 	require.True(t, ok)
+}
+
+// beginsTx is a pool or connection: it can begin a transaction.
+type beginsTx struct{ pgquerier.Querier }
+
+func (beginsTx) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return nil, errors.New("not used")
+}
+
+// txHandle is a transaction: it cannot.
+type txHandle struct{ pgquerier.Querier }
+
+// The handles pii is given, wrapped by pgquerier.Neutralize, open their own
+// snapshot when they wrap a pool or a connection, and not when they wrap a
+// transaction.
+func TestSnapshotOfWrappedHandles(t *testing.T) {
+	_, ok := snapshotOf(pgquerier.Neutralize(beginsTx{}))
+	require.True(t, ok)
+	_, ok = snapshotOf(pgquerier.Neutralize(txHandle{}))
+	require.False(t, ok)
 }

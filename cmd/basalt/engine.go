@@ -47,7 +47,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return cli.ExitUsage
 	}
-	if !slices.Contains([]string{startedByHand, startedByMCP, startedByCrash}, *startedBy) {
+	if !slices.Contains([]string{startedByHand, engine.StartedByMCP, engine.StartedByCrash}, *startedBy) {
 		_, _ = fmt.Fprintf(io.Err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
 		return cli.ExitUsage
 	}

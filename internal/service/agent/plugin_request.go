@@ -568,3 +568,10 @@ func pluginLevelLine(level int) string {
 func joinNames(names []string) string {
 	return strings.Join(slices.Sorted(slices.Values(names)), ", ")
 }
+
+// pluginTools are the tools that ask for a plugin.
+func (h handlers) pluginTools() []guidance.Tool {
+	return []guidance.Tool{
+		contractTool(toolRequestPlugin, h.wrap(toolRequestPlugin, h.requestPlugin)),
+	}
+}

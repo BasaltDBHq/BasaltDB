@@ -308,3 +308,12 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 	}
 	return st.State == guardmodel.GuardUpgradeAvailable, nil
 }
+
+// statusTools are the tools that report the agent's state and confirm the
+// collected database.
+func (h handlers) statusTools() []guidance.Tool {
+	return []guidance.Tool{
+		contractTool(guidance.ToolStatus, h.wrap(guidance.ToolStatus, h.status)),
+		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
+	}
+}

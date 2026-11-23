@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -417,7 +418,7 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 			b.Fail(errors.New("a database waiting for confirmation needs its setup and address"))
 			return ""
 		}
-		return confirmDatabaseSteps(b, dn.SetupID, dn.Database)
+		return handoff.ConfirmDatabaseSteps(b, dn.SetupID, dn.Database)
 	case guidance.ReasonPagesOff:
 		b.CallTool(guidance.ToolListPending, map[string]any{}, "Read the held writes: each has the link the person opens, since this engine serves no pages.")
 		return ""

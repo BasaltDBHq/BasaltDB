@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
 // EngineDownStatus is status as the shim answers it when the engine socket
@@ -37,7 +38,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: guidance.EngineStatus{Reachable: false, Build: build},
 		Guard:  guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: host.LatestGuardVersion()},
-		Setup:  guidance.SetupStatus{State: setupNone},
+		Setup:  guidance.SetupStatus{State: handoff.SetupNone},
 		Pages:  guidance.PagesStatus{URL: links.DefaultLocal},
 	}
 	if cfg != nil {
@@ -67,9 +68,9 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 			r.Pages.URL = base
 		}
 		if a, ok := configAgent(cfg, name); ok {
-			setup := setupFrom(a.Setup, false, now)
-			r.Setup = setup.status
-			setup.addProblem(&ps)
+			setup := handoff.SetupFrom(a.Setup, false, now)
+			r.Setup = setup.Status
+			setup.AddProblem(&ps)
 		}
 	}
 	list, err := ps.Sorted()

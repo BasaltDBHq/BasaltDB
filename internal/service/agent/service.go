@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -171,7 +172,7 @@ type StatusDeps struct {
 	// Finisher finishes a setup the database shows recorded: it promotes a
 	// rotated credential and clears setup from engine.json. Optional: the
 	// setup is then only forgotten in memory.
-	Finisher SetupFinisher
+	Finisher handoff.SetupFinisher
 	// The functions that read the host: all required.
 	// CrashReports are the crash reports in dirs, newest first.
 	CrashReports func(dirs ...string) []CrashReport
@@ -262,7 +263,7 @@ func NewService(d Deps) *Service {
 		d.Status.Probe = noProbe{latest: d.Status.LatestGuardVersion}
 	}
 	if d.Status.Finisher == nil {
-		d.Status.Finisher = noFinisher{}
+		d.Status.Finisher = handoff.NoFinisher{}
 	}
 	if d.Status.Upgrade == nil {
 		d.Status.Upgrade = guardUpgrade{probe: d.Status.Probe}

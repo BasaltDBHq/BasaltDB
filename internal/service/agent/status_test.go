@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
 	"github.com/google/uuid"
@@ -225,13 +226,13 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",
 		})}, 1, nil)},
-		problemGuardMissing:       {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
-		problemGuardOutdated:      {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
-		problemUpgradeAvailable:   {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
-		problemNoPasskey:          {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
-		problemSetupNotRun:        {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
-		problemSetupExpired:       {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
-		problemSetupChangePending: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
+		problemGuardMissing:               {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
+		problemGuardOutdated:              {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
+		problemUpgradeAvailable:           {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
+		problemNoPasskey:                  {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
+		handoff.ProblemSetupNotRun:        {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
+		handoff.ProblemSetupExpired:       {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
+		handoff.ProblemSetupChangePending: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
 		problemLockFileUnusable: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
@@ -422,7 +423,7 @@ func TestStatusWhenEverythingIsReady(t *testing.T) {
 	require.Equal(t, guardmodel.GuardOK, r.Guard.State)
 	require.True(t, r.Passkeys.Registered)
 	require.Equal(t, ptr(2), r.Passkeys.Active)
-	require.Equal(t, guidance.SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guardmodel.SetupAgent}, r.Setup)
+	require.Equal(t, guidance.SetupStatus{State: handoff.SetupDone, SetupID: caseRunID, Kind: guardmodel.SetupAgent}, r.Setup)
 	require.Nil(t, r.Vault, "no vault reporter yet: vault is left out")
 	require.Equal(t, &guidance.LedgerStatus{Bytes: 123456, ValuesKeptDays: 30, RecordsKeptDays: 365}, r.Ledger)
 }
@@ -467,7 +468,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
 	require.False(t, r.Engine.Reachable)
 	require.False(t, r.Ready)
-	require.Equal(t, setupNone, r.Setup.State)
+	require.Equal(t, handoff.SetupNone, r.Setup.State)
 	require.Equal(t, osservice.StartCommand("linux"), r.Problems[0].NextSteps[0].Command)
 
 	// A same-user config the shim reads: its operator and its foreground engine.
@@ -478,10 +479,10 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByAgent, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
-	require.Equal(t, setupPending, r.Setup.State)
+	require.Equal(t, handoff.SetupPending, r.Setup.State)
 	require.Equal(t, "a1b2 c3d4 e5f6 0718 293a", r.Setup.Fingerprint)
 	require.Equal(t, "basalt engine --config /etc/basalt/engine.json", findProblem(t, r, problemEngineUnreachable).NextSteps[0].Command)
-	findProblem(t, r, problemSetupNotRun)
+	findProblem(t, r, handoff.ProblemSetupNotRun)
 }
 
 func TestStatusVaultHook(t *testing.T) {
@@ -515,26 +516,26 @@ func TestSetupStates(t *testing.T) {
 		want     string
 		code     bool
 	}{
-		{"none", nil, false, setupNone, false},
-		{"pending install", pendingSetup(guardmodel.SetupInstall, soon), false, setupPending, true},
-		{"recorded", pendingSetup(guardmodel.SetupInstall, soon), true, setupNone, false},
-		{"expired install", pendingSetup(guardmodel.SetupInstall, past), false, setupExpired, false},
-		{"expired upgrade is dropped", pendingSetup(guardmodel.SetupUpgrade, past), false, setupNone, false},
-		{"pending upgrade", pendingSetup(guardmodel.SetupUpgrade, soon), false, setupPending, true},
-		{"pending connect-only", &awaiting, false, setupPending, true},
-		{"connect-only hold after expiry", &hold, false, setupPending, false},
-		{"connect-only after the collect window", &ended, false, setupExpired, false},
-		{"confirmed connect-only after expiry", &confirmed, false, setupPending, false},
+		{"none", nil, false, handoff.SetupNone, false},
+		{"pending install", pendingSetup(guardmodel.SetupInstall, soon), false, handoff.SetupPending, true},
+		{"recorded", pendingSetup(guardmodel.SetupInstall, soon), true, handoff.SetupNone, false},
+		{"expired install", pendingSetup(guardmodel.SetupInstall, past), false, handoff.SetupExpired, false},
+		{"expired upgrade is dropped", pendingSetup(guardmodel.SetupUpgrade, past), false, handoff.SetupNone, false},
+		{"pending upgrade", pendingSetup(guardmodel.SetupUpgrade, soon), false, handoff.SetupPending, true},
+		{"pending connect-only", &awaiting, false, handoff.SetupPending, true},
+		{"connect-only hold after expiry", &hold, false, handoff.SetupPending, false},
+		{"connect-only after the collect window", &ended, false, handoff.SetupExpired, false},
+		{"confirmed connect-only after expiry", &confirmed, false, handoff.SetupPending, false},
 	} {
-		v := setupFrom(tc.setup, tc.recorded, statusNow)
-		require.Equal(t, tc.want, v.status.State, tc.name)
-		require.Equal(t, tc.code, v.code != "", tc.name)
+		v := handoff.SetupFrom(tc.setup, tc.recorded, statusNow)
+		require.Equal(t, tc.want, v.Status.State, tc.name)
+		require.Equal(t, tc.code, v.Code != "", tc.name)
 		if !tc.code {
-			require.Empty(t, v.fingerprint, tc.name)
-			require.Empty(t, v.status.Fingerprint, tc.name)
+			require.Empty(t, v.Fingerprint, tc.name)
+			require.Empty(t, v.Status.Fingerprint, tc.name)
 		}
-		if tc.want == setupExpired {
-			require.Empty(t, v.status.Fingerprint, "a fingerprint only while pending")
+		if tc.want == handoff.SetupExpired {
+			require.Empty(t, v.Status.Fingerprint, "a fingerprint only while pending")
 		}
 	}
 }
@@ -661,7 +662,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	require.False(t, isError)
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1, "the setup explains the missing role: no database problem besides it")
-	require.Equal(t, problemSetupNotRun, problems[0].(map[string]any)["code"])
+	require.Equal(t, handoff.ProblemSetupNotRun, problems[0].(map[string]any)["code"])
 
 	// The person ran it and the agent checks status, which reads afresh
 	// (held calls may trust a not-recorded answer for a few seconds).
@@ -690,7 +691,7 @@ func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1)
 	require.Equal(t, problemDatabaseUnreachable, problems[0].(map[string]any)["code"], "no SETUP_NOT_RUN for a code that may be used")
-	require.Equal(t, setupPending, body["setup"].(map[string]any)["state"], "the config's code is still shown")
+	require.Equal(t, handoff.SetupPending, body["setup"].(map[string]any)["state"], "the config's code is still shown")
 }
 
 func TestStatusRefusesArguments(t *testing.T) {

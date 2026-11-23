@@ -175,3 +175,19 @@ func SetupPendingSteps(b *Steps, cmds Commands, code, fingerprint string, blocki
 	return lead + " The agent gives you a link: open it, check that it shows the setup fingerprint " + fingerprint +
 		", and follow the page, then tell the agent. Never paste your database password into this chat.", nil
 }
+
+// NothingSignableLead says why nothing the agent holds can be approved yet.
+const NothingSignableLead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
+
+// NoPasskeySteps: the agent runs basalt init, whose link opens the page
+// where the person registers a passkey; on an agent-operated engine the
+// connect page (RI-6: the person's computer registers a portal passkey when
+// none is active).
+func NoPasskeySteps(b *Steps, cmds Commands) string {
+	const lead = NothingSignableLead
+	if cmds.AgentOperated() {
+		return RemoteSetupSteps(b, cmds, lead)
+	}
+	b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they register a passkey: held writes and reverts are signed with one.")
+	return lead + " The agent gives you a link to register one."
+}

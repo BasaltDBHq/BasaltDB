@@ -364,29 +364,13 @@ func passkeySummary(keys []guidance.PasskeyStatus) string {
 
 // noPasskeyProblemSteps are the NO_PASSKEY problem's steps: the setup
 // page's Update link when the engine serves it (its Update check adds a
-// passkey on the person's device), else noPasskeySteps.
+// passkey on the person's device), else guidance.NoPasskeySteps.
 func noPasskeyProblemSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	if !cmds.AgentOperated() && cmds.UpdateLinkURL() != "" {
 		// The setup page's Update check adds a passkey on this device.
 		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page adds a passkey on their device.")
 		b.EndTurn("End your turn; the person adds the passkey on that page.")
-		return nothingSignableLead + " Open the link the agent gives you and add a passkey there."
+		return guidance.NothingSignableLead + " Open the link the agent gives you and add a passkey there."
 	}
-	return NoPasskeySteps(b, cmds)
-}
-
-// nothingSignableLead says why nothing the agent holds can be approved yet.
-const nothingSignableLead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
-
-// NoPasskeySteps: the agent runs basalt init, whose link opens the page
-// where the person registers a passkey; on an agent-operated engine the
-// connect page (RI-6: the person's computer registers a portal passkey when
-// none is active).
-func NoPasskeySteps(b *guidance.Steps, cmds guidance.Commands) string {
-	const lead = nothingSignableLead
-	if cmds.AgentOperated() {
-		return guidance.RemoteSetupSteps(b, cmds, lead)
-	}
-	b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they register a passkey: held writes and reverts are signed with one.")
-	return lead + " The agent gives you a link to register one."
+	return guidance.NoPasskeySteps(b, cmds)
 }

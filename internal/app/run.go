@@ -104,10 +104,10 @@ const linkInstructions = "When you show the person a link from Basalt, put it on
 	"never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. " +
 	"Show personMessage verbatim and keep its line breaks."
 
-// RunWith is Run with the restart onto a new binary: when restart.Upgrade
+// runWith is Run with the restart onto a new binary: when restart.Upgrade
 // returns, the engine stops between calls, closes everything Run opened,
 // releases its lock and returns ErrRestart.
-func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger, restart RestartOptions) error {
+func runWith(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger, restart restartOptions) error {
 	if runtime.GOOS != "linux" && runtime.GOOS != goosDarwin {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
@@ -284,7 +284,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	defer cancel()
 	// An engine that has stayed up, however it was started, ends the story
 	// of an earlier give-up: status stops reporting it.
-	stable := time.AfterFunc(cmp.Or(restart.StableAfter, DefaultStableAfter), func() {
+	stable := time.AfterFunc(cmp.Or(restart.StableAfter, defaultStableAfter), func() {
 		if err := os.Remove(filepath.Join(env.stateDir, engine.LastStopFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Warn("could not remove the record of why the engine stopped", "err", err)
 		}
@@ -300,7 +300,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// starts; an entry whose record fails is not served to that agent. In
 	// same-user mode the plugins then follow engine.json and the agents'
 	// approvals while the engine runs (pluginWatch). The supervisor stops
-	// the plugins within plugin.StopWait of ctx ending, before RunWith
+	// the plugins within plugin.StopWait of ctx ending, before runWith
 	// returns (and before a restart runs a new binary).
 	wg.Go(func() {
 		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
@@ -510,7 +510,7 @@ type agentRuntime struct {
 // agentEnv is what every agent's runtime shares.
 type agentEnv struct {
 	cfg         config.Config
-	startedBy   string // why this engine started (RestartOptions.StartedBy)
+	startedBy   string // why this engine started (restartOptions.StartedBy)
 	configPath  string
 	pagesBase   string
 	pagesOrigin string
@@ -554,7 +554,7 @@ type agentEnv struct {
 	// file is refused.
 	keys handoff.Signer
 	// handoff reaches the connect service and the collected database.
-	handoff HandoffOptions
+	handoff handoffOptions
 	// reload has the engine serve its config again.
 	reload func()
 }
@@ -690,7 +690,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.Vault, deps.Status.Portal, deps.Status.Plugins = env.vault, env.portal, env.plugins
 	deps.Status.CrashDirs = status.CrashDirs(env.stateDir)
 	deps.Status.Access = func(ctx context.Context) (status.CatalogAccess, error) { return agentAccess(ctx, pool) }
-	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, TrustOf(pool)
+	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, trustOf(pool)
 	deps.Status.Database = handoff.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
 	deps.Status.Finisher = finisher
 	deps.Describe.Catalog = agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)}

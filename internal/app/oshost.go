@@ -26,17 +26,17 @@ import (
 // goosDarwin is runtime.GOOS on macOS.
 const goosDarwin = "darwin"
 
-// OSHost is the real machine.
-type OSHost struct{}
+// osHost is the real machine.
+type osHost struct{}
 
-func (OSHost) Euid() int                      { return os.Geteuid() }
-func (OSHost) Executable() (string, error)    { return cli.ShimExecutable() }
-func (OSHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
-func (OSHost) LookPath(name string) (string, error) {
+func (osHost) Euid() int                      { return os.Geteuid() }
+func (osHost) Executable() (string, error)    { return cli.ShimExecutable() }
+func (osHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
+func (osHost) LookPath(name string) (string, error) {
 	return exec.LookPath(name)
 }
 
-func (OSHost) ResolvedExecutable() (string, error) {
+func (osHost) ResolvedExecutable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -47,7 +47,7 @@ func (OSHost) ResolvedExecutable() (string, error) {
 // darwinConsole is owned by the user logged in at the Mac's screen.
 const darwinConsole = "/dev/console"
 
-func (OSHost) DialogAvailable(goos string) error {
+func (osHost) DialogAvailable(goos string) error {
 	paths, err := osservice.DialogPaths(goos)
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func (OSHost) DialogAvailable(goos string) error {
 // caller's reaches the script.
 var dialogEnv = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
 
-func (OSHost) AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error {
+func (osHost) AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error {
 	argv, err := osservice.DialogCommand(goos, prompt, script)
 	if err != nil {
 		return err
@@ -93,7 +93,7 @@ func (OSHost) AdminDialog(ctx context.Context, goos, prompt, script string, out 
 	return osservice.DialogError(goos, code, said.String(), err)
 }
 
-func (OSHost) SetupState(ctx context.Context, origin string) (string, error) {
+func (osHost) SetupState(ctx context.Context, origin string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+localsetup.SetupCheckPath, strings.NewReader("{}"))
@@ -116,7 +116,7 @@ func (OSHost) SetupState(ctx context.Context, origin string) (string, error) {
 	return out.Code, nil
 }
 
-func (OSHost) ServiceRuns(ctx context.Context, goos string) (int, int, error) {
+func (osHost) ServiceRuns(ctx context.Context, goos string) (int, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
 	defer cancel()
 	if goos == goosDarwin {
@@ -185,19 +185,19 @@ func parseSystemdRuns(out string) (runs, lastExit int, err error) {
 // maxLinkAnswer bounds the engine's answer to a pages API request.
 const maxLinkAnswer = 16 << 10
 
-func (OSHost) Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error {
+func (osHost) Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error {
 	cmd := exec.CommandContext(ctx, "sudo", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(stdin), out, errw
 	return cmd.Run()
 }
 
-func (OSHost) Run(ctx context.Context, args []string, out, errw io.Writer) error {
+func (osHost) Run(ctx context.Context, args []string, out, errw io.Writer) error {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout, cmd.Stderr = out, errw
 	return cmd.Run()
 }
 
-func (OSHost) OpenURL(ctx context.Context, link string) error {
+func (osHost) OpenURL(ctx context.Context, link string) error {
 	return browser.Open(ctx, link)
 }
 
@@ -205,7 +205,7 @@ func (OSHost) OpenURL(ctx context.Context, link string) error {
 // loopback answer is immediate.
 const pagesProbeTimeout = 2 * time.Second
 
-func (OSHost) PagesUp(ctx context.Context, origin string) bool {
+func (osHost) PagesUp(ctx context.Context, origin string) bool {
 	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/healthz", nil)
@@ -220,7 +220,7 @@ func (OSHost) PagesUp(ctx context.Context, origin string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func (OSHost) System(out, errw io.Writer) cli.System {
+func (osHost) System(out, errw io.Writer) cli.System {
 	return osservice.OSSystem{Stdout: out, Stderr: errw}
 }
 
@@ -230,7 +230,7 @@ const (
 	probeInterval = 500 * time.Millisecond
 )
 
-func (OSHost) Probe(ctx context.Context, socket string) error {
+func (osHost) Probe(ctx context.Context, socket string) error {
 	deadline := time.Now().Add(probeTimeout)
 	for {
 		err := cli.ProbeOnce(socket)
@@ -252,7 +252,7 @@ const (
 	engineJournalLines = "50"
 )
 
-func (OSHost) EngineLog(ctx context.Context, goos string) (string, error) {
+func (osHost) EngineLog(ctx context.Context, goos string) (string, error) {
 	if goos != goosDarwin {
 		out, err := exec.CommandContext(ctx, "journalctl", "-u", servicespec.SystemdUnitName,
 			"-n", engineJournalLines, "-o", "cat", "--no-pager").Output()

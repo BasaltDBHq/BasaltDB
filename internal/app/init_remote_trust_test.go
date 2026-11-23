@@ -74,7 +74,7 @@ func certRun(t *testing.T, cfg string, server caServer) (setup.RemoteInitResult,
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
 	c.FetchChain = server.fetch
-	res, err := setupcli.InitRemote(c, SetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	res, err := setupcli.InitRemote(c, setupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	return res, stderr.String(), err
 }
 
@@ -166,7 +166,7 @@ func TestInitRemotePins(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		c := e.io(&stdout, &stderr)
 		c.FetchChain = s.fetch
-		code := runInit(c, SetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+		code := runInit(c, setupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 		require.Equal(t, cli.ExitOK, code, "%s: %s", name, stderr.String())
 		require.Contains(t, stderr.String(), "trusts it on the connect page", name)
 		require.NotContains(t, stderr.String(), "basalt trust", name)

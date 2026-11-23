@@ -18,13 +18,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
-// HandoffOptions reach the connect service and the collected database for
+// handoffOptions reach the connect service and the collected database for
 // the agents of a connect-only setup code. The zero value is the
 // contract's: the connect service at handoff.ServiceURL, the system's
 // resolver, dialer and certificate roots, and the real clock. Tests give
 // their own, by construction only: nothing in the config or the
 // environment changes them.
-type HandoffOptions struct {
+type handoffOptions struct {
 	ServiceURL string
 	HTTP       *http.Client
 	Prober     handoff.Prober
@@ -32,14 +32,14 @@ type HandoffOptions struct {
 	Now func() time.Time
 }
 
-func (o HandoffOptions) serviceURL() string {
+func (o handoffOptions) serviceURL() string {
 	if o.ServiceURL == "" {
 		return handoff.ServiceURL
 	}
 	return o.ServiceURL
 }
 
-func (o HandoffOptions) now() func() time.Time {
+func (o handoffOptions) now() func() time.Time {
 	if o.Now != nil {
 		return o.Now
 	}
@@ -124,7 +124,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(), StartedBy: env.startedBy,
 		PagesBase: env.pagesBase, PagesOrigin: env.pagesOrigin, ConnectBudget: env.cfg.ConnectLinkBudget(),
 		Vault: env.vault, Handoff: pending, Log: log, Now: env.handoff.now(),
-		Errors: AgentErrors(), LatestGuardVersion: AgentEngineHost().LatestGuardVersion,
+		Errors: AgentErrors(), LatestGuardVersion: agentEngineHost().LatestGuardVersion,
 		Guide: connectOnlyGuide,
 	}
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)

@@ -39,7 +39,7 @@ func (u appUpdateHost) DiscoverConfig(system string) (string, error) {
 }
 
 func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return cli.LoadEngineConfigAs(Shell{}, euid, path)
+	return cli.LoadEngineConfigAs(shell{}, euid, path)
 }
 
 // noticeOf is n as the CLI prints it for the binary at exe; nil without a
@@ -74,7 +74,7 @@ func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv
 	if len(args) == 0 || slices.Contains(status.NoUpdateLine, args[0]) || cli.WantsJSON(args) {
 		return nothing
 	}
-	if status.UpdateOff(getenv, appUpdateHost{OSHost{}}, appUpdateHost{OSHost{}}) {
+	if status.UpdateOff(getenv, appUpdateHost{osHost{}}, appUpdateHost{osHost{}}) {
 		return nothing
 	}
 	ck, err := updateChecker(getenv)

@@ -7,7 +7,7 @@ import (
 // wireHandoff fills the ports the connect probe declares with the Postgres
 // adapter's: the trust profiles the engine holds now, and the login that
 // trusts them. A port the caller already set stays.
-func wireHandoff(o HandoffOptions) HandoffOptions {
+func wireHandoff(o handoffOptions) handoffOptions {
 	if o.Prober.Trust == nil {
 		o.Prober.Trust = pgdial.Trust
 	}

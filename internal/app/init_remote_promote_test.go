@@ -30,10 +30,10 @@ type loggedInConn struct{ pgquerier.Querier }
 
 func (loggedInConn) Close(context.Context) error { return nil }
 
-// recordedHost is SetupHost with the guard's answers given: the
+// recordedHost is setupHost with the guard's answers given: the
 // database has the latest guard, and the pending setup is recorded or not.
 type recordedHost struct {
-	SetupHost
+	setupHost
 	recorded bool
 }
 
@@ -108,7 +108,7 @@ func TestInitRemoteIgnoresACredentialForAnotherRole(t *testing.T) {
 	require.NoError(t, config.WriteFile(credFile,
 		[]byte(agentDSN(t, "postgres://postgres@db.example.com:5432/app", "other", "bot", botPassword)+"\n")))
 	var dialed []string
-	_, err := runRemote(t, SetupHost{}, cfg, func(_ context.Context, dsn string) (cli.AgentConn, error) {
+	_, err := runRemote(t, setupHost{}, cfg, func(_ context.Context, dsn string) (cli.AgentConn, error) {
 		dialed = append(dialed, dsn)
 		return nil, handoff.ErrLoginRefused
 	})
@@ -128,11 +128,11 @@ func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {
 	unlock, err := config.LockFile(path)
 	require.NoError(t, err)
 	defer unlock()
-	root, err := SetupHost{}.OpenRootCredFiles(dir, os.Geteuid())
+	root, err := setupHost{}.OpenRootCredFiles(dir, os.Geteuid())
 	require.NoError(t, err)
 	defer root.Close()
 	want := fmt.Sprintf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
-	for name, files := range map[string]setup.CredFiles{"path": PathCredFiles{}, "root": root} {
+	for name, files := range map[string]setup.CredFiles{"path": pathCredFiles{}, "root": root} {
 		_, err := files.Lock(path)
 		require.ErrorIs(t, err, config.ErrLocked, name)
 		require.EqualError(t, err, want, name)
@@ -160,7 +160,7 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
 	io.FetchChain = second.fetch
-	res, err := setupcli.InitRemote(io, SetupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	res, err := setupcli.InitRemote(io, setupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.NoError(t, err, stderr.String())
 	require.Equal(t, []string{pending}, dialed, "the .pending login decides")
 	p, err := setupcode.Decode(res.Code)

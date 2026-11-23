@@ -57,7 +57,7 @@ type readerPkg struct {
 // adapter): a call through app is a read too.
 var readerPkgs = map[string]readerPkg{
 	credfilesImport: {name: "credfiles", folder: "internal/setup/out/credfiles", readers: credfilesCredentialReaders},
-	appImport:       {name: "app", folder: "internal/app", readers: map[string]bool{"ReadKeptCredential": true}},
+	appImport:       {name: "app", folder: "internal/app", readers: map[string]bool{"readKeptCredential": true}},
 }
 
 // folderReaders is the readers an unqualified call counts as in folder.
@@ -75,10 +75,10 @@ func folderReaders(folder string) map[string]bool {
 // string another user wrote there. Every other read must call it.
 var uncheckedCredentialReads = map[string]string{
 	"internal/setup/out/credfiles/keptcred_unix.go:ReadKeptCredential:readOwnedCredential": "service install writes it back for the engine's user and never connects with it",
-	"internal/app/engine_commands.go:keptCredentialSpec:ReadKeptCredential":                "service install writes it back for the engine's user and never connects with it",
+	"internal/app/engine_commands.go:keptCredentialSpec:readKeptCredential":                "service install writes it back for the engine's user and never connects with it",
 	// app forwards credfiles.ReadKeptCredential: a read site of its own, added
 	// with the move.
-	"internal/app/setupfiles.go:ReadKeptCredential:credfiles.ReadKeptCredential":          "a one-line forward; its one caller, keptCredentialSpec, is listed above",
+	"internal/app/setupfiles.go:readKeptCredential:credfiles.ReadKeptCredential":          "a one-line forward; its one caller, keptCredentialSpec, is listed above",
 	"internal/setup/out/credfiles/keptcred_unix.go:readOwnCredential:readCredentialFile":  "only a file this process's user owns (ownedByThisUser): root's own as root",
 	"internal/setup/out/credfiles/keptcred_unix.go:readCredentialFile:readCredentialFrom": "its owner rule is its caller's, and its callers are listed here",
 	"internal/setup/out/credfiles/pathfiles.go:PathCredFiles.Read:readOwnCredential":      "init --remote not as root",
@@ -369,14 +369,14 @@ func a() { readCredentialFrom(f, nil); ReadKeptCredential(h, "p", "u") }
 import "example.com/other/credfiles"
 func a() { credfiles.ReadKeptCredential(h, "p", "u") }
 `), "internal/handoff"), "another package named credfiles is not this one")
-	require.Equal(t, map[string]bool{"x.go:a:app.ReadKeptCredential": false}, credentialReadsIn("x.go", parse(`package main
+	require.Equal(t, map[string]bool{"x.go:a:app.readKeptCredential": false}, credentialReadsIn("x.go", parse(`package main
 import "`+appImport+`"
-func a() { app.ReadKeptCredential(h, "p", "u") }
+func a() { app.readKeptCredential(h, "p", "u") }
 `), "cmd/basalt"), "app forwards credfiles' reader to cmd: a call through it is a read")
 	require.Empty(t, credentialReadsIn("x.go", parse(`package main
 import "`+appImport+`"
 func a() { app.ReadOwnCredential("p") }
-`), "cmd/basalt"), "app forwards only ReadKeptCredential")
+`), "cmd/basalt"), "app forwards only readKeptCredential")
 }
 
 // The reader table names real code: each package's folder holds Go files of

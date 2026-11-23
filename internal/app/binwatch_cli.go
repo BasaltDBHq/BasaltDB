@@ -10,18 +10,18 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/binwatch"
 )
 
-// BinaryWatch is engine.BinaryWatch on this machine's binaries.
-type BinaryWatch struct{}
+// binaryWatch is engine.BinaryWatch on this machine's binaries.
+type binaryWatch struct{}
 
 // ExecPath is the path this process was started from as arg0 names it,
 // looked up on PATH, and checked to be the running binary exe.
-func (BinaryWatch) ExecPath(arg0, exe string) (string, error) {
+func (binaryWatch) ExecPath(arg0, exe string) (string, error) {
 	return binwatch.ExecPath(arg0, exec.LookPath, func() (string, error) { return exe, nil }, binwatch.OS{}.Stat)
 }
 
-// OSRestart watches the binary this engine was started from. When it
+// osRestart watches the binary this engine was started from. When it
 // cannot (its path cannot be read), the engine runs without the restart.
-func OSRestart(log *slog.Logger) engine.BinaryRestart {
+func osRestart(log *slog.Logger) engine.BinaryRestart {
 	sys := binwatch.OS{}
 	exe, err := os.Executable()
 	if err != nil {

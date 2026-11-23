@@ -29,11 +29,11 @@ import (
 // this test instead of hanging until DefaultStartWait.
 const mcpStartDeadline = 10 * time.Second
 
-// userConfigHost is OSHost with a fixed UserConfigDir, so basalt mcp
+// userConfigHost is osHost with a fixed UserConfigDir, so basalt mcp
 // without --config finds the per-user config init left, while euid still
 // matches the file owner (or auto-start is skipped).
 type userConfigHost struct {
-	OSHost
+	osHost
 	dir string
 }
 
@@ -72,7 +72,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 
 	runViaConnect(t, d, res.Code, "public.leads")
 
-	// OSHost with the same UserConfigDir init used, so basalt mcp finds the
+	// osHost with the same UserConfigDir init used, so basalt mcp finds the
 	// per-user config and auto-start sees the real file owner.
 	requireMCPCommandReachesEngine(t, res.MCPCommand, userConfigHost{dir: h.configDir}, socketDir)
 }

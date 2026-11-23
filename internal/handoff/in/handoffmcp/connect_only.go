@@ -115,7 +115,7 @@ func (c ConnectOnly) refused(tool string) func(context.Context, json.RawMessage)
 }
 
 func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, error) {
-	var args handoff.ConfirmArgs
+	var args confirmArgs
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, c.guide().Failure(guidance.ToolConfirmDatabase, nil, err)
 	}

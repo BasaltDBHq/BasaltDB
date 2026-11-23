@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -104,7 +105,7 @@ type remoteFlags struct {
 	timeout                   time.Duration
 	operatedBy                OperatedBy
 	// vault is what init asks the config's vault to be (chooseVault).
-	vault vaultChoice
+	vault setup.VaultChoice
 }
 
 // RemoteInitResult is what basalt init --remote prints.
@@ -969,7 +970,7 @@ func (r *remoteInit) settle() error {
 		return err
 	}
 	r.f.vault = vc
-	r.settings = vc.settings(r.settings)
+	r.settings = vc.Settings(r.settings)
 	r.settings.OperatedBy = r.f.operatedBy.enum()
 	return nil
 }
@@ -1187,9 +1188,9 @@ func (r *remoteInit) writeConfig(s *config.Setup) error {
 // It takes no flag that changes the vault.
 func remoteVaultLine(w config.VaultWritten) string {
 	if w.Kept {
-		return fmt.Sprintf("basalt: vault: %s (kept from engine.json)\n", modeOf(w.Vault))
+		return fmt.Sprintf("basalt: vault: %s (kept from engine.json)\n", setup.ModeOf(w.Vault))
 	}
-	return fmt.Sprintf("basalt: vault: %s\n", modeOf(w.Vault))
+	return fmt.Sprintf("basalt: vault: %s\n", setup.ModeOf(w.Vault))
 }
 
 // result is the remote-init result: the code, and what the person does

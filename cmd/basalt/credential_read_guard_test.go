@@ -83,7 +83,7 @@ var uncheckedCredentialReads = map[string]string{
 	"cmd/basalt/engine.go:keptCredentialSpec:readKeptCredential":                        "service install writes it back for the engine's user and never connects with it",
 	"cmd/basalt/keptcred_unix.go:readOwnCredential:readCredentialFile":                  "only a file this process's user owns (ownedByThisUser): root's own as root",
 	"cmd/basalt/keptcred_unix.go:readCredentialFile:readCredentialFrom":                 "its owner rule is its caller's, and its callers are listed here",
-	"cmd/basalt/init_remote.go:pathCredFiles.read:readOwnCredential":                    "init --remote not as root",
+	"cmd/basalt/init_remote.go:pathCredFiles.Read:readOwnCredential":                    "init --remote not as root",
 	"internal/handoff/pathfiles.go:PathFiles.ReadCredential:config.ReadCredential":      "an engine not running as root (agentFilesFor)",
 	"internal/handoff/pathfiles.go:PathFiles.ReadPending:config.ReadOwnCredentialLimit": "an engine not running as root (agentFilesFor)",
 	"internal/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":                 "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
@@ -94,7 +94,7 @@ var uncheckedCredentialReads = map[string]string{
 // checkedCredentialReads are root's reads of another user's file, which call
 // pgdial.CheckForeignDSN. Listed so the scan is seen to find them.
 var checkedCredentialReads = []string{
-	"cmd/basalt/credfiles_unix.go:rootCredFiles.read:readCredentialFrom",
+	"cmd/basalt/credfiles_unix.go:rootCredFiles.Read:readCredentialFrom",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAt",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAtLimit",
 	"internal/app/setupbackend/setupbackend.go:Backend.ReadCredential:config.ReadCredential",

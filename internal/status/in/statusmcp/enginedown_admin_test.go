@@ -12,7 +12,6 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
@@ -28,7 +27,7 @@ func TestEngineDownToolsRefuseAnAdminURL(t *testing.T) {
 
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Log: slog.New(slog.NewTextHandler(&logs, nil)), Now: func() time.Time { return statusNow }}
 	downTools := down.Tools()
-	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(downTools, agent.WithMeta)...)
+	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(downTools, nil)...)
 	for _, tool := range downTools {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
 			body, isError := serveCall(t, downSrv, tool.Name, args)

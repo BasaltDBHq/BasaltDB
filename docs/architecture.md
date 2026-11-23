@@ -10,7 +10,7 @@ BasaltDB is one Go binary, `basalt` (`cmd/basalt`), plus a schema installed in t
 - **Engine.** `basalt engine` is a long-running service on the agent's machine, running as its own OS user. It serves each agent over a Unix socket, checks the agent's SQL, and holds that agent's scoped Postgres credential. It is the first filter, not the boundary. Code: `internal/app`.
 - **MCP shim.** `basalt mcp --agent NAME` is the process an MCP client starts. It only relays stdio to the engine's socket. It holds no credential and parses no SQL. Code: `internal/adapter/inbound/shim`.
 
-The fourth piece is not Go. The **guard** is the `basalt_meta` schema in the person's Postgres: roles, row triggers, the ledger and the functions that verify approvals. It is what holds whatever path a write takes. Its SQL is in `internal/adapter/outbound/postgres/guard/schema/*.sql`, embedded in the binary and run in name order; `internal/adapter/outbound/postgres/guard` installs it and makes the calls the engine needs inside an agent's transactions.
+The fourth piece is not Go. The **guard** is the `basalt_meta` schema in the person's Postgres: roles, row triggers, the ledger and the functions that verify approvals. It is what holds whatever path a write takes. Its SQL is in `internal/platform/postgres/guard/schema/*.sql`, embedded in the binary and run in name order; `internal/platform/postgres/guard` installs it and makes the calls the engine needs inside an agent's transactions.
 
 ```
 MCP client --stdio--> basalt mcp (shim) --unix socket--> basalt engine --agent credential--> Postgres
@@ -28,7 +28,7 @@ person --> approval / revert page (passkey) -----------> engine or relay --> bas
 5. Postgres verifies the P-256 signature in `basalt_meta.submit_approval`. Go has a mirror of that check (`internal/core/passkey`) for early feedback, but only Postgres's check counts. `internal/core/approval` encodes the codes that travel between the engine, the page and the relay.
 6. The agent repeats the `write` with the approval id, and the engine applies exactly what was previewed. If the rows changed meanwhile, it is refused.
 
-A revert follows the same path with one difference: an agent can only prepare it (`request_revert`), and the person signs. `basalt_meta.apply_revert` verifies the signature and writes a new change that restores the old values. It never edits history, and a row someone changed after the agent is skipped and reported, not overwritten. Code: `internal/core/revert` for the codes, `internal/adapter/outbound/postgres/guard/schema/006_reverts.sql` for the apply.
+A revert follows the same path with one difference: an agent can only prepare it (`request_revert`), and the person signs. `basalt_meta.apply_revert` verifies the signature and writes a new change that restores the old values. It never edits history, and a row someone changed after the agent is skipped and reported, not overwritten. Code: `internal/core/revert` for the codes, `internal/platform/postgres/guard/schema/006_reverts.sql` for the apply.
 
 ## Package map
 
@@ -37,7 +37,7 @@ The code layout, the import rules, the core register and the file lists for reve
 ## Where to start
 
 - **Adding or changing an MCP tool:** the contract first (`api/mcp`, CONTRACT.md), then `internal/service/agent`.
-- **Changing what the guard enforces:** a new numbered file in `internal/adapter/outbound/postgres/guard/schema`, never an edit to an applied one.
+- **Changing what the guard enforces:** a new numbered file in `internal/platform/postgres/guard/schema`, never an edit to an applied one.
 - **Changing a CLI command:** its file in `cmd/basalt`, and the CLI section of the contract (`contract/cli.md`).
 - **Changing what an agent may run:** `internal/core/sqlguard`.
 - **Changing a signing page:** `web/`, and the codes in `internal/core/approval` or `internal/core/revert`.

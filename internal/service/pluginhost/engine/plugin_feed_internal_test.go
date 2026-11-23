@@ -24,10 +24,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
@@ -820,7 +820,7 @@ var setupKinds = []string{"INSTALL", "AGENT", "UPGRADE"}
 // argument and checks against a fixed list.
 func guardLedgerKinds(t *testing.T) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "..", "..", "adapter", "outbound", "postgres", "guard", "schema", "*.sql"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "platform", "postgres", "guard", "schema", "*.sql"))
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 	var out []string

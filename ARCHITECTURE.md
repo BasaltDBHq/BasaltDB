@@ -114,7 +114,7 @@ The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lis
 | Next steps for the agent | `internal/service/agent/revert_steps.go` |
 | Revert code and authorisation line | `internal/core/revert` |
 | Passkey signature check | `internal/core/passkey` |
-| Revert SQL, verified inside Postgres | `internal/adapter/outbound/postgres/guard/revert.go`, `rescope.go`, `schema/006_reverts.sql` |
+| Revert SQL, verified inside Postgres | `internal/platform/postgres/guard/revert.go`, `rescope.go`, `schema/006_reverts.sql` |
 | Ledger side of a revert | `internal/platform/postgres/ledger/reverts.go` |
 | The person's page | `internal/adapter/inbound/pages/pages.go` |
 | Command line | `cmd/basalt` |
@@ -126,7 +126,7 @@ The code does not meet every rule yet. `internal/testkit/archtest/baseline/` lis
 | A write is held; the agent is told how to wait | `internal/service/agent/write_hold.go`, `approval_flow.go`, `approval_pending.go`, `delivery_deliver.go` |
 | Approval code and the line the person signs | `internal/core/approval` |
 | Passkey signature check | `internal/core/passkey` |
-| Approval SQL, verified inside Postgres | `internal/adapter/outbound/postgres/guard/approval.go`, `schema/005_approvals.sql` |
+| Approval SQL, verified inside Postgres | `internal/platform/postgres/guard/approval.go`, `schema/005_approvals.sql` |
 | Ledger side | `internal/platform/postgres/ledger/approvals.go` |
 | The person's page | `internal/adapter/inbound/pages/pages.go` |
 | Plugin approvals | `internal/service/agent/approval_plugin.go`, `internal/core/approval/plugin.go` |

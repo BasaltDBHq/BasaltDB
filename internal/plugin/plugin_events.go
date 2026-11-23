@@ -175,7 +175,7 @@ func wantedPlugins(cfg config.Config, ep *Plugins, trust trustWant) pluginWant {
 	}
 	var network func(string, []string) string
 	if ep != nil {
-		network = ep.o.Ports.Network
+		network = PluginNetwork
 	}
 	return wantedFrom(cfg, ep.startedCopy, mode, goos, network, trust, kept)
 }

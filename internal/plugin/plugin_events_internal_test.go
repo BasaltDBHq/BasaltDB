@@ -348,7 +348,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 		Network:  pluginmodel.Network{Egress: []string{"ner.acme.example:443"}},
 	}
 	for _, m := range []pluginmodel.Manifest{local, remote} {
-		d := pluginDetail(k, pluginmodel.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginmodel.ModeSameUser, "linux", testPorts.Network)
+		d := pluginDetail(k, pluginmodel.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginmodel.ModeSameUser, "linux", PluginNetwork)
 		for _, kind := range []guardmodel.PluginEventKind{guardmodel.PluginEnabled, guardmodel.PluginDisabled, guardmodel.PluginChanged} {
 			b, err := json.Marshal(map[string]any{"kind": kind, "detail": d})
 			require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 			require.NoError(t, sch.Validate(inst), string(b))
 		}
 	}
-	d := pluginDetail(k, pluginmodel.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginmodel.ModeSameUser, "linux", testPorts.Network)
+	d := pluginDetail(k, pluginmodel.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginmodel.ModeSameUser, "linux", PluginNetwork)
 	require.Equal(t, guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	require.Nil(t, d.Isolation, "a remote entry records no local isolation")
 	require.Equal(t, []string{"approval.deliver", "feed.observe"}, d.Hooks)
@@ -460,7 +460,7 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 		}
 		require.NotEmpty(t, m.Network.Egress)
 		k := pluginmodel.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
-		det := pluginDetail(k, pluginmodel.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginmodel.ModeSameUser, "linux", testPorts.Network)
+		det := pluginDetail(k, pluginmodel.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, pluginmodel.ModeSameUser, "linux", PluginNetwork)
 		if det.Isolation != nil {
 			det.Isolation = &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesOSUser, Network: guardmodel.PluginNetworkNotEnforced}
 		}
@@ -497,13 +497,13 @@ func TestPluginIsolationIsWhatRuns(t *testing.T) {
 		{"service macos", pluginmodel.ModeService, "darwin", local(), iso(guardmodel.PluginFilesOSUser, guardmodel.PluginNetworkNotEnforced)},
 		{"service macos egress", pluginmodel.ModeService, "darwin", local("x.example:443"), iso(guardmodel.PluginFilesOSUser, guardmodel.PluginNetworkNotEnforced)},
 	} {
-		d := pluginDetail(pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, pluginmodel.Verified{Manifest: tc.m}, tc.mode, tc.goos, testPorts.Network)
+		d := pluginDetail(pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, pluginmodel.Verified{Manifest: tc.m}, tc.mode, tc.goos, PluginNetwork)
 		require.Equal(t, tc.want, d.Isolation, tc.name)
 	}
 	remote := local("ner.acme.example:443")
 	remote.Endpoint = pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example"}}
 	for _, mode := range []pluginmodel.Mode{pluginmodel.ModeSameUser, pluginmodel.ModeService} {
-		d := pluginDetail(pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, pluginmodel.Verified{Manifest: remote}, mode, "linux", testPorts.Network)
+		d := pluginDetail(pluginmodel.EntryKey{Name: "acme-ner", Instance: "default"}, pluginmodel.Verified{Manifest: remote}, mode, "linux", PluginNetwork)
 		require.Nil(t, d.Isolation)
 		require.Equal(t, guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	}

@@ -16,3 +16,10 @@ func TestUserClash(t *testing.T) {
 	require.Nil(t, plugin.UserClash(long, "default", others), "an entry does not clash with itself")
 	require.Nil(t, plugin.UserClash("other", "default", others))
 }
+
+func TestPluginNetwork(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "ENFORCED", plugin.PluginNetwork("linux", nil))
+	require.Equal(t, "DECLARED", plugin.PluginNetwork("linux", []string{"hooks.slack.com:443"}))
+	require.Equal(t, "NOT_ENFORCED", plugin.PluginNetwork("darwin", nil))
+}

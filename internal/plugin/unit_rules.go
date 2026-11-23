@@ -85,3 +85,16 @@ func (ep *Plugins) planUnit(p config.Plugin, v pluginmodel.Verified) (pluginmode
 	}
 	return ep.unitHost.RenderUnit(entry)
 }
+
+// PluginNetwork is how a local entry's network is recorded on goos in
+// service mode: ENFORCED with an empty egress on Linux (it runs without
+// network), DECLARED with a non-empty one, NOT_ENFORCED on macOS.
+func PluginNetwork(goos string, egress []string) string {
+	switch {
+	case goos == goosDarwin:
+		return "NOT_ENFORCED"
+	case len(egress) == 0:
+		return "ENFORCED"
+	}
+	return "DECLARED"
+}

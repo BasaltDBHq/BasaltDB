@@ -207,10 +207,6 @@ func TestDarwinPluginDisableKeepsTheLog(t *testing.T) {
 
 func TestPluginNetwork(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "ENFORCED", osservice.PluginNetwork("linux", nil))
-	require.Equal(t, "DECLARED", osservice.PluginNetwork("linux", []string{"hooks.slack.com:443"}))
-	require.Equal(t, "NOT_ENFORCED", osservice.PluginNetwork("darwin", nil))
-
 	none, err := osservice.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, none, "\nPrivateNetwork=yes\n", "an empty egress runs without network")

@@ -34,7 +34,7 @@ func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFil
 // (service.OpenTrustedDir, the trusted owner as openRootCredFiles): it
 // locks, reads and writes engine.json relative to it.
 type rootConfigDir struct {
-	dir     trustedDir
+	dir     TrustedDir
 	trusted int
 }
 
@@ -144,7 +144,7 @@ func missingStateDir(stateDir, goos string, owner int) error {
 
 // readRootKeyFile reads the key file in the state directory d, owned by
 // dirUID: an error wrapping fs.ErrNotExist when there is none.
-func readRootKeyFile(d trustedDir, dirUID int) (*channel.EngineKeys, error) {
+func readRootKeyFile(d TrustedDir, dirUID int) (*channel.EngineKeys, error) {
 	f, err := config.OpenPlainAt(d, channel.KeyFileName, func(f *os.File) error {
 		fi, err := f.Stat()
 		if err != nil {

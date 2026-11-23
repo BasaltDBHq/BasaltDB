@@ -17,7 +17,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
-// Shell is the shell's real host: the adapters, reached through
+// Shell is the shell's real host: the adapters, reached through this
+// package's own functions.
 type Shell struct{}
 
 func (Shell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
@@ -37,7 +38,7 @@ func (Shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 }
 
 // SetupHost is basalt init --remote's real host: the adapters, reached
-// through
+// through this package's own functions.
 type SetupHost struct{}
 
 func (SetupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
@@ -62,7 +63,7 @@ func (SetupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile 
 	return TrustProfileFor(configPath, host)
 }
 
-func (SetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error) {
+func (SetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error) {
 	d, err := OSOpenTrustedDir(dir, owner, create)
 	if err != nil {
 		return nil, err
@@ -126,7 +127,7 @@ type setupFilesHost interface {
 	// OSOpenTrustedDir opens dir for root, refusing a directory on the way
 	// that someone other than root or owner could swap; create makes it
 	// when missing.
-	OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error)
+	OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error)
 	// OSOpenTrustedFile opens path read-only for root: its directory as
 	// OSOpenTrustedDir does, the file itself never through a symlink.
 	OSOpenTrustedFile(path string, owner int) (*os.File, error)
@@ -134,11 +135,6 @@ type setupFilesHost interface {
 	// such user.
 	OSLookupUID(name string) int
 }
-
-// trustedDir is a directory opened by OSOpenTrustedDir: files in it are
-// reached relative to its descriptor, never by path. It is the credential
-// files' own (TrustedDir), so a setupFilesHost reaches them too.
-type trustedDir = TrustedDir
 
 // ProbeLogin tries a login with dsn and closes it: the error says how far
 // it got (setup.HardenedCredential).

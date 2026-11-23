@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,30 +20,42 @@ const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 // config from a path.
 var configLoaders = map[string]bool{"Load": true, "LoadOpen": true, "LoadNoFollow": true}
 
-// plainConfigLoads are the only places in this package and the CLI shell
-// (internal/platform/cli) allowed to call a config loader directly. Every
-// other read goes through cli.LoadEngineConfig (or cli.LoadEngineConfigAs),
-// the hardened read as root. Each entry is file:function:loader, with the
-// reason it is safe.
+// plainConfigLoads are the only places in cmd/basalt and internal/
+// allowed to call a config loader directly. Every other read goes through
+// cli.LoadEngineConfig (or cli.LoadEngineConfigAs), the hardened read as
+// root. Each entry is file:function:loader, the file named from the
+// repository root, with the reason it is safe.
 var plainConfigLoads = map[string]string{
 	// The non-root branch: euid is not 0.
-	shellDir + "config.go:LoadEngineConfigAs:Load": "only when not root",
+	"internal/platform/cli/config.go:LoadEngineConfigAs:Load": "only when not root",
 	// The hardened read itself: OpenTrustedFile and CheckConfigFile.
-	shellDir + "config_unix.go:loadConfigAsRoot:LoadOpen": "the hardened read",
+	"internal/platform/cli/config_unix.go:loadConfigAsRoot:LoadOpen": "the hardened read",
 	// No root on that platform.
-	shellDir + "config_other.go:loadConfigAsRoot:Load": "platform without root",
+	"internal/platform/cli/config_other.go:loadConfigAsRoot:Load": "platform without root",
 	// basalt mcp runs as the agent's OS user.
-	"engine_commands.go:engineDown:Load": "basalt mcp, as the agent's user",
+	"internal/app/engine_commands.go:engineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
 	// memory limits, refusing a link at the config; the config itself is
 	// read again through OpenEngineFile before anything is written.
-	"engine_commands.go:runServiceAt:LoadNoFollow": "the unit's memory limit only",
+	"internal/app/engine_commands.go:runServiceAt:LoadNoFollow": "the unit's memory limit only",
 	// basalt mcp reads the socket directory and the agents from the config,
 	// as the agent's OS user.
-	engineCLIDir + "mcp.go:RunMCPAt:Load": "basalt mcp, as the agent's user",
+	"internal/engine/in/enginecli/mcp.go:RunMCPAt:Load": "basalt mcp, as the agent's user",
 	// The hand-off reads a connect-only agent's pending setup from the
 	// engine config, as the engine's own user, refusing a link at it.
-	handoffDir + "setupfiles.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
+	"internal/handoff/setupfiles.go:PendingSetup:LoadNoFollow": "the engine's hand-off, as the engine's user",
+	// The setup page's agent jobs (update, remove, repair) refuse an
+	// engine that runs as root before they read the config.
+	"internal/setup/in/localsetup/agentjobs.go:configuredAgent:Load": "the setup page's agent jobs, after refusing an engine that runs as root",
+	// Reached only after configuredAgent, which refuses an engine that
+	// runs as root.
+	"internal/setup/in/localsetup/agentjobs.go:validateAgentJob:Load": "after configuredAgent refused an engine that runs as root",
+	// runAgentJob's removal, after validateAgentJob (configuredAgent)
+	// refused an engine that runs as root.
+	"internal/setup/in/localsetup/agentjobs.go:forget:Load": "a removal, after configuredAgent refused an engine that runs as root",
+	// The setup page's reset refuses an engine that runs as root before it
+	// reads the config.
+	"internal/setup/in/localsetup/reset.go:engineConfig:Load": "the setup page's reset, after refusing an engine that runs as root",
 }
 
 // configLoadsIn lists the config loaders f refers to, as
@@ -102,64 +115,54 @@ func configLoadsIn(name string, f *ast.File) []string {
 	return found
 }
 
-// shellDir is the CLI shell's source folder, from this package, as the
-// entries in plainConfigLoads name it.
-const shellDir = "../../internal/platform/cli/"
-
-// engineCLIDir is the engine's CLI controllers' source folder, from this
-// package, as the entries in plainConfigLoads name it.
-const engineCLIDir = "../../internal/engine/in/enginecli/"
-
-// setupCLIDir is the setup CLI controllers' source folder, from this
-// package: basalt init --remote's controller reads the engine config.
-const setupCLIDir = "../../internal/setup/in/setupcli/"
-
-// cmdDir is the binary's source folder, from this package: it holds only
-// the call into this package, and is scanned so that stays so.
-const cmdDir = "../../cmd/basalt/"
-
-// engineDir is the engine's use cases' source folder, from this package:
-// the supervisor's config read (SuperviseConfig) passes through it.
-const engineDir = "../../internal/engine/"
-
-// handoffDir is the hand-off use case's source folder, from this package: the
-// connect-only agent's files read the engine config as the engine's user.
-const handoffDir = "../../internal/handoff/"
-
 // No root code path reads the engine config with a config loader directly:
-// a new call outside plainConfigLoads, in this package (the command line's
-// code), the CLI shell, the engine's use cases or its CLI controllers, the
-// setup CLI controllers, the binary, or the hand-off, fails here, so it uses
-// cli.LoadEngineConfig.
+// a new call outside plainConfigLoads, in the binary (cmd/basalt) or
+// anywhere under internal/, this package included, fails here, so it uses
+// cli.LoadEngineConfig. Every package is scanned, so code moved into a new
+// package stays in view. Not scanned: internal/config, which defines the
+// loaders, and _test.go files.
 func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 	t.Parallel()
-	files, err := filepath.Glob("*.go")
-	require.NoError(t, err)
-	for dir, what := range map[string]string{
-		shellDir:     "the CLI shell's sources",
-		engineDir:    "the engine's use cases",
-		engineCLIDir: "the engine's CLI controllers",
-		setupCLIDir:  "the setup CLI controllers",
-		cmdDir:       "the binary's sources",
-		handoffDir:   "the hand-off",
-	} {
-		more, err := filepath.Glob(dir + "*.go")
-		require.NoError(t, err)
-		require.NotEmpty(t, more, what+" are scanned too")
-		files = append(files, more...)
-	}
 	fset := token.NewFileSet()
 	var found []string
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
+	parse := func(rel string) {
+		src, err := os.ReadFile(filepath.Join("..", "..", rel))
 		require.NoError(t, err)
-		f, err := parser.ParseFile(fset, name, src, 0)
+		f, err := parser.ParseFile(fset, rel, src, 0)
 		require.NoError(t, err)
-		found = append(found, configLoadsIn(name, f)...)
+		found = append(found, configLoadsIn(rel, f)...)
 	}
+	files, err := filepath.Glob(filepath.Join("..", "..", "cmd", "basalt", "*.go"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files, "the binary's sources are scanned too")
+	for _, name := range files {
+		if !strings.HasSuffix(name, "_test.go") {
+			parse("cmd/basalt/" + filepath.Base(name))
+		}
+	}
+	var walked int
+	require.NoError(t, filepath.WalkDir(filepath.Join("..", "..", "internal"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(filepath.Join("..", ".."), path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if rel == "internal/config" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go") {
+			parse(rel)
+			walked++
+		}
+		return nil
+	}))
+	require.NotZero(t, walked, "internal/'s sources are scanned too")
 	sort.Strings(found)
 	var stray []string
 	for _, at := range found {

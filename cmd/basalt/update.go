@@ -44,16 +44,16 @@ var noUpdateLine = []string{"engine", "mcp", "help", "-h", "--help"}
 // is the engine's own, 0600), the check stays off, so an admin's opt-out is
 // never overridden by a failed read; the engine's own notice reaches the
 // agent. No config at all means nobody opted out.
-func updateOff(getenv func(string) string, h host) bool {
-	if app.UpdateDisabled(getenv) || buildinfo.Version == app.UpdateDevVersion {
+func updateOff(getenv func(string) string, h updateHost) bool {
+	if h.UpdateDisabled(getenv) || buildinfo.Version == h.UpdateDevVersion() {
 		return true
 	}
-	path, derr := discoverConfig(h, config.DefaultPath(runtime.GOOS))
+	path, derr := h.DiscoverConfig(config.DefaultPath(runtime.GOOS))
 	if derr != nil {
 		// Two configs: the command itself reports it; the system one decides.
 		path = config.DefaultPath(runtime.GOOS)
 	}
-	cfg, err := loadEngineConfigAs(appShell{}, h.Euid(), path)
+	cfg, err := h.LoadEngineConfigAs(h.Euid(), path)
 	switch {
 	case err == nil:
 		return !cfg.UpdateCheckOn()
@@ -61,6 +61,60 @@ func updateOff(getenv func(string) string, h host) bool {
 		return false
 	}
 	return true
+}
+
+// updateHost is what updateOff reads outside itself: the environment's off
+// switch, the version of a build with no release number, and the engine
+// config a command would read by default.
+type updateHost interface {
+	// UpdateDisabled reports whether the environment turns the check off.
+	UpdateDisabled(getenv func(string) string) bool
+	// UpdateDevVersion is the version of a build with no release number.
+	UpdateDevVersion() string
+	// Euid is the effective user id.
+	Euid() int
+	// DiscoverConfig is the engine.json a command finds by itself, system
+	// being the system path.
+	DiscoverConfig(system string) (string, error)
+	// LoadEngineConfigAs reads the engine config at path for a process
+	// with effective uid euid.
+	LoadEngineConfigAs(euid int, path string) (config.Config, error)
+}
+
+// appUpdateHost is updateHost on the machine h, through app.
+type appUpdateHost struct{ h host }
+
+func (u appUpdateHost) UpdateDisabled(getenv func(string) string) bool {
+	return app.UpdateDisabled(getenv)
+}
+
+func (u appUpdateHost) UpdateDevVersion() string { return app.UpdateDevVersion }
+
+func (u appUpdateHost) Euid() int { return u.h.Euid() }
+
+func (u appUpdateHost) DiscoverConfig(system string) (string, error) {
+	return discoverConfig(u.h, system)
+}
+
+func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
+	cfg, err := loadEngineConfigAs(appShell{}, euid, path)
+	return cfg.Config, err
+}
+
+// updateNotice is the newer-release notice as the CLI prints it: its line
+// and whether the newer release is a security fix.
+type updateNotice struct {
+	line     string
+	security bool
+}
+
+// noticeOf is n as the CLI prints it for the binary at exe; nil without a
+// notice.
+func noticeOf(n *app.UpdateNotice, exe string) *updateNotice {
+	if n == nil {
+		return nil
+	}
+	return &updateNotice{line: n.Line(exe), security: n.Security}
 }
 
 func updateChecker(getenv func(string) string) (*app.UpdateChecker, error) {
@@ -86,7 +140,7 @@ func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv fun
 	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || wantsJSON(args) {
 		return nothing
 	}
-	if updateOff(getenv, osHost{}) {
+	if updateOff(getenv, appUpdateHost{osHost{}}) {
 		return nothing
 	}
 	ck, err := updateChecker(getenv)
@@ -104,20 +158,20 @@ func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv fun
 		case <-time.After(refreshGrace):
 		}
 		exe, _ := os.Executable()
-		printUpdateLine(std.err, getenv, ck.Cached(), exe)
+		printUpdateLine(std.err, getenv, noticeOf(ck.Cached(), exe))
 	}
 }
 
 // printUpdateLine writes n's line to w: yellow, or red for a security
 // release, only when w is a terminal and NO_COLOR is not set.
-func printUpdateLine(w io.Writer, getenv func(string) string, n *app.UpdateNotice, exe string) {
+func printUpdateLine(w io.Writer, getenv func(string) string, n *updateNotice) {
 	if n == nil {
 		return
 	}
-	line := n.Line(exe)
+	line := n.line
 	if getenv("NO_COLOR") == "" && isTerminal(w) {
 		color := ansiYellow
-		if n.Security {
+		if n.security {
 			color = ansiRed
 		}
 		line = color + line + ansiReset

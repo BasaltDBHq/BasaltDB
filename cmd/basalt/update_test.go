@@ -18,12 +18,12 @@ import (
 func TestPrintUpdateLine(t *testing.T) {
 	n := &updatecheck.Notice{Current: "0.0.1", Latest: "0.0.2", URL: "u"}
 	var b bytes.Buffer
-	printUpdateLine(&b, func(string) string { return "" }, n, "/x/basalt")
+	printUpdateLine(&b, func(string) string { return "" }, noticeOf(n, "/x/basalt"))
 	if got := b.String(); strings.Contains(got, "\x1b") || !strings.Contains(got, "basalt 0.0.1 is out of date; 0.0.2 is available.") || !strings.HasSuffix(got, "\n") {
 		t.Errorf("non-terminal output = %q", got)
 	}
 	b.Reset()
-	printUpdateLine(&b, func(string) string { return "" }, nil, "/x/basalt")
+	printUpdateLine(&b, func(string) string { return "" }, noticeOf(nil, "/x/basalt"))
 	if b.Len() != 0 {
 		t.Errorf("printed without a notice: %q", b.String())
 	}
@@ -81,10 +81,10 @@ func TestUpdateOffFollowsAReadableConfig(t *testing.T) {
 	getenv := func(string) string { return "" }
 	h := newFakeHost(t)
 	writeUserConfig(t, h, configWith("OFF"), 0o600)
-	require.True(t, updateOff(getenv, h))
+	require.True(t, updateOff(getenv, appUpdateHost{h}))
 	h = newFakeHost(t)
 	writeUserConfig(t, h, configWith("ON"), 0o600)
-	require.False(t, updateOff(getenv, h))
+	require.False(t, updateOff(getenv, appUpdateHost{h}))
 }
 
 func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
@@ -93,5 +93,5 @@ func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
 	}
-	require.False(t, updateOff(func(string) string { return "" }, h))
+	require.False(t, updateOff(func(string) string { return "" }, appUpdateHost{h}))
 }

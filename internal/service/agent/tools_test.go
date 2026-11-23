@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginmcp"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -88,7 +89,7 @@ func servedTools(s *Service) []guidance.Tool {
 	tools := RunStartTools(s, mount)
 	for _, list := range [][]guidance.Tool{
 		WriteTools(s, mount), ledgermcp.Tools(s, mount), RunTools(s, mount), approvalmcp.Tools(s, mount), revertmcp.Tools(s, mount),
-		pluginmcp.Tools(s, mount), DescribeTools(s, mount), StatusTools(s, mount), handoffmcp.Tools(mount),
+		pluginmcp.Tools(s, mount), DescribeTools(s, mount), statusmcp.Tools(s, mount), handoffmcp.Tools(mount),
 	} {
 		tools = append(tools, list...)
 	}

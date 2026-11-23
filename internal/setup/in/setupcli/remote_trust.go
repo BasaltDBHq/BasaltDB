@@ -4,8 +4,6 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -28,15 +26,15 @@ func (r *remoteInit) noteUnknownAuthority() {
 	if r.base == nil || r.c.FetchChain == nil {
 		return
 	}
-	cfg, err := pgconn.ParseConfig(r.base.String())
-	if err != nil || cfg.Host == "" || cfg.TLSConfig == nil || cfg.TLSConfig.RootCAs != nil {
+	target, err := r.setup.ConnTarget(r.base.String())
+	if err != nil || target.Host == "" || !target.SystemRoots {
 		return
 	}
-	host := trustprofile.NormalizeHost(cfg.Host)
+	host := trustprofile.NormalizeHost(target.Host)
 	if r.setup.TrustProfileFor(r.f.ConfigPath, host) != nil {
 		return // a profile, a pin included, decides; a changed pin shows at the login
 	}
-	chain, err := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
+	chain, err := r.c.FetchChain(r.c.Ctx, host, target.Port)
 	if err != nil {
 		return
 	}
@@ -76,16 +74,16 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 	if r.c.FetchChain == nil || !trustprofile.CertificateNotVerified(err) {
 		return false
 	}
-	cfg, perr := pgconn.ParseConfig(dsn)
-	if perr != nil || cfg.Host == "" {
+	target, perr := r.setup.ConnTarget(dsn)
+	if perr != nil || target.Host == "" {
 		return false
 	}
-	host := trustprofile.NormalizeHost(cfg.Host)
+	host := trustprofile.NormalizeHost(target.Host)
 	p := pinOf(r.setup, r.f.ConfigPath, host)
 	if p == nil {
 		return false
 	}
-	chain, ferr := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
+	chain, ferr := r.c.FetchChain(r.c.Ctx, host, target.Port)
 	if ferr != nil || len(chain) == 0 {
 		return false
 	}

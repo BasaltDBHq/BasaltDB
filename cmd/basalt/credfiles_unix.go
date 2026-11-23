@@ -55,7 +55,7 @@ func openRootConfigDir(h setupFilesHost, dir string, trusted int) (*rootConfigDi
 	return &rootConfigDir{dir: d, trusted: trusted}, nil
 }
 
-// upsert is config.UpsertAgentVault on the config file name, relative to
+// Upsert is config.UpsertAgentVault on the config file name, relative to
 // the opened directory, the file checked as the hardened read checks it and
 // written owned by the directory's owner.
 func (d *rootConfigDir) Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {

@@ -141,12 +141,16 @@ func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
 
 // fakeConfigDir is a RootConfigDir that records what is upserted.
 type fakeConfigDir struct {
-	names  []string
-	closed bool
+	names    []string
+	settings []config.Settings
+	agents   []config.Agent
+	closed   bool
 }
 
-func (d *fakeConfigDir) Upsert(name string, _ config.Settings, _ config.Agent) (config.VaultWritten, error) {
+func (d *fakeConfigDir) Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {
 	d.names = append(d.names, name)
+	d.settings = append(d.settings, s)
+	d.agents = append(d.agents, a)
 	return config.VaultWritten{}, nil
 }
 
@@ -166,5 +170,10 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	}
 	require.NoError(t, r.writeConfig(nil))
 	require.Equal(t, []string{"engine.json"}, d.names)
+	require.Len(t, d.agents, 1)
+	require.Equal(t, "bot", d.agents[0].Name)
+	require.Equal(t, "bot", d.agents[0].OSUser)
+	require.Equal(t, filepath.Join(dir, "agents", "bot.url"), d.agents[0].Store.CredentialFile)
+	require.Equal(t, "/run/basalt", d.settings[0].SocketDir)
 	require.NoFileExists(t, filepath.Join(dir, "engine.json"), "nothing is written by path")
 }

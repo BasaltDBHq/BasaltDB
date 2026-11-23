@@ -103,7 +103,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 	case guidance.CodeApprovalInvalid:
 		person = approvalInvalidSteps(b, te, f)
 	case guidance.CodeRevertInvalid:
-		revertInvalidSteps(b, te, f)
+		revertInvalidSteps(b, te, f.arg(guidance.ArgRevertID))
 	case guidance.CodePermissionDenied:
 		person = s.permissionDeniedSteps(b, te, f)
 	case guidance.CodeNotFound:
@@ -373,24 +373,6 @@ func runArgs(f failure) map[string]any {
 		return map[string]any{guidance.ArgRunID: id}
 	}
 	return map[string]any{}
-}
-
-func revertInvalidSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) {
-	id := f.arg(guidance.ArgRevertID)
-	switch te.Reason {
-	case guidance.ReasonLineInvalid:
-		b.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id, "pending": true}, "Read the plan's pending lines again and send only those.")
-	case guidance.ReasonPlanNotSigned:
-		b.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id}, "Read the plan: it is not signed yet.")
-		b.EndTurn("The person signs the plan on the revert page; end your turn and apply it when they say they signed.")
-	case guidance.ReasonPlanFinished:
-		b.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id}, "Read the plan's final state.")
-		b.Stop("The revert is applied: do not send more lines.")
-	case guidance.ReasonNotThisAgent:
-		b.Stop("This revert is not one of yours: do not retry.")
-	default:
-		b.Fail(fmt.Errorf("REVERT_INVALID %s needs the revert page's link", te.Reason))
-	}
 }
 
 var deniedTable = regexp.MustCompile(`permission denied for (?:table|relation) (\S+)`)

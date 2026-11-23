@@ -508,3 +508,23 @@ func skipReason(pv action.PreviewPage) string {
 	}
 	return guidance.ReasonAllChangedByPeople
 }
+
+// revertInvalidSteps are REVERT_INVALID's steps, by reason: what the agent does
+// about a plan line, an unsigned or finished plan, or a revert that is not its
+// own. id is the revert the call named.
+func revertInvalidSteps(b *guidance.Steps, te *toolresult.ToolError, id string) {
+	switch te.Reason {
+	case guidance.ReasonLineInvalid:
+		b.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id, "pending": true}, "Read the plan's pending lines again and send only those.")
+	case guidance.ReasonPlanNotSigned:
+		b.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id}, "Read the plan: it is not signed yet.")
+		b.EndTurn("The person signs the plan on the revert page; end your turn and apply it when they say they signed.")
+	case guidance.ReasonPlanFinished:
+		b.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id}, "Read the plan's final state.")
+		b.Stop("The revert is applied: do not send more lines.")
+	case guidance.ReasonNotThisAgent:
+		b.Stop("This revert is not one of yours: do not retry.")
+	default:
+		b.Fail(fmt.Errorf("REVERT_INVALID %s needs the revert page's link", te.Reason))
+	}
+}

@@ -45,7 +45,7 @@ func reviewOnlyRevertSteps(id uuid.UUID, link string) []toolresult.NextStep {
 	return []toolresult.NextStep{
 		guidance.OpenLink(link, "Open the link to review the rows. It cannot be signed yet."),
 		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
-		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), ArgReissueLink: true},
 			"Once status shows the Vault connected, call this for a link the person can sign, and show it."),
 	}
 }
@@ -69,7 +69,7 @@ func waitEndedSteps(id uuid.UUID, link, open string) []toolresult.NextStep {
 		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
 		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), ArgReissueLink: true},
 			"For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working."),
 	}
 }
@@ -89,7 +89,7 @@ func widenedWaitSteps(id uuid.UUID) []toolresult.NextStep {
 		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
 		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), ArgReissueLink: true},
 			"Only if the person asks for a new link: it resets the revert to your own work, dropping what they added."),
 	}
 }
@@ -194,7 +194,7 @@ func filterText(scope action.Scope) string {
 // longRevertLink is r's long link: it carries the whole request, so the
 // engine can give it again when the short link is gone.
 func (rc *revertCase) longRevertLink(ctx context.Context, r action.Revert) (string, error) {
-	ids, err := rc.delivery.credentialIDs(ctx)
+	ids, err := rc.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +223,7 @@ func (rc *revertCase) signingLink(ctx context.Context, r action.Revert, text str
 	switch {
 	case r.Widened:
 		return guidance.OpenLink("", text), nil
-	case rc.delivery.shortLinked(r.ID):
+	case rc.delivery.ShortLinked(r.ID):
 		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	pick, err := rc.restatedRevertLink(ctx, r)
@@ -248,23 +248,23 @@ func (rc *revertCase) signingLink(ctx context.Context, r action.Revert, text str
 // A request too large for a long link is restated as the page's address:
 // linkPage when a short link given earlier carries it, else linkNone
 // (CONTRACT.md, Large values, rule 3).
-func (rc *revertCase) restatedRevertLink(ctx context.Context, r action.Revert) (handOver, error) {
-	req := revertRequestOf(r)
-	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
+func (rc *revertCase) restatedRevertLink(ctx context.Context, r action.Revert) (HandOver, error) {
+	req := RevertRequestOf(r)
+	long, tooLarge, err := LongOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
 	if err != nil {
-		return handOver{}, err
+		return HandOver{}, err
 	}
 	if tooLarge {
 		kind := linkNone
-		if rc.delivery.carriesLarge(req.Cost) {
+		if rc.delivery.CarriesLarge(req.Cost) {
 			kind = linkPage
 		}
-		return handOver{URL: rc.delivery.pageAddress(links.Revert, r.ID), Kind: kind}, nil
+		return HandOver{URL: rc.delivery.PageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
-	if rc.delivery.shortLinked(r.ID) {
-		return handOver{URL: long, Kind: linkLong}, nil
+	if rc.delivery.ShortLinked(r.ID) {
+		return HandOver{URL: long, Kind: linkLong}, nil
 	}
-	return chooseLink("", long, rc.core.LinkBudget, links.RevertFile(r.ID))
+	return ChooseLink("", long, rc.core.LinkBudget, links.RevertFile(r.ID))
 }
 
 // revertTitle names revert r for the person, starting lowercase: its scope,

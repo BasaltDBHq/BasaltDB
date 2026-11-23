@@ -45,7 +45,7 @@ func openItemLink(b *guidance.Steps, p PendingItem) {
 // link the hold handed over; CONTRACT.md, The request file and pasted
 // blocks), else at the link the hold handed over.
 func (ac *approvalCase) openHeldLink(b *guidance.Steps, n *toolresult.ApprovalNotice, text string) {
-	if id, err := uuid.Parse(n.ApprovalID); (err == nil && ac.delivery.shortLinked(id)) || isPageAddress(n.ApprovalURL) {
+	if id, err := uuid.Parse(n.ApprovalID); (err == nil && ac.delivery.ShortLinked(id)) || IsPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink("Open the short link the agent gave you earlier and approve with your passkey.")
 		return
 	}

@@ -24,13 +24,13 @@ import (
 // the Vault when its lines cost at most maxPortalRequestCost. With neither,
 // the answer is REQUEST_TOO_LARGE.
 
-// argReissueLink is list_pending's and request_revert's argument that
+// ArgReissueLink is list_pending's and request_revert's argument that
 // issues a new link.
-const argReissueLink = "reissueLink"
+const ArgReissueLink = "reissueLink"
 
-// reasonRequestTooLarge is APPROVAL_REQUIRED's and QUERY_TIMEOUT's reason,
+// ReasonRequestTooLarge is APPROVAL_REQUIRED's and QUERY_TIMEOUT's reason,
 // and the results case, for a request no link this engine has can carry.
-const reasonRequestTooLarge = "REQUEST_TOO_LARGE"
+const ReasonRequestTooLarge = "REQUEST_TOO_LARGE"
 
 // maxPortalRequestCost is the most a request's lines may cost, in the
 // budget's unit, on the portal's short link: the page's response over the
@@ -41,9 +41,9 @@ const maxPortalRequestCost = 15 << 20
 // per-value cost).
 const textOverhead = 128
 
-// textsCost is what texts cost in the budget's unit (ledger.textCost): each
+// TextsCost is what texts cost in the budget's unit (ledger.textCost): each
 // one's bytes, 6 more for each byte JSON escapes, and 128.
-func textsCost(texts []string) int64 {
+func TextsCost(texts []string) int64 {
 	var n int64
 	for _, t := range texts {
 		n += int64(len(t)) + textOverhead
@@ -56,20 +56,20 @@ func textsCost(texts []string) int64 {
 	return n
 }
 
-// sizedRequest is the request of a held write or revert as the engine has
+// SizedRequest is the request of a held write or revert as the engine has
 // it: the binding text, and the lines unless an agent's read left them out
 // (LeftOut: Lines are then their heads), with what the lines cost.
-type sizedRequest struct {
+type SizedRequest struct {
 	Binding string
 	Lines   []string
 	LeftOut bool
 	Cost    int64
 }
 
-// longOrTooLarge builds the request's long link with build, or reports the
+// LongOrTooLarge builds the request's long link with build, or reports the
 // request too large for one: its lines were left out, or the page would
 // refuse to decode it (linkcodec.ErrRequestTooLarge).
-func longOrTooLarge(r sizedRequest, build func() (string, error)) (string, bool, error) {
+func LongOrTooLarge(r SizedRequest, build func() (string, error)) (string, bool, error) {
 	if r.LeftOut {
 		return "", true, nil
 	}
@@ -80,51 +80,51 @@ func longOrTooLarge(r sizedRequest, build func() (string, error)) (string, bool,
 	return long, false, err
 }
 
-// largeShortLink issues a new short link that can carry a request too large
+// LargeShortLink issues a new short link that can carry a request too large
 // for any other link (revoking the item's earlier one): the portal's when
 // the Vault registers it and the lines cost at most maxPortalRequestCost,
 // else one to the local pages; "" when there is none.
-func (dc *deliveryCase) largeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error) {
+func (dc *deliveryCase) LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error) {
 	if cost <= maxPortalRequestCost {
-		if link := dc.relayLink(ctx, page, id, expires); link != "" {
+		if link := dc.RelayLink(ctx, page, id, expires); link != "" {
 			return link, nil
 		}
 	}
 	return dc.localLink(page, id, expires)
 }
 
-// carriesLarge reports whether a short link this engine hands over can
+// CarriesLarge reports whether a short link this engine hands over can
 // carry a request whose lines cost cost: the local pages always, the
 // portal's over a READY Vault up to maxPortalRequestCost.
-func (dc *deliveryCase) carriesLarge(cost int64) bool {
+func (dc *deliveryCase) CarriesLarge(cost int64) bool {
 	return dc.core.PagesOrigin != "" || (cost <= maxPortalRequestCost && dc.deps.Relay.Connected())
 }
 
-// pageAddress is an item's page with no fragment: what a field that would
+// PageAddress is an item's page with no fragment: what a field that would
 // restate a long link carries for a request too large for one.
-func (dc *deliveryCase) pageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string {
+func (dc *deliveryCase) PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string {
 	if dc.core.PagesOrigin != "" {
 		return page(dc.core.PagesOrigin, id)
 	}
 	return page(dc.core.PagesBase, id)
 }
 
-// revertRequestOf is r's request as the agent's read returned it.
-func revertRequestOf(r action.Revert) sizedRequest {
-	return sizedRequest{Binding: r.BindingText, Lines: r.Lines, LeftOut: r.LinesLeftOut, Cost: max(r.LinesCost, textsCost(r.Lines))}
+// RevertRequestOf is r's request as the agent's read returned it.
+func RevertRequestOf(r action.Revert) SizedRequest {
+	return SizedRequest{Binding: r.BindingText, Lines: r.Lines, LeftOut: r.LinesLeftOut, Cost: max(r.LinesCost, TextsCost(r.Lines))}
 }
 
-// isPageAddress reports whether url is a page's address with no fragment
+// IsPageAddress reports whether url is a page's address with no fragment
 // (pageAddress): a short link handed over earlier carries the request, and
 // the person opens that one. Every link the engine hands over has one.
-func isPageAddress(url string) bool {
+func IsPageAddress(url string) bool {
 	return url != "" && !strings.Contains(url, "#")
 }
 
-// tooLargeMessage is the REQUEST_TOO_LARGE personMessage for what (the held
+// TooLargeMessage is the REQUEST_TOO_LARGE personMessage for what (the held
 // write, or a revert), whose lines cost cost and which expires at expires,
 // by the engine's setup (CONTRACT.md, Large values, rule 5).
-func (dc *deliveryCase) tooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string {
+func (dc *deliveryCase) TooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string {
 	return dc.tooLargeText(what, cost, expires, isRevert)
 }
 
@@ -165,45 +165,45 @@ func tooLargeAsk(isRevert bool) string {
 // endTurnSetup is the END_TURN text of REQUEST_TOO_LARGE.
 const endTurnSetup = "End your turn: the person changes the setup first."
 
-// approvalTooLargeSteps are the steps of a held write too large for a link:
+// ApprovalTooLargeSteps are the steps of a held write too large for a link:
 // the person changes the setup, then the agent asks for new links for the
 // run's pending holds.
-func approvalTooLargeSteps(runID uuid.UUID) ([]toolresult.NextStep, error) {
+func ApprovalTooLargeSteps(runID uuid.UUID) ([]toolresult.NextStep, error) {
 	return guidance.NewSteps().AskPerson(tooLargeAsk(false)).EndTurn(endTurnSetup).
-		CallTool(guidance.ToolListPending, map[string]any{"kind": guidance.KindApproval, "status": "PENDING", guidance.ArgRunID: runID.String(), argReissueLink: true},
+		CallTool(guidance.ToolListPending, map[string]any{"kind": guidance.KindApproval, "status": "PENDING", guidance.ArgRunID: runID.String(), ArgReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives the held write a new link.").
 		Build()
 }
 
-// revertTooLargeSteps are the steps of a revert too large for a link: on
+// RevertTooLargeSteps are the steps of a revert too large for a link: on
 // request_revert's error a STOP first (stop), then the person changes the
 // setup or asks for a narrower revert, and the agent asks for a new link
 // for this revert only.
-func revertTooLargeSteps(id uuid.UUID, stop bool) ([]toolresult.NextStep, error) {
+func RevertTooLargeSteps(id uuid.UUID, stop bool) ([]toolresult.NextStep, error) {
 	b := guidance.NewSteps()
 	if stop {
 		b.Stop("Do not retry now: no link this engine has can carry this revert.")
 	}
 	return b.AskPerson(tooLargeAsk(true)).EndTurn(endTurnSetup).
-		CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
+		CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), ArgReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives this revert a new link.").
 		Build()
 }
 
-// revertTooLargeError is request_revert's QUERY_TIMEOUT REQUEST_TOO_LARGE:
+// RevertTooLargeError is request_revert's QUERY_TIMEOUT REQUEST_TOO_LARGE:
 // the revert is prepared and waits until it expires, but no link this
 // engine has can carry it.
-func (dc *deliveryCase) revertTooLargeError(id uuid.UUID, cost int64, expires time.Time) error {
-	steps, err := revertTooLargeSteps(id, true)
+func (dc *deliveryCase) RevertTooLargeError(id uuid.UUID, cost int64, expires time.Time) error {
+	steps, err := RevertTooLargeSteps(id, true)
 	if err != nil {
 		return err
 	}
 	return &toolresult.ToolError{
-		Code: guidance.CodeQueryTimeout, Reason: reasonRequestTooLarge,
+		Code: guidance.CodeQueryTimeout, Reason: ReasonRequestTooLarge,
 		Message: fmt.Sprintf("revert %s is prepared, but its rows are too large for any link this engine has: "+
 			"a page decodes at most 1 MiB from a link. It stays pending until it expires (list_pending lists it); "+
 			"do what nextSteps say.", id),
-		PersonMessage: dc.tooLargeMessage(fmt.Sprintf("The revert %s", id), cost, expires, true),
+		PersonMessage: dc.TooLargeMessage(fmt.Sprintf("The revert %s", id), cost, expires, true),
 		NextSteps:     steps,
 	}
 }

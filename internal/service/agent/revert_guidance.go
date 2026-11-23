@@ -56,7 +56,7 @@ func (rc *revertCase) planGuidance(plan RevertPlan) (string, []toolresult.NextSt
 		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
 			guidance.Sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(guidance.PersonTime)), steps, nil
 	case r.Status == action.RevertPending && plan.tooLarge:
-		steps, err := revertTooLargeSteps(r.ID, false)
+		steps, err := RevertTooLargeSteps(r.ID, false)
 		return plan.PersonMessage, steps, err
 	case r.Status == action.RevertPending:
 		b.SendRequest(plan.RequestFile).

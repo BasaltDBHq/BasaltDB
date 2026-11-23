@@ -41,7 +41,7 @@ func (pc *pluginCase) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
-	ids, err := pc.delivery.credentialIDs(ctx)
+	ids, err := pc.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}

@@ -19,7 +19,7 @@ func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 	if err != nil {
 		return approval.Request{}, err
 	}
-	ids, err := ac.delivery.credentialIDs(ctx)
+	ids, err := ac.delivery.CredentialIDs(ctx)
 	if err != nil {
 		return approval.Request{}, err
 	}
@@ -29,7 +29,7 @@ func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 	}
 	return approval.Request{
 		ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: ac.delivery.columnsOf(ctx, a.Lines),
+		Columns: ac.delivery.ColumnsOf(ctx, a.Lines),
 	}, nil
 }
 
@@ -44,7 +44,7 @@ func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) 
 	}
 	// Postgres accepted the signature: the receipt names the approval as
 	// Postgres records it, never as the page sent it.
-	return ac.delivery.approvalReceipt(ctx, r.ApprovalID)
+	return ac.delivery.ApprovalReceipt(ctx, r.ApprovalID)
 }
 
 // openApproval is one of this agent's held writes that can still be

@@ -105,7 +105,7 @@ func TestNoticeCarriesTheAgentsLink(t *testing.T) {
 }
 
 // noticeLinkPattern is the pattern of a notice's link in
-// deliver.schema.json: a link the engine hands an agent must fit it, or the
+// Deliver.schema.json: a link the engine hands an agent must fit it, or the
 // engine would leave it out of the notice.
 func noticeLinkPattern(t *testing.T) *regexp.Regexp {
 	t.Helper()

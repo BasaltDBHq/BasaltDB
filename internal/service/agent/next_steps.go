@@ -323,7 +323,7 @@ func (s *Service) approvalRequiredSteps(b *guidance.Steps, te *toolresult.ToolEr
 		// connection): a wait cannot succeed.
 		b.OpenLink(n.ApprovalURL, "Open the link to review the rows. It cannot be signed yet.")
 		b.EndTurn("Do not wait: this link cannot be signed. End your turn, showing approval.personMessage.")
-		b.CallTool(guidance.ToolListPending, map[string]any{argReissueLink: true}, "Once status shows the Vault connected, call this for a link the person can sign, and show it.")
+		b.CallTool(guidance.ToolListPending, map[string]any{ArgReissueLink: true}, "Once status shows the Vault connected, call this for a link the person can sign, and show it.")
 	case guidance.ReasonNoPasskey:
 		b.AgentRunCommand(s.deps.Core.Commands.Init(), "Nobody can approve yet: run this once and show the person the link it prints, where they register a passkey.")
 		if s.deps.Core.Commands.AgentOperated() {
@@ -433,7 +433,7 @@ func notFoundSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) strin
 		return "This link is incomplete, expired or was replaced by a newer one. Ask the agent for the link again."
 	case guidance.ReasonLinkReset:
 		b.TellAgent("Ask the agent for the new link to this revert.")
-		return linkResetMessage
+		return LinkResetMessage
 	default:
 		b.Fail(fmt.Errorf("NOT_FOUND has no reason %q", te.Reason))
 	}
@@ -511,8 +511,8 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 // needs the person back at its page: not signed yet, a signature the
 // database refused, or a passkey it does not accept. The link in its message
 // follows the link budget like the hold's; no new short link is issued here.
-func (s *Service) approvalLinkError(te *toolresult.ToolError, n heldNotice) *toolresult.ToolError {
-	if n.reason == reasonRequestTooLarge {
+func (s *Service) approvalLinkError(te *toolresult.ToolError, n HeldAnswer) *toolresult.ToolError {
+	if n.reason == ReasonRequestTooLarge {
 		// No link can carry it: the same message and steps as the hold's.
 		te.PersonMessage, te.NextSteps = n.PersonMessage, n.steps
 		return te
@@ -550,8 +550,8 @@ func (s *Service) approvalLinkError(te *toolresult.ToolError, n heldNotice) *too
 // the budget is handed over (CONTRACT.md, The request file and pasted
 // blocks). Otherwise it is the link the hold chose: the long link within the
 // budget, or the hash link, whose request file the agent already sent.
-func (s *Service) openApprovalAgain(b *guidance.Steps, n heldNotice, text string) {
-	if n.shortHeld || isPageAddress(n.ApprovalURL) {
+func (s *Service) openApprovalAgain(b *guidance.Steps, n HeldAnswer, text string) {
+	if n.shortHeld || IsPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink("Open the short link the agent gave you earlier. " + text)
 		return
 	}
@@ -562,11 +562,11 @@ func (s *Service) openApprovalAgain(b *guidance.Steps, n heldNotice, text string
 // the person back to the page: a pointer to the short link they have while
 // the pages are served, else the hold's link (a hash link names the request
 // file the agent already sent).
-func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []toolresult.Link) {
+func (s *Service) approvalAgainMessage(lead string, n HeldAnswer) (string, []toolresult.Link) {
 	if n.shortHeld {
 		return pointBackMessage(lead)
 	}
-	return approvalMessage(lead, handOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true})
+	return ApprovalMessage(lead, HandOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true})
 }
 
 // setupSteps: a pending setup is run by the person on their own computer;

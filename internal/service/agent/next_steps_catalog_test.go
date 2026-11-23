@@ -147,7 +147,7 @@ const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AA
 
 func held(reason string, url string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := heldNotice{ApprovalNotice: caseNotice(url), reason: reason}
+		n := HeldAnswer{ApprovalNotice: caseNotice(url), reason: reason}
 		if reason == guidance.ReasonWaitEnded {
 			return approvalStillPendingError(n)
 		}
@@ -157,7 +157,7 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := heldNotice{ApprovalNotice: caseNotice(caseShortLink), longURL: caseShortLink, pick: handOver{URL: caseShortLink, Kind: linkLong}}
+		n := HeldAnswer{ApprovalNotice: caseNotice(caseShortLink), longURL: caseShortLink, pick: HandOver{URL: caseShortLink, Kind: linkLong}}
 		return s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
@@ -184,13 +184,13 @@ var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascade
 
 // tooLargeNotice is the notice of a held write whose request no link this
 // engine has can carry: no local pages, no Vault.
-func tooLargeNotice(t *testing.T, s *Service, issue bool) heldNotice {
+func tooLargeNotice(t *testing.T, s *Service, issue bool) HeldAnswer {
 	t.Helper()
 	s.deps.Core.PagesOrigin = ""
 	if p, _ := s.deps.Core.Store.(parts); p.approvalStore == nil {
 		setApprovals(&s.deps, catalogApprovals{})
 	}
-	req := sizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
+	req := SizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
 	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
 		time.Now().Add(time.Hour), issue)
 	require.NoError(t, err)
@@ -258,12 +258,12 @@ func catalogCases() map[string]catalogCase {
 			"request_revert",
 			map[string]any{"runId": caseRunID, "intent": "Undo"},
 			func(t *testing.T, s *Service) error {
-				return s.delivery.revertTooLargeError(uuid.MustParse(caseRevertID), 2<<20, time.Now().Add(time.Hour))
+				return s.delivery.RevertTooLargeError(uuid.MustParse(caseRevertID), 2<<20, time.Now().Add(time.Hour))
 			},
 		},
 		caseKey("APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", ""): {"write", writeArgs0, func(t *testing.T, s *Service) error {
 			n := tooLargeNotice(t, s, issueLink)
-			require.Equal(t, reasonRequestTooLarge, n.reason)
+			require.Equal(t, ReasonRequestTooLarge, n.reason)
 			return approvalError(n, "")
 		}},
 		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(guidance.ReasonHeld, caseShortLink)},
@@ -352,10 +352,10 @@ func catalogCases() map[string]catalogCase {
 		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK", Message: "no such link"})},
 		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
 		caseKey("APPROVAL_INVALID", "REVEAL_REFUSED", ""): {"approval_page", nil, func(*testing.T, *Service) error {
-			return revealRefused(guidance.CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+			return RevealRefused(guidance.CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
 		}},
 		caseKey("REVERT_INVALID", "REVEAL_REFUSED", ""): {"revert_page", nil, func(*testing.T, *Service) error {
-			return revealRefused(guidance.CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+			return RevealRefused(guidance.CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
 		}},
 		caseKey("NOT_FOUND", "", "describe"): {
 			"describe",

@@ -30,16 +30,16 @@ func TestChooseLink(t *testing.T) {
 		name        string
 		short, long string
 		budget      int
-		want        handOver
+		want        HandOver
 	}{
-		{"a short link comes first", short, long, 1800, handOver{URL: short, Kind: linkShort}},
-		{"a short link is never measured", short, long, 1, handOver{URL: short, Kind: linkShort}},
-		{"a long link within the budget", "", long, 1800, handOver{URL: long, Kind: linkLong}},
-		{"a long link at the budget", "", long, len(long), handOver{URL: long, Kind: linkLong}},
-		{"a long link one over the budget becomes the hash link", "", long, len(long) - 1, handOver{URL: hash, Kind: linkHash, File: &file}},
-		{"far over the budget", "", long, 1, handOver{URL: hash, Kind: linkHash, File: &file}},
+		{"a short link comes first", short, long, 1800, HandOver{URL: short, Kind: linkShort}},
+		{"a short link is never measured", short, long, 1, HandOver{URL: short, Kind: linkShort}},
+		{"a long link within the budget", "", long, 1800, HandOver{URL: long, Kind: linkLong}},
+		{"a long link at the budget", "", long, len(long), HandOver{URL: long, Kind: linkLong}},
+		{"a long link one over the budget becomes the hash link", "", long, len(long) - 1, HandOver{URL: hash, Kind: linkHash, File: &file}},
+		{"far over the budget", "", long, 1, HandOver{URL: hash, Kind: linkHash, File: &file}},
 	} {
-		got, err := chooseLink(tc.short, tc.long, tc.budget, "f.txt")
+		got, err := ChooseLink(tc.short, tc.long, tc.budget, "f.txt")
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, got, tc.name)
 	}
@@ -74,9 +74,9 @@ func noticeService(origin string, budget int) *Service {
 
 const localPages = "http://localhost:8787"
 
-func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) heldNotice {
+func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) HeldAnswer {
 	t.Helper()
-	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
+	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), SizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
 		time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issue)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
@@ -160,7 +160,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, 1)
 		s.deps.Core.Commands = cmds
-		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: lines},
+		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), SizedRequest{Binding: noticeBinding, Lines: lines},
 			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issueLink)
 		require.NoError(t, err)
 		requirePersonMessage(t, n.PersonMessage, n.Links)

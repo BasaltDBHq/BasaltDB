@@ -38,14 +38,14 @@ func (ac *approvalCase) RevealApproval(ctx context.Context, id uuid.UUID, secret
 	}
 	ticket, err := ac.deps.Store.OpenReveal(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
 	rows, err := ac.deps.Store.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
-		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.pageLink(links.Approval, id, secret))
+		return approval.RevealAnswer{}, ac.revealApprovalError(err, ac.delivery.PageLink(links.Approval, id, secret))
 	}
-	return checkedAnswer(a.Lines, rows)
+	return CheckedAnswer(a.Lines, rows)
 }
 
 // heldRun is what re-runs a held write: its statement and parameters as
@@ -92,9 +92,9 @@ func (ac *approvalCase) revealApprovalError(err error, link string) error {
 	detail := guidance.StoreDetail(err)
 	switch {
 	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRefused:
-		return revealRefused(guidance.CodeApprovalInvalid, link)
+		return RevealRefused(guidance.CodeApprovalInvalid, link)
 	case code == guardmodel.CodeApprovalInvalid && detail == guardmodel.RevealRowsChanged:
-		return revealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
+		return RevealRowsChanged(guidance.CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
 	case code == guardmodel.CodeApprovalInvalid && detail == approvalNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guardmodel.CodeApprovalInvalid:

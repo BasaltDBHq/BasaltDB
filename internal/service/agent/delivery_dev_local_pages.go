@@ -21,9 +21,9 @@ func devLocalMessage(pm string) string {
 	return config.DevLocalPagesWarning + "\n\n" + pm
 }
 
-// devLocalError is te with the warning on its personMessage and its held
+// DevLocalError is te with the warning on its personMessage and its held
 // approval's, on a copy: te may be shared.
-func devLocalError(te *toolresult.ToolError) *toolresult.ToolError {
+func DevLocalError(te *toolresult.ToolError) *toolresult.ToolError {
 	out := *te
 	out.PersonMessage = devLocalMessage(out.PersonMessage)
 	if out.Approval != nil {
@@ -34,10 +34,10 @@ func devLocalError(te *toolresult.ToolError) *toolresult.ToolError {
 	return &out
 }
 
-// devLocalResult is the result v with the warning on every personMessage
+// DevLocalResult is the result v with the warning on every personMessage
 // it holds, at any depth (results, warnings, list items, status problems).
 // It goes through JSON so no result type is missed; numbers keep their text.
-func devLocalResult(v any) (any, error) {
+func DevLocalResult(v any) (any, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return nil, err

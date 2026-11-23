@@ -102,7 +102,7 @@ func refusedInNote(r rune) bool {
 // to a revert Postgres refuses everything for: it is logged.
 func (rc *revertCase) revokeRejected(ctx context.Context, id uuid.UUID) {
 	revoke := func() {
-		if err := rc.delivery.linkRevoke(id); err != nil {
+		if err := rc.delivery.LinkRevoke(id); err != nil {
 			rc.core.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
 		}
 	}

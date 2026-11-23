@@ -171,9 +171,9 @@ func newRelayEnv(t *testing.T, opts vaulttest.Options, rnd io.Reader, connect bo
 }
 
 // notice holds a write for approval and returns what the agent hands over.
-func (e *relayEnv) notice(t *testing.T) heldNotice {
+func (e *relayEnv) notice(t *testing.T) HeldAnswer {
 	t.Helper()
-	n, err := e.svc.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
+	n, err := e.svc.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), SizedRequest{Binding: noticeBinding, Lines: bigLines(3)},
 		e.clock.Now().Add(time.Hour), issueLink)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
@@ -236,7 +236,7 @@ func TestRelayHandsOverTheRegisteredPortalShortLink(t *testing.T) {
 
 	// A revert's link goes the same way.
 	id := uuid.Must(uuid.NewV7())
-	link, err := e.svc.delivery.shortLink(context.Background(), links.Revert, id, e.clock.Now().Add(time.Hour), issueLink)
+	link, err := e.svc.delivery.ShortLink(context.Background(), links.Revert, id, e.clock.Now().Add(time.Hour), issueLink)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(link, links.Portal+"/reverts/"+id.String()+"#s="), link)
 	_, rkeys := shortSecret(t, link)

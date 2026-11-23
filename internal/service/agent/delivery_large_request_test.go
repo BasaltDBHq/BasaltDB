@@ -28,7 +28,7 @@ func TestTooLargeMessagesKeepToTheirLimit(t *testing.T) {
 					s := operatedService(t, "linux", config, operatedBy)
 					s.deps.Core.PagesBase = base
 					for _, isRevert := range []bool{false, true} {
-						msg := s.delivery.tooLargeMessage(what, cost, time.Now(), isRevert)
+						msg := s.delivery.TooLargeMessage(what, cost, time.Now(), isRevert)
 						require.NoError(t, guidance.CheckPersonMessage(msg), "%s %s %s %d %v: %d characters", operatedBy, config, base, cost, isRevert, len(msg))
 					}
 				}

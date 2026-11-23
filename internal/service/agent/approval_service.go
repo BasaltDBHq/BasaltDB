@@ -29,17 +29,17 @@ type approvalCase struct {
 
 // approvalDelivery is what the approval use case asks of the delivery use case.
 type approvalDelivery interface {
-	approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error)
-	carriesLarge(cost int64) bool
-	columnsOf(ctx context.Context, lines []string) approval.ColumnOrder
-	credentialIDs(ctx context.Context) ([]passkey.Bytes, error)
-	deliver(n LinkNotice)
-	largeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
-	pageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
-	pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
-	shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error)
-	shortLinked(id uuid.UUID) bool
-	tooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string
+	ApprovalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error)
+	CarriesLarge(cost int64) bool
+	ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder
+	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
+	Deliver(n LinkNotice)
+	LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
+	PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
+	PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
+	ShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error)
+	ShortLinked(id uuid.UUID) bool
+	TooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string
 }
 
 // approvalReverts is what the approval use case reads of the revert use case:

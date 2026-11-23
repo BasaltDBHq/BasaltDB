@@ -78,12 +78,12 @@ func standaloneLink(link string) string {
 	return ""
 }
 
-// deliver hands n to the deliverer. It is called only where the link is
+// Deliver hands n to the deliverer. It is called only where the link is
 // final: the agent's answer is built, or the write is held and waits, and
 // nothing after it issues another link for the item in this call. A
 // deliverer that panics is logged and costs the agent nothing: the answer
 // is returned as it was built.
-func (dc *deliveryCase) deliver(n LinkNotice) {
+func (dc *deliveryCase) Deliver(n LinkNotice) {
 	if dc.deps.Deliverer == nil {
 		return
 	}
@@ -100,16 +100,16 @@ func (dc *deliveryCase) deliver(n LinkNotice) {
 	dc.deps.Deliverer.DeliverLink(n)
 }
 
-// deliverHeld makes the notice of answer, the APPROVAL_REQUIRED answer of
+// DeliverHeld makes the notice of answer, the APPROVAL_REQUIRED answer of
 // a write this call held: its link is that answer's approval.approvalUrl.
 // Write calls it once, when the write is held, also when the call then
 // waits for the person.
-func (dc *deliveryCase) deliverHeld(id uuid.UUID, expires time.Time, answer error) {
+func (dc *deliveryCase) DeliverHeld(id uuid.UUID, expires time.Time, answer error) {
 	var te *toolresult.ToolError
 	if !errors.As(answer, &te) || te.Code != guidance.CodeApprovalRequired || te.Approval == nil {
 		return
 	}
-	dc.deliver(LinkNotice{
+	dc.Deliver(LinkNotice{
 		Kind: NoticeApprovalRequested, ApprovalID: id, Headline: te.Approval.Headline, ExpiresAt: expires, Link: te.Approval.ApprovalURL,
 	})
 }

@@ -71,20 +71,20 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 		if holdsAdminCredential(args) {
 			te := h.svc.Failure(tool, nil, adminCredentialError())
 			if h.svc.deps.Status.DevLocalPages {
-				return nil, devLocalError(te)
+				return nil, DevLocalError(te)
 			}
 			return nil, te
 		}
 		out, err := h.admitted(ctx, tool, args, call)
 		switch {
 		case err == nil && h.svc.deps.Status.DevLocalPages:
-			return devLocalResult(out)
+			return DevLocalResult(out)
 		case err == nil:
 			return out, nil
 		}
 		te := h.svc.Failure(tool, guidance.CallArgs(args), err)
 		if h.svc.deps.Status.DevLocalPages {
-			return nil, devLocalError(te)
+			return nil, DevLocalError(te)
 		}
 		return nil, te
 	}

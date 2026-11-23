@@ -59,36 +59,36 @@ func (s *Service) PageFailure(err error) *toolresult.ToolError {
 // The calls the revert use case makes on the links and the relay, which
 // delivery owns.
 
-func (dc *deliveryCase) linkRevoke(id uuid.UUID) error { return dc.deps.Links.RevokeItem(id) }
+func (dc *deliveryCase) LinkRevoke(id uuid.UUID) error { return dc.deps.Links.RevokeItem(id) }
 
-func (dc *deliveryCase) linkRotate(id uuid.UUID, secret string, expires time.Time) (links.Rotated, error) {
+func (dc *deliveryCase) LinkRotate(id uuid.UUID, secret string, expires time.Time) (links.Rotated, error) {
 	return dc.deps.Links.Rotate(id, secret, expires)
 }
 
-func (dc *deliveryCase) linkExtend(id uuid.UUID, expires time.Time) (links.RelayLink, bool, error) {
+func (dc *deliveryCase) LinkExtend(id uuid.UUID, expires time.Time) (links.RelayLink, bool, error) {
 	return dc.deps.Links.Extend(id, expires)
 }
 
-func (dc *deliveryCase) linkReset(id uuid.UUID, until time.Time) error {
+func (dc *deliveryCase) LinkReset(id uuid.UUID, until time.Time) error {
 	return dc.deps.Links.Reset(id, until)
 }
 
-func (dc *deliveryCase) linkWasReset(id uuid.UUID, secret string) bool {
+func (dc *deliveryCase) LinkWasReset(id uuid.UUID, secret string) bool {
 	return dc.deps.Links.WasReset(id, secret)
 }
 
-func (dc *deliveryCase) relayRegister(ctx context.Context, token channel.LinkToken, expires time.Time) error {
+func (dc *deliveryCase) RelayRegister(ctx context.Context, token channel.LinkToken, expires time.Time) error {
 	return dc.deps.Relay.Register(ctx, token, expires)
 }
 
-func (dc *deliveryCase) notifyRevertTo(ctx context.Context, n RevertNotice) error {
+func (dc *deliveryCase) NotifyRevertTo(ctx context.Context, n RevertNotice) error {
 	return dc.deps.Notifier.NotifyRevert(ctx, n)
 }
 
-func (dc *deliveryCase) notifyHeldTo(ctx context.Context, n HeldNotice) error {
+func (dc *deliveryCase) NotifyHeldTo(ctx context.Context, n HeldNotice) error {
 	return dc.deps.Notifier.NotifyHeld(ctx, n)
 }
 
-func (dc *deliveryCase) relayConnected() bool { return dc.deps.Relay.Connected() }
+func (dc *deliveryCase) RelayConnected() bool { return dc.deps.Relay.Connected() }
 
-func (dc *deliveryCase) pollInterval() time.Duration { return dc.deps.Poll }
+func (dc *deliveryCase) PollInterval() time.Duration { return dc.deps.Poll }

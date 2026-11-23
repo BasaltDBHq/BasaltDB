@@ -91,7 +91,7 @@ func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, er
 		// waits would otherwise keep the person from hearing of it until it
 		// answers. Its link is the hold's own answer's, which is the answer
 		// the agent gets unless the person signs first.
-		wc.delivery.deliverHeld(id, expires, err)
+		wc.delivery.DeliverHeld(id, expires, err)
 		if p.Wait == 0 {
 			return WriteOutcome{}, err
 		}

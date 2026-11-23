@@ -48,6 +48,20 @@ type Uploader struct{ socketPath string }
 // socketPath.
 func NewUploader(socketPath string) Uploader { return Uploader{socketPath: socketPath} }
 
+// NewPluginUploader is basalt mcp's uploader of request_plugin folders: the
+// plugin service's UploadFolder over the channel to the agent's socket at
+// socketPath, answered as the engine takes it.
+func NewPluginUploader(socketPath string) PluginUploader {
+	ch := NewUploader(socketPath)
+	return func(ctx context.Context, source string) (mcpserver.PluginUpload, error) {
+		up, err := plugin.UploadFolder(ctx, ch, source)
+		if err != nil {
+			return mcpserver.PluginUpload{}, err
+		}
+		return mcpserver.PluginUpload{UploadID: up.UploadID, Name: up.Name, Executables: up.Executables}, nil
+	}
+}
+
 // ReadSource reads the plugin folder dir for an upload (ReadPluginSource).
 func (u Uploader) ReadSource(dir string) (plugin.UploadSource, error) {
 	src, err := ReadPluginSource(dir)

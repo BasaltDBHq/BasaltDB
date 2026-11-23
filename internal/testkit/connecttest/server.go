@@ -596,7 +596,7 @@ func fromSetup(e *setup.Error) *refusalError {
 	case "BINARY_TOO_OLD":
 		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
 	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", codeUsed, "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
-		setup.CodeNoTables, setup.CodeTablesChanged, setup.CodeClassesChanged:
+		setup.CodeNoTables, setup.CodeTablesChanged, setup.CodeClassesChanged, setup.CodeGuardUnusable:
 		return &refusalError{connect.CodeFailedPrecondition, e.Code, e.Message}
 	case setup.CodeAnswersInvalid:
 		return &refusalError{connect.CodeInvalidArgument, e.Code, "The answers do not match the questions for this database."}

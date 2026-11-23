@@ -12,9 +12,6 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -54,6 +51,12 @@ const (
 	piidictSqlStateQueryCanceled = "57014"
 )
 
+// The type OIDs of json and jsonb, whose text values the scan unquotes.
+const (
+	jsonOID  = 114
+	jsonbOID = 3802
+)
+
 // Relation kinds (pg_class.relkind) that have a ctid to page by.
 const (
 	relkindTable        = "r"
@@ -70,20 +73,29 @@ type Builder interface {
 	RebuildNeeded() <-chan struct{}
 }
 
-// Pool is an agent's connection pool. The scan hands it to the dictionary
-// and its own reads through pgquerier.Neutralize.
-type Pool interface {
-	pgquerier.Querier
-	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+// textQuerier is a handle that answers a query in Postgres's text format:
+// each row's raw values (nil for NULL, valid only during the call) and its
+// columns' type OIDs (pgquerier.Neutral).
+type textQuerier interface {
+	QueryText(ctx context.Context, sql string, args []any, row func(raw [][]byte, typeOIDs []uint32) error) error
 }
+
+// The page transactions pii is given are pgquerier.Neutral: a change to its
+// method would otherwise fail every page.
+var _ textQuerier = pgquerier.Neutral{}
 
 // ScanSource is one agent whose readable IDENTIFIER columns the scan reads,
 // with the agent's own credential (decision M51-2) and statement timeout.
 type ScanSource struct {
-	Agent   string
-	DB      Pool
-	Classes *Map
-	Limits  sqlguard.Limits
+	Agent string
+	// DB is the agent's connection pool, for the catalog reads
+	// (pgquerier.Neutralize).
+	DB PiidictQuerier
+	// ReadOnly runs each page in a read-only transaction of its own on the
+	// same pool (pgquerier.ReadOnlyTx).
+	ReadOnly ReadOnlyTx
+	Classes  *Map
+	Limits   sqlguard.Limits
 }
 
 // ScanOptions tune the scan; zero fields take the defaults.
@@ -244,7 +256,7 @@ type scanRun struct {
 
 func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 	lctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
-	cols, err := src.Classes.Identifiers(lctx, pgquerier.Neutralize(src.DB))
+	cols, err := src.Classes.Identifiers(lctx, src.DB)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("agent %s: %w", src.Agent, err)
@@ -273,11 +285,11 @@ func skipReason(err error) string {
 	if errors.As(err, &slow) {
 		return "it has no key to page by and a full read exceeds the statement timeout; values the agent reads from it are still added"
 	}
-	var pe *pgconn.PgError
+	var pe sqlStater
 	if !errors.As(err, &pe) {
 		return ""
 	}
-	switch pe.Code {
+	switch pe.SQLState() {
 	case sqlStateUndefinedTable, sqlStateUndefinedColumn, sqlStateInsufficient:
 		return "the agent can no longer read it"
 	}
@@ -318,15 +330,15 @@ func byTable(cols []IdentifierColumn) []scanTable {
 // (slowRelationError) instead of failing the whole cycle.
 func (r *scanRun) table(ctx context.Context, src ScanSource, t scanTable) error {
 	kctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
-	keys, relkind, err := keysetOf(kctx, pgquerier.Neutralize(src.DB), t.oid)
+	keys, relkind, err := keysetOf(kctx, src.DB, t.oid)
 	cancel()
 	if err != nil {
 		return err
 	}
 	if len(keys) == 0 && relkind != relkindTable && relkind != relkindMaterialized {
 		err := r.pageAll(ctx, src, onePassPager(t))
-		var pe *pgconn.PgError
-		if errors.As(err, &pe) && pe.Code == piidictSqlStateQueryCanceled {
+		var pe sqlStater
+		if errors.As(err, &pe) && pe.SQLState() == piidictSqlStateQueryCanceled {
 			return &slowRelationError{err: err}
 		}
 		return err
@@ -348,6 +360,13 @@ func (e *slowRelationError) Error() string {
 
 func (e *slowRelationError) Unwrap() error { return e.err }
 
+// relationGoneError is a relation dropped after the classes named it: the
+// undefined_table Postgres raises for it, so the cycle skips it.
+type relationGoneError struct{}
+
+func (relationGoneError) Error() string    { return ": table is gone (SQLSTATE 42P01)" }
+func (relationGoneError) SQLState() string { return sqlStateUndefinedTable }
+
 // keyColumn is one column of the keyset a table is paged by.
 type keyColumn struct {
 	name, typ string
@@ -359,7 +378,7 @@ func (k keyColumn) sql() string {
 	if k.system {
 		return k.name
 	}
-	return pgx.Identifier{k.name}.Sanitize()
+	return quoteIdentifier(k.name)
 }
 
 // keysetOf reads a table's relkind and its primary key columns with their
@@ -369,12 +388,24 @@ func keysetOf(ctx context.Context, db PiidictQuerier, oid uint32) ([]keyColumn, 
 	if err != nil {
 		return nil, "", err
 	}
-	var relkind string
-	if err := db.QueryRow(ctx, q, args...).Scan(&relkind); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, "", &pgconn.PgError{Code: sqlStateUndefinedTable, Message: "table is gone"}
-		}
+	relRows, err := db.Query(ctx, q, args...)
+	if err != nil {
 		return nil, "", err
+	}
+	var (
+		relkind, kind string
+		found         bool
+	)
+	if err := forEachRow(relRows, []any{&kind}, func() error {
+		if !found {
+			relkind, found = kind, true
+		}
+		return nil
+	}); err != nil {
+		return nil, "", err
+	}
+	if !found {
+		return nil, "", relationGoneError{}
 	}
 	// Plain SQL: a catalog query over the unnested index key, which
 	// squirrel cannot express.
@@ -430,9 +461,9 @@ func rowPager(t scanTable, keys []keyColumn) func(page int) pager {
 			bounds = append(bounds, "CAST(? AS "+k.typ+")")
 		}
 		for _, c := range t.cols {
-			sel = append(sel, pgx.Identifier{c.Column}.Sanitize())
+			sel = append(sel, quoteIdentifier(c.Column))
 		}
-		from := pgx.Identifier{t.schema, t.name}.Sanitize()
+		from := quoteIdentifier(t.schema, t.name)
 		tuple := "(" + strings.Join(order, ", ") + ") > (" + strings.Join(bounds, ", ") + ")"
 		return pager{
 			keyCols: len(keys), cols: t.cols,
@@ -455,9 +486,9 @@ func onePassPager(t scanTable) func(page int) pager {
 	return func(int) pager {
 		sel := make([]string, 0, len(t.cols))
 		for _, c := range t.cols {
-			sel = append(sel, pgx.Identifier{c.Column}.Sanitize())
+			sel = append(sel, quoteIdentifier(c.Column))
 		}
-		from := pgx.Identifier{t.schema, t.name}.Sanitize()
+		from := quoteIdentifier(t.schema, t.name)
 		return pager{
 			cols: t.cols, onePass: true,
 			query: func([]string) (string, []any, error) {
@@ -507,40 +538,39 @@ func (r *scanRun) page(ctx context.Context, src ScanSource, p pager, cursor []st
 	// for a connection.
 	ctx, cancel := context.WithTimeout(ctx, src.Limits.StatementTimeout+pageWaitMargin)
 	defer cancel()
-	tx, err := src.DB.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	timeout, targs, err := piidictPsql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", src.Limits.StatementTimeoutSetting())).ToSql()
-	if err != nil {
-		return nil, 0, err
-	}
-	if _, err := tx.Exec(ctx, timeout, targs...); err != nil {
-		return nil, 0, err
-	}
-	rows, err := tx.Query(ctx, q, append([]any{pgx.QueryResultFormats{pgx.TextFormatCode}}, args...)...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
 	var next []string
 	n := 0
-	for rows.Next() {
-		raw, fds := rows.RawValues(), rows.FieldDescriptions()
-		next = next[:0]
-		for i := range p.keyCols {
-			next = append(next, string(raw[i]))
+	err = src.ReadOnly(ctx, func(tx Querier) error {
+		timeout, targs, err := piidictPsql.Select().Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", src.Limits.StatementTimeoutSetting())).ToSql()
+		if err != nil {
+			return err
 		}
-		for i, c := range p.cols {
-			j := p.keyCols + i
-			if err := r.add(c, fds[j].DataTypeOID, raw[j]); err != nil {
-				return nil, 0, err
+		if _, err := tx.Exec(ctx, timeout, targs...); err != nil {
+			return err
+		}
+		text, ok := tx.(textQuerier)
+		if !ok {
+			return errors.New("pii: the page's transaction cannot answer in text format")
+		}
+		return text.QueryText(ctx, q, args, func(raw [][]byte, typeOIDs []uint32) error {
+			next = next[:0]
+			for i := range p.keyCols {
+				next = append(next, string(raw[i]))
 			}
-		}
-		n++
+			for i, c := range p.cols {
+				j := p.keyCols + i
+				if err := r.add(c, typeOIDs[j], raw[j]); err != nil {
+					return err
+				}
+			}
+			n++
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, 0, err
 	}
-	return next, n, rows.Err()
+	return next, n, nil
 }
 
 // add puts one value in the build, bounded by the memory budget.
@@ -565,7 +595,7 @@ func scanValue(typeOID uint32, raw []byte) (string, bool) {
 	if raw == nil {
 		return "", false
 	}
-	if typeOID == pgtype.JSONOID || typeOID == pgtype.JSONBOID {
+	if typeOID == jsonOID || typeOID == jsonbOID {
 		return valueText(json.RawMessage(raw))
 	}
 	return valueText(string(raw))

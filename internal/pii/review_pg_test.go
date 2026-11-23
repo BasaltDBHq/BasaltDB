@@ -63,7 +63,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 		wg.Go(func() {
 			octx, ocancel := context.WithTimeout(ctx, 10*time.Second)
 			defer ocancel()
-			errs <- obs.Returned(octx, tx, []action.Column{label}, rows)
+			errs <- obs.Returned(octx, pgquerier.Neutralize(tx), []action.Column{label}, rows)
 		})
 	}
 	wg.Wait()
@@ -93,7 +93,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	obs := NewObserver(classes, dict)
 	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
 	reader := postgres.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
-	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
+	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
 	require.NoError(t, store.StartRun(ctx, in))
@@ -156,7 +156,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 	limits := sqlguard.DefaultLimits()
 	limits.StatementTimeout = 200 * time.Millisecond
 	log, out := newLog()
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: limits}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: limits}},
 		ScanOptions{}, log)
 
 	res, err := s.Cycle(ctx)
@@ -177,7 +177,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	pool.Close() // every cycle fails
 	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	log, out := newLog()
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(pool), ReadOnly: pgquerier.ReadOnlyTx(pool), Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, log)
 	for i := range failWarnAfter {
 		_, err := s.Cycle(context.Background())

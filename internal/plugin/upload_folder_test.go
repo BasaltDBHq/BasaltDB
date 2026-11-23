@@ -11,6 +11,8 @@ import (
 )
 
 type fakeChannel struct {
+	readDir string
+	sentCtx context.Context
 	src     plugin.UploadSource
 	readErr error
 	sent    [][]plugin.UploadFile
@@ -18,9 +20,13 @@ type fakeChannel struct {
 	sendErr error
 }
 
-func (c *fakeChannel) ReadSource(string) (plugin.UploadSource, error) { return c.src, c.readErr }
+func (c *fakeChannel) ReadSource(dir string) (plugin.UploadSource, error) {
+	c.readDir = dir
+	return c.src, c.readErr
+}
 
-func (c *fakeChannel) Upload(_ context.Context, files []plugin.UploadFile) (string, error) {
+func (c *fakeChannel) Upload(ctx context.Context, files []plugin.UploadFile) (string, error) {
+	c.sentCtx = ctx
 	c.sent = append(c.sent, files)
 	return c.id, c.sendErr
 }
@@ -30,8 +36,12 @@ func (c *fakeChannel) Upload(_ context.Context, files []plugin.UploadFile) (stri
 func TestUploadFolder(t *testing.T) {
 	files := []plugin.UploadFile{{Path: "manifest.json", Data: []byte("{}")}, {Path: "bin/p", Data: []byte("x")}}
 	ch := &fakeChannel{src: plugin.UploadSource{Files: files, Executables: []string{"bin/p"}, Name: "acme-ner"}, id: "u1"}
-	got, err := plugin.UploadFolder(context.Background(), ch, "/src")
+	type key struct{}
+	ctx := context.WithValue(context.Background(), key{}, "this call")
+	got, err := plugin.UploadFolder(ctx, ch, "/src/acme-ner")
 	require.NoError(t, err)
+	require.Equal(t, "/src/acme-ner", ch.readDir, "the folder named is the one read")
+	require.Equal(t, "this call", ch.sentCtx.Value(key{}), "the upload runs under the caller's context")
 	require.Equal(t, plugin.UploadResult{UploadID: "u1", Name: "acme-ner", Executables: []string{"bin/p"}}, got)
 	require.Equal(t, [][]plugin.UploadFile{files}, ch.sent)
 

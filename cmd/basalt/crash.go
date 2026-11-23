@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
-	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
@@ -29,7 +27,7 @@ func guarded(args []string, std cli.Stdio, f func() int) (code int) {
 			return
 		}
 		code = cli.ExitError
-		engine.ReportPanic(crashHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
+		engine.ReportPanic(engineHost{}, engineTerminal{}, std.Err, commandName(args), v, debug.Stack())
 	}()
 	return f()
 }
@@ -48,10 +46,12 @@ func commandName(args []string) string {
 	return ""
 }
 
-// crashHost is the crash use case's engine.Host.
-type crashHost struct{}
+// engineHost is engine.Host through app and the machine.
+type engineHost struct{ osHost }
 
-func (crashHost) NewRecorder(command string) (engine.Recorder, []string) { return newRecorder(command) }
+func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
+
+func (engineHost) LastStopHashEngineJSON(path string) string { return app.LastStopHashEngineJSON(path) }
 
 // engineTerminal is engine.Terminal on the CLI shell.
 type engineTerminal struct{}
@@ -60,24 +60,15 @@ func (engineTerminal) TerminalText(s string) string { return cli.TerminalText(s)
 
 func (engineTerminal) InfoOwnerUID(fi os.FileInfo) (int, bool) { return cli.InfoOwnerUID(fi) }
 
-// crashRecorder is engine.Recorder on the crash recorder rec.
-type crashRecorder struct{ rec app.CrashRecorder }
-
-func (r crashRecorder) Save(dir string, shared bool, in app.CrashInput) (string, error) {
-	r.rec.Dir, r.rec.Shared = dir, shared
-	rep, err := r.rec.Save(in)
-	return rep.ID, err
+func (engineTerminal) WriteFileAtomic(path string, data []byte) error {
+	return cli.WriteFileAtomic(path, data)
 }
 
-// newRecorder is the recorder for this process and the directories to try,
-// in order: the engine's state directory for the engine, the person's config
-// directory for every other command.
-func newRecorder(command string) (engine.Recorder, []string) {
-	rec := app.CrashRecorder{Version: buildinfo.Version, Scrub: app.CrashOSScrubber(), Now: time.Now}
-	user, state := engine.UserCrashDir(osHost{}), filepath.Join(config.DefaultStateDir(cli.GoosNow()), app.CrashDirName)
-	dirs := []string{user, state}
-	if command == "engine" {
-		dirs = []string{state, user}
-	}
-	return crashRecorder{rec}, cli.NonEmpty(dirs)
+func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
+	return cli.HeldAtEveryLook(held, sleep)
+}
+
+// newRecorder is the crash recorder for this process.
+func newRecorder() engine.Recorder {
+	return app.CrashRecorder{Version: buildinfo.Version, Scrub: app.CrashOSScrubber(), Now: time.Now}
 }

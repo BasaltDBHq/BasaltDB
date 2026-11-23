@@ -584,13 +584,14 @@ func widens(prev, cur guardmodel.PluginEntryEvent) bool {
 	return slices.ContainsFunc(cur.Egress, func(h string) bool { return !slices.Contains(prev.Egress, h) })
 }
 
-// FeedKinds are the ledger kinds feed/1 may carry. A CHANGE is an event only
+// feedKinds are the ledger kinds feed/1 may carry. A CHANGE is an event only
 // when its status is APPLIED, a REFUSED only when its op is not SELECT
 // (feedFilter keeps only those).
-var FeedKinds = []string{
+var feedKinds = []string{
 	guardmodel.KindChange, guardmodel.KindRefused, guardmodel.KindApprovalPending, guardmodel.KindApproved,
 	guardmodel.KindRevertPending, guardmodel.KindRevertSigned, guardmodel.KindReverted, guardmodel.KindRevertRejected,
 }
 
-// feedFilter is the ledger rows that are feed/1 events.
-var feedFilter = guardmodel.FeedFilter{Kinds: FeedKinds, AppliedChangesOnly: true, SkipRefusedReads: true}
+// feedFilter is the ledger rows that are feed/1 events: feedKinds, with no
+// unapplied CHANGE and no REFUSED SELECT (the filter's zero flags).
+var feedFilter = guardmodel.FeedFilter{Kinds: feedKinds}

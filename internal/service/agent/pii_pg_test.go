@@ -102,7 +102,9 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()
-	refuse := func(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return corepii.ErrDeltaFull }
+	refuse := func(context.Context, pgquerier.Port, []action.Column, []map[string]any) error {
+		return corepii.ErrDeltaFull
+	}
 	svc, d, _, _ := piiService(t, failingObserver{}, refuse)
 	_, err := svc.Write(context.Background(), agent.WriteParams{
 		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",

@@ -20,7 +20,7 @@ type Querier = pgquerier.Querier
 
 // Guard is the port to the guard in an agent's database, where the plugin
 // records, the approvals of plugin entries and the feed's events are kept. An
-// outbound adapter implements it (adapter/outbound/postgres/pluginledger)
+// outbound adapter implements it (platform/postgres/pluginledger)
 // and the app hands it over in Ports. Every method takes the agent's handle and
 // returns the database's errors unwrapped.
 type Guard interface {

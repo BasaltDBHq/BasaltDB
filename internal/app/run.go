@@ -40,13 +40,13 @@ import (
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
-	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -293,7 +293,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	})
 	defer stable.Stop()
 	for _, u := range upkeeps {
-		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
+		wg.Go(func() { u.Run(ctx, ledger.DefaultInterval) })
 	}
 	for _, run := range srv.runs {
 		wg.Go(func() { run(ctx) })
@@ -420,7 +420,7 @@ type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *sl
 // startedAgents are the agents the engine serves and what it closes.
 type startedAgents struct {
 	agents   []engine.Agent
-	upkeeps  []*upkeep.Upkeep
+	upkeeps  []*ledger.Upkeep
 	services []*agent.Service
 	scans    []pii.ScanSource
 	// pluginLedgers are the agents' own ledgers, for their plugin events.
@@ -588,7 +588,7 @@ const agentPoolConns = 4
 // timer, and the lazy connection pool on its own credential they share.
 type agentRuntime struct {
 	svc    *agent.Service
-	upkeep *upkeep.Upkeep
+	upkeep *ledger.Upkeep
 	// scan is what the engine's PII scan reads for this agent.
 	scan pii.ScanSource
 	// db is the agent's own connection pool, outside any tool call.
@@ -613,7 +613,7 @@ type agentEnv struct {
 	// UPDATE and REMOVE (setupJobs), else empty.
 	setupOrigin string
 	stateDir    string
-	pins        upkeep.Pins
+	pins        ledger.Pins
 	// rotated takes each agent's password setter, for the setup page's
 	// REPAIR.
 	rotated *rotations
@@ -807,7 +807,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	return agentRuntime{
 		svc: svc,
 		run: repin,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
+		upkeep: ledger.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(pii.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
 		scan: pii.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
@@ -862,7 +862,7 @@ const stateDirMode = 0o700
 // statePins keeps verified chain heads in dir. When dir cannot be created
 // the engine still serves, pinning in memory only, and says so: a rewrite
 // made while it is stopped is then caught only by the full check on start.
-func statePins(dir string, log *slog.Logger) upkeep.Pins {
+func statePins(dir string, log *slog.Logger) ledger.Pins {
 	if err := os.MkdirAll(dir, stateDirMode); err != nil {
 		log.Error("no state directory; ledger chain heads are pinned in memory only", "dir", dir, "err", err)
 		return &chainpin.Memory{}
@@ -873,7 +873,7 @@ func statePins(dir string, log *slog.Logger) upkeep.Pins {
 // KeptSetAside reads the pins agent set aside after reinstalls from its
 // pin (chainpin.Pin.SetAside), for the reinstall notice. A pin that cannot
 // be read is logged and adds nothing: the ledger still shows the notice.
-func KeptSetAside(pins upkeep.Pins, agent string, log *slog.Logger) func() []action.SetAside {
+func KeptSetAside(pins ledger.Pins, agent string, log *slog.Logger) func() []action.SetAside {
 	return func() []action.SetAside {
 		p, _, err := pins.Load(agent)
 		if err != nil {

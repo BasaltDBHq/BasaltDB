@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -25,7 +26,7 @@ func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 }
 
 // vaultInStatus is status.vault as an agent's status tool reports ev.
-func vaultInStatus(t *testing.T, ev engineVault) map[string]any {
+func vaultInStatus(t *testing.T, ev vault.Engine) map[string]any {
 	t.Helper()
 	d := testAgentDeps("bot", onePasskey{})
 	d.Status.Vault = ev
@@ -56,6 +57,6 @@ func TestStatusReportsVaultOff(t *testing.T) {
 	ev := openVault(config.Config{}, t.TempDir(), time.Now, quietLog(), nil, nil)
 	v := vaultInStatus(t, ev)
 	require.Equal(t, "OFF", v["state"])
-	require.Equal(t, ev.status().EngineID, v["engineId"], "the engine id whenever the key file loads")
-	require.Equal(t, ev.status().Fingerprint, v["fingerprint"])
+	require.Equal(t, ev.Status().EngineID, v["engineId"], "the engine id whenever the key file loads")
+	require.Equal(t, ev.Status().Fingerprint, v["fingerprint"])
 }

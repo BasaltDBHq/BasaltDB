@@ -253,20 +253,20 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
-	require.NotNil(t, ev.client)
-	live.Add("bot", secrets, ev.client.Unregister)
+	require.NotNil(t, ev.Client)
+	live.Add("bot", secrets, ev.Client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = ev.client.Run(runCtx)
+		_ = ev.Client.Run(runCtx)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		<-done
 	})
-	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
-	relay.c.Store(ev.client)
+	require.Eventually(t, ev.Client.Connected, 5*time.Second, 5*time.Millisecond)
+	relay.c.Store(ev.Client)
 
 	// Once the Vault answers, basalt mcp's upload goes through.
 	up, err := uploader(ctx, dir)

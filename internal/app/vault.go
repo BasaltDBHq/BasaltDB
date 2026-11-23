@@ -10,32 +10,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
-
-// engineVault is the engine's keys and its socket to the Vault (CONTRACT.md,
-// Vault channel).
-type engineVault struct {
-	// client keeps the socket; nil when the engine does not dial out.
-	client *vault.Client
-	// status is vault in status: KEY_ERROR, OFF, or the socket's state.
-	status func() vault.Status
-	// keys are the engine's keys, nil when the key file is refused
-	// (KEY_ERROR): they sign receipts whatever vault says.
-	keys *channel.EngineKeys
-}
-
-// receipts is the signer of the agents' receipts: none (a nil interface)
-// when the key file is refused, and the answers then carry noReceipt.
-func (v engineVault) receipts() linksvc.ReceiptSigner {
-	if v.keys == nil {
-		return nil
-	}
-	return v.keys
-}
 
 // openVault loads the engine's keys, making them on the first start whatever
 // vault says (VC-36: receipts need the signing key on every path), and
@@ -44,14 +22,14 @@ func (v engineVault) receipts() linksvc.ReceiptSigner {
 // pages as usual, never dials out, and status says KEY_ERROR. Sessions
 // resolve their token in live and are answered by pages; with either nil,
 // every session is refused at message 1.
-func openVault(cfg config.Config, stateDir string, now func() time.Time, log *slog.Logger, live *linksvc.Registry, pages vault.Dispatcher) engineVault {
+func openVault(cfg config.Config, stateDir string, now func() time.Time, log *slog.Logger, live *linksvc.Registry, pages vault.Dispatcher) vault.Engine {
 	keys, err := loadEngineKeys(stateDir, now)
 	if err != nil {
 		log.Error("engine key file refused: the Vault stays off and links are long links until it is fixed; "+
 			"correct the file's owner (the engine's OS user) and mode (0600), it is never replaced", "err", err)
-		return engineVault{status: vault.KeyErrorStatus}
+		return vault.Engine{Status: vault.KeyErrorStatus}
 	}
-	off := engineVault{status: func() vault.Status { return vault.OffStatus(keys) }, keys: keys}
+	off := vault.Engine{Status: func() vault.Status { return vault.OffStatus(keys) }, Keys: keys}
 	if !cfg.VaultEnabled() {
 		return off
 	}
@@ -64,7 +42,7 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 		log.Error("the Vault stays off", "err", err)
 		return off
 	}
-	return engineVault{client: client, status: client.Status, keys: keys}
+	return vault.Engine{Client: client, Status: client.Status, Keys: keys}
 }
 
 // pruneInterval is how often the engine drops expired links, so an expired
@@ -108,11 +86,4 @@ func loadEngineKeys(stateDir string, now func() time.Time) (*channel.EngineKeys,
 // does not import the stores.
 func LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
 	return keyfile.LoadOrCreateKeys(path, now)
-}
-
-// VaultStatus is status.vault for every agent's status tool: OFF (with the
-// engine id when the keys load), KEY_ERROR, or the socket's state.
-func (v engineVault) VaultStatus() guidance.VaultStatus {
-	st := v.status()
-	return guidance.VaultStatus{State: string(st.State), EngineID: st.EngineID, Fingerprint: st.Fingerprint}
 }

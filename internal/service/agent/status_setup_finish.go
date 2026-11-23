@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/user"
 	"strconv"
@@ -79,36 +80,83 @@ func (c *setupCache) remember(id string, now time.Time) {
 	c.id, c.at = id, now
 }
 
-// pendingSetup is the agent's pending setup, nil when none is.
-func (sc *statusKeeper) pendingSetup() *config.Setup {
-	sc.setupMu.Lock()
-	defer sc.setupMu.Unlock()
-	return sc.setup
+// setupKeeper owns the agent's pending setup: StatusDeps.Setup until the
+// database shows it recorded, the held calls' cache of a setup not recorded
+// yet, and the lock file the engine could not open while finishing one
+// (problem LOCK_FILE_UNUSABLE).
+type setupKeeper struct {
+	mu          sync.Mutex
+	setup       *config.Setup
+	notRecorded setupCache
+	lockTrouble lockTrouble
 }
 
-// setupFinished forgets the pending setup id once it is recorded.
-func (sc *statusKeeper) setupFinished(id string) {
-	sc.setupMu.Lock()
-	defer sc.setupMu.Unlock()
-	if sc.setup != nil && sc.setup.SetupID == id {
-		sc.setup = nil
+// pending is the agent's pending setup, nil when none is.
+func (k *setupKeeper) pending() *config.Setup {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.setup
+}
+
+// finished forgets the pending setup id once it is recorded.
+func (k *setupKeeper) finished(id string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.setup != nil && k.setup.SetupID == id {
+		k.setup = nil
 	}
+}
+
+// setupProbe is what the setup watch reads of the database: whether a setup
+// is recorded, and the latest one.
+type setupProbe interface {
+	SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error)
+	LatestSetup(ctx context.Context) (guardmodel.AgentSetup, bool, error)
+}
+
+// setupWatch is the agent's pending setup as one call reads it: the setup as
+// it stands, what finishes it, and what it reads of the database.
+type setupWatch struct {
+	setup *config.Setup
+	// database names the credential's database (Deps.Database).
+	database string
+	probe    setupProbe
+	finisher SetupFinisher
+	// finished forgets the pending setup once the database shows it
+	// recorded.
+	finished func(id string)
+	// notRecorded remembers, for a few seconds, that a held call found the
+	// pending setup not recorded (gate).
+	notRecorded *setupCache
+	// lockTrouble is the lock file finishing a setup could not open.
+	lockTrouble *lockTrouble
+	log         *slog.Logger
+	now         func() time.Time
 }
 
 // AdmitTick is the heartbeat's gate: it first looks for a pending setup of
 // any kind in the database, so a rotated credential is picked up and
 // engine.json cleared even when nobody calls status, then admits as Admit.
 func (sc *statusKeeper) AdmitTick(ctx context.Context) error {
-	if d := sc.statusDeps(); d.setup != nil && d.setup.Kind != guardmodel.SetupInstall {
-		d.pendingRecorded(ctx)
+	if w := sc.setupWatch(); w.setup != nil && w.setup.Kind != guardmodel.SetupInstall {
+		w.pendingRecorded(ctx)
 	}
 	return sc.Admit(ctx)
+}
+
+// setupWatch is the pending setup as a call reads it now.
+func (sc *statusKeeper) setupWatch() setupWatch {
+	return setupWatch{
+		setup: sc.pending.pending(), database: sc.deps.Database, probe: sc.deps.Probe, finisher: sc.deps.Finisher,
+		finished: sc.pending.finished, notRecorded: &sc.pending.notRecorded, lockTrouble: &sc.pending.lockTrouble,
+		log: sc.core.Log, now: sc.core.Now,
+	}
 }
 
 // recordedAsAgent reads, with the agent's own credential, whether setup id
 // is recorded: with the .pending credential first, then the engine's own.
 // Recorded, it finishes the setup.
-func (s statusDeps) recordedAsAgent(ctx context.Context, id uuid.UUID) (bool, error) {
+func (s setupWatch) recordedAsAgent(ctx context.Context, id uuid.UUID) (bool, error) {
 	recorded, has, err := s.finisher.PendingRecorded(ctx, id)
 	if err != nil {
 		s.log.Error("read the pending setup with the pending credential", "err", err)
@@ -132,7 +180,7 @@ func (s statusDeps) recordedAsAgent(ctx context.Context, id uuid.UUID) (bool, er
 // LOCK_FILE_UNUSABLE until a try opens it (CONTRACT.md, Lock files). Any
 // other failure, such as a config the engine cannot write, is logged and
 // the setup forgotten: the database, not the file, decides that it is done.
-func (s statusDeps) finish(ctx context.Context, promote bool) {
+func (s setupWatch) finish(ctx context.Context, promote bool) {
 	id := s.setup.SetupID
 	err := s.finisher.Finish(ctx, id, promote)
 	var unusable *config.LockUnusableError

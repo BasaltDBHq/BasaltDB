@@ -114,7 +114,7 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, setupPending, r.Setup.State)
 			require.Empty(t, tc.fin.finished(), "nothing is cleared")
-			require.NotNil(t, svc.status.pendingSetup(), "the setup stays pending")
+			require.NotNil(t, svc.status.pending.pending(), "the setup stays pending")
 		})
 	}
 }
@@ -142,7 +142,7 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, guidance.SetupStatus{State: setupDone, SetupID: setup.SetupID, Kind: guardmodel.SetupInstall}, r.Setup)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: false}}, fin.finished())
-	require.Nil(t, svc.status.pendingSetup(), "forgotten in memory too")
+	require.Nil(t, svc.status.pending.pending(), "forgotten in memory too")
 	p := findProblem(t, r, problemNoPasskey)
 	require.Equal(t, mcpcontract.SeverityError, p.Severity)
 	require.False(t, r.Ready, "nothing held can be approved yet")
@@ -170,7 +170,7 @@ func TestAPendingCredentialThatFindsTheSetupIsPromoted(t *testing.T) {
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: true}}, fin.finished())
-	require.Nil(t, svc.status.pendingSetup())
+	require.Nil(t, svc.status.pending.pending())
 	require.NotEqual(t, setupPending, r.Setup.State)
 }
 
@@ -189,7 +189,7 @@ func TestAFailedFinishIsTriedAgainWhenItCanStillWork(t *testing.T) {
 	} {
 		svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
 		require.NoError(t, svc.Admit(ctx), "%s: recorded, so served", name)
-		require.NotNil(t, svc.status.pendingSetup(), name)
+		require.NotNil(t, svc.status.pending.pending(), name)
 		require.NoError(t, svc.Admit(ctx), name)
 		require.Len(t, fin.finished(), 2, "%s: tried again", name)
 	}
@@ -197,7 +197,7 @@ func TestAFailedFinishIsTriedAgainWhenItCanStillWork(t *testing.T) {
 	fin := &fakeFinisher{finishErr: errors.New("read-only file system")}
 	svc := finishing(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), recorded: true}, fin, pendingInstall(), 1)
 	require.NoError(t, svc.Admit(ctx))
-	require.Nil(t, svc.status.pendingSetup())
+	require.Nil(t, svc.status.pending.pending())
 	require.NoError(t, svc.Admit(ctx))
 	require.Len(t, fin.finished(), 1)
 }
@@ -295,7 +295,7 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	require.Contains(t, found.PersonMessage, lock)
 	require.Equal(t, "sudo chown "+engineUserName()+" "+lock, found.NextSteps[0].Command)
 	require.Equal(t, toolresult.ActorPerson, found.NextSteps[0].Actor)
-	require.NotNil(t, svc.status.pendingSetup(), "still pending: the next call tries again")
+	require.NotNil(t, svc.status.pending.pending(), "still pending: the next call tries again")
 
 	fin.mu.Lock()
 	fin.finishErr = nil
@@ -305,6 +305,6 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	for _, p := range r.Problems {
 		require.NotEqual(t, problemLockFileUnusable, p.Code, "fixed: no problem")
 	}
-	require.Nil(t, svc.status.pendingSetup(), "finished once the lock opens")
+	require.Nil(t, svc.status.pending.pending(), "finished once the lock opens")
 	require.Len(t, fin.finished(), 2)
 }

@@ -165,10 +165,6 @@ func WithCertificateHint(dsn string, err error) error { return pgdial.WithCertif
 // CurrentTrustProfileSet is the trust profiles a connection opened now uses.
 func CurrentTrustProfileSet() *trustprofile.Set { return pgdial.Trust() }
 
-// CheckForeignDSN refuses a connection string with parameters that make the
-// driver read a file (ErrForeignDSN).
-func CheckForeignDSN(dsn string) error { return pgdial.CheckForeignDSN(dsn) }
-
 // CertificateNotVerified reports whether err is a server certificate that
 // did not verify.
 func CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }

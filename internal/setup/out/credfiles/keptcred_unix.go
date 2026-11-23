@@ -61,9 +61,9 @@ func checkEngineFile(f *os.File, uid int, engineUser string) error {
 }
 
 // ReadKeptCredential reads the agent's existing credential file as root
-// (OpenEngineFile), mode 0600 or tighter.
-// ReadKeptCredential reads the engine user's credential for basalt service
-// install when the role kept its password. Root only writes it back into
+// (OpenEngineFile), mode 0600 or tighter: the engine user's credential for
+// basalt service install when the role kept its password. Root only writes
+// it back into
 // the unit's files, owned by that user again, and never connects with it,
 // so it takes no pgdial.CheckForeignDSN (TestRootCredentialReadsAreChecked).
 func ReadKeptCredential(h FilesHost, path, engineUser string) (string, error) {

@@ -14,6 +14,7 @@ import (
 
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
@@ -30,7 +31,7 @@ func UseStore(d *agent.Deps, s agent.SQLStore) {
 // app wires them.
 func ToolError(err error) *toolresult.ToolError { return app.AgentErrors().ToolError(err) }
 
-func ServiceManager() agent.ServiceManager { return app.AgentServiceManager() }
+func ServiceManager() guidance.ServiceManager { return app.AgentServiceManager() }
 
 // PgWiring is what PgService builds the service from; a PgOption changes it.
 type PgWiring struct {

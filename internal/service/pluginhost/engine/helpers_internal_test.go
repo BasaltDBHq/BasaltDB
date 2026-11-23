@@ -148,7 +148,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	var d agent.Deps
 	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
 	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
-	d.Core.ServiceManager = agent.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
+	d.Core.ServiceManager = guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 	d.Core.Errors = agent.ErrorMap{
 		InvalidParams: ledger.ErrInvalidParams,
 		InvalidIntent: guard.ErrInvalidIntent,

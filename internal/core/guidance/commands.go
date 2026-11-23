@@ -1,13 +1,9 @@
-package agentkit
+package guidance
 
 import (
-	"fmt"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // Commands builds the commands a step names for one agent. A person never
@@ -18,8 +14,11 @@ import (
 type Commands struct {
 	agent      string
 	configPath string
-	goos       string
-	foreground bool
+	// defaultConfigPath is where the engine reads its config when it was
+	// started with none (configPath is empty).
+	defaultConfigPath string
+	goos              string
+	foreground        bool
 	// agentOperated: engine.json operatedBy is AGENT, so machine steps are
 	// the agent's and setup goes through the connect page.
 	agentOperated bool
@@ -44,20 +43,11 @@ type ServiceManager struct {
 const cmdBasalt = "basalt"
 
 // NewCommands returns the commands for agent. configPath is the absolute
-// path the engine was started with ("" when the default); goos picks the
-// default path and the service manager (runtime.GOOS when empty); manager
-// is the service manager's commands.
-func NewCommands(agent, configPath, goos string, manager ServiceManager) (Commands, error) {
-	if !config.ValidAgentName(agent) {
-		return Commands{}, fmt.Errorf("%q is not a valid agent name", agent)
-	}
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	if configPath != "" && !filepath.IsAbs(configPath) {
-		return Commands{}, fmt.Errorf("config path %q must be absolute", configPath)
-	}
-	return Commands{agent: agent, goos: goos, configPath: configPath, manager: manager}, nil
+// path the engine was started with ("" when the default), and
+// defaultConfigPath the path the engine uses then; goos picks the service
+// manager's commands. The caller has checked agent and configPath.
+func NewCommands(agent, configPath, defaultConfigPath, goos string, manager ServiceManager) Commands {
+	return Commands{agent: agent, goos: goos, configPath: configPath, defaultConfigPath: defaultConfigPath, manager: manager}
 }
 
 // Foreground returns c for an engine that runs in the foreground as the
@@ -93,8 +83,8 @@ func (c Commands) Removed(removed func() bool) Commands {
 	return c
 }
 
-// engineRemoved reports whether Removed's func says the engine is removed.
-func (c Commands) engineRemoved() bool { return c.removed != nil && c.removed() }
+// EngineRemoved reports whether Removed's func says the engine is removed.
+func (c Commands) EngineRemoved() bool { return c.removed != nil && c.removed() }
 
 // UpdateLinkURL is the setup page's UPDATE link UpdateLink set, or "".
 func (c Commands) UpdateLinkURL() string { return c.updateLink }
@@ -140,7 +130,7 @@ func (c Commands) EngineRestart() string {
 func (c Commands) foregroundEngine() string {
 	path := c.configPath
 	if path == "" {
-		path = config.DefaultPath(c.goos)
+		path = c.defaultConfigPath
 	}
 	return "basalt engine --config " + ShellQuote(path)
 }

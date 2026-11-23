@@ -23,7 +23,7 @@ import (
 // does not answer: engine unreachable, guard UNKNOWN, operatedBy from the
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
-func EngineDownStatus(host EngineHost, name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
+func EngineDownStatus(host EngineHost, name string, cmds guidance.Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
 	return EngineDownStatusAfterStart(host, name, cmds, cfg, cfgErr, build, now, "", "")
 }
 
@@ -32,7 +32,7 @@ func EngineDownStatus(host EngineHost, name string, cmds Commands, cfg *config.C
 // ("basalt mcp could not start the engine: <reason>. Its log is <path>."),
 // shown as the problem ENGINE_START_FAILED before ENGINE_UNREACHABLE, whose
 // steps stay.
-func EngineDownStatusAfterStart(host EngineHost, name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (StatusReport, error) {
+func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure, configPath string) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},

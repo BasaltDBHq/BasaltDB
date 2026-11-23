@@ -180,7 +180,7 @@ func (l *lockTrouble) get() string {
 // with root, on the engine's machine. A PERSON step on an agent-operated
 // engine too: it needs root.
 func lockFileSteps(b *guidance.Steps, path string) string {
-	cmd := "sudo chown " + engineUserName() + " " + shellQuote(path)
+	cmd := "sudo chown " + engineUserName() + " " + guidance.ShellQuote(path)
 	b.RunCommand(cmd, "Run this on the engine's machine: the engine cannot open this lock file.")
 	b.TellAgent("Tell the agent when it is done.")
 	return "The engine cannot open its lock file " + path + " (a root process left it behind), so it cannot finish the agent's setup. On the engine's machine, run: " + cmd + " then tell the agent."

@@ -89,7 +89,7 @@ func withDB(t *testing.T) remoteEnv {
 func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cli.IO {
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: stdout, Err: stderr},
 		func(k string) string {
-			if k == envAdminURL {
+			if k == setup.EnvAdminURL {
 				return "postgres://admin:" + adminSecret + "@db.example.com/postgres"
 			}
 			return e.env[k]
@@ -497,7 +497,7 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 	e.probe = func(_ context.Context, dsn string) error {
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
-		probed = append(probed, u.Query().Get(setup.ParamSSLMode)+"/"+u.Query().Get(setup.ParamChannelBinding))
+		probed = append(probed, u.Query().Get("sslmode")+"/"+u.Query().Get("channel_binding"))
 		return &pgconn.PgError{Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant}
 	}
 	r := remoteWith(t, e, cfg, "--agent", "bot")
@@ -507,8 +507,8 @@ func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
 	require.NoError(t, err)
 	u, err := url.Parse(strings.TrimSpace(string(raw)))
 	require.NoError(t, err)
-	require.Equal(t, setup.SSLVerifyFull, u.Query().Get(setup.ParamSSLMode))
-	require.Empty(t, u.Query().Get(setup.ParamChannelBinding))
+	require.Equal(t, "verify-full", u.Query().Get("sslmode"))
+	require.Empty(t, u.Query().Get("channel_binding"))
 	const line = "basalt: connection protected: database identity verified (channel binding not available through the Supabase pooler)\n"
 	require.Equal(t, 1, strings.Count(r.stderr, line), r.stderr)
 	requireNoSecret(t, r, cfg, credentialPassword(t, pending))

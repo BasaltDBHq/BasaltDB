@@ -18,6 +18,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -216,9 +217,9 @@ func (s *Server) Handler() http.Handler {
 	// The pages at their RESTful paths (links; owner decisions, Decided
 	// Nov 12), and only the files they load: no listings, no tests.
 	files := http.FileServerFS(s.files)
-	mux.Handle("GET /lib/{file}", libFile(files))
+	mux.Handle("GET /lib/{file}", LibFile(files))
 	mux.Handle("GET /style.css", files)
-	mux.Handle("GET /fonts/{file}", fontFile(files))
+	mux.Handle("GET /fonts/{file}", FontFile(files))
 	for _, r := range web.PageRoutes {
 		if r.ID {
 			mux.HandleFunc("GET "+r.Path+"{id}", s.page(r.File))
@@ -245,8 +246,8 @@ func (s *Server) Handler() http.Handler {
 	return refuseDatabaseURL(s.origin, mux)
 }
 
-// libFile serves the pages' scripts, lib/*.js, and nothing else there.
-func libFile(files http.Handler) http.Handler {
+// LibFile serves the pages' scripts, lib/*.js, and nothing else there.
+func LibFile(files http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if path.Ext(r.PathValue("file")) != ".js" {
 			http.NotFound(w, r)
@@ -256,8 +257,8 @@ func libFile(files http.Handler) http.Handler {
 	})
 }
 
-// fontFile serves the pages' fonts, fonts/*.woff2, and their license.
-func fontFile(files http.Handler) http.Handler {
+// FontFile serves the pages' fonts, fonts/*.woff2, and their license.
+func FontFile(files http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch file := r.PathValue("file"); {
 		case path.Ext(file) == ".woff2":
@@ -297,7 +298,7 @@ func (s *Server) page(name string) http.HandlerFunc {
 // named by the path parameter name, as ask returns them (CONTRACT.md, Local
 // pages, POST …/reveal): the approval and revert pages share it. The body
 // is decoded strictly, { "proof", "revealSecret" }; Postgres checks the
-// proof. The answer is sent with Cache-Control: no-store (writeJSON) and
+// proof. The answer is sent with Cache-Control: no-store (WriteJSON) and
 // kept nowhere.
 func (s *Server) Reveal(w http.ResponseWriter, r *http.Request, name string,
 	ask func(context.Context, Agent, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error),
@@ -459,21 +460,21 @@ func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uu
 // page can make none of these posts. False means the answer is written.
 func (s *Server) Body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Header.Get("Origin") != s.origin {
-		writeError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the approval page")
+		WriteError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the approval page")
 		return nil, false
 	}
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-		writeError(w, http.StatusUnsupportedMediaType, agent.CodeInvalidArgument, "the body must be application/json")
+		WriteError(w, http.StatusUnsupportedMediaType, agent.CodeInvalidArgument, "the body must be application/json")
 		return nil, false
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, agent.CodeInvalidArgument, "the body is too large")
+		WriteError(w, http.StatusRequestEntityTooLarge, agent.CodeInvalidArgument, "the body is too large")
 		return nil, false
 	case err != nil:
-		writeError(w, http.StatusBadRequest, agent.CodeInvalidArgument, "cannot read the body")
+		WriteError(w, http.StatusBadRequest, agent.CodeInvalidArgument, "cannot read the body")
 		return nil, false
 	}
 	return body, true
@@ -508,19 +509,19 @@ func (s *Server) Fail(w http.ResponseWriter, err error) {
 	if status == http.StatusInternalServerError {
 		s.log.Error("pages", "err", err)
 	}
-	dto := errorDTO{
+	dto := ErrorDTO{
 		Code: te.Code, Message: te.Message, Reason: te.Reason, PersonMessage: te.PersonMessage, NextSteps: personSteps(te.NextSteps),
 	}
 	var ne *nonceError
 	if errors.As(err, &ne) {
 		dto.RescopeNonce = ne.nonce
 	}
-	writeJSON(w, status, dto)
+	WriteJSON(w, status, dto)
 }
 
-// errorDTO is the pages' error body: the contract's tool error as the page
+// ErrorDTO is the pages' error body: the contract's tool error as the page
 // shows it, with the person's message and only the steps for the person.
-type errorDTO struct {
+type ErrorDTO struct {
 	Code          string                `json:"code"`
 	Message       string                `json:"message"`
 	Reason        string                `json:"reason,omitempty"`
@@ -531,8 +532,9 @@ type errorDTO struct {
 	RescopeNonce passkey.Bytes `json:"rescopeNonce,omitempty"`
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorDTO{Code: code, Message: message})
+// WriteError answers the error body with only code and message.
+func WriteError(w http.ResponseWriter, status int, code, message string) {
+	WriteJSON(w, status, ErrorDTO{Code: code, Message: message})
 }
 
 // personSteps are the steps the person takes: the page shows them, and the
@@ -549,10 +551,11 @@ func personSteps(steps []toolresult.NextStep) []toolresult.NextStep {
 
 // Reply answers v as JSON, 200.
 func (s *Server) Reply(w http.ResponseWriter, v any) {
-	writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+// WriteJSON answers v as JSON with status, never cached.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
 		http.Error(w, "internal engine error", http.StatusInternalServerError)
@@ -562,4 +565,78 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n')) // the page may have gone; nothing to do
+}
+
+// refuseDatabaseURL refuses, on every route but the setup page's two, a
+// body that holds a databaseUrl field, in any case: only those take the
+// admin connection string. A request from a foreign Origin goes on to its
+// route, which refuses it before reading anything. A body within the
+// pages' limit is parsed; a larger one, read up to scanLimit, is refused
+// when it names the field anywhere. Either is handed on unchanged, and the
+// route refuses what is too large.
+func refuseDatabaseURL(origin string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		o := r.Header.Get("Origin")
+		if r.Method != http.MethodPost || r.URL.Path == SetupCheckPath || r.URL.Path == SetupRunPath || r.Body == nil ||
+			(o != "" && o != origin) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		head, err := io.ReadAll(io.LimitReader(r.Body, scanLimit))
+		if err == nil && namesDatabaseURL(head) {
+			WriteError(w, http.StatusBadRequest, agent.CodeInvalidArgument, "This route never takes the admin connection string.")
+			return
+		}
+		r.Body = readCloser{Reader: io.MultiReader(bytes.NewReader(head), r.Body), Closer: r.Body}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// scanLimit bounds how much of an oversized body the scan reads.
+const scanLimit = 1 << 20
+
+// databaseURLKey is the field only the setup routes take, compared without
+// case.
+const databaseURLKey = "databaseurl"
+
+// namesDatabaseURL: a body within the limit has the field at any depth; a
+// larger one names it anywhere in what was read.
+func namesDatabaseURL(head []byte) bool {
+	if len(head) > maxBody {
+		return bytes.Contains(bytes.ToLower(head), []byte(databaseURLKey))
+	}
+	return HoldsDatabaseURL(head)
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// HoldsDatabaseURL reports whether a JSON body has a databaseUrl field at
+// any depth: only the setup routes take the admin connection string.
+func HoldsDatabaseURL(body []byte) bool {
+	var v any
+	if json.Unmarshal(body, &v) != nil {
+		return false
+	}
+	return hasKey(v, databaseURLKey)
+}
+
+func hasKey(v any, key string) bool {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			if strings.EqualFold(k, key) || hasKey(child, key) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range t {
+			if hasKey(child, key) {
+				return true
+			}
+		}
+	}
+	return false
 }

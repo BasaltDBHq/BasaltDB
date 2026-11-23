@@ -33,6 +33,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // agentUsers has the agent's OS user alice (uid 4242) and an engine (uid
@@ -399,7 +400,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
-	srv.MountSetup(pages.NewSetupHandlers(origin, jobs, slog.New(slog.DiscardHandler).With("component", "setup")))
+	srv.MountSetup(setuppage.NewSetupHandlers(origin, jobs, slog.New(slog.DiscardHandler).With("component", "setup")))
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: time.Second}
 	served := make(chan struct{})
 	go func() {

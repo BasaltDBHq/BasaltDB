@@ -150,7 +150,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 		return nil
 	}))
 	require.Positive(t, jsonFiles)
-	for _, dir := range []string{"internal/app", "internal/service/agent", "internal/config", "internal/service/handoff", "internal/service/pluginhost", "internal/service/person", "internal/service/piidict", "internal/service/portalcheck", "internal/service/upkeep", "internal/adapter/inbound/pages", "internal/adapter/outbound/osservice", "internal/lib/peercred", "internal/adapter/inbound/mcp", "internal/adapter/inbound/shim", "internal/approval/in/approvalpage", "internal/revert/in/revertpage", "internal/plugin/in/pluginpage"} {
+	for _, dir := range []string{"internal/app", "internal/service/agent", "internal/config", "internal/service/handoff", "internal/service/pluginhost", "internal/service/person", "internal/service/piidict", "internal/service/portalcheck", "internal/service/upkeep", "internal/adapter/inbound/pages", "internal/adapter/outbound/osservice", "internal/lib/peercred", "internal/adapter/inbound/mcp", "internal/adapter/inbound/shim", "internal/approval/in/approvalpage", "internal/revert/in/revertpage", "internal/plugin/in/pluginpage", "internal/setup/in/setuppage"} {
 		requireGoStringsAgentLed(t, filepath.Join(root, filepath.FromSlash(dir)))
 	}
 }

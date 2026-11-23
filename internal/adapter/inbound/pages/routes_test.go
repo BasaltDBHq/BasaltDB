@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -226,10 +227,10 @@ func TestRouteTable(t *testing.T) {
 
 	withSetup := newMounted(setupOrigin, log)
 	withSetup.Add(probeAgent{})
-	withSetup.MountSetup(pages.NewSetupHandlers(setupOrigin, &fakeJobs{}, log.With("component", "setup")))
+	withSetup.MountSetup(setuppage.NewSetupHandlers(setupOrigin, &fakeJobs{}, log.With("component", "setup")))
 	section("with setup jobs", probeHandler(withSetup.Handler()))
 
-	section("setup only", probeHandler(pages.SetupOnlyHandler(setupOrigin, &fakeJobs{}, log)))
+	section("setup only", probeHandler(setuppage.SetupOnlyHandler(setupOrigin, &fakeJobs{}, log)))
 
 	session := newMounted(setupOrigin, log)
 	session.Add(probeAgent{})

@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // pluginApprovalDetail is the detail of a local wire.detect entry in same-user
@@ -258,6 +259,6 @@ func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
-	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))
+	srv.MountSetup(setuppage.NewConfiguredSetupHandlers(origin))
 	return srv
 }

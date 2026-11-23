@@ -86,7 +86,7 @@ func (a writeArgs) wait() time.Duration {
 	if a.ApprovalID == "" {
 		return 0
 	}
-	return DefaultApprovalWait
+	return guidance.DefaultApprovalWait
 }
 
 // writeTools are the tools of a store that speaks SQL: query and write.

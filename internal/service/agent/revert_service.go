@@ -299,7 +299,7 @@ func (rc *revertCase) revertWithLink(ctx context.Context, r action.Revert) (Requ
 // DefaultRevertWait is how long request_revert with revertId waits for the
 // person's signature when the agent names no waitForSignature, as the
 // waiting write does.
-const DefaultRevertWait = DefaultApprovalWait
+const DefaultRevertWait = guidance.DefaultApprovalWait
 
 // AwaitRevertParams is request_revert's wait form: a revert this agent
 // requested, how long to wait for the person's signature, and whether to
@@ -556,7 +556,7 @@ func scopeRefused(scope action.Scope, err error) error {
 	case guardmodel.ScopeFilter:
 		return scopeFilterRefused(hint)
 	case guardmodel.ScopeFilterCap:
-		return scopeFilterCapped()
+		return ScopeFilterCapped()
 	}
 	return &guidance.ArgumentError{Message: "the revert scope was refused: " + hint}
 }
@@ -570,7 +570,7 @@ func scopeFilterRefused(refused string) error {
 		"scope; run_history shows them"}
 }
 
-func scopeFilterCapped() error {
+func ScopeFilterCapped() error {
 	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilterCap, Message: fmt.Sprintf("runs and tables each list at most %d "+
 		"entries, nothing was prepared. Leave a filter out for all of your work in the scope: the person can narrow it on the "+
 		"signing page", revert.MaxFilter)}

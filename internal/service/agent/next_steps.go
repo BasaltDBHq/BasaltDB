@@ -319,7 +319,7 @@ func (s *Service) approvalRequiredSteps(b *guidance.Steps, te *toolresult.ToolEr
 	switch te.Reason {
 	case guidance.ReasonHeld:
 		b.OpenLink(n.ApprovalURL, "Open the link, review the rows and approve with your passkey.")
-		b.RepeatCall(guidance.ToolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(DefaultApprovalWait.Seconds())))
+		b.RepeatCall(guidance.ToolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(guidance.DefaultApprovalWait.Seconds())))
 	case guidance.ReasonHeldNoPages:
 		// No page can sign this link (no local pages, no live Vault
 		// connection): a wait cannot succeed.

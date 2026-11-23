@@ -49,7 +49,7 @@ type approvalDelivery interface {
 // a pending one.
 type approvalReverts interface {
 	ListOpenReverts(ctx context.Context, p action.RevertListParams) (pagination.Page[action.Revert], error)
-	pendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error
+	PendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error
 }
 
 // admitter admits a call: the engine is set up and its guard is current.

@@ -30,12 +30,12 @@ type PendingRevert struct {
 	issued bool
 }
 
-// pendingRevert fills an open revert's headline, link, message and steps
+// PendingRevert fills an open revert's headline, link, message and steps
 // (CONTRACT.md, Reverts in list_pending): an APPLYING plan goes to the
 // agent's batch loop; a PENDING revert goes to the person, at a new short
 // link on reissue, at its long link otherwise, and on the page they
 // widened on for a widened revert.
-func (rc *revertCase) pendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
+func (rc *revertCase) PendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
 	if p.Status == action.RevertApplying {
 		headline, err := revertHeadline(p.Revert)
 		if err != nil {

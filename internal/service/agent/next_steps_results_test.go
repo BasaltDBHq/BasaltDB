@@ -251,7 +251,7 @@ func resultCases() map[string]resultCase {
 			tool: "list_pending", args: map[string]any{}, openWithoutURL: true,
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				p := &PendingRevert{Revert: caseRevertWith(t, ledger.RevertPending)}
-				require.NoError(t, s.revert.pendingRevert(context.Background(), p, false))
+				require.NoError(t, s.revert.PendingRevert(context.Background(), p, false))
 				return p.PersonMessage, p.Links, p.NextSteps
 			},
 		},
@@ -259,7 +259,7 @@ func resultCases() map[string]resultCase {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				p := &PendingRevert{Revert: caseBatchedRevert(t, ledger.RevertApplying)}
-				require.NoError(t, s.revert.pendingRevert(context.Background(), p, false))
+				require.NoError(t, s.revert.PendingRevert(context.Background(), p, false))
 				return p.PersonMessage, p.Links, p.NextSteps
 			},
 		},

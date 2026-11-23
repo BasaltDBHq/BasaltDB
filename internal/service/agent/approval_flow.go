@@ -103,7 +103,7 @@ func approvalRequiredError(n linksvc.HeldAnswer) error {
 	return approvalError(n, fmt.Sprintf("held for the person's approval: %d rows. Show the person approval.personMessage verbatim, "+
 		"then, without ending your turn, call write once with the same arguments plus approvalId: it waits up to %d seconds "+
 		"for their passkey and returns APPLIED as soon as they approve. %s It expires at %s.",
-		n.Rows, int(DefaultApprovalWait.Seconds()), afterWaitRunsOut, n.ExpiresAt))
+		n.Rows, int(guidance.DefaultApprovalWait.Seconds()), afterWaitRunsOut, n.ExpiresAt))
 }
 
 // approvalStillPendingError is the APPROVAL_REQUIRED answer of a wait
@@ -192,12 +192,6 @@ func (ac *approvalCase) largeApprovalNotice(ctx context.Context, id, runID uuid.
 	}
 	return n, nil
 }
-
-// DefaultApprovalWait is how long a write with approvalId waits for the
-// person's signature when the call does not say (CONTRACT.md, Waiting
-// write), under the 2 minutes after which Claude Code moves a tool call to
-// the background.
-const DefaultApprovalWait = 90 * time.Second
 
 func approvalInvalid(reason, format string, args ...any) *toolresult.ToolError {
 	return &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}

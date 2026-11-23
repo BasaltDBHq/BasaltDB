@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/updatecheck"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 // OS is the real System.

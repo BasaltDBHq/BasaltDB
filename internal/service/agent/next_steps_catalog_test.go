@@ -158,7 +158,7 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
 		n := heldNotice{ApprovalNotice: caseNotice(caseShortLink), longURL: caseShortLink, pick: handOver{URL: caseShortLink, Kind: linkLong}}
-		return s.approvalLinkError(&toolresult.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
+		return s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
 
@@ -274,7 +274,7 @@ func catalogCases() map[string]catalogCase {
 			held(guidance.ReasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc"),
 		},
 
-		caseKey("APPROVAL_EXPIRED", "", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: CodeApprovalExpired, Message: "approval expired"})},
+		caseKey("APPROVAL_EXPIRED", "", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: "approval expired"})},
 
 		caseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonNotSigned)},
 		caseKey("APPROVAL_INVALID", "ALREADY_USED", ""):    {"write", withApproval(writeArgs0), guardApproval("approval already used")},
@@ -338,9 +338,9 @@ func catalogCases() map[string]catalogCase {
 
 		caseKey("PERMISSION_DENIED", "", ""): {"query", queryArgs0, pgFail("42501", "permission denied for table events", "")},
 
-		caseKey("NOT_FOUND", "RUN", ""):      {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeNotFound, Reason: "RUN", Message: "no such run"})},
-		caseKey("NOT_FOUND", "CHANGE", ""):   {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&toolresult.ToolError{Code: CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
-		caseKey("NOT_FOUND", "APPROVAL", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
+		caseKey("NOT_FOUND", "RUN", ""):      {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "RUN", Message: "no such run"})},
+		caseKey("NOT_FOUND", "CHANGE", ""):   {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
+		caseKey("NOT_FOUND", "APPROVAL", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
 		caseKey("NOT_FOUND", "REVERT", ""):   {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
 		caseKey("NOT_FOUND", "TASK", ""): {
 			"preview_revert",
@@ -349,13 +349,13 @@ func catalogCases() map[string]catalogCase {
 				return notOwnTask(action.Scope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
 			}),
 		},
-		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&toolresult.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
-		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{Code: CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
+		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK", Message: "no such link"})},
+		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
 		caseKey("APPROVAL_INVALID", "REVEAL_REFUSED", ""): {"approval_page", nil, func(*testing.T, *Service) error {
-			return revealRefused(CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+			return revealRefused(guidance.CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
 		}},
 		caseKey("REVERT_INVALID", "REVEAL_REFUSED", ""): {"revert_page", nil, func(*testing.T, *Service) error {
-			return revealRefused(CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+			return revealRefused(guidance.CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
 		}},
 		caseKey("NOT_FOUND", "", "describe"): {
 			"describe",
@@ -364,8 +364,8 @@ func catalogCases() map[string]catalogCase {
 		},
 
 		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
-		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "changes no rows now"})},
-		caseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&ArgumentError{Message: "invalid arguments"})},
+		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "changes no rows now"})},
+		caseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&guidance.ArgumentError{Message: "invalid arguments"})},
 		caseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {
 			"run_history",
 			map[string]any{"runId": caseRunID, "cursor": "x"},
@@ -392,12 +392,12 @@ func catalogCases() map[string]catalogCase {
 		caseKey("UNAVAILABLE", "TOO_MANY_CONNECTIONS", ""): {"query", queryArgs0, pgFail("53300", `too many connections for role "basalt_agent_bot"`, "")},
 		caseKey("UNAVAILABLE", "CREDENTIAL_REJECTED", ""):  {"query", queryArgs0, pgFail("28P01", "password authentication failed", "")},
 		caseKey("UNAVAILABLE", "GUARD_MISSING", ""):        {"query", queryArgs0, pgFail("3F000", `schema "basalt_meta" does not exist`, "")},
-		caseKey("UNAVAILABLE", "GUARD_OUTDATED", ""):       {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: "the guard is outdated"})},
-		caseKey("UNAVAILABLE", "ENGINE_UNREACHABLE", ""):   {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, Message: "no engine"})},
-		caseKey("UNAVAILABLE", "PAGES_OFF", ""):            {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonPagesOff, Message: "no pages"})},
+		caseKey("UNAVAILABLE", "GUARD_OUTDATED", ""):       {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: "the guard is outdated"})},
+		caseKey("UNAVAILABLE", "ENGINE_UNREACHABLE", ""):   {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, Message: "no engine"})},
+		caseKey("UNAVAILABLE", "PAGES_OFF", ""):            {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonPagesOff, Message: "no pages"})},
 
-		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint})},
-		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint, Expired: true})},
+		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&guidance.SetupError{Code: testSetupCode, Fingerprint: testFingerprint})},
+		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&guidance.SetupError{Code: testSetupCode, Fingerprint: testFingerprint, Expired: true})},
 		caseKey("UNAVAILABLE", "DATABASE_NOT_CONFIRMED", ""): {"query", queryArgs0, plain(&DatabaseNotConfirmedError{
 			SetupID: caseSetupID, Database: caseDatabase,
 		})},
@@ -561,10 +561,10 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *toolresult.ToolErro
 	for i, st := range te.NextSteps {
 		requireStepObeysRules(t, st, kase, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
 	}
-	if te.Code == CodeInternal || te.Code == CodeUnavailable {
+	if te.Code == guidance.CodeInternal || te.Code == guidance.CodeUnavailable {
 		require.NotEmpty(t, te.ErrorID, "errorId on UNAVAILABLE and INTERNAL")
 	}
-	if te.Code == CodeRowLimitExceeded {
+	if te.Code == guidance.CodeRowLimitExceeded {
 		require.Equal(t, guidance.MaxRetryRows, te.NextSteps[2].MaxRows)
 		require.Contains(t, te.NextSteps[2].Text, "only on an explicit yes", "AE-7")
 	}
@@ -837,7 +837,7 @@ func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 	t.Parallel()
 	s := serviceFor(t, "linux", "")
 	te := s.Failure("write", writeArgs0, store.MapError(&pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"}))
-	require.Equal(t, CodeStaleRead, te.Code)
+	require.Equal(t, guidance.CodeStaleRead, te.Code)
 	require.Len(t, te.NextSteps, 2)
 	require.Equal(t, toolresult.ActionStop, te.NextSteps[0].Action)
 	require.Equal(t, toolresult.ActionAskPerson, te.NextSteps[1].Action)
@@ -851,14 +851,14 @@ func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 	s := serviceFor(t, "linux", "")
 	tooLarge := store.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}))
 	for tool, want := range map[string]string{
-		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
-		"run_history": CodeQueryTimeout, "list_pending": CodeQueryTimeout, "revert_plan": CodeQueryTimeout,
-		"list_runs": CodeInternal, "status": CodeInternal,
+		"query": guidance.CodeQueryTimeout, "write": guidance.CodeQueryTimeout, "describe": guidance.CodeQueryTimeout,
+		"run_history": guidance.CodeQueryTimeout, "list_pending": guidance.CodeQueryTimeout, "revert_plan": guidance.CodeQueryTimeout,
+		"list_runs": guidance.CodeInternal, "status": guidance.CodeInternal,
 	} {
 		te := s.Failure(tool, nil, tooLarge)
 		require.Equal(t, want, te.Code, tool)
-		if want == CodeQueryTimeout {
-			require.Equal(t, ReasonSizeLimit, te.Reason, tool)
+		if want == guidance.CodeQueryTimeout {
+			require.Equal(t, guidance.ReasonSizeLimit, te.Reason, tool)
 		}
 	}
 }
@@ -871,13 +871,13 @@ func TestRowTooLargeOnlyForTheAgentsOwnStatement(t *testing.T) {
 	s := serviceFor(t, "linux", "")
 	row := fmt.Errorf("read: %w", &resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}})
 	for tool, want := range map[string]string{
-		"query": ReasonRowTooLarge, "write": ReasonRowTooLarge,
-		"run_history": ReasonSizeLimit, "describe": ReasonSizeLimit, "preview_revert": ReasonSizeLimit,
+		"query": guidance.ReasonRowTooLarge, "write": guidance.ReasonRowTooLarge,
+		"run_history": guidance.ReasonSizeLimit, "describe": guidance.ReasonSizeLimit, "preview_revert": guidance.ReasonSizeLimit,
 	} {
 		te := s.Failure(tool, nil, row)
-		require.Equal(t, CodeQueryTimeout, te.Code, tool)
+		require.Equal(t, guidance.CodeQueryTimeout, te.Code, tool)
 		require.Equal(t, want, te.Reason, tool)
-		if want == ReasonRowTooLarge {
+		if want == guidance.ReasonRowTooLarge {
 			require.Contains(t, te.Message, "body (20.0 MiB)", tool)
 			require.Contains(t, te.Message, "substr(col, 1, 100000)", tool)
 		}

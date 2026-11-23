@@ -106,7 +106,7 @@ func (s *Service) deliver(n LinkNotice) {
 // waits for the person.
 func (s *Service) deliverHeld(id uuid.UUID, expires time.Time, answer error) {
 	var te *toolresult.ToolError
-	if !errors.As(answer, &te) || te.Code != CodeApprovalRequired || te.Approval == nil {
+	if !errors.As(answer, &te) || te.Code != guidance.CodeApprovalRequired || te.Approval == nil {
 		return
 	}
 	s.deliver(LinkNotice{

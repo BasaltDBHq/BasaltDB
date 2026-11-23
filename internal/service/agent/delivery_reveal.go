@@ -48,7 +48,7 @@ type RevealRequest struct {
 func (in RevealRequest) revealKey() ([]byte, error) {
 	raw, err := links.DecodeSecret(in.RevealSecret)
 	if err != nil {
-		return nil, &ArgumentError{Message: "revealSecret must be 16 random bytes, base64url without padding"}
+		return nil, &guidance.ArgumentError{Message: "revealSecret must be 16 random bytes, base64url without padding"}
 	}
 	defer clear(raw)
 	return approval.RevealKey(raw)
@@ -84,7 +84,7 @@ func revealRefused(code, link string) error {
 		return err
 	}
 	te.NextSteps = steps
-	return &PageError{ToolError: te}
+	return &guidance.PageError{ToolError: te}
 }
 
 // pageLink is the page's own short link, with the secret it holds.
@@ -95,7 +95,7 @@ func (s *Service) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, se
 // revealRowsChanged is a reveal whose hidden rows changed since the agent
 // asked: nothing is shown, and the item can no longer apply as signed.
 func revealRowsChanged(code, what, then string) error {
-	return &PageError{ToolError: &toolresult.ToolError{
+	return &guidance.PageError{ToolError: &toolresult.ToolError{
 		Code: code, Reason: guidance.ReasonRowsChanged,
 		Message:       fmt.Sprintf("the hidden rows of this %s changed since it was prepared; nothing was shown", what),
 		PersonMessage: "These rows changed since the agent asked. " + then + ".",

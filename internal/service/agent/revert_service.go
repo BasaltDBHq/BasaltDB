@@ -55,7 +55,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		return RevertPreview{}, s.prepareError(ctx, guidance.ToolPreviewRevert, p.Scope, err)
 	}
 	if !pv.CursorFound {
-		return RevertPreview{}, &ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: ReasonStaleCursor}
+		return RevertPreview{}, &guidance.ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: guidance.ReasonStaleCursor}
 	}
 	if pv.Lines > 0 && pv.Restore == 0 {
 		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
@@ -89,7 +89,7 @@ func cursorHash(cursor string) (string, error) {
 	}
 	hash, err := pagination.DecodeNameCursor(cursor)
 	if err != nil || hash == "" {
-		return "", &ArgumentError{Message: "invalid cursor", Reason: ReasonStaleCursor}
+		return "", &guidance.ArgumentError{Message: "invalid cursor", Reason: guidance.ReasonStaleCursor}
 	}
 	return hash, nil
 }
@@ -123,14 +123,14 @@ type RevertPlan struct {
 // once the person signed it.
 func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
 	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
-	if sentinel(err, s.deps.Revert.ErrNotFound) {
-		return RevertPlan{}, &toolresult.ToolError{Code: CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
+	if guidance.Sentinel(err, s.deps.Revert.ErrNotFound) {
+		return RevertPlan{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
 		return RevertPlan{}, err
 	}
 	if !r.Batched {
-		return RevertPlan{}, &ArgumentError{Message: fmt.Sprintf(
+		return RevertPlan{}, &guidance.ArgumentError{Message: fmt.Sprintf(
 			"revert %s has %d lines: the revert page applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
 	page, err := s.deps.Revert.Store.RevertLines(ctx, p)
@@ -314,7 +314,7 @@ type AwaitRevertParams struct {
 // or Wait is over. It never signs: the person signs on the revert page.
 func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
 	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
-	if sentinel(err, s.deps.Revert.ErrNotFound) {
+	if guidance.Sentinel(err, s.deps.Revert.ErrNotFound) {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
@@ -351,7 +351,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 // relayed: expired meanwhile, rows changed since the preview, or a
 // signature that does not verify.
 func (s *Service) applyRevertError(ctx context.Context, r action.Revert, err error) error {
-	code, ok := ledgerCode(err)
+	code, ok := guidance.LedgerCode(err)
 	switch {
 	case ok && code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
@@ -362,7 +362,7 @@ func (s *Service) applyRevertError(ctx context.Context, r action.Revert, err err
 		return err
 	}
 	// apply_revert's details (basalt_meta version 9) tell the cases apart.
-	detail := storeDetail(err)
+	detail := guidance.StoreDetail(err)
 	switch {
 	case strings.Contains(detail, "rows changed since"):
 		return s.rowsChanged(r, detail)
@@ -427,7 +427,7 @@ func (s *Service) revertStateOf(ctx context.Context, r action.Revert) (Requested
 // no pages is there no short link, and the long link is given again.
 func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what string) (RequestedRevert, error) {
 	r := out.Revert
-	expires := r.ExpiresAt.UTC().Format(personTime)
+	expires := r.ExpiresAt.UTC().Format(guidance.PersonTime)
 	if r.Widened {
 		// The person holds the only link to the scope they chose: the page
 		// they widened on. The agent has none to give (RS-5).
@@ -463,7 +463,7 @@ func applyByText(r action.Revert) string {
 	if r.ApplyBy == nil {
 		return "the deadline"
 	}
-	return r.ApplyBy.UTC().Format(personTime)
+	return r.ApplyBy.UTC().Format(guidance.PersonTime)
 }
 
 // checkOwnScope runs before any guard call on preview_revert and
@@ -486,7 +486,7 @@ func (s *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
 		own, err := s.deps.Revert.Store.HasTaskRun(ctx, scope.ID)
 		return ownOr(own, err, notOwnTask(scope))
 	}
-	return &ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
+	return &guidance.ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
 }
 
 // ownOr is checkOwnScope's answer to an ownership lookup: the lookup's
@@ -512,7 +512,7 @@ const taskWidenPointer = "You can include other agents' changes in this task on 
 func notOwnScope(scope action.Scope) error {
 	kind := strings.ToLower(string(scope.Kind))
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
+		Code: guidance.CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
 			"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
 				"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
 				"a person can revert any change, run or task on the revert page that agent's request opens", kind, scope.ID, kind),
@@ -526,7 +526,7 @@ func notOwnScope(scope action.Scope) error {
 // names no agent: this agent cannot see who ran in the task (N12-R1).
 func notOwnTask(scope action.Scope) error {
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
+		Code: guidance.CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
 			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
 				"check the task id in list_runs", scope.ID),
 		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, ask an agent that ran in it "+
@@ -542,7 +542,7 @@ func notOwnTask(scope action.Scope) error {
 // INVALID_ARGUMENT with the guard's explanation. nil when err is not a
 // scope refusal.
 func scopeRefused(scope action.Scope, err error) error {
-	detail, hint, ok := scopeRefusal(err)
+	detail, hint, ok := guidance.ScopeRefusal(err)
 	if !ok {
 		return nil
 	}
@@ -556,20 +556,20 @@ func scopeRefused(scope action.Scope, err error) error {
 	case guardmodel.ScopeFilterCap:
 		return scopeFilterCapped()
 	}
-	return &ArgumentError{Message: "the revert scope was refused: " + hint}
+	return &guidance.ArgumentError{Message: "the revert scope was refused: " + hint}
 }
 
 // scopeFilterRefused answers runs or tables outside the agent's own work.
 // refused is the guard's list of refused entries, one fixed text per kind,
 // so another agent's run or table reads exactly like an unknown one.
 func scopeFilterRefused(refused string) error {
-	return &ArgumentError{Reason: ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was " +
+	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was " +
 		"prepared: " + refused + ". runs lists only your own runs in the task, and tables only tables you wrote in this " +
 		"scope; run_history shows them"}
 }
 
 func scopeFilterCapped() error {
-	return &ArgumentError{Reason: ReasonScopeFilterCap, Message: fmt.Sprintf("runs and tables each list at most %d "+
+	return &guidance.ArgumentError{Reason: guidance.ReasonScopeFilterCap, Message: fmt.Sprintf("runs and tables each list at most %d "+
 		"entries, nothing was prepared. Leave a filter out for all of your work in the scope: the person can narrow it on the "+
 		"signing page", revert.MaxFilter)}
 }
@@ -584,17 +584,17 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope action.Sc
 	if errors.Is(err, action.ErrEmptyProposal) {
 		return s.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if code, ok := ledgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
+	if code, ok := guidance.LedgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
 		return fmt.Errorf("prepare revert: %w", ctx.Err())
 	}
-	if !timedOut(err) {
+	if !guidance.TimedOut(err) {
 		return err
 	}
-	return s.prepareTimeout(tool, scope, storeError(err).SQLState)
+	return s.prepareTimeout(tool, scope, guidance.StoreError(err).SQLState)
 }
 
 // revertLink is what the agent hands the person to sign a prepared revert:

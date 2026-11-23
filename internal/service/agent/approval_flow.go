@@ -69,7 +69,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	return heldNotice{
 		reason: reason,
 		ApprovalNotice: toolresult.ApprovalNotice{
-			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
+			ApprovalID: id.String(), ExpiresAt: guidance.TimeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: pick.URL, RequestFile: pick.File, PersonMessage: text, Links: msgLinks,
 		},
 		pick:      pick,
@@ -127,7 +127,7 @@ func approvalError(n heldNotice, message string) error {
 		// Large values, rule 4), and the wait that ran out says the same.
 		notice.ApprovalURL = ""
 		return &toolresult.ToolError{
-			Code: CodeApprovalRequired, Reason: reasonRequestTooLarge, Approval: &notice,
+			Code: guidance.CodeApprovalRequired, Reason: reasonRequestTooLarge, Approval: &notice,
 			Message: fmt.Sprintf("held for the person's approval: %d rows, but they are too large for any link this engine has "+
 				"(a page decodes at most 1 MiB from a link). It stays held until it expires at %s; do not wait for it. "+
 				"Do what nextSteps say.", n.Rows, n.ExpiresAt),
@@ -135,7 +135,7 @@ func approvalError(n heldNotice, message string) error {
 		}
 	}
 	return &toolresult.ToolError{
-		Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
+		Code: guidance.CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
 		PersonMessage: notice.PersonMessage, Links: notice.Links,
 	}
 }
@@ -157,7 +157,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 	n := heldNotice{
 		reason: guidance.ReasonHeld,
 		ApprovalNotice: toolresult.ApprovalNotice{
-			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
+			ApprovalID: id.String(), ExpiresAt: guidance.TimeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: s.pageAddress(links.Approval, id),
 		},
 	}
@@ -198,7 +198,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 const DefaultApprovalWait = 90 * time.Second
 
 func approvalInvalid(reason, format string, args ...any) *toolresult.ToolError {
-	return &toolresult.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
+	return &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
 }
 
 // differentWrite is the refusal of a write that is not the held one: its

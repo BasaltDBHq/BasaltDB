@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -280,7 +281,7 @@ func TestPagesRelayChecks(t *testing.T) {
 	a.relayed = a.relayed[:1]
 
 	// Errors keep the contract's code and map to a status.
-	a.err = &toolresult.ToolError{Code: agent.CodeApprovalExpired, Message: "this approval expired"}
+	a.err = &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: "this approval expired"}
 	status, out = s.do(t, http.MethodGet, "/api/v1/approvals/"+id.String(), host, "", "", "", secret)
 	require.Equal(t, http.StatusGone, status)
 	require.JSONEq(t, `{"code":"APPROVAL_EXPIRED","message":"this approval expired"}`, out)

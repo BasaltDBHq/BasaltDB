@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
@@ -89,7 +90,7 @@ func encodeSearchCursor(c CatalogSearchCursor) string {
 
 // decodeSearchCursor reads a cursor describe returned for a search.
 func decodeSearchCursor(cursor string) (CatalogSearchCursor, error) {
-	stale := &ArgumentError{Message: "invalid arguments: the cursor is not one describe returned for a search", Reason: ReasonStaleCursor}
+	stale := &guidance.ArgumentError{Message: "invalid arguments: the cursor is not one describe returned for a search", Reason: guidance.ReasonStaleCursor}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		return CatalogSearchCursor{}, stale

@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -115,9 +116,9 @@ func TestRelayPluginApproval(t *testing.T) {
 		err    *toolresult.ToolError
 		status int
 	}{
-		{&toolresult.ToolError{Code: agent.CodeApprovalExpired, Message: "this plugin approval expired"}, http.StatusGone},
-		{&toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "already signed"}, http.StatusConflict},
-		{&toolresult.ToolError{Code: agent.CodeUnavailable, Reason: "GUARD_OUTDATED", Message: "the guard is older than schema version 5"}, http.StatusServiceUnavailable},
+		{&toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: "this plugin approval expired"}, http.StatusGone},
+		{&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "already signed"}, http.StatusConflict},
+		{&toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: "GUARD_OUTDATED", Message: "the guard is older than schema version 5"}, http.StatusServiceUnavailable},
 	} {
 		a.pluginErr = c.err
 		status, out := p.do(t, http.MethodPost, path, host, p.origin, "application/json", body, secret)
@@ -149,7 +150,7 @@ func TestPluginApprovalRequestRoute(t *testing.T) {
 	require.Equal(t, http.StatusOK, status, out)
 	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"binding":%q,"settings":%q}`, id, pluginBinding, pluginSettings), out)
 
-	a.pluginErr = &toolresult.ToolError{Code: agent.CodeApprovalExpired, Message: "expired"}
+	a.pluginErr = &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: "expired"}
 	status, _ = p.do(t, http.MethodGet, path, host, "", "", "", secret)
 	require.Equal(t, http.StatusGone, status)
 

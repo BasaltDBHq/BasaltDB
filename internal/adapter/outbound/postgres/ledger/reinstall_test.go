@@ -15,7 +15,7 @@ import (
 )
 
 // personMessageLimit is the status tool's personMessage limit
-// (agent.MaxPersonMessageLength).
+// (guidance.MaxPersonMessageLength).
 const personMessageLimit = 500
 
 var (

@@ -19,12 +19,12 @@ import (
 // input schema, and query and write only for a store that speaks SQL
 // (CONTRACT.md, Stores). Handlers parse, validate, make one service call
 // and render.
-func Tools(svc *Service) []Tool {
+func Tools(svc *Service) []guidance.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	h := handlers{svc: svc}
-	tools := []Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
+	tools := []guidance.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
 	if speaksSQL(svc.deps.Core.Store.Kind()) {
 		tools = append(tools,
 			contractTool("query", h.wrap("query", h.query)),
@@ -53,12 +53,12 @@ func speaksSQL(kind action.StoreKind) bool {
 
 // contractTool builds a tool from its contract. A missing contract is a
 // build defect: the contract test keeps served tools and contracts aligned.
-func contractTool(name string, call func(context.Context, json.RawMessage) (any, error)) Tool {
+func contractTool(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
 	c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 	if !ok {
 		panic("agent: no contract for tool " + name)
 	}
-	return Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: call}
+	return guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: call}
 }
 
 type handlers struct {
@@ -86,7 +86,7 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 		case err == nil:
 			return out, nil
 		}
-		te := h.svc.Failure(tool, callArgs(args), err)
+		te := h.svc.Failure(tool, guidance.CallArgs(args), err)
 		if h.svc.deps.Status.DevLocalPages {
 			return nil, devLocalError(te)
 		}
@@ -133,14 +133,14 @@ type runStartResult struct {
 
 func (h handlers) runStart(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args runStartArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	run, err := h.svc.StartRun(ctx, args.Intent, optionalID(args.TaskID))
 	if err != nil {
 		return nil, err
 	}
-	return runStartResult{RunID: run.RunID.String(), TaskID: run.TaskID.String(), Intent: run.Intent, StartedAt: timeText(run.StartedAt), Warnings: run.Warnings}, nil
+	return runStartResult{RunID: run.RunID.String(), TaskID: run.TaskID.String(), Intent: run.Intent, StartedAt: guidance.TimeText(run.StartedAt), Warnings: run.Warnings}, nil
 }
 
 // --- query ---
@@ -183,12 +183,12 @@ func columnsDTO(cols []action.Column) []columnDTO {
 
 func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args queryArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	params, err := paramValues(args.Params)
 	if err != nil {
-		return nil, &ArgumentError{Message: err.Error()}
+		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
 	res, err := h.svc.Query(ctx, QueryParams{SQL: args.SQL, Params: params, RunID: optionalID(args.RunID)})
 	if err != nil {
@@ -219,7 +219,7 @@ type runHistoryArgs struct {
 
 func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args runHistoryArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	params := action.ChangeListParams{Params: args.Params, RunID: uuid.MustParse(args.RunID)}

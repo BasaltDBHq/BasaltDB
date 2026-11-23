@@ -54,7 +54,7 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, 
 			guidance.AgentStep(toolresult.ActionEndTurn, "End your turn: apply the lines only after the person says they signed."),
 		}
 		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
-			guidance.Sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(personTime)), steps, nil
+			guidance.Sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(guidance.PersonTime)), steps, nil
 	case r.Status == revertPending && plan.tooLarge:
 		steps, err := revertTooLargeSteps(r.ID, false)
 		return plan.PersonMessage, steps, err
@@ -125,5 +125,5 @@ func outcomeMessage(r action.Revert) string {
 		return fmt.Sprintf("%s was signed but not finished by %s: %d rows restored, %d left as they are, %d not restored.",
 			what, applyByText(r), restored, skipped, r.Progress.Pending)
 	}
-	return fmt.Sprintf("%s expired at %s without your signature; nothing was reverted.", what, r.ExpiresAt.UTC().Format(personTime))
+	return fmt.Sprintf("%s expired at %s without your signature; nothing was reverted.", what, r.ExpiresAt.UTC().Format(guidance.PersonTime))
 }

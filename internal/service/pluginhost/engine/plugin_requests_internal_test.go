@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
@@ -137,7 +138,7 @@ func TestRequestErrors(t *testing.T) {
 	require.Equal(t, "TOO_LARGE", r.Reason)
 	require.ErrorAs(t, requestError(&person.Error{Code: person.CodeAgentNotAllowed, Message: "scope"}, false), &r)
 	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
-	var ae *agent.ArgumentError
+	var ae *guidance.ArgumentError
 	require.ErrorAs(t, requestError(&person.Error{Code: person.CodeNotFound, Message: "gone"}, true), &ae)
 	require.ErrorIs(t, requestError(&person.Error{Code: person.CodeNotFound, Message: "no entry"}, false), agent.ErrPluginNotFound)
 }

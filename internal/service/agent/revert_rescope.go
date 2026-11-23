@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -154,7 +155,7 @@ func (r *rescopes) drop(id uuid.UUID) {
 func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in ScopeRequest) (ScopeResponse, error) {
 	widen := in.Proof != nil
 	if widen && subtle.ConstantTimeCompare([]byte(in.NewSecret), []byte(secret)) == 1 {
-		return ScopeResponse{}, &ArgumentError{Message: "newSecret must be a new secret the page made, not the link's current one"}
+		return ScopeResponse{}, &guidance.ArgumentError{Message: "newSecret must be a new secret the page made, not the link's current one"}
 	}
 	release, err := s.rescopes.lock(ctx, id)
 	if err != nil {
@@ -173,7 +174,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if widen {
 		raw, err := links.DecodeSecret(in.NewSecret)
 		if err != nil {
-			return ScopeResponse{}, &ArgumentError{Message: "newSecret must be 16 random bytes, base64url without padding"}
+			return ScopeResponse{}, &guidance.ArgumentError{Message: "newSecret must be 16 random bytes, base64url without padding"}
 		}
 		key, err := revert.RescopeKey(raw)
 		clear(raw)
@@ -267,20 +268,20 @@ func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel
 // failure is one REVERT_INVALID whatever its cause; a rescope past
 // guardmodel.MCPPrepareTimeout is QUERY_TIMEOUT TIME_LIMIT.
 func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) error {
-	if _, hint, ok := scopeRefusal(err); ok {
-		return &ArgumentError{Message: "the scope was refused: " + hint}
+	if _, hint, ok := guidance.ScopeRefusal(err); ok {
+		return &guidance.ArgumentError{Message: "the scope was refused: " + hint}
 	}
-	se := storeError(err)
+	se := guidance.StoreError(err)
 	if se == nil {
 		return err
 	}
-	code, _ := ledgerCode(err)
+	code, _ := guidance.LedgerCode(err)
 	switch {
 	case code == guardmodel.CodeRevertInvalid && se.Detail == guardmodel.RevertWidenRefused:
 		return widenRefused()
 	case code == guardmodel.CodeRevertExpired:
 		return s.revertExpired(r)
-	case timedOut(err) && ctx.Err() == nil:
+	case guidance.TimedOut(err) && ctx.Err() == nil:
 		return rescopeTimeout()
 	}
 	return err
@@ -290,8 +291,8 @@ func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) 
 // order 3): one fixed answer, so the agent holding the link learns nothing
 // about other agents' runs or tables from it.
 func widenRefused() error {
-	return &PageError{ToolError: &toolresult.ToolError{
-		Code:    CodeRevertInvalid,
+	return &guidance.PageError{ToolError: &toolresult.ToolError{
+		Code:    guidance.CodeRevertInvalid,
 		Message: "the scope change was refused: it needs the person's passkey proof, or the page that proved one; nothing changed",
 		PersonMessage: "This scope change was refused, and nothing changed. To include other agents' changes, choose them " +
 			"again on this page and confirm with your passkey.",
@@ -300,8 +301,8 @@ func widenRefused() error {
 
 // rescopeTimeout is a rescope that ran past guardmodel.MCPPrepareTimeout (N12-R9).
 func rescopeTimeout() error {
-	return &PageError{ToolError: &toolresult.ToolError{
-		Code: CodeQueryTimeout, Reason: ReasonTimeLimit,
+	return &guidance.PageError{ToolError: &toolresult.ToolError{
+		Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonTimeLimit,
 		Message: "the scope change took longer than 100 seconds and was stopped; nothing changed",
 		PersonMessage: "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. " +
 			"Choose fewer agents, runs or tables, or try again.",
@@ -312,8 +313,8 @@ func rescopeTimeout() error {
 // it restarted since the person widened it (owner, Q13). The answer
 // carries the nonce the person's new widen proof signs.
 func widenAgain(nonce []byte) error {
-	return &PageError{RescopeNonce: nonce, ToolError: &toolresult.ToolError{
-		Code:    CodeRevertInvalid,
+	return &guidance.PageError{RescopeNonce: nonce, ToolError: &toolresult.ToolError{
+		Code:    guidance.CodeRevertInvalid,
 		Message: "the engine restarted since the person widened this revert, and holds its lines in memory only",
 		PersonMessage: "The scope you chose on this page is no longer held by the engine (it restarted). Include other " +
 			"agents' changes again to see the lines, or ask the agent for a new link to its own proposal.",

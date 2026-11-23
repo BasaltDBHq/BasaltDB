@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -71,7 +72,7 @@ func (p pluginPage) postPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := approval.DecodePluginResponse(body)
 	if err != nil || resp.ApprovalID != id {
-		p.s.Fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
+		p.s.Fail(w, &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
 		return
 	}
 	at, err := Find(r.Context(), p.s, asPlugins(func(ctx context.Context, pa PluginApprovals) (time.Time, error) {

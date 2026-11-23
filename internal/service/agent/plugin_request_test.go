@@ -15,6 +15,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -106,7 +107,7 @@ func callPlugin(t *testing.T, s *Service, args map[string]any, meta json.RawMess
 	raw, err := json.Marshal(args)
 	require.NoError(t, err)
 	var a requestPluginArgs
-	if err := decodeArgs(raw, &a); err != nil {
+	if err := guidance.DecodeArgs(raw, &a); err != nil {
 		return requestPluginResult{}, err
 	}
 	if err := a.check(); err != nil {
@@ -184,7 +185,7 @@ func TestRequestPluginArguments(t *testing.T) {
 	} {
 		f := &fakePluginRequests{opened: openedPlugin()}
 		_, err := callPlugin(t, pluginService(t, f), args, uploadMeta())
-		requireReason(t, err, CodeInvalidArgument, "")
+		requireReason(t, err, guidance.CodeInvalidArgument, "")
 		require.Empty(t, f.opens, "%v", args)
 	}
 }
@@ -196,7 +197,7 @@ func TestRequestPluginNeedsTheShimsUpload(t *testing.T) {
 	for _, meta := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`{"` + mcp.MetaPluginUpload + `": {"uploadId": "nope", "name": "x"}}`)} {
 		f := &fakePluginRequests{opened: openedPlugin()}
 		_, err := callPlugin(t, pluginService(t, f), map[string]any{"source": "/home/me/local-ner"}, meta)
-		requireReason(t, err, CodeInvalidArgument, "")
+		requireReason(t, err, guidance.CodeInvalidArgument, "")
 		require.Empty(t, f.opens)
 	}
 }
@@ -275,7 +276,7 @@ func TestRequestPluginWaitOnlyReads(t *testing.T) {
 
 	f = &fakePluginRequests{err: ErrPluginNotFound}
 	_, err = callPlugin(t, pluginService(t, f), map[string]any{"approvalId": casePluginApproval}, nil)
-	requireReason(t, err, CodeNotFound, "")
+	requireReason(t, err, guidance.CodeNotFound, "")
 
 	// No entry holds it any more (removed, or replaced for every agent), but
 	// the caller's guard still has it: ENDED.

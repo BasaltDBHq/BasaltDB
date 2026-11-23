@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -54,16 +55,16 @@ func writeResultFromDomain(o WriteOutcome) writeResult {
 
 func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args writeArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		// An empty or missing intent is the contract's INTENT_REQUIRED.
 		if intentMissing(raw) {
-			return nil, &toolresult.ToolError{Code: CodeIntentRequired, Message: "write needs an intent: why this change is made"}
+			return nil, &toolresult.ToolError{Code: guidance.CodeIntentRequired, Message: "write needs an intent: why this change is made"}
 		}
 		return nil, err
 	}
 	params, err := paramValues(args.Params)
 	if err != nil {
-		return nil, &ArgumentError{Message: err.Error()}
+		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
 	out, err := h.svc.Write(ctx, WriteParams{
 		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: optionalID(args.RunID),

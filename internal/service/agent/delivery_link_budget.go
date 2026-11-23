@@ -144,4 +144,4 @@ func revertMessage(summary string, pick handOver, extra ...string) (string, []to
 }
 
 // expiryLine states a deadline for a person.
-func expiryLine(t time.Time) string { return "Expires " + t.UTC().Format(personTime) + "." }
+func expiryLine(t time.Time) string { return "Expires " + t.UTC().Format(guidance.PersonTime) + "." }

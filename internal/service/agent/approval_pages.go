@@ -57,7 +57,7 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Approv
 		return action.Approval{}, err
 	}
 	a, err := s.deps.Approval.Store.FindApproval(ctx, id)
-	if sentinel(err, s.deps.Approval.ErrNotFound) {
+	if guidance.Sentinel(err, s.deps.Approval.ErrNotFound) {
 		return action.Approval{}, ErrNotThisAgent
 	}
 	if err != nil {
@@ -65,7 +65,7 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Approv
 	}
 	switch {
 	case a.Status == approvalExpired || !s.deps.Core.Now().Before(a.ExpiresAt):
-		return a, &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(personTime))}
+		return a, &toolresult.ToolError{Code: guidance.CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(guidance.PersonTime))}
 	case a.Status == approvalApproved:
 		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this write is already approved; the agent applies it")
 	case a.Status == approvalApplied:

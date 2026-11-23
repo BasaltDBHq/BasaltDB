@@ -145,7 +145,7 @@ const pluginDefaultInstanceName = "default"
 
 func (h handlers) requestPlugin(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args requestPluginArgs
-	if err := decodeArgs(raw, &args); err != nil {
+	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
 	if err := args.check(); err != nil {
@@ -165,15 +165,15 @@ func (a requestPluginArgs) check() error {
 	remove := a.Remove != nil && *a.Remove
 	switch {
 	case forms != 1:
-		return &ArgumentError{Message: "name exactly one of source, name or approvalId"}
+		return &guidance.ArgumentError{Message: "name exactly one of source, name or approvalId"}
 	case a.ApprovalID != "" && (a.Instance != "" || a.Agents != nil || a.Remove != nil):
-		return &ArgumentError{Message: "approvalId takes nothing but waitForApproval"}
+		return &guidance.ArgumentError{Message: "approvalId takes nothing but waitForApproval"}
 	case a.ApprovalID == "" && a.WaitForApproval != nil:
-		return &ArgumentError{Message: "waitForApproval is only for approvalId"}
+		return &guidance.ArgumentError{Message: "waitForApproval is only for approvalId"}
 	case a.Remove != nil && a.Name == "":
-		return &ArgumentError{Message: "remove is only for name"}
+		return &guidance.ArgumentError{Message: "remove is only for name"}
 	case remove && a.Agents != nil:
-		return &ArgumentError{Message: "remove takes no agents: the plugin stops for every agent it served"}
+		return &guidance.ArgumentError{Message: "remove takes no agents: the plugin stops for every agent it served"}
 	}
 	return nil
 }
@@ -322,7 +322,7 @@ func noPortalLinkError(message, person string) error {
 
 // uploadOf is basalt mcp's upload of the source, from the call's _meta.
 func uploadOf(meta json.RawMessage) (PluginUpload, error) {
-	missing := &ArgumentError{Message: "basalt mcp handed over no plugin files for source (or the engine dropped them when it restarted); call request_plugin again with source"}
+	missing := &guidance.ArgumentError{Message: "basalt mcp handed over no plugin files for source (or the engine dropped them when it restarted); call request_plugin again with source"}
 	var m map[string]json.RawMessage
 	if len(meta) == 0 || json.Unmarshal(meta, &m) != nil || m[MetaPluginUpload] == nil {
 		return PluginUpload{}, missing
@@ -365,7 +365,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 		noPasskeySteps(steps, s.deps.Core.Commands)
 	}
 	lines = append(lines, lead, pluginLevelLine(level), ask, "", link, "",
-		fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", o.ExpiresAt.UTC().Format(personTime)))
+		fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", o.ExpiresAt.UTC().Format(guidance.PersonTime)))
 	steps.OpenLink(link, "Open the link, read what the plugin may do and approve it with your passkey.").
 		CallTool(toolRequestPlugin, map[string]any{"approvalId": o.ApprovalID.String()},
 			fmt.Sprintf("Show the person personMessage first. Then, in the same turn, call this once: it returns as soon as the plugin runs, or after %d seconds.", int(DefaultApprovalWait/time.Second)))
@@ -375,7 +375,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 	}
 	return requestPluginResult{
 		State: PluginStatePending, Name: o.Name, Instance: o.Instance, Version: o.Version, Agents: o.Agents,
-		ApprovalID: o.ApprovalID.String(), ExpiresAt: timeText(o.ExpiresAt), ApprovalURL: link,
+		ApprovalID: o.ApprovalID.String(), ExpiresAt: guidance.TimeText(o.ExpiresAt), ApprovalURL: link,
 		PersonMessage: strings.Join(lines, "\n"), Links: []toolresult.Link{{Label: "Approve the plugin " + o.Name, URL: link}},
 		NextSteps: built,
 	}, nil
@@ -443,7 +443,7 @@ func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool
 			CallTool(toolRequestPlugin, again, "When they want it, call this: it opens a new approval for the installed plugin.")
 	default:
 		msg = fmt.Sprintf("The plugin %s waits for your approval. Open the link the agent gave you and approve it with your passkey before %s; tell the agent once you did.",
-			entry, st.ExpiresAt.UTC().Format(personTime))
+			entry, st.ExpiresAt.UTC().Format(guidance.PersonTime))
 		wait := 0
 		steps.OpenGivenLink("Open the plugin approval link the agent gave you and approve it with your passkey.").
 			TellAgent("Tell the agent once you approved.").
@@ -463,7 +463,7 @@ func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool
 		PersonMessage: msg, NextSteps: built,
 	}
 	if st.State == PluginStatePending && !st.ExpiresAt.IsZero() {
-		res.ExpiresAt = timeText(st.ExpiresAt)
+		res.ExpiresAt = guidance.TimeText(st.ExpiresAt)
 	}
 	return res, nil
 }
@@ -483,7 +483,7 @@ func (s *Service) pluginError(err error) error {
 	var r *PluginRefusedError
 	switch {
 	case errors.Is(err, ErrPluginNotFound):
-		return &toolresult.ToolError{Code: CodeNotFound, Message: err.Error()}
+		return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: err.Error()}
 	case errors.As(err, &r):
 		return pluginRefused(r.Reason, r.Message, "Basalt did not add or change the plugin: "+r.Message)
 	}

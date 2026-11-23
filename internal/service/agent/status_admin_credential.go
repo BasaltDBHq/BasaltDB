@@ -185,13 +185,13 @@ func isHex(c byte) bool {
 }
 
 func adminCredentialError() error {
-	return &ArgumentError{Reason: ReasonAdminCredential, Message: adminCredentialMessage}
+	return &guidance.ArgumentError{Reason: ReasonAdminCredential, Message: adminCredentialMessage}
 }
 
 // adminCredentialToolError is the refusal as a tool error with its steps,
 // for the tools that answer without the service (the engine-down tools).
 func adminCredentialToolError(tool string) *toolresult.ToolError {
-	te := &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
+	te := &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
 	b := guidance.NewSteps()
 	invalidArgumentSteps(b, te, failure{tool: tool})
 	te.NextSteps, _ = b.Build() // fixed steps: they cannot fail

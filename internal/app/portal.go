@@ -6,12 +6,12 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
+	"github.com/basaltdbhq/basaltdb/internal/status"
 )
 
 // portalChecker is the daily portal check (CONTRACT.md, CLI, basalt portal
 // verify) as the agents' status reads it.
-type portalChecker struct{ *portalcheck.Checker }
+type portalChecker struct{ *status.Checker }
 
 // PortalFinding is the last check's result for status.
 func (p portalChecker) PortalFinding() (agent.PortalFinding, bool) {
@@ -29,5 +29,5 @@ func newPortalChecker(pagesBase, stateDir string, log *slog.Logger, now func() t
 	if pagesBase != links.Portal {
 		return nil
 	}
-	return &portalChecker{portalcheck.New(portalcheck.Options(pagesBase), stateDir, log.With("component", "portal-check"), now)}
+	return &portalChecker{status.New(status.Options(pagesBase), stateDir, log.With("component", "portal-check"), now)}
 }

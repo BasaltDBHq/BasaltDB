@@ -117,7 +117,7 @@ var flagSetNames = regexp.MustCompile(`(?:\.flags|NewFlagSet)\("([a-z]+(?: [a-z-
 func actualCommandsAndFlags(t *testing.T, actual map[string]surfaceEntry) {
 	t.Helper()
 	// An agent marker in the environment must not change what -h reaches.
-	for _, k := range agentMarkers {
+	for _, k := range cli.AgentMarkers {
 		t.Setenv(k, "")
 	}
 	probed := map[string]bool{}

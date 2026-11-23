@@ -111,7 +111,7 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 			return connect(ctx, shell, dsn)
 		},
 		fetchChain: fetchChain,
-		width:      func() int { return terminalWidth(std.out) },
+		width:      func() int { return cli.TerminalWidth(std.out) },
 	}
 	c.probe = probeLogin(c)
 	stdin := std.in
@@ -120,19 +120,6 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		c.interactive = true
 	}
 	return c
-}
-
-// terminalWidth is w's width in columns when it is a terminal, else 0.
-func terminalWidth(w io.Writer) int {
-	f, ok := w.(*os.File)
-	if !ok {
-		return 0
-	}
-	cols, _, err := term.GetSize(int(f.Fd()))
-	if err != nil {
-		return 0
-	}
-	return cols
 }
 
 // fail prints err and returns its exit code. An error can carry database

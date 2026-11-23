@@ -9,12 +9,10 @@ import (
 	"os"
 	"runtime"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
-
-	"golang.org/x/term"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -137,7 +135,7 @@ var errDevBuild = errors.New("a build with no release number gets no update noti
 // notice as a field where the command has one).
 func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv func(string) string) func() {
 	nothing := func() {}
-	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || wantsJSON(args) {
+	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || cli.WantsJSON(args) {
 		return nothing
 	}
 	if updateOff(getenv, appUpdateHost{osHost{}}) {
@@ -169,7 +167,7 @@ func printUpdateLine(w io.Writer, getenv func(string) string, n *updateNotice) {
 		return
 	}
 	line := n.line
-	if getenv("NO_COLOR") == "" && isTerminal(w) {
+	if getenv("NO_COLOR") == "" && cli.IsTerminal(w) {
 		color := ansiYellow
 		if n.security {
 			color = ansiRed
@@ -177,19 +175,4 @@ func printUpdateLine(w io.Writer, getenv func(string) string, n *updateNotice) {
 		line = color + line + ansiReset
 	}
 	fmt.Fprintln(w, line)
-}
-
-func isTerminal(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	return ok && term.IsTerminal(int(f.Fd()))
-}
-
-// wantsJSON is true when args carry --json (or -json), with or without a value.
-func wantsJSON(args []string) bool {
-	for _, a := range args {
-		if a == "--json" || a == "-json" || strings.HasPrefix(a, "--json=") || strings.HasPrefix(a, "-json=") {
-			return true
-		}
-	}
-	return false
 }

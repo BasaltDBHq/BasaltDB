@@ -60,7 +60,7 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	usage(&out)
-	require.Contains(t, out.String(), agentsHelp)
+	require.Contains(t, out.String(), cli.AgentsHelp)
 	requireAgentLed(t, "basalt --help", out.String())
 }
 
@@ -120,7 +120,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", app.Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp":        agentsHelp,
+		"agentsHelp":        cli.AgentsHelp,
 		"remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)

@@ -233,7 +233,7 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--remote] [--demo]\n\n"+
 			"Installs the engine service when needed, then prints and opens the setup link. Finish the setup on that page:\n"+
 			"the admin connection string is typed there, never here.\n\n"+
-			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n\n"+manyAgentsHelp)
+			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n\n"+cli.ManyAgentsHelp)
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

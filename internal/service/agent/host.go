@@ -4,13 +4,6 @@ import (
 	"time"
 )
 
-// The Vault connection's states in status.vault.state.
-const (
-	vaultStateOff       = "OFF"
-	vaultStateConnected = "CONNECTED"
-	vaultStateKeyError  = "KEY_ERROR"
-)
-
 // The catalog's own types: what describe reads of the database's tables
 // and views.
 

@@ -429,6 +429,11 @@ func ConnString(a setupcode.Address, user, password string, binding bool) string
 	return u.String()
 }
 
+// LoginRefused reports whether err is the database refusing a login: any
+// class 28 error, or Supabase's pooler not knowing the user. The setup
+// finisher counts it as a setup not run yet, as basalt init --remote does.
+func LoginRefused(err error) bool { return proves(false, err) }
+
 // proves reports whether a probe login's error proves the candidate: with
 // channel binding only a refused password (28P01) does; without, any
 // refusal of the login (class 28, or Supabase's pooler not knowing the

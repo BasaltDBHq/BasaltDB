@@ -92,6 +92,12 @@ func CheckTrustedConfig(f *os.File, trusted int) error {
 // connection string and the file's info, so a later rename can check the
 // name still names the file read (SameFileAt).
 func ReadCredentialAt(d Dir, name string) (string, os.FileInfo, error) {
+	return ReadCredentialAtLimit(d, name, maxConfigBytes)
+}
+
+// ReadCredentialAtLimit is ReadCredentialAt for a file of at most limit
+// bytes, counted as stored (before the surrounding space is trimmed).
+func ReadCredentialAtLimit(d Dir, name string, limit int) (string, os.FileInfo, error) {
 	path := filepath.Join(d.Path(), name)
 	owner, err := d.Owner()
 	if err != nil {
@@ -116,12 +122,12 @@ func ReadCredentialAt(d Dir, name string) (string, os.FileInfo, error) {
 	if uid := int(st.Uid); uid != os.Geteuid() && uid != owner {
 		return "", nil, fmt.Errorf("credential file %s is owned by uid %d, not this process's user or uid %d (the owner of %s)", path, uid, owner, d.Path())
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, maxConfigBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
 		return "", nil, err
 	}
 	dsn := strings.TrimSpace(string(raw))
-	if dsn == "" || len(raw) > maxConfigBytes {
+	if dsn == "" || len(raw) > limit {
 		return "", nil, fmt.Errorf("credential file %s is empty or too large", path)
 	}
 	return dsn, fi, nil

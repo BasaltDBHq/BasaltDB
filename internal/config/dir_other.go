@@ -19,5 +19,8 @@ func CheckTrustedConfig(*os.File, int) error { return errNoLock }
 // ReadCredentialAt: see dir_unix.go.
 func ReadCredentialAt(Dir, string) (string, os.FileInfo, error) { return "", nil, errNoLock }
 
+// ReadCredentialAtLimit: see dir_unix.go.
+func ReadCredentialAtLimit(Dir, string, int) (string, os.FileInfo, error) { return "", nil, errNoLock }
+
 // SameFileAt: see dir_unix.go.
 func SameFileAt(Dir, string, os.FileInfo) error { return errNoLock }

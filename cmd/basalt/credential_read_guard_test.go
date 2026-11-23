@@ -25,8 +25,11 @@ const appImport = "github.com/basaltdbhq/basaltdb/internal/app"
 // here, or the guard cannot see its callers. The guard works per function:
 // one CheckForeignDSN call in a function marks every read in it checked.
 var (
-	configCredentialReaders = map[string]bool{"ReadCredential": true, "ReadCredentialAt": true, "ReadOwnCredential": true}
-	localCredentialReaders  = map[string]bool{
+	configCredentialReaders = map[string]bool{
+		"ReadCredential": true, "ReadCredentialAt": true, "ReadCredentialAtLimit": true,
+		"ReadOwnCredential": true, "ReadOwnCredentialLimit": true,
+	}
+	localCredentialReaders = map[string]bool{
 		"readOwnedCredential": true, "readCredentialFrom": true, "readCredentialFile": true,
 		"readOwnCredential": true, "readKeptCredential": true,
 	}
@@ -42,7 +45,7 @@ var uncheckedCredentialReads = map[string]string{
 	"cmd/basalt/keptcred_unix.go:readCredentialFile:readCredentialFrom":                       "its owner rule is its caller's, and its callers are listed here",
 	"cmd/basalt/init_remote.go:pathCredFiles.read:readOwnCredential":                          "init --remote not as root",
 	"internal/app/credfiles.go:pathFiles.readCredential:config.ReadCredential":                "an engine not running as root (agentFilesFor)",
-	"internal/app/credfiles.go:pathFiles.readPending:config.ReadOwnCredential":                "an engine not running as root (agentFilesFor)",
+	"internal/app/credfiles.go:pathFiles.ReadPending:config.ReadOwnCredentialLimit":           "an engine not running as root (agentFilesFor)",
 	"internal/service/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":               "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
 	"internal/adapter/inbound/localsetup/agentjobs.go:credentialTarget:config.ReadCredential": "the setup page's UPDATE and REMOVE: parsed for its target only, never connected with; refused as root (validateAgentJob)",
 	"internal/app/handoff_files.go:handoffFiles.ReadSecret:config.ReadOwnCredential":          "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
@@ -53,6 +56,7 @@ var uncheckedCredentialReads = map[string]string{
 var checkedCredentialReads = []string{
 	"cmd/basalt/credfiles_unix.go:rootCredFiles.read:readCredentialFrom",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAt",
+	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAtLimit",
 	"internal/app/setupbackend/setupbackend.go:Backend.ReadCredential:config.ReadCredential",
 }
 

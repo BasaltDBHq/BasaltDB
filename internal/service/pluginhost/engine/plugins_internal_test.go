@@ -23,11 +23,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )

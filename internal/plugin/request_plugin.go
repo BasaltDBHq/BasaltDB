@@ -199,18 +199,18 @@ func noPortalLinkError(message, person string) error {
 }
 
 // uploadOf is basalt mcp's upload of the source, from the call's _meta.
-func uploadOf(meta json.RawMessage) (PluginUpload, error) {
+func uploadOf(meta json.RawMessage) (pluginUpload, error) {
 	missing := &guidance.ArgumentError{Message: "basalt mcp handed over no plugin files for source (or the engine dropped them when it restarted); call request_plugin again with source"}
 	var m map[string]json.RawMessage
-	if len(meta) == 0 || json.Unmarshal(meta, &m) != nil || m[MetaPluginUpload] == nil {
-		return PluginUpload{}, missing
+	if len(meta) == 0 || json.Unmarshal(meta, &m) != nil || m[metaPluginUpload] == nil {
+		return pluginUpload{}, missing
 	}
-	var up PluginUpload
-	if json.Unmarshal(m[MetaPluginUpload], &up) != nil || up.Name == "" {
-		return PluginUpload{}, missing
+	var up pluginUpload
+	if json.Unmarshal(m[metaPluginUpload], &up) != nil || up.Name == "" {
+		return pluginUpload{}, missing
 	}
 	if _, err := uuid.Parse(up.UploadID); err != nil {
-		return PluginUpload{}, missing
+		return pluginUpload{}, missing
 	}
 	return up, nil
 }
@@ -447,12 +447,12 @@ func joinNames(names []string) string {
 	return strings.Join(slices.Sorted(slices.Values(names)), ", ")
 }
 
-// MetaPluginUpload is the _meta key under which basalt mcp hands the engine
+// metaPluginUpload is the _meta key under which basalt mcp hands the engine
 // the plugin files it uploaded for a request_plugin call.
-const MetaPluginUpload = "dev.basaltdb/upload"
+const metaPluginUpload = "dev.basaltdb/upload"
 
-// PluginUpload is the value of MetaPluginUpload.
-type PluginUpload struct {
+// pluginUpload is the value of metaPluginUpload.
+type pluginUpload struct {
 	UploadID    string   `json:"uploadId"`
 	Name        string   `json:"name"`
 	Executables []string `json:"executables,omitempty"`

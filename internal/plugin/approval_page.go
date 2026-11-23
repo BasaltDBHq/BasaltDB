@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -81,7 +80,7 @@ func (pc *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardm
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
-	if !agentHoldsPluginApprovals(st, pc.deps.ApprovalsVersion) {
+	if !holdsPluginApprovals(st, pc.deps.ApprovalsVersion) {
 		return guardmodel.PluginApprovalRecord{}, linksvc.ErrNotThisAgent
 	}
 	r, ok, err := pc.deps.Approvals.ReadPluginApproval(ctx, id)
@@ -102,14 +101,6 @@ func (pc *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardm
 		return r, linksvc.ErrNotThisAgent
 	}
 	return r, nil
-}
-
-// agentHoldsPluginApprovals reports whether a guard has plugin approvals: schema
-// version is installed.
-func agentHoldsPluginApprovals(st guardmodel.Status, version int) bool {
-	return st.Installed >= version &&
-		!slices.Contains(st.MissingBreaking, version) &&
-		!slices.Contains(st.MissingNonBreaking, version)
 }
 
 // The plugin page's answers. They are the page's own (PageError), never

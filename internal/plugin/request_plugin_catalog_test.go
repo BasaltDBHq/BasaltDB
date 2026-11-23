@@ -26,8 +26,8 @@ import (
 // must not drift.
 func TestUploadCopiesMatchTheProtocol(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, mcpserver.MetaPluginUpload, MetaPluginUpload)
-	require.Equal(t, mcpserver.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
+	require.Equal(t, mcpserver.MetaPluginUpload, metaPluginUpload)
+	require.Equal(t, mcpserver.PluginUpload(pluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
 }
 
 // withOperatedBy is an engine whose operatedBy is by.

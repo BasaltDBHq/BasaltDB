@@ -93,7 +93,7 @@ func pluginService(t *testing.T, f *fakePluginRequests, opts ...option) *Service
 }
 
 func uploadMeta() json.RawMessage {
-	return json.RawMessage(`{"` + MetaPluginUpload + `": {"uploadId": "` + casePluginUpload + `", "name": "local-ner", "executables": ["bin/ner"]}}`)
+	return json.RawMessage(`{"` + metaPluginUpload + `": {"uploadId": "` + casePluginUpload + `", "name": "local-ner", "executables": ["bin/ner"]}}`)
 }
 
 // callPlugin makes the call the tool's controller makes once it has decoded
@@ -164,7 +164,7 @@ func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 // asked, so no path the agent names is ever opened by the engine.
 func TestRequestPluginNeedsTheShimsUpload(t *testing.T) {
 	t.Parallel()
-	for _, meta := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`{"` + MetaPluginUpload + `": {"uploadId": "nope", "name": "x"}}`)} {
+	for _, meta := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`{"` + metaPluginUpload + `": {"uploadId": "nope", "name": "x"}}`)} {
 		f := &fakePluginRequests{opened: openedPlugin()}
 		_, err := callPlugin(t, pluginService(t, f), map[string]any{"source": "/home/me/local-ner"}, meta)
 		requireReason(t, err, guidance.CodeInvalidArgument, "")

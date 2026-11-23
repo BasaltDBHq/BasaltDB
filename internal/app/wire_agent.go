@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
@@ -163,41 +165,41 @@ func (p agentProbe) ReinstallNotice(ctx context.Context, limit int) (string, boo
 // agent's own types.
 type agentCatalog struct{ *postgres.Catalog }
 
-func relationOf(r pgcatalog.Relation) agent.CatalogRelation { return agent.CatalogRelation(r) }
+func relationOf(r pgcatalog.Relation) agentsvc.CatalogRelation { return agentsvc.CatalogRelation(r) }
 
-func (c agentCatalog) Relations(ctx context.Context) ([]agent.CatalogRelation, int, error) {
+func (c agentCatalog) Relations(ctx context.Context) ([]agentsvc.CatalogRelation, int, error) {
 	rs, n, err := c.Catalog.Relations(ctx)
-	out := make([]agent.CatalogRelation, len(rs))
+	out := make([]agentsvc.CatalogRelation, len(rs))
 	for i, r := range rs {
 		out[i] = relationOf(r)
 	}
 	return out, n, err
 }
 
-func (c agentCatalog) Find(ctx context.Context, schema, name string) (agent.CatalogRelation, bool, error) {
+func (c agentCatalog) Find(ctx context.Context, schema, name string) (agentsvc.CatalogRelation, bool, error) {
 	r, ok, err := c.Catalog.Find(ctx, schema, name)
 	return relationOf(r), ok, err
 }
 
-func (c agentCatalog) Describe(ctx context.Context, oid uint32) (agent.CatalogDetail, error) {
+func (c agentCatalog) Describe(ctx context.Context, oid uint32) (agentsvc.CatalogDetail, error) {
 	d, err := c.Catalog.Describe(ctx, oid)
-	out := agent.CatalogDetail{
-		CatalogRelation: relationOf(d.Relation), PrimaryKey: d.PrimaryKey, Stats: agent.CatalogStats(d.Stats),
+	out := agentsvc.CatalogDetail{
+		CatalogRelation: relationOf(d.Relation), PrimaryKey: d.PrimaryKey, Stats: agentsvc.CatalogStats(d.Stats),
 		RLS: d.RLS, CascadesIntoHidden: d.CascadesIntoHidden,
 	}
 	for _, col := range d.Columns {
-		out.Columns = append(out.Columns, agent.CatalogColumn(col))
+		out.Columns = append(out.Columns, agentsvc.CatalogColumn(col))
 	}
 	for _, ix := range d.Indexes {
-		out.Indexes = append(out.Indexes, agent.CatalogIndex(ix))
+		out.Indexes = append(out.Indexes, agentsvc.CatalogIndex(ix))
 	}
 	for _, k := range d.Keys {
-		out.Keys = append(out.Keys, agent.CatalogKey(k))
+		out.Keys = append(out.Keys, agentsvc.CatalogKey(k))
 	}
 	return out, err
 }
 
-func (c agentCatalog) Search(ctx context.Context, q string, exclude []agent.CatalogColumnKey, after *agent.CatalogSearchCursor, limit int) ([]agent.CatalogMatch, error) {
+func (c agentCatalog) Search(ctx context.Context, q string, exclude []agentsvc.CatalogColumnKey, after *agentsvc.CatalogSearchCursor, limit int) ([]agentsvc.CatalogMatch, error) {
 	ex := make([]pgcatalog.ColumnKey, len(exclude))
 	for i, k := range exclude {
 		ex[i] = pgcatalog.ColumnKey(k)
@@ -208,9 +210,9 @@ func (c agentCatalog) Search(ctx context.Context, q string, exclude []agent.Cata
 		cur = &v
 	}
 	ms, err := c.Catalog.Search(ctx, q, ex, cur, limit)
-	out := make([]agent.CatalogMatch, len(ms))
+	out := make([]agentsvc.CatalogMatch, len(ms))
 	for i, m := range ms {
-		out[i] = agent.CatalogMatch{CatalogRelation: relationOf(m.Relation), Rank: m.Rank, Matched: m.Matched}
+		out[i] = agentsvc.CatalogMatch{CatalogRelation: relationOf(m.Relation), Rank: m.Rank, Matched: m.Matched}
 	}
 	return out, err
 }
@@ -244,7 +246,7 @@ func agentUpdate(cached func() *updatecheck.Notice) func() *status.ReleaseNotice
 }
 
 // NewAgentCatalog is the store's catalog as the agent reads it.
-func NewAgentCatalog(c *postgres.Catalog) agent.Catalog { return agentCatalog{c} }
+func NewAgentCatalog(c *postgres.Catalog) agentsvc.Catalog { return agentCatalog{c} }
 
 // NewAgentProbe is the store's probe as the agent reads it.
 func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }

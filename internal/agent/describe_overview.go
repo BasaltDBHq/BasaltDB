@@ -12,7 +12,7 @@ import (
 
 // DescribeOverview counts what the agent can see, lists it (up to 50
 // tables) or its schemas, and tells the person how to see what it cannot.
-func (ds *describeCase) DescribeOverview(ctx context.Context) (Overview, error) {
+func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	visible, notGranted, err := ds.deps.Catalog.Relations(ctx)
 	if err != nil {
 		return Overview{}, err
@@ -109,7 +109,7 @@ func overviewLargeSteps(b *guidance.Steps, schemas []SchemaCount) {
 // one of the tables; the setup page that basalt init links to lists them, so
 // the agent never sees their names (D-1, D-7). No ASK_PERSON: platform
 // schemas are ungranted on every Supabase project.
-func (ds *describeCase) notGrantedSteps(b *guidance.Steps, notGranted int) string {
+func (ds *Service) notGrantedSteps(b *guidance.Steps, notGranted int) string {
 	b.TellAgent("Tell the agent when it needs one of these tables: it gives you a link where you pick them.")
 	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
 		"To give it one, tell the agent: it gives you a link where you pick the tables.",
@@ -133,7 +133,7 @@ func describeNotFound(resource string) error {
 // DescribeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
-func (ds *describeCase) DescribeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
+func (ds *Service) DescribeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
 	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: searchTerm(f.Arg(guidance.ArgResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")

@@ -81,11 +81,6 @@ func runVersion(_ context.Context, _ []string, io stdio) int {
 	return cli.ExitOK
 }
 
-// manyAgentsHelp tells an agent reading --help how to connect another
-// database: one engine serves many agents, each on one database.
-const manyAgentsHelp = "One engine serves many agents. Each agent uses one database. To connect another database,\n" +
-	"add another agent: basalt init --remote --agent NAME."
-
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "basalt - the action ledger for AI agents on your Postgres")
 	fmt.Fprintln(w)
@@ -98,11 +93,11 @@ func usage(w io.Writer) {
 		fmt.Fprintf(w, "  %-10s %s\n", cmd.name, cmd.summary)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, manyAgentsHelp)
+	fmt.Fprintln(w, cli.ManyAgentsHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes: 0 ok, 1 error, 2 usage error.")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, agentsHelp)
+	fmt.Fprintln(w, cli.AgentsHelp)
 }
 
 // fail prints err for command name and returns the error exit code.
@@ -110,8 +105,3 @@ func fail(w io.Writer, name string, err error) int {
 	fmt.Fprintf(w, "basalt %s: %v\n", name, err)
 	return cli.ExitError
 }
-
-// agentsHelp is the top-level help's line for an agent reading it
-// (CONTRACT.md, Agents and the admin credential).
-const agentsHelp = "Agents: never ask for or accept the database admin connection string or password.\n" +
-	"To set up, run basalt init on the person's own computer, or basalt init --remote on one the person cannot reach, and show the person the link it prints."

@@ -76,7 +76,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		}
 		handed = ln
 	}
-	cfg, err := loadEngineConfigAs(appShell{}, h.Euid(), *configPath)
+	cfg, err := cli.LoadEngineConfigAs(appShell{}, h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
@@ -91,7 +91,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
 	reload := func() error {
-		next, err := loadEngineConfigAs(appShell{}, h.Euid(), *configPath)
+		next, err := cli.LoadEngineConfigAs(appShell{}, h.Euid(), *configPath)
 		if err != nil {
 			return err
 		}
@@ -577,7 +577,7 @@ func keptCredentialSpec(spec app.OSSpec, a agentInstall, dryRun bool) (app.OSSpe
 // connect-only setup and no credential file exists at cred: the agent
 // waits for its database's address.
 func waitingForAddress(spec app.OSSpec, name, cred string) bool {
-	cfg, err := loadEngineConfigAs(appShell{}, os.Geteuid(), spec.ConfigPath)
+	cfg, err := cli.LoadEngineConfigAs(appShell{}, os.Geteuid(), spec.ConfigPath)
 	if err != nil {
 		return false
 	}

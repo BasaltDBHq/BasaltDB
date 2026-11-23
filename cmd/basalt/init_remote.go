@@ -363,10 +363,10 @@ func (r *remoteInit) paths() error {
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
 	}
 	r.stateDir = config.Config{StateDir: r.settings.StateDir}.StateDirFor(r.c.Goos)
-	// As root, the hardened read (loadEngineConfig): the config must be a
+	// As root, the hardened read (cli.LoadEngineConfig): the config must be a
 	// plain file owned by root or its directory's owner, not writable by
 	// group or others and reached without links, before any field is read.
-	cfg, err := loadEngineConfig(r.c, r.f.configPath)
+	cfg, err := cli.LoadEngineConfig(r.c, r.f.configPath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:

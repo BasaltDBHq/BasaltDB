@@ -175,7 +175,7 @@ func superviseConfig(euid int, configPath string) (config.Config, error) {
 			SocketDir: config.DefaultSocketDir(runtime.GOOS), StateDir: config.DefaultStateDir(runtime.GOOS),
 		}, nil
 	}
-	return loadEngineConfigAs(appShell{}, euid, configPath)
+	return cli.LoadEngineConfigAs(appShell{}, euid, configPath)
 }
 
 const privateDirMode = 0o700

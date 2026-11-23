@@ -55,3 +55,20 @@ func PerUserConfigFallback(h Machine, system string) string {
 	}
 	return user
 }
+
+// LoadEngineConfig reads the engine config at path for this person CLI.
+func LoadEngineConfig(c *IO, path string) (config.Config, error) {
+	return LoadEngineConfigAs(c.Shell, c.Host.Euid(), path)
+}
+
+// LoadEngineConfigAs reads the engine config at path for a process with
+// effective uid euid: config.Load, or as root the hardened read
+// (loadConfigAsRoot, opening through sh). basalt engine started as root
+// reads its config here too.
+func LoadEngineConfigAs(sh Host, euid int, path string) (config.Config, error) {
+	if euid != 0 {
+		return config.Load(path)
+	}
+	cfg, _, err := loadConfigAsRoot(sh, path)
+	return cfg, err
+}

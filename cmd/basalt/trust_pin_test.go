@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
@@ -72,7 +73,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	c.Probe, c.Host = noNetworkProbe, systemSocketHost(t)
 	c.AgentLogin = func(ctx context.Context, dsn string) (cli.AgentConn, error) {
 		events = append(events, "login")
-		return nil, errLoginRefused
+		return nil, handoff.ErrLoginRefused
 	}
 	c.FetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
 		events = append(events, "handshake")

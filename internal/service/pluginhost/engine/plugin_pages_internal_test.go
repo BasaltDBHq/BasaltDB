@@ -255,5 +255,6 @@ func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv.MountApprovals(pages.NewApprovalHandlers(srv))
 	srv.MountReverts(pages.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
+	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))
 	return srv
 }

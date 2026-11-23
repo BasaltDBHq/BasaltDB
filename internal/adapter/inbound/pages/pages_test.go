@@ -126,11 +126,14 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 	return serveAgents(t, all...)
 }
 
-// mounted mounts every page's handlers on p, as app does.
-func mounted(p *pages.Server) *pages.Server {
+// newMounted is the pages for origin with every page's handlers mounted,
+// as app mounts them: the setup routes of an engine with no setup jobs.
+func newMounted(origin string, log *slog.Logger) *pages.Server {
+	p := pages.New(origin, log)
 	p.MountApprovals(pages.NewApprovalHandlers(p))
 	p.MountReverts(pages.NewRevertHandlers(p))
 	p.MountPlugins(pages.NewPluginHandlers(p))
+	p.MountSetup(pages.NewConfiguredSetupHandlers(origin))
 	return p
 }
 
@@ -146,7 +149,7 @@ func serveAgents(t *testing.T, agents ...testAgent) site {
 	origin := "http://localhost:" + port
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	p := mounted(pages.New(origin, slog.New(slog.DiscardHandler)))
+	p := newMounted(origin, slog.New(slog.DiscardHandler))
 	for _, a := range agents {
 		a.wire(secrets, origin)
 		p.Add(a)

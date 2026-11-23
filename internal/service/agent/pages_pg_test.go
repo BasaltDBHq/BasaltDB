@@ -48,6 +48,7 @@ func newLocalPages(t *testing.T, env agentEnv) localPages {
 	site.MountApprovals(pages.NewApprovalHandlers(site))
 	site.MountReverts(pages.NewRevertHandlers(site))
 	site.MountPlugins(pages.NewPluginHandlers(site))
+	site.MountSetup(pages.NewConfiguredSetupHandlers(pageOrigin))
 	site.Add(env.svc)
 	srv := httptest.NewServer(site.Handler())
 	t.Cleanup(srv.Close)

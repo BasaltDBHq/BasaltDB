@@ -15,17 +15,32 @@ import (
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
-// Setup paths (CONTRACT.md, The local setup page).
-const (
-	SetupPagePath  = "/setup/"
-	SetupCheckPath = "/api/v1/setup/check"
-	SetupRunPath   = "/api/v1/setup/run"
-	// SetupDoctorPath is the Update check: no admin string.
-	SetupDoctorPath  = "/api/v1/setup/doctor"
-	SetupEnginePath  = "/api/v1/setup/engine"
-	SetupNotMinePath = "/api/v1/setup/not-mine"
-	setupPageFile    = "setup/index.html"
-)
+// setupPageFile is the setup page's file.
+const setupPageFile = "setup/index.html"
+
+// NewSetupHandlers serve the setup page's jobs for this engine's agents
+// (CONTRACT.md, The local setup page), for Server.MountSetup: the only
+// routes that read the admin connection string. origin is the page origin
+// a POST must carry exactly.
+func NewSetupHandlers(origin string, jobs SetupJobs, log *slog.Logger) SetupHandlers {
+	if origin == "" || jobs == nil || log == nil {
+		panic("pages: origin, setup jobs and logger required")
+	}
+	st := setupRoutes{origin: origin, jobs: jobs, log: log}
+	return SetupHandlers{
+		Page: serveSetupPage, Check: st.check, Run: st.run, Doctor: st.doctor, Engine: st.engine, NotMine: st.notMine,
+	}
+}
+
+// NewConfiguredSetupHandlers are the setup routes of an engine with no
+// setup jobs, for Server.MountSetup: every route refuses JOB_UNAVAILABLE
+// without reading the body.
+func NewConfiguredSetupHandlers(origin string) SetupHandlers {
+	c := configuredSetup{origin: origin}
+	return SetupHandlers{
+		Page: serveSetupPage, Check: c.refuse, Run: c.refuse, Doctor: c.refuse, Engine: c.refuse, NotMine: c.refuse,
+	}
+}
 
 // SetupJobs runs the setup page's jobs (localsetup.Service).
 type SetupJobs interface {
@@ -252,8 +267,10 @@ func setupStatus(r *localsetup.RefusalError) int {
 
 // configuredSetup answers the setup routes of an engine that has a config:
 // an install never changes it, and the body is never read.
-func (s *Server) configuredSetup(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Origin") != s.origin {
+type configuredSetup struct{ origin string }
+
+func (c configuredSetup) refuse(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != c.origin {
 		writeError(w, http.StatusForbidden, localsetup.CodeInvalidArgument, "The request does not come from the setup page.")
 		return
 	}

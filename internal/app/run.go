@@ -515,9 +515,10 @@ const pagesHeaderTimeout = 10 * time.Second
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
 func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log *slog.Logger) (*pagesSite, error) {
-	srv := newPages(p.Origin, log.With("component", "pages"))
+	pagesLog := log.With("component", "pages")
+	srv := newPages(p.Origin, pagesLog)
 	if setup != nil {
-		srv.SetSetup(setup)
+		srv.MountSetup(pages.NewSetupHandlers(p.Origin, setup, pagesLog.With("component", "setup")))
 	}
 	if handed != nil {
 		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)

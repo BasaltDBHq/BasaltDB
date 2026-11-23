@@ -34,6 +34,7 @@ func TestRequestPluginGetsTheRequestMeta(t *testing.T) {
 	}{
 		"with _meta":    {meta: `,"_meta":{"dev.basaltdb/upload":{"uploadId":"u1","name":"ner"}}`, want: json.RawMessage(`{"dev.basaltdb/upload":{"uploadId":"u1","name":"ner"}}`)},
 		"without _meta": {meta: ``, want: nil},
+		"empty _meta":   {meta: `,"_meta":{}`, want: json.RawMessage(`{}`)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -676,10 +676,10 @@ const supavisorNoTenant = "Tenant or user not found"
 
 // loginAsAgent connects with dsn: errLoginRefused when the database
 // refuses the login (class 28, or the pooler not knowing the role).
-func loginAsAgent(ctx context.Context, sh shellHost, dsn string) (agentConn, error) {
+func loginAsAgent(ctx context.Context, sh cli.Host, dsn string) (agentConn, error) {
 	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	defer cancel()
-	conn, err := connect(ctx, sh, dsn)
+	conn, err := cli.Connect(ctx, sh, dsn)
 	var pg *pgconn.PgError
 	switch {
 	case err == nil:

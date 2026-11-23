@@ -1,6 +1,9 @@
 package main
 
-import "github.com/basaltdbhq/basaltdb/internal/config"
+import (
+	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+)
 
 // loadEngineConfig reads the engine config at path for this person CLI.
 func loadEngineConfig(c *cliIO, path string) (config.Config, error) {
@@ -11,7 +14,7 @@ func loadEngineConfig(c *cliIO, path string) (config.Config, error) {
 // effective uid euid: config.Load, or as root the hardened read
 // (loadConfigAsRoot, opening through sh). basalt engine started as root
 // reads its config here too.
-func loadEngineConfigAs(sh shellHost, euid int, path string) (config.Config, error) {
+func loadEngineConfigAs(sh cli.Host, euid int, path string) (config.Config, error) {
 	if euid != 0 {
 		return config.Load(path)
 	}

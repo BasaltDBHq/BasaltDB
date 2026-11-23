@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -45,19 +46,7 @@ type starterDeps struct {
 }
 
 func osStarterDeps() starterDeps {
-	return starterDeps{owner: pathOwner, launch: launchDetached, answers: socketAnswers, wait: shim.DefaultStartWait, now: time.Now}
-}
-
-func pathOwner(path string) (int, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, errors.New("no owner for " + path)
-	}
-	return int(st.Uid), nil
+	return starterDeps{owner: cli.PathOwner, launch: launchDetached, answers: socketAnswers, wait: shim.DefaultStartWait, now: time.Now}
 }
 
 func socketAnswers(socket string) bool {

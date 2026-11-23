@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
@@ -33,7 +34,7 @@ import (
 // mcpBinary is the program of the printed basalt mcp command: the absolute,
 // link-resolved path of the running binary, which the agent app finds
 // whatever its PATH is. Bare basalt only when the path is unknown.
-func mcpBinary(h host) string {
+func mcpBinary(h cli.Machine) string {
 	if exe, err := h.Executable(); err == nil {
 		return exe
 	}

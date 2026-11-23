@@ -36,7 +36,7 @@ func runEngine(ctx context.Context, args []string, io cli.Stdio) int {
 }
 
 // runEngineOn is runEngine with the host that tells root and the config dir.
-func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h host) int {
+func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine) int {
 	fs := cli.NewFlagSet("engine")
 	fs.SetOutput(io.Err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
@@ -54,7 +54,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h host) int {
 		_, _ = fmt.Fprintln(io.Err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
 		return cli.ExitUsage
 	}
-	*configPath = configOrFallback(h, fs, *configPath)
+	*configPath = cli.ConfigOrFallback(h, fs, *configPath)
 	// Started as root, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
 	if *supervised {
@@ -214,21 +214,21 @@ func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
 }
 
 // runMCPOn is runMCP with the host that tells root and the config dir.
-func runMCPOn(ctx context.Context, args []string, io cli.Stdio, h host) int {
+func runMCPOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine) int {
 	return runMCPAt(ctx, args, io, h, config.DefaultPath(runtime.GOOS))
 }
 
 // runMCPAt is runMCPOn with the system path of engine.json (tests give
 // their own). The config is found by itself ([Config discovery]); the socket
 // directory and, when the engine serves one agent, the agent come from it.
-func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h host, system string) int {
+func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, system string) int {
 	fs := cli.NewFlagSet("mcp")
 	fs.SetOutput(io.Err)
 	name := fs.String("agent", "", "agent name (needed only when the engine serves more than one agent)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return cli.ExitUsage
 	}
-	cfgPath, err := discoverConfig(h, system)
+	cfgPath, err := cli.DiscoverConfig(h, system)
 	if err != nil {
 		return fail(io.Err, "mcp", err)
 	}

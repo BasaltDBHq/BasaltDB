@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // fakeHost records what init would do on the machine; nothing runs.
@@ -143,7 +144,7 @@ func (h *fakeHost) OpenURL(_ context.Context, link string) error {
 
 func (h *fakeHost) PagesUp(context.Context, string) bool { return h.pagesUp }
 
-func (h *fakeHost) System(io.Writer, io.Writer) system { return h.sys }
+func (h *fakeHost) System(io.Writer, io.Writer) cli.System { return h.sys }
 
 func (h *fakeHost) Probe(_ context.Context, socket string) error {
 	h.probed = append(h.probed, socket)

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // leakedAdmin is an admin connection string an agent was handed; no output
@@ -35,7 +36,7 @@ func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 
 func TestAgentNotInConfigNamesTheAgentLedSetup(t *testing.T) {
 	t.Parallel()
-	err := errAgentNotInConfig("bot", "/etc/basalt/engine.json")
+	err := cli.ErrAgentNotInConfig("bot", "/etc/basalt/engine.json")
 	require.EqualError(t, err, `agent "bot" is not in /etc/basalt/engine.json; set it up with basalt init --agent bot on the person's own computer, or basalt init --remote --agent bot on one the person cannot reach, and show the person the link it prints`)
 	requireAgentLed(t, "errAgentNotInConfig", err.Error())
 }
@@ -49,8 +50,8 @@ func TestTopLevelHelpHidesEngine(t *testing.T) {
 
 	// The command is hidden, not gone: it still parses its own flags.
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"engine", "--help"}, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr})
-	require.Equal(t, exitUsage, code)
+	code := run(context.Background(), []string{"engine", "--help"}, cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr})
+	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, stderr.String(), "-config")
 	require.NotContains(t, stderr.String(), "unknown command")
 }
@@ -59,7 +60,7 @@ func TestTopLevelHelpTellsAgents(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	usage(&out)
-	require.Contains(t, out.String(), agentsHelp)
+	require.Contains(t, out.String(), cli.AgentsHelp)
 	requireAgentLed(t, "basalt --help", out.String())
 }
 
@@ -119,7 +120,7 @@ func TestAgentFacingTextIsAgentLed(t *testing.T) {
 	root := filepath.Join("..", "..")
 	requireAgentLed(t, "MCP instructions", app.Instructions)
 	for name, text := range map[string]string{
-		"agentsHelp":        agentsHelp,
+		"agentsHelp":        cli.AgentsHelp,
 		"remoteAdminEnvSet": remoteAdminEnvSet,
 	} {
 		requireAgentLed(t, name, text)

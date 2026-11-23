@@ -26,33 +26,34 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
-func runEngine(ctx context.Context, args []string, io stdio) int {
+func runEngine(ctx context.Context, args []string, io cli.Stdio) int {
 	return runEngineOn(ctx, args, io, osHost{})
 }
 
 // runEngineOn is runEngine with the host that tells root and the config dir.
-func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
-	fs := newFlagSet("engine")
-	fs.SetOutput(io.err)
+func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h host) int {
+	fs := cli.NewFlagSet("engine")
+	fs.SetOutput(io.Err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	pluginDebug := fs.Bool("plugin-debug", false, "show local plugins' stderr on this terminal (a foreground engine only; never logged)")
 	supervised := fs.Bool("supervise", false, "run the engine as a child and restart it when it crashes")
 	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp or crash (set by basalt mcp and --supervise)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
-		return exitUsage
+		return cli.ExitUsage
 	}
 	if !slices.Contains([]string{startedByHand, startedByMCP, startedByCrash}, *startedBy) {
-		_, _ = fmt.Fprintf(io.err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
-		return exitUsage
+		_, _ = fmt.Fprintf(io.Err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
+		return cli.ExitUsage
 	}
 	if *supervised && *pluginDebug {
-		_, _ = fmt.Fprintln(io.err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
-		return exitUsage
+		_, _ = fmt.Fprintln(io.Err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
+		return cli.ExitUsage
 	}
 	*configPath = configOrFallback(h, fs, *configPath)
 	// Started as root, the hardened read: the config's
@@ -62,7 +63,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	}
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)
-	log := engineLog(io.err)
+	log := engineLog(io.Err)
 	// handed is the setup page's listener of an engine that waited for its
 	// config: the first run serves its own pages on it.
 	var handed net.Listener
@@ -70,23 +71,23 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
-				return exitOK
+				return cli.ExitOK
 			}
-			return fail(io.err, "engine", err)
+			return fail(io.Err, "engine", err)
 		}
 		handed = ln
 	}
 	cfg, err := loadEngineConfigAs(appShell{}, h.Euid(), *configPath)
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	run := func(ctx context.Context, o app.RestartOptions) error {
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		if *pluginDebug {
-			o.PluginStderr = io.err
+			o.PluginStderr = io.Err
 		}
-		return app.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
+		return app.RunWith(ctx, cfg, enginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.
@@ -99,9 +100,9 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		return nil
 	}
 	if err := serveRestarting(ctx, run, osRestart(log), reload, log); err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // waitsForConfig: a service engine on a first install, started before its
@@ -127,7 +128,7 @@ func waitsForConfigAt(euid int, configPath, systemPath string) bool {
 	if err != nil || !dir.IsDir() {
 		return false
 	}
-	owner, ok := infoOwnerUID(dir)
+	owner, ok := cli.InfoOwnerUID(dir)
 	return ok && owner == euid
 }
 
@@ -209,13 +210,13 @@ func enginePath(path string) string {
 // socket does not answer it serves status and the tool list itself and
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
-func runMCP(ctx context.Context, args []string, io stdio) int {
+func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
 	return runMCPOn(ctx, args, io, osHost{}, appMCPHost{})
 }
 
 // runMCPOn is runMCP with the host that tells root and the config dir, and
 // m, what it reaches outside the CLI.
-func runMCPOn(ctx context.Context, args []string, io stdio, h host, m mcpHost) int {
+func runMCPOn(ctx context.Context, args []string, io cli.Stdio, h host, m mcpHost) int {
 	return runMCPAt(ctx, args, io, h, m, config.DefaultPath(runtime.GOOS))
 }
 
@@ -254,16 +255,16 @@ func (appMCPHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
 // runMCPAt is runMCPOn with the system path of engine.json (tests give
 // their own). The config is found by itself ([Config discovery]); the socket
 // directory and, when the engine serves one agent, the agent come from it.
-func runMCPAt(ctx context.Context, args []string, io stdio, h host, m mcpHost, system string) int {
-	fs := newFlagSet("mcp")
-	fs.SetOutput(io.err)
+func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h host, m mcpHost, system string) int {
+	fs := cli.NewFlagSet("mcp")
+	fs.SetOutput(io.Err)
 	name := fs.String("agent", "", "agent name (needed only when the engine serves more than one agent)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
-		return exitUsage
+		return cli.ExitUsage
 	}
 	cfgPath, err := discoverConfig(h, system)
 	if err != nil {
-		return fail(io.err, "mcp", err)
+		return fail(io.Err, "mcp", err)
 	}
 	socketDir := config.DefaultSocketDir(runtime.GOOS)
 	var names []string
@@ -279,35 +280,35 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, m mcpHost, s
 	}
 	if *name == "" {
 		if len(names) != 1 {
-			fail(io.err, "mcp", fmt.Errorf("%w: --agent NAME is needed: the engine serves %s", errUsage, cmp.Or(strings.Join(names, ", "), "no agent")))
-			return exitUsage
+			fail(io.Err, "mcp", fmt.Errorf("%w: --agent NAME is needed: the engine serves %s", cli.ErrUsage, cmp.Or(strings.Join(names, ", "), "no agent")))
+			return cli.ExitUsage
 		}
 		*name = names[0]
 	}
 	if !config.ValidAgentName(*name) {
 		fs.Usage()
-		return exitUsage
+		return cli.ExitUsage
 	}
 	path := config.SocketPath(socketDir, *name)
-	log := m.EngineLog(io.err)
+	log := m.EngineLog(io.Err)
 	down, err := m.EngineDown(shimAgent(*name, path), enginePath(cfgPath), log)
 	if err != nil {
-		return fail(io.err, "mcp", err)
+		return fail(io.Err, "mcp", err)
 	}
 	// Links to the engine's own local pages open in the browser on a
 	// person-operated engine; the engine says which in its hello answer.
 	// A plugin the agent asks for (request_plugin) is uploaded over a
 	// second connection to the agent's own socket.
 	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path)}
-	if exe, err := shimExecutable(); err == nil {
+	if exe, err := cli.ShimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = m.EngineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
-	if err := shim.ServeWith(ctx, path, m.NewEngineDownServer(down), io.in, io.out, opts); err != nil {
-		return fail(io.err, "mcp", err)
+	if err := shim.ServeWith(ctx, path, m.NewEngineDownServer(down), io.In, io.Out, opts); err != nil {
+		return fail(io.Err, "mcp", err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // socketAgents are the agents with a socket in dir.
@@ -360,25 +361,6 @@ func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, er
 	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: app.AgentEngineHost()}, nil
 }
 
-// shimExecutable is the path of this binary as a starter runs it: the
-// symlink resolved when it can be (a link in ~/.local/bin to a rebuilt
-// path), else the path as the OS gave it, which the starter then finds gone.
-func shimExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return resolveExecutable(exe), nil
-}
-
-// resolveExecutable is exe with its links resolved, else exe as given.
-func resolveExecutable(exe string) string {
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved
-	}
-	return exe
-}
-
 func shimCommands(name, configPath string, cfg *config.Config) (guidance.Commands, error) {
 	if !config.ValidAgentName(name) {
 		name = fallbackAgentName
@@ -418,20 +400,20 @@ const fallbackAgentName = "agent"
 // step first; --dry-run stops there. The removal is the setup page's
 // Remove, after which basalt init removes the service through the
 // administrator dialog (service.RemoveScript).
-func runService(ctx context.Context, args []string, io stdio) int {
+func runService(ctx context.Context, args []string, io cli.Stdio) int {
 	return runServiceAt(ctx, args, io, config.DefaultPath(runtime.GOOS))
 }
 
 // runServiceAt is runService on the engine config at configPath: the
 // service's engine always runs on the system path (tests give their own).
-func runServiceAt(ctx context.Context, args []string, io stdio, configPath string) int {
+func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int {
 	if len(args) == 0 || args[0] != "install" {
-		fail(io.err, "service", errors.New("want install"))
-		return exitUsage
+		fail(io.Err, "service", errors.New("want install"))
+		return cli.ExitUsage
 	}
 	action := args[0]
-	fs := newFlagSet("service " + action)
-	fs.SetOutput(io.err)
+	fs := cli.NewFlagSet("service " + action)
+	fs.SetOutput(io.Err)
 	user := fs.String("user", app.OSDefaultUser(runtime.GOOS), "OS user the engine runs as")
 	binary := fs.String("binary", "", "absolute path of the basalt binary (default: this binary)")
 	dryRun := fs.Bool("dry-run", false, "print the steps without running them")
@@ -479,15 +461,15 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	fs.BoolVar(&a.keepCredential, flagKeepCredential, false, "install --agent: keep the agent's credential file (its role kept its password)")
 	credStdin := fs.Bool("credential-stdin", false, "install --agent: read the agent's connection string from stdin")
 	if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
-		return exitUsage
+		return cli.ExitUsage
 	}
 	if a.keepCredential && *credStdin {
-		fail(io.err, "service", errors.New("--keep-credential and --credential-stdin cannot be used together"))
-		return exitUsage
+		fail(io.Err, "service", errors.New("--keep-credential and --credential-stdin cannot be used together"))
+		return cli.ExitUsage
 	}
-	bin, err := binaryPath(*binary)
+	bin, err := cli.BinaryPath(*binary)
 	if err != nil {
-		return fail(io.err, "service", err)
+		return fail(io.Err, "service", err)
 	}
 	spec := app.OSSpec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: configPath, User: *user}
 	// The unit's memory limits follow the installed config's
@@ -500,55 +482,55 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 	var lock *config.HeldLock
 	if action == "install" && a.name != "" {
 		if a.devLocalPages {
-			_, _ = fmt.Fprintln(io.err, "basalt: "+config.DevLocalPagesWarning)
+			_, _ = fmt.Fprintln(io.Err, "basalt: "+config.DevLocalPagesWarning)
 		}
 		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
 			uid, err := parseUID(os.Getenv(envSudoUID))
 			if err != nil {
-				return fail(io.err, "service", fmt.Errorf("%s: %w", envSudoUID, err))
+				return fail(io.Err, "service", fmt.Errorf("%s: %w", envSudoUID, err))
 			}
 			a.personUIDs = []uint32{uid}
 		}
 		if !*dryRun {
-			a.report = func(v config.VaultWritten) { _, _ = fmt.Fprint(io.err, a.vaultChoice().line(v)) }
+			a.report = func(v config.VaultWritten) { _, _ = fmt.Fprint(io.Err, a.vaultChoice().line(v)) }
 			// Hold the config lock from reading engine.json until the new
 			// one is in place, as every config writer does; the lock file
 			// goes to the engine's user (CONTRACT.md, Lock files).
 			held, err := config.LockConfigAs(configPath, app.OSLookupUID(*user))
 			if err != nil {
-				return fail(io.err, "service", err)
+				return fail(io.Err, "service", err)
 			}
 			defer held.Release()
 			lock = &held
 		}
-		spec, err = agentSpecFromStdin(io.in, spec, a, *credStdin, *dryRun)
+		spec, err = agentSpecFromStdin(io.In, spec, a, *credStdin, *dryRun)
 		if err != nil {
-			return fail(io.err, "service", err)
+			return fail(io.Err, "service", err)
 		}
 	}
 	if cfg, err := config.LoadNoFollow(configPath); err == nil {
 		// Every local plugin entry runs under its own unit and OS user:
 		// install writes them all again.
-		spec = withPluginUnits(spec, cfg, io.err)
+		spec = withPluginUnits(spec, cfg, io.Err)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		_, _ = fmt.Fprintf(io.err, "basalt: %s cannot be read, so plugin service units are left as they are\n", configPath)
+		_, _ = fmt.Fprintf(io.Err, "basalt: %s cannot be read, so plugin service units are left as they are\n", configPath)
 	}
-	sys := app.OSExecSystem{Stdout: io.out, Stderr: io.err}
+	sys := app.OSExecSystem{Stdout: io.Out, Stderr: io.Err}
 
 	steps, err := app.OSInstallPlan(ctx, sys, spec)
 	if err != nil {
-		return fail(io.err, "service", err)
+		return fail(io.Err, "service", err)
 	}
-	if err := app.OSSettle(app.OSApply(ctx, sys, steps, *dryRun, io.out), sys, runtime.GOOS); err != nil {
-		return fail(io.err, "service", err)
+	if err := app.OSSettle(app.OSApply(ctx, sys, steps, *dryRun, io.Out), sys, runtime.GOOS); err != nil {
+		return fail(io.Err, "service", err)
 	}
 	// The install may have just made the engine's user.
 	if lock != nil {
 		if err := lock.HandTo(app.OSLookupUID(*user)); err != nil {
-			return fail(io.err, "service", fmt.Errorf("give %s.lock to %s: %w", configPath, *user, err))
+			return fail(io.Err, "service", fmt.Errorf("give %s.lock to %s: %w", configPath, *user, err))
 		}
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // maxCredentialBytes bounds the connection string read from stdin.
@@ -640,17 +622,6 @@ func waitingForAddress(spec app.OSSpec, name, cred string) bool {
 		}
 	}
 	return false
-}
-
-func binaryPath(flagValue string) (string, error) {
-	if flagValue != "" {
-		return filepath.Abs(flagValue)
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(exe)
 }
 
 // checkServicePersons refuses a service install without a person uid, or

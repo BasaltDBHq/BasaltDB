@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -164,7 +165,7 @@ func TestInitRemotePins(t *testing.T) {
 		c := e.io(&stdout, &stderr)
 		c.fetchChain = s.fetch
 		code := runInit(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
-		require.Equal(t, exitOK, code, "%s: %s", name, stderr.String())
+		require.Equal(t, cli.ExitOK, code, "%s: %s", name, stderr.String())
 		require.Contains(t, stderr.String(), "trusts it on the connect page", name)
 		require.NotContains(t, stderr.String(), "basalt trust", name)
 		require.NotContains(t, stderr.String(), "--trust-root", "the agent is not handed the flag")

@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -36,13 +37,13 @@ const (
 func runInitLocal(c *cliIO, h localHost, args []string) int {
 	job, err := parseInitLocal(c, args)
 	if errors.Is(err, flag.ErrHelp) {
-		return exitOK
+		return cli.ExitOK
 	}
 	if err != nil {
 		return c.fail(err)
 	}
 	if c.host.Euid() == 0 {
-		return c.fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", errUsage))
+		return c.fail(fmt.Errorf("%w: run basalt init as your own OS user, not root: the agent runs as that user, and the setup page asks for your password when it needs one", cli.ErrUsage))
 	}
 	me, err := user.Current()
 	if err != nil {
@@ -87,7 +88,7 @@ func runInitLocal(c *cliIO, h localHost, args []string) int {
 		fmt.Fprintln(c.stderr, "basalt: the browser did not open; open the link above by hand")
 	}
 	fmt.Fprintln(c.stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
-	return exitOK
+	return cli.ExitOK
 }
 
 // changeLink is basalt init on an engine that is already set up: it prints
@@ -112,14 +113,14 @@ func changeLink(c *cliIO, h localHost, job localsetup.Job) (code int, reset bool
 	case engineRemoved:
 		return removeEngineService(c, h), false
 	case engineResetAsked:
-		if code := resetEngineService(c, h); code != exitOK {
+		if code := resetEngineService(c, h); code != cli.ExitOK {
 			return code, false
 		}
-		return exitOK, true
+		return cli.ExitOK, true
 	case engineWaiting, engineSetUp:
 	}
 	fmt.Fprintln(c.stderr, "basalt: after a Remove on that page, run basalt init once more: it removes the engine service.")
-	return exitOK, false
+	return cli.ExitOK, false
 }
 
 // waitForRemoval asks the engine, for up to removalWait (as long as an
@@ -218,13 +219,13 @@ func runServiceDialog(c *cliIO, d serviceDialog) int {
 		return c.fail(fmt.Errorf(d.failed, err))
 	}
 	fmt.Fprintln(c.stderr, d.done)
-	return exitOK
+	return cli.ExitOK
 }
 
 // parseInitLocal reads basalt init's flags on a person-operated engine:
 // --agent and --demo only. Any other flag is a usage error.
 func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
-	fs := newFlagSet("init")
+	fs := cli.NewFlagSet("init")
 	fs.SetOutput(c.stderr)
 	agent := fs.String("agent", "", "the agent's name (default: "+app.DemoAgent+")")
 	demoFlag := fs.Bool("demo", false, "set up the sample database instead of your own tables")
@@ -232,23 +233,23 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 		fmt.Fprintln(c.stderr, "usage: basalt init [--agent NAME] [--remote] [--demo]\n\n"+
 			"Installs the engine service when needed, then prints and opens the setup link. Finish the setup on that page:\n"+
 			"the admin connection string is typed there, never here.\n\n"+
-			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n\n"+manyAgentsHelp)
+			"  --agent NAME  the agent's name\n  --remote      on a bot's machine: make a setup code for the connect page\n  --demo        set up the sample database instead of your own tables\n\n"+cli.ManyAgentsHelp)
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return localsetup.Job{}, err
 		}
-		return localsetup.Job{}, fmt.Errorf("%w: basalt init on this computer takes only --agent and --demo; the setup page asks for the rest", errUsage)
+		return localsetup.Job{}, fmt.Errorf("%w: basalt init on this computer takes only --agent and --demo; the setup page asks for the rest", cli.ErrUsage)
 	}
 	if fs.NArg() > 0 {
-		return localsetup.Job{}, fmt.Errorf("%w: basalt init takes no arguments", errUsage)
+		return localsetup.Job{}, fmt.Errorf("%w: basalt init takes no arguments", cli.ErrUsage)
 	}
 	name := *agent
 	if name == "" {
 		name = app.DemoAgent
 	}
 	if !guardmodel.ValidAgentName(name) {
-		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", errUsage, name)
+		return localsetup.Job{}, fmt.Errorf("%w: --agent %q is not a name an agent can have (lowercase letters, digits and _)", cli.ErrUsage, name)
 	}
 	return localsetup.Job{Job: localsetup.JobInstall, Agent: name, Demo: *demoFlag}, nil
 }
@@ -268,7 +269,7 @@ func ensureEngineService(c *cliIO, h localHost) error {
 		return err
 	}
 	fmt.Fprintf(c.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		h.OSDefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
+		h.OSDefaultUser(c.goos), cli.ShellJoin(dialogEngineArgs(c.goos, bin)))
 	if err := c.host.AdminDialog(c.ctx, c.goos, app.OSInstallPrompt, script, c.stderr); err != nil {
 		if errors.Is(err, app.ErrOSNoDialog) {
 			return noDialog(err)

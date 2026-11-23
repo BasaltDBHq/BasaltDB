@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // evil is text an agent or its data can put in the ledger: erase the line
@@ -27,20 +29,12 @@ func requireTerminalSafe(t *testing.T, out string) {
 	require.Contains(t, out, "<U+001B>", "the escape shows as text")
 }
 
-func TestTerminalTextKeepsLinesAndTabsAndEscapesControls(t *testing.T) {
-	t.Parallel()
-	require.Equal(t,
-		"a\nb\tc<U+001B>[2K<U+001B>]0;t<U+0007><U+007F><U+009B>d<U+000D><U+202E><0xFF>",
-		terminalText("a\nb\tc\x1b[2K\x1b]0;t\x07\x7f\u009bd\r\u202e\xff"))
-	require.Equal(t, "note 5 — 日本 🚀 José\n", terminalText("note 5 — 日本 🚀 José\n"))
-}
-
 func TestFailEscapesControlCharacters(t *testing.T) {
 	t.Parallel()
 	var errOut bytes.Buffer
 	c := &cliIO{ctx: context.Background(), stderr: &errOut}
 	err := errors.New("cannot revert: duplicate key: Key (email)=(" + evil + "\nbasalt: reverted: 3 rows restored, 0 left as they are)")
-	require.Equal(t, exitError, c.fail(err))
+	require.Equal(t, cli.ExitError, c.fail(err))
 	out := errOut.String()
 	requireTerminalSafe(t, out)
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")

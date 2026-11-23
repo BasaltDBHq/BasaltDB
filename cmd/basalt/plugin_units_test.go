@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -31,7 +32,7 @@ func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
 	}
 
 	err := checkAgentOSUserWith("alice", "basalt", engineGroup, lookupGroups)
-	require.ErrorIs(t, err, errUsage)
+	require.ErrorIs(t, err, cli.ErrUsage)
 	require.ErrorContains(t, err, "--os-user alice is in the engine's group basalt")
 	require.NoError(t, checkAgentOSUserWith("bob", "basalt", engineGroup, lookupGroups))
 	require.ErrorContains(t, checkAgentOSUserWith("basalt", "basalt", engineGroup, lookupGroups), "the engine's own OS user")

@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -41,7 +42,7 @@ func TestStartUpdateNoticeSkips(t *testing.T) {
 	}
 	var e bytes.Buffer
 	for _, args := range [][]string{nil, {"engine"}, {"mcp"}, {"status", "--json"}, {"version"}} {
-		startUpdateNotice(context.Background(), args, stdio{err: &e}, getenv)()
+		startUpdateNotice(context.Background(), args, cli.Stdio{Err: &e}, getenv)()
 	}
 	if e.Len() != 0 {
 		t.Errorf("printed %q", e.String())
@@ -55,7 +56,7 @@ func writeUserConfig(t *testing.T, h *fakeHost, body string, mode os.FileMode) {
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
 	}
-	dir := filepath.Join(h.configDir, perUserDirName)
+	dir := filepath.Join(h.configDir, config.UserDirName)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	path := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))

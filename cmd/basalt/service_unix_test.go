@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // --no-service is a flag of basalt init only: basalt service install's
@@ -25,9 +27,9 @@ func TestServiceInstallBinaryErrorHasNoInitHint(t *testing.T) {
 	var out, errb bytes.Buffer
 
 	code := runServiceAt(context.Background(), []string{"install", "--binary", bin, "--dry-run"},
-		stdio{in: strings.NewReader(""), out: &out, err: &errb}, tempConfig(t))
+		cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb}, tempConfig(t))
 
-	require.Equal(t, exitError, code, errb.String())
+	require.Equal(t, cli.ExitError, code, errb.String())
 	require.Contains(t, errb.String(), "only root may be able to change it")
 	require.NotContains(t, errb.String(), "--no-service")
 }

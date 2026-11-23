@@ -30,9 +30,6 @@ import (
 // Without a terminal, --yes or --no-service must say which: init never
 // falls back to the foreground on its own (checkServiceAnswer).
 
-// perUserDirName is the per-user config directory under os.UserConfigDir.
-const perUserDirName = config.UserDirName
-
 // mcpBinary is the program of the printed basalt mcp command: the absolute,
 // link-resolved path of the running binary, which the agent app finds
 // whatever its PATH is. Bare basalt only when the path is unknown.
@@ -65,15 +62,6 @@ func temporaryBinaryWarning(bin, tmp string) string {
 // finds the engine config and the socket directory by itself.
 func mcpArgs(agent, bin string) []string {
 	return []string{bin, "mcp", "--agent", agent}
-}
-
-// shellJoin quotes each argument for display.
-func shellJoin(args []string) string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		out = append(out, shellQuote(a))
-	}
-	return strings.Join(out, " ")
 }
 
 // agentInstall is the agent basalt service install places for the engine.

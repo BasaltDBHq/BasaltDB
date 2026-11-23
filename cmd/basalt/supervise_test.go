@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // superviseRig is supervise with a fake clock: a child "runs" by moving the
@@ -173,17 +174,17 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 	defer release()
 	var stderr bytes.Buffer
 
-	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
+	code := runSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
 
-	require.Equal(t, exitOK, code, stderr.String())
+	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another basalt engine --supervise runs")
 }
 
 func TestStartedByRefusesUnknownValue(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
-	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
-	require.Equal(t, exitUsage, code)
+	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
+	require.Equal(t, cli.ExitUsage, code)
 }
 
 func TestLastStopIsWrittenAndCleared(t *testing.T) {
@@ -214,9 +215,9 @@ func TestAnotherEngineNeedsEveryLookHeld(t *testing.T) {
 		return func() bool { v := seq[min(i, len(seq)-1)]; i++; return v }
 	}
 	nap := func(time.Duration) {}
-	require.True(t, heldAtEveryLook(looks(true, true, true), nap))
-	require.False(t, heldAtEveryLook(looks(true, false, true), nap), "a probe that ended is not an engine")
-	require.False(t, heldAtEveryLook(looks(false), nap))
+	require.True(t, cli.HeldAtEveryLook(looks(true, true, true), nap))
+	require.False(t, cli.HeldAtEveryLook(looks(true, false, true), nap), "a probe that ended is not an engine")
+	require.False(t, cli.HeldAtEveryLook(looks(false), nap))
 }
 
 func TestSuperviseGivesUpWhenBinaryIsGone(t *testing.T) {
@@ -287,7 +288,7 @@ func TestChildStarterResolvesThePathAtEachRestart(t *testing.T) {
 	bin := filepath.Join(dir, "basalt")
 	trace := filepath.Join(dir, "trace")
 	writeSh(t, bin, "echo first >> '"+trace+"'; exit 1")
-	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, stdio{out: io.Discard, err: io.Discard}, slog.New(slog.DiscardHandler))
+	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 
 	wait, err := start(context.Background(), startedByMCP)
 	require.NoError(t, err)
@@ -307,7 +308,7 @@ func TestChildStarterStopsWhenThePathIsGone(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "basalt")
 	writeSh(t, bin, "exit 1")
-	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, stdio{out: io.Discard, err: io.Discard}, slog.New(slog.DiscardHandler))
+	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 	wait, err := start(context.Background(), startedByMCP)
 	require.NoError(t, err)
 	require.Error(t, wait())

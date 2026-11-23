@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // mcpStartDeadline is well under the shim's 15s autostart wait, so a
@@ -52,7 +53,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	// wrote the credential, and the database does not record the setup
 	// yet. The Vault is off so the engine reaches no portal here.
 	first := remoteWith(t, e, "", "--agent", "bot")
-	cfg := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	cfg := filepath.Join(h.configDir, config.UserDirName, "engine.json")
 	loaded, err := config.Load(cfg)
 	require.NoError(t, err)
 	credFile := loaded.Agents[0].Store.CredentialFile
@@ -65,7 +66,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 
 	res := remoteWith(t, e, "", "--agent", "bot").res
 	require.NotEqual(t, first.res.SetupID, res.SetupID)
-	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
+	socketDir := filepath.Join(h.configDir, config.UserDirName, "run")
 	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, res.MCPCommand)
 
 	runViaConnect(t, d, res.Code, "public.leads")
@@ -98,7 +99,7 @@ func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, s
 	began := time.Now()
 	go func() {
 		// argv is the printed command without the program and "mcp" subcommand.
-		exited <- runMCPOn(ctx, mcpCommand[2:], stdio{in: in, out: outW, err: &errBuf}, h, appMCPHost{})
+		exited <- runMCPOn(ctx, mcpCommand[2:], cli.Stdio{In: in, Out: outW, Err: &errBuf}, h, appMCPHost{})
 		_ = outW.Close()
 	}()
 	_, err := fmt.Fprintf(inW, "%s\n%s\n",
@@ -131,5 +132,5 @@ func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, s
 	require.True(t, report.Ready, resp.Result.Content[0].Text)
 
 	require.NoError(t, inW.Close())
-	require.Equal(t, exitOK, <-exited, errBuf.String())
+	require.Equal(t, cli.ExitOK, <-exited, errBuf.String())
 }

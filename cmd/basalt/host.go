@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,6 +19,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/jackc/pgx/v5"
 
@@ -189,7 +188,7 @@ func (appSetupHost) OSUnitPath(goos string) string { return app.OSUnitPath(goos)
 type osHost struct{}
 
 func (osHost) Euid() int                      { return os.Geteuid() }
-func (osHost) Executable() (string, error)    { return shimExecutable() }
+func (osHost) Executable() (string, error)    { return cli.ShimExecutable() }
 func (osHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
 func (osHost) LookPath(name string) (string, error) {
 	return exec.LookPath(name)
@@ -220,7 +219,7 @@ func (osHost) DialogAvailable(goos string) error {
 		return nil
 	}
 	// The dialog shows on the Mac's screen: only for the person logged in there.
-	uid, err := fileOwnerUID(darwinConsole)
+	uid, err := cli.FileOwnerUID(darwinConsole)
 	if err != nil {
 		return fmt.Errorf("%w (%s: %w)", app.ErrOSNoDialog, darwinConsole, err)
 	}
@@ -387,13 +386,12 @@ func (osHost) System(out, errw io.Writer) system {
 const (
 	probeTimeout  = 20 * time.Second
 	probeInterval = 500 * time.Millisecond
-	probeIOLimit  = 2 * time.Second
 )
 
 func (osHost) Probe(ctx context.Context, socket string) error {
 	deadline := time.Now().Add(probeTimeout)
 	for {
-		err := probeOnce(socket)
+		err := cli.ProbeOnce(socket)
 		if err == nil || time.Now().After(deadline) {
 			return err
 		}
@@ -434,31 +432,4 @@ func (osHost) EngineLog(ctx context.Context, goos string) (string, error) {
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, engineLogTail))
 	return string(raw), err
-}
-
-// probeInit is the MCP initialize request the probe sends.
-const probeInit = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"basalt-init","version":"0"}}}` + "\n"
-
-// probeOnce connects to the agent's socket, sends initialize and checks
-// the engine names itself.
-func probeOnce(socket string) error {
-	conn, err := net.DialTimeout("unix", socket, probeIOLimit)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(probeIOLimit)); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(conn, probeInit); err != nil {
-		return err
-	}
-	line, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("no answer: %w", err)
-	}
-	if !strings.Contains(line, `"name":"basalt"`) {
-		return errors.New("unexpected answer from the socket")
-	}
-	return nil
 }

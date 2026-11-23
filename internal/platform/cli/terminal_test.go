@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 
 func TestConfigArg(t *testing.T) {
 	t.Parallel()
-	_, given := configArg([]string{"--agent", "bot"})
+	_, given := ConfigArg([]string{"--agent", "bot"})
 	require.False(t, given)
 	for want, args := range map[string][]string{
 		"/a.json": {"--config", "/a.json"},
@@ -16,7 +16,7 @@ func TestConfigArg(t *testing.T) {
 		"/c.json": {"--config=/a.json", "--agent", "x", "-config", "/c.json"},
 		"/d.json": {"--config=/d.json", "--", "--config", "/e.json"},
 	} {
-		got, given := configArg(args)
+		got, given := ConfigArg(args)
 		require.True(t, given, args)
 		require.Equal(t, want, got, args)
 	}

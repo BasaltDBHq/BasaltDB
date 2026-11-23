@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -18,7 +19,7 @@ import (
 func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 	t.Setenv("BASALT_DATABASE_URL", "")
 	t.Setenv("BASALT_ADMIN_DATABASE_URL", "")
-	for _, k := range agentMarkers {
+	for _, k := range cli.AgentMarkers {
 		t.Setenv(k, "")
 	}
 	cmds := [][]string{
@@ -33,8 +34,8 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				var out, errw bytes.Buffer
 				args := append(append([]string{}, base...), flag, "/nowhere")
-				code := run(context.Background(), args, stdio{in: strings.NewReader(""), out: &out, err: &errw})
-				require.Equal(t, exitUsage, code, "stderr: %s", errw.String())
+				code := run(context.Background(), args, cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errw})
+				require.Equal(t, cli.ExitUsage, code, "stderr: %s", errw.String())
 				require.Contains(t, errw.String(), "flag provided but not defined: -"+strings.TrimPrefix(flag, "--"))
 			})
 		}
@@ -44,8 +45,8 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 func TestEngineStillTakesConfig(t *testing.T) {
 	t.Parallel()
 	var out, errw bytes.Buffer
-	code := run(context.Background(), []string{"engine", "--config"}, stdio{in: strings.NewReader(""), out: &out, err: &errw})
-	require.Equal(t, exitUsage, code)
+	code := run(context.Background(), []string{"engine", "--config"}, cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errw})
+	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, errw.String(), "flag needs an argument: -config")
 }
 
@@ -55,8 +56,8 @@ func TestEngineStillTakesConfig(t *testing.T) {
 func TestServiceInstallIsPinnedToTheConfigTheRemovalChecks(t *testing.T) {
 	t.Parallel()
 	var out, errw bytes.Buffer
-	code := run(context.Background(), []string{"service", "install", "--config", "/elsewhere/engine.json", "--dry-run"}, stdio{in: strings.NewReader(""), out: &out, err: &errw})
-	require.Equal(t, exitUsage, code)
+	code := run(context.Background(), []string{"service", "install", "--config", "/elsewhere/engine.json", "--dry-run"}, cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errw})
+	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, errw.String(), "flag provided but not defined: -config")
 	for _, goos := range []string{"linux", "darwin"} {
 		script, err := osservice.RemoveScript(goos)

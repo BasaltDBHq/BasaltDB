@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
@@ -85,7 +87,7 @@ func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
 			plant(t, cfg, planted)
 
 			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey)
-			require.Equal(t, exitError, r.code, r.stdout)
+			require.Equal(t, cli.ExitError, r.code, r.stdout)
 			_, err := os.Lstat(planted)
 			require.ErrorIs(t, err, os.ErrNotExist, "the credential file the config names is never written")
 			_, err = os.Lstat(planted + pendingSuffix)
@@ -94,7 +96,7 @@ func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
 	}
 }
 
-// checkConfigFile, the hardened read's file check, refuses a config owned
+// cli.CheckConfigFile, the hardened read's file check, refuses a config owned
 // by anyone but root or the trusted user, and one writable by group or
 // others, and accepts the plain 0600 file of its owner.
 func TestRootConfigCheckRefusesAnotherOwnerOrAnOpenMode(t *testing.T) {
@@ -106,12 +108,12 @@ func TestRootConfigCheckRefusesAnotherOwnerOrAnOpenMode(t *testing.T) {
 		t.Cleanup(func() { fh.Close() })
 		return fh
 	}
-	require.NoError(t, checkConfigFile(open(), os.Getuid()))
-	require.ErrorContains(t, checkConfigFile(open(), os.Getuid()+1), "owned by uid")
+	require.NoError(t, cli.CheckConfigFile(open(), os.Getuid()))
+	require.ErrorContains(t, cli.CheckConfigFile(open(), os.Getuid()+1), "owned by uid")
 	for _, mode := range []os.FileMode{0o620, 0o602, 0o666} {
 		require.NoError(t, os.Chmod(f.configPath, mode))
-		require.ErrorContains(t, checkConfigFile(open(), os.Getuid()), "writable by group or others", "mode %o", mode)
+		require.ErrorContains(t, cli.CheckConfigFile(open(), os.Getuid()), "writable by group or others", "mode %o", mode)
 	}
 	require.NoError(t, os.Chmod(f.configPath, 0o644))
-	require.NoError(t, checkConfigFile(open(), os.Getuid()), "readable by others is not refused")
+	require.NoError(t, cli.CheckConfigFile(open(), os.Getuid()), "readable by others is not refused")
 }

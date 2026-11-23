@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // testAsBasaltEnv makes the test binary run main() (see TestMain).
@@ -171,7 +172,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	outR, outW := io.Pipe()
 	done := make(chan int, 1)
 	go func() {
-		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, stdio{in: in, out: outW, err: &out}, osHost{}, appMCPHost{}, cfgPath)
+		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, cli.Stdio{In: in, Out: outW, Err: &out}, osHost{}, appMCPHost{}, cfgPath)
 		_ = outW.Close()
 	}()
 	_, err = fmt.Fprintf(inW, "%s\n%s\n",
@@ -222,7 +223,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	require.NoError(t, err, "its output goes to the engine log")
 
 	require.NoError(t, inW.Close())
-	require.Equal(t, exitOK, <-done, out.String())
+	require.Equal(t, cli.ExitOK, <-done, out.String())
 }
 
 func parentOf(pid int) (int, error) {
@@ -249,9 +250,9 @@ func TestSuperviseBesideAnEngineStartedByHand(t *testing.T) {
 	defer hand.Release()
 	var stderr bytes.Buffer
 
-	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
+	code := runSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
 
-	require.Equal(t, exitOK, code, stderr.String())
+	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another engine already runs for this config")
 	require.NotContains(t, stderr.String(), "restarting it", "no crash loop")
 }

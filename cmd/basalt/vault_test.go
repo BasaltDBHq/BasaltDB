@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -61,7 +62,7 @@ func TestChooseVault(t *testing.T) {
 
 	for _, pages := range []string{links.DefaultLocal, "http://localhost:7777"} {
 		_, err := chooseVault(VaultModeOn, OperatedByPerson, pages, personWhy)
-		require.ErrorIs(t, err, errUsage, "--vault=on needs the portal's pages, not %s", pages)
+		require.ErrorIs(t, err, cli.ErrUsage, "--vault=on needs the portal's pages, not %s", pages)
 	}
 }
 

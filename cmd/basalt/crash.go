@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -21,19 +21,19 @@ import (
 
 // runGuarded runs the command line and turns a panic into a saved crash
 // report, one line on stderr and exit code 1.
-func runGuarded(ctx context.Context, args []string, std stdio) int {
+func runGuarded(ctx context.Context, args []string, std cli.Stdio) int {
 	return guarded(args, std, func() int { return run(ctx, args, std) })
 }
 
 // guarded runs f, which runs the command line args.
-func guarded(args []string, std stdio, f func() int) (code int) {
+func guarded(args []string, std cli.Stdio, f func() int) (code int) {
 	defer func() {
 		v := recover()
 		if v == nil {
 			return
 		}
-		code = exitError
-		reportPanic(std.err, commandName(args), v, debug.Stack())
+		code = cli.ExitError
+		reportPanic(std.Err, commandName(args), v, debug.Stack())
 	}()
 	return f()
 }
@@ -45,8 +45,8 @@ func commandName(args []string) string {
 		return ""
 	}
 	for _, cmd := range commands() {
-		if cmd.name == args[0] {
-			return cmd.name
+		if cmd.Name == args[0] {
+			return cmd.Name
 		}
 	}
 	return ""
@@ -63,12 +63,12 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 		rec.Shared = command == "engine" && dir == dirs[0]
 		rep, err := rec.Save(app.CrashInput{Command: command, Kind: app.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
 		if err == nil {
-			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", rep.ID, terminalText(dir))
+			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", rep.ID, cli.TerminalText(dir))
 			return
 		}
 		lastErr = err
 	}
-	fmt.Fprintf(w, "basalt: crashed, and the crash report could not be saved (%s)\n", terminalText(lastErr.Error()))
+	fmt.Fprintf(w, "basalt: crashed, and the crash report could not be saved (%s)\n", cli.TerminalText(lastErr.Error()))
 }
 
 // newRecorder is the recorder for this process and the directories to try,
@@ -76,12 +76,12 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 // directory for every other command.
 func newRecorder(command string) (app.CrashRecorder, []string) {
 	rec := app.CrashRecorder{Version: buildinfo.Version, Scrub: app.CrashOSScrubber(), Now: time.Now}
-	user, state := userCrashDir(), filepath.Join(config.DefaultStateDir(goosNow()), app.CrashDirName)
+	user, state := userCrashDir(), filepath.Join(config.DefaultStateDir(cli.GoosNow()), app.CrashDirName)
 	dirs := []string{user, state}
 	if command == "engine" {
 		dirs = []string{state, user}
 	}
-	return rec, nonEmpty(dirs)
+	return rec, cli.NonEmpty(dirs)
 }
 
 func userCrashDir() string {
@@ -89,17 +89,5 @@ func userCrashDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(base, perUserDirName, app.CrashDirName)
+	return filepath.Join(base, config.UserDirName, app.CrashDirName)
 }
-
-func nonEmpty(in []string) []string {
-	var out []string
-	for _, s := range in {
-		if s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func goosNow() string { return runtime.GOOS }

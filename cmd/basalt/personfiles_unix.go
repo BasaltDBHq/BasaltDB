@@ -3,12 +3,11 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // loadConfigAsRoot reads the engine config for a root person CLI (sudo
@@ -29,7 +28,7 @@ func loadConfigAsRoot(sh shellHost, path string) (cfg config.Config, trusted int
 	if err != nil {
 		return config.Config{}, 0, err
 	}
-	trusted, err = dirOwner(abs)
+	trusted, err = cli.DirOwner(abs)
 	if err != nil {
 		return config.Config{}, 0, err
 	}
@@ -38,30 +37,11 @@ func loadConfigAsRoot(sh shellHost, path string) (cfg config.Config, trusted int
 		if err != nil {
 			return nil, err
 		}
-		if err := checkConfigFile(f, trusted); err != nil {
+		if err := cli.CheckConfigFile(f, trusted); err != nil {
 			f.Close()
 			return nil, err
 		}
 		return f, nil
 	})
 	return cfg, trusted, err
-}
-
-// checkConfigFile checks the opened config before it is read: a plain
-// file, owned by root or trusted, not writable by group or others.
-func checkConfigFile(f *os.File, trusted int) error {
-	return config.CheckTrustedConfig(f, trusted)
-}
-
-// dirOwner is the owner of path's directory, not following a link.
-func dirOwner(path string) (int, error) {
-	fi, err := os.Lstat(filepath.Dir(path))
-	if err != nil {
-		return 0, err
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, errors.New("cannot read the directory's owner")
-	}
-	return int(st.Uid), nil
 }

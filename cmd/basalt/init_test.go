@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // basalt mcp finds the config and the socket directory itself, so the line
@@ -24,8 +26,8 @@ func TestResolveExecutableFollowsLinks(t *testing.T) {
 	require.NoError(t, os.WriteFile(target, []byte("x"), 0o700))
 	link := filepath.Join(dir, "basalt")
 	require.NoError(t, os.Symlink(target, link))
-	require.Equal(t, target, resolveExecutable(link))
-	require.Equal(t, filepath.Join(dir, "gone"), resolveExecutable(filepath.Join(dir, "gone")))
+	require.Equal(t, target, cli.ResolveExecutable(link))
+	require.Equal(t, filepath.Join(dir, "gone"), cli.ResolveExecutable(filepath.Join(dir, "gone")))
 }
 
 func TestTemporaryBinaryWarning(t *testing.T) {

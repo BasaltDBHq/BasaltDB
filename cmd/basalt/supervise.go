@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // The values of --started-by: who started this engine.
@@ -125,70 +126,59 @@ func runChild(ctx context.Context, o superviseOptions, startedBy string) error {
 
 // runSupervise is basalt engine --supervise: one supervisor per config,
 // restarting the engine as a child of this process.
-func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h host) int {
+func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdio, h host) int {
 	cfg, err := superviseConfig(h.Euid(), configPath)
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	startedFrom, err := superviseBinaryPath()
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	// An update can drop empty folders; the engine makes its own too.
 	if err := os.MkdirAll(cfg.SocketDir, privateDirMode); err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	release, err := config.LockFile(filepath.Join(cfg.SocketDir, superviseLock))
 	if errors.Is(err, config.ErrLocked) {
-		_, _ = fmt.Fprintln(io.err, "basalt engine: another basalt engine --supervise runs for this config")
-		return exitOK
+		_, _ = fmt.Fprintln(io.Err, "basalt engine: another basalt engine --supervise runs for this config")
+		return cli.ExitOK
 	}
 	if err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
 	defer release()
 
-	log := engineLog(io.err)
+	log := engineLog(io.Err)
 	stateDir := cfg.StateDirFor(runtime.GOOS)
 	lockPath := app.LockPath(cfg.SocketDir)
 	o := superviseOptions{
 		firstStartedBy: startedBy,
 		start:          childStarter(startedFrom, configPath, lockPath, stateDir, io, log),
-		sleep:          sleepCtx,
+		sleep:          cli.SleepCtx,
 		now:            time.Now,
 		log:            log,
 		lastStop:       func(reason string) { writeLastStop(stateDir, reason, configPath, time.Now(), log) },
 	}
 	if err := supervise(ctx, o); err != nil {
-		return fail(io.err, "engine", err)
+		return fail(io.Err, "engine", err)
 	}
-	return exitOK
+	return cli.ExitOK
 }
 
 // superviseConfig is the config the supervisor needs (its socket and state
 // folders): the config file's, or, for a service engine whose config does
 // not exist yet, the defaults its child waits with (waitsForConfig).
-func superviseConfig(euid int, configPath string) (engineConfig, error) {
+func superviseConfig(euid int, configPath string) (config.Config, error) {
 	if waitsForConfig(euid, configPath) {
-		return engineConfig{Config: config.Config{
+		return config.Config{
 			SocketDir: config.DefaultSocketDir(runtime.GOOS), StateDir: config.DefaultStateDir(runtime.GOOS),
-		}}, nil
+		}, nil
 	}
 	return loadEngineConfigAs(appShell{}, euid, configPath)
 }
 
 const privateDirMode = 0o700
-
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
-	}
-}
 
 // superviseBinaryPath is the path the supervisor was started from: a
 // crash restart resolves it again, so a new file at the same path is run
@@ -217,14 +207,14 @@ func resolveSuperviseBinary(startedFrom string) (string, error) {
 // with this process's output, after resolving startedFrom again. A child
 // that stays up for fastCrash clears the last give-up; one that fails
 // because another engine holds the lock reports errAnotherEngine.
-func childStarter(startedFrom, configPath, lockPath, stateDir string, io stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
+func childStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
 	return func(ctx context.Context, startedBy string) (func() error, error) {
 		exe, err := resolveSuperviseBinary(startedFrom)
 		if err != nil {
 			return nil, err
 		}
 		cmd := exec.CommandContext(ctx, exe, "engine", "--config", configPath, "--started-by", startedBy)
-		cmd.Stdout, cmd.Stderr = io.out, io.err
+		cmd.Stdout, cmd.Stderr = io.Out, io.Err
 		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 		cmd.WaitDelay = childStopWait
 		prepareSuperviseChild(cmd)
@@ -252,7 +242,7 @@ func writeLastStop(stateDir, reason, configPath string, at time.Time, log *slog.
 		err = os.MkdirAll(stateDir, privateDirMode)
 	}
 	if err == nil {
-		err = writeFileAtomic(filepath.Join(stateDir, lastStopFile), raw)
+		err = cli.WriteFileAtomic(filepath.Join(stateDir, lastStopFile), raw)
 	}
 	if err != nil {
 		log.Warn("could not record why the engine stopped", "err", err)
@@ -265,34 +255,13 @@ func clearLastStop(stateDir string, log *slog.Logger) {
 	}
 }
 
-func writeFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, config.FileMode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
 // anotherEngineRuns is true when the engine lock is held at every one of a
 // few looks. A real engine holds it all the time; a probe by someone else
 // (basalt status, a starting basalt mcp) holds it for a moment and reads as
 // a holder, so one look that finds it free means no engine runs.
 func anotherEngineRuns(lockPath string) bool {
-	return heldAtEveryLook(func() bool {
+	return cli.HeldAtEveryLook(func() bool {
 		_, up, _ := pidlock.Running(lockPath)
 		return up
 	}, time.Sleep)
-}
-
-func heldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
-	const looks, gap = 3, 70 * time.Millisecond
-	for i := range looks {
-		if !held() {
-			return false
-		}
-		if i < looks-1 {
-			sleep(gap)
-		}
-	}
-	return true
 }

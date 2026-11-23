@@ -10,11 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 func runArgs(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), args, stdio{in: strings.NewReader(""), out: &stdout, err: &stderr})
+	code := run(context.Background(), args, cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr})
 	return code, stdout.String(), stderr.String()
 }
 
@@ -26,22 +27,22 @@ func TestRun(t *testing.T) {
 		stdout     string
 		stderrPart string
 	}{
-		{args: []string{"version"}, code: exitOK, stdout: "basalt " + buildinfo.Version + "\n"},
-		{args: []string{"--version"}, code: exitOK, stdout: "basalt " + buildinfo.Version + "\n"},
-		{args: nil, code: exitUsage, stderrPart: "Usage: basalt"},
-		{args: []string{"serve"}, code: exitUsage, stderrPart: `unknown command "serve"`},
+		{args: []string{"version"}, code: cli.ExitOK, stdout: "basalt " + buildinfo.Version + "\n"},
+		{args: []string{"--version"}, code: cli.ExitOK, stdout: "basalt " + buildinfo.Version + "\n"},
+		{args: nil, code: cli.ExitUsage, stderrPart: "Usage: basalt"},
+		{args: []string{"serve"}, code: cli.ExitUsage, stderrPart: `unknown command "serve"`},
 		// Removed: the setup page's Update check does their jobs.
-		{args: []string{"passkey", "list"}, code: exitUsage, stderrPart: `unknown command "passkey"`},
-		{args: []string{"trust", "pin", "--host", "h"}, code: exitUsage, stderrPart: `unknown command "trust"`},
-		{args: []string{"classify"}, code: exitUsage, stderrPart: `unknown command "classify"`},
-		{args: []string{"mcp"}, code: exitUsage, stderrPart: "-agent"},
-		{args: []string{"mcp", "--agent", "Bad/Name"}, code: exitUsage},
+		{args: []string{"passkey", "list"}, code: cli.ExitUsage, stderrPart: `unknown command "passkey"`},
+		{args: []string{"trust", "pin", "--host", "h"}, code: cli.ExitUsage, stderrPart: `unknown command "trust"`},
+		{args: []string{"classify"}, code: cli.ExitUsage, stderrPart: `unknown command "classify"`},
+		{args: []string{"mcp"}, code: cli.ExitUsage, stderrPart: "-agent"},
+		{args: []string{"mcp", "--agent", "Bad/Name"}, code: cli.ExitUsage},
 		// No engine: the shim answers itself; an empty session ends cleanly.
-		{args: []string{"mcp", "--agent", "nobody_runs_this"}, code: exitOK},
-		{args: []string{"engine", "--config", filepath.Join(t.TempDir(), "none.json")}, code: exitError, stderrPart: "basalt engine:"},
-		{args: []string{"engine", "extra"}, code: exitUsage},
-		{args: []string{"service"}, code: exitUsage, stderrPart: "want install"},
-		{args: []string{"service", "restart"}, code: exitUsage},
+		{args: []string{"mcp", "--agent", "nobody_runs_this"}, code: cli.ExitOK},
+		{args: []string{"engine", "--config", filepath.Join(t.TempDir(), "none.json")}, code: cli.ExitError, stderrPart: "basalt engine:"},
+		{args: []string{"engine", "extra"}, code: cli.ExitUsage},
+		{args: []string{"service"}, code: cli.ExitUsage, stderrPart: "want install"},
+		{args: []string{"service", "restart"}, code: cli.ExitUsage},
 	}
 	for _, tc := range cases {
 		code, stdout, stderr := runArgs(tc.args...)
@@ -53,7 +54,7 @@ func TestRun(t *testing.T) {
 	}
 
 	code, stdout, _ := runArgs("help")
-	require.Equal(t, exitOK, code)
+	require.Equal(t, cli.ExitOK, code)
 	for _, name := range []string{"engine", "mcp", "service", "version"} {
 		require.Contains(t, stdout, name)
 	}

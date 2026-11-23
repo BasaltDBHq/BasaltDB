@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
@@ -67,7 +68,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guardmodel.DefaultPrefix, "bot", "0123abcd"))
 	var events []string
 	var out, errb bytes.Buffer
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
+	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb}, func(string) string { return "" })
 	c.probe, c.host = noNetworkProbe, systemSocketHost(t)
 	c.agentLogin = func(ctx context.Context, dsn string) (agentConn, error) {
 		events = append(events, "login")
@@ -78,7 +79,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
 	code := runInit(c, appSetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
-	require.Equal(t, exitOK, code, errb.String())
+	require.Equal(t, cli.ExitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
 }

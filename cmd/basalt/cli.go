@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/term"
 
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -97,10 +98,10 @@ type shellHost interface {
 	OSOpenTrustedFile(path string, owner int) (*os.File, error)
 }
 
-func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
+func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cliIO {
 	shell := appShell{}
 	c := &cliIO{
-		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
+		ctx: ctx, stdin: bufio.NewReader(std.In), stdout: std.Out, stderr: std.Err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
 		shell: shell,
 		agentLogin: func(ctx context.Context, dsn string) (agentConn, error) {
@@ -110,10 +111,10 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 			return connect(ctx, shell, dsn)
 		},
 		fetchChain: fetchChain,
-		width:      func() int { return terminalWidth(std.out) },
+		width:      func() int { return cli.TerminalWidth(std.Out) },
 	}
 	c.probe = probeLogin(c)
-	stdin := std.in
+	stdin := std.In
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		c.terminal = f
 		c.interactive = true
@@ -121,71 +122,29 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 	return c
 }
 
-// terminalWidth is w's width in columns when it is a terminal, else 0.
-func terminalWidth(w io.Writer) int {
-	f, ok := w.(*os.File)
-	if !ok {
-		return 0
-	}
-	cols, _, err := term.GetSize(int(f.Fd()))
-	if err != nil {
-		return 0
-	}
-	return cols
-}
-
-// errUsage marks an error as a usage error (exit 2).
-var errUsage = errors.New("usage")
-
 // fail prints err and returns its exit code. An error can carry database
 // text (a Postgres detail quotes the values an agent wrote), so it is
-// escaped (terminalText) and its later lines are indented: no line of it
-// can pass for a line basalt printed.
+// escaped (cli.TerminalText) and its later lines are indented: no line of
+// it can pass for a line basalt printed.
 func (c *cliIO) fail(err error) int {
 	if errors.Is(err, flag.ErrHelp) {
-		return exitOK // the flag set already printed its usage
+		return cli.ExitOK // the flag set already printed its usage
 	}
-	msg := strings.ReplaceAll(terminalText(err.Error()), "\n", "\n"+failIndent)
+	msg := strings.ReplaceAll(cli.TerminalText(err.Error()), "\n", "\n"+failIndent)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", msg)
-	if errors.Is(err, errUsage) {
-		return exitUsage
+	if errors.Is(err, cli.ErrUsage) {
+		return cli.ExitUsage
 	}
-	return exitError
+	return cli.ExitError
 }
 
 // failIndent starts each later line of an error printed by fail.
 const failIndent = "  "
 
 func (c *cliIO) flags(name string) *flag.FlagSet {
-	fs := newFlagSet(name)
+	fs := cli.NewFlagSet(name)
 	fs.SetOutput(c.stderr)
 	return fs
-}
-
-// flagSetMade, when set, sees every flag set newFlagSet makes. Only the
-// surface test sets it, to read the flags the binary really has
-// (contract/surface.json).
-var flagSetMade func(*flag.FlagSet)
-
-// newFlagSet makes the flag set of a command or subcommand. Every command
-// makes its flag set here, so the surface test sees all of them.
-func newFlagSet(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	if flagSetMade != nil {
-		flagSetMade(fs)
-	}
-	return fs
-}
-
-// parse parses args and refuses positional arguments.
-func parse(fs *flag.FlagSet, args []string) error {
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("%w: %w", errUsage, err)
-	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("%w: unexpected argument %q", errUsage, fs.Arg(0))
-	}
-	return nil
 }
 
 // connect opens one connection, usable through a transaction pooler
@@ -203,10 +162,10 @@ func connect(ctx context.Context, sh shellHost, dsn string) (*pgx.Conn, error) {
 
 // withIO adapts a guard command to the command table: open builds the
 // command's cliIO (newIO).
-func withIO(open func(context.Context, stdio, func(string) string) *cliIO,
+func withIO(open func(context.Context, cli.Stdio, func(string) string) *cliIO,
 	f func(c *cliIO, args []string) int,
-) func(context.Context, []string, stdio) int {
-	return func(ctx context.Context, args []string, std stdio) int {
+) func(context.Context, []string, cli.Stdio) int {
+	return func(ctx context.Context, args []string, std cli.Stdio) int {
 		return f(open(ctx, std, os.Getenv), args)
 	}
 }

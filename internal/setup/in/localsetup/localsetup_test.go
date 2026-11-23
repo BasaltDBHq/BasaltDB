@@ -1107,25 +1107,40 @@ func TestRealInstallARunAfterAFailedCommitRecordsThePinAgain(t *testing.T) {
 	require.Error(t, err, "the engine already has a config now")
 }
 
-// cutOnCommit is a connection that dies when the commit is sent: the
-// server's answer is never read, so the outcome is unknown.
-type cutOnCommit struct{ net.Conn }
+// isCommit reports whether b is the simple query message of COMMIT: 'Q',
+// its length, then the text.
+func isCommit(b []byte) bool {
+	return len(b) > 5 && b[0] == 'Q' && bytes.Equal(bytes.ToLower(b[5:]), []byte("commit\x00"))
+}
 
-func (c cutOnCommit) Write(b []byte) (int, error) {
-	// A simple query message: 'Q', its length, then the text.
-	if len(b) > 5 && b[0] == 'Q' && bytes.Equal(bytes.ToLower(b[5:]), []byte("commit\x00")) {
+// cutAfterCommit is a connection that sends the commit and then dies: the
+// server's answer is never read, so the outcome is unknown.
+type cutAfterCommit struct{ net.Conn }
+
+func (c cutAfterCommit) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if err == nil && isCommit(b) {
+		_ = c.Close()
+	}
+	return n, err
+}
+
+// cutBeforeCommit is a connection that dies before the commit is sent: the
+// driver knows nothing reached the server, a known failure.
+type cutBeforeCommit struct{ net.Conn }
+
+func (c cutBeforeCommit) Write(b []byte) (int, error) {
+	if isCommit(b) {
 		_ = c.Close()
 		return 0, errors.New("the connection was cut")
 	}
 	return c.Conn.Write(b)
 }
 
-func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	ctx := context.Background()
-	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
-	cut := true
+// cutService is a setup service whose admin connections are wrapped by
+// wrap while *cut is true.
+func cutService(t *testing.T, f *fixture, cut *bool, wrap func(net.Conn) net.Conn) *localsetup.Service {
+	t.Helper()
 	svc, err := localsetup.New(localsetup.Options{
 		Backend:    setupbackend.Backend{},
 		ConfigPath: f.config, Origin: origin, Users: fakeUsers{}, Prefix: f.db.Names.Prefix,
@@ -1135,16 +1150,29 @@ func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T
 			if err != nil {
 				return nil, err
 			}
-			if cut {
+			if *cut {
 				cfg.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
 					c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
-					return cutOnCommit{c}, err
+					if err != nil {
+						return nil, err
+					}
+					return wrap(c), nil
 				}
 			}
 			return pgx.ConnectConfig(ctx, cfg)
 		},
 	})
 	require.NoError(t, err)
+	return svc
+}
+
+func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	cut := true
+	svc := cutService(t, f, &cut, func(c net.Conn) net.Conn { return cutAfterCommit{c} })
 	req := f.real()
 	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
 	checked, err := svc.Check(ctx, req)
@@ -1159,8 +1187,8 @@ func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T
 	_, statErr := os.Stat(cred)
 	require.NoError(t, statErr, "the credential of a role that may exist stays")
 
-	// A run again, now that the connection holds: it overwrites the file, the
-	// role was never made.
+	// A run again, now that the connection holds: it finishes with the role
+	// when the commit went through, and overwrites the file when it did not.
 	cut = false
 	checked, err = svc.Check(ctx, req)
 	require.NoError(t, err)
@@ -1169,6 +1197,30 @@ func TestRealInstallKeepsTheCredentialWhenTheCommitOutcomeIsUnknown(t *testing.T
 	require.NoError(t, err)
 	_, err = config.ReadCredential(cred)
 	require.NoError(t, err)
+}
+
+// A commit the connection never sent is a known failure: nothing changed,
+// and the credential written before it is removed.
+func TestRealInstallRemovesTheCredentialWhenTheCommitIsNeverSent(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	f.db.Exec(t, `CREATE TABLE public.orders (id bigint PRIMARY KEY)`)
+	cut := true
+	svc := cutService(t, f, &cut, func(c net.Conn) net.Conn { return cutBeforeCommit{c} })
+	req := f.real()
+	req.Tables = []localsetup.TablePick{{Table: "public.orders", Access: localsetup.AccessRead}}
+	checked, err := svc.Check(ctx, req)
+	require.NoError(t, err)
+	req.Challenge, req.Passkey = checked.Challenge, register(t, *checked.Challenge)
+	_, err = svc.Run(ctx, req)
+	var r *localsetup.RefusalError
+	require.True(t, errors.As(err, &r))
+	require.Equal(t, localsetup.CodeSetupFailed, r.Code)
+	require.NotContains(t, r.Message, "did not confirm")
+	require.Contains(t, r.Message, "nothing changed")
+	_, statErr := os.Stat(filepath.Join(filepath.Dir(f.config), "agents", "bot.url"))
+	require.ErrorIs(t, statErr, os.ErrNotExist, "the credential of a role rolled back is removed")
 }
 
 func TestRealInstallDeletesTheCredentialWhenTheCommitKnownlyFails(t *testing.T) {

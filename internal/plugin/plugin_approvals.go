@@ -78,7 +78,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 	v, err := a.ports.Guard.AgentVersion(ctx, a.db)
 	switch {
 	case err != nil:
-		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
+		a.unavailable, a.transient = whyApprovalsUnread, transientErr(a.ports.Guard, err)
 		return
 	case v < a.ports.approvalsVersion():
 		a.unavailable = whyApprovalsOldGuard
@@ -86,7 +86,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 	}
 	recs, err := a.ports.Guard.ReadPluginApprovals(ctx, a.db)
 	if err != nil {
-		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
+		a.unavailable, a.transient = whyApprovalsUnread, transientErr(a.ports.Guard, err)
 		return
 	}
 	a.newest = make(map[pluginmodel.EntryKey]guardmodel.PluginApprovalRecord, len(recs))
@@ -130,7 +130,7 @@ func (a *agentApprovals) check(ctx context.Context, k pluginmodel.EntryKey, d gu
 	}
 	sum, err := a.ports.Guard.PluginSettingsSHA256(ctx, a.db, s)
 	if err != nil {
-		return withheldWhy{why: whyApprovalsUnread, transient: transientErr(err)}, false
+		return withheldWhy{why: whyApprovalsUnread, transient: transientErr(a.ports.Guard, err)}, false
 	}
 	// A mismatch is named while it lasts, also once the withhold ended the
 	// approval: the person sees what differs, not only that it ended.

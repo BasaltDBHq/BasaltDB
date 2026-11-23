@@ -624,7 +624,7 @@ func (e *feedEnv) recordServed(k pluginmodel.EntryKey, kind guardmodel.PluginEve
 		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
 		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
 	}
-	require.NoError(e.t, guard.RecordPluginEntryEvent(context.Background(), e.l.dbs["product_a"].db, kind, d))
+	require.NoError(e.t, guard.RecordPluginEntryEvent(context.Background(), pgxOf(e.l.dbs["product_a"].db), kind, d))
 	return e.head()
 }
 

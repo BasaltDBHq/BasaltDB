@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -179,12 +180,12 @@ func TestPluginInstallRefusesAUserInTheEnginesGroup(t *testing.T) {
 		sys := newFake()
 		sys.users[user] = true
 		sys.inGroup = map[string]bool{user + " " + h.EngineUser: true}
-		_, err := osservice.PluginInstallPlan(context.Background(), sys, h, []osservice.PluginEntry{entry(goos, "default")})
+		_, err := osservice.PluginInstallPlan(context.Background(), sys, h, []servicespec.PluginEntry{entry(goos, "default")})
 		require.ErrorContains(t, err, "its OS user "+user+" is in the engine's group "+h.EngineUser, goos)
 		require.ErrorContains(t, err, fix, goos)
 
 		sys.inGroup = nil
-		_, err = osservice.PluginInstallPlan(context.Background(), sys, h, []osservice.PluginEntry{entry(goos, "default")})
+		_, err = osservice.PluginInstallPlan(context.Background(), sys, h, []servicespec.PluginEntry{entry(goos, "default")})
 		require.NoError(t, err, goos)
 	}
 }

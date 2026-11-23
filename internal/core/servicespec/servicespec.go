@@ -1,7 +1,7 @@
 // Package servicespec is the data of the engine service that the use cases
 // name and the OS adapters act on: the unit names, the administrator
-// dialog's prompts and outcomes, a crash handler's input and the last-stop
-// record.
+// dialog's prompts and outcomes, a crash handler's input, the last-stop
+// record, and the plugin units' entries, hosts, names and OS users.
 package servicespec
 
 import (

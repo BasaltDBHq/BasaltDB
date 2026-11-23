@@ -16,7 +16,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // keptClient calls the engine-kept plugin methods in process, as the OS
@@ -120,7 +119,7 @@ func uploadMethods(p *Requests, caller string, served func() error) map[string]m
 	}
 	fail := func(err error) *toolresult.ToolError {
 		var te *toolresult.ToolError
-		var r *agent.PluginRefusedError
+		var r *PluginRefusedError
 		switch {
 		case errors.As(err, &te):
 			return te

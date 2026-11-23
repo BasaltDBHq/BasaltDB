@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // uploadSource writes a plugin folder basalt mcp can read.
@@ -67,9 +66,9 @@ func TestUploadRefusedBeforeAnythingIsWritten(t *testing.T) {
 		name, caller, reason string
 		served               func() error
 	}{
-		{"not the person's OS user", "other", agent.ReasonPluginAgentNotAllowed, func() error { return nil }},
-		{"refused by the tool", "bot", agent.ReasonPluginAgentOperated, func() error {
-			return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
+		{"not the person's OS user", "other", ReasonPluginAgentNotAllowed, func() error { return nil }},
+		{"refused by the tool", "bot", ReasonPluginAgentOperated, func() error {
+			return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: ReasonPluginAgentOperated, Message: "operated by an agent"}
 		}},
 	} {
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, tc.reason), 0o700))

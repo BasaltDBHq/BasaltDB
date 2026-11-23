@@ -14,7 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // request_plugin on a real guard: the caller's upload opens one approval
@@ -34,11 +33,11 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 
 	// Not the caller among the agents: refused, and the upload is dropped,
 	// so a refused call holds none of the engine's few uploads.
-	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"helper"}, Executables: exec})
-	var r *agent.PluginRefusedError
+	_, err = p.OpenPlugin(ctx, "bot", PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"helper"}, Executables: exec})
+	var r *PluginRefusedError
 	require.ErrorAs(t, err, &r)
-	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
-	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
+	require.Equal(t, ReasonPluginAgentNotAllowed, r.Reason)
+	_, err = p.OpenPlugin(ctx, "bot", PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
 	var gone *guidance.ArgumentError
 	require.ErrorAs(t, err, &gone, "the refused call's upload is gone")
 
@@ -46,10 +45,10 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	// took the upload (its scope check) and one after (the manifest).
 	for _, kase := range []struct {
 		reason string
-		open   agent.PluginOpen
+		open   PluginOpen
 	}{
-		{agent.ReasonPluginAgentNotAllowed, agent.PluginOpen{Name: "acme-ner", Instance: "default", Agents: []string{"bot", "ghost"}, Executables: exec}},
-		{"BAD_MANIFEST", agent.PluginOpen{Name: "other-ner", Instance: "default", Executables: exec}},
+		{ReasonPluginAgentNotAllowed, PluginOpen{Name: "acme-ner", Instance: "default", Agents: []string{"bot", "ghost"}, Executables: exec}},
+		{"BAD_MANIFEST", PluginOpen{Name: "other-ner", Instance: "default", Executables: exec}},
 	} {
 		id, err = f.client.PluginUpload(ctx, files)
 		require.NoError(t, err)
@@ -57,7 +56,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 		_, err = p.OpenPlugin(ctx, "bot", kase.open)
 		require.ErrorAs(t, err, &r)
 		require.Equal(t, kase.reason, r.Reason)
-		_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
+		_, err = p.OpenPlugin(ctx, "bot", PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
 		require.ErrorAs(t, err, &gone, "the refused call's upload is gone (%s)", kase.reason)
 	}
 
@@ -65,7 +64,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	id, err = f.client.PluginUpload(ctx, files)
 	require.NoError(t, err)
 	p.DropUpload("bot", id)
-	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
+	_, err = p.OpenPlugin(ctx, "bot", PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
 	require.ErrorAs(t, err, &gone, "a dropped upload is gone")
 
 	// The real folder through basalt mcp's uploader, as the agent's OS user.
@@ -83,7 +82,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	require.Equal(t, "acme-ner", up.Name)
 	require.Equal(t, exec, up.Executables)
 	id = uuid.MustParse(up.UploadID)
-	open := agent.PluginOpen{UploadID: &id, Name: up.Name, Instance: "default", Executables: up.Executables}
+	open := PluginOpen{UploadID: &id, Name: up.Name, Instance: "default", Executables: up.Executables}
 
 	opened, err := p.OpenPlugin(ctx, "bot", open)
 	require.NoError(t, err)
@@ -101,20 +100,20 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 
 	st, err := p.PluginApproval(ctx, "bot", opened.ApprovalID)
 	require.NoError(t, err)
-	require.Equal(t, agent.PluginStatePending, st.State)
+	require.Equal(t, PluginStatePending, st.State)
 	_, err = p.PluginApproval(ctx, "bot", uuid.Must(uuid.NewV7()))
-	require.ErrorIs(t, err, agent.ErrPluginNotFound)
+	require.ErrorIs(t, err, ErrPluginNotFound)
 
 	// The person signs; nothing serves it here, so the wait reads APPROVED,
 	// not RUNNING.
 	f.sign(PluginOpenedApproval{ApprovalID: &opened.ApprovalID, BindingText: opened.BindingText})
 	st, err = p.PluginApproval(ctx, "bot", opened.ApprovalID)
 	require.NoError(t, err)
-	require.Equal(t, agent.PluginStateApproved, st.State)
+	require.Equal(t, PluginStateApproved, st.State)
 
 	require.NoError(t, p.RemovePlugin(ctx, "bot", "acme-ner", "default"))
 	require.Empty(t, f.entries())
 	_, err = p.PluginApproval(ctx, "bot", opened.ApprovalID)
-	require.ErrorIs(t, err, agent.ErrPluginNotFound)
-	require.ErrorIs(t, p.RemovePlugin(ctx, "bot", "acme-ner", "default"), agent.ErrPluginNotFound)
+	require.ErrorIs(t, err, ErrPluginNotFound)
+	require.ErrorIs(t, p.RemovePlugin(ctx, "bot", "acme-ner", "default"), ErrPluginNotFound)
 }

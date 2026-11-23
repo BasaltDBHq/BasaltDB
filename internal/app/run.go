@@ -670,7 +670,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.deliverer != nil {
 		deliverer = env.deliverer(a.Name)
 	}
-	var requests agent.PluginRequests
+	var requests plugin.PluginRequests
 	if env.requests != nil {
 		requests = env.requests
 	}

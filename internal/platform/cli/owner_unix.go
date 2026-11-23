@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package cli
 
 import (
 	"errors"
@@ -8,8 +8,8 @@ import (
 	"syscall"
 )
 
-// infoOwnerUID is the uid that owns the file fi describes.
-func infoOwnerUID(fi os.FileInfo) (int, bool) {
+// InfoOwnerUID is the uid that owns the file fi describes.
+func InfoOwnerUID(fi os.FileInfo) (int, bool) {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
 		return 0, false
@@ -17,8 +17,8 @@ func infoOwnerUID(fi os.FileInfo) (int, bool) {
 	return int(st.Uid), true
 }
 
-// fileOwnerUID is the uid that owns path.
-func fileOwnerUID(path string) (int, error) {
+// FileOwnerUID is the uid that owns path.
+func FileOwnerUID(path string) (int, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return 0, err

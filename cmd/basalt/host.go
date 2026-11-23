@@ -21,6 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/jackc/pgx/v5"
 
@@ -220,7 +221,7 @@ func (osHost) DialogAvailable(goos string) error {
 		return nil
 	}
 	// The dialog shows on the Mac's screen: only for the person logged in there.
-	uid, err := fileOwnerUID(darwinConsole)
+	uid, err := cli.FileOwnerUID(darwinConsole)
 	if err != nil {
 		return fmt.Errorf("%w (%s: %w)", app.ErrOSNoDialog, darwinConsole, err)
 	}

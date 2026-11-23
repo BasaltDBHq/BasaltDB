@@ -36,7 +36,7 @@ func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {
 
 func TestAgentNotInConfigNamesTheAgentLedSetup(t *testing.T) {
 	t.Parallel()
-	err := errAgentNotInConfig("bot", "/etc/basalt/engine.json")
+	err := cli.ErrAgentNotInConfig("bot", "/etc/basalt/engine.json")
 	require.EqualError(t, err, `agent "bot" is not in /etc/basalt/engine.json; set it up with basalt init --agent bot on the person's own computer, or basalt init --remote --agent bot on one the person cannot reach, and show the person the link it prints`)
 	requireAgentLed(t, "errAgentNotInConfig", err.Error())
 }

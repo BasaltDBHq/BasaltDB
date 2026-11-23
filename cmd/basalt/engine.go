@@ -128,7 +128,7 @@ func waitsForConfigAt(euid int, configPath, systemPath string) bool {
 	if err != nil || !dir.IsDir() {
 		return false
 	}
-	owner, ok := infoOwnerUID(dir)
+	owner, ok := cli.InfoOwnerUID(dir)
 	return ok && owner == euid
 }
 

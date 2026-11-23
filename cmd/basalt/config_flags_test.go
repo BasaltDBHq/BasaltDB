@@ -19,7 +19,7 @@ import (
 func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 	t.Setenv("BASALT_DATABASE_URL", "")
 	t.Setenv("BASALT_ADMIN_DATABASE_URL", "")
-	for _, k := range agentMarkers {
+	for _, k := range cli.AgentMarkers {
 		t.Setenv(k, "")
 	}
 	cmds := [][]string{

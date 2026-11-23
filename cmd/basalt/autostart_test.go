@@ -16,9 +16,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
@@ -81,7 +81,7 @@ func (r *starterRig) deps(owner int, launchErr error) starterDeps {
 				var l *pidlock.Lock
 				for range 100 {
 					var err error
-					if l, err = pidlock.AcquireLock(app.LockPath(r.cfg.SocketDir)); err == nil {
+					if l, err = pidlock.AcquireLock(engine.LockPath(r.cfg.SocketDir)); err == nil {
 						break
 					}
 					time.Sleep(10 * time.Millisecond)
@@ -267,7 +267,7 @@ func TestEngineStarterRefusesASymlinkedLog(t *testing.T) {
 func TestEngineStarterEngineRunsButNeverServesThisSocket(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	l, err := pidlock.AcquireLock(app.LockPath(r.cfg.SocketDir))
+	l, err := pidlock.AcquireLock(engine.LockPath(r.cfg.SocketDir))
 	require.NoError(t, err)
 	t.Cleanup(l.Release)
 	d := r.deps(testEuid, nil)
@@ -297,7 +297,7 @@ func writeGiveUp(t *testing.T, stateDir, configPath, reason string, at time.Time
 	rec := servicespec.LastStopFileRecord{Reason: reason, At: at.UTC(), EngineSHA256: laststop.HashEngineJSON(configPath)}
 	raw, err := json.Marshal(rec)
 	require.NoError(t, err)
-	path := filepath.Join(stateDir, app.LastStopFile)
+	path := filepath.Join(stateDir, engine.LastStopFile)
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
 	return path
 }

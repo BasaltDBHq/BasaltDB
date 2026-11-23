@@ -53,12 +53,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
-const lockFileName = "engine.lock"
-
-// LockPath is the engine's lock file in socket directory dir: held while
-// the engine runs, with its pid (basalt status reads both).
-func LockPath(dir string) string { return filepath.Join(dir, lockFileName) }
-
 var errNoAgent = errors.New("no agent to serve: every configured agent was refused (see the errors above)")
 
 // Instructions is the MCP initialize instruction text every agent sees,
@@ -136,7 +130,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err := engine.EnsureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
 		return err
 	}
-	lock, err := pidlock.AcquireLock(LockPath(cfg.SocketDir))
+	lock, err := pidlock.AcquireLock(engine.LockPath(cfg.SocketDir))
 	if err != nil {
 		return err
 	}
@@ -175,7 +169,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, startedBy: startedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), rotated: rotated}
+	env := agentEnv{cfg: cfg, startedBy: engine.StartedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), rotated: rotated}
 	// Plugins are verified now and started below, once the agents serve: a
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
@@ -290,7 +284,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// An engine that has stayed up, however it was started, ends the story
 	// of an earlier give-up: status stops reporting it.
 	stable := time.AfterFunc(cmp.Or(restart.StableAfter, DefaultStableAfter), func() {
-		if err := os.Remove(filepath.Join(env.stateDir, LastStopFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(filepath.Join(env.stateDir, engine.LastStopFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Warn("could not remove the record of why the engine stopped", "err", err)
 		}
 	})

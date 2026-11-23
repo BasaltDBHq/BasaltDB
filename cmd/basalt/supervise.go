@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -35,7 +36,7 @@ const (
 	maxFastCrashes = 5
 	// childStopWait is how long a child gets after SIGTERM before SIGKILL.
 	childStopWait = 30 * time.Second
-	lastStopFile  = app.LastStopFile
+	lastStopFile  = engine.LastStopFile
 	superviseLock = "supervise.lock"
 )
 
@@ -151,7 +152,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 
 	log := engineLog(io.Err)
 	stateDir := cfg.StateDirFor(runtime.GOOS)
-	lockPath := app.LockPath(cfg.SocketDir)
+	lockPath := engine.LockPath(cfg.SocketDir)
 	o := superviseOptions{
 		firstStartedBy: startedBy,
 		start:          childStarter(startedFrom, configPath, lockPath, stateDir, io, log),

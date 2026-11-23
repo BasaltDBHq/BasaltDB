@@ -155,15 +155,3 @@ func (c ConnectOnly) Status(ctx context.Context) (guidance.StatusReport, error) 
 	r.Problems, r.Ready = list, statussvc.Ready(list)
 	return r, nil
 }
-
-// --- the served agent's confirm_database ---
-
-// confirmDatabase answers confirm_database on an agent with no connect-only
-// setup waiting: INVALID_ARGUMENT.
-func (h handlers) confirmDatabase(_ context.Context, raw json.RawMessage) (any, error) {
-	var args handoff.ConfirmArgs
-	if err := guidance.DecodeArgs(raw, &args); err != nil {
-		return nil, err
-	}
-	return nil, &guidance.ArgumentError{Message: handoff.ErrNotWaiting.Error()}
-}

@@ -15,12 +15,10 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 	return h.svc.Status(ctx)
 }
 
-// StatusTools are the tools that report the agent's state and confirm the
-// collected database.
+// StatusTools are the tools that report the agent's state.
 func StatusTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
 	return []guidance.Tool{
 		mount(guidance.ToolStatus, h.status),
-		mount(guidance.ToolConfirmDatabase, h.confirmDatabase),
 	}
 }

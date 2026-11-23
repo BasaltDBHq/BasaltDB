@@ -173,10 +173,6 @@ func (s *Setup) checkIncluded() error {
 	return nil
 }
 
-// Included are the tables the grants cover, as the person approved them:
-// the ticked ones, else nil.
-func (s *Setup) Included() []string { return slices.Clone(s.included) }
-
 // errTablesChanged is TABLES_CHANGED.
 func errTablesChanged() error {
 	return refuse(CodeTablesChanged, "the tables changed since they were listed (a table was dropped, renamed or given to another owner), so the setup did not run and nothing changed: check the setup again")

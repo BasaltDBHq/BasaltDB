@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,8 +14,10 @@ import (
 
 var t0 = time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
 
-func checker(dir string, rep *portalverify.Report, err error) *Checker {
-	c := New(portalverify.Options{Base: "https://portal.example"}, dir, slog.New(slog.DiscardHandler), func() time.Time { return t0 })
+// checker has no state directory: the test of saving and loading results
+// went with Load (pilot D7).
+func checker(rep *portalverify.Report, err error) *Checker {
+	c := New(portalverify.Options{Base: "https://portal.example"}, "", slog.New(slog.DiscardHandler), func() time.Time { return t0 })
 	c.verify = func(context.Context, portalverify.Options) (*portalverify.Report, error) { return rep, err }
 	return c
 }
@@ -29,7 +29,7 @@ func report(files ...portalverify.File) *portalverify.Report {
 func TestEachMismatchStatusIsAMismatch(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{portalverify.StatusDiffers, portalverify.StatusMissing, portalverify.StatusHeader, portalverify.StatusUnexpected} {
-		res := checker("", report(
+		res := checker(report(
 			portalverify.File{Path: "style.css", Status: portalverify.StatusOK},
 			portalverify.File{Path: "lib/x.js", Status: status},
 		), nil).Check(context.Background())
@@ -41,21 +41,21 @@ func TestEachMismatchStatusIsAMismatch(t *testing.T) {
 
 func TestACleanPortalAndAnUncheckedOneAreNoMismatch(t *testing.T) {
 	t.Parallel()
-	clean := checker("", report(portalverify.File{Path: "style.css", Status: portalverify.StatusOK}), nil).Check(context.Background())
+	clean := checker(report(portalverify.File{Path: "style.css", Status: portalverify.StatusOK}), nil).Check(context.Background())
 	require.False(t, clean.Mismatch())
 
-	unchecked := checker("", report(portalverify.File{Path: "style.css", Status: portalverify.StatusError, Detail: "timeout"}), nil).Check(context.Background())
+	unchecked := checker(report(portalverify.File{Path: "style.css", Status: portalverify.StatusError, Detail: "timeout"}), nil).Check(context.Background())
 	require.False(t, unchecked.Mismatch(), "a network error is not a finding")
 	require.Equal(t, 1, unchecked.Unchecked)
 
-	failed := checker("", nil, errors.New("boom")).Check(context.Background())
+	failed := checker(nil, errors.New("boom")).Check(context.Background())
 	require.False(t, failed.Mismatch())
 	require.Equal(t, "boom", failed.Error)
 }
 
 func TestSummaryCountsInAFixedOrder(t *testing.T) {
 	t.Parallel()
-	res := checker("", report(
+	res := checker(report(
 		portalverify.File{Path: "a", Status: portalverify.StatusMissing},
 		portalverify.File{Path: "b", Status: portalverify.StatusDiffers},
 		portalverify.File{Path: "c", Status: portalverify.StatusDiffers},
@@ -69,7 +69,7 @@ func TestFindingsAreCapped(t *testing.T) {
 	for i := range maxFindings + 5 {
 		files = append(files, portalverify.File{Path: string(rune('a'+i%26)) + "/" + time.Duration(i).String(), Status: portalverify.StatusDiffers})
 	}
-	res := checker("", report(files...), nil).Check(context.Background())
+	res := checker(report(files...), nil).Check(context.Background())
 	require.Len(t, res.Findings, maxFindings)
 	require.Equal(t, maxFindings+5, res.Total)
 	require.Contains(t, res.Summary(), "(and 5 more)")
@@ -77,7 +77,7 @@ func TestFindingsAreCapped(t *testing.T) {
 
 func TestLastIsEmptyBeforeTheFirstCheckAndKeepsTheLatest(t *testing.T) {
 	t.Parallel()
-	c := checker("", report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil)
+	c := checker(report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil)
 	_, ok := c.Last()
 	require.False(t, ok)
 	c.Check(context.Background())
@@ -85,34 +85,6 @@ func TestLastIsEmptyBeforeTheFirstCheckAndKeepsTheLatest(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, got.Mismatch())
 	require.Equal(t, t0, got.CheckedAt)
-}
-
-func TestTheResultIsSavedAndLoadedForTheSamePortalOnly(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	checker(dir, report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil).Check(context.Background())
-
-	st, err := os.Stat(filepath.Join(dir, FileName))
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
-
-	got, ok := Load(dir, "https://portal.example")
-	require.True(t, ok)
-	require.True(t, got.Mismatch())
-	require.True(t, got.CheckedAt.Equal(t0))
-
-	_, ok = Load(dir, "https://other.example")
-	require.False(t, ok, "a result of another portal says nothing")
-	_, ok = Load(t.TempDir(), "https://portal.example")
-	require.False(t, ok, "no file")
-}
-
-func TestLoadIgnoresAFileThatIsNotAResult(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, FileName), []byte("not json"), 0o600))
-	_, ok := Load(dir, "https://portal.example")
-	require.False(t, ok)
 }
 
 func TestRunChecksAtOnceAndAgainEachInterval(t *testing.T) {

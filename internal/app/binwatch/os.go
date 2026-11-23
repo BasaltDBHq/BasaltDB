@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 

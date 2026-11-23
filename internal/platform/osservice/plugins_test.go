@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the plugin unit golden files under testdata/")
@@ -56,7 +56,7 @@ func golden(t *testing.T, name, got string) {
 		require.NoError(t, os.WriteFile(path, []byte(got), 0o644))
 	}
 	want, err := os.ReadFile(path)
-	require.NoError(t, err, "run go test ./internal/adapter/outbound/osservice/ -run TestPluginUnitsGolden -update")
+	require.NoError(t, err, "run go test ./internal/platform/osservice/ -run TestPluginUnitsGolden -update")
 	require.Equal(t, string(want), got)
 }
 

@@ -314,7 +314,7 @@ CREATE TABLE public.secrets (id bigint PRIMARY KEY, v text)`)
 // and no request without a proof resets anything. The person sees the
 // database's name on the page and answers No; basalt init then runs the
 // reset script through the administrator dialog (here its effect, done by
-// the test: the script itself is tested in internal/adapter/outbound/osservice, and
+// the test: the script itself is tested in internal/platform/osservice, and
 // init's part in cmd/basalt). The database keeps everything, and the
 // person's install is accepted again, even under the same agent name.
 func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {

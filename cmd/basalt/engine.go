@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -300,7 +301,7 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	// person-operated engine; the engine says which in its hello answer.
 	// A plugin the agent asks for (request_plugin) is uploaded over a
 	// second connection to the agent's own socket.
-	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path)}
+	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path), UploadAllowed: plugin.UploadAllowed}
 	if exe, err := cli.ShimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = m.EngineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)

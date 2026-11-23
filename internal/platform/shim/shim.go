@@ -104,6 +104,10 @@ type Options struct {
 	// request_plugin call names (CONTRACT.md, MCP tools, request_plugin).
 	// Nil uploads nothing, and the engine refuses such a call.
 	UploadPlugin PluginUploader
+	// UploadAllowed, given who the engine's hello answer says operates it
+	// and its local page origin, says whether UploadPlugin runs for it
+	// (plugin.UploadAllowed). Nil uploads nothing.
+	UploadAllowed func(operatedBy, pagesOrigin string) bool
 }
 
 // ServeWith is Serve with options.
@@ -127,7 +131,7 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 		neg:  negotiation{build: buildinfo.Version, minEngine: minEngine},
 		path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial,
 		reconnectWait: wait, start: opts.Start, startWait: startWait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
-		opener: newAutoOpener(opts.Open), upload: opts.UploadPlugin,
+		opener: newAutoOpener(opts.Open), upload: opts.UploadPlugin, uploadAllowed: opts.UploadAllowed,
 	}
 	return serve(ctx, r, in)
 }
@@ -228,6 +232,9 @@ type relay struct {
 	// upload reads and uploads a request_plugin call's folder
 	// (Options.UploadPlugin); nil uploads nothing.
 	upload PluginUploader
+	// uploadAllowed says whether upload runs for an engine
+	// (Options.UploadAllowed); nil uploads nothing.
+	uploadAllowed func(operatedBy, pagesOrigin string) bool
 
 	// retries carries the in-flight reads a dying session hands back to the
 	// serve loop; retried holds the ids already given their one retry.

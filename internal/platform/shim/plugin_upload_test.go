@@ -13,6 +13,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 func readySession(operatedBy, pagesOrigin string) *session {
@@ -51,7 +52,7 @@ func TestPrepareUploadsTheSource(t *testing.T) {
 func prepareUploads(t *testing.T, sess *session) {
 	t.Helper()
 	var asked []string
-	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
+	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, uploadAllowed: plugin.UploadAllowed, upload: func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
 		asked = append(asked, source)
 		return mcpserver.PluginUpload{UploadID: "0193a4c2-7d1e-7c3a-9f00-0000000000f6", Name: "local-ner", Executables: []string{"bin/ner"}}, nil
 	}}
@@ -71,7 +72,7 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 		readySession("", "http://localhost:7878"),
 		readySession(mcpcontract.OperatedByPerson, ""),
 	} {
-		r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcpserver.PluginUpload, error) {
+		r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, uploadAllowed: plugin.UploadAllowed, upload: func(context.Context, string) (mcpserver.PluginUpload, error) {
 			t.Fatal("no upload here")
 			return mcpserver.PluginUpload{}, nil
 		}}
@@ -82,7 +83,7 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 		require.Contains(t, meta, "progressToken")
 	}
 	// An engine that takes no uploads: forwarded without one.
-	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, upload: func(context.Context, string) (mcpserver.PluginUpload, error) {
+	r := &relay{out: &lineWriter{w: &bytes.Buffer{}}, uploadAllowed: plugin.UploadAllowed, upload: func(context.Context, string) (mcpserver.PluginUpload, error) {
 		return mcpserver.PluginUpload{}, ErrNoUploads
 	}}
 	out, answered := r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), []byte(pluginCall))
@@ -106,7 +107,7 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 func TestPrepareAnswersAnUnreadableFolder(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	r := &relay{out: &lineWriter{w: &buf}, upload: func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
+	r := &relay{out: &lineWriter{w: &buf}, uploadAllowed: plugin.UploadAllowed, upload: func(_ context.Context, source string) (mcpserver.PluginUpload, error) {
 		_, err := ReadPluginSource(source)
 		return mcpserver.PluginUpload{}, err
 	}}

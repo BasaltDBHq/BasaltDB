@@ -171,7 +171,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	outR, outW := io.Pipe()
 	done := make(chan int, 1)
 	go func() {
-		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, stdio{in: in, out: outW, err: &out}, osHost{}, cfgPath)
+		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, stdio{in: in, out: outW, err: &out}, osHost{}, appMCPHost{}, cfgPath)
 		_ = outW.Close()
 	}()
 	_, err = fmt.Fprintf(inW, "%s\n%s\n",

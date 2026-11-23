@@ -50,7 +50,7 @@ type statusDeps struct {
 	trust        TrustReporter
 	// database names the credential's database (Deps.Database).
 	database string
-	cmds     Commands
+	cmds     guidance.Commands
 	setup    *config.Setup
 	probe    Probe
 	finisher SetupFinisher
@@ -90,7 +90,7 @@ func (s *Service) statusDeps() statusDeps {
 // when it does not run.
 type LocalStatus struct {
 	Name       string
-	Commands   Commands
+	Commands   guidance.Commands
 	OperatedBy string
 	Setup      *config.Setup
 	// PagesBase is the config's pages base URL; PagesOrigin is the origin
@@ -391,7 +391,7 @@ func passkeySummary(keys []PasskeyStatus) string {
 // noPasskeyProblemSteps are the NO_PASSKEY problem's steps: the setup
 // page's Update link when the engine serves it (its Update check adds a
 // passkey on the person's device), else noPasskeySteps.
-func noPasskeyProblemSteps(b *guidance.Steps, cmds Commands) string {
+func noPasskeyProblemSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	if !cmds.AgentOperated() && cmds.UpdateLinkURL() != "" {
 		// The setup page's Update check adds a passkey on this device.
 		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page adds a passkey on their device.")
@@ -408,7 +408,7 @@ const nothingSignableLead = "No passkey is registered for this agent, so nothing
 // where the person registers a passkey; on an agent-operated engine the
 // connect page (RI-6: the person's computer registers a portal passkey when
 // none is active).
-func noPasskeySteps(b *guidance.Steps, cmds Commands) string {
+func noPasskeySteps(b *guidance.Steps, cmds guidance.Commands) string {
 	const lead = nothingSignableLead
 	if cmds.AgentOperated() {
 		return remoteSetupSteps(b, cmds, lead)

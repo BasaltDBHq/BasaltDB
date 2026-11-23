@@ -37,8 +37,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Uids of the kept-plugin cases: the person, and an agent's own OS user.
@@ -109,7 +109,7 @@ func newKeptFixture(t *testing.T, names []string, scoped ...string) *keptFixture
 	raw, err := json.Marshal(f.cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(f.configPath, raw, 0o600))
-	store, err := pluginhost.New(f.state, time.Now)
+	store, err := plugin.New(f.state, time.Now)
 	require.NoError(t, err)
 	f.s = &KeptPlugins{
 		ports: testPorts,
@@ -139,7 +139,7 @@ func source(version string) ([]shim.PluginFile, []string) {
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
 	return []shim.PluginFile{
-		{Path: pluginhost.ManifestFile, Data: []byte(manifest)},
+		{Path: plugin.ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
 	}, []string{"bin/acme-ner"}
@@ -274,10 +274,10 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	fi, err = os.Stat(filepath.Join(copyDir, "share", "model.txt"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o644), fi.Mode().Perm())
-	fi, err = os.Stat(filepath.Join(f.state, pluginhost.EntriesFile))
+	fi, err = os.Stat(filepath.Join(f.state, plugin.EntriesFile))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
-	des, err := os.ReadDir(filepath.Join(f.state, pluginhost.UploadsDir))
+	des, err := os.ReadDir(filepath.Join(f.state, plugin.UploadsDir))
 	require.NoError(t, err)
 	require.Empty(t, des, "the upload's directory is gone once used")
 	require.Zero(t, f.s.store.Open(), "the upload is gone once used")
@@ -303,7 +303,7 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 // engine's storage, through the person socket.
 func TestFilesOverSocketRespectLimits(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
-	f.s.store.WithLimits(pluginhost.Limits{PartBytes: 16, UploadBytes: 40, StorageBytes: 60, UploadPaths: 3, OpenUploads: 2})
+	f.s.store.WithLimits(plugin.Limits{PartBytes: 16, UploadBytes: 40, StorageBytes: 60, UploadPaths: 3, OpenUploads: 2})
 	begin := func() uuid.UUID {
 		r, err := f.client.PluginUploadBegin(context.Background())
 		require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	}
 	tooLarge := func(err error) {
 		t.Helper()
-		requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonTooLarge)
+		requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonTooLarge)
 	}
 
 	id := begin()
@@ -335,17 +335,17 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	tooLarge(part(id, "a", 32, 9))
 
 	id, id2 := begin(), begin()
-	requirePersonError(t, func() error { _, err := f.client.PluginUploadBegin(context.Background()); return err }(), person.CodePluginRefused, pluginhost.ReasonTooManyUploads)
+	requirePersonError(t, func() error { _, err := f.client.PluginUploadBegin(context.Background()); return err }(), person.CodePluginRefused, plugin.ReasonTooManyUploads)
 	require.NoError(t, part(id, "a", 0, 16))
 	require.NoError(t, part(id, "a", 16, 16))
 	require.NoError(t, part(id2, "a", 0, 16))
 	tooLarge(part(id2, "a", 16, 16))
 
-	f.s.store.WithLimits(pluginhost.DefaultLimits())
+	f.s.store.WithLimits(plugin.DefaultLimits())
 	id = begin()
-	tooLarge(part(id, pluginhost.SignatureFile, 0, pluginhost.MaxSignatureFileBytes+1))
+	tooLarge(part(id, plugin.SignatureFile, 0, plugin.MaxSignatureFileBytes+1))
 	id = begin()
-	tooLarge(part(id, "a", 0, pluginhost.MaxPartBytes+1))
+	tooLarge(part(id, "a", 0, plugin.MaxPartBytes+1))
 
 	// A seventeenth entry is refused before anything is written.
 	require.NoError(t, f.s.store.Update(f.cfg, func([]config.Plugin) ([]config.Plugin, error) {
@@ -576,22 +576,22 @@ func TestKeptOpenRefusals(t *testing.T) {
 	id, err := f.client.PluginUpload(context.Background(), files)
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "other-name", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonBadManifest)
+	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonBadManifest)
 	id, err = f.client.PluginUpload(context.Background(), append(slices.Clone(files), shim.PluginFile{Path: "extra", Data: []byte("x")}))
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonBadManifest)
+	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonBadManifest)
 	id, err = f.client.PluginUpload(context.Background(), files[:2])
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonBadManifest)
+	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonBadManifest)
 	// A file whose hash is not the manifest's.
 	bad := slices.Clone(files)
 	bad[2] = shim.PluginFile{Path: "share/model.txt", Data: []byte("other")}
 	id, err = f.client.PluginUpload(context.Background(), bad)
 	require.NoError(t, err)
 	_, err = f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
-	requirePersonError(t, err, person.CodePluginRefused, pluginhost.ReasonNotTrusted)
+	requirePersonError(t, err, person.CodePluginRefused, plugin.ReasonNotTrusted)
 	// An engine running as root refuses a local plugin.
 	f.s.euid = 0
 	_, err = f.add("default", "product_a")

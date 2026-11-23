@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -27,8 +26,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Hooks of the test plugin's manifest.
@@ -77,19 +77,19 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
   "network": { "egress": [] }
 }
 `, hooks, transport, args, sha256.Sum256(exe))
-	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
 	if signed {
-		key, err := pluginhost.GenerateKey()
+		key, err := plugin.GenerateKey()
 		require.NoError(t, err)
-		pemBytes, err := pluginhost.MarshalPublicKey(&key.PublicKey)
+		pemBytes, err := plugin.MarshalPublicKey(&key.PublicKey)
 		require.NoError(t, err)
 		_, _, err = f.trust.Add(pemBytes)
 		require.NoError(t, err)
-		sig, err := pluginhost.SignManifest([]byte(manifest), key)
+		sig, err := plugin.SignManifest([]byte(manifest), key)
 		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(src, plugin.SignatureFile), sig, 0o644))
 	}
-	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(!signed))
+	v, err := plugin.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, plugin.RequireApproval(!signed))
 	require.NoError(t, err)
 	// The longest timeout: the plugin is this test binary, built with -race.
 	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
@@ -708,7 +708,7 @@ func TestCommandsApprovalIsServed(t *testing.T) {
 			f.cfg.Plugins = append(f.cfg.Plugins, p)
 			l := newPluginLedgers(t, f)
 
-			v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
+			v, err := plugin.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, plugin.RequireApproval(true))
 			require.NoError(t, err)
 			d := PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]})
 			l.sign(t, l.person(t), "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
@@ -735,8 +735,8 @@ func (f *pluginFixture) installRemote() config.Plugin {
   "network": { "egress": ["ner.acme.example:443"] }
 }
 `
-	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
-	v, err := pluginhost.Install(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
+	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
+	v, err := plugin.Install(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, plugin.RequireApproval(true))
 	require.NoError(t, err)
 	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
 }

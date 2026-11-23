@@ -14,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
@@ -28,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
@@ -148,7 +148,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 	var d agent.Deps
 	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
 	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
-	d.Core.ServiceManager = agent.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
+	d.Core.ServiceManager = guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 	d.Core.Errors = agent.ErrorMap{
 		InvalidParams: ledger.ErrInvalidParams,
 		InvalidIntent: guard.ErrInvalidIntent,

@@ -47,7 +47,7 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 
 	// Without the link, and for any other fix, the agent runs basalt init.
 	for _, tc := range []struct {
-		cmds   Commands
+		cmds   guidance.Commands
 		reason string
 	}{{cmds, guidance.ReasonGuardOutdated}, {with, guidance.ReasonCredentialRejected}, {with, guidance.ReasonGuardMissing}} {
 		b = guidance.NewSteps()

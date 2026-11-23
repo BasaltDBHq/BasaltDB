@@ -200,7 +200,7 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 		"Core.Store":                    func(d *Deps) { d.Core.Store = nil },
 		"Core.Log":                      func(d *Deps) { d.Core.Log = nil },
 		"Core.Now":                      func(d *Deps) { d.Core.Now = nil },
-		"Core.ServiceManager":           func(d *Deps) { d.Core.ServiceManager = ServiceManager{} },
+		"Core.ServiceManager":           func(d *Deps) { d.Core.ServiceManager = guidance.ServiceManager{} },
 		"Core.Errors.InvalidParams":     func(d *Deps) { d.Core.Errors.InvalidParams = nil },
 		"Core.Errors.InvalidIntent":     func(d *Deps) { d.Core.Errors.InvalidIntent = nil },
 		"Core.Errors.RowTooLarge":       func(d *Deps) { d.Core.Errors.RowTooLarge = nil },

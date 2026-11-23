@@ -17,14 +17,14 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // pluginLedgers is a guard with the fixture's two agents, each with its own
@@ -313,7 +313,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	probs = ep.PluginProblems("client_x")
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "database is reachable")
-	require.NotEqual(t, pluginhost.StateReady, ep.host.State(q.Key()))
+	require.NotEqual(t, plugin.StateReady, ep.host.State(q.Key()))
 
 	// Next start, database reachable: recorded and served.
 	l.record(t, f, f.plugins(nil))
@@ -452,7 +452,7 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 			if remote {
 				raw = strings.Replace(raw, `"files": {"bin/p": "sha256:`+strings.Repeat("0", 64)+`"},`, "", 1)
 			}
-			next, err := pluginhost.ParseManifest([]byte(raw))
+			next, err := plugin.ParseManifest([]byte(raw))
 			if err != nil {
 				require.ErrorContains(t, err, "too large to record")
 				break

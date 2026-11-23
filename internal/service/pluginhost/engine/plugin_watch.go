@@ -17,8 +17,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Timing of the plugin watch (CONTRACT.md, Plugins, Plugin changes while
@@ -127,7 +127,7 @@ func newPluginWatch(ep *Plugins, cfg config.Config, path string, ledgers map[str
 }
 
 // run reads engine.json every pluginWatchTick until ctx is done.
-func (w *pluginWatch) run(ctx context.Context, clock pluginhost.Clock) {
+func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
 	for {
 		var reply chan struct{}
 		select {
@@ -575,7 +575,7 @@ func (w *pluginWatch) apply(desired map[pluginmodel.EntryKey]runningEntry) {
 		delete(w.ep.first, k)
 		w.ep.mu.Unlock()
 		if err := w.ep.sup.Add(d.e); err != nil {
-			if !errors.Is(err, pluginhost.ErrNotRunning) { // the engine is stopping
+			if !errors.Is(err, plugin.ErrNotRunning) { // the engine is stopping
 				w.log.Warn("plugin not started", "plugin", k.String(), "err", err)
 			}
 			continue
@@ -738,7 +738,7 @@ func (w *pluginWatch) writeServing() {
 		r := w.running[k]
 		e := PluginServingEntry{
 			Name: k.Name, Instance: k.Instance, ManifestSHA256: r.p.ManifestSHA256,
-			Ready: w.ep.host.State(k) == pluginhost.StateReady, Agents: []PluginServingAgent{},
+			Ready: w.ep.host.State(k) == plugin.StateReady, Agents: []PluginServingAgent{},
 		}
 		for _, a := range slices.Sorted(slices.Values(r.e.Agents)) {
 			sa := PluginServingAgent{Agent: a}

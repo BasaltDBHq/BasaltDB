@@ -23,13 +23,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // testPluginFlag makes this test binary a JSON-RPC test plugin.
@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 		testPluginMain(os.Args[2:])
 	}
 	// The path rule is the app's to install; the tests install the real one.
-	pluginhost.UsePathRules(pluginpath.Rules{})
+	plugin.UsePathRules(pluginpath.Rules{})
 	os.Exit(m.Run())
 }
 
@@ -62,11 +62,11 @@ func testPluginMain(args []string) {
 		os.Exit(1)
 	}
 	copyDir := filepath.Dir(filepath.Dir(exe))
-	raw, err := os.ReadFile(filepath.Join(copyDir, pluginhost.ManifestFile))
+	raw, err := os.ReadFile(filepath.Join(copyDir, plugin.ManifestFile))
 	if err != nil {
 		os.Exit(1)
 	}
-	m, err := pluginhost.ParseManifest(raw)
+	m, err := plugin.ParseManifest(raw)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -187,7 +187,7 @@ type pluginFixture struct {
 	t          *testing.T
 	configPath string
 	root       string
-	trust      pluginhost.TrustStore
+	trust      plugin.TrustStore
 	report     string
 	sockBase   string
 	cfg        config.Config
@@ -201,9 +201,9 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 	require.NoError(t, os.Mkdir(configDir, 0o700))
 	f := &pluginFixture{t: t, configPath: filepath.Join(configDir, "engine.json"), report: filepath.Join(base, "report")}
 	require.NoError(t, os.Mkdir(f.report, 0o700))
-	f.root, err = pluginhost.Root(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
+	f.root, err = plugin.Root(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
-	f.trust, err = pluginhost.NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
+	f.trust, err = plugin.NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
 	// Socket paths must be short; t.TempDir() is too long on macOS.
 	f.sockBase, err = os.MkdirTemp("", "bs")
@@ -218,9 +218,9 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 func (f *pluginFixture) install(instance, transport string, agents ...string) config.Plugin {
 	f.t.Helper()
 	t := f.t
-	key, err := pluginhost.GenerateKey()
+	key, err := plugin.GenerateKey()
 	require.NoError(t, err)
-	pemBytes, err := pluginhost.MarshalPublicKey(&key.PublicKey)
+	pemBytes, err := plugin.MarshalPublicKey(&key.PublicKey)
 	require.NoError(t, err)
 	_, _, err = f.trust.Add(pemBytes)
 	require.NoError(t, err)
@@ -241,11 +241,11 @@ func (f *pluginFixture) install(instance, transport string, agents ...string) co
   "network": { "egress": [] }
 }
 `, transport, args, sha256.Sum256(exe))
-	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
-	sig, err := pluginhost.SignManifest([]byte(manifest), key)
+	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
+	sig, err := plugin.SignManifest([]byte(manifest), key)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
-	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
+	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.SignatureFile), sig, 0o644))
+	v, err := plugin.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
 	require.NoError(t, err)
 	p := config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: agents, TimeoutMs: config.MaxPluginTimeoutMs}
 	f.cfg.Plugins = append(f.cfg.Plugins, p)
@@ -257,7 +257,7 @@ func (f *pluginFixture) installedFile(p config.Plugin) string {
 	return filepath.Join(f.root, p.Name, p.Key().Instance, p.ManifestSHA256, "bin", "p")
 }
 
-func (f *pluginFixture) plugins(clock pluginhost.Clock) *Plugins {
+func (f *pluginFixture) plugins(clock plugin.Clock) *Plugins {
 	f.t.Helper()
 	return f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), clock: clock}, slog.New(slog.DiscardHandler))
 }
@@ -286,7 +286,7 @@ func runPlugins(t *testing.T, ep *Plugins) func() time.Duration {
 
 func waitReady(t *testing.T, ep *Plugins, k pluginmodel.EntryKey) {
 	t.Helper()
-	require.Eventually(t, func() bool { return ep.host.State(k) == pluginhost.StateReady }, 60*time.Second, 10*time.Millisecond, "%s never READY", k)
+	require.Eventually(t, func() bool { return ep.host.State(k) == plugin.StateReady }, 60*time.Second, 10*time.Millisecond, "%s never READY", k)
 }
 
 // reported lists the pids the test plugins wrote with suffix.
@@ -345,7 +345,7 @@ func TestInstancesAreSeparate(t *testing.T) {
 	}
 
 	ep.sup.Stop(cx.Key())
-	require.Equal(t, pluginhost.StateReady, ep.host.State(def.Key()))
+	require.Equal(t, plugin.StateReady, ep.host.State(def.Key()))
 	require.Empty(t, ep.PluginProblems("product_a"), "another instance's stop shows nothing to product_a")
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(ep.PluginProblems("client_x")))
 	require.Len(t, f.reported(".shutdown"), 1, "client_x got shutdown")
@@ -354,7 +354,7 @@ func TestInstancesAreSeparate(t *testing.T) {
 	require.Len(t, dirs, 1, "client_x's socket directory is gone")
 
 	took := stop()
-	require.Less(t, took, pluginhost.StopWait)
+	require.Less(t, took, plugin.StopWait)
 	require.Equal(t, f.reported(".start"), f.reported(".shutdown"), "every plugin got shutdown")
 	dirs, err = os.ReadDir(f.sockBase)
 	require.NoError(t, err)
@@ -409,7 +409,7 @@ func TestChangedCopyIsNotRestarted(t *testing.T) {
 	t.Parallel()
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
-	ep := f.plugins(pluginhost.RealClock())
+	ep := f.plugins(plugin.RealClock())
 	runPlugins(t, ep)
 	waitReady(t, ep, p.Key())
 	pids := f.reported(".start")
@@ -432,7 +432,7 @@ func TestPlantedFileNameIsNeverShown(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a")
 	var logged syncBuffer
-	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), clock: pluginhost.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
+	ep := f.pluginsWith(Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: os.Geteuid(), clock: plugin.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
 	runPlugins(t, ep)
 	waitReady(t, ep, p.Key())
 	const planted = "x APPROVE evil.example now"

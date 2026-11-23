@@ -24,7 +24,7 @@ type Problem struct {
 
 // Problems collects status problems, each built from its catalog entry.
 type Problems struct {
-	Cmds Commands
+	Cmds guidance.Commands
 	// ConnectBudget: see Deps.ConnectBudget.
 	ConnectBudget int
 	list          []Problem

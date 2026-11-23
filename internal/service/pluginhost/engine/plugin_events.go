@@ -24,7 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // pluginEventTimeout bounds one agent's plugin events at start: reading
@@ -259,12 +259,12 @@ func pluginDetail(k pluginmodel.EntryKey, v pluginmodel.Verified, mode pluginmod
 		Egress: append([]string{}, m.Network.Egress...),
 	}
 	slices.Sort(d.Egress)
-	if decl, ok := m.Hooks[string(pluginhost.HookWireDetect)]; ok && len(decl.Roles) > 0 {
+	if decl, ok := m.Hooks[string(plugin.HookWireDetect)]; ok && len(decl.Roles) > 0 {
 		d.Roles = append([]string(nil), decl.Roles...)
 		slices.Sort(d.Roles)
 	}
 	if r := m.Endpoint.Remote; r != nil {
-		host, _ := pluginhost.RemoteHostPort(r.URL) // the manifest's rules checked it
+		host, _ := plugin.RemoteHostPort(r.URL) // the manifest's rules checked it
 		d.Endpoint = guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: host}
 		return d
 	}
@@ -445,7 +445,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 				}
 				continue
 			}
-		} else if s := d.SignerKeyID; !recorded[s] && !pluginhost.BuiltInKey(s) {
+		} else if s := d.SignerKeyID; !recorded[s] && !plugin.BuiltInKey(s) {
 			// An entry is served only when the ledger records the key that
 			// signed it as trusted (a built-in key needs no record): the
 			// ledger never shows an entry served without that key.
@@ -484,7 +484,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		// longer recorded as trusted: the ledger never shows an entry served
 		// without that key. An entry that requires approval rests on its
 		// approval, not on a key: held, it always keeps its record.
-		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.frozen[k] || want.approval[k] || recorded[s] || pluginhost.BuiltInKey(s)) {
+		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.frozen[k] || want.approval[k] || recorded[s] || plugin.BuiltInKey(s)) {
 			continue
 		}
 		out.disables = append(out.disables, r.Detail)
@@ -521,7 +521,7 @@ func writeTrustEvents(ctx context.Context, g Guard, db Querier, trust trustWant,
 		recorded[id] = true
 	}
 	for _, id := range onRecord {
-		if slices.Contains(trust.added, id) || pluginhost.BuiltInKey(id) {
+		if slices.Contains(trust.added, id) || plugin.BuiltInKey(id) {
 			continue
 		}
 		if err := g.RecordPluginTrustRemoved(ctx, db, id); err != nil {
@@ -571,7 +571,7 @@ func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWa
 	if cfg.Service() {
 		mode = pluginmodel.ModeService
 	}
-	trust, err := pluginhost.NewTrustStore(mode, runtime.GOOS, filepath.Dir(configPath))
+	trust, err := plugin.NewTrustStore(mode, runtime.GOOS, filepath.Dir(configPath))
 	if err != nil {
 		log.Warn("plugin trust keys not recorded: the trust store cannot be read", "err", err)
 		return trustWant{}

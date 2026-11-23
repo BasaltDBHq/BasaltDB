@@ -17,7 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // Feed timing (CONTRACT.md, Plugins, Notifier messages, Limits and numbers).
@@ -56,13 +56,13 @@ var defaultFeedTiming = feedTiming{poll: feedPoll, minBackoff: feedMinBackoff, m
 // notifier hook. It holds no event in memory between rounds: events wait in
 // the ledger. Nothing an agent does waits on it.
 type pluginFeed struct {
-	host    *pluginhost.Host
+	host    *plugin.Host
 	served  func() []pluginmodel.Entry
 	ledgers map[string]AgentLedger
 	// dir is <stateDir>/plugin-cursors.
 	dir     string
 	senders *pluginSenders
-	clock   pluginhost.Clock
+	clock   plugin.Clock
 	log     *slog.Logger
 	timing  feedTiming
 
@@ -81,8 +81,8 @@ type feedPair struct {
 // newPluginFeed feeds the entries served returns, with the agents' ledgers,
 // keeping cursors under stateDir; with no stateDir it feeds nothing and
 // only keeps the senders.
-func newPluginFeed(host *pluginhost.Host, served func() []pluginmodel.Entry, ledgers map[string]AgentLedger, stateDir string,
-	senders *pluginSenders, clock pluginhost.Clock, log *slog.Logger,
+func newPluginFeed(host *plugin.Host, served func() []pluginmodel.Entry, ledgers map[string]AgentLedger, stateDir string,
+	senders *pluginSenders, clock plugin.Clock, log *slog.Logger,
 ) *pluginFeed {
 	if host == nil || served == nil || senders == nil || clock == nil || log == nil {
 		panic("engine: the plugin feed needs a host, the served entries, senders, a clock and a log")
@@ -125,8 +125,8 @@ func (f *pluginFeed) follow(ctx context.Context) {
 	var notifiers []pluginmodel.EntryKey
 	want := map[feedPair]bool{}
 	for _, e := range f.served() {
-		_, feeds := e.Manifest.Hooks[string(pluginhost.HookFeedObserve)]
-		_, delivers := e.Manifest.Hooks[string(pluginhost.HookApprovalDeliver)]
+		_, feeds := e.Manifest.Hooks[string(plugin.HookFeedObserve)]
+		_, delivers := e.Manifest.Hooks[string(plugin.HookApprovalDeliver)]
 		if feeds || delivers {
 			notifiers = append(notifiers, e.Key)
 		}
@@ -253,7 +253,7 @@ func nextFeedBackoff(prev time.Duration, t feedTiming) time.Duration {
 func (r *feedReader) round(ctx context.Context) roundResult {
 	k := r.pair.key
 	reg, ok := r.f.host.Registration(k)
-	if !ok || r.f.host.State(k) != pluginhost.StateReady {
+	if !ok || r.f.host.State(k) != plugin.StateReady {
 		// Not logged: status shows the entry PLUGIN_UNAVAILABLE.
 		r.failing = true
 		return roundFailed
@@ -273,7 +273,7 @@ func (r *feedReader) round(ctx context.Context) roundResult {
 
 // send sends batch b on registration reg and moves the cursor to the
 // answer.
-func (r *feedReader) send(ctx context.Context, reg pluginhost.Registration, b feedRead) roundResult {
+func (r *feedReader) send(ctx context.Context, reg plugin.Registration, b feedRead) roundResult {
 	k := r.pair.key
 	raw, seqs, err := feedBatch(b.events)
 	if err != nil {
@@ -287,7 +287,7 @@ func (r *feedReader) send(ctx context.Context, reg pluginhost.Registration, b fe
 	outcome := make(chan error, 1)
 	agent := r.pair.agent
 	err = s.Send(ctx, pluginCall{
-		run: func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error {
+		run: func(ctx context.Context, h *plugin.Host, k pluginmodel.EntryKey) error {
 			var err error
 			last, err = h.ObserveFeedOn(ctx, k, reg, agent, raw)
 			return err

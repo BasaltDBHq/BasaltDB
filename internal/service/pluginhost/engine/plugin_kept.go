@@ -22,8 +22,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // keptDatabaseTimeout bounds each database's part of a plugin method: the
@@ -57,7 +57,7 @@ type KeptAgent struct {
 // agent's database with that agent's own credential. The methods that
 // change entries run one at a time.
 type KeptPlugins struct {
-	store      *pluginhost.Store
+	store      *plugin.Store
 	cfg        config.Config
 	configPath string
 	agents     map[string]KeptAgent
@@ -82,16 +82,16 @@ type KeptPlugins struct {
 
 // storeError maps a store refusal to the person socket.
 func storeError(err error) error {
-	var ke *pluginhost.Error
+	var ke *plugin.Error
 	if !errors.As(err, &ke) {
 		return err
 	}
 	switch ke.Kind {
-	case pluginhost.KindInvalid:
+	case plugin.KindInvalid:
 		return &person.Error{Code: person.CodeInvalidArgument, Message: ke.Message}
-	case pluginhost.KindNotFound:
+	case plugin.KindNotFound:
 		return &person.Error{Code: person.CodeNotFound, Message: ke.Message}
-	case pluginhost.KindRefused:
+	case plugin.KindRefused:
 	}
 	return person.Refused(ke.Reason, ke.Message)
 }
@@ -110,7 +110,7 @@ func (s *KeptPlugins) UploadBegin(_ context.Context, uid uint32) (person.PluginU
 	if err != nil {
 		return person.PluginUploadBeginResult{}, storeError(err)
 	}
-	return person.PluginUploadBeginResult{UploadID: u.ID, ExpiresAt: u.ExpiresAt, MaxPartBytes: pluginhost.MaxPartBytes, MaxUploadBytes: pluginhost.MaxUploadBytes}, nil
+	return person.PluginUploadBeginResult{UploadID: u.ID, ExpiresAt: u.ExpiresAt, MaxPartBytes: plugin.MaxPartBytes, MaxUploadBytes: plugin.MaxUploadBytes}, nil
 }
 
 // UploadPart is PLUGIN_UPLOAD_PART.
@@ -183,7 +183,7 @@ func (s *KeptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	if !scope.AllowsAll(p.Agents) {
 		return person.PluginOpenResult{}, notAllowed(k)
 	}
-	var taken *pluginhost.Taken
+	var taken *plugin.Taken
 	if p.UploadID != nil {
 		t, err := s.store.Take(uid, *p.UploadID)
 		if err != nil {
@@ -232,7 +232,7 @@ func (s *KeptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	case prev != nil && !scope.AllowsAll(prev.Agents):
 		return person.PluginOpenResult{}, notAllowed(k)
 	case prev == nil && len(entries) >= config.MaxKeptPlugins:
-		return person.PluginOpenResult{}, person.Refused(pluginhost.ReasonTooLarge, fmt.Sprintf(
+		return person.PluginOpenResult{}, person.Refused(plugin.ReasonTooLarge, fmt.Sprintf(
 			"the engine keeps at most %d plugin entries; remove one first", config.MaxKeptPlugins))
 	}
 	if p.Settings != nil {
@@ -242,7 +242,7 @@ func (s *KeptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	}
 
 	// The copy: staged from the upload, or the installed one.
-	var staged *pluginhost.Staged
+	var staged *plugin.Staged
 	var v pluginmodel.Verified
 	if taken != nil {
 		if err := s.refuseLocalAsRoot(taken); err != nil {
@@ -358,7 +358,7 @@ func derefInt(p *int) int {
 // refuseLocalAsRoot refuses, before anything is written, the upload of a
 // local plugin to an engine running as root (ENGINE_IS_ROOT). A manifest
 // that does not parse is left to staging, which names the rule.
-func (s *KeptPlugins) refuseLocalAsRoot(t *pluginhost.Taken) error {
+func (s *KeptPlugins) refuseLocalAsRoot(t *plugin.Taken) error {
 	if s.euid != 0 {
 		return nil
 	}
@@ -366,7 +366,7 @@ func (s *KeptPlugins) refuseLocalAsRoot(t *pluginhost.Taken) error {
 	// which names the rule it breaks.
 	raw, readErr := t.Manifest()
 	if readErr == nil {
-		if m, err := pluginhost.ParseManifest(raw); err == nil && !m.Endpoint.IsRemote() {
+		if m, err := plugin.ParseManifest(raw); err == nil && !m.Endpoint.IsRemote() {
 			return engineIsRoot()
 		}
 	}
@@ -387,9 +387,9 @@ func keptRefusal(err error) error {
 	}
 	reason := string(ve.Reason)
 	if ve.Path != nil {
-		reason = pluginhost.ReasonUnsafePath
+		reason = plugin.ReasonUnsafePath
 	}
-	return &pluginhost.Error{Kind: pluginhost.KindRefused, Reason: reason, Message: "the installed copy is refused: " + ve.Error() + ". Nothing was written"}
+	return &plugin.Error{Kind: plugin.KindRefused, Reason: reason, Message: "the installed copy is refused: " + ve.Error() + ". Nothing was written"}
 }
 
 // sameSettings reports whether a and b have the same settings.
@@ -839,12 +839,12 @@ func (s *KeptPlugins) listed(p config.Plugin, source string, scope person.Scope,
 		mode = pluginmodel.ModeSameUser
 		v, err = s.store.Verify(k, p.ManifestSHA256)
 	} else {
-		root, err = pluginhost.Root(trustMode, s.goos, filepath.Dir(s.configPath))
+		root, err = plugin.Root(trustMode, s.goos, filepath.Dir(s.configPath))
 		if err == nil {
-			var trust pluginhost.TrustStore
-			trust, err = pluginhost.NewTrustStore(trustMode, s.goos, filepath.Dir(s.configPath))
+			var trust plugin.TrustStore
+			trust, err = plugin.NewTrustStore(trustMode, s.goos, filepath.Dir(s.configPath))
 			if err == nil {
-				v, err = pluginhost.Verify(root, k, p.ManifestSHA256, trust, trustMode)
+				v, err = plugin.Verify(root, k, p.ManifestSHA256, trust, trustMode)
 			}
 		}
 	}
@@ -967,8 +967,8 @@ func (r *keptApprovalReader) stateOf(agent string, k pluginmodel.EntryKey) perso
 // are swept. A store that cannot be opened is logged and nil: no
 // engine-kept entry is served, and the person socket answers the plugin
 // methods UNKNOWN_METHOD.
-func OpenKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *pluginhost.Store {
-	store, err := pluginhost.New(stateDir, time.Now)
+func OpenKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *plugin.Store {
+	store, err := plugin.New(stateDir, time.Now)
 	if err != nil {
 		log.Error("engine-kept plugins are not served: the state directory cannot hold them", "err", err)
 		return nil
@@ -984,7 +984,7 @@ func OpenKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *plugin
 // OpenKeptPlugins serves the person socket's plugin methods on store, nil
 // when there is none. A change applies to what ep runs before the method
 // answers, and PLUGIN_LIST says what ep serves.
-func OpenKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Store, ep *Plugins, agents map[string]KeptAgent, log *slog.Logger, ports Ports) *KeptPlugins {
+func OpenKeptPlugins(cfg config.Config, configPath string, store *plugin.Store, ep *Plugins, agents map[string]KeptAgent, log *slog.Logger, ports Ports) *KeptPlugins {
 	if store == nil {
 		return nil
 	}
@@ -996,7 +996,7 @@ func OpenKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Sto
 // NewKeptPlugins serves the person socket's plugin methods on store, with no
 // engine behind it: a change applies to nothing and PLUGIN_LIST reports
 // nothing served.
-func NewKeptPlugins(store *pluginhost.Store, cfg config.Config, configPath string, agents map[string]KeptAgent, log *slog.Logger, ports Ports) *KeptPlugins {
+func NewKeptPlugins(store *plugin.Store, cfg config.Config, configPath string, agents map[string]KeptAgent, log *slog.Logger, ports Ports) *KeptPlugins {
 	return &KeptPlugins{
 		store: store, cfg: cfg, configPath: configPath, agents: agents, euid: engineEUID(), goos: runtimeGOOS(), log: log, ports: ports,
 	}

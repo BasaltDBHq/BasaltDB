@@ -23,7 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // maxSourceBytes bounds what is read of a plugin folder: the upload's own
@@ -263,11 +263,11 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 		}
 		return b, fi.Mode().Perm()&0o111 != 0, nil
 	}
-	manifest, _, err := read(pluginhost.ManifestFile, pluginhost.MaxManifestBytes)
+	manifest, _, err := read(plugin.ManifestFile, plugin.MaxManifestBytes)
 	if err != nil {
 		return PluginSource{}, err
 	}
-	m, err := pluginhost.ParseManifest(manifest)
+	m, err := plugin.ParseManifest(manifest)
 	if err != nil {
 		return PluginSource{}, &toolresult.ToolError{
 			Code: codePluginRefused, Reason: "BAD_MANIFEST", Message: "the plugin is refused: " + err.Error() + ". Nothing was written",
@@ -275,13 +275,13 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 			NextSteps:     []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
 		}
 	}
-	files := []PluginFile{{Path: pluginhost.ManifestFile, Data: manifest}}
-	if _, err := root.Lstat(pluginhost.SignatureFile); err == nil {
-		sig, _, err := read(pluginhost.SignatureFile, pluginhost.MaxSignatureFileBytes)
+	files := []PluginFile{{Path: plugin.ManifestFile, Data: manifest}}
+	if _, err := root.Lstat(plugin.SignatureFile); err == nil {
+		sig, _, err := read(plugin.SignatureFile, plugin.MaxSignatureFileBytes)
 		if err != nil {
 			return PluginSource{}, err
 		}
-		files = append(files, PluginFile{Path: pluginhost.SignatureFile, Data: sig})
+		files = append(files, PluginFile{Path: plugin.SignatureFile, Data: sig})
 	}
 	var execs []string
 	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {

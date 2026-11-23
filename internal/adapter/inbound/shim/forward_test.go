@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 
 	"github.com/stretchr/testify/require"
 
@@ -126,8 +127,8 @@ func TestARequestThatNeverReachedAClosedEngineGoesToTheNextOne(t *testing.T) {
 
 // testServiceManager is a service manager with fixed commands: no shim test
 // reads them.
-func testServiceManager() agent.ServiceManager {
-	return agent.ServiceManager{
+func testServiceManager() guidance.ServiceManager {
+	return guidance.ServiceManager{
 		StartCommand: func(string) string { return "start-the-engine" },
 		RestartArgs:  func(string) []string { return []string{"restart-the-engine"} },
 	}

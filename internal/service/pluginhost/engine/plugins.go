@@ -18,9 +18,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Options are how the engine reaches its plugins.
@@ -39,7 +39,7 @@ type Options struct {
 	goos string
 	euid int
 	// clock is the supervisor's; plugin.RealClock() when nil.
-	clock pluginhost.Clock
+	clock plugin.Clock
 	// units finds a service engine's plugin units; the machine's when nil.
 	units *UnitSource
 	// Ports are the adapters the host is built on; every one is required.
@@ -59,7 +59,7 @@ type Options struct {
 	now func() time.Time
 	// kept is a service engine's own entries (CONTRACT.md, Plugin approval
 	// in service mode); nil in same-user mode.
-	kept *pluginhost.Store
+	kept *plugin.Store
 }
 
 // Why an entry is not started though it verified.
@@ -73,8 +73,8 @@ const (
 // run by a supervisor. It is the agents' status source for PLUGIN_UNAVAILABLE
 // and PLUGIN_NOT_TRUSTED. A plugin that fails never stops the engine.
 type Plugins struct {
-	host *pluginhost.Host
-	sup  *pluginhost.Supervisor
+	host *plugin.Host
+	sup  *plugin.Supervisor
 	log  *slog.Logger
 	o    Options
 	// senders make the notifier hooks' calls, one per served entry that
@@ -90,7 +90,7 @@ type Plugins struct {
 
 	mode  pluginmodel.Mode
 	root  string
-	trust pluginhost.TrustStore
+	trust plugin.TrustStore
 
 	mu sync.Mutex
 	// first is each entry's copy verified at start, used by its first
@@ -140,7 +140,7 @@ type Plugins struct {
 	// can), the engine-kept entries not served because engine.json holds
 	// their (name, instance), and why no engine-kept local entry may start
 	// (an agent's OS user in the engine's group).
-	kept        *pluginhost.Store
+	kept        *plugin.Store
 	keptKeys    map[pluginmodel.EntryKey]bool
 	keptProblem string
 	clashes     []config.Plugin
@@ -190,10 +190,10 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 		o.goos = runtime.GOOS
 	}
 	if o.clock == nil {
-		o.clock = pluginhost.RealClock()
+		o.clock = plugin.RealClock()
 	}
 	ep := &Plugins{
-		host: pluginhost.NewHost(), log: log, o: o,
+		host: plugin.NewHost(), log: log, o: o,
 		mode:  pluginmodel.ModeSameUser,
 		first: map[pluginmodel.EntryKey]pluginmodel.Verified{}, notTrusted: map[pluginmodel.EntryKey]error{}, refused: map[pluginmodel.EntryKey]string{},
 		approval: map[pluginmodel.EntryKey]bool{}, startChecks: map[pluginmodel.EntryKey]entryCheck{},
@@ -216,7 +216,7 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 	}
 	configured := configuredPlugins(ep.startCfg)
 	ep.configured = configured
-	ep.sup = pluginhost.NewSupervisor(ep.host, ep.dial, o.clock).WithLog(log)
+	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, o.clock).WithLog(log)
 	if o.now == nil {
 		o.now = time.Now
 		ep.o.now = o.now
@@ -227,8 +227,8 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 		ep.delivery.timing = *o.deliverTiming
 	}
 	dir := filepath.Dir(configPath)
-	root, rootErr := pluginhost.Root(ep.mode, o.goos, dir)
-	trust, trustErr := pluginhost.NewTrustStore(ep.mode, o.goos, dir)
+	root, rootErr := plugin.Root(ep.mode, o.goos, dir)
+	trust, trustErr := plugin.NewTrustStore(ep.mode, o.goos, dir)
 	ep.root, ep.trust = root, trust
 	ep.rootErr = errors.Join(rootErr, trustErr)
 	for _, p := range configured {
@@ -310,7 +310,7 @@ func (ep *Plugins) startCheck(k pluginmodel.EntryKey) (entryCheck, bool) {
 func verifyFailure(err error) string {
 	var ve *pluginmodel.VerifyError
 	if errors.As(err, &ve) {
-		return pluginhost.VerifyFailure(ve)
+		return plugin.VerifyFailure(ve)
 	}
 	return err.Error()
 }
@@ -425,7 +425,7 @@ func (ep *Plugins) verifyCopy(k pluginmodel.EntryKey, sum string, required bool)
 	if ep.isKept(k) {
 		return ep.kept.Verify(k, sum)
 	}
-	return pluginhost.Verify(ep.root, k, sum, ep.trust, ep.mode, pluginhost.RequireApproval(required))
+	return plugin.Verify(ep.root, k, sum, ep.trust, ep.mode, plugin.RequireApproval(required))
 }
 
 func (ep *Plugins) configuredEntry(k pluginmodel.EntryKey) config.Plugin {
@@ -490,7 +490,7 @@ func (ep *Plugins) PluginProblems(name string) []agent.PluginProblem {
 		withheld := ep.unrecordedFor(k, name)
 		switch {
 		case notTrusted != nil:
-			prob.Code, prob.Message = agent.ProblemPluginNotTrusted, pluginhost.NotTrustedMessage(k, notTrusted, name)
+			prob.Code, prob.Message = agent.ProblemPluginNotTrusted, plugin.NotTrustedMessage(k, notTrusted, name)
 		case refused != "":
 			prob.Message = "plugin " + k.String() + " was not started: " + refused
 		case withheld.why != "":
@@ -498,7 +498,7 @@ func (ep *Plugins) PluginProblems(name string) []agent.PluginProblem {
 				prob.Code = withheld.code
 			}
 			prob.Message = "plugin " + k.String() + " is not served to this agent: " + withheld.why
-		case ep.host.State(k) == pluginhost.StateReady:
+		case ep.host.State(k) == plugin.StateReady:
 			continue
 		default:
 			prob.Message = "plugin " + k.String() + " is not ready"
@@ -687,7 +687,7 @@ func (ep *Plugins) healthOf(k pluginmodel.EntryKey, kept bool) string {
 	if ep == nil || ep.host == nil || ep.isKept(k) != kept {
 		return person.HealthNotStarted
 	}
-	if ep.host.State(k) == pluginhost.StateReady {
+	if ep.host.State(k) == plugin.StateReady {
 		return person.HealthReady
 	}
 	if _, ok := ep.host.Registration(k); ok {

@@ -23,7 +23,7 @@ type EngineDown struct {
 	// Name is the agent's name.
 	Name string
 	// Commands are the agent's commands: the engine start among them.
-	Commands Commands
+	Commands guidance.Commands
 	// Config is the engine config the shim could read; nil when it could
 	// not (then operatedBy is PERSON).
 	Config *config.Config
@@ -156,7 +156,7 @@ func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
 
 // commands are d's commands for the operatedBy of the config the shim
 // read; PERSON when it read none.
-func (d EngineDown) commands() Commands {
+func (d EngineDown) commands() guidance.Commands {
 	if d.Config == nil {
 		return d.Commands.OperatedBy(mcpcontract.OperatedByPerson)
 	}

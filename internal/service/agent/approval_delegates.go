@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 
 	"github.com/google/uuid"
@@ -37,7 +39,7 @@ func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret strin
 }
 
 // liveWrites is the write store's statement check, read live from the service.
-type liveWrites struct{ d *WriteDeps }
+type liveWrites struct{ d *agentsvc.WriteDeps }
 
 func (l liveWrites) Check(sql string, tool action.Tool) (action.Statement, error) {
 	return l.d.Store.Check(sql, tool)

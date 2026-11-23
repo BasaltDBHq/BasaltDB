@@ -2,69 +2,18 @@ package agent
 
 import (
 	"context"
-	"time"
-
-	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
-// writeCase is the query and write use case: runs, reads, writes and the
-// holding of a write for the person's approval. It holds a reference to the
-// shared core group and to its own WriteDeps. What it needs from the other use
-// cases it names as small ports of its own.
-type writeCase struct {
-	core      *CoreDeps
-	deps      *WriteDeps
-	delivery  writeDelivery
-	approvals writeApprovals
-	upgrade   upgradeWarner
-	next      approvalLinker
-}
-
-// writeDelivery is what the write use case asks of the delivery use case.
-type writeDelivery interface {
-	ApprovalReceiptOf(a action.Approval) (linksvc.Receipt, error)
-	AwaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error
-	DeliverHeld(id uuid.UUID, expires time.Time, answer error)
-	NotifyHeldTo(ctx context.Context, n linksvc.HeldNotice) error
-}
-
-// writeApprovals is what the write use case asks of the approval use case: to
-// hold a write and to read it back.
-type writeApprovals interface {
-	ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error)
-	HoldColumns(ctx context.Context, sql string, params []any) ([]string, error)
-	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
-	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
-	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
-	// NotFound is the ledger's answer for an approval the role does not hold.
-	NotFound() error
-}
-
-// upgradeWarner gives the warnings of a guard that can be upgraded, for run_start.
-type upgradeWarner interface {
-	UpgradeWarnings(ctx context.Context) []toolresult.Warning
-}
-
-// approvalLinker puts the link of a held write into an error answer.
-type approvalLinker interface {
-	approvalLinkError(te *toolresult.ToolError, n linksvc.HeldAnswer) *toolresult.ToolError
-}
-
-func newWriteCase(core *CoreDeps, deps *WriteDeps, delivery writeDelivery, approvals writeApprovals, upgrade upgradeWarner, next approvalLinker) *writeCase {
-	return &writeCase{core: core, deps: deps, delivery: delivery, approvals: approvals, upgrade: upgrade, next: next}
-}
-
 // StartRun starts a run with intent. taskID joins a task another agent
 // started; uuid.Nil starts a new task.
-// StartRun is the write use case's StartRun.
-func (s *Service) StartRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
-	return s.write.StartRun(ctx, intent, taskID)
+func (s *Service) StartRun(ctx context.Context, intent string, taskID uuid.UUID) (agentsvc.RunInfo, error) {
+	return s.agent.StartRun(ctx, intent, taskID)
 }
 
 // Query checks sql against the policy, runs it read-only within the limits
@@ -72,9 +21,8 @@ func (s *Service) StartRun(ctx context.Context, intent string, taskID uuid.UUID)
 // refused or failed statement is recorded as a REFUSED change. A read that
 // cannot be recorded is not returned: the ledger must know what the agent
 // saw.
-// Query is the write use case's Query.
-func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
-	return s.write.Query(ctx, p)
+func (s *Service) Query(ctx context.Context, p agentsvc.QueryParams) (agentsvc.QueryOutcome, error) {
+	return s.agent.Query(ctx, p)
 }
 
 // History returns one page of a run's change records.
@@ -83,14 +31,12 @@ func (s *Service) History(ctx context.Context, p action.ChangeListParams) (Histo
 }
 
 // ListRuns returns one page of the agent's own runs with what each did.
-// ListRuns is the write use case's ListRuns.
 func (s *Service) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return s.write.ListRuns(ctx, p)
+	return s.agent.ListRuns(ctx, p)
 }
 
 // Write checks sql against the policy and runs it through the guard with
 // the intent. A refused or failed write is recorded as a REFUSED change.
-// Write is the write use case's Write.
-func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error) {
-	return s.write.Write(ctx, p)
+func (s *Service) Write(ctx context.Context, p agentsvc.WriteParams) (agentsvc.WriteOutcome, error) {
+	return s.agent.Write(ctx, p)
 }

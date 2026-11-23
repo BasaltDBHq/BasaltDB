@@ -168,14 +168,17 @@ func describeService(t *testing.T, cat agentsvc.Catalog, classes fakeClasses, op
 	return NewService(d)
 }
 
-// kindStore is a store of one kind.
-type kindStore action.StoreKind
+// kindStore is a store of one kind: describe reads nothing else of it.
+type kindStore struct {
+	agentsvc.Store
+	kind action.StoreKind
+}
 
-func (k kindStore) Kind() action.StoreKind { return action.StoreKind(k) }
+func (k kindStore) Kind() action.StoreKind { return k.kind }
 
 // describeUseCase is the describe use case over cat, on the commands cmds.
 func describeUseCase(cmds guidance.Commands, cat agentsvc.Catalog) *agentsvc.Service {
-	return agentsvc.New(agentsvc.Core{Store: kindStore(action.StorePostgres), Commands: cmds}, &agentsvc.DescribeDeps{Catalog: cat, Classes: fakeClasses{}},
+	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Commands: cmds}, &agentsvc.DescribeDeps{Catalog: cat, Classes: fakeClasses{}}, &agentsvc.WriteDeps{},
 		func() *guidance.UpdateInfo { return nil })
 }
 
@@ -790,14 +793,4 @@ func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
 	m := decodeBody(t, body)
 	require.Len(t, m["schemas"], 50)
 	require.NotContains(t, m, "otherSchemas")
-}
-
-func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
-	t.Parallel()
-	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
-	require.NoError(t, err)
-	msg := describeUseCase(cmds, &fakeCatalog{}).DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
-	require.Contains(t, msg, "another database needs its own agent")
-	require.NotContains(t, msg, "basalt ", "the person runs no command")
-	require.NoError(t, guidance.CheckPersonMessage(msg))
 }

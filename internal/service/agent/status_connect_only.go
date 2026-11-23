@@ -85,7 +85,7 @@ func (c ConnectOnly) Tools() []guidance.Tool {
 		default:
 			call = c.refused(ct.Name)
 		}
-		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: refuseAdminCredential(ct.Name, call)})
+		out = append(out, guidance.Tool{Name: ct.Name, Description: ct.Description, InputSchema: ct.InputSchema, Call: RefuseAdminCredential(ct.Name, call)})
 	}
 	return out
 }

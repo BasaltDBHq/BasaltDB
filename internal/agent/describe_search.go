@@ -34,7 +34,7 @@ func (ds *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (
 		}
 		after = &c
 	}
-	secrets, err := ds.deps.Classes.Secrets(ctx)
+	secrets, err := ds.describe.Classes.Secrets(ctx)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
@@ -42,7 +42,7 @@ func (ds *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (
 	for _, r := range secrets {
 		exclude = append(exclude, CatalogColumnKey{OID: r.TableOID, Attnum: r.Attnum})
 	}
-	matches, err := ds.deps.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
+	matches, err := ds.describe.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}

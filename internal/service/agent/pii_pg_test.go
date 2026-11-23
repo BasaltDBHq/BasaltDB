@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
 	"github.com/basaltdbhq/basaltdb/internal/pii/out/dictfile"
@@ -32,7 +34,7 @@ import (
 // piiService is the engine's agent service with the PII observer wired as
 // the engine wires it: query rows through the service, RETURNING rows inside
 // the write's transaction.
-func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc) (*agent.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
+func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedFunc) (*agent.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, city text);
@@ -71,7 +73,7 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
 	t.Parallel()
 	svc, _, dict, keys := piiService(t, nil, nil)
-	out, err := svc.Query(context.Background(), agent.QueryParams{SQL: `SELECT id, email, city FROM people ORDER BY id`})
+	out, err := svc.Query(context.Background(), agentsvc.QueryParams{SQL: `SELECT id, email, city FROM people ORDER BY id`})
 	require.NoError(t, err)
 	require.Len(t, out.Rows, 2)
 	for _, v := range []string{"ann@corp.ee", "ben@corp.ee"} {
@@ -91,7 +93,7 @@ func (failingObserver) Observe(context.Context, []action.Column, []map[string]an
 func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 	t.Parallel()
 	svc, d, _, _ := piiService(t, failingObserver{}, nil)
-	out, err := svc.Query(context.Background(), agent.QueryParams{SQL: `SELECT email FROM people`})
+	out, err := svc.Query(context.Background(), agentsvc.QueryParams{SQL: `SELECT email FROM people`})
 	require.Error(t, err)
 	require.Empty(t, out.Rows)
 	require.Equal(t, guidance.CodeInternal, agenttest.ToolError(err).Code)
@@ -106,7 +108,7 @@ func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 		return corepii.ErrDeltaFull
 	}
 	svc, d, _, _ := piiService(t, failingObserver{}, refuse)
-	_, err := svc.Write(context.Background(), agent.WriteParams{
+	_, err := svc.Write(context.Background(), agentsvc.WriteParams{
 		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",
 	})
 	require.ErrorIs(t, err, corepii.ErrDeltaFull)

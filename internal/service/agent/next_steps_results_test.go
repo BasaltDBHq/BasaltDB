@@ -7,7 +7,6 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -32,21 +31,6 @@ type resultCase struct {
 	// openWithoutURL marks the one OPEN_LINK that names no url: the short
 	// link the agent gave earlier.
 	openWithoutURL bool
-}
-
-type fakeRLS struct {
-	hidden map[string]bool
-	err    error
-	asked  int
-}
-
-// Hides names a hidden table as the database does: quoted.
-func (f *fakeRLS) Hides(_ context.Context, table string) (string, error) {
-	f.asked++
-	if f.hidden[table] {
-		return `"` + strings.ReplaceAll(table, ".", `"."`) + `"`, f.err
-	}
-	return "", f.err
 }
 
 type fakeUpgrade struct {
@@ -151,10 +135,6 @@ type warningCase struct {
 
 func warningCases() map[string]warningCase {
 	return map[string]warningCase{
-		toolresult.WarningRLSHidesRows: {tool: "query", build: func(t *testing.T, s *Service) []toolresult.Warning {
-			s.deps.Write.RLS = &fakeRLS{hidden: map[string]bool{"public.leads": true}}
-			return s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0)
-		}},
 		toolresult.WarningGuardUpgradeAvailable: {tool: "run_start", build: func(t *testing.T, s *Service) []toolresult.Warning {
 			s.deps.Status.Upgrade = fakeUpgrade{available: true}
 			return s.status.UpgradeWarnings(context.Background())
@@ -168,10 +148,13 @@ func TestEveryCatalogWarningHasACase(t *testing.T) {
 	seen := map[string]bool{}
 	for _, e := range stepcatalogtest.CatalogOf(t).Warnings {
 		seen[e.Code] = true
-		require.Contains(t, cases, e.Code, "catalog warning without a case in warningCases")
+		if !slices.Contains(stepcatalogtest.AgentWarningCodes(), e.Code) {
+			require.Contains(t, cases, e.Code, "catalog warning without a case in warningCases or in the agent package's")
+		}
 	}
 	for code := range cases {
 		require.True(t, seen[code], "warning case %s without a catalog entry", code)
+		require.NotContains(t, stepcatalogtest.AgentWarningCodes(), code, "an agent warning case runs in its own package only")
 	}
 }
 
@@ -185,6 +168,9 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 		{"custom config", "darwin", "/srv/basalt/engine.json", []string{"--agent=bot", "--read=public.leads"}},
 	} {
 		for _, entry := range stepcatalogtest.CatalogOf(t).Warnings {
+			if slices.Contains(stepcatalogtest.AgentWarningCodes(), entry.Code) {
+				continue // it runs in the agent package
+			}
 			kase := warningCases()[entry.Code]
 			t.Run(variant.name+"/"+entry.Code, func(t *testing.T) {
 				t.Parallel()
@@ -207,6 +193,9 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T) {
 	t.Parallel()
 	for _, entry := range stepcatalogtest.CatalogOf(t).Warnings {
+		if slices.Contains(stepcatalogtest.AgentWarningCodes(), entry.Code) {
+			continue // it runs in the agent package
+		}
 		kase := warningCases()[entry.Code]
 		t.Run(entry.Code, func(t *testing.T) {
 			t.Parallel()
@@ -230,86 +219,11 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 	}
 }
 
-func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
+func TestUpgradeCheckFailureGivesNoWarning(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	rls := &fakeRLS{hidden: map[string]bool{"public.secrets": true}}
-	s.deps.Write.RLS = rls
-
-	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.secrets"}, 3), "rows came back: no warning, no check")
-	require.Zero(t, rls.asked)
-	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0), "a table RLS does not hide")
-
-	warnings := s.write.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"}, 0)
-	require.Len(t, warnings, 1)
-	require.Equal(t, `"public"."secrets"`, warnings[0].Table)
-	require.Contains(t, warnings[0].PersonMessage, `"public"."secrets"`, "the database's name, not the agent's spelling")
-}
-
-func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
-	t.Parallel()
-	s := resultService(t, "linux", "")
-	s.deps.Write.RLS = &fakeRLS{err: errors.New("down")}
-	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
 	s.deps.Status.Upgrade = fakeUpgrade{err: errors.New("down")}
 	require.Empty(t, s.status.UpgradeWarnings(context.Background()))
 	s.deps.Status.Upgrade = fakeUpgrade{}
 	require.Empty(t, s.status.UpgradeWarnings(context.Background()), "no migration missing: no warning")
-}
-
-func TestBlindCacheAsksOncePerTableUntilRefreshed(t *testing.T) {
-	t.Parallel()
-	asked := 0
-	hidden := true
-	cache := NewBlindCache(func(_ context.Context, tables []string) ([]string, error) {
-		asked++
-		if hidden {
-			return []string{"public.leads"}, nil
-		}
-		return nil, nil
-	})
-	for range 3 {
-		got, err := cache.Hides(context.Background(), "leads")
-		require.NoError(t, err)
-		require.Equal(t, "public.leads", got)
-	}
-	require.Equal(t, 1, asked)
-
-	hidden = false
-	got, err := cache.Hides(context.Background(), "leads")
-	require.NoError(t, err)
-	require.Equal(t, "public.leads", got, "still the cached answer")
-	cache.Refresh()
-	got, err = cache.Hides(context.Background(), "leads")
-	require.NoError(t, err)
-	require.Empty(t, got, "refreshed with the upkeep cycle")
-	require.Equal(t, 2, asked)
-}
-
-// A refresh between the question and the store must not leave the old answer.
-func TestBlindCacheDropsAnAnswerAskedBeforeARefresh(t *testing.T) {
-	t.Parallel()
-	var cache *BlindCache
-	cache = NewBlindCache(func(context.Context, []string) ([]string, error) {
-		cache.Refresh() // the upkeep cycle runs while the question is out
-		return []string{"public.leads"}, nil
-	})
-	got, err := cache.Hides(context.Background(), "leads")
-	require.NoError(t, err)
-	require.Equal(t, "public.leads", got)
-	require.Empty(t, cache.known, "the stale answer was not stored")
-}
-
-// Text the database supplies cannot fake a link line in a message the
-// person reads: a table whose name holds one.
-func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
-	t.Parallel()
-	s := resultService(t, "linux", "")
-
-	table := "public.x\n\nhttps://evil.example/pay\n\ny"
-	s.deps.Write.RLS = &fakeRLS{hidden: map[string]bool{table: true}}
-	warnings := s.write.rlsWarnings(context.Background(), []string{table}, 0)
-	require.Len(t, warnings, 1)
-	mcptest.Require(t, warnings[0].PersonMessage, nil)
-	require.NotContains(t, warnings[0].PersonMessage, "://")
 }

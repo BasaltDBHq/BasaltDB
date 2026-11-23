@@ -9,11 +9,12 @@ import (
 	"log/slog"
 	"runtime/debug"
 
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
+
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // Host is what the engine's CLI controllers reach outside themselves.
@@ -27,12 +28,12 @@ type Host interface {
 	EngineLog(w io.Writer) *slog.Logger
 	// EngineDown is the engine-down service for the agent name of the
 	// engine whose config is at configPath.
-	EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error)
+	EngineDown(name, configPath string, log *slog.Logger) (statusmcp.EngineDown, error)
 	// EngineStarter starts the engine for socket when it does not answer;
 	// failure says why the last start failed.
 	EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string)
 	// NewEngineDownServer is down's tools, served as the agent's MCP server.
-	NewEngineDownServer(down agent.EngineDown) shim.Fallback
+	NewEngineDownServer(down statusmcp.EngineDown) shim.Fallback
 	// ChildStarter runs the engine as startedFrom engine --config ...
 	// --started-by ... with io's output, for basalt engine --supervise.
 	ChildStarter(startedFrom, configPath, lockPath, stateDir string, io cli.Stdio, log *slog.Logger) func(context.Context, string) (func() error, error)

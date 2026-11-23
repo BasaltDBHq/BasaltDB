@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -87,37 +85,6 @@ func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) linksvc.He
 	return n
 }
 
-// TestPersonMessagesNameNoCommandWithALongConfigPath builds the
-// personMessages that once offered a command named after --config, with a
-// 252-character path: each stays within the limit and names no basalt
-// command, since the person acts on a link (CONTRACT.md, Next steps).
-func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
-	t.Parallel()
-	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux", testManager())
-	require.NoError(t, err)
-	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
-	s.wire()
-
-	messages := map[string]string{}
-	describe := describeUseCase(cmds, &fakeCatalog{notGranted: 12})
-	granted, err := describe.DescribeOverview(context.Background())
-	require.NoError(t, err)
-	messages["not granted"] = granted.PersonMessage
-	messages["describe not found"] = describe.DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
-	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
-	rls.wire()
-	w, err := rls.write.rlsWarning("public." + strings.Repeat("t", 60))
-	require.NoError(t, err)
-	messages["rls warning"] = w.PersonMessage
-
-	for name, m := range messages {
-		require.NoError(t, guidance.CheckPersonMessage(m), "%s: %s", name, m)
-		require.NotContains(t, m, long, name)
-		require.NotContains(t, m, "basalt ", "%s: the person runs no command", name)
-	}
-}
-
 // APPROVAL_INVALID sends the person back to the page the hold handed over:
 // with the pages served, to the short link they have (no url, no long link
 // over the budget); without them, to the hash link, naming the request file
@@ -127,7 +94,7 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, links.DefaultBudget)
 		n := approvalNoticeOf(t, s, 60, linksvc.KeepLink)
-		te := s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
+		te := s.ApprovalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
 		stepcatalogtest.RequirePersonMessage(t, te.PersonMessage, te.Links)
 		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
 		open := te.NextSteps[0]

@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
 
 	"github.com/basaltdbhq/basaltdb/internal/ledger/out/pinfile"
@@ -662,7 +664,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.relayLinks != nil {
 		env.relayLinks.Add(a.Name, secrets, env.dropLink)
 	}
-	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+	blind := agentsvc.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
 	var deliverer linksvc.LinkDeliverer
@@ -725,7 +727,7 @@ const guardLogTimeout = 15 * time.Second
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
 // started as root, through directories opened without
 // following a link, from the computed credential path only (rootFiles).
-func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
+func agentFilesFor(env agentEnv, a config.Agent) (handoff.AgentFiles, error) {
 	if !env.asRoot {
 		return handoff.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
 	}

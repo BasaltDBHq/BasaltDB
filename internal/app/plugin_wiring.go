@@ -169,34 +169,16 @@ func (p *pluginRequests) uploadMethods(caller string, served func() error) map[s
 		mcpserver.MethodPluginUploadBegin: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			out, err := p.UploadBegin(ctx, caller, served)
 			if err != nil {
-				return nil, uploadError(err)
+				return nil, plugin.UploadError(err)
 			}
 			return out, nil
 		},
 		mcpserver.MethodPluginUploadPart: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			out, err := p.UploadPart(ctx, caller, served, raw)
 			if err != nil {
-				return nil, uploadError(err)
+				return nil, plugin.UploadError(err)
 			}
 			return out, nil
 		},
 	}
-}
-
-// uploadError is the upload methods' answer for err.
-func uploadError(err error) *toolresult.ToolError {
-	var te *toolresult.ToolError
-	var r *plugin.PluginRefusedError
-	var ae *guidance.ArgumentError
-	switch {
-	case errors.As(err, &te):
-		return te
-	case errors.As(err, &r):
-		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
-	case errors.As(err, &ae):
-		return &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: ae.Message}
-	case errors.Is(err, plugin.ErrPluginNotFound):
-		return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: "the upload is unknown, expired or used"}
-	}
-	return &toolresult.ToolError{Code: guidance.CodeInternal, Message: "the engine could not take the plugin's files"}
 }

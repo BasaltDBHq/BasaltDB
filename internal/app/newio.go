@@ -21,8 +21,8 @@ const (
 	envCacheDir = "BASALT_CACHE_DIR"
 )
 
-// NewIO is the CLI shell over the real machine, for a command line on std.
-func NewIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.IO {
+// newIO is the CLI shell over the real machine, for a command line on std.
+func newIO(ctx context.Context, std cli.Stdio, getenv func(string) string) *cli.IO {
 	shell := Shell{}
 	c := &cli.IO{
 		Ctx: ctx, Stdin: bufio.NewReader(std.In), Stdout: std.Out, Stderr: std.Err,

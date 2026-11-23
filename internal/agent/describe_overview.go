@@ -13,21 +13,21 @@ import (
 // DescribeOverview counts what the agent can see, lists it (up to 50
 // tables) or its schemas, and tells the person how to see what it cannot.
 func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
-	visible, notGranted, err := ds.deps.Catalog.Relations(ctx)
+	visible, notGranted, err := ds.describe.Catalog.Relations(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	lines, err := ds.deps.Catalog.Structure(ctx)
+	lines, err := ds.describe.Catalog.Structure(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	pii, err := ds.deps.Classes.CatalogFingerprint(ctx)
+	pii, err := ds.describe.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	limits := ds.deps.Catalog.Limits()
+	limits := ds.describe.Catalog.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: string(ds.core.Store.Kind()), Database: ds.deps.Catalog.Database(), Host: ds.deps.Catalog.Host()},
+		Store:       StoreInfo{Kind: string(ds.core.Store.Kind()), Database: ds.describe.Catalog.Database(), Host: ds.describe.Catalog.Host()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
 		Update:      ds.update(),
@@ -130,10 +130,10 @@ func describeNotFound(resource string) error {
 		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, guidance.MaxTableChars))}
 }
 
-// DescribeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
+// describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
-func (ds *Service) DescribeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
+func (ds *Service) describeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
 	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: searchTerm(f.Arg(guidance.ArgResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")

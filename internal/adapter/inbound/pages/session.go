@@ -27,34 +27,39 @@ type sessionRoute struct {
 	resource string
 	action   string
 	param    string
-	serve    func(*Server, http.ResponseWriter, *http.Request)
+	// handler is the mounted handler the route serves.
+	handler func(*Server) http.HandlerFunc
 }
 
 // sessionRoutes are the only routes a session dispatches: never the links
 // issuing routes, /healthz, the pages or their files.
 var sessionRoutes = []sessionRoute{
-	{http.MethodGet, approvalsResource, "", approvalParam, (*Server).getApproval},
-	{http.MethodPost, approvalsResource, "approve", approvalParam, (*Server).postApproval},
-	{http.MethodGet, revertsResource, "", revertParam, (*Server).getRevert},
-	{http.MethodPost, revertsResource, "apply", revertParam, (*Server).postRevert},
-	{http.MethodPost, revertsResource, "scope", revertParam, (*Server).postScope},
-	{http.MethodPost, revertsResource, "reject", revertParam, (*Server).postReject},
-	{http.MethodPost, approvalsResource, "reveal", approvalParam, (*Server).postApprovalReveal},
-	{http.MethodPost, revertsResource, "reveal", revertParam, (*Server).postRevertReveal},
+	{http.MethodGet, approvalsResource, "", ApprovalParam, func(s *Server) http.HandlerFunc { return s.approvals.Get }},
+	{http.MethodPost, approvalsResource, "approve", ApprovalParam, func(s *Server) http.HandlerFunc { return s.approvals.Approve }},
+	{http.MethodGet, revertsResource, "", RevertParam, func(s *Server) http.HandlerFunc { return s.reverts.Get }},
+	{http.MethodPost, revertsResource, "apply", RevertParam, func(s *Server) http.HandlerFunc { return s.reverts.Apply }},
+	{http.MethodPost, revertsResource, "scope", RevertParam, func(s *Server) http.HandlerFunc { return s.reverts.Scope }},
+	{http.MethodPost, revertsResource, "reject", RevertParam, func(s *Server) http.HandlerFunc { return s.reverts.Reject }},
+	{http.MethodPost, approvalsResource, "reveal", ApprovalParam, func(s *Server) http.HandlerFunc { return s.approvals.Reveal }},
+	{http.MethodPost, revertsResource, "reveal", RevertParam, func(s *Server) http.HandlerFunc { return s.reverts.Reveal }},
 	// A plugin approval of an agent-operated engine (CONTRACT.md, Plugin
 	// approval through the portal): read and relay, as for an approval.
-	{http.MethodGet, pluginsResource, "", approvalParam, (*Server).getPlugin},
-	{http.MethodPost, pluginsResource, "approve", approvalParam, (*Server).postPlugin},
+	{http.MethodGet, pluginsResource, "", ApprovalParam, func(s *Server) http.HandlerFunc { return s.plugins.Get }},
+	{http.MethodPost, pluginsResource, "approve", ApprovalParam, func(s *Server) http.HandlerFunc { return s.plugins.Approve }},
 }
 
-// The resources of the pages API and the path parameters naming an
-// approval and a revert.
+// The resources of the pages API.
 const (
 	approvalsResource = "approvals"
 	revertsResource   = "reverts"
 	pluginsResource   = "plugins"
-	approvalParam     = "approvalId"
-	revertParam       = "revertId"
+)
+
+// ApprovalParam and RevertParam are the path parameters naming an approval
+// (a plugin approval too) and a revert, for LinkedID.
+const (
+	ApprovalParam = "approvalId"
+	RevertParam   = "revertId"
 )
 
 // sessionAPIPrefix starts every route a session may call.
@@ -124,6 +129,7 @@ type SessionResponse struct {
 // or secret as an unknown id (404 NOT_FOUND, one body for all), another
 // header 400, a foreign origin 403, a body over 16 KiB 413.
 func (s *Server) Dispatch(ctx context.Context, link SessionLink, req SessionRequest) SessionResponse {
+	s.mounted()
 	w := newRecorder()
 	s.serveSession(ctx, w, link, req)
 	return w.response()
@@ -132,7 +138,7 @@ func (s *Server) Dispatch(ctx context.Context, link SessionLink, req SessionRequ
 func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link SessionLink, req SessionRequest) {
 	route, id, ok := matchSessionRoute(req.Method, req.Path)
 	if !ok {
-		s.fail(w, unknownLink())
+		s.Fail(w, unknownLink())
 		return
 	}
 	for name, value := range req.Headers {
@@ -144,7 +150,7 @@ func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link S
 	}
 	secret := req.Headers[links.SecretHeader]
 	if id != link.Item.String() || !sessionSecret(secret, link.Token) {
-		s.fail(w, unknownLink())
+		s.Fail(w, unknownLink())
 		return
 	}
 	if req.Headers["origin"] != s.origin {
@@ -157,14 +163,14 @@ func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link S
 	}
 	r, err := http.NewRequestWithContext(ctx, req.Method, req.Path, bytes.NewReader(req.Body))
 	if err != nil {
-		s.fail(w, unknownLink())
+		s.Fail(w, unknownLink())
 		return
 	}
 	for name, value := range req.Headers {
 		r.Header.Set(sessionHeaders[name], value)
 	}
 	r.SetPathValue(route.param, id)
-	route.serve(s, w, r)
+	route.handler(s)(w, r)
 }
 
 // sessionSecret reports whether secret is the session's own link's: its

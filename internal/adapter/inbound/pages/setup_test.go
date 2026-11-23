@@ -191,7 +191,7 @@ func TestSetupOnlyHandlerServesThePageAndNothingElse(t *testing.T) {
 // no body, and every other route refuses a body with a databaseUrl.
 func TestConfiguredPagesTakeNoAdminString(t *testing.T) {
 	t.Parallel()
-	h := pages.New(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
+	h := mounted(pages.New(setupOrigin, slog.New(slog.DiscardHandler))).Handler()
 	w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
@@ -225,7 +225,7 @@ func TestConfiguredPagesRunTheSetupJobsTheyAreGiven(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
 	jobs := &fakeJobs{}
-	srv := pages.New(setupOrigin, slog.New(slog.NewTextHandler(&logs, nil)))
+	srv := mounted(pages.New(setupOrigin, slog.New(slog.NewTextHandler(&logs, nil))))
 	srv.SetSetup(jobs)
 	h := srv.Handler()
 	body := `{"job":"UPDATE","agent":"demo_bot","osUser":"alice","demo":false,"databaseUrl":"` + adminString + `"}`
@@ -253,7 +253,7 @@ func TestConfiguredPagesRunTheSetupJobsTheyAreGiven(t *testing.T) {
 func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 	t.Parallel()
 	jobs := &fakeJobs{}
-	srv := pages.New(setupOrigin, slog.New(slog.DiscardHandler))
+	srv := mounted(pages.New(setupOrigin, slog.New(slog.DiscardHandler)))
 	srv.SetSetup(jobs)
 	for _, h := range []http.Handler{srv.Handler(), pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
 		w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
@@ -270,7 +270,7 @@ func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 	require.Len(t, jobs.doctors, 2)
 	require.Equal(t, localsetup.DoctorRequest{Agent: "demo_bot", OSUser: "alice"}, jobs.doctors[0])
 
-	h := pages.New(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
+	h := mounted(pages.New(setupOrigin, slog.New(slog.DiscardHandler))).Handler()
 	w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), localsetup.CodeJobUnavailable)
@@ -282,7 +282,7 @@ func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
 	t.Parallel()
 	jobs := &fakeJobs{}
-	srv := pages.New(setupOrigin, slog.New(slog.DiscardHandler))
+	srv := mounted(pages.New(setupOrigin, slog.New(slog.DiscardHandler)))
 	srv.SetSetup(jobs)
 	for _, h := range []http.Handler{srv.Handler(), pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
 		w := setupCall{path: pages.SetupEnginePath, origin: setupOrigin, body: `{}`}.do(h)
@@ -307,7 +307,7 @@ func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
 	require.Equal(t, 2, jobs.engines)
 	require.Equal(t, 2, jobs.notMine)
 
-	h := pages.New(setupOrigin, slog.New(slog.DiscardHandler)).Handler()
+	h := mounted(pages.New(setupOrigin, slog.New(slog.DiscardHandler))).Handler()
 	for _, path := range []string{pages.SetupEnginePath, pages.SetupNotMinePath} {
 		w := setupCall{path: path, origin: setupOrigin, body: `{}`}.do(h)
 		require.Equal(t, http.StatusConflict, w.Code)

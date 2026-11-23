@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -92,7 +91,7 @@ func (e *relayEnv) leadScore(t *testing.T, id int) int {
 // for a test whose Vault breaks every session.
 func (e *relayEnv) loopbackApproval(t *testing.T, item heldItem) approval.Request {
 	t.Helper()
-	site := pages.New(links.Portal, quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(e.svc)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/approvals/"+item.id, nil)
 	for k, v := range pagetest.Headers(item.secret) {

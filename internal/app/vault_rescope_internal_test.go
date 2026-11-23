@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
@@ -86,7 +85,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	s := serveOverVault(t, &wire{}, svc, secrets, id)
 	relay.c.Store(s.client)
 
-	loopback := pages.New(links.Portal, quietLog())
+	loopback := newPages(links.Portal, quietLog())
 	loopback.Add(svc)
 	viaLoopback := func(path string, headers map[string]string, body string) (int, string) {
 		t.Helper()

@@ -236,7 +236,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// running, so a restart onto an upgraded binary waits for them.
 	gate := newCallGate()
 	if cfg.VaultEnabled() {
-		sessionPages = pages.New(base, log.With("component", "vault-pages"))
+		sessionPages = newPages(base, log.With("component", "vault-pages"))
 		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
@@ -512,7 +512,7 @@ const pagesHeaderTimeout = 10 * time.Second
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
 func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log *slog.Logger) (*pagesSite, error) {
-	srv := pages.New(p.Origin, log.With("component", "pages"))
+	srv := newPages(p.Origin, log.With("component", "pages"))
 	if setup != nil {
 		srv.SetSetup(setup)
 	}

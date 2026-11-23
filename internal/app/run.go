@@ -49,6 +49,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/service/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/service/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -158,7 +159,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
 	}
 	var site *pagesSite
-	var jobs pages.SetupJobs
+	var jobs setuppage.SetupJobs
 	rotated := newRotations()
 	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
 	handed = nil
@@ -514,11 +515,11 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the approval pages. A port it cannot bind stops the
 // engine: without the pages, held writes would carry only the long link,
 // which chat clients truncate. Run skips it when pagesAddr is "off".
-func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log *slog.Logger) (*pagesSite, error) {
+func listenPages(p config.Pages, handed net.Listener, setup setuppage.SetupJobs, log *slog.Logger) (*pagesSite, error) {
 	pagesLog := log.With("component", "pages")
 	srv := newPages(p.Origin, pagesLog)
 	if setup != nil {
-		srv.MountSetup(pages.NewSetupHandlers(p.Origin, setup, pagesLog.With("component", "setup")))
+		srv.MountSetup(setuppage.NewSetupHandlers(p.Origin, setup, pagesLog.With("component", "setup")))
 	}
 	if handed != nil {
 		log.Info("serving approval pages", "addr", handed.Addr().String(), "origin", p.Origin)
@@ -537,7 +538,7 @@ func listenPages(p config.Pages, handed net.Listener, setup pages.SetupJobs, log
 // local setup page), or nil: an agent-operated engine never takes the
 // admin connection string, nor does an engine run as root, which reads
 // its agents' files by other rules.
-func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string)) pages.SetupJobs {
+func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string)) setuppage.SetupJobs {
 	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != SetupOrigin {
 		return nil
 	}

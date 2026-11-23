@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // unlabeled is the passkey as the setup page sends it: the browser's
@@ -48,7 +49,7 @@ func TestTheSetupPageInstallsWithAnUnlabeledPasskey(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	var logs bytes.Buffer
-	h := pages.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
+	h := setuppage.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
 
 	var checked localsetup.CheckAnswer
 	require.Equal(t, http.StatusOK, post(t, h, pages.SetupCheckPath, f.request(), &checked))

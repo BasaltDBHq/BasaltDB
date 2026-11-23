@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 const setupOrigin = "http://localhost:8787"
@@ -88,7 +89,7 @@ func TestSetupRoutesTakeTheAdminStringFromThePageOnly(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
 	jobs := &fakeJobs{}
-	h := pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
+	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
 
 	for _, path := range []string{pages.SetupCheckPath, pages.SetupRunPath} {
 		w := setupCall{path: path, origin: setupOrigin, body: setupBody("")}.do(h)
@@ -162,7 +163,7 @@ func TestSetupRefusalStatuses(t *testing.T) {
 		localsetup.CodeTimeLimit:               http.StatusGatewayTimeout,
 	} {
 		jobs := &fakeJobs{refusal: &localsetup.RefusalError{Code: code, Message: "m"}}
-		h := pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
+		h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
 		w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 		require.Equal(t, status, w.Code, code)
 	}
@@ -170,7 +171,7 @@ func TestSetupRefusalStatuses(t *testing.T) {
 
 func TestSetupOnlyHandlerServesThePageAndNothingElse(t *testing.T) {
 	t.Parallel()
-	h := pages.SetupOnlyHandler(setupOrigin, &fakeJobs{}, slog.New(slog.DiscardHandler))
+	h := setuppage.SetupOnlyHandler(setupOrigin, &fakeJobs{}, slog.New(slog.DiscardHandler))
 	get := func(path string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+path, nil))
@@ -227,7 +228,7 @@ func TestConfiguredPagesRunTheSetupJobsTheyAreGiven(t *testing.T) {
 	jobs := &fakeJobs{}
 	log := slog.New(slog.NewTextHandler(&logs, nil))
 	srv := newMounted(setupOrigin, log)
-	srv.MountSetup(pages.NewSetupHandlers(setupOrigin, jobs, log.With("component", "setup")))
+	srv.MountSetup(setuppage.NewSetupHandlers(setupOrigin, jobs, log.With("component", "setup")))
 	h := srv.Handler()
 	body := `{"job":"UPDATE","agent":"demo_bot","osUser":"alice","demo":false,"databaseUrl":"` + adminString + `"}`
 
@@ -255,8 +256,8 @@ func TestDoctorRouteTakesNoAdminString(t *testing.T) {
 	t.Parallel()
 	jobs := &fakeJobs{}
 	srv := newMounted(setupOrigin, slog.New(slog.DiscardHandler))
-	srv.MountSetup(pages.NewSetupHandlers(setupOrigin, jobs, slog.New(slog.DiscardHandler)))
-	for _, h := range []http.Handler{srv.Handler(), pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
+	srv.MountSetup(setuppage.NewSetupHandlers(setupOrigin, jobs, slog.New(slog.DiscardHandler)))
+	for _, h := range []http.Handler{srv.Handler(), setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
 		w := setupCall{path: pages.SetupDoctorPath, origin: setupOrigin, body: `{"agent":"demo_bot","osUser":"alice"}`}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), `"database":"app"`)
@@ -284,8 +285,8 @@ func TestNotYourDatabaseRoutesTakeNothing(t *testing.T) {
 	t.Parallel()
 	jobs := &fakeJobs{}
 	srv := newMounted(setupOrigin, slog.New(slog.DiscardHandler))
-	srv.MountSetup(pages.NewSetupHandlers(setupOrigin, jobs, slog.New(slog.DiscardHandler)))
-	for _, h := range []http.Handler{srv.Handler(), pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
+	srv.MountSetup(setuppage.NewSetupHandlers(setupOrigin, jobs, slog.New(slog.DiscardHandler)))
+	for _, h := range []http.Handler{srv.Handler(), setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))} {
 		w := setupCall{path: pages.SetupEnginePath, origin: setupOrigin, body: `{}`}.do(h)
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), `"database":"app"`)
@@ -323,7 +324,7 @@ func TestSetupRefusalCarriesThePinnedCertificate(t *testing.T) {
 		Code: localsetup.CodeCertificateNotVerified, Message: "m", Pinned: strings.Repeat("b", 64),
 		TrustRoot: &localsetup.TrustRoot{Subject: "CN=x", SHA256: strings.Repeat("a", 64), ExpiresAt: "2030-01-01T00:00:00Z"},
 	}}
-	h := pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
+	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.DiscardHandler))
 	w := setupCall{path: pages.SetupCheckPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.Contains(t, w.Body.String(), `"pinned":"`+strings.Repeat("b", 64)+`"`)
@@ -340,7 +341,7 @@ func TestSetupFailedLogsItsCause(t *testing.T) {
 		Code: localsetup.CodeSetupFailed, Message: "Reading the database or running the setup failed (Postgres error 42P01, install script, statement 3); nothing changed.",
 		Cause: &localsetup.Cause{Step: "install script, statement 3", SQLState: "42P01", Message: `relation "basalt_meta.installs" does not exist`},
 	}}
-	h := pages.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
+	h := setuppage.SetupOnlyHandler(setupOrigin, jobs, slog.New(slog.NewTextHandler(&logs, nil)))
 	w := setupCall{path: pages.SetupRunPath, origin: setupOrigin, body: setupBody("")}.do(h)
 	require.Equal(t, http.StatusConflict, w.Code)
 	require.NotContains(t, w.Body.String(), "does not exist", "the cause stays in the log")

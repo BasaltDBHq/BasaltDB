@@ -15,6 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // reset is an install whose engine config and credential are gone, as on
@@ -118,7 +119,7 @@ func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 		BEGIN RAISE EXCEPTION 'attach failed: % / % / password=`+otherPW+`', '`+adminPW+`', 'postgres://x' || ':`+otherPW+`@db.example/app'; END $$`)
 
 	var logs bytes.Buffer
-	h := pages.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
+	h := setuppage.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
 	req := f.request()
 	req.DatabaseURL = adminURL
 	var checked localsetup.CheckAnswer

@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -136,7 +137,7 @@ func newMounted(origin string, log *slog.Logger) *pages.Server {
 	p.MountApprovals(approvalpage.NewApprovalHandlers(p))
 	p.MountReverts(revertpage.NewRevertHandlers(p))
 	p.MountPlugins(pluginpage.NewPluginHandlers(p))
-	p.MountSetup(pages.NewConfiguredSetupHandlers(origin))
+	p.MountSetup(setuppage.NewConfiguredSetupHandlers(origin))
 	return p
 }
 

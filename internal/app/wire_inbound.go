@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // newPages is the pages for origin with every page's handlers mounted: the
@@ -21,7 +22,7 @@ func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
 	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
-	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))
+	srv.MountSetup(setuppage.NewConfiguredSetupHandlers(origin))
 	return srv
 }
 

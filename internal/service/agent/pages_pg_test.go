@@ -32,6 +32,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // pageOrigin is the origin the test pages claim, as the engine's config
@@ -51,7 +52,7 @@ func newLocalPages(t *testing.T, env agentEnv) localPages {
 	site.MountApprovals(approvalpage.NewApprovalHandlers(site))
 	site.MountReverts(revertpage.NewRevertHandlers(site))
 	site.MountPlugins(pluginpage.NewPluginHandlers(site))
-	site.MountSetup(pages.NewConfiguredSetupHandlers(pageOrigin))
+	site.MountSetup(setuppage.NewConfiguredSetupHandlers(pageOrigin))
 	site.Add(env.svc)
 	srv := httptest.NewServer(site.Handler())
 	t.Cleanup(srv.Close)

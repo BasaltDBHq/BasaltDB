@@ -69,7 +69,7 @@ func (sc *statusKeeper) statusDeps() statusDeps {
 		crashDirs: sc.deps.CrashDirs, linkBudget: sc.core.LinkBudget, access: sc.deps.Access,
 		engineRecord: sc.deps.EngineRecord, trust: sc.deps.Trust, cmds: sc.core.Commands, probe: sc.deps.Probe, watch: sc.setupWatch(),
 		errs: sc.core.Errors, latestGuard: sc.deps.LatestGuardVersion, crashReports: sc.deps.CrashReports,
-		update: sc.updateInfo(), passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
+		update: sc.UpdateInfo(), passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
 	}
 }
 

@@ -51,7 +51,7 @@ func testDeps() Deps {
 		return out
 	}
 	d.Status.LatestGuardVersion = guard.LatestVersion
-	d.Status.UpdateMessage = func(n UpdateNotice, exe string) string {
+	d.Status.UpdateMessage = func(n ReleaseNotice, exe string) string {
 		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 	}
 	d.Status.StartHoldOffUntil = testEngineHost().StartHoldOffUntil

@@ -15,8 +15,8 @@ type CrashReport struct {
 	IssueURL func(limit int) string
 }
 
-// UpdateNotice is a newer release the engine knows of.
-type UpdateNotice struct {
+// ReleaseNotice is a newer release the engine knows of.
+type ReleaseNotice struct {
 	Current  string
 	Latest   string
 	Security bool

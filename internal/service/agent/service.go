@@ -131,7 +131,7 @@ type StatusDeps struct {
 	// Update gives the newer release the engine knows of, from its daily
 	// check (CONTRACT.md, Update notice); optional, nil or a nil result
 	// when none.
-	Update func() *UpdateNotice
+	Update func() *ReleaseNotice
 	// Portal reports the engine's last daily portal check for status
 	// (problem PORTAL_MISMATCH); status says nothing about the portal when
 	// nil.
@@ -167,7 +167,7 @@ type StatusDeps struct {
 	LatestGuardVersion func() int
 	// UpdateMessage is the notice for the agent to relay, for the binary
 	// at exe.
-	UpdateMessage func(n UpdateNotice, exe string) string
+	UpdateMessage func(n ReleaseNotice, exe string) string
 	// StartHoldOffUntil is when the supervisor tries the engine again after
 	// it gave up (false when it holds nothing off).
 	StartHoldOffUntil func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
@@ -296,7 +296,7 @@ func NewService(d Deps) *Service {
 // reference to its own group of s.deps and to the shared core group.
 func (s *Service) wire() {
 	s.status = newStatusKeeper(&s.deps.Core, &s.deps.Status)
-	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.status.updateInfo)
+	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.status.UpdateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
 	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveWrites{&s.deps.Write}, runChecker{s.deps.Core.Store}, s)
@@ -386,7 +386,7 @@ func (wc *writeCase) StartRun(ctx context.Context, intent string, taskID uuid.UU
 	if err != nil {
 		return RunInfo{}, err
 	}
-	run.Warnings = wc.upgrade.upgradeWarnings(ctx)
+	run.Warnings = wc.upgrade.UpgradeWarnings(ctx)
 	return run, nil
 }
 

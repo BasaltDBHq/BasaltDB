@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
@@ -48,7 +46,7 @@ func checkCovered(ctx context.Context, b SetuprunBackend, tx Querier) error {
 }
 
 // detailedError is a database error followed by the Detail and Hint the
-// guard raised with it, which pgconn.PgError.Error leaves out.
+// guard raised with it, which the driver's error text leaves out.
 type detailedError struct {
 	err    error
 	detail string
@@ -62,14 +60,17 @@ func (e *detailedError) Unwrap() error { return e.err }
 // so a refusal says which table is wrong and how to fix it ("table crm.nopk
 // has no primary key; ..." and "add a primary key, or revoke ..."), not only
 // "NOT_ALLOWED (SQLSTATE BS007)". An error with neither, or already
-// carrying them, is returned as it is.
-func WithGuardDetail(err error) error {
-	var pg *pgconn.PgError
+// carrying them, is returned as it is. b reads them from the error.
+func WithGuardDetail(b SetuprunBackend, err error) error {
 	var done *detailedError
-	if err == nil || errors.As(err, &done) || !errors.As(err, &pg) || (pg.Detail == "" && pg.Hint == "") {
+	if err == nil || errors.As(err, &done) {
 		return err
 	}
-	return &detailedError{err: err, detail: Sentences(pg.Detail, pg.Hint)}
+	detail, hint, ok := b.GuardDetail(err)
+	if !ok || (detail == "" && hint == "") {
+		return err
+	}
+	return &detailedError{err: err, detail: Sentences(detail, hint)}
 }
 
 // NothingChanged ends a failed install's error with "nothing changed": as a

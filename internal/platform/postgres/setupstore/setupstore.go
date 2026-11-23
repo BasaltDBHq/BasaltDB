@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -88,6 +89,25 @@ func (Store) MissingTables(err error) ([]string, bool) {
 		return nil, false
 	}
 	return missing.Tables, true
+}
+
+// GuardDetail is the Detail and Hint of the Postgres error in err.
+func (Store) GuardDetail(err error) (detail, hint string, ok bool) {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) {
+		return "", "", false
+	}
+	return pg.Detail, pg.Hint, true
+}
+
+// sqlUndefinedTable is Postgres's undefined_table: a guard older than the
+// table, or none.
+const sqlUndefinedTable = "42P01"
+
+// UndefinedTable reports whether err is Postgres's undefined_table.
+func (Store) UndefinedTable(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == sqlUndefinedTable
 }
 
 func (Store) PlanInit(ctx context.Context, q pgquerier.Port, opts guardmodel.InitOptions) (guardmodel.Script, error) {

@@ -40,6 +40,12 @@ type SetuprunBackend interface {
 	RLSBlindTables(ctx context.Context, q Querier, role string, tables []string) ([]string, error)
 	// MissingTables is the tables of a plan's refusal for tables that do not exist.
 	MissingTables(err error) ([]string, bool)
+	// GuardDetail is the Detail and Hint of the database error in err;
+	// false when err carries no database error.
+	GuardDetail(err error) (detail, hint string, ok bool)
+	// UndefinedTable reports whether err is the database's undefined_table:
+	// a guard older than the table, or none.
+	UndefinedTable(err error) bool
 
 	PlanInit(ctx context.Context, q Querier, opts guardmodel.InitOptions) (guardmodel.Script, error)
 	PlanUninstall(ctx context.Context, q Querier, n guardmodel.Names) ([]string, error)

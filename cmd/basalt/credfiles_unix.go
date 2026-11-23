@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -21,7 +23,7 @@ import (
 // openRootCredFiles opens dir, the agents directory, as root
 // (app.OpenRootCredFiles), making it (and the config directory) when
 // missing, through h. trusted is rootTrustedOwner's.
-func openRootCredFiles(h setupFilesHost, dir string, trusted int) (credFiles, error) {
+func openRootCredFiles(h setupFilesHost, dir string, trusted int) (setup.CredFiles, error) {
 	files, err := app.OpenRootCredFiles(h, dir, trusted)
 	if err != nil {
 		return nil, err
@@ -138,7 +140,7 @@ func missingStateDir(stateDir, goos string, owner int) error {
 		return fmt.Errorf("the state directory %s does not exist yet; start the engine's service once (it makes it), then run basalt init --remote again", stateDir)
 	}
 	return fmt.Errorf("the state directory %s does not exist yet; make it for the engine's user (sudo install -d -m %04o -o %d %s), then run basalt init --remote again",
-		stateDir, stateDirMode, owner, stateDir)
+		stateDir, engine.StateDirMode, owner, stateDir)
 }
 
 // readRootKeyFile reads the key file in the state directory d, owned by

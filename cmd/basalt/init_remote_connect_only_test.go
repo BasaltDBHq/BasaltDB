@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 )
 
@@ -184,7 +185,7 @@ func TestInitRemoteConnectOnlyNeedsTheConnectPath(t *testing.T) {
 		editConfig(t, cfg, tc.edit)
 		old := secretOf(t, cfg)
 		r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
-		require.Equal(t, exitError, r.code, "%s: %s", name, r.stderr)
+		require.Equal(t, cli.ExitError, r.code, "%s: %s", name, r.stderr)
 		require.Contains(t, r.stderr, tc.want, name)
 		require.Equal(t, old, secretOf(t, cfg), name)
 	}
@@ -199,7 +200,7 @@ func TestInitRemoteConnectOnlyNeedsTheEngineKey(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(state, channel.KeyFileName), []byte("not a key"), 0o600))
 
 	r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
-	require.Equal(t, exitError, r.code, r.stderr)
+	require.Equal(t, cli.ExitError, r.code, r.stderr)
 	require.Contains(t, r.stderr, "a setup code for the connect page needs the engine's key, and basalt cannot read or make it as this user")
 	require.Contains(t, r.stderr, "Run basalt init --remote as the engine's OS user")
 	require.NoFileExists(t, cfg)

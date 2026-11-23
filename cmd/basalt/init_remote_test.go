@@ -32,6 +32,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -158,7 +159,7 @@ func remoteWith(t *testing.T, e remoteEnv, cfg string, args ...string) remoteRun
 	res, err := initRemote(c, appSetupHost{}, takePathFlags(c, runInit, all))
 	require.NoError(t, err, stderr.String())
 	require.NoError(t, printRemoteResult(c, res))
-	r := remoteRun{result: result{exitOK, stdout.String(), stderr.String()}, res: res}
+	r := remoteRun{result: result{cli.ExitOK, stdout.String(), stderr.String()}, res: res}
 	p, err := setupcode.Decode(r.res.Code)
 	require.NoError(t, err)
 	r.payload = p
@@ -313,7 +314,7 @@ func TestInitRemoteUsage(t *testing.T) {
 	} {
 		cfg := withState(t, tempConfig(t))
 		r := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, args...)...)
-		require.Equal(t, exitUsage, r.code, "%v: %s", args, r.stderr)
+		require.Equal(t, cli.ExitUsage, r.code, "%v: %s", args, r.stderr)
 		require.Empty(t, r.stdout)
 		require.NoFileExists(t, cfg, "%v", args)
 	}
@@ -333,7 +334,7 @@ func TestInitRemoteWithoutAgent(t *testing.T) {
 
 	remote(t, cfg, "--agent", "lead_bot")
 	r := cliNoDB(t, "init", "--remote", "--config", cfg)
-	require.Equal(t, exitUsage, r.code, r.stderr)
+	require.Equal(t, cli.ExitUsage, r.code, r.stderr)
 	require.Contains(t, r.stderr, "more than one agent: give --agent NAME")
 }
 
@@ -394,7 +395,7 @@ func TestInitRemoteMakesATargetCode(t *testing.T) {
 	require.Contains(t, r.stdout, "\n\n"+r.res.Code+"\n\n")
 	require.Contains(t, r.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
-	require.Contains(t, r.stdout, "  "+shellJoin(r.res.MCPCommand)+"\n")
+	require.Contains(t, r.stdout, "  "+cli.ShellJoin(r.res.MCPCommand)+"\n")
 }
 
 // requireConnectGuidance checks a result that carries the connect link: the
@@ -523,7 +524,7 @@ func TestInitRemoteExplainsACredentialWithTargetParams(t *testing.T) {
 
 		r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
 
-		require.Equal(t, exitError, r.code, "%q: %s", suffix, r.stderr)
+		require.Equal(t, cli.ExitError, r.code, "%q: %s", suffix, r.stderr)
 		require.Contains(t, r.stderr, "was written by basalt init for a connection string with a host= parameter")
 		require.Contains(t, r.stderr, "Use another --agent name")
 		require.NotContains(t, r.stderr, "enginepw")
@@ -591,7 +592,7 @@ func TestInitRemoteRefusesASymlinkedCredential(t *testing.T) {
 	require.NoError(t, os.Symlink(target, first.credFile))
 
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code)
+	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, "is not usable")
 	raw, err := os.ReadFile(target)
 	require.NoError(t, err)
@@ -602,7 +603,7 @@ func TestInitRemoteRefusesASymlinkedCredential(t *testing.T) {
 	require.NoError(t, config.WriteFile(first.credFile, []byte(supabaseDSN(t)+"\n")))
 	require.NoError(t, os.Symlink(target, first.credFile+pendingSuffix))
 	r = cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code)
+	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, pendingSuffix+" is not usable")
 
 	// config.WriteFile, which writes every file init writes, refuses a link.
@@ -851,7 +852,7 @@ func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {
 	first := seedCredential(t, noDB(t), cfg, "bot", supabaseDSN(t))
 	require.NoError(t, os.Link(first.credFile, filepath.Join(t.TempDir(), "copy")))
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code)
+	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, "hard link")
 }
 
@@ -862,10 +863,10 @@ func TestInitRemoteRunsOneAtATime(t *testing.T) {
 	unlock, err := lockFile(first.credFile + lockSuffix)
 	require.NoError(t, err)
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code)
+	require.Equal(t, cli.ExitError, r.code)
 	require.Contains(t, r.stderr, "another basalt init --remote is running")
 	unlock()
-	require.Equal(t, exitOK, cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot").code)
+	require.Equal(t, cli.ExitOK, cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot").code)
 }
 
 func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
@@ -891,7 +892,7 @@ func TestCheckBuildVersion(t *testing.T) {
 	for _, bad := range []string{"dev", "master-ced6c31", "", "0.0"} {
 		err := checkBuildVersion(bad)
 		require.Error(t, err, bad)
-		require.NotErrorIs(t, err, errUsage)
+		require.NotErrorIs(t, err, cli.ErrUsage)
 		require.Contains(t, err.Error(), "install a release build")
 	}
 }
@@ -957,7 +958,7 @@ func TestInitRemoteAsRootNotesServiceModeOnlyAfterWriting(t *testing.T) {
 	cfg := withState(t, tempConfig(t))
 	require.NoError(t, os.Symlink(t.TempDir(), filepath.Join(filepath.Dir(cfg), "agents")))
 	r := e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code, r.stdout)
+	require.Equal(t, cli.ExitError, r.code, r.stdout)
 	require.Contains(t, r.stderr, "a symlink is refused")
 	require.NotContains(t, r.stderr, "service one", "refused at agents/: nothing written")
 
@@ -966,14 +967,14 @@ func TestInitRemoteAsRootNotesServiceModeOnlyAfterWriting(t *testing.T) {
 	require.NoError(t, os.MkdirAll(agents, 0o700))
 	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+lockSuffix)))
 	r = e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code, r.stderr)
+	require.Equal(t, cli.ExitError, r.code, r.stderr)
 	require.NotContains(t, r.stderr, "service one", "refused at the lock, after opening the directories: nothing written")
 	_, err := os.Stat(cfg)
 	require.ErrorIs(t, err, os.ErrNotExist)
 
 	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+lockSuffix)))
 	r = e.cli(t, "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Equal(t, 1, strings.Count(r.stderr, "this config is a service one (mode SERVICE)"), "said once, after writing: %s", r.stderr)
 }
 
@@ -995,11 +996,11 @@ func TestInitRemoteRefusesAPersonOperatedEngine(t *testing.T) {
 	remote(t, cfg, "--agent", "bot")
 	editConfig(t, cfg, func(c *config.Config) { c.OperatedBy = "PERSON"; c.Vault = "" })
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot")
-	require.Equal(t, exitError, r.code, r.stderr)
+	require.Equal(t, cli.ExitError, r.code, r.stderr)
 	require.Contains(t, r.stderr, "this engine is person-operated")
 
 	help := cliNoDB(t, "init", "--remote", "-h")
-	require.True(t, slices.Contains([]int{exitOK, exitUsage}, help.code), help.stderr)
+	require.True(t, slices.Contains([]int{cli.ExitOK, cli.ExitUsage}, help.code), help.stderr)
 	require.Contains(t, help.stderr, "-agent")
 	for _, gone := range []string{"-write", "-database-url", "-new-code", "-forget", "-json"} {
 		require.NotContains(t, help.stderr, gone)

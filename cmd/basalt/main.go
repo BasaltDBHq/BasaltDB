@@ -12,13 +12,7 @@ import (
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-)
-
-// Exit codes (CONTRACT.md).
-const (
-	exitOK    = 0
-	exitError = 1
-	exitUsage = 2
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 func main() {
@@ -62,12 +56,12 @@ func runInitCommand(c *cliIO, args []string) int { return runInit(c, appSetupHos
 func run(ctx context.Context, args []string, io stdio) int {
 	if len(args) == 0 {
 		usage(io.err)
-		return exitUsage
+		return cli.ExitUsage
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
 		usage(io.out)
-		return exitOK
+		return cli.ExitOK
 	case "--version":
 		return runVersion(ctx, nil, io)
 	}
@@ -79,12 +73,12 @@ func run(ctx context.Context, args []string, io stdio) int {
 	}
 	fmt.Fprintf(io.err, "basalt: unknown command %q\n\n", args[0])
 	usage(io.err)
-	return exitUsage
+	return cli.ExitUsage
 }
 
 func runVersion(_ context.Context, _ []string, io stdio) int {
 	fmt.Fprintln(io.out, "basalt "+buildinfo.Version)
-	return exitOK
+	return cli.ExitOK
 }
 
 // manyAgentsHelp tells an agent reading --help how to connect another
@@ -114,7 +108,7 @@ func usage(w io.Writer) {
 // fail prints err for command name and returns the error exit code.
 func fail(w io.Writer, name string, err error) int {
 	fmt.Fprintf(w, "basalt %s: %v\n", name, err)
-	return exitError
+	return cli.ExitError
 }
 
 // agentsHelp is the top-level help's line for an agent reading it

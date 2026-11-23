@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // leakedConn is built from parts so no secret scanner reads it as a
@@ -30,7 +31,7 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 	code := guarded([]string{"init", "--agent", "bot"}, stdio{err: &errw}, func() int {
 		panic("connect " + leakedConn + " envsecretvalue99 " + panicSecret)
 	})
-	require.Equal(t, exitError, code)
+	require.Equal(t, cli.ExitError, code)
 	line := errw.String()
 	require.Equal(t, 1, strings.Count(line, "\n"), line)
 	require.Contains(t, line, "the agent's status tool names it")

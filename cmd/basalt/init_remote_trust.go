@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -51,7 +52,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 	}
 	if seen := trustpin.Check(chain, host, r.c.now()); seen.Pinnable() {
 		fmt.Fprintf(r.c.stderr, "basalt: %s presents a certificate authority no authority on this machine verifies: %s\n",
-			terminalText(host), connectPageTrust)
+			cli.TerminalText(host), connectPageTrust)
 	}
 }
 

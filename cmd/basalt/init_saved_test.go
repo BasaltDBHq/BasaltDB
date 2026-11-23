@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -38,7 +39,7 @@ func TestServiceInstallRefusesKeepCredentialWithStdin(t *testing.T) {
 		"install", "--agent", "bot", "--os-user", "x",
 		"--keep-credential", "--credential-stdin", "--dry-run",
 	}, stdio{in: strings.NewReader(""), out: &out, err: &errb})
-	require.Equal(t, exitUsage, code)
+	require.Equal(t, cli.ExitUsage, code)
 }
 
 func TestKeptCredentialSpec(t *testing.T) {

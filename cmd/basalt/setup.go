@@ -67,15 +67,6 @@ func mcpArgs(agent, bin string) []string {
 	return []string{bin, "mcp", "--agent", agent}
 }
 
-// shellJoin quotes each argument for display.
-func shellJoin(args []string) string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		out = append(out, shellQuote(a))
-	}
-	return strings.Join(out, " ")
-}
-
 // agentInstall is the agent basalt service install places for the engine.
 type agentInstall struct {
 	name, osUser, pagesURL, dsn string

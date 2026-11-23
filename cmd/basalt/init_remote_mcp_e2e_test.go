@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // mcpStartDeadline is well under the shim's 15s autostart wait, so a
@@ -131,5 +132,5 @@ func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, s
 	require.True(t, report.Ready, resp.Result.Content[0].Text)
 
 	require.NoError(t, inW.Close())
-	require.Equal(t, exitOK, <-exited, errBuf.String())
+	require.Equal(t, cli.ExitOK, <-exited, errBuf.String())
 }

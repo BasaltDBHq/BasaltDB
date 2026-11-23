@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 type result struct {
@@ -47,7 +49,7 @@ func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"--help"}, {"init", "-h"}} {
 		code, stdout, stderr := runArgs(args...)
-		require.Equal(t, exitOK, code, stderr)
+		require.Equal(t, cli.ExitOK, code, stderr)
 		out := stdout + stderr
 		for _, want := range []string{"One engine serves many agents", "one database", "basalt init --remote --agent NAME"} {
 			require.Contains(t, out, want, args)

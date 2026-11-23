@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
@@ -85,7 +87,7 @@ func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
 			plant(t, cfg, planted)
 
 			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey)
-			require.Equal(t, exitError, r.code, r.stdout)
+			require.Equal(t, cli.ExitError, r.code, r.stdout)
 			_, err := os.Lstat(planted)
 			require.ErrorIs(t, err, os.ErrNotExist, "the credential file the config names is never written")
 			_, err = os.Lstat(planted + pendingSuffix)

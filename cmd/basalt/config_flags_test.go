@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 )
 
@@ -34,7 +35,7 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 				var out, errw bytes.Buffer
 				args := append(append([]string{}, base...), flag, "/nowhere")
 				code := run(context.Background(), args, stdio{in: strings.NewReader(""), out: &out, err: &errw})
-				require.Equal(t, exitUsage, code, "stderr: %s", errw.String())
+				require.Equal(t, cli.ExitUsage, code, "stderr: %s", errw.String())
 				require.Contains(t, errw.String(), "flag provided but not defined: -"+strings.TrimPrefix(flag, "--"))
 			})
 		}
@@ -45,7 +46,7 @@ func TestEngineStillTakesConfig(t *testing.T) {
 	t.Parallel()
 	var out, errw bytes.Buffer
 	code := run(context.Background(), []string{"engine", "--config"}, stdio{in: strings.NewReader(""), out: &out, err: &errw})
-	require.Equal(t, exitUsage, code)
+	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, errw.String(), "flag needs an argument: -config")
 }
 
@@ -56,7 +57,7 @@ func TestServiceInstallIsPinnedToTheConfigTheRemovalChecks(t *testing.T) {
 	t.Parallel()
 	var out, errw bytes.Buffer
 	code := run(context.Background(), []string{"service", "install", "--config", "/elsewhere/engine.json", "--dry-run"}, stdio{in: strings.NewReader(""), out: &out, err: &errw})
-	require.Equal(t, exitUsage, code)
+	require.Equal(t, cli.ExitUsage, code)
 	require.Contains(t, errw.String(), "flag provided but not defined: -config")
 	for _, goos := range []string{"linux", "darwin"} {
 		script, err := osservice.RemoveScript(goos)

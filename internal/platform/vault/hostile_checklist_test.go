@@ -28,8 +28,8 @@ var hostileChecklist = []hostileCheck{
 	{
 		item: "tampered, duplicated, replayed, reordered, reflected and cross-session frames are refused by the engine (FRAME_INVALID, no request run)",
 		goTests: map[string][]string{
-			"internal/adapter/outbound/vault/hostile_session_test.go": {"TestHostileVaultFramesToTheEngine", "TestHostileVaultSplicesAFrameIntoAnotherSession"},
-			"internal/adapter/outbound/vault/session_test.go":         {"TestSessionRefusesBadFrames"},
+			"internal/platform/vault/hostile_session_test.go": {"TestHostileVaultFramesToTheEngine", "TestHostileVaultSplicesAFrameIntoAnotherSession"},
+			"internal/platform/vault/session_test.go":         {"TestSessionRefusesBadFrames"},
 		},
 	},
 	{
@@ -43,9 +43,9 @@ var hostileChecklist = []hostileCheck{
 	{
 		item: "a wrong secret, an expired, revoked or unknown link get LINK_REFUSED alike, with nothing before it",
 		goTests: map[string][]string{
-			"internal/adapter/outbound/vault/hostile_session_test.go": {"TestDeadLinksGetNothingButLinkRefused"},
-			"internal/adapter/outbound/vault/session_test.go":         {"TestSessionRefusesDeadTokensAlike", "TestRevokedLinkEndsItsSessions"},
-			"internal/app/vault_session_internal_test.go":             {"TestVaultSessionDeadTokenTiming", "TestVaultSessionEndsWhenItsLinkIsRevoked"},
+			"internal/platform/vault/hostile_session_test.go": {"TestDeadLinksGetNothingButLinkRefused"},
+			"internal/platform/vault/session_test.go":         {"TestSessionRefusesDeadTokensAlike", "TestRevokedLinkEndsItsSessions"},
+			"internal/app/vault_session_internal_test.go":     {"TestVaultSessionDeadTokenTiming", "TestVaultSessionEndsWhenItsLinkIsRevoked"},
 		},
 	},
 	{
@@ -63,10 +63,10 @@ var hostileChecklist = []hostileCheck{
 	{
 		item: "size caps: message 1, frames, ROUTE and control messages, headers, a 16 KiB body (413), sessions per link and per engine, a session idle 5 minutes or open 30",
 		goTests: map[string][]string{
-			"internal/adapter/outbound/vault/hostile_session_test.go": {"TestMessageOneOfAnotherLength"},
-			"internal/adapter/outbound/vault/session_test.go":         {"TestSessionOversizeFrames", "TestSessionLimits", "TestSessionAnswersRequests", "TestSessionTimeouts"},
-			"internal/adapter/outbound/vault/hostile_test.go":         {"TestRefusesAHostileVault", "TestSessionLimitAndHandshakeTimeout"},
-			"internal/app/vault_session_internal_test.go":             {"TestVaultSessionKeepsThePagesRules"},
+			"internal/platform/vault/hostile_session_test.go": {"TestMessageOneOfAnotherLength"},
+			"internal/platform/vault/session_test.go":         {"TestSessionOversizeFrames", "TestSessionLimits", "TestSessionAnswersRequests", "TestSessionTimeouts"},
+			"internal/platform/vault/hostile_test.go":         {"TestRefusesAHostileVault", "TestSessionLimitAndHandshakeTimeout"},
+			"internal/app/vault_session_internal_test.go":     {"TestVaultSessionKeepsThePagesRules"},
 		},
 	},
 	{
@@ -75,7 +75,7 @@ var hostileChecklist = []hostileCheck{
 	},
 	{
 		item:    "forged SESSION_OPEN, OK, ERROR and SESSION_CLOSE do no harm",
-		goTests: map[string][]string{"internal/adapter/outbound/vault/vault_test.go": {"TestForgedControlMessagesAreHarmless"}},
+		goTests: map[string][]string{"internal/platform/vault/vault_test.go": {"TestForgedControlMessagesAreHarmless"}},
 	},
 	{
 		item: "without the person's passkey nothing is approved or applied through the channel; a signature for another item is refused by Postgres",
@@ -101,7 +101,7 @@ var hostileChecklist = []hostileCheck{
 // readRepo reads a file by its path from the repository root.
 func readRepo(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", filepath.FromSlash(path)))
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", filepath.FromSlash(path)))
 	require.NoError(t, err, path)
 	return string(b)
 }

@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
 // lockedBuffer is a log sink the client's goroutines can share.

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 type countingDispatcher struct{ calls int }

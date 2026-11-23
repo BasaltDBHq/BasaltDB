@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -59,38 +60,6 @@ const (
 	toolStatus  = "status"
 )
 
-// OperatedBy is the value of --operated-by: who runs the machine steps on
-// this engine's machine. CLI input spelling only; engine.json holds the
-// enum (mcpcontract.OperatedByPerson or OperatedByAgent).
-type OperatedBy string
-
-// --operated-by values.
-const (
-	OperatedByPerson OperatedBy = "person"
-	OperatedByAgent  OperatedBy = "agent"
-)
-
-// String implements flag.Value.
-func (o *OperatedBy) String() string { return string(*o) }
-
-// Set implements flag.Value, refusing anything but the two values.
-func (o *OperatedBy) Set(v string) error {
-	switch OperatedBy(v) {
-	case OperatedByPerson, OperatedByAgent:
-		*o = OperatedBy(v)
-		return nil
-	}
-	return fmt.Errorf("must be %s or %s", OperatedByPerson, OperatedByAgent)
-}
-
-// enum is the value engine.json stores.
-func (o OperatedBy) enum() string {
-	if o == OperatedByAgent {
-		return mcpcontract.OperatedByAgent
-	}
-	return mcpcontract.OperatedByPerson
-}
-
 // remoteVaultWhy says why the vault is off by default for an engine
 // another init made person-operated.
 const remoteVaultWhy = "default for a person-operated engine"
@@ -103,7 +72,7 @@ const remoteVaultWhy = "default for a person-operated engine"
 type remoteFlags struct {
 	agent, prefix, configPath string
 	timeout                   time.Duration
-	operatedBy                OperatedBy
+	operatedBy                setup.OperatedBy
 	// vault is what init asks the config's vault to be (chooseVault).
 	vault setup.VaultChoice
 }
@@ -189,7 +158,7 @@ func initRemote(c *cli.IO, h remoteHost, args []string) (RemoteInitResult, error
 // --agent only (CONTRACT.md, CLI). The role's prefix and its statement
 // timeout are fixed values.
 func parseInitRemote(c *cli.IO, args []string) (remoteFlags, error) {
-	f := remoteFlags{prefix: cmp.Or(c.RolePrefix, guardmodel.DefaultPrefix), timeout: guardmodel.DefaultStatementTimeout, operatedBy: OperatedByAgent}
+	f := remoteFlags{prefix: cmp.Or(c.RolePrefix, guardmodel.DefaultPrefix), timeout: guardmodel.DefaultStatementTimeout, operatedBy: setup.OperatedByAgent}
 	var remote bool
 	fs := c.Flags("init --remote")
 	fs.BoolVar(&remote, flagRemote, false, "set up an agent on a bot's machine: prints the connect link the person opens")
@@ -960,18 +929,18 @@ func (r *remoteInit) pendingConnectOnly() *config.Setup {
 // behind the person's back: the connect path then refuses.
 func (r *remoteInit) settle() error {
 	if r.existed && r.prev.OperatedBy != mcpcontract.OperatedByAgent {
-		r.f.operatedBy = OperatedByPerson
+		r.f.operatedBy = setup.OperatedByPerson
 	}
 	if err := r.setPrefix(r.f.prefix); err != nil {
 		return err
 	}
-	vc, err := chooseVault("", r.f.operatedBy, links.Portal, remoteVaultWhy)
+	vc, err := setupcli.ChooseVault("", r.f.operatedBy, links.Portal, remoteVaultWhy)
 	if err != nil {
 		return err
 	}
 	r.f.vault = vc
 	r.settings = vc.Settings(r.settings)
-	r.settings.OperatedBy = r.f.operatedBy.enum()
+	r.settings.OperatedBy = r.f.operatedBy.Enum()
 	return nil
 }
 
@@ -1175,7 +1144,7 @@ func (r *remoteInit) writeConfig(s *config.Setup) error {
 	fmt.Fprint(r.c.Stderr, r.serviceNote)
 	fmt.Fprint(r.c.Stderr, remoteVaultLine(v))
 	r.connectBudget = 0
-	if r.f.operatedBy == OperatedByAgent && v.Vault == config.VaultOn {
+	if r.f.operatedBy == setup.OperatedByAgent && v.Vault == config.VaultOn {
 		r.connectBudget = r.linkBudget
 		if r.connectBudget <= 0 {
 			r.connectBudget = links.DefaultBudget

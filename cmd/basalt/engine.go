@@ -211,11 +211,11 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 		return nil
 	})
 	fs.Func("operated-by", "install --agent: person or agent, the config's operatedBy (default: keep the config's)", func(v string) error {
-		var o OperatedBy
+		var o setup.OperatedBy
 		if err := o.Set(v); err != nil {
 			return err
 		}
-		a.operatedBy = o.enum()
+		a.operatedBy = o.Enum()
 		return nil
 	})
 	fs.Func(flagInitArg, "install --agent: ignored, kept for older install scripts; refused when it holds a secret (repeatable)", func(v string) error {

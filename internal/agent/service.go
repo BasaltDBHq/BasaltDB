@@ -1,7 +1,7 @@
 // Package agent is what the engine does for one agent on its own database:
 // describe, and the runs, queries and writes it makes, each on the agent's
-// scoped credential. The tools that front it and the use cases of the other
-// domains are served by internal/service/agent.
+// scoped credential. The tools that front it are internal/agent/in/agentmcp;
+// internal/app wires it with the use cases of the other domains.
 package agent
 
 import (

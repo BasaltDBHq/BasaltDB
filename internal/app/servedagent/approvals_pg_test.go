@@ -34,7 +34,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // notices records what the engine hands its Notifier.
@@ -80,7 +79,7 @@ type agentEnv struct {
 	h      harness
 	person *passkeytest.Authenticator
 	sent   *notices
-	svc    *agent.Service
+	svc    *app.Service
 	blind  *agentsvc.BlindCache
 	// finds counts the agent's approval reads: one when a call looks its
 	// approval up, one more for every poll while it waits.
@@ -95,7 +94,7 @@ type agentEnv struct {
 // finds wraps the store and counts FindApproval calls, so a test can tell
 // that the agent is waiting without guessing a delay.
 type finds struct {
-	agent.SQLStore
+	app.SQLStore
 	n atomic.Int64
 }
 
@@ -106,7 +105,7 @@ func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval
 
 // revertFinds wraps the store and counts FindRevert calls.
 type revertFinds struct {
-	agent.SQLStore
+	app.SQLStore
 	n atomic.Int64
 }
 
@@ -178,7 +177,7 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 
 // agentHarnessWith is agentHarnessLimits with an edit of the dependencies,
 // made before the service is built, so every use case reads it.
-func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, edit func(*agent.Deps), pagesOrigin ...string) agentEnv {
+func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, edit func(*app.Deps), pagesOrigin ...string) agentEnv {
 	t.Helper()
 	var receipts linksvc.ReceiptSigner
 	if keys != nil {
@@ -192,15 +191,15 @@ func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 
-	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", agenttest.ServiceManager())
+	cmds, err := app.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", agenttest.ServiceManager())
 	require.NoError(t, err)
 	sent := &notices{}
 	var watched *finds
 	var watchedReverts *revertFinds
 	var blind *agentsvc.BlindCache
 	// As the engine runs it: every read of a call charged to its budget.
-	svc := agenttest.PgService(t, a.URL, agenttest.WithLimits(limits), agenttest.WithBudget(), agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		watched = &finds{SQLStore: d.Core.Store.(agent.SQLStore)}
+	svc := agenttest.PgService(t, a.URL, agenttest.WithLimits(limits), agenttest.WithBudget(), agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
+		watched = &finds{SQLStore: d.Core.Store.(app.SQLStore)}
 		watchedReverts = &revertFinds{SQLStore: watched}
 		blind = agentsvc.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 			return guard.RLSBlindTables(ctx, pool, "", tables)
@@ -243,7 +242,7 @@ const reviewOnlyText = "Review only: this link cannot be signed. Ask the agent f
 // relayApproval is what the approval page does after the passkey signed:
 // it posts the signature, which the engine relays to Postgres
 // (RelayApproval), on its own pages or through the Vault. Nothing is pasted.
-func relayApproval(svc *agent.Service, resp approval.Response) error {
+func relayApproval(svc *app.Service, resp approval.Response) error {
 	_, err := svc.RelayApproval(context.Background(), resp)
 	return err
 }

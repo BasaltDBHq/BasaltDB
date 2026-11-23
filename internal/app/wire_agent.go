@@ -28,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
@@ -37,8 +36,8 @@ import (
 // manager, the crash directory, the Vault session. Each agent's wiring
 // fills the rest on top of it, and the service refuses a Deps that lacks
 // one.
-func AgentHostDeps() agent.Deps {
-	var d agent.Deps
+func AgentHostDeps() Deps {
+	var d Deps
 	d.Core.ServiceManager = AgentServiceManager()
 	d.Core.Errors = AgentErrors()
 	d.Write.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
@@ -105,7 +104,7 @@ func agentUpdateMessage(n status.ReleaseNotice, exe string) string {
 }
 
 // AgentTools are the tools of svc as the MCP server serves them.
-func AgentTools(svc *agent.Service) []mcpserver.Tool {
+func AgentTools(svc *Service) []mcpserver.Tool {
 	return mcpserver.ToolsFrom(agentTools(svc), nil)
 }
 

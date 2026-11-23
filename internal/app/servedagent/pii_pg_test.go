@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
@@ -29,13 +30,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
 // the engine wires it: query rows through the service, RETURNING rows inside
 // the write's transaction.
-func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedFunc) (*agent.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
+func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedFunc) (*app.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, city text);
@@ -62,7 +62,7 @@ func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedF
 	dict, err := dictfile.Open(dir, keys, corepii.DefaultDictionaryOptions(time.Now))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	env := agenttest.PgService(t, a.URL, agenttest.WithReturned(returned), agenttest.WithDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
+	env := agenttest.PgService(t, a.URL, agenttest.WithReturned(returned), agenttest.WithDeps(func(deps *app.Deps, pool *pgxpool.Pool) {
 		if obs == nil {
 			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(pool))
 		}

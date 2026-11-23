@@ -32,7 +32,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // lateRelay is the agent's link relay once the Vault client exists.
@@ -83,7 +82,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := pg.service(func(d *agent.Deps) {
+	svc := pg.service(func(d *Deps) {
 		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = links.Portal, secrets, relay
 	})
 	s := serveOverVault(t, &wire{}, svc, secrets, id)

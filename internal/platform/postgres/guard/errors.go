@@ -56,7 +56,7 @@ func ScopeRefusal(err error) (detail, hint string, ok bool) {
 // CodeOf returns the guard-level code (the MESSAGE the guard raised) of
 // err, and false when err is not a guard error. BS005 and BS009 carry
 // several codes, told apart by the message. MCP tool codes are mapped from SQLSTATEs in
-// internal/service/agent, per CONTRACT.md "Error codes".
+// internal/core/guidance (ErrorMap), per CONTRACT.md "Error codes".
 func CodeOf(err error) (guardmodel.Code, bool) {
 	var pg *pgconn.PgError
 	if !errors.As(err, &pg) {

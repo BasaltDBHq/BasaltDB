@@ -20,7 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The plugin host (internal/plugin) holds
@@ -119,7 +118,7 @@ func recordPluginEvents(ctx context.Context, cfg config.Config, configPath strin
 // pluginAdmit is svc's admission for plugin records: plugin.ErrNotAdmitted
 // when the agent is served status only (no guard, an outdated one, a pending
 // setup), the probe's error when its database does not answer.
-func pluginAdmit(svc *agent.Service) func(context.Context) error {
+func pluginAdmit(svc *Service) func(context.Context) error {
 	return func(ctx context.Context) error {
 		err := svc.Admit(ctx)
 		var te *toolresult.ToolError

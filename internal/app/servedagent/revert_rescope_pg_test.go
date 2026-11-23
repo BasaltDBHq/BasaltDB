@@ -41,7 +41,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // pgCalls records every statement and its parameters the engine sends to
@@ -110,7 +109,7 @@ type rescopeEnv struct {
 	calls       *pgCalls
 	sent        *notices
 
-	svc *agent.Service
+	svc *app.Service
 	h   harness
 	p   localPages
 }
@@ -145,15 +144,15 @@ func newRescopeEnv(t *testing.T) *rescopeEnv {
 
 // start (re)starts bot's engine: a new pool, the links read back from
 // their file, and nothing else kept. wrap, when set, wraps the store.
-func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStore) {
+func (e *rescopeEnv) start(t *testing.T, wrap func(app.SQLStore) app.SQLStore) {
 	t.Helper()
 	secrets, err := secretfile.Open(e.linksPath, time.Now, rand.Reader)
 	require.NoError(t, err)
 	e.svc = agenttest.PgService(t, e.bot.URL,
 		agenttest.WithPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),
-		agenttest.WithDeps(func(d *agent.Deps, _ *pgxpool.Pool) {
+		agenttest.WithDeps(func(d *app.Deps, _ *pgxpool.Pool) {
 			if wrap != nil {
-				agenttest.UseStore(d, wrap(d.Core.Store.(agent.SQLStore)))
+				agenttest.UseStore(d, wrap(d.Core.Store.(app.SQLStore)))
 			}
 			d.Delivery.Notifier, d.Core.PagesOrigin, d.Delivery.Links, d.Delivery.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc
@@ -580,7 +579,7 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 
 // slowReverts answers every rescope as Postgres does once the statement
 // timeout cancels it.
-type slowReverts struct{ agent.SQLStore }
+type slowReverts struct{ app.SQLStore }
 
 func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
 	return action.RescopedRevert{}, store.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
@@ -592,7 +591,7 @@ func TestScopeRouteTimeLimit(t *testing.T) {
 	t.Parallel()
 	e := newRescopeEnv(t)
 	id, secret := e.request(t)
-	e.start(t, func(s agent.SQLStore) agent.SQLStore { return slowReverts{s} })
+	e.start(t, func(s app.SQLStore) app.SQLStore { return slowReverts{s} })
 	var perr pageError
 	require.Equal(t, http.StatusGatewayTimeout, e.p.post(scopePath(id), pageOrigin, secret, scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "QUERY_TIMEOUT", perr.Code)

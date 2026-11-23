@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // pluginApprovalDetail is the detail of a local wire.detect entry in same-user
@@ -116,7 +115,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	// stopped at them would never reach the opener.
 	for _, a := range []*guardtest.Agent{helper, other, bot} {
 		pg := newPGAgent(t, a.URL, 2)
-		p.srv.Add(pg.service(func(dp *agent.Deps) {
+		p.srv.Add(pg.service(func(dp *Deps) {
 			dp.Core.Name, dp.Core.Now = strings.TrimPrefix(a.Role, d.Names.Prefix+"_agent_"), clock
 			dp.Core.PagesOrigin, dp.Delivery.Links = p.origin, p.secrets
 			dp.Plugin.Approvals = pg.store
@@ -218,7 +217,7 @@ func TestPluginRoutesOnOlderGuard(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	srv.Add(pg.service(func(dp *agent.Deps) {
+	srv.Add(pg.service(func(dp *Deps) {
 		dp.Core.PagesOrigin, dp.Delivery.Links, dp.Plugin.Approvals = origin, secrets, pg.store
 		dp.Status.Probe = testProbe{store.Probe{Q: pool, Migrations: guard.Migrations()}}
 	}))

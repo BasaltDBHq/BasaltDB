@@ -15,11 +15,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // onePasskey answers the passkey count status reads; nothing else is called.
-type onePasskey struct{ agent.SQLStore }
+type onePasskey struct{ SQLStore }
 
 func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 	return make([]passkey.Credential, 1), nil
@@ -30,7 +29,7 @@ func vaultInStatus(t *testing.T, ev vault.Engine) map[string]any {
 	t.Helper()
 	d := testAgentDeps("bot", onePasskey{})
 	d.Status.Vault = ev
-	svc := agent.NewService(d)
+	svc := NewService(d)
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	raw, err := json.Marshal(r)

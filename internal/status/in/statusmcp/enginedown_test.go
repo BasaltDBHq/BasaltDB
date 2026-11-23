@@ -24,7 +24,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
@@ -34,6 +33,18 @@ import (
 var statusNow = time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 
 const statusCredential = "/etc/basalt/agents/bot.url"
+
+// newCommands are the commands the engine builds for agent bot on linux
+// (app.NewCommands, which this package cannot import): the inputs pass its
+// checks, a valid agent name and an absolute or empty config path, so its
+// result is guidance.NewCommands' own.
+func newCommands(t *testing.T, configPath string) guidance.Commands {
+	t.Helper()
+	const name = "bot"
+	require.True(t, config.ValidAgentName(name), name)
+	require.True(t, configPath == "" || filepath.IsAbs(configPath), configPath)
+	return guidance.NewCommands(name, configPath, config.DefaultPath("linux"), "linux", testManager())
+}
 
 func testManager() guidance.ServiceManager {
 	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
@@ -80,8 +91,7 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 
 func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	t.Parallel()
-	cmds, err := agent.NewCommands("bot", "/srv/basalt/engine.json", "linux", testManager())
-	require.NoError(t, err)
+	cmds := newCommands(t, "/srv/basalt/engine.json")
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(down.Tools(), nil)...)
 
@@ -124,8 +134,7 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 // that cannot read the config keeps the person's steps (the default above).
 func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	t.Parallel()
-	cmds, err := agent.NewCommands("bot", "", "linux", testManager())
-	require.NoError(t, err)
+	cmds := newCommands(t, "")
 	cfg := &config.Config{
 		SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
 		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
@@ -156,8 +165,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 // status and in every other call, with the log's path.
 func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	t.Parallel()
-	cmds, err := agent.NewCommands("bot", "", "linux", testManager())
-	require.NoError(t, err)
+	cmds := newCommands(t, "")
 	const why = "basalt mcp could not start the engine: the engine did not start within 15s. Its log is /s/engine.log."
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
 
@@ -188,8 +196,7 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 
 func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	t.Parallel()
-	cmds, err := agent.NewCommands("bot", "", "linux", testManager())
-	require.NoError(t, err)
+	cmds := newCommands(t, "")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("v1\n"), 0o600))

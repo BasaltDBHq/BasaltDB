@@ -39,7 +39,7 @@ type Deps struct {
 	Delivery linksvc.Deps
 	Status   statussvc.Deps
 	Describe agentsvc.DescribeDeps
-	Plugin   PluginDeps
+	Plugin   pluginsvc.Deps
 }
 
 // CoreDeps is what every use case shares: who the agent is, the ledger kept
@@ -73,21 +73,6 @@ type CoreDeps struct {
 	LinkBudget int
 }
 
-// PluginDeps is what the plugin tools and the plugin approval pages use.
-type PluginDeps struct {
-	// Approvals are the guard's plugin approvals on the agent's credential,
-	// for the plugin approval routes of the pages; optional, and those
-	// routes know no plugin approval of this agent when nil.
-	Approvals PluginApprovalStore
-	// Requests serve request_plugin with the engine-kept plugin entries of
-	// a service engine; nil on any other engine, where the tool is refused
-	// (CONTRACT.md, MCP tools, request_plugin).
-	Requests pluginsvc.PluginRequests
-	// ApprovalsVersion is the basalt_meta version that holds plugin
-	// approvals.
-	ApprovalsVersion int
-}
-
 // Service runs one agent's tool calls.
 type Service struct {
 	deps Deps
@@ -102,7 +87,7 @@ type Service struct {
 	// ledger is the read side of the ledger: run history.
 	ledger *ledgersvc.Reads
 	// plugin is the plugin use case.
-	plugin *pluginCase
+	plugin *pluginsvc.Service
 	// status is the status use case.
 	status *statussvc.Service
 }
@@ -153,7 +138,7 @@ func (s *Service) wire() {
 	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.agent, s)
 	s.approval.SetDelivery(s.delivery)
 	s.approval.SetReverts(s.revert)
-	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
+	s.plugin = pluginsvc.NewService(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
 	s.agent.SetPorts(s.delivery, s.approval, s.status, s, s)
 }
@@ -168,6 +153,12 @@ func (s *Service) agentCore() agentsvc.Core {
 func (s *Service) statusCore() statussvc.Core {
 	c := s.deps.Core
 	return statussvc.Core{Name: c.Name, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors, PagesBase: c.PagesBase, PagesOrigin: c.PagesOrigin, LinkBudget: c.LinkBudget}
+}
+
+// pluginCore is the part of the shared settings the plugin use case reads.
+func (s *Service) pluginCore() pluginsvc.Core {
+	c := s.deps.Core
+	return pluginsvc.Core{Name: c.Name, Now: c.Now, Commands: c.Commands, Errors: c.Errors, PagesOrigin: c.PagesOrigin}
 }
 
 // revertCore is the part of the shared settings the revert use case reads.

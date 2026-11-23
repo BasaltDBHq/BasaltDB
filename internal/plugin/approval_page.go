@@ -1,10 +1,9 @@
-package agent
+package plugin
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
@@ -38,7 +37,7 @@ type PluginApprovalStore interface {
 // PluginApprovalRequest is the request of a pending plugin approval this
 // agent's role opened: its binding and settings texts as Postgres built
 // them, and the database's passkeys.
-func (pc *pluginCase) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error) {
+func (pc *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error) {
 	r, err := pc.openPluginApproval(ctx, id)
 	if err != nil {
 		return approval.PluginRequest{}, err
@@ -53,7 +52,7 @@ func (pc *pluginCase) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (
 // RelayPluginApproval relays the person's signature of a plugin approval
 // this agent's role opened to submit_plugin_approval, and returns when
 // Postgres recorded it.
-func (pc *pluginCase) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
+func (pc *Service) RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
 	if _, err := pc.openPluginApproval(ctx, r.ApprovalID); err != nil {
 		return time.Time{}, err
 	}
@@ -70,7 +69,7 @@ func (pc *pluginCase) RelayPluginApproval(ctx context.Context, r approval.Plugin
 // schema version 5 (which cannot hold one), an approval the role cannot
 // see or only sees as a named agent (no binding text, so the opener is
 // asked instead), and a proof that does not match the binding text.
-func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
+func (pc *Service) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
 	if pc.deps.Approvals == nil {
 		return guardmodel.PluginApprovalRecord{}, linksvc.ErrNotThisAgent
 	}
@@ -102,14 +101,6 @@ func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (gua
 		return r, linksvc.ErrNotThisAgent
 	}
 	return r, nil
-}
-
-// holdsPluginApprovals reports whether a guard has plugin approvals: schema
-// version is installed.
-func holdsPluginApprovals(st guardmodel.Status, version int) bool {
-	return st.Installed >= version &&
-		!slices.Contains(st.MissingBreaking, version) &&
-		!slices.Contains(st.MissingNonBreaking, version)
 }
 
 // The plugin page's answers. They are the page's own (PageError), never
@@ -154,7 +145,7 @@ func pluginCancelled(id uuid.UUID) error {
 // signature of plugin approval id: told apart by the guard's detail, the
 // message carrying it. Any other failure (the database cannot be reached)
 // is returned as it is, for the usual mapping.
-func (pc *pluginCase) pluginRelayError(ctx context.Context, id uuid.UUID, err error) error {
+func (pc *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error) error {
 	code, ok := guidance.LedgerCode(err)
 	if !ok {
 		return err

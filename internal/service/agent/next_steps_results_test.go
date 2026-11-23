@@ -62,17 +62,16 @@ func resultCases() map[string]resultCase {
 		},
 	}
 	maps.Copy(cases, confirmResultCases())
-	maps.Copy(cases, pluginResultCases())
 	return cases
 }
 
-func resultService(t *testing.T, goos, config string, opts ...func(*Deps)) *Service {
+func resultService(t *testing.T, goos, config string) *Service {
 	t.Helper()
 	base := func(d *Deps) {
 		d.Core.PagesOrigin = "http://localhost:7878"
 		d.Core.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
 	}
-	return serviceFor(t, goos, config, append([]func(*Deps){base}, opts...)...)
+	return serviceFor(t, goos, config, base)
 }
 
 func TestEveryCatalogResultHasACase(t *testing.T) {
@@ -83,19 +82,19 @@ func TestEveryCatalogResultHasACase(t *testing.T) {
 	for _, e := range stepcatalogtest.CatalogOf(t).Results {
 		key := resultKey(e.Tool, e.Case)
 		seen[key] = true
-		if _, ok := cases[key]; !ok && !slices.Contains(stepcatalogtest.RevertResultKeys(), key) && !slices.Contains(stepcatalogtest.ApprovalResultKeys(), key) {
+		if _, ok := cases[key]; !ok && !slices.Contains(stepcatalogtest.RevertResultKeys(), key) && !slices.Contains(stepcatalogtest.ApprovalResultKeys(), key) && !slices.Contains(stepcatalogtest.PluginResultKeys(), key) {
 			missing = append(missing, key)
 		}
 	}
-	require.Empty(t, missing, "catalog results without a case in resultCases or in the revert or approval package's")
+	require.Empty(t, missing, "catalog results without a case in resultCases or in the revert, approval or plugin package's")
 	var stale []string
 	for k := range cases {
 		if !seen[k] {
 			stale = append(stale, k)
 		}
 	}
-	for _, k := range slices.Concat(stepcatalogtest.RevertResultKeys(), stepcatalogtest.ApprovalResultKeys()) {
-		require.NotContains(t, cases, k, "a revert or approval result case runs in its own package only")
+	for _, k := range slices.Concat(stepcatalogtest.RevertResultKeys(), stepcatalogtest.ApprovalResultKeys(), stepcatalogtest.PluginResultKeys()) {
+		require.NotContains(t, cases, k, "a revert, approval or plugin result case runs in its own package only")
 	}
 	sort.Strings(stale)
 	require.Empty(t, stale, "result cases without a catalog entry")

@@ -226,13 +226,13 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",
 		})}, 1, nil)},
-		problemGuardMissing:               {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
-		problemGuardOutdated:              {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
-		problemUpgradeAvailable:           {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
-		problemNoPasskey:                  {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
-		handoff.ProblemSetupNotRun:        {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
-		handoff.ProblemSetupExpired:       {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
-		handoff.ProblemSetupChangePending: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
+		problemGuardMissing:     {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
+		problemGuardOutdated:    {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
+		problemUpgradeAvailable: {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
+		problemNoPasskey:        {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
+		"SETUP_NOT_RUN":         {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
+		"SETUP_EXPIRED":         {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
+		"SETUP_CHANGE_PENDING":  {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
 		problemLockFileUnusable: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
@@ -479,10 +479,10 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByAgent, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
-	require.Equal(t, handoff.SetupPending, r.Setup.State)
+	require.Equal(t, "PENDING", r.Setup.State)
 	require.Equal(t, "a1b2 c3d4 e5f6 0718 293a", r.Setup.Fingerprint)
 	require.Equal(t, "basalt engine --config /etc/basalt/engine.json", findProblem(t, r, problemEngineUnreachable).NextSteps[0].Command)
-	findProblem(t, r, handoff.ProblemSetupNotRun)
+	findProblem(t, r, "SETUP_NOT_RUN")
 }
 
 func TestStatusVaultHook(t *testing.T) {
@@ -517,15 +517,15 @@ func TestSetupStates(t *testing.T) {
 		code     bool
 	}{
 		{"none", nil, false, handoff.SetupNone, false},
-		{"pending install", pendingSetup(guardmodel.SetupInstall, soon), false, handoff.SetupPending, true},
+		{"pending install", pendingSetup(guardmodel.SetupInstall, soon), false, "PENDING", true},
 		{"recorded", pendingSetup(guardmodel.SetupInstall, soon), true, handoff.SetupNone, false},
 		{"expired install", pendingSetup(guardmodel.SetupInstall, past), false, handoff.SetupExpired, false},
 		{"expired upgrade is dropped", pendingSetup(guardmodel.SetupUpgrade, past), false, handoff.SetupNone, false},
-		{"pending upgrade", pendingSetup(guardmodel.SetupUpgrade, soon), false, handoff.SetupPending, true},
-		{"pending connect-only", &awaiting, false, handoff.SetupPending, true},
-		{"connect-only hold after expiry", &hold, false, handoff.SetupPending, false},
+		{"pending upgrade", pendingSetup(guardmodel.SetupUpgrade, soon), false, "PENDING", true},
+		{"pending connect-only", &awaiting, false, "PENDING", true},
+		{"connect-only hold after expiry", &hold, false, "PENDING", false},
 		{"connect-only after the collect window", &ended, false, handoff.SetupExpired, false},
-		{"confirmed connect-only after expiry", &confirmed, false, handoff.SetupPending, false},
+		{"confirmed connect-only after expiry", &confirmed, false, "PENDING", false},
 	} {
 		v := handoff.SetupFrom(tc.setup, tc.recorded, statusNow)
 		require.Equal(t, tc.want, v.Status.State, tc.name)
@@ -662,7 +662,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	require.False(t, isError)
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1, "the setup explains the missing role: no database problem besides it")
-	require.Equal(t, handoff.ProblemSetupNotRun, problems[0].(map[string]any)["code"])
+	require.Equal(t, "SETUP_NOT_RUN", problems[0].(map[string]any)["code"])
 
 	// The person ran it and the agent checks status, which reads afresh
 	// (held calls may trust a not-recorded answer for a few seconds).
@@ -691,7 +691,7 @@ func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1)
 	require.Equal(t, problemDatabaseUnreachable, problems[0].(map[string]any)["code"], "no SETUP_NOT_RUN for a code that may be used")
-	require.Equal(t, handoff.SetupPending, body["setup"].(map[string]any)["state"], "the config's code is still shown")
+	require.Equal(t, "PENDING", body["setup"].(map[string]any)["state"], "the config's code is still shown")
 }
 
 func TestStatusRefusesArguments(t *testing.T) {

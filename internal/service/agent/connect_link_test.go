@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
 	"github.com/stretchr/testify/require"
@@ -86,8 +85,8 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 		probe   *fakeProbe
 		kind    string
 	}{
-		{handoff.ProblemSetupNotRun, missing, guardmodel.SetupInstall},
-		{handoff.ProblemSetupChangePending, ok, guardmodel.SetupAgent},
+		{"SETUP_NOT_RUN", missing, guardmodel.SetupInstall},
+		{"SETUP_CHANGE_PENDING", ok, guardmodel.SetupAgent},
 	} {
 		t.Run(tc.problem, func(t *testing.T) {
 			t.Parallel()

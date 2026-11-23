@@ -21,7 +21,7 @@ type statusKeeper struct {
 }
 
 func newStatusKeeper(core *CoreDeps, deps *StatusDeps) *statusKeeper {
-	return &statusKeeper{core: core, deps: deps, pending: &handoff.SetupKeeper{Setup: deps.Setup}}
+	return &statusKeeper{core: core, deps: deps, pending: handoff.NewSetupKeeper(deps.Setup)}
 }
 
 // The reads the plugin use case makes of the status group, read as it stands.

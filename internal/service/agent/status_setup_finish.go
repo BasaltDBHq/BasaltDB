@@ -23,7 +23,7 @@ import (
 // any kind in the database, so a rotated credential is picked up and
 // engine.json cleared even when nobody calls status, then admits as Admit.
 func (sc *statusKeeper) AdmitTick(ctx context.Context) error {
-	if w := sc.setupWatch(); w.Setup != nil && w.Setup.Kind != guardmodel.SetupInstall {
+	if w := sc.setupWatch(); w.Pending() != nil && w.Pending().Kind != guardmodel.SetupInstall {
 		w.PendingRecorded(ctx)
 	}
 	return sc.Admit(ctx)
@@ -31,9 +31,5 @@ func (sc *statusKeeper) AdmitTick(ctx context.Context) error {
 
 // setupWatch is the pending setup as a call reads it now.
 func (sc *statusKeeper) setupWatch() handoff.SetupWatch {
-	return handoff.SetupWatch{
-		Setup: sc.pending.Pending(), Database: sc.deps.Database, Probe: sc.deps.Probe, Finisher: sc.deps.Finisher,
-		Finished: sc.pending.Finished, NotRecorded: &sc.pending.NotRecorded, LockTrouble: &sc.pending.LockTrouble,
-		Log: sc.core.Log, Now: sc.core.Now,
-	}
+	return sc.pending.Watch(sc.deps.Database, sc.deps.Probe, sc.deps.Finisher, sc.core.Log, sc.core.Now)
 }

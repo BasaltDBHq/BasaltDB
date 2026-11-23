@@ -131,9 +131,7 @@ func (l LocalStatus) Report(ctx context.Context) (guidance.StatusReport, error) 
 		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, probe: l.Probe,
 		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
 		// basalt status reads; the running engine finishes the setup.
-		watch: handoff.SetupWatch{
-			Setup: l.Setup, Probe: l.Probe, Finisher: handoff.NoFinisher{}, Finished: func(string) {}, NotRecorded: &handoff.SetupCache{}, LockTrouble: &handoff.LockTrouble{}, Log: l.Log, Now: l.Now,
-		},
+		watch:    handoff.NewLocalWatch(l.Setup, l.Probe, l.Log, l.Now),
 		passkeys: l.Passkeys, log: l.Log, now: l.Now,
 		errs: l.Errors, latestGuard: l.LatestGuardVersion,
 	}.report(ctx)
@@ -166,7 +164,7 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	r.Trust, trust = s.trustStatus(ctx, &ps)
 	setup, known := s.watch.View(ctx)
 	r.Setup = setup.Status
-	if path := s.watch.LockTrouble.Get(); path != "" {
+	if path := s.watch.LockTroubleFile(); path != "" {
 		ps.Add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
 			func(b *guidance.Steps) string { return handoff.LockFileSteps(b, path) })
 	}

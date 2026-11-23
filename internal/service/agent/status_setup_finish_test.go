@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/user"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -113,7 +115,7 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 			}
 			r, err := svc.Status(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, handoff.SetupPending, r.Setup.State)
+			require.Equal(t, "PENDING", r.Setup.State)
 			require.Empty(t, tc.fin.finished(), "nothing is cleared")
 			require.NotNil(t, svc.status.pending.Pending(), "the setup stays pending")
 		})
@@ -172,7 +174,7 @@ func TestAPendingCredentialThatFindsTheSetupIsPromoted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []finishCall{{id: setup.SetupID, promote: true}}, fin.finished())
 	require.Nil(t, svc.status.pending.Pending())
-	require.NotEqual(t, handoff.SetupPending, r.Setup.State)
+	require.NotEqual(t, "PENDING", r.Setup.State)
 }
 
 // A promotion that fails leaves the engine on its old password, and a lock
@@ -258,7 +260,7 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, probe.count(), "status reads afresh")
 
-	now = now.Add(handoff.NotRecordedFor)
+	now = now.Add((5 * time.Second))
 	require.Error(t, svc.Admit(ctx))
 	require.Equal(t, 3, probe.count(), "read again once the answer is old")
 }
@@ -294,7 +296,7 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	}
 	require.NotNil(t, found, "%+v", r.Problems)
 	require.Contains(t, found.PersonMessage, lock)
-	require.Equal(t, "sudo chown "+handoff.EngineUserName()+" "+lock, found.NextSteps[0].Command)
+	require.Equal(t, "sudo chown "+engineUserNameOf()+" "+lock, found.NextSteps[0].Command)
 	require.Equal(t, toolresult.ActorPerson, found.NextSteps[0].Actor)
 	require.NotNil(t, svc.status.pending.Pending(), "still pending: the next call tries again")
 
@@ -308,4 +310,13 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 	}
 	require.Nil(t, svc.status.pending.Pending(), "finished once the lock opens")
 	require.Len(t, fin.finished(), 2)
+}
+
+// engineUserNameOf is the engine's OS user, by name when it has one, else
+// its uid: what the lock file's chown command names.
+func engineUserNameOf() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return strconv.Itoa(os.Geteuid())
 }

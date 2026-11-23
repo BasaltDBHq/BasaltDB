@@ -14,34 +14,22 @@ import (
 )
 
 const (
-	ArgSetupID = "setupId"
-)
-
-const (
-	ArgDatabase = "database"
-)
-
-const (
-	AnswerYes = "YES"
-)
-
-const (
+	argSetupID  = "setupId"
+	argDatabase = "database"
+	AnswerYes   = "YES"
 	// The states of confirm_database's result.
-	ConfirmedState = "CONFIRMED"
-)
-
-const (
-	RefusedState = "REFUSED"
+	confirmedState = "CONFIRMED"
+	refusedState   = "REFUSED"
 )
 
 // connectOnlyWaiting is status's message while a connect-only setup waits
 // for its address: the engine cannot tell a setup not run yet from an
 // address the service lost.
-const ConnectOnlyWaiting = "Waiting for the setup on the connect page. If you already approved it there, open the same link again and approve once more: your bot will connect."
+const connectOnlyWaiting = "Waiting for the setup on the connect page. If you already approved it there, open the same link again and approve once more: your bot will connect."
 
 // connectOnlyExpiredHold is the same wait after the code has expired but
 // the collect window is still open: the expired link is not reprinted.
-const ConnectOnlyExpiredHold = "Waiting for a setup already started on the connect page. The setup link has expired, so it cannot be opened again. If you already approved it there, your bot will connect."
+const connectOnlyExpiredHold = "Waiting for a setup already started on the connect page. The setup link has expired, so it cannot be opened again. If you already approved it there, your bot will connect."
 
 // connectPortal is where a connect-only code is pasted when its link does
 // not fit the link budget.
@@ -56,16 +44,16 @@ const connectPortal = "portal.basaltvault.app/connect"
 // hold wording once the code has expired.
 func connectOnlyWaitingMessage(code string) string {
 	if code == "" {
-		return ConnectOnlyExpiredHold
+		return connectOnlyExpiredHold
 	}
-	return ConnectOnlyWaiting
+	return connectOnlyWaiting
 }
 
 func connectOnlySteps(b *guidance.Steps, code, fingerprint string, budget int) (string, []toolresult.Link) {
 	if code == "" {
 		b.EndTurn("End your turn: a setup already started on the connect page may still finish.")
 		b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
-		return ConnectOnlyExpiredHold, nil
+		return connectOnlyExpiredHold, nil
 	}
 	if !guidance.SetupCode.MatchString(code) || fingerprint == "" {
 		b.Fail(errors.New("a pending setup needs its code and fingerprint"))
@@ -87,20 +75,20 @@ func connectOnlySteps(b *guidance.Steps, code, fingerprint string, budget int) (
 	return guidance.ConnectOnlyMessage(lead+" If you already approved it, open the same link and approve once more.", url, fingerprint)
 }
 
-// confirmDatabaseSteps: the agent asks the person whether db is their
+// ConfirmDatabaseSteps: the agent asks the person whether db is their
 // database, ends its turn, and calls confirm_database with their answer.
 // The engine fills in setupId and database, never answer.
 func ConfirmDatabaseSteps(b *guidance.Steps, setupID string, db setupcode.Address) string {
 	b.AskPerson("Ask the person exactly: The setup points me at " + db.Name() + ". Is that your database?")
 	b.EndTurn("End your turn: the person answers next.")
-	b.CallTool(guidance.ToolConfirmDatabase, map[string]any{ArgSetupID: setupID, ArgDatabase: DatabaseArg(db)},
+	b.CallTool(guidance.ToolConfirmDatabase, map[string]any{argSetupID: setupID, argDatabase: databaseArg(db)},
 		"Call this with answer set to the person's own yes (YES) or no (NO) about that database. Never answer for them.")
 	return "The setup points the agent at " + db.Name() + ". The agent asks you in the chat whether that is your database, and uses it only after you say yes. " +
 		"If it is not the one you pasted on the connect page, say no."
 }
 
 // databaseArg is db as confirm_database takes it.
-func DatabaseArg(db setupcode.Address) map[string]any {
+func databaseArg(db setupcode.Address) map[string]any {
 	out := map[string]any{"host": db.Host, "port": db.Port, "database": db.Database}
 	if db.SupabaseRef != "" {
 		out["supabaseRef"] = db.SupabaseRef
@@ -220,21 +208,21 @@ type Handoff interface {
 	Confirm(ctx context.Context, setupID string, db setupcode.Address, yes bool) (Answer, error)
 }
 
-// confirmArgs are confirm_database's arguments.
+// ConfirmArgs are confirm_database's arguments.
 type ConfirmArgs struct {
 	SetupID  string            `json:"setupId" validate:"required,uuid"`
 	Database setupcode.Address `json:"database" validate:"required"`
 	Answer   string            `json:"answer" validate:"required,oneof=YES NO"`
 }
 
-// confirmResult is confirm_database's result for ans.
+// NewConfirmResult is confirm_database's result for ans.
 func NewConfirmResult(ans Answer, cmds guidance.Commands) (ConfirmResult, error) {
 	b := guidance.NewSteps()
-	out := ConfirmResult{State: ConfirmedState, Database: ans.Database}
+	out := ConfirmResult{State: confirmedState, Database: ans.Database}
 	if ans.Confirmed {
 		confirmedSteps(b)
 	} else {
-		out.State = RefusedState
+		out.State = refusedState
 		out.PersonMessage = refusedResultSteps(b, cmds)
 	}
 	steps, err := b.Build()
@@ -246,7 +234,7 @@ func NewConfirmResult(ans Answer, cmds guidance.Commands) (ConfirmResult, error)
 	return out, guidance.CheckPersonMessage(out.PersonMessage)
 }
 
-// connectOnlyProblems is status.setup for st, with its problem added to ps.
+// ConnectOnlyProblems is status.setup for st, with its problem added to ps.
 func ConnectOnlyProblems(st State, ps *guidance.Problems, now time.Time) guidance.SetupStatus {
 	s := st.Setup
 	v := SetupFrom(&s, false, now)
@@ -256,8 +244,8 @@ func ConnectOnlyProblems(st State, ps *guidance.Problems, now time.Time) guidanc
 		v.AddProblem(ps)
 	case st.Phase == PhaseConfirm && st.Database != nil:
 		db := *st.Database
-		out.State, out.Fingerprint, out.Database = SetupConfirmDatabase, "", &db
-		ps.Add(ProblemConfirmDatabase, "the setup reached "+db.Name()+"; the person confirms it is their database before the agent uses it",
+		out.State, out.Fingerprint, out.Database = setupConfirmDatabase, "", &db
+		ps.Add(problemConfirmDatabase, "the setup reached "+db.Name()+"; the person confirms it is their database before the agent uses it",
 			func(b *guidance.Steps) string { return ConfirmDatabaseSteps(b, s.SetupID, db) })
 	case st.Phase != PhaseWaiting:
 		// Confirmed, or engine.json changed: the engine builds the agent
@@ -273,7 +261,7 @@ func ConnectOnlyProblems(st State, ps *guidance.Problems, now time.Time) guidanc
 			func(b *guidance.Steps) string { return trustRootMismatchSteps(b, s.Code, ps.ConnectBudget, db) })
 	case st.Problem == ProblemUnreachable && st.Database != nil:
 		db := *st.Database
-		ps.Add(ProblemUnreachableFromBot, "this machine cannot reach "+db.Name(),
+		ps.Add(problemUnreachableFromBot, "this machine cannot reach "+db.Name(),
 			func(b *guidance.Steps) string { return unreachableFromBotSteps(b, s.Code, ps.ConnectBudget, db) })
 	default:
 		v.AddProblem(ps)

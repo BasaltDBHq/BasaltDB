@@ -11,7 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/dictfile"
+	"github.com/basaltdbhq/basaltdb/internal/pii/out/dictfile"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"

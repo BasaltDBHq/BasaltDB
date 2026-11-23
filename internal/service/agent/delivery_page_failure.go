@@ -85,7 +85,7 @@ func (s *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 		// The page has no agent to run basalt init: the person asks it for
 		// the link that registers the passkey they use.
 		steps, err := guidance.NewSteps().
-			TellAgent(askAgentForRegisterLinkText).
+			TellAgent(guidance.AskAgentForRegisterLinkText).
 			Build()
 		if err != nil {
 			s.deps.Core.Log.Error("cannot build the page's passkey steps", "err", err)

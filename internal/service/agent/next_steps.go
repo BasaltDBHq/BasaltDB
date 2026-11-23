@@ -96,7 +96,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 	case guidance.CodeApprovalRequired:
 		person = s.approvalRequiredSteps(b, te)
 	case guidance.CodeApprovalExpired:
-		approvalExpiredSteps(b)
+		guidance.ApprovalExpiredSteps(b)
 		person = approvalExpiredMessage
 	case guidance.CodeApprovalInvalid:
 		person = approvalInvalidSteps(b, te, f)
@@ -481,15 +481,15 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 	case guidance.ReasonDatabaseUnreachable:
 		b.RepeatCall(f.tool, nil, 0, "Try the same call once more, in case the database was only briefly busy.")
 		b.AskPerson("Then tell the person the database cannot be reached and ask them to check that Postgres is running.")
-		return databaseUnreachableMessage
+		return guidance.DatabaseUnreachableMessage
 	case guidance.ReasonTooManyConnections:
 		b.RepeatCall(f.tool, nil, 0, "Try the same call once more: a connection may have closed since.")
-		b.AskPerson(tooManyConnectionsAsk)
-		return tooManyConnectionsMessage(s.deps.Core.Commands)
+		b.AskPerson(guidance.TooManyConnectionsAsk)
+		return guidance.TooManyConnectionsMessage(s.deps.Core.Commands)
 	case guidance.ReasonCredentialRejected, guidance.ReasonGuardMissing, guidance.ReasonGuardOutdated:
-		return fixSteps(b, s.deps.Core.Commands, te.Reason)
+		return guidance.FixSteps(b, s.deps.Core.Commands, te.Reason)
 	case guidance.ReasonEngineUnreachable:
-		return engineUnreachableSteps(b, s.deps.Core.Commands, f.tool)
+		return guidance.EngineUnreachableSteps(b, s.deps.Core.Commands, f.tool)
 	case guidance.ReasonSetupPending, guidance.ReasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case guidance.ReasonDatabaseNotConfirmed:
@@ -527,7 +527,7 @@ func (s *Service) approvalLinkError(te *toolresult.ToolError, n heldNotice) *too
 		s.openApprovalAgain(b, n, "Approve again on the page; the signature did not verify.")
 		lead = "The approval signature did not verify, so nothing was applied."
 	case guidance.ReasonPasskeyRevoked:
-		b.AgentRunCommand(s.deps.Core.Commands.Init(), passkeyInitText)
+		b.AgentRunCommand(s.deps.Core.Commands.Init(), guidance.PasskeyInitText)
 		s.openApprovalAgain(b, n, "Then approve the held write with that passkey.")
 		lead = "That passkey is not accepted here (unknown or revoked), so nothing was applied. The agent gives you a link to register the passkey you use; then approve again."
 	default:
@@ -573,7 +573,7 @@ func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []too
 // an expired one is renewed on the engine's machine (an OPERATOR step).
 func (s *Service) setupSteps(b *guidance.Steps, te *toolresult.ToolError, f failure) string {
 	if te.Reason == guidance.ReasonSetupExpired {
-		return setupExpiredSteps(b, s.deps.Core.Commands)
+		return guidance.SetupExpiredSteps(b, s.deps.Core.Commands)
 	}
 	var se *guidance.SetupError
 	if !errors.As(f.err, &se) {
@@ -584,7 +584,7 @@ func (s *Service) setupSteps(b *guidance.Steps, te *toolresult.ToolError, f fail
 		b.CallTool(guidance.ToolStatus, map[string]any{}, "Call status: its setup problem says what the person or you do next.")
 		return ""
 	}
-	person, ls := setupPendingSteps(b, s.deps.Core.Commands, se.Code, se.Fingerprint, true, s.deps.Status.ConnectBudget)
+	person, ls := guidance.SetupPendingSteps(b, s.deps.Core.Commands, se.Code, se.Fingerprint, true, s.deps.Status.ConnectBudget)
 	te.Links = ls
 	return person
 }

@@ -71,7 +71,7 @@ func connectOnlySteps(b *guidance.Steps, code, fingerprint string, budget int) (
 		b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 		return connectOnlyExpiredHold, nil
 	}
-	if !setupCode.MatchString(code) || fingerprint == "" {
+	if !guidance.SetupCode.MatchString(code) || fingerprint == "" {
 		b.Fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil
 	}
@@ -367,7 +367,7 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 		v := c.Vault.VaultStatus()
 		r.Vault = &v
 	}
-	ps := Problems{Cmds: cmds, ConnectBudget: c.ConnectBudget}
+	ps := guidance.Problems{Cmds: cmds, ConnectBudget: c.ConnectBudget}
 	r.Setup = connectOnlyProblems(st, &ps, c.Now())
 	list, err := ps.Sorted()
 	if err != nil {
@@ -378,7 +378,7 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 }
 
 // connectOnlyProblems is status.setup for st, with its problem added to ps.
-func connectOnlyProblems(st handoff.State, ps *Problems, now time.Time) SetupStatus {
+func connectOnlyProblems(st handoff.State, ps *guidance.Problems, now time.Time) SetupStatus {
 	s := st.Setup
 	v := setupFrom(&s, false, now)
 	out := v.status

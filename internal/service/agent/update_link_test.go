@@ -34,7 +34,7 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	with := cmds.UpdateLink(testUpdateLink)
 
 	b := guidance.NewSteps()
-	person := fixSteps(b, with, guidance.ReasonGuardOutdated)
+	person := guidance.FixSteps(b, with, guidance.ReasonGuardOutdated)
 	steps := actions(t, b)
 	require.True(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, testUpdateLink), "%+v", steps)
 	require.False(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, ""), "no basalt init when the link is there")
@@ -51,7 +51,7 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 		reason string
 	}{{cmds, guidance.ReasonGuardOutdated}, {with, guidance.ReasonCredentialRejected}, {with, guidance.ReasonGuardMissing}} {
 		b = guidance.NewSteps()
-		fixSteps(b, tc.cmds, tc.reason)
+		guidance.FixSteps(b, tc.cmds, tc.reason)
 		steps = actions(t, b)
 		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", tc.reason, steps)
 		require.False(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, ""), tc.reason)
@@ -71,12 +71,12 @@ func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
 	removed := cmds.UpdateLink(testUpdateLink).Removed(func() bool { return gone })
 	for _, reason := range []string{guidance.ReasonCredentialRejected, guidance.ReasonGuardMissing, guidance.ReasonGuardOutdated} {
 		b := guidance.NewSteps()
-		person := fixSteps(b, removed, reason)
+		person := guidance.FixSteps(b, removed, reason)
 		require.NotContains(t, person, "Last step", "not removed yet: the usual fix")
 
 		gone = true
 		b = guidance.NewSteps()
-		person = fixSteps(b, removed, reason)
+		person = guidance.FixSteps(b, removed, reason)
 		steps := actions(t, b)
 		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", reason, steps)
 		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionStop, ""), reason)

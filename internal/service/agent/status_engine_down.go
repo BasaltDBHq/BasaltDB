@@ -127,7 +127,7 @@ func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.T
 	te := &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
 	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
 	b := guidance.NewSteps()
-	te.PersonMessage = engineUnreachableSteps(b, d.commands(), retry)
+	te.PersonMessage = guidance.EngineUnreachableSteps(b, d.commands(), retry)
 	steps, err := b.Build()
 	if err != nil {
 		return nil, err

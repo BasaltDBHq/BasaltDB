@@ -1,12 +1,12 @@
-package agentkit
+package agent
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // TestInitIsTheOneSetupCommand checks the one basalt command a step names
@@ -43,7 +43,7 @@ func TestForegroundEngineCommands(t *testing.T) {
 	require.Equal(t, "basalt engine --config /home/me/engine.json", c.EngineStart())
 	require.Equal(t, "basalt engine --config /home/me/engine.json", c.EngineRestart())
 	def := mustCommands(t, "", "darwin").Foreground()
-	require.Equal(t, "basalt engine --config "+ShellQuote(config.DefaultPath("darwin")), def.EngineStart())
+	require.Equal(t, "basalt engine --config "+guidance.ShellQuote(config.DefaultPath("darwin")), def.EngineStart())
 	spaced := mustCommands(t, "/home/my me/engine.json", "linux").Foreground()
 	require.Equal(t, "basalt engine --config '/home/my me/engine.json'", spaced.EngineStart())
 }
@@ -57,17 +57,13 @@ func TestServiceEngineCommands(t *testing.T) {
 
 func TestShellQuoteALeadingEquals(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "'=ls'", ShellQuote("=ls"), "zsh expands =cmd")
-	require.Equal(t, "plain/path", ShellQuote("plain/path"))
+	require.Equal(t, "'=ls'", guidance.ShellQuote("=ls"), "zsh expands =cmd")
+	require.Equal(t, "plain/path", guidance.ShellQuote("plain/path"))
 }
 
-func mustCommands(t *testing.T, path, goos string) Commands {
+func mustCommands(t *testing.T, path, goos string) guidance.Commands {
 	t.Helper()
 	c, err := NewCommands("bot", path, goos, testManager())
 	require.NoError(t, err)
 	return c
-}
-
-func testManager() ServiceManager {
-	return ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 }

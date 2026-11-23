@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -345,7 +346,7 @@ func resolveExecutable(exe string) string {
 	return exe
 }
 
-func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, error) {
+func shimCommands(name, configPath string, cfg *config.Config) (guidance.Commands, error) {
 	if !config.ValidAgentName(name) {
 		name = fallbackAgentName
 	}

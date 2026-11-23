@@ -113,8 +113,8 @@ func pluginApprovalSteps(b *guidance.Steps, p PluginProblem) string {
 	return lead
 }
 
-func unusableFileSteps(b *guidance.Steps, cmds Commands, file string) string {
-	file = shellQuote(file)
+func unusableFileSteps(b *guidance.Steps, cmds guidance.Commands, file string) string {
+	file = guidance.ShellQuote(file)
 	move, restart := "sudo mv "+file+" "+file+".bad", cmds.EngineRestart()
 	b.RunCommand(move, "Move the unusable entries file aside; the engine keeps no plugin until then.")
 	b.RunCommand(restart, "Then restart the engine: it starts with no engine-kept plugins.")

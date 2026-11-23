@@ -26,11 +26,11 @@ const TooManyConnectionsAsk = "Tell the person the agent has used all the databa
 
 // TooManyConnectionsMessage is the person's message when the agent role is at
 // its connection limit, in an error and in status (CONTRACT.md, Error codes).
-func TooManyConnectionsMessage(cmds Commands) string {
+func TooManyConnectionsMessage(cmds guidance.Commands) string {
 	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
-		cmds.agent, setupcode.AgentConnectionLimit)
+		cmds.AgentName(), setupcode.AgentConnectionLimit)
 }
 
 // fixes are what the person is told for the machine problems of the guard
@@ -47,7 +47,7 @@ var fixes = map[string]string{
 // reason; the person tells the agent when it is done and the agent stops
 // until then. On an agent-operated engine the agent follows what init
 // prints instead (RI-17 for CREDENTIAL_REJECTED).
-func FixSteps(b *guidance.Steps, cmds Commands, reason string) string {
+func FixSteps(b *guidance.Steps, cmds guidance.Commands, reason string) string {
 	problem, ok := fixes[reason]
 	if !ok {
 		b.Fail(fmt.Errorf("no fix for %s", reason))
@@ -56,7 +56,7 @@ func FixSteps(b *guidance.Steps, cmds Commands, reason string) string {
 	if cmds.AgentOperated() {
 		return RemoteSetupSteps(b, cmds, problem)
 	}
-	if cmds.engineRemoved() {
+	if cmds.EngineRemoved() {
 		// The setup page removed BasaltDB and the engine's last agent: its
 		// role is gone, so every call fails. basalt init finishes the
 		// removal (CONTRACT.md, The local setup page, Removing the engine
@@ -66,8 +66,8 @@ func FixSteps(b *guidance.Steps, cmds Commands, reason string) string {
 		b.Stop("Do not retry: BasaltDB is removed from this database.")
 		return removedPersonText
 	}
-	if reason == guidance.ReasonGuardOutdated && cmds.updateLink != "" {
-		b.OpenLink(cmds.updateLink, "Show the person this link: its page updates the guard once they type the admin connection string there.")
+	if reason == guidance.ReasonGuardOutdated && cmds.UpdateLinkURL() != "" {
+		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page updates the guard once they type the admin connection string there.")
 		b.TellAgent("Tell the agent when it is done.")
 		b.Stop("Do not retry until the person says it is fixed.")
 		return problem + " Open the link the agent gives you, follow the page, then tell the agent."
@@ -104,7 +104,7 @@ const initPersonText = "The agent gives you a link: open it, follow the page, th
 // now; what it prints (the connect link, its personMessage and nextSteps)
 // replaces the rest of these steps (RI-2). The person's message names no
 // command on the agent's machine.
-func RemoteSetupSteps(b *guidance.Steps, cmds Commands, problem string) string {
+func RemoteSetupSteps(b *guidance.Steps, cmds guidance.Commands, problem string) string {
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the link it prints and follow its steps.")
 	return problem + " " + initPersonText
 }
@@ -112,7 +112,7 @@ func RemoteSetupSteps(b *guidance.Steps, cmds Commands, problem string) string {
 // EngineUnreachableSteps: the person starts the engine; on an agent-operated
 // engine the agent starts it, once, then repeats tool (status when tool is
 // empty or status itself).
-func EngineUnreachableSteps(b *guidance.Steps, cmds Commands, tool string) string {
+func EngineUnreachableSteps(b *guidance.Steps, cmds guidance.Commands, tool string) string {
 	if !cmds.AgentOperated() {
 		return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
 	}
@@ -136,7 +136,7 @@ func personFix(b *guidance.Steps, command, problem string) string {
 var SetupCode = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // SetupExpiredSteps: the agent runs basalt init again for a new link.
-func SetupExpiredSteps(b *guidance.Steps, cmds Commands) string {
+func SetupExpiredSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "The setup link for this agent expired before it was used. " + initPersonText
@@ -152,7 +152,7 @@ func SetupExpiredSteps(b *guidance.Steps, cmds Commands) string {
 // hosted service (CONTRACT.md, Next steps with the connect link). Without
 // one there is no page to hand over: the agent runs basalt init, which
 // prints the link. The links are those of the message.
-func SetupPendingSteps(b *guidance.Steps, cmds Commands, code, fingerprint string, blocking bool, budget int) (string, []toolresult.Link) {
+func SetupPendingSteps(b *guidance.Steps, cmds guidance.Commands, code, fingerprint string, blocking bool, budget int) (string, []toolresult.Link) {
 	if !SetupCode.MatchString(code) || fingerprint == "" {
 		b.Fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil

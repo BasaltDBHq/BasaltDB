@@ -112,7 +112,7 @@ func databaseArg(db handoff.Address) map[string]any {
 }
 
 // databaseRefusedSteps: a recovery code, made on the engine's machine.
-func databaseRefusedSteps(b *guidance.Steps, cmds Commands) string {
+func databaseRefusedSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "You said the database the setup reached is not yours, so the agent never logged in there and forgot its address and password. " +
@@ -121,7 +121,7 @@ func databaseRefusedSteps(b *guidance.Steps, cmds Commands) string {
 
 // addressInvalidSteps: the address the page handed over was refused; the
 // next basalt init --remote forgets the setup and makes a recovery code.
-func addressInvalidSteps(b *guidance.Steps, cmds Commands) string {
+func addressInvalidSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	b.AskPerson("Tell the person the database address the connect page handed over was refused, so you did not use it.")
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
@@ -131,7 +131,7 @@ func addressInvalidSteps(b *guidance.Steps, cmds Commands) string {
 
 // setupNotFoundSteps: the database the person confirmed does not record
 // the setup; a new code.
-func setupNotFoundSteps(b *guidance.Steps, cmds Commands, database string) string {
+func setupNotFoundSteps(b *guidance.Steps, cmds guidance.Commands, database string) string {
 	where := "the database the agent connected to"
 	if database != "" {
 		where = database
@@ -214,7 +214,7 @@ func confirmedSteps(b *guidance.Steps) string {
 }
 
 // refusedResultSteps: the address and the password are gone; a new code.
-func refusedResultSteps(b *guidance.Steps, cmds Commands) string {
+func refusedResultSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	return databaseRefusedSteps(b, cmds)
 }
 
@@ -231,7 +231,7 @@ type Handoff interface {
 // database: status, confirm_database, and every other tool refused.
 type ConnectOnly struct {
 	Name       string
-	Commands   Commands
+	Commands   guidance.Commands
 	OperatedBy string
 	SameUser   bool
 	// StartedBy is why this engine started (hand, mcp or crash).
@@ -327,7 +327,7 @@ func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, err
 }
 
 // confirmResult is confirm_database's result for ans.
-func confirmResult(ans handoff.Answer, cmds Commands) (ConfirmResult, error) {
+func confirmResult(ans handoff.Answer, cmds guidance.Commands) (ConfirmResult, error) {
 	b := guidance.NewSteps()
 	out := ConfirmResult{State: confirmedState, Database: ans.Database}
 	if ans.Confirmed {

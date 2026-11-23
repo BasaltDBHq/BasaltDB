@@ -37,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -657,10 +658,10 @@ type agentEnv struct {
 // commands are agent a's next-step commands: a foreground engine's when it
 // is no service, and the setup page's UPDATE link for a when the engine
 // serves the setup jobs (setupOrigin).
-func (env agentEnv) commands(a config.Agent) (agent.Commands, error) {
+func (env agentEnv) commands(a config.Agent) (guidance.Commands, error) {
 	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, AgentServiceManager())
 	if err != nil {
-		return agent.Commands{}, err
+		return guidance.Commands{}, err
 	}
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()

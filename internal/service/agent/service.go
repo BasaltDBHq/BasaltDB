@@ -54,10 +54,10 @@ type CoreDeps struct {
 	Now   func() time.Time
 	// Commands builds the commands the person runs for this agent; the
 	// default ones for Name and the platform's default config when zero.
-	Commands Commands
+	Commands guidance.Commands
 	// ServiceManager is the host's service manager, for the default
 	// Commands.
-	ServiceManager ServiceManager
+	ServiceManager guidance.ServiceManager
 	// Errors tells apart the error values of the adapters.
 	Errors ErrorMap
 	// PagesBase is the base URL of the approval and revert pages (links);

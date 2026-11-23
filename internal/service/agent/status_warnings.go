@@ -168,7 +168,7 @@ func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
 
 // upgradeSteps: the person adds the missing non-breaking migrations when it
 // suits them, in a warning and in status, on the page basalt init links to.
-func upgradeSteps(b *guidance.Steps, cmds Commands) string {
+func upgradeSteps(b *guidance.Steps, cmds guidance.Commands) string {
 	b.AskPerson("Tell the person the guard can be updated when it suits them, and ask whether to do it now.")
 	if cmds.UpdateLinkURL() != "" && !cmds.AgentOperated() {
 		b.OpenLink(cmds.UpdateLinkURL(), "On the person's yes, show them this link: nothing stops, and the agent needs no restart.")

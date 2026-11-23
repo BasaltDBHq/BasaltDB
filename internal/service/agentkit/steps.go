@@ -121,16 +121,6 @@ func (b *Steps) AgentRunCommand(command, text string) *Steps {
 	return b.add(toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Command: command}, text)
 }
 
-// MachineCommand adds a machine step on the engine's machine (a catalog
-// OPERATOR step): the agent's on an agent-operated engine, with
-// agentText, else the person's, with personText.
-func (b *Steps) MachineCommand(cmds Commands, command, personText, agentText string) *Steps {
-	if cmds.AgentOperated() {
-		return b.AgentRunCommand(command, agentText)
-	}
-	return b.RunCommand(command, personText)
-}
-
 // SendRequest adds the AGENT SEND_REQUEST step for f, which goes first
 // (CONTRACT.md, The request file and pasted blocks); nothing when f is nil.
 func (b *Steps) SendRequest(f *links.RequestFile) *Steps {

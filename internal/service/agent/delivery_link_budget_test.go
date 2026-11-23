@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -306,7 +307,7 @@ func requireSendRequestFirst(t *testing.T, steps []toolresult.NextStep, file *li
 	require.NotEmpty(t, steps, where)
 	require.Equal(t, toolresult.ActorAgent, steps[0].Actor, where)
 	require.Equal(t, toolresult.ActionSendRequest, steps[0].Action, where)
-	require.Equal(t, sendRequestText(file), steps[0].Text, where)
+	require.Equal(t, agentkit.SendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
 		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}

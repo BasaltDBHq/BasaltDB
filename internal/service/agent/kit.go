@@ -26,18 +26,13 @@ type (
 	DatabaseNotConfirmedError = agentkit.DatabaseNotConfirmedError
 	PageError                 = agentkit.PageError
 	MessageBuilder            = agentkit.MessageBuilder
-	MessageBlock              = agentkit.MessageBlock
 	Problem                   = agentkit.Problem
 	Problems                  = agentkit.Problems
 )
 
 const (
-	MaxStepTextLength           = agentkit.MaxStepTextLength
 	MaxPersonMessageLength      = agentkit.MaxPersonMessageLength
 	MaxRetryRows                = agentkit.MaxRetryRows
-	MaxWaitSeconds              = agentkit.MaxWaitSeconds
-	LabelConnect                = agentkit.LabelConnect
-	ConnectStepText             = agentkit.ConnectStepText
 	ConnectOnlyStepText         = agentkit.ConnectOnlyStepText
 	CodeIntentRequired          = agentkit.CodeIntentRequired
 	CodeStaleRead               = agentkit.CodeStaleRead
@@ -124,10 +119,7 @@ const (
 	askAgentForRegisterLinkText = agentkit.AskAgentForRegisterLinkText
 )
 
-var (
-	ErrStepText = agentkit.ErrStepText
-	setupCode   = agentkit.SetupCode
-)
+var setupCode = agentkit.SetupCode
 
 func NewCommands(agent, configPath, goos string, manager ServiceManager) (Commands, error) {
 	return agentkit.NewCommands(agent, configPath, goos, manager)
@@ -163,10 +155,6 @@ func NewSteps() *Steps {
 
 func withSendRequest(steps []toolresult.NextStep, f *links.RequestFile) []toolresult.NextStep {
 	return agentkit.WithSendRequest(steps, f)
-}
-
-func sendRequestText(f *links.RequestFile) string {
-	return agentkit.SendRequestText(f)
 }
 
 func CheckPersonMessage(message string) error {
@@ -247,14 +235,6 @@ func shown(s string, n int) string {
 
 func fitToSteps(message string, steps []toolresult.NextStep) string {
 	return agentkit.FitToSteps(message, steps)
-}
-
-func severityRank(s string) int {
-	return agentkit.SeverityRank(s)
-}
-
-func problemEntry(code string) (mcpcontract.ProblemSteps, bool) {
-	return agentkit.ProblemEntry(code)
 }
 
 func catalog() mcpcontract.NextSteps {

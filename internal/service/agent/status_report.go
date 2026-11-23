@@ -14,7 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
 // Status is the status tool: whether the agent is served and each problem
@@ -102,10 +101,6 @@ type LocalStatus struct {
 	EngineUnknown bool
 	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
 	DevLocalPages bool
-	// Collected is, for a connect-only setup, what basalt status collected
-	// while the engine is down (same-user mode); nil reports the setup
-	// from engine.json alone.
-	Collected *handoff.State
 	// ConnectBudget is the config's config.ConnectLinkBudget (0: no connect
 	// link).
 	ConnectBudget int

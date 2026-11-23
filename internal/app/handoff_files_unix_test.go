@@ -23,7 +23,7 @@ func TestHandoffFilesWritePin(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	require.NoError(t, os.Chmod(dir, 0o700))
-	f := handoffFiles{configPath: filepath.Join(dir, "engine.json"), agent: "lead_bot"}
+	f := handoff.SetupFiles{ConfigPath: filepath.Join(dir, "engine.json"), Agent: "lead_bot", Pins: trustPins{}}
 	const host = "db.example.com"
 	pinOf := func(t *testing.T) handoff.Pin {
 		t.Helper()
@@ -34,7 +34,7 @@ func TestHandoffFilesWritePin(t *testing.T) {
 	}
 	pin := pinOf(t)
 	require.NoError(t, f.WritePin(host, pin))
-	got := trustdir.Set(f.configPath).For(host)
+	got := trustdir.Set(f.ConfigPath).For(host)
 	require.NotNil(t, got)
 	require.Equal(t, trustprofile.PinName(host), got.Name)
 	require.Equal(t, []*x509.Certificate{pin.Top}, got.Certificates())
@@ -42,5 +42,5 @@ func TestHandoffFilesWritePin(t *testing.T) {
 
 	err = f.WritePin(host, pinOf(t))
 	require.ErrorContains(t, err, "covers "+host)
-	require.True(t, trustdir.Set(f.configPath).For(host).Certificates()[0].Equal(pin.Top), "the first pin stays")
+	require.True(t, trustdir.Set(f.ConfigPath).For(host).Certificates()[0].Equal(pin.Top), "the first pin stays")
 }

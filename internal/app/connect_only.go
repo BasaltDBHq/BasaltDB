@@ -63,7 +63,7 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 		// the agent's OS user.
 		return true, nil
 	}
-	files := handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}
+	files := handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}
 	if _, err := os.Lstat(a.Store.CredentialFile); err != nil {
 		if errNotExist(err) {
 			return true, nil
@@ -115,7 +115,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	}
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,
-		Files:   handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile},
+		Files:   handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}},
 		Changed: reload, Log: log.With("component", "connect"), Now: env.handoff.now(), Cache: cache,
 	})
 	if err != nil {
@@ -148,7 +148,7 @@ func newRepin(env agentEnv, a config.Agent, cc *pgx.ConnConfig, log *slog.Logger
 		Setup: *a.Setup, Credential: setupcode.Address(t),
 		Collector: handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now()),
 		Prober:    env.handoff.Prober,
-		Files:     repinFiles{handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}},
+		Files:     handoff.RepinSetupFiles{SetupFiles: handoff.SetupFiles{ConfigPath: env.configPath, Agent: a.Name, CredFile: a.Store.CredentialFile, Pins: trustPins{}}},
 		Log:       log.With("component", "connect"), Now: env.handoff.now(),
 	})
 	if err != nil {

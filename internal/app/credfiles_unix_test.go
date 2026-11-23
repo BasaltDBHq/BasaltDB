@@ -178,11 +178,11 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 			require.NoError(t, os.Link(path, path+".link"))
 		},
 	}
-	adapters := map[string]func(t *testing.T, cfgPath, credFile string) agentFiles{
-		"path": func(_ *testing.T, cfgPath, credFile string) agentFiles {
+	adapters := map[string]func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles{
+		"path": func(_ *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
-		"root": func(t *testing.T, cfgPath, credFile string) agentFiles {
+		"root": func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			t.Helper()
 			files, err := openRootFiles(cfgPath, "bot", credFile)
 			require.NoError(t, err)
@@ -234,11 +234,11 @@ func TestTheEngineRefusesAPendingCredentialOver4096Bytes(t *testing.T) {
 	require.Len(t, over, 4097)
 	exact := "postgres://bt_agent_bot:" + pw(4095) + "@db:5432/app\n"
 	require.Len(t, exact, 4096)
-	adapters := map[string]func(t *testing.T, cfgPath, credFile string) agentFiles{
-		"path": func(_ *testing.T, cfgPath, credFile string) agentFiles {
+	adapters := map[string]func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles{
+		"path": func(_ *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
-		"root": func(t *testing.T, cfgPath, credFile string) agentFiles {
+		"root": func(t *testing.T, cfgPath, credFile string) handoff.AgentFiles {
 			t.Helper()
 			files, err := openRootFiles(cfgPath, "bot", credFile)
 			require.NoError(t, err)

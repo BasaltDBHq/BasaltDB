@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 )
 
 // recoverRig is a same-user engine config on a real guard, not yet running.
@@ -100,7 +101,7 @@ func TestRunAfterUpdateLikeRestore(t *testing.T) {
 	require.NoError(t, os.Chmod(r.stateDir, 0o755))
 	require.NoError(t, os.MkdirAll(r.socketDir, 0o755))
 	require.NoError(t, os.Chmod(r.socketDir, 0o755))
-	require.NoError(t, os.WriteFile(app.LockPath(r.socketDir), []byte("999999\n"), 0o644))
+	require.NoError(t, os.WriteFile(engine.LockPath(r.socketDir), []byte("999999\n"), 0o644))
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: r.sock, Net: "unix"})
 	require.NoError(t, err)
 	ln.SetUnlinkOnClose(false)
@@ -156,7 +157,7 @@ func TestRunForgetsAnEarlierGiveUp(t *testing.T) {
 	t.Parallel()
 	r := newRecoverRig(t)
 	require.NoError(t, os.MkdirAll(r.stateDir, 0o700))
-	record := filepath.Join(r.stateDir, app.LastStopFile)
+	record := filepath.Join(r.stateDir, engine.LastStopFile)
 	require.NoError(t, os.WriteFile(record, []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

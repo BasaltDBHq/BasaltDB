@@ -23,8 +23,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 )
 
@@ -69,7 +69,7 @@ func TestSuperviseRealEngineKilled(t *testing.T) {
 	})
 	sock := config.SocketPath(socketDir, "product_a")
 	enginePID := func() int {
-		pid, up, _ := pidlock.Running(app.LockPath(socketDir))
+		pid, up, _ := pidlock.Running(engine.LockPath(socketDir))
 		if !up {
 			return 0
 		}
@@ -156,14 +156,14 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfgPath, raw))
 	t.Cleanup(func() { // the engine is detached: stop its supervisor
-		if pid, up, _ := pidlock.Running(app.LockPath(socketDir)); up {
+		if pid, up, _ := pidlock.Running(engine.LockPath(socketDir)); up {
 			if ppid, err := parentOf(pid); err == nil {
 				_ = syscall.Kill(ppid, syscall.SIGTERM)
 			}
 			_ = syscall.Kill(pid, syscall.SIGTERM)
 		}
 	})
-	_, up, _ := pidlock.Running(app.LockPath(socketDir))
+	_, up, _ := pidlock.Running(engine.LockPath(socketDir))
 	require.False(t, up, "no engine runs before the call")
 
 	in, inW := io.Pipe()
@@ -211,7 +211,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	}
 	require.Equal(t, "MCP", report.Engine.StartedBy, "basalt mcp started this engine")
 
-	pid, up, _ := pidlock.Running(app.LockPath(socketDir))
+	pid, up, _ := pidlock.Running(engine.LockPath(socketDir))
 	require.True(t, up)
 	ppid, err := parentOf(pid)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestSuperviseBesideAnEngineStartedByHand(t *testing.T) {
 	raw := `{"socketDir":"` + filepath.Join(dir, "run") + `","stateDir":"` + filepath.Join(dir, "state") + `","mode":"SAME_USER",` +
 		`"agents":[{"name":"bot","osUser":"someone","store":{"kind":"POSTGRES","credentialFile":"` + filepath.Join(dir, "bot.url") + `"}}]}`
 	require.NoError(t, config.WriteFile(cfgPath, []byte(raw)))
-	hand, err := pidlock.AcquireLock(app.LockPath(filepath.Join(dir, "run")))
+	hand, err := pidlock.AcquireLock(engine.LockPath(filepath.Join(dir, "run")))
 	require.NoError(t, err)
 	defer hand.Release()
 	var stderr bytes.Buffer

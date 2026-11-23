@@ -5,25 +5,10 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
-
-// NonEmpty is in without its empty strings.
-func NonEmpty(in []string) []string {
-	var out []string
-	for _, s := range in {
-		if s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// GoosNow is the operating system this binary runs on.
-func GoosNow() string { return runtime.GOOS }
 
 // SleepCtx waits d, or less when ctx ends: false when ctx ended first.
 func SleepCtx(ctx context.Context, d time.Duration) bool {

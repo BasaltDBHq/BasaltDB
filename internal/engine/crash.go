@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -16,16 +17,16 @@ import (
 
 // Recorder saves this process's crash reports.
 type Recorder interface {
-	// Save saves in as a report in dir, readable by the engine's group when
-	// shared, and returns the report's id.
-	Save(dir string, shared bool, in servicespec.CrashInput) (id string, err error)
+	// SaveIn saves in as a report in dir, readable by the engine's group
+	// when shared, and returns the report's id.
+	SaveIn(dir string, shared bool, in servicespec.CrashInput) (id string, err error)
 }
 
 // Host is what the engine's use cases reach outside themselves.
 type Host interface {
-	// NewRecorder is the recorder for this process and the directories to
-	// try, in order, for command.
-	NewRecorder(command string) (Recorder, []string)
+	CrashDirHost
+	// NewRecorder is the crash recorder for this process.
+	NewRecorder() Recorder
 }
 
 // Terminal is what the engine's use cases read from the CLI shell.
@@ -37,8 +38,8 @@ type Terminal interface {
 	InfoOwnerUID(fi os.FileInfo) (int, bool)
 }
 
-// osHost is the machine's per-user config directory.
-type osHost interface {
+// CrashDirHost is the machine's per-user config directory.
+type CrashDirHost interface {
 	UserConfigDir() (string, error)
 }
 
@@ -46,11 +47,11 @@ type osHost interface {
 // nothing can be saved it says so, still without the panic's text, which can
 // hold what the command was working on.
 func ReportPanic(h Host, t Terminal, w io.Writer, command string, v any, stack []byte) {
-	rec, dirs := h.NewRecorder(command)
+	rec, dirs := h.NewRecorder(), crashDirs(h, command)
 	var lastErr error
 	for _, dir := range dirs {
 		shared := command == "engine" && dir == dirs[0]
-		id, err := rec.Save(dir, shared, servicespec.CrashInput{Command: command, Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
+		id, err := rec.SaveIn(dir, shared, servicespec.CrashInput{Command: command, Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
 		if err == nil {
 			fmt.Fprintf(w, "basalt: crashed; report %s was saved in %s: the agent's status tool names it, with the link to file it on GitHub\n", id, t.TerminalText(dir))
 			return
@@ -62,10 +63,28 @@ func ReportPanic(h Host, t Terminal, w io.Writer, command string, v any, stack [
 
 // UserCrashDir is the person's crash directory on h, "" when h has no
 // per-user config directory.
-func UserCrashDir(h osHost) string {
+func UserCrashDir(h CrashDirHost) string {
 	base, err := h.UserConfigDir()
 	if err != nil {
 		return ""
 	}
 	return filepath.Join(base, config.UserDirName, servicespec.CrashDirName)
+}
+
+// crashDirs are the directories to try, in order: the engine's state
+// directory for the engine, the person's config directory for every other
+// command; one that is unknown is left out.
+func crashDirs(h CrashDirHost, command string) []string {
+	user, state := UserCrashDir(h), filepath.Join(config.DefaultStateDir(runtime.GOOS), servicespec.CrashDirName)
+	dirs := []string{user, state}
+	if command == "engine" {
+		dirs = []string{state, user}
+	}
+	var out []string
+	for _, d := range dirs {
+		if d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
 }

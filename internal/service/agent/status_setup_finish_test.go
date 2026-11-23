@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -129,7 +130,7 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 	fin := &fakeFinisher{}
 	svc := finishing(probe, fin, setup, 0)
 	srv, tools := serverOf(svc)
-	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, testFingerprint)
+	requireOnlyStatusServed(t, srv, tools, guidance.ReasonSetupPending, testFingerprint)
 
 	// The person ran the code on their computer.
 	id := uuid.MustParse(setup.SetupID)

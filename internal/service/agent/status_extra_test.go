@@ -14,6 +14,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 func extraStatus(t *testing.T, edit func(*Deps)) (StatusReport, string) {
@@ -25,7 +26,7 @@ func extraStatus(t *testing.T, edit func(*Deps)) (StatusReport, string) {
 	edit(&d)
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
-	tool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	tool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	return r, requireStatusSchema(t, tool, r)
 }
 

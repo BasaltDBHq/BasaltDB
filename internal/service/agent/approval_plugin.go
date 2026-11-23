@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -119,7 +120,7 @@ func pluginPageError(code, reason, message, person string, steps []toolresult.Ne
 
 // askAgentForLink is the person's step when the page can do nothing more.
 func askAgentForLink() []toolresult.NextStep {
-	steps, err := NewSteps().TellAgent("Ask the agent for a new link.").Build()
+	steps, err := guidance.NewSteps().TellAgent("Ask the agent for a new link.").Build()
 	if err != nil {
 		return nil
 	}
@@ -135,7 +136,7 @@ func pluginExpired(id uuid.UUID, at time.Time) error {
 }
 
 func pluginAlreadyApproved(id uuid.UUID) error {
-	return pluginPageError(CodeApprovalInvalid, reasonAlreadyUsed,
+	return pluginPageError(CodeApprovalInvalid, guidance.ReasonAlreadyUsed,
 		fmt.Sprintf("plugin approval %s is already signed", id),
 		"This plugin approval is already signed. The plugin starts within a few seconds of the signature.", nil)
 }
@@ -176,17 +177,17 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 		return ErrNotThisAgent
 	}
 	te := s.deps.Core.Errors.ToolError(err)
-	if te.Reason == reasonPasskeyRevoked {
-		steps, stepErr := NewSteps().
+	if te.Reason == guidance.ReasonPasskeyRevoked {
+		steps, stepErr := guidance.NewSteps().
 			TellAgent(askAgentForRegisterLinkText).
 			Build()
 		if stepErr != nil {
 			return errors.Join(err, stepErr)
 		}
-		return pluginPageError(CodeApprovalInvalid, reasonPasskeyRevoked, msg,
+		return pluginPageError(CodeApprovalInvalid, guidance.ReasonPasskeyRevoked, msg,
 			"The plugin approval was signed with a passkey this database does not accept (unknown or revoked), so nothing was "+
 				"approved. Ask the agent for a link to register the passkey you use, then try again on this page.", steps)
 	}
-	return pluginPageError(CodeApprovalInvalid, reasonBadSignature, msg,
+	return pluginPageError(CodeApprovalInvalid, guidance.ReasonBadSignature, msg,
 		"The plugin approval code did not verify, so nothing was approved. Approve again on this page.", nil)
 }

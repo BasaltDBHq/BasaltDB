@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -21,7 +22,7 @@ import (
 
 // reviseRequestRevert: call request_revert again, with what the agent adds.
 func reviseRequestRevert(args map[string]any, text string) toolresult.NextStep {
-	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Text: text, Tool: toolRequestRevert, Arguments: args}
+	return toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Text: text, Tool: guidance.ToolRequestRevert, Arguments: args}
 }
 
 // requestedSteps: the person signs at link, the agent waits once.
@@ -30,8 +31,8 @@ func requestedSteps(id uuid.UUID, link string, reviewOnly bool) []toolresult.Nex
 		return reviewOnlyRevertSteps(id, link)
 	}
 	return []toolresult.NextStep{
-		openLink(link, "Open the link, review the rows and sign with your passkey."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: int(DefaultRevertWait.Seconds())},
+		guidance.OpenLink(link, "Open the link, review the rows and sign with your passkey."),
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: int(DefaultRevertWait.Seconds())},
 			fmt.Sprintf("In this turn, call request_revert once with revertId: it waits up to %d seconds.", int(DefaultRevertWait.Seconds()))),
 	}
 }
@@ -42,9 +43,9 @@ func requestedSteps(id uuid.UUID, link string, reviewOnly bool) []toolresult.Nex
 // Vault connected again, reissues the link, which is then a short link.
 func reviewOnlyRevertSteps(id uuid.UUID, link string) []toolresult.NextStep {
 	return []toolresult.NextStep{
-		openLink(link, "Open the link to review the rows. It cannot be signed yet."),
-		agentStep(toolresult.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
+		guidance.OpenLink(link, "Open the link to review the rows. It cannot be signed yet."),
+		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait: this link cannot be signed. End your turn, showing personMessage."),
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
 			"Once status shows the Vault connected, call this for a link the person can sign, and show it."),
 	}
 }
@@ -63,12 +64,12 @@ const (
 // a fresh short link only when the person lost theirs.
 func waitEndedSteps(id uuid.UUID, link, open string) []toolresult.NextStep {
 	return []toolresult.NextStep{
-		openLink(link, open),
-		personStep(toolresult.ActionTellAgent, "Tell the agent when you have signed, or that you lost the link."),
-		agentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
+		guidance.OpenLink(link, open),
+		guidance.PersonStep(toolresult.ActionTellAgent, "Tell the agent when you have signed, or that you lost the link."),
+		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
 			"For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working."),
 	}
 }
@@ -83,28 +84,28 @@ const widenedMessage = "You changed the scope on the signing page; the agent can
 // agent's proposal (owner, Q8).
 func widenedWaitSteps(id uuid.UUID) []toolresult.NextStep {
 	return []toolresult.NextStep{
-		openLink("", "Sign with your passkey on the page where you changed the scope."),
-		personStep(toolresult.ActionTellAgent, "Tell the agent when you have signed."),
-		agentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
+		guidance.OpenLink("", "Sign with your passkey on the page where you changed the scope."),
+		guidance.PersonStep(toolresult.ActionTellAgent, "Tell the agent when you have signed."),
+		guidance.AgentStep(toolresult.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
 			"Only if the person asks for a new link: it resets the revert to your own work, dropping what they added."),
 	}
 }
 
 func applyingSteps(id uuid.UUID) []toolresult.NextStep {
-	return []toolresult.NextStep{callTool(toolRevertPlan, map[string]any{argRevertID: id.String(), "pending": true, "limit": revert.MaxBatch},
+	return []toolresult.NextStep{guidance.CallTool(guidance.ToolRevertPlan, map[string]any{guidance.ArgRevertID: id.String(), "pending": true, "limit": revert.MaxBatch},
 		"Get the pending lines and apply them with apply_revert_batch, until pending is 0.")}
 }
 
 func appliedSteps() []toolresult.NextStep {
-	return []toolresult.NextStep{agentStep(toolresult.ActionStop, "The revert is done; do not request it again.")}
+	return []toolresult.NextStep{guidance.AgentStep(toolresult.ActionStop, "The revert is done; do not request it again.")}
 }
 
 // rejectedSteps: the person rejected the revert on the signing page.
 func rejectedSteps() []toolresult.NextStep {
-	return []toolresult.NextStep{agentStep(toolresult.ActionStop,
+	return []toolresult.NextStep{guidance.AgentStep(toolresult.ActionStop,
 		"The person rejected the revert and nothing was reverted. Do not request it again on your own.")}
 }
 
@@ -120,7 +121,7 @@ func rejectedMessage(r action.Revert) string {
 
 func expiredSteps(r action.Revert) []toolresult.NextStep {
 	return []toolresult.NextStep{
-		agentStep(toolresult.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
+		guidance.AgentStep(toolresult.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
 		reviseRequestRevert(scopeArgs(proposalOf(r)),
 			"On yes, call request_revert for the same scope with the person's reason as intent."),
 	}
@@ -180,9 +181,9 @@ func filterText(scope action.Scope) string {
 	}
 	switch n := len(scope.Tables); {
 	case n == 1:
-		parts = append(parts, "table "+shown(scope.Tables[0], maxFilterTableChars))
+		parts = append(parts, "table "+guidance.Shown(scope.Tables[0], maxFilterTableChars))
 	case n > 1:
-		parts = append(parts, fmt.Sprintf("tables %s and %d more", shown(scope.Tables[0], maxFilterTableChars), n-1))
+		parts = append(parts, fmt.Sprintf("tables %s and %d more", guidance.Shown(scope.Tables[0], maxFilterTableChars), n-1))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -202,9 +203,9 @@ func (s *Service) longRevertLink(ctx context.Context, r action.Revert) (string, 
 
 func revertNotFound(id uuid.UUID) error {
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf(
+		Code: CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf(
 			"no revert %s requested by this agent: request one with request_revert and a changeId or runId of yours", id),
-		NextSteps: []toolresult.NextStep{agentStep(toolresult.ActionAskPerson,
+		NextSteps: []toolresult.NextStep{guidance.AgentStep(toolresult.ActionAskPerson,
 			"Ask the person which revert they mean; this agent prepared no revert with that id.")},
 	}
 }
@@ -221,21 +222,21 @@ func revertNotFound(id uuid.UUID) error {
 func (s *Service) signingLink(ctx context.Context, r action.Revert, text string) (toolresult.NextStep, error) {
 	switch {
 	case r.Widened:
-		return openLink("", text), nil
+		return guidance.OpenLink("", text), nil
 	case s.shortLinked(r.ID):
-		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
+		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	pick, err := s.restatedRevertLink(ctx, r)
 	if err != nil {
 		return toolresult.NextStep{}, err
 	}
 	if pick.Kind == linkPage || pick.Kind == linkNone {
-		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
+		return guidance.OpenLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	if pick.Kind == linkHash {
 		text = "Open the link with the request file the agent sent you earlier. " + text
 	}
-	return openLink(pick.URL, text), nil
+	return guidance.OpenLink(pick.URL, text), nil
 }
 
 // restatedRevertLink is r's link in a result that names it without issuing
@@ -294,12 +295,12 @@ const (
 // the revert page (signingLink).
 func (s *Service) badSignatureWith(open toolresult.NextStep, r action.Revert, message string) error {
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
+		Code: CodeRevertInvalid, Reason: guidance.ReasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The signature for %s did not verify, so nothing was reverted. Sign again on "+
 			"the revert page.", revertTitle(r)),
 		NextSteps: []toolresult.NextStep{
 			open,
-			agentStep(toolresult.ActionEndTurn, stepEndTurnPersonActsNext),
+			guidance.AgentStep(toolresult.ActionEndTurn, guidance.StepEndTurnPersonActsNext),
 		},
 	}
 }
@@ -320,22 +321,22 @@ const requestAgainText = "On yes, call request_revert with these arguments and t
 // to the revert page (signingLink).
 func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) error {
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
+		Code: CodeRevertInvalid, Reason: guidance.ReasonPasskeyRevoked,
 		Message: "the revert was signed by a passkey this database does not know or that was revoked; nothing was reverted",
 		PersonMessage: fmt.Sprintf("%s was signed with a passkey this database does not accept (unknown or "+
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
-			sentence(revertTitle(r))),
+			guidance.Sentence(revertTitle(r))),
 		NextSteps: []toolresult.NextStep{
 			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: passkeyInitText, Command: s.deps.Core.Commands.Init()},
 			open,
-			agentStep(toolresult.ActionEndTurn, stepEndTurnPersonActsNext),
+			guidance.AgentStep(toolresult.ActionEndTurn, guidance.StepEndTurnPersonActsNext),
 		},
 	}
 }
 
 func (s *Service) rowsChanged(r action.Revert, detail string) error {
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: reasonRowsChanged,
+		Code: CodeRevertInvalid, Reason: guidance.ReasonRowsChanged,
 		Message: "the database refused the revert, nothing was reverted: " + detail,
 		PersonMessage: fmt.Sprintf("Rows changed after the preview of %s%s, so nothing was reverted. The agent "+
 			"requests it again for you to sign the current rows.", revertTitle(r), filterText(proposalOf(r))),
@@ -349,14 +350,14 @@ func (s *Service) rowsChanged(r action.Revert, detail string) error {
 // here, without it for a widened revert (RS-5).
 func nothingSigned(r action.Revert) error {
 	te := &toolresult.ToolError{
-		Code: CodeNothingToRevert, Reason: reasonReadsOnly,
+		Code: CodeNothingToRevert, Reason: guidance.ReasonReadsOnly,
 		Message:       fmt.Sprintf("revert %s has no row to restore in the scope that was signed; nothing was reverted", r.ID),
-		PersonMessage: sentence(revertTitle(r)) + " has no row to restore in the scope you signed, so nothing was reverted.",
-		NextSteps:     []toolresult.NextStep{agentStep(toolresult.ActionStop, "There is nothing to revert; do not retry.")},
+		PersonMessage: guidance.Sentence(revertTitle(r)) + " has no row to restore in the scope you signed, so nothing was reverted.",
+		NextSteps:     []toolresult.NextStep{guidance.AgentStep(toolresult.ActionStop, "There is nothing to revert; do not retry.")},
 	}
 	if r.Skipped > 0 {
-		te.Reason = reasonAllChangedByPeople
-		te.PersonMessage = sentence(revertTitle(r)) + " has no row to restore: every row in it was changed since by someone " +
+		te.Reason = guidance.ReasonAllChangedByPeople
+		te.PersonMessage = guidance.Sentence(revertTitle(r)) + " has no row to restore: every row in it was changed since by someone " +
 			"else, and Basalt never overwrites them (people win). Nothing was reverted."
 	}
 	return te
@@ -368,25 +369,25 @@ func alreadySigned(r action.Revert) error {
 		msg = fmt.Sprintf("revert %s was rejected by the person on the revert page; nothing was reverted", r.ID)
 	}
 	return &toolresult.ToolError{
-		Code: CodeRevertInvalid, Reason: reasonPlanFinished, Message: msg,
+		Code: CodeRevertInvalid, Reason: guidance.ReasonPlanFinished, Message: msg,
 		NextSteps: []toolresult.NextStep{
-			callTool(toolRequestRevert, map[string]any{argRevertID: r.ID.String(), argWaitForSignature: 0}, "See the revert's state."),
-			agentStep(toolresult.ActionStop, "Do not ask the person to sign it again."),
+			guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: r.ID.String(), guidance.ArgWaitForSignature: 0}, "See the revert's state."),
+			guidance.AgentStep(toolresult.ActionStop, "Do not ask the person to sign it again."),
 		},
 	}
 }
 
 func (s *Service) revertExpired(r action.Revert) error {
-	reason, window := reasonNotSigned, "was not signed within an hour"
+	reason, window := guidance.ReasonNotSigned, "was not signed within an hour"
 	if r.SignedAt != nil {
-		reason, window = reasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
+		reason, window = guidance.ReasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
 	}
 	return &toolresult.ToolError{
 		Code: CodeRevertExpired, Reason: reason,
 		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, timeText(r.ExpiresAt)),
-		PersonMessage: fmt.Sprintf("%s %s, so it expired. To revert it still, ask the agent to prepare it again.", sentence(revertTitle(r)), window),
+		PersonMessage: fmt.Sprintf("%s %s, so it expired. To revert it still, ask the agent to prepare it again.", guidance.Sentence(revertTitle(r)), window),
 		NextSteps: []toolresult.NextStep{
-			agentStep(toolresult.ActionAskPerson, "Ask the person whether to prepare it again."),
+			guidance.AgentStep(toolresult.ActionAskPerson, "Ask the person whether to prepare it again."),
 			reviseRequestRevert(scopeArgs(proposalOf(r)), requestAgainText),
 		},
 	}
@@ -403,7 +404,7 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 			"A narrower revert, with runs or tables, may fit.",
 		strings.ToLower(string(scope.Kind)), scope.ID, int(guardmodel.MCPPrepareTimeout.Seconds()))}
 	what := "prepare"
-	if tool == toolPreviewRevert {
+	if tool == guidance.ToolPreviewRevert {
 		what = "preview"
 		te.Message = fmt.Sprintf("previewing the revert of %s %s took longer than %s; nothing was previewed. "+
 			"A narrower revert, with runs or tables, may fit.",
@@ -411,9 +412,9 @@ func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState strin
 	}
 	te.PersonMessage = fmt.Sprintf("This revert is too large for the agent to %s in one call, so nothing was prepared. "+
 		"The agent can revert a part of it instead: only some runs or tables.", what)
-	steps, err := NewSteps().Stop("This revert is too large to prepare here: do not retry it as it is.").
+	steps, err := guidance.NewSteps().Stop("This revert is too large to prepare here: do not retry it as it is.").
 		AskPerson("Ask the person whether a narrower revert will do: request_revert with runs or tables.").
-		EndTurn(stepEndTurnPersonActsNext).Build()
+		EndTurn(guidance.StepEndTurnPersonActsNext).Build()
 	if err != nil {
 		return err
 	}
@@ -448,7 +449,7 @@ func statementLimitText(d time.Duration) string {
 func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, err error) error {
 	detail := s.deps.Core.Errors.ToolError(err).Message
 	if strings.Contains(detail, "changed no rows") {
-		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, detail)
+		return s.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, detail)
 	}
 	pv, perr := s.deps.Revert.Store.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
@@ -462,29 +463,29 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope a
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
 	te := &toolresult.ToolError{Code: CodeNothingToRevert, Reason: reason}
 	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
-	if tool == toolRequestRevert {
+	if tool == guidance.ToolRequestRevert {
 		te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared. preview_revert shows each row and why it is "+
 			"skipped (%s)", what, detail)
 	}
-	b := NewSteps()
+	b := guidance.NewSteps()
 	switch reason {
-	case reasonReadsOnly:
+	case guidance.ReasonReadsOnly:
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
 		b.Stop("There is nothing to revert; do not retry.")
-	case reasonAlreadyReverted:
+	case guidance.ReasonAlreadyReverted:
 		by, err := s.deps.Revert.Store.RevertedBy(ctx, scope)
 		if err != nil {
 			s.deps.Core.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}
 		args, named := map[string]any{}, ""
 		if by != uuid.Nil {
-			args[argChangeID] = by.String()
+			args[guidance.ArgChangeID] = by.String()
 			named = fmt.Sprintf(" (the revert's change %s)", by)
 		}
 		te.PersonMessage = fmt.Sprintf("%s was already reverted%s. Reverting that revert brings the agent's changes back; rows "+
 			"someone changed since are left as they are, and you sign it with your passkey.", what, named)
 		b.AskPerson("Tell the person it was already reverted; ask whether to undo that revert, which brings your work back.")
-		b.ReviseCall(toolRequestRevert, args, "On yes, call request_revert with the revert's changeId and the person's reason as intent.")
+		b.ReviseCall(guidance.ToolRequestRevert, args, "On yes, call request_revert with the revert's changeId and the person's reason as intent.")
 	default:
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: every row it wrote was changed since by someone else, and "+
 			"Basalt never overwrites them (people win).", what)
@@ -510,7 +511,7 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope a
 // changed the rows since.
 func skipReason(pv action.PreviewPage) string {
 	if pv.Lines > 0 && pv.AllAlreadyReverted {
-		return reasonAlreadyReverted
+		return guidance.ReasonAlreadyReverted
 	}
-	return reasonAllChangedByPeople
+	return guidance.ReasonAllChangedByPeople
 }

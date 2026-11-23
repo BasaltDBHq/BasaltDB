@@ -6,6 +6,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -48,7 +49,7 @@ func holdTooLarge(lines []string, holdErr error) *toolresult.ToolError {
 // holdTooLargeSteps: the agent stops and asks. The person makes the change
 // themselves or has the agent write fewer rows per call, each still held;
 // on an older guard, an upgrade lets the same write be held.
-func (s *Service) holdTooLargeSteps(b *Steps, te *toolresult.ToolError) string {
+func (s *Service) holdTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string {
 	b.Stop("Do not retry the write as it is.")
 	if strings.Contains(te.Message, olderGuardNote) {
 		b.AskPerson("Tell the person this database's guard is too old to hold a write with rows this large and needs an upgrade; " +

@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -25,22 +26,22 @@ func (s statusDeps) addUnreachable(ctx context.Context, ps *Problems, err error,
 	}
 	te := s.errs.ToolError(err)
 	switch te.Reason {
-	case reasonCredentialRejected:
+	case guidance.ReasonCredentialRejected:
 		ps.Add(problemCredentialRejected, "the database refuses the agent's credential",
-			func(b *Steps) string { return fixSteps(b, s.cmds, reasonCredentialRejected) })
-	case reasonTooManyConnections:
+			func(b *guidance.Steps) string { return fixSteps(b, s.cmds, guidance.ReasonCredentialRejected) })
+	case guidance.ReasonTooManyConnections:
 		ps.Add(problemTooManyConnections, "the agent's role has used all the database connections it is allowed",
-			func(b *Steps) string {
+			func(b *guidance.Steps) string {
 				b.AskPerson(tooManyConnectionsAsk)
 				return tooManyConnectionsMessage(s.cmds)
 			})
-	case reasonGuardMissing:
+	case guidance.ReasonGuardMissing:
 		ps.Add(problemGuardMissing, "the guard is not installed in this database",
-			func(b *Steps) string { return fixSteps(b, s.cmds, reasonGuardMissing) })
+			func(b *guidance.Steps) string { return fixSteps(b, s.cmds, guidance.ReasonGuardMissing) })
 	default:
 		s.log.Error("status: read the guard", "err", err)
 		ps.Add(problemDatabaseUnreachable, "the database cannot be reached",
-			func(b *Steps) string {
+			func(b *guidance.Steps) string {
 				b.AskPerson("Tell the person the database cannot be reached and ask them to check that Postgres is running.")
 				return databaseUnreachableMessage
 			})
@@ -51,13 +52,13 @@ func addGuardProblem(ps *Problems, st guardmodel.Status) {
 	switch st.State {
 	case guardmodel.GuardMissing:
 		ps.Add(problemGuardMissing, "the guard is not installed in this database; no tool but status works",
-			func(b *Steps) string { return fixSteps(b, ps.Cmds, reasonGuardMissing) })
+			func(b *guidance.Steps) string { return fixSteps(b, ps.Cmds, guidance.ReasonGuardMissing) })
 	case guardmodel.GuardOutdated:
 		ps.Add(problemGuardOutdated, fmt.Sprintf("the guard misses breaking migrations %s; no tool but status works until it is upgraded", versions(st.MissingBreaking)),
-			func(b *Steps) string { return fixSteps(b, ps.Cmds, reasonGuardOutdated) })
+			func(b *guidance.Steps) string { return fixSteps(b, ps.Cmds, guidance.ReasonGuardOutdated) })
 	case guardmodel.GuardUpgradeAvailable:
 		ps.Add(problemUpgradeAvailable, fmt.Sprintf("the guard misses non-breaking migrations %s; every tool works", versions(st.MissingNonBreaking)),
-			func(b *Steps) string { return upgradeSteps(b, ps.Cmds) })
+			func(b *guidance.Steps) string { return upgradeSteps(b, ps.Cmds) })
 	}
 }
 
@@ -103,27 +104,27 @@ func (v setupView) addProblem(ps *Problems) {
 	switch {
 	case v.refused:
 		ps.Add(problemDatabaseRefused, "the person said the database the setup reached is not theirs; a new setup code is needed",
-			func(b *Steps) string { return databaseRefusedSteps(b, ps.Cmds) })
+			func(b *guidance.Steps) string { return databaseRefusedSteps(b, ps.Cmds) })
 	case v.status.State == setupExpired:
 		ps.Add(problemSetupExpired, "the agent's setup code expired before it was used; a new one is needed",
-			func(b *Steps) string { return setupExpiredSteps(b, ps.Cmds) })
+			func(b *guidance.Steps) string { return setupExpiredSteps(b, ps.Cmds) })
 	case v.status.State != setupPending:
 	case v.awaiting:
 		ps.AddLinked(problemSetupNotRun, connectOnlyWaitingMessage(v.code),
-			func(b *Steps) (string, []toolresult.Link) {
+			func(b *guidance.Steps) (string, []toolresult.Link) {
 				return connectOnlySteps(b, v.code, v.fingerprint, ps.ConnectBudget)
 			})
 	case v.confirmed:
 		ps.Add(problemSetupNotFound, "the database the person confirmed does not record this setup: "+v.database,
-			func(b *Steps) string { return setupNotFoundSteps(b, ps.Cmds, v.database) })
+			func(b *guidance.Steps) string { return setupNotFoundSteps(b, ps.Cmds, v.database) })
 	case v.status.Kind == guardmodel.SetupInstall:
 		ps.AddLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
-			func(b *Steps) (string, []toolresult.Link) {
+			func(b *guidance.Steps) (string, []toolresult.Link) {
 				return setupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, true, ps.ConnectBudget)
 			})
 	default:
 		ps.AddLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
-			func(b *Steps) (string, []toolresult.Link) {
+			func(b *guidance.Steps) (string, []toolresult.Link) {
 				return setupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, false, ps.ConnectBudget)
 			})
 	}
@@ -235,12 +236,12 @@ func (s *Service) Admit(ctx context.Context) error {
 	}
 	switch st.State {
 	case guardmodel.GuardOutdated:
-		return &toolresult.ToolError{Code: CodeUnavailable, Reason: reasonGuardOutdated, Message: fmt.Sprintf(
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: fmt.Sprintf(
 			"the guard in this database misses breaking migrations %s of this engine; only status works until the person upgrades it",
 			versions(st.MissingBreaking))}
 	case guardmodel.GuardMissing:
 		return &toolresult.ToolError{
-			Code: CodeUnavailable, Reason: reasonGuardMissing,
+			Code: CodeUnavailable, Reason: guidance.ReasonGuardMissing,
 			Message: "the guard is not installed in this database; only status works until the person installs it",
 		}
 	}
@@ -294,7 +295,7 @@ func notInstalledYet(st guardmodel.Status, err error) bool {
 	// Only the store's own refusals carry these reasons, so no adapter's error
 	// values are needed to tell them.
 	reason := ErrorMap{}.ToolError(err).Reason
-	return reason == reasonCredentialRejected || reason == reasonGuardMissing
+	return reason == guidance.ReasonCredentialRejected || reason == guidance.ReasonGuardMissing
 }
 
 // guardUpgrade answers UpgradeChecker from the probe.

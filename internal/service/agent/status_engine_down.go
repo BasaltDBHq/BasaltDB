@@ -9,6 +9,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
@@ -82,11 +83,11 @@ func (d EngineDown) Tools() []Tool {
 	contracts := mcpcontract.MustLoad()
 	out := make([]Tool, 0, len(contracts))
 	for _, c := range contracts {
-		if c.Status != mcpcontract.StatusImplemented && c.Name != toolStatus {
+		if c.Status != mcpcontract.StatusImplemented && c.Name != guidance.ToolStatus {
 			continue
 		}
 		call := d.unreachable(c.Name)
-		if c.Name == toolStatus {
+		if c.Name == guidance.ToolStatus {
 			call = d.status
 		}
 		out = append(out, Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
@@ -123,9 +124,9 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 // retry is the tool an agent-operated engine's agent calls again once it
 // started the engine; "" calls status.
 func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.ToolError, error) {
-	te := &toolresult.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
+	te := &toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
 	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
-	b := NewSteps()
+	b := guidance.NewSteps()
 	te.PersonMessage = engineUnreachableSteps(b, d.commands(), retry)
 	steps, err := b.Build()
 	if err != nil {
@@ -164,8 +165,8 @@ func (d EngineDown) commands() Commands {
 
 func (d EngineDown) invalidArgument(err error) *toolresult.ToolError {
 	te := &toolresult.ToolError{Code: CodeInvalidArgument, Message: err.Error()}
-	b := NewSteps()
-	invalidArgumentSteps(b, te, failure{tool: toolStatus})
+	b := guidance.NewSteps()
+	invalidArgumentSteps(b, te, failure{tool: guidance.ToolStatus})
 	te.NextSteps, _ = b.Build() // one fixed step: it cannot fail
 	return te
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -78,7 +79,7 @@ func revealRefused(code, link string) error {
 		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Your passkey didn't confirm. Nothing was shown; try again.",
 	}
-	steps, err := NewSteps().OpenLink(link, "Open this page again and press Show values with passkey once more.").Build()
+	steps, err := guidance.NewSteps().OpenLink(link, "Open this page again and press Show values with passkey once more.").Build()
 	if err != nil {
 		return err
 	}
@@ -95,7 +96,7 @@ func (s *Service) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, se
 // asked: nothing is shown, and the item can no longer apply as signed.
 func revealRowsChanged(code, what, then string) error {
 	return &PageError{ToolError: &toolresult.ToolError{
-		Code: code, Reason: reasonRowsChanged,
+		Code: code, Reason: guidance.ReasonRowsChanged,
 		Message:       fmt.Sprintf("the hidden rows of this %s changed since it was prepared; nothing was shown", what),
 		PersonMessage: "These rows changed since the agent asked. " + then + ".",
 	}}

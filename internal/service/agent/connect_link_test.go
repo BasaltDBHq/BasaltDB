@@ -11,9 +11,9 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 func kinds(steps []toolresult.NextStep) []mcpcontract.StepKind { return catalogKinds(steps) }
@@ -28,7 +28,7 @@ func requireConnectPending(t *testing.T, kind, code, reason string, pm string, l
 	require.Equal(t, url, steps[0].URL)
 	require.Equal(t, "OPEN_LINK", steps[0].Action)
 	require.Equal(t, "TELL_AGENT", steps[1].Action, "no laptop command after the link")
-	require.Equal(t, []toolresult.Link{{Label: agentkit.LabelConnect, URL: url}}, ls)
+	require.Equal(t, []toolresult.Link{{Label: guidance.LabelConnect, URL: url}}, ls)
 	require.Contains(t, pm, "\n\n"+url+"\n\n", "the link on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
 	require.Contains(t, pm, testFingerprint)
@@ -59,7 +59,7 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 			s.deps.Status.ConnectBudget = tc.budget
 			te := s.Failure("query", queryArgs0, &SetupError{Code: testSetupCode, Fingerprint: testFingerprint})
 			if tc.link {
-				requireConnectPending(t, mcpcontract.VariantError, "UNAVAILABLE", reasonSetupPending, te.PersonMessage, te.Links, te.NextSteps)
+				requireConnectPending(t, mcpcontract.VariantError, "UNAVAILABLE", guidance.ReasonSetupPending, te.PersonMessage, te.Links, te.NextSteps)
 				return
 			}
 			require.Empty(t, te.Links)
@@ -100,7 +100,7 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 			require.NoError(t, err)
 			p := findProblem(t, r, tc.problem)
 			requireConnectPending(t, mcpcontract.VariantProblem, tc.problem, "", p.PersonMessage, p.Links, p.NextSteps)
-			statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+			statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 			requireStatusSchema(t, statusTool, r)
 
 			// With no connect budget the agent's basalt init comes first.

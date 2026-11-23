@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -157,26 +158,26 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("BS003", "ROW_LIMIT_EXCEEDED"), CodeRowLimitExceeded, "", "BS003"},
 		{pg("BS004", "STALE_READ"), CodeStaleRead, "", "BS004"},
 		{pg("BS005", "APPROVAL_EXPIRED"), CodeApprovalExpired, "", "BS005"},
-		{pg("BS005", "APPROVAL_INVALID: approval already used"), CodeApprovalInvalid, reasonBadSignature, "BS005"},
-		{store.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}), CodeApprovalInvalid, reasonAlreadyUsed, "BS005"},
+		{pg("BS005", "APPROVAL_INVALID: approval already used"), CodeApprovalInvalid, guidance.ReasonBadSignature, "BS005"},
+		{store.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}), CodeApprovalInvalid, guidance.ReasonAlreadyUsed, "BS005"},
 		{pg("BS006", "PREVIEW_CANNOT_COMMIT"), CodeInternal, "", "BS006"},
 		{pg("BS007", "NOT_ALLOWED: unknown basalt.mode"), CodeStatementRefused, ReasonNotAllowed, "BS007"},
 		{pg("BS008", "LEDGER_INPUT_INVALID"), CodeInternal, "", "BS008"},
 		{pg("57014", "canceling statement due to statement timeout"), CodeQueryTimeout, ReasonTimeLimit, "57014"},
 		{pg("42501", "permission denied for table secrets"), CodePermissionDenied, "", "42501"},
-		{pg("08006", "connection failure"), CodeUnavailable, reasonDatabaseUnreachable, "08006"},
-		{pg("28P01", "password authentication failed"), CodeUnavailable, reasonCredentialRejected, "28P01"},
-		{pg("57P01", "terminating connection due to administrator command"), CodeUnavailable, reasonDatabaseUnreachable, "57P01"},
-		{pg("53300", `too many connections for role "basalt_agent_bot"`), CodeUnavailable, reasonTooManyConnections, "53300"},
-		{pg("53100", "could not extend file: No space left on device"), CodeUnavailable, reasonDatabaseUnreachable, "53100"},
+		{pg("08006", "connection failure"), CodeUnavailable, guidance.ReasonDatabaseUnreachable, "08006"},
+		{pg("28P01", "password authentication failed"), CodeUnavailable, guidance.ReasonCredentialRejected, "28P01"},
+		{pg("57P01", "terminating connection due to administrator command"), CodeUnavailable, guidance.ReasonDatabaseUnreachable, "57P01"},
+		{pg("53300", `too many connections for role "basalt_agent_bot"`), CodeUnavailable, guidance.ReasonTooManyConnections, "53300"},
+		{pg("53100", "could not extend file: No space left on device"), CodeUnavailable, guidance.ReasonDatabaseUnreachable, "53100"},
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&action.RefusalError{Reason: action.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", action.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
 		{fmt.Errorf("read: %w", budget.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
 		{store.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
-		{&toolresult.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
-		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},
+		{&toolresult.ToolError{Code: CodeNotFound, Reason: guidance.ReasonRun, Message: "no run"}, CodeNotFound, guidance.ReasonRun, ""},
+		{context.DeadlineExceeded, CodeUnavailable, guidance.ReasonDatabaseUnreachable, ""},
 		{fmt.Errorf("list: %w", ledger.ErrInvalidParams), CodeInvalidArgument, "", ""},
 		{guard.ErrInvalidIntent, CodeInvalidArgument, "", ""},
 		{fmt.Errorf("list: %w: invalid cursor: missing id", ledger.ErrInvalidParams), CodeInvalidArgument, ReasonStaleCursor, ""},

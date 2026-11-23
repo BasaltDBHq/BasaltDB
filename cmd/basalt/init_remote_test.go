@@ -29,11 +29,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 const (
@@ -410,7 +410,7 @@ func requireConnectGuidance(t *testing.T, res RemoteInitResult) {
 	require.Contains(t, pm, "\n\n"+res.ConnectURL+"\n\n", "the link stands on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
 	require.NotContains(t, pm, "basalt init", "the person runs no command")
-	mcptest.Require(t, pm, []toolresult.Link{{Label: agentkit.LabelConnect, URL: res.ConnectURL}})
+	mcptest.Require(t, pm, []toolresult.Link{{Label: guidance.LabelConnect, URL: res.ConnectURL}})
 }
 
 // An agent-operated engine with the Vault on hands the connect link; an
@@ -443,7 +443,7 @@ func TestInitRemoteHandsTheConnectLinkOnlyWithTheVaultOn(t *testing.T) {
 			require.Empty(t, r.res.ConnectURL, "no link, no laptop command: the code is pasted at the connect page")
 			require.NotContains(t, r.res.PersonMessage, "--setup-code")
 			require.Contains(t, r.res.PersonMessage, "portal.basaltvault.app/connect")
-			require.LessOrEqual(t, utf8.RuneCountInString(r.res.PersonMessage), agent.MaxPersonMessageLength)
+			require.LessOrEqual(t, utf8.RuneCountInString(r.res.PersonMessage), guidance.MaxPersonMessageLength)
 		})
 	}
 }
@@ -474,8 +474,8 @@ func TestConnectMessageFitsForTheLongestName(t *testing.T) {
 			name = candidate
 		}
 	}
-	pm, ls := agent.ConnectMessage("Finish setting up Basalt for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
-	require.NoError(t, agent.CheckPersonMessage(pm), pm)
+	pm, ls := guidance.ConnectMessage("Finish setting up Basalt for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
+	require.NoError(t, guidance.CheckPersonMessage(pm), pm)
 	mcptest.Require(t, pm, ls)
 }
 
@@ -879,7 +879,7 @@ func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
 	require.GreaterOrEqual(t, len(name), 50)
 	pm := setupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
 	withoutURL := strings.Replace(pm, releasePage+"\n", "", 1)
-	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), agent.MaxPersonMessageLength, pm)
+	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), guidance.MaxPersonMessageLength, pm)
 	require.Equal(t, 1, strings.Count(pm, name), "the agent is named once")
 }
 

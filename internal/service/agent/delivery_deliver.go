@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -58,7 +59,7 @@ const noticeHeadlineMax = 1000
 // database applied to the whole of it, then cut to 999 characters and an
 // ellipsis when longer than 1,000.
 func NoticeHeadline(headline string) string {
-	s := plainText(headline)
+	s := guidance.PlainText(headline)
 	if r := []rune(s); len(r) > noticeHeadlineMax {
 		s = string(r[:noticeHeadlineMax-1]) + "…"
 	}

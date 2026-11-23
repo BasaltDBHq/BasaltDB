@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
@@ -28,7 +29,7 @@ func TestTooLargeMessagesKeepToTheirLimit(t *testing.T) {
 					s.deps.Core.PagesBase = base
 					for _, isRevert := range []bool{false, true} {
 						msg := s.tooLargeMessage(what, cost, time.Now(), isRevert)
-						require.NoError(t, CheckPersonMessage(msg), "%s %s %s %d %v: %d characters", operatedBy, config, base, cost, isRevert, len(msg))
+						require.NoError(t, guidance.CheckPersonMessage(msg), "%s %s %s %d %v: %d characters", operatedBy, config, base, cost, isRevert, len(msg))
 					}
 				}
 			}

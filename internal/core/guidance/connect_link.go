@@ -1,4 +1,4 @@
-package agentkit
+package guidance
 
 import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"

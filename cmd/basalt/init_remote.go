@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 
@@ -27,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // basalt init --remote runs on the engine's machine, which the agent may
@@ -1171,10 +1171,10 @@ func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) Rem
 	// An agent-operated engine with the Vault on hands the connect link
 	// when the whole link fits the budget (no network call: the link only
 	// holds the code); else the text says where to paste the code.
-	url := agent.ConnectLink(s.Code, r.connectBudget)
+	url := guidance.ConnectLink(s.Code, r.connectBudget)
 	if url != "" {
 		res.ConnectURL = url
-		res.PersonMessage, _ = agent.ConnectMessage("Finish setting up Basalt for "+r.f.agent+".", url, s.Fingerprint)
+		res.PersonMessage, _ = guidance.ConnectMessage("Finish setting up Basalt for "+r.f.agent+".", url, s.Fingerprint)
 	}
 	res.pasteAtPortal = url == ""
 	return res
@@ -1195,9 +1195,9 @@ func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
 func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) RemoteInitResult {
 	res.ConnectOnly = true
 	lead := "Connect your database to " + r.f.agent + "."
-	if open := agent.ConnectLink(s.Code, r.connectBudget); open != "" {
+	if open := guidance.ConnectLink(s.Code, r.connectBudget); open != "" {
 		res.ConnectURL = open
-		res.PersonMessage, _ = agent.ConnectOnlyMessage(lead, open, s.Fingerprint)
+		res.PersonMessage, _ = guidance.ConnectOnlyMessage(lead, open, s.Fingerprint)
 		return res
 	}
 	res.pasteAtPortal = true

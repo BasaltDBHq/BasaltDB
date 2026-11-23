@@ -15,6 +15,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 )
 
@@ -50,15 +51,15 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds Commands, cfg
 	}
 	if startFailure != "" {
 		ps.Add(problemEngineStartFailed, startFailure,
-			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
+			func(b *guidance.Steps) string { return engineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 	}
 	ps.Add(problemEngineUnreachable, msg,
-		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
+		func(b *guidance.Steps) string { return engineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 	if cfg != nil {
 		if stop, ok := ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
 			r.Engine.LastStop = &stop
 			ps.Add(problemEngineGaveUp, engineGaveUpMessage(host, stop, configPath, now),
-				func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
+				func(b *guidance.Steps) string { return engineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 		}
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
 		r.Enforcement = enforcement(cfg.OperatedBy, !cfg.Service())
@@ -109,7 +110,7 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 
 // engineRevokedSteps: the agent asks whether the person revoked this engine
 // on purpose.
-func engineRevokedSteps(b *Steps) string {
+func engineRevokedSteps(b *guidance.Steps) string {
 	b.AskPerson("Tell the person this engine's key is revoked in their database. Ask whether they revoked it on purpose, and show the message.")
 	b.EndTurn("End your turn: the person answers next.")
 	return "This engine's key is revoked in your database. BasaltDB does not act on it: the links this engine handed over keep working until they expire. To cut this engine off, remove BasaltDB from the database. " +

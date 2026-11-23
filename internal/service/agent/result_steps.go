@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -13,14 +14,14 @@ import (
 func (s *Service) itemGuidance(p PendingItem) (string, []toolresult.Link, []toolresult.NextStep, error) {
 	switch {
 	case s.expired(p):
-		b := NewSteps()
+		b := guidance.NewSteps()
 		approvalExpiredSteps(b)
 		steps, err := b.Build()
 		return approvalExpiredMessage, nil, steps, err
 	case s.waitsForPerson(p) && p.tooLargeSteps != nil:
 		return p.Notice.PersonMessage, nil, p.tooLargeSteps, nil
 	case s.waitsForPerson(p):
-		b := NewSteps().SendRequest(p.Notice.RequestFile)
+		b := guidance.NewSteps().SendRequest(p.Notice.RequestFile)
 		openItemLink(b, p)
 		steps, err := b.Build()
 		return p.Notice.PersonMessage, p.Notice.Links, steps, err
@@ -30,7 +31,7 @@ func (s *Service) itemGuidance(p PendingItem) (string, []toolresult.Link, []tool
 
 // openItemLink adds a pending item's OPEN_LINK step: with no url when
 // list_pending restates the link while the engine serves the pages.
-func openItemLink(b *Steps, p PendingItem) {
+func openItemLink(b *guidance.Steps, p PendingItem) {
 	if p.Restated {
 		b.OpenGivenLink("Open the link the agent gave you earlier, review the rows and approve with your passkey.")
 		return
@@ -42,7 +43,7 @@ func openItemLink(b *Steps, p PendingItem) {
 // with no url while the engine serves the pages (the person has the short
 // link the hold handed over; CONTRACT.md, The request file and pasted
 // blocks), else at the link the hold handed over.
-func (s *Service) openHeldLink(b *Steps, n *toolresult.ApprovalNotice, text string) {
+func (s *Service) openHeldLink(b *guidance.Steps, n *toolresult.ApprovalNotice, text string) {
 	if id, err := uuid.Parse(n.ApprovalID); (err == nil && s.shortLinked(id)) || isPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink("Open the short link the agent gave you earlier and approve with your passkey.")
 		return

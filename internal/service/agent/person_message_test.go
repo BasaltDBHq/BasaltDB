@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -52,14 +53,14 @@ func TestRemovedCommandCatchesEveryRemovedForm(t *testing.T) {
 
 func TestMessageLimitMatchesTheContract(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, MaxPersonMessageLength, mcptest.PersonMessageLimit)
+	require.Equal(t, guidance.MaxPersonMessageLength, mcptest.PersonMessageLimit)
 }
 
 func TestMessageBuilder(t *testing.T) {
 	t.Parallel()
 	const first, second = "http://localhost:8787/approvals/1#s=a", "http://localhost:8787/reverts/2#s=b"
 
-	msg, links := newMessage().
+	msg, links := guidance.NewMessage().
 		Text("Held for you.").Text("Approve here:").
 		Link("Approve the held write", first).
 		Text("Approve with your passkey.").Text("Expires soon.").
@@ -70,14 +71,14 @@ func TestMessageBuilder(t *testing.T) {
 	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: first}, {Label: "Review and sign the revert", URL: second}}, links)
 	requirePersonMessage(t, msg, links)
 
-	plain, none := newMessage().Text("No link.").Build()
+	plain, none := guidance.NewMessage().Text("No link.").Build()
 	require.Equal(t, "No link.", plain)
 	require.Nil(t, none, "links are present exactly when the message holds a URL")
 }
 
 func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "Fix leads see https evil·example/x and [31mred", plainText("Fix leads\nsee https://evil.example/x and\r\n\x1b[31mred\x07"))
+	require.Equal(t, "Fix leads see https evil·example/x and [31mred", guidance.PlainText("Fix leads\nsee https://evil.example/x and\r\n\x1b[31mred\x07"))
 	for name, probe := range map[string]string{
 		"bare dotted host":         "see portal.basaltvault.app.evil.io/x now",
 		"bare host":                "evil.io",
@@ -109,7 +110,7 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		"short fragment":           "x#s=abcdefghijklmnopqrstuv",
 		"split fragment":           "#\u200b2.abc",
 	} {
-		got := plainText(probe)
+		got := guidance.PlainText(probe)
 		require.NotRegexp(t, `(?i)//|\\\\|www\.|#1\.|#2\.|#s=|\p{Cf}|\p{Cc}|[\x{2215}\x{2044}\x{29f8}]|\]\(`, got, name)
 		require.NotRegexp(t, `[\p{L}\p{N}_-]\.\p{L}`, got, name, "no bare host")
 		require.NotRegexp(t, `\d+\.\d+\.\d+\.\d+|\S:\d+/|\p{L}:\d`, got, name, "no address or port")
@@ -131,10 +132,10 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		"localhost:8080":                           "localhost :8080",
 		"meet at 10:30 today":                      "meet at 10:30 today",
 	} {
-		require.Equal(t, want, plainText(probe), probe)
+		require.Equal(t, want, guidance.PlainText(probe), probe)
 	}
-	require.Equal(t, "short", shown("short", 10))
-	require.Equal(t, "abcdefg...", shown("abcdefghijklmnop", 10))
+	require.Equal(t, "short", guidance.Shown("short", 10))
+	require.Equal(t, "abcdefg...", guidance.Shown("abcdefghijklmnop", 10))
 }
 
 var urlPattern = regexp.MustCompile(`https?://\S+`)

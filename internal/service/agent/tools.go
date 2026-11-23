@@ -9,6 +9,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -39,7 +40,7 @@ func Tools(svc *Service) []Tool {
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
 		contractTool(toolRequestPlugin, h.wrap(toolRequestPlugin, h.requestPlugin)),
 		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
-		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
+		contractTool(guidance.ToolStatus, h.wrap(guidance.ToolStatus, h.status)),
 		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
 	)
 }
@@ -97,7 +98,7 @@ func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessag
 	// status always answers; confirm_database answers INVALID_ARGUMENT
 	// here, where no connect-only database waits (ConnectOnly serves it
 	// while one does).
-	if tool == toolStatus || tool == toolConfirmDatabase {
+	if tool == guidance.ToolStatus || tool == toolConfirmDatabase {
 		return call(ctx, args)
 	}
 	if err := h.svc.Admit(ctx); err != nil {

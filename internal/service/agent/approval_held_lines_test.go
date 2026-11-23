@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // holdTooLarge refuses lines over the cap before the hold, and maps an
@@ -51,16 +52,16 @@ func TestHoldTooLargeTellsThePerson(t *testing.T) {
 	for _, operatedBy := range []string{"", mcpcontract.OperatedByAgent} {
 		s := operatedService(t, "linux", "", operatedBy)
 
-		b := NewSteps()
+		b := guidance.NewSteps()
 		msg := s.holdTooLargeSteps(b, older)
-		require.NoError(t, CheckPersonMessage(msg))
+		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "64 KiB")
 		require.NotContains(t, msg, "basalt ", "the person runs no command: the agent gives a link")
 		require.Contains(t, msg, "update the guard")
 
-		b = NewSteps()
+		b = guidance.NewSteps()
 		msg = s.holdTooLargeSteps(b, over)
-		require.NoError(t, CheckPersonMessage(msg))
+		require.NoError(t, guidance.CheckPersonMessage(msg))
 		require.Contains(t, msg, "Make the change yourself")
 		steps, err := b.Build()
 		require.NoError(t, err)

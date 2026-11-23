@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -116,8 +117,8 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 }
 
 func (s *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
-	table := shown(dbName, maxTableChars)
-	b := NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
+	table := guidance.Shown(dbName, maxTableChars)
+	b := guidance.NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
 	b.AgentRunCommand(s.deps.Core.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
 	if !s.deps.Core.Commands.AgentOperated() {
 		b.TellAgent("Tell the agent once it is done.")
@@ -150,7 +151,7 @@ func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
 	if !available {
 		return nil
 	}
-	b := NewSteps()
+	b := guidance.NewSteps()
 	person := upgradeSteps(b, s.deps.Core.Commands)
 	steps, err := b.Build()
 	if err != nil {
@@ -167,7 +168,7 @@ func (s *Service) upgradeWarnings(ctx context.Context) []toolresult.Warning {
 
 // upgradeSteps: the person adds the missing non-breaking migrations when it
 // suits them, in a warning and in status, on the page basalt init links to.
-func upgradeSteps(b *Steps, cmds Commands) string {
+func upgradeSteps(b *guidance.Steps, cmds Commands) string {
 	b.AskPerson("Tell the person the guard can be updated when it suits them, and ask whether to do it now.")
 	if cmds.UpdateLinkURL() != "" && !cmds.AgentOperated() {
 		b.OpenLink(cmds.UpdateLinkURL(), "On the person's yes, show them this link: nothing stops, and the agent needs no restart.")

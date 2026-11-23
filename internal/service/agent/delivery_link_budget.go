@@ -3,6 +3,7 @@ package agent
 import (
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -108,7 +109,7 @@ func approvalMessage(lead string, pick handOver, tail ...string) (string, []tool
 }
 
 func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []toolresult.Link) {
-	msg := newMessage().Text(lead)
+	msg := guidance.NewMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
 		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent))
@@ -127,7 +128,7 @@ func buildApprovalMessage(lead string, pick handOver, tail []string) (string, []
 // revertMessage is the personMessage of a prepared revert at the link handed
 // over: what it restores, why, and when it expires, then the link.
 func revertMessage(summary string, pick handOver, extra ...string) (string, []toolresult.Link) {
-	msg := newMessage().Text(summary)
+	msg := guidance.NewMessage().Text(summary)
 	for _, line := range extra {
 		msg.Text(line)
 	}

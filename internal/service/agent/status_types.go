@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
@@ -18,12 +19,12 @@ import (
 
 // Problem codes of the status tool (api/mcp/errors/next-steps.json, problems).
 const (
-	problemEngineUnreachable   = reasonEngineUnreachable
-	problemDatabaseUnreachable = reasonDatabaseUnreachable
-	problemTooManyConnections  = reasonTooManyConnections
-	problemCredentialRejected  = reasonCredentialRejected
-	problemGuardMissing        = reasonGuardMissing
-	problemGuardOutdated       = reasonGuardOutdated
+	problemEngineUnreachable   = guidance.ReasonEngineUnreachable
+	problemDatabaseUnreachable = guidance.ReasonDatabaseUnreachable
+	problemTooManyConnections  = guidance.ReasonTooManyConnections
+	problemCredentialRejected  = guidance.ReasonCredentialRejected
+	problemGuardMissing        = guidance.ReasonGuardMissing
+	problemGuardOutdated       = guidance.ReasonGuardOutdated
 	problemUpgradeAvailable    = "GUARD_UPGRADE_AVAILABLE"
 	problemNoPasskey           = "NO_PASSKEY"
 	problemSetupNotRun         = "SETUP_NOT_RUN"

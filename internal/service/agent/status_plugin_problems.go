@@ -1,5 +1,7 @@
 package agent
 
+import "github.com/basaltdbhq/basaltdb/internal/core/guidance"
+
 // Status problems of plugin entries (CONTRACT.md, Plugins, problems and
 // errors; Next steps per code).
 const (
@@ -58,7 +60,7 @@ func (s statusDeps) addPluginProblems(ps *Problems) {
 		return
 	}
 	for _, p := range s.plugins.PluginProblems(s.name) {
-		ps.Add(p.Code, p.Message, func(b *Steps) string {
+		ps.Add(p.Code, p.Message, func(b *guidance.Steps) string {
 			switch p.Code {
 			case ProblemPluginAwaitingApproval, ProblemPluginApprovalExpired, ProblemPluginApprovalMismatch:
 				return pluginApprovalSteps(b, p)
@@ -81,7 +83,7 @@ func (s statusDeps) addPluginProblems(ps *Problems) {
 // request_plugin changes only the plugins the engine keeps itself.
 const configEntryText = " It is in engine.json, so it is changed or removed by editing that file."
 
-func pluginApprovalSteps(b *Steps, p PluginProblem) string {
+func pluginApprovalSteps(b *guidance.Steps, p PluginProblem) string {
 	entry := p.Name + "/" + p.Instance
 	var lead string
 	switch p.Code {
@@ -111,7 +113,7 @@ func pluginApprovalSteps(b *Steps, p PluginProblem) string {
 	return lead
 }
 
-func unusableFileSteps(b *Steps, cmds Commands, file string) string {
+func unusableFileSteps(b *guidance.Steps, cmds Commands, file string) string {
 	file = shellQuote(file)
 	move, restart := "sudo mv "+file+" "+file+".bad", cmds.EngineRestart()
 	b.RunCommand(move, "Move the unusable entries file aside; the engine keeps no plugin until then.")
@@ -123,13 +125,13 @@ func unusableFileSteps(b *Steps, cmds Commands, file string) string {
 	return lead + " To move the file aside, run: " + move + " Then restart the engine: " + restart
 }
 
-func droppedNoticesSteps(b *Steps, p PluginProblem) string {
-	b.CallTool(toolListPending, map[string]any{}, "Call this to see what waits for the person's approval, and hand them the links again.")
+func droppedNoticesSteps(b *guidance.Steps, p PluginProblem) string {
+	b.CallTool(guidance.ToolListPending, map[string]any{}, "Call this to see what waits for the person's approval, and hand them the links again.")
 	return "The plugin " + p.Name + "/" + p.Instance + " did not deliver some approval notices, so a link may not have reached you. " +
 		"Nothing is lost: ask the agent what waits for your approval."
 }
 
-func pluginSteps(b *Steps, p PluginProblem) string {
+func pluginSteps(b *guidance.Steps, p PluginProblem) string {
 	entry := p.Name + "/" + p.Instance
 	b.AskPerson("Ask the person whether to remove the plugin " + entry + "; the status message says what is wrong with it.")
 	if p.EngineKept {

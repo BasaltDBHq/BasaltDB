@@ -11,6 +11,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -160,11 +161,11 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	ps := Problems{Cmds: s.cmds, ConnectBudget: s.connectBudget}
 	if s.devLocalPages {
 		ps.Add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
-			func(b *Steps) string { return devLocalPagesSteps(b, s.cmds) })
+			func(b *guidance.Steps) string { return devLocalPagesSteps(b, s.cmds) })
 	}
 	if !s.engineReachable && !s.engineUnknown {
 		ps.Add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
-			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
+			func(b *guidance.Steps) string { return engineUnreachableSteps(b, s.cmds, guidance.ToolStatus) })
 	}
 	s.addPortalProblem(&ps)
 	s.addPluginProblems(&ps)
@@ -174,7 +175,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {
 		ps.Add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
-			func(b *Steps) string { return lockFileSteps(b, path) })
+			func(b *guidance.Steps) string { return lockFileSteps(b, path) })
 	}
 	if known {
 		// A setup whose recorded state could not be read (the database is
@@ -292,7 +293,7 @@ const reinstalledAsk = "Show the person this notice and ask whether someone on t
 // copy records a reinstall. A guard older than version 36 records none; a
 // read that fails is logged and adds nothing.
 func (s statusDeps) addReinstalled(ctx context.Context, ps *Problems) {
-	msg, ok, err := s.probe.ReinstallNotice(ctx, MaxPersonMessageLength)
+	msg, ok, err := s.probe.ReinstallNotice(ctx, guidance.MaxPersonMessageLength)
 	if err != nil {
 		s.log.Error("status: read the reinstalls", "err", err)
 		return
@@ -301,7 +302,7 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *Problems) {
 		return
 	}
 	ps.Add(problemLedgerReinstalled, "the guard was installed again and a pin of the old ledger was set aside; the tools keep working",
-		func(b *Steps) string {
+		func(b *guidance.Steps) string {
 			b.AskPerson(reinstalledAsk)
 			return msg
 		})
@@ -323,7 +324,7 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *Problems, setupDone b
 		if len(all) > 0 {
 			msg = "no passkey is registered on " + origin + ", where this agent's links open, so held writes and reverts cannot be signed"
 		}
-		ps.Add(problemNoPasskey, msg, func(b *Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
+		ps.Add(problemNoPasskey, msg, func(b *guidance.Steps) string { return noPasskeyProblemSteps(b, s.cmds) })
 	}
 	out := PasskeysStatus{Registered: n > 0, Active: &n}
 	for _, k := range keys {
@@ -390,7 +391,7 @@ func passkeySummary(keys []PasskeyStatus) string {
 // noPasskeyProblemSteps are the NO_PASSKEY problem's steps: the setup
 // page's Update link when the engine serves it (its Update check adds a
 // passkey on the person's device), else noPasskeySteps.
-func noPasskeyProblemSteps(b *Steps, cmds Commands) string {
+func noPasskeyProblemSteps(b *guidance.Steps, cmds Commands) string {
 	if !cmds.AgentOperated() && cmds.UpdateLinkURL() != "" {
 		// The setup page's Update check adds a passkey on this device.
 		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page adds a passkey on their device.")
@@ -407,7 +408,7 @@ const nothingSignableLead = "No passkey is registered for this agent, so nothing
 // where the person registers a passkey; on an agent-operated engine the
 // connect page (RI-6: the person's computer registers a portal passkey when
 // none is active).
-func noPasskeySteps(b *Steps, cmds Commands) string {
+func noPasskeySteps(b *guidance.Steps, cmds Commands) string {
 	const lead = nothingSignableLead
 	if cmds.AgentOperated() {
 		return remoteSetupSteps(b, cmds, lead)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -46,8 +47,8 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	if err != nil {
 		return heldNotice{}, err
 	}
-	reason := reasonHeld
-	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
+	reason := guidance.ReasonHeld
+	lead := "Held for your approval: " + guidance.Shown(summary.Headline(), maxHeadlineChars) + "."
 	var text string
 	var msgLinks []toolresult.Link
 	switch {
@@ -58,12 +59,12 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 		text, msgLinks = waitMessage(lead, expires)
 	default:
 		if short == "" {
-			reason = reasonHeldNoPages
+			reason = guidance.ReasonHeldNoPages
 		}
 		text, msgLinks = approvalMessage(lead, pick, expiryLine(expires))
 	}
 	if len(ids) == 0 {
-		reason = reasonNoPasskey // nobody can sign: the first step is to register a passkey
+		reason = guidance.ReasonNoPasskey // nobody can sign: the first step is to register a passkey
 	}
 	return heldNotice{
 		reason: reason,
@@ -87,7 +88,7 @@ func waitMessage(lead string, expires time.Time) (string, []toolresult.Link) {
 // pointBackMessage is lead, then a pointer to the approval link the person
 // was given, then tail.
 func pointBackMessage(lead string, tail ...string) (string, []toolresult.Link) {
-	msg := newMessage().Text(lead).Text("Approve with the link you were given.")
+	msg := guidance.NewMessage().Text(lead).Text("Approve with the link you were given.")
 	for _, line := range tail {
 		msg.Text(line)
 	}
@@ -106,7 +107,7 @@ func approvalRequiredError(n heldNotice) error {
 // approvalStillPendingError is the APPROVAL_REQUIRED answer of a wait
 // that ran out: no second wait, the person may take long.
 func approvalStillPendingError(n heldNotice) error {
-	n.reason = reasonWaitEnded
+	n.reason = guidance.ReasonWaitEnded
 	return approvalError(n, fmt.Sprintf("still waiting for the person's approval of %d rows; nothing was applied. "+
 		"Do not call write to wait again. End your turn: tell the person the write is waiting for their approval "+
 		"(approval.personMessage has the link), that it expires at %s, and that you apply it when they "+
@@ -152,9 +153,9 @@ func requestOf(a action.Approval) sizedRequest {
 func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, summary approval.Summary,
 	expires time.Time, issue, noPasskey bool,
 ) (heldNotice, error) {
-	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
+	lead := "Held for your approval: " + guidance.Shown(summary.Headline(), maxHeadlineChars) + "."
 	n := heldNotice{
-		reason: reasonHeld,
+		reason: guidance.ReasonHeld,
 		ApprovalNotice: toolresult.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: s.pageAddress(links.Approval, id),
@@ -185,7 +186,7 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 	}
 	n.shortHeld = s.shortLinked(id)
 	if noPasskey {
-		n.reason = reasonNoPasskey
+		n.reason = guidance.ReasonNoPasskey
 	}
 	return n, nil
 }
@@ -203,13 +204,13 @@ func approvalInvalid(reason, format string, args ...any) *toolresult.ToolError {
 // differentWrite is the refusal of a write that is not the held one: its
 // step repeats the held write exactly, with its approval id.
 func differentWrite(a action.Approval, format string, args ...any) error {
-	te := approvalInvalid(reasonDifferentWrite, format, args...)
-	call := map[string]any{"sql": a.Statement, "intent": a.Intent, argRunID: a.RunID.String(), argApprovalID: a.ID.String()}
+	te := approvalInvalid(guidance.ReasonDifferentWrite, format, args...)
+	call := map[string]any{"sql": a.Statement, "intent": a.Intent, guidance.ArgRunID: a.RunID.String(), guidance.ArgApprovalID: a.ID.String()}
 	var params []any
 	if len(a.Params) > 0 && json.Unmarshal(a.Params, &params) == nil && len(params) > 0 {
 		call["params"] = params
 	}
-	if steps, err := NewSteps().CallTool(toolWrite, call, "Send exactly the held write: this sql, these params and this intent, with its approvalId.").Build(); err == nil {
+	if steps, err := guidance.NewSteps().CallTool(guidance.ToolWrite, call, "Send exactly the held write: this sql, these params and this intent, with its approvalId.").Build(); err == nil {
 		te.NextSteps = steps
 	}
 	return te

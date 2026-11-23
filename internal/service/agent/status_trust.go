@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -163,7 +164,7 @@ func (s statusDeps) addPinMismatch(ctx context.Context, ps *Problems, rep TrustR
 	}
 	host := rep.Applied.Host
 	ps.Add(problemTrustPinMismatch, fmt.Sprintf("the engine pins %s to %s, but the ledger records SHA-256 %s for it", host, pinFingerprints(p), sha),
-		func(b *Steps) string {
+		func(b *guidance.Steps) string {
 			b.AskPerson("Tell the person the ledger records another pin than the engine's, and ask whether they accepted a rotation.")
 			b.AgentRunCommand(s.cmds.Init(), "On the person's yes, run this and show them the link it prints, where they record the engine's pin.")
 			return fmt.Sprintf("The engine trusts the certificate authority with SHA-256 %s for your database %s, but the pin recorded in the "+
@@ -174,7 +175,7 @@ func (s statusDeps) addPinMismatch(ctx context.Context, ps *Problems, rep TrustR
 
 func (s statusDeps) addTrustRefused(ps *Problems, r trustprofile.Refused) {
 	ps.Add(problemTrustProfileRefused, "the trust profile file "+r.File+" is refused: "+r.Reason,
-		func(b *Steps) string {
+		func(b *guidance.Steps) string {
 			b.TellAgent("Fix or remove the file on the engine's machine, then tell the agent.")
 			return "Basalt refused the trust profile file " + r.File + ": " + r.Reason + ". It does not apply, and a built-in profile of the same " +
 				"name stays off until it is fixed; the other files still apply. Fix or remove the file, then tell the agent."
@@ -206,7 +207,7 @@ func (s statusDeps) addTrustExpiring(ps *Problems, a trustprofile.Applied, sorte
 		fix = "Update basalt for the provider's new roots. Nothing on the setup page adds a root before the database presents a new certificate."
 	}
 	ps.Add(problemTrustRootExpiring, fmt.Sprintf("the trust profile %s verifying %s holds %s that %s", a.Profile.Name, a.Host, what, when),
-		func(b *Steps) string {
+		func(b *guidance.Steps) string {
 			b.AskPerson("Tell the person the root that verifies their database expires soon, and ask whether their provider has already put the new certificate on the database.")
 			b.AgentRunCommand(s.cmds.Init(), "Only once they say it has, run this and show them the link it prints: its Update check shows the renewed certificate, and they decide. Before that it finds nothing to add.")
 			return fmt.Sprintf("The certificate authority that verifies your database %s %s (trust profile %s). "+
@@ -240,7 +241,7 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *Problems,
 			why = "its sslmode is below verify-full, so trust profiles do not apply. Trust its CA on the setup page the agent gives you a link to"
 		}
 		ps.Add(problemCertificateNotVerified, msg,
-			func(b *Steps) string {
+			func(b *guidance.Steps) string {
 				b.AgentRunCommand(s.cmds.Init(), trustInitText)
 				b.TellAgent("Tell the agent when it is done.")
 				return "The certificate of your database " + host + " does not verify: " + why + ". Or change the agent's connection on the " +
@@ -250,7 +251,7 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *Problems,
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
 	ps.Add(problemCertificateNotVerified, msg,
-		func(b *Steps) string {
+		func(b *guidance.Steps) string {
 			b.AgentRunCommand(s.cmds.Init(), trustInitText)
 			b.TellAgent("Tell the agent when it is done.")
 			return "The certificate of your database " + host + " does not verify against the system's authorities or any trust profile. " +
@@ -275,7 +276,7 @@ func (s statusDeps) addRootChanged(ctx context.Context, ps *Problems, rep *Trust
 	host := rep.Applied.Host
 	ps.Add(problemTrustRootChanged, fmt.Sprintf("%s presents the certificate authority SHA-256 %s, but it is pinned to %s, so the agent cannot connect",
 		host, trustprofile.Fingerprint(top), pinFingerprints(p)),
-		func(b *Steps) string {
+		func(b *guidance.Steps) string {
 			b.AgentRunCommand(s.cmds.Init(), trustInitText)
 			b.TellAgent("Tell the agent when it is done.")
 			return fmt.Sprintf("Your database %s presents another certificate authority than the pinned one.\nPinned: %s\nNow: %s\n"+

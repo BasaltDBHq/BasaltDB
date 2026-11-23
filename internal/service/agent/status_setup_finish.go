@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // Finishing a setup from the laptop (CONTRACT.md, Setup from your laptop, On
@@ -53,7 +54,7 @@ func (noFinisher) Finish(context.Context, string, bool) error { return nil }
 // LoginRefused reports whether err is the database refusing a login (the
 // role does not exist, or has another password).
 func LoginRefused(err error) bool {
-	return err != nil && ErrorMap{}.ToolError(err).Reason == reasonCredentialRejected
+	return err != nil && ErrorMap{}.ToolError(err).Reason == guidance.ReasonCredentialRejected
 }
 
 // notRecordedFor is how long a held call trusts an earlier call that found
@@ -178,7 +179,7 @@ func (l *lockTrouble) get() string {
 // lockFileSteps: the person gives the lock file back to the engine's user
 // with root, on the engine's machine. A PERSON step on an agent-operated
 // engine too: it needs root.
-func lockFileSteps(b *Steps, path string) string {
+func lockFileSteps(b *guidance.Steps, path string) string {
 	cmd := "sudo chown " + engineUserName() + " " + shellQuote(path)
 	b.RunCommand(cmd, "Run this on the engine's machine: the engine cannot open this lock file.")
 	b.TellAgent("Tell the agent when it is done.")

@@ -11,6 +11,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -37,7 +38,7 @@ func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 	t.Parallel()
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	b := NewSteps()
+	b := guidance.NewSteps()
 	person := devLocalPagesSteps(b, cmds.OperatedBy(mcpcontract.OperatedByAgent))
 	steps, err := b.Build()
 	require.NoError(t, err)
@@ -59,7 +60,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	srv, _ := serverOf(NewService(d))
-	body, isErr := serveCall(t, srv, toolStatus, map[string]any{})
+	body, isErr := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isErr)
 	problems, ok := body["problems"].([]any)
 	require.True(t, ok)
@@ -79,7 +80,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 func TestNoWarningWithoutDevLocalPages(t *testing.T) {
 	t.Parallel()
 	srv, _ := degraded(t, &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, nil)
-	body, _ := serveCall(t, srv, toolStatus, map[string]any{})
+	body, _ := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.NotContains(t, body, "DEV_LOCAL_PAGES")
 	for _, p := range body["problems"].([]any) {
 		require.NotEqual(t, problemDevLocalPages, p.(map[string]any)["code"])

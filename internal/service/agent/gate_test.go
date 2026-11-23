@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -31,7 +32,7 @@ func requireGuardOutdated(t *testing.T, err error, path string) {
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te, path)
 	require.Equal(t, CodeUnavailable, te.Code, path)
-	require.Equal(t, reasonGuardOutdated, te.Reason, path)
+	require.Equal(t, guidance.ReasonGuardOutdated, te.Reason, path)
 }
 
 func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {

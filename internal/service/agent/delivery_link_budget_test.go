@@ -15,10 +15,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -270,21 +270,21 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
 
 	messages := map[string]string{}
-	for _, tool := range []string{toolPreviewRevert, toolRequestRevert} {
+	for _, tool := range []string{guidance.ToolPreviewRevert, guidance.ToolRequestRevert} {
 		err := s.prepareTimeout(tool, scope, "57014")
 		var te *toolresult.ToolError
 		require.ErrorAs(t, err, &te)
 		messages["timeout "+tool] = te.PersonMessage
 	}
-	err = s.nothingToRevertError(context.Background(), toolPreviewRevert, scope, reasonReadsOnly, "changed no rows")
+	err = s.nothingToRevertError(context.Background(), guidance.ToolPreviewRevert, scope, guidance.ReasonReadsOnly, "changed no rows")
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	messages["nothing to revert, task"] = te.PersonMessage
 	for _, st := range te.NextSteps {
 		require.Empty(t, st.Command, "no command for other agents' changes in the task")
 	}
-	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
-	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
+	messages["not granted"] = s.notGrantedSteps(guidance.NewSteps(), 12)
+	messages["describe not found"] = s.describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", time.Now().Add(time.Hour))
 
 	for name, m := range messages {
-		require.NoError(t, CheckPersonMessage(m), "%s: %s", name, m)
+		require.NoError(t, guidance.CheckPersonMessage(m), "%s: %s", name, m)
 		require.NotContains(t, m, long, name)
 		require.NotContains(t, m, "basalt ", "%s: the person runs no command", name)
 	}
@@ -307,9 +307,9 @@ func requireSendRequestFirst(t *testing.T, steps []toolresult.NextStep, file *li
 	require.NotEmpty(t, steps, where)
 	require.Equal(t, toolresult.ActorAgent, steps[0].Actor, where)
 	require.Equal(t, toolresult.ActionSendRequest, steps[0].Action, where)
-	require.Equal(t, agentkit.SendRequestText(file), steps[0].Text, where)
+	require.Equal(t, guidance.SendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
+		requireStepObeysRules(t, st, catalogCase{tool: guidance.ToolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}
 	require.NotEqual(t, toolresult.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
 }
@@ -323,7 +323,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	s := noticeService("", links.DefaultBudget)
 
 	n := approvalNoticeOf(t, s, 60, issueLink)
-	te := s.Failure(toolWrite, writeArgs0, approvalRequiredError(n))
+	te := s.Failure(guidance.ToolWrite, writeArgs0, approvalRequiredError(n))
 	require.Same(t, n.RequestFile, te.Approval.RequestFile)
 	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
 
@@ -394,7 +394,7 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, links.DefaultBudget)
 		n := approvalNoticeOf(t, s, 60, keepLink)
-		te := s.approvalLinkError(&toolresult.ToolError{Code: CodeApprovalInvalid, Reason: reasonNotSigned, Message: "m"}, n)
+		te := s.approvalLinkError(&toolresult.ToolError{Code: CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
 		requirePersonMessage(t, te.PersonMessage, te.Links)
 		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
 		open := te.NextSteps[0]
@@ -426,8 +426,8 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, len(long), links.DefaultBudget, "the fixture must be over budget")
 		for name, refuse := range map[string]func() error{
-			reasonBadSignature:   func() error { return s.badSignature(ctx, big, "the code does not verify") },
-			reasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
+			guidance.ReasonBadSignature:   func() error { return s.badSignature(ctx, big, "the code does not verify") },
+			guidance.ReasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
 		} {
 			te := testErrors().ToolError(refuse())
 			require.Equal(t, CodeRevertInvalid, te.Code, name)

@@ -107,7 +107,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	require.Contains(t, string(hello), `"result"`)
 
 	src, model := bigSource(t, 200<<10)
-	up, err := pluginUploader(bot.SocketPath)(context.Background(), src)
+	up, err := shim.NewPluginUploader(bot.SocketPath)(context.Background(), src)
 	require.NoError(t, err)
 	require.Equal(t, 1, store.Open())
 	id, err := uuid.Parse(up.UploadID)
@@ -119,7 +119,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	require.Equal(t, model, got, "every part arrived, in order")
 	staged.Release()
 
-	_, err = pluginUploader(stranger.SocketPath)(context.Background(), src)
+	_, err = shim.NewPluginUploader(stranger.SocketPath)(context.Background(), src)
 	require.Error(t, err, "another OS user's connection is refused")
 	require.Zero(t, store.Open(), "nothing was written for it")
 }
@@ -168,17 +168,4 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	te = call("bot", mcpserver.MethodPluginUploadPart, ok, part(`{"uploadId":"`+uuid.NewString()+`","path":"a","offset":0,"data":""}`))
 	require.Equal(t, "NOT_FOUND", te.Code)
 	require.Equal(t, guidance.CodeNotFound, te.Code)
-}
-
-// pluginUploader is basalt mcp's uploader (cmd/basalt engine.go): the
-// plugin service's UploadFolder over the shim's channel to socketPath.
-func pluginUploader(socketPath string) shim.PluginUploader {
-	ch := shim.NewUploader(socketPath)
-	return func(ctx context.Context, source string) (mcpserver.PluginUpload, error) {
-		up, err := plugin.UploadFolder(ctx, ch, source)
-		if err != nil {
-			return mcpserver.PluginUpload{}, err
-		}
-		return mcpserver.PluginUpload{UploadID: up.UploadID, Name: up.Name, Executables: up.Executables}, nil
-	}
 }

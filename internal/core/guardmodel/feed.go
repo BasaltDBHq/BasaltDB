@@ -69,11 +69,15 @@ type PluginEntryEvent struct {
 }
 
 // FeedFilter is which ledger rows a feed read returns: rows of the listed
-// kinds, a CHANGE only when it was applied (AppliedChangesOnly), and a
-// REFUSED only when its op is not SELECT (SkipRefusedReads). The store
-// applies it in its query, so a limit pages over the rows it keeps.
+// kinds, a CHANGE only when it was applied and a REFUSED only when its op is
+// not SELECT, unless the Include flags say otherwise. The zero value of each
+// flag is the narrower read, so a filter built without them carries no
+// unapplied change and no refused read. The store applies it in its query,
+// so a limit pages over the rows it keeps.
 type FeedFilter struct {
-	Kinds              []string
-	AppliedChangesOnly bool
-	SkipRefusedReads   bool
+	Kinds []string
+	// IncludeUnappliedChanges keeps a CHANGE whatever its status.
+	IncludeUnappliedChanges bool
+	// IncludeRefusedReads keeps a REFUSED SELECT.
+	IncludeRefusedReads bool
 }

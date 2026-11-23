@@ -27,7 +27,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -232,7 +231,7 @@ func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m
 	// person-operated engine; the engine says which in its hello answer.
 	// A plugin the agent asks for (request_plugin) is uploaded over a
 	// second connection to the agent's own socket.
-	opts := shim.Options{Open: h.OpenURL, UploadPlugin: pluginUploader(path), UploadAllowed: plugin.UploadAllowed}
+	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path), UploadAllowed: plugin.UploadAllowed}
 	if exe, err := cli.ShimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = m.EngineStarter(engine.EnginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
@@ -554,17 +553,3 @@ func checkServicePersons(uids []uint32, engineUser string) error {
 // engineLog is the engine's and basalt mcp's log on w: a text handler that
 // scrubs link secrets from what it writes (logredact).
 func engineLog(w io.Writer) *slog.Logger { return slog.New(logredact.NewTextHandler(w, nil)) }
-
-// pluginUploader is basalt mcp's uploader of request_plugin folders: the
-// plugin service's UploadFolder over the shim's channel to the agent's
-// socket at socketPath, answered as the shim hands it to the engine.
-func pluginUploader(socketPath string) shim.PluginUploader {
-	ch := shim.NewUploader(socketPath)
-	return func(ctx context.Context, source string) (mcpserver.PluginUpload, error) {
-		up, err := plugin.UploadFolder(ctx, ch, source)
-		if err != nil {
-			return mcpserver.PluginUpload{}, err
-		}
-		return mcpserver.PluginUpload{UploadID: up.UploadID, Name: up.Name, Executables: up.Executables}, nil
-	}
-}

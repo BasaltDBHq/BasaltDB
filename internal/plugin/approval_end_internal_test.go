@@ -79,6 +79,13 @@ func TestEndPluginApproval(t *testing.T) {
 		{"an approval not signed yet", &endGuard{apps: []guardmodel.PluginApprovalRecord{
 			approval(guardmodel.PluginApprovalStatusApproved, true, nil, nil),
 		}}, nil},
+		{"a pending approval", &endGuard{apps: []guardmodel.PluginApprovalRecord{
+			approval(guardmodel.PluginApprovalStatusPending, true, &signed, nil),
+		}}, nil},
+		{"served on the record wins over a signed approval", &endGuard{
+			recs: guardmodel.PluginRecords{Entries: []guardmodel.PluginRecord{{Kind: guardmodel.PluginEnabled, Detail: served}}},
+			apps: []guardmodel.PluginApprovalRecord{approval(guardmodel.PluginApprovalStatusApproved, true, &signed, nil)},
+		}, []guardmodel.PluginDetail{served}},
 		{"nothing", &endGuard{}, nil},
 	} {
 		require.NoError(t, endPluginApproval(ctx, c.g, nil, "acme-ner", "default"), c.name)

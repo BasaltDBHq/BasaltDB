@@ -63,19 +63,19 @@ const reuseFor = 5 * time.Minute
 // the engine reached a PREVIEW one: *Client.
 type Collector interface {
 	Collect(ctx context.Context, setupID, fingerprint string) (Collected, error)
-	Report(ctx context.Context, setupID, fingerprint string, a Address, r Reach) error
+	Report(ctx context.Context, setupID, fingerprint string, a setupcode.Address, r Reach) error
 }
 
 // AddressProber probes an address with logins bound to fail: Prober.
 // Resolve checks the address and resolves its host once; ProbeAt probes the
 // address it resolved to.
 type AddressProber interface {
-	Resolve(ctx context.Context, a Address) (netip.Addr, error)
+	Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, error)
 	// Approve checks, with the TLS handshake alone, the certificate
 	// authority the person trusted on the connect page against the chain
 	// the server presents to this machine.
-	Approve(ctx context.Context, a Address, ip netip.Addr, approved string) (Pin, error)
-	ProbeAt(ctx context.Context, a Address, ip netip.Addr, user string, pin Pin) (Probed, error)
+	Approve(ctx context.Context, a setupcode.Address, ip netip.Addr, approved string) (Pin, error)
+	ProbeAt(ctx context.Context, a setupcode.Address, ip netip.Addr, user string, pin Pin) (Probed, error)
 }
 
 // Files are the agent's files and its entry in engine.json, as the engine
@@ -111,7 +111,7 @@ type State struct {
 	Phase string
 	// Database is the probed database (CONFIRM_DATABASE), or the one that
 	// could not be reached (problem DATABASE_UNREACHABLE_FROM_BOT).
-	Database *Address
+	Database *setupcode.Address
 	// Problem is CLOCK_SKEW, ADDRESS_INVALID, TRUST_ROOT_MISMATCH or
 	// DATABASE_UNREACHABLE_FROM_BOT while waiting, "" otherwise.
 	Problem string
@@ -239,11 +239,11 @@ func (v previewProbe) passed(key string, ip netip.Addr, now time.Time) bool {
 // probeKey is what a probe of a held under trustRoot is for: a probe that
 // passed under one trusted certificate authority, or none, stands for no
 // other.
-func probeKey(a Address, trustRoot string) string {
+func probeKey(a setupcode.Address, trustRoot string) string {
 	if trustRoot == "" {
-		return a.key()
+		return a.Key()
 	}
-	return a.key() + "\x00" + trustRoot
+	return a.Key() + "\x00" + trustRoot
 }
 
 // State is the setup's state now: it reads engine.json first, so a pending
@@ -376,11 +376,11 @@ func (p *Pending) step(ctx context.Context) {
 		case p.o.NoSetUpProbe:
 			return
 		default:
-			probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role), pin)
+			probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, setupcode.LoginUser(addr, p.role), pin)
 		}
 	}
 	switch {
-	case errors.Is(err, ErrAddressInvalid):
+	case errors.Is(err, setupcode.ErrAddressInvalid):
 		p.o.Log.Warn("the collected address is refused", "setupId", setup.SetupID)
 		if !setup.AddressInvalid {
 			if err := p.o.Files.MarkAddressInvalid(setup.SetupID); err != nil {
@@ -466,7 +466,7 @@ func (p *Pending) previewStep(ctx context.Context, setup config.Setup, got Colle
 		}
 		if err == nil {
 			v.ip = ip
-			v.probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role), pin)
+			v.probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, setupcode.LoginUser(addr, p.role), pin)
 			v.pinned = pinnedOf(pin)
 		}
 		r, report := ReachOf(err)
@@ -494,7 +494,7 @@ func (p *Pending) previewStep(ctx context.Context, setup config.Setup, got Colle
 }
 
 // waiting records a step that left the setup waiting, with its problem.
-func (p *Pending) waiting(problem string, db *Address) {
+func (p *Pending) waiting(problem string, db *setupcode.Address) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.st.Phase != PhaseWaiting {
@@ -549,7 +549,7 @@ func (p *Pending) save() {
 type Answer struct {
 	// Confirmed is YES: the credential is written.
 	Confirmed bool
-	Database  Address
+	Database  setupcode.Address
 }
 
 // Confirm records the person's answer for setup id and database db, which
@@ -560,7 +560,7 @@ type Answer struct {
 // remove .secret, clear awaitingAddress; the engine then builds the agent
 // anew on its credential. NO: remove .secret and record refused; nothing
 // logged in there and nothing pinned.
-func (p *Pending) Confirm(_ context.Context, id string, db Address, yes bool) (Answer, error) {
+func (p *Pending) Confirm(_ context.Context, id string, db setupcode.Address, yes bool) (Answer, error) {
 	p.recheckConfig()
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -586,7 +586,7 @@ func (p *Pending) Confirm(_ context.Context, id string, db Address, yes bool) (A
 }
 
 // confirm is YES. p.mu and the agent's lock are held.
-func (p *Pending) confirm(id string, db Address) (Answer, error) {
+func (p *Pending) confirm(id string, db setupcode.Address) (Answer, error) {
 	secret, err := p.o.Files.ReadSecret()
 	if err != nil {
 		return Answer{}, fmt.Errorf("read the agent's password: %w", err)
@@ -596,7 +596,7 @@ func (p *Pending) confirm(id string, db Address) (Answer, error) {
 			return Answer{}, fmt.Errorf("pin the database's certificate authority: %w", err)
 		}
 	}
-	dsn := ConnString(db, LoginUser(db, p.role), secret, p.probed.ChannelBinding)
+	dsn := ConnString(db, setupcode.LoginUser(db, p.role), secret, p.probed.ChannelBinding)
 	if err := p.o.Files.WriteCredential(dsn); err != nil {
 		return Answer{}, fmt.Errorf("write the agent's credential: %w", err)
 	}
@@ -617,7 +617,7 @@ func (p *Pending) confirm(id string, db Address) (Answer, error) {
 }
 
 // refuse is NO. p.mu and the agent's lock are held.
-func (p *Pending) refuse(id string, db Address) (Answer, error) {
+func (p *Pending) refuse(id string, db setupcode.Address) (Answer, error) {
 	if err := p.o.Files.RemoveSecret(); err != nil {
 		return Answer{}, err
 	}

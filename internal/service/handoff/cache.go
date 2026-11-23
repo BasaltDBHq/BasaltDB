@@ -1,25 +1,14 @@
 package handoff
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/netip"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 )
-
-// key names a's canonical form without holding it: the probe cache keeps
-// this, never the address.
-func (a Address) key() string {
-	c := a.Canonical()
-	sum := sha256.Sum256([]byte(c.Host + "\n" + strconv.Itoa(c.Port) + "\n" + c.Database + "\n" + c.SupabaseRef))
-	return hex.EncodeToString(sum[:])
-}
 
 // Cached is what the engine keeps of its last PREVIEW probe across
 // processes (the engine, and basalt status while it is down): a hash of

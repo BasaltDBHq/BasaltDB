@@ -52,7 +52,7 @@ Every package under `internal/` sits in one of the layers above. A new top-level
 - **types**: a type that a port is written in, or a rule used by two or more callers. Anyone may import it.
 - **codec**: the code for a format written down in `api/`. Anyone may import it.
 
-Core stays pure. A package in `internal/core` does not import `os`, `io/fs`, `path/filepath`, `net` (`net/url` is fine), `net/http`, `os/exec`, `syscall`, `io/ioutil`, `math/rand`, `crypto/rand` or a database driver, does not dot-import, and does not call `time.Now`, `time.Since`, `time.Until` or `os.Getenv`. The exception is key and salt generation in the codecs `channel` and `setupcode`, which may import `crypto/rand`; the register below records it.
+Core stays pure. A package in `internal/core` does not import `os`, `io/fs`, `path/filepath`, `net` (`net/url` is fine), `net/http`, `os/exec`, `syscall`, `io/ioutil`, `math/rand`, `crypto/rand` or a database driver, does not dot-import, and does not call `time.Now`, `time.Since`, `time.Until` or `os.Getenv`. The exceptions are key and salt generation in the codecs `channel` and `setupcode`, which may import `crypto/rand`, and `setupcode`'s database address, which may import `net` for `net.JoinHostPort` only; the register below records them.
 
 ## Where does this code go
 
@@ -94,7 +94,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | `channel` | Vault channel | codec | 3 | `crypto/rand` | - |
 | `links` | links | codec | 3 | - | - |
 | `linkcodec` | links | codec | 3 | - | - |
-| `setupcode` | setup | codec | 3 | `crypto/rand` | - |
+| `setupcode` | setup | codec | 3 | `crypto/rand`, `net` | - |
 | `pluginproto` | plugins | codec | 3 | - | - |
 | `largevalue` | large values | codec | 3 | - | - |
 | `toolresult` | agent | types | 2 | - | - |

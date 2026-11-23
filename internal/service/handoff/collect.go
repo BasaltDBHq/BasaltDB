@@ -13,6 +13,7 @@ import (
 	connectv1 "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1"
 	"github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1/connectv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
 // ServiceURL is the connect service the engine collects from.
@@ -86,7 +87,7 @@ const (
 // Address.Check and Probe), with its hold's phase: HoldPreview, HoldSetUp,
 // or anything else the service sent, which the engine treats as a preview.
 type Collected struct {
-	Address Address
+	Address setupcode.Address
 	Phase   string
 	// TrustRoot is the SHA-256 of the certificate authority the person
 	// trusted on the connect page for the address's host, or "". It adds
@@ -122,7 +123,7 @@ func (c *Client) Collect(ctx context.Context, setupID, fingerprint string) (Coll
 		return Collected{}, errors.New("the connect service answered without an address")
 	}
 	return Collected{
-		Address:   Address{Host: t.GetHost(), Port: int(t.GetPort()), Database: t.GetDatabase(), SupabaseRef: t.GetSupabaseRef()},
+		Address:   setupcode.Address{Host: t.GetHost(), Port: int(t.GetPort()), Database: t.GetDatabase(), SupabaseRef: t.GetSupabaseRef()},
 		Phase:     res.Msg.GetPhase(),
 		TrustRoot: res.Msg.GetTrustRoot(),
 	}, nil
@@ -134,7 +135,7 @@ func (c *Client) at() string { return c.now().UTC().Truncate(time.Second).Format
 // shape rules (CONTRACT.md, Connect, The reach check): r.Reason is empty
 // when r reached it. The address is sent and signed in its canonical form.
 // The refusals are Collect's.
-func (c *Client) Report(ctx context.Context, setupID, fingerprint string, a Address, r Reach) error {
+func (c *Client) Report(ctx context.Context, setupID, fingerprint string, a setupcode.Address, r Reach) error {
 	at, canon := c.at(), a.Canonical()
 	result := ResultReachable
 	if r.Reason != "" {

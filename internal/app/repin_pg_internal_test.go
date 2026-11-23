@@ -152,7 +152,7 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 	t.Helper()
 	r, err := handoff.NewRepin(handoff.RepinOptions{
 		Setup:      f.setup,
-		Credential: handoff.Address{Host: repinHost, Port: 5432, Database: f.d.Admin.Config().Database},
+		Credential: setupcode.Address{Host: repinHost, Port: 5432, Database: f.d.Admin.Config().Database},
 		Collector:  handoff.NewClient(nil, f.base, f.keys, time.Now),
 		Prober: handoff.Prober{
 			Resolver: staticResolver{netip.MustParseAddr("8.8.8.8")},

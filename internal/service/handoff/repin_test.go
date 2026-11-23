@@ -44,7 +44,9 @@ func (c holdCollector) Collect(context.Context, string, string) (Collected, erro
 	return c.hold, c.err
 }
 
-func (holdCollector) Report(context.Context, string, string, Address, Reach) error { return nil }
+func (holdCollector) Report(context.Context, string, string, setupcode.Address, Reach) error {
+	return nil
+}
 
 // repinFiles record what the engine would write.
 type fakeRepinFiles struct {
@@ -72,7 +74,7 @@ func TestRepin(t *testing.T) {
 	ownPin := trustprofiletest.Profile(t, trustprofile.Operator, trustprofile.PinName(db.Host), []string{"=" + db.Host}, oldCA)
 	other, _ := trustprofiletest.Chain(t, db.Host)
 
-	run := func(t *testing.T, hold Collected, credential Address) (*trustServer, *fakeRepinFiles, *Repin) {
+	run := func(t *testing.T, hold Collected, credential setupcode.Address) (*trustServer, *fakeRepinFiles, *Repin) {
 		t.Helper()
 		s := newTrustServer(t, db.Host, ownPin)
 		setup := certSetup(t, now)
@@ -120,7 +122,7 @@ func TestRepin(t *testing.T) {
 	})
 	t.Run("another database", func(t *testing.T) {
 		t.Parallel()
-		elsewhere := Address{Host: "other.example.com", Port: 5432, Database: "app"}
+		elsewhere := setupcode.Address{Host: "other.example.com", Port: 5432, Database: "app"}
 		s, files, _ := run(t, Collected{Address: elsewhere, Phase: HoldSetUp, TrustRoot: trustprofile.DERSHA256(other)}, db)
 		require.Empty(t, files.replaced)
 		require.Zero(t, s.dials.Load(), "nothing is read for another database")

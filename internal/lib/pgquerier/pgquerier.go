@@ -93,3 +93,29 @@ func ReadOnlyTx(b interface {
 		return fn(Neutralize(tx))
 	}
 }
+
+// QueryText runs sql with every result column in Postgres's text format,
+// and calls row with each row's raw values (nil for NULL, valid only during
+// the call) and its columns' type OIDs. It returns row's error, or the
+// query's.
+func (n Neutral) QueryText(ctx context.Context, sql string, args []any, row func(raw [][]byte, typeOIDs []uint32) error) error {
+	rows, err := n.q.Query(ctx, sql, append([]any{pgx.QueryResultFormats{pgx.TextFormatCode}}, args...)...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var oids []uint32
+	for rows.Next() {
+		if oids == nil {
+			fds := rows.FieldDescriptions()
+			oids = make([]uint32, len(fds))
+			for i, fd := range fds {
+				oids[i] = fd.DataTypeOID
+			}
+		}
+		if err := row(rows.RawValues(), oids); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}

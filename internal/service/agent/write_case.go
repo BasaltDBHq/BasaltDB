@@ -48,7 +48,7 @@ type writeApprovals interface {
 
 // upgradeWarner gives the warnings of a guard that can be upgraded, for run_start.
 type upgradeWarner interface {
-	upgradeWarnings(ctx context.Context) []toolresult.Warning
+	UpgradeWarnings(ctx context.Context) []toolresult.Warning
 }
 
 // approvalLinker puts the link of a held write into an error answer.

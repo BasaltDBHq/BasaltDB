@@ -35,15 +35,15 @@ type pluginDelivery interface {
 
 // pluginStatusView is what the plugin use case reads of the status use case.
 type pluginStatusView interface {
-	// sameUser says the engine runs as the person's own OS user.
-	sameUser() bool
-	// devLocalPages says engine.json has devLocalPages set.
-	devLocalPages() bool
-	// vaultState is the engine's Vault state, vaultStateOff when there is
+	// SameUser says the engine runs as the person's own OS user.
+	SameUser() bool
+	// DevLocalPages says engine.json has devLocalPages set.
+	DevLocalPages() bool
+	// VaultState is the engine's Vault state, vaultStateOff when there is
 	// no Vault reporter.
-	vaultState() string
-	// guardStatus reads the guard's state on the agent's credential.
-	guardStatus(ctx context.Context) (guardmodel.Status, error)
+	VaultState() string
+	// GuardStatus reads the guard's state on the agent's credential.
+	GuardStatus(ctx context.Context) (guardmodel.Status, error)
 }
 
 func newPluginCase(core *CoreDeps, deps *PluginDeps, delivery pluginDelivery, status pluginStatusView, admit admitter) *pluginCase {

@@ -96,7 +96,7 @@ func agentCrashReports(dirs ...string) []agent.CrashReport {
 	return out
 }
 
-func agentUpdateMessage(n agent.UpdateNotice, exe string) string {
+func agentUpdateMessage(n agent.ReleaseNotice, exe string) string {
 	return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 }
 
@@ -228,16 +228,16 @@ func agentEngineRecord(r *guardmodel.RecordedEngine) *agent.EngineRecord {
 }
 
 // agentUpdate is the update checker's cached notice as the agent reads it.
-func agentUpdate(cached func() *updatecheck.Notice) func() *agent.UpdateNotice {
+func agentUpdate(cached func() *updatecheck.Notice) func() *agent.ReleaseNotice {
 	if cached == nil {
 		return nil
 	}
-	return func() *agent.UpdateNotice {
+	return func() *agent.ReleaseNotice {
 		n := cached()
 		if n == nil {
 			return nil
 		}
-		return &agent.UpdateNotice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}
+		return &agent.ReleaseNotice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}
 	}
 }
 

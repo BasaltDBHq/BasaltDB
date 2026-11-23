@@ -182,7 +182,7 @@ func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
 		}
 		return out
 	}
-	d.Status.UpdateMessage = func(n agent.UpdateNotice, exe string) string {
+	d.Status.UpdateMessage = func(n agent.ReleaseNotice, exe string) string {
 		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 	}
 	d.Plugin.ApprovalsVersion = guard.PluginApprovalsVersion

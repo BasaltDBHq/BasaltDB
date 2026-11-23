@@ -76,7 +76,7 @@ const answerNo = "NO"
 
 func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) handoffmcp.ConnectOnly {
 	t.Helper()
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	return handoffmcp.ConnectOnly{
 		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
@@ -282,7 +282,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 // waiting one with its connect link.
 func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", testManager())
+	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	waiting := connectOnlySetup(statusNow.Add(time.Hour))
 	refused := waiting

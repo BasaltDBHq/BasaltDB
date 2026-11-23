@@ -9,11 +9,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
-// NewCommands returns the commands for agent. configPath is the absolute
+// newCommands returns the commands for agent. configPath is the absolute
 // path the engine was started with ("" when the default); goos picks the
 // default path and the service manager (runtime.GOOS when empty); manager
 // is the service manager's commands.
-func NewCommands(agent, configPath, goos string, manager guidance.ServiceManager) (guidance.Commands, error) {
+func newCommands(agent, configPath, goos string, manager guidance.ServiceManager) (guidance.Commands, error) {
 	if !config.ValidAgentName(agent) {
 		return guidance.Commands{}, fmt.Errorf("%q is not a valid agent name", agent)
 	}

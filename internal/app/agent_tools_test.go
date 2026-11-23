@@ -47,8 +47,8 @@ func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) 
 	return action.WriteResult{}, nil
 }
 func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }
-func (nopStore) History(context.Context, action.ChangeListParams) (History, error) {
-	return History{}, nil
+func (nopStore) History(context.Context, action.ChangeListParams) (changeHistory, error) {
+	return changeHistory{}, nil
 }
 
 func (nopStore) ListRuns(context.Context, action.RunListParams) (pagination.Page[action.RunSummary], error) {

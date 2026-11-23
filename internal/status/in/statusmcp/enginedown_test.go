@@ -35,7 +35,7 @@ var statusNow = time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 const statusCredential = "/etc/basalt/agents/bot.url"
 
 // newCommands are the commands the engine builds for agent bot on linux
-// (app.NewCommands, which this package cannot import): the inputs pass its
+// (app's newCommands, which this package cannot reach): the inputs pass its
 // checks, a valid agent name and an absolute or empty config path, so its
 // result is guidance.NewCommands' own.
 func newCommands(t *testing.T, configPath string) guidance.Commands {

@@ -47,7 +47,7 @@ func AgentTools(svc *Service) []mcpserver.Tool {
 // the agent's store.
 type agentTools struct {
 	*agentsvc.Service
-	core *CoreDeps
+	core *coreDeps
 }
 
 // StoreKind is the kind of the agent's store: query and write are served

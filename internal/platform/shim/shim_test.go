@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 
 	"github.com/basaltdbhq/basaltdb/internal/status"
@@ -88,8 +89,9 @@ func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client,
 // startShimWith is startShim with the relay's options.
 func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-chan error) {
 	t.Helper()
-	cmds, err := app.NewCommands("bot", "", "linux", testServiceManager())
-	require.NoError(t, err)
+	// The engine's commands for bot on linux with the default config: a
+	// valid name passes app's checks, so they are guidance.NewCommands' own.
+	cmds := guidance.NewCommands("bot", "", config.DefaultPath("linux"), "linux", testServiceManager())
 	down := statusmcp.EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	fallback := app.NewEngineDownServer(down)
 	inR, inW := io.Pipe()

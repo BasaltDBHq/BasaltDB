@@ -11,6 +11,7 @@ import (
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -191,8 +193,9 @@ func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 
-	cmds, err := app.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", agenttest.ServiceManager())
-	require.NoError(t, err)
+	// The engine's commands for bot on linux: a valid name and an absolute
+	// config path pass app's checks, so they are guidance.NewCommands' own.
+	cmds := guidance.NewCommands("bot", "/etc/basalt-test/engine.json", config.DefaultPath("linux"), "linux", agenttest.ServiceManager())
 	sent := &notices{}
 	var watched *finds
 	var watchedReverts *revertFinds

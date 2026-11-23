@@ -16,16 +16,17 @@ import (
 // agent's own credential, in action types. The Postgres adapter
 // (internal/platform/postgres/store) implements them; the service never imports it.
 
-// Store is any store an agent can be bound to: its kind, what the engine
-// may rely on, and the ledger kept next to it.
-type Store interface {
+// agentStore is any store an agent can be bound to: its kind, what the
+// engine may rely on, and the ledger kept next to it.
+type agentStore interface {
 	Kind() action.StoreKind
 	Capabilities() action.Capabilities
-	Ledger
+	agentLedger
 }
 
-// Ledger records the agent's runs, reads and refusals and reads them back.
-type Ledger interface {
+// agentLedger records the agent's runs, reads and refusals and reads them
+// back.
+type agentLedger interface {
 	FindRun(ctx context.Context, id uuid.UUID) (action.Run, error)
 	StartRun(ctx context.Context, in action.Intent) error
 	// RecordRead records a read the engine ran (owner decision #7) and
@@ -33,7 +34,7 @@ type Ledger interface {
 	// transaction, so it may write.
 	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 	RecordRefusal(ctx context.Context, r action.Refusal) error
-	History(ctx context.Context, p action.ChangeListParams) (History, error)
+	History(ctx context.Context, p action.ChangeListParams) (changeHistory, error)
 	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
 }
 
@@ -46,7 +47,7 @@ type statementChecker interface {
 
 // SQLStore is a store that speaks SQL: the query and write tools run on it.
 type SQLStore interface {
-	Store
+	agentStore
 	approvalsvc.Store
 	revertsvc.Store
 	statementChecker

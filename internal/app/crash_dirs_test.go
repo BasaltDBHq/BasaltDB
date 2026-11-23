@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/crash"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 )
 
 // A panic of the engine process itself on a laptop is saved under the

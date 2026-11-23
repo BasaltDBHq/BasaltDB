@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "about": "The surface budget: every command, flag, MCP tool and argument, environment variable and page path the product has. TestSurfaceBudget in cmd/basalt builds the real surface from the binary, the tool contracts, the source and web/, and fails on any difference with this file. An entry marked removing is still present and names the epic that removes it; the change that removes it deletes the entry. Changing this file needs a maintainer's sign-off. Flags are written \"<command> --<flag>\"; an MCP argument is \"<tool>.<argument>\"; setBy binary marks a variable the binary sets for its own children.",
+  "about": "The surface budget: every command, flag, MCP tool and argument, environment variable and page path the product has. TestSurfaceBudget in internal/app builds the real surface from the binary, the tool contracts, the source and web/, and fails on any difference with this file. An entry marked removing is still present and names the epic that removes it; the change that removes it deletes the entry. Changing this file needs a maintainer's sign-off. Flags are written \"<command> --<flag>\"; an MCP argument is \"<tool>.<argument>\"; setBy binary marks a variable the binary sets for its own children.",
   "entries": [
     {"kind": "command", "name": "engine"},
     {"kind": "command", "name": "init"},

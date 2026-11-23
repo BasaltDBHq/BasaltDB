@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -60,17 +59,33 @@ const (
 // ErrNotAdmitted: the agent is served status only (agent.Service.Admit).
 var ErrNotAdmitted = errors.New("the agent is served status only")
 
+// dbError is Guard.DBError for an error that may be nil, on a Guard that may
+// be unset (an agent with no connection has none): neither is a database
+// reply.
+func dbError(g Guard, err error) (code, message, detail string, ok bool) {
+	if g == nil || err == nil {
+		return "", "", "", false
+	}
+	return g.DBError(err)
+}
+
+// noAnswer is Guard.NoAnswer for an error that may be nil, on a Guard that
+// may be unset.
+func noAnswer(g Guard, err error) bool {
+	return g != nil && err != nil && g.NoAnswer(err)
+}
+
 // unrecordedWhy is why a record could not be written, for the agent's
 // status: never the error's text, which could name a value.
 func unrecordedWhy(g Guard, err error) string {
-	var pg *pgconn.PgError
 	if errors.Is(err, ErrNotAdmitted) {
 		return whyNotAdmitted
 	}
-	if !errors.As(err, &pg) {
+	code, _, _, ok := dbError(g, err)
+	if !ok {
 		return whyUnreachable
 	}
-	switch pg.Code {
+	switch code {
 	case sqlstateUndefinedFunction:
 		return whyNoPluginEvents
 	case sqlstateUndefinedTable, sqlstateInvalidSchemaName:
@@ -86,18 +101,18 @@ func unrecordedWhy(g Guard, err error) string {
 // answer: no connection, a timeout, a connection lost. Any other failure,
 // a Postgres error, a refusal to admit the agent or a reply the engine
 // cannot read, decides.
-func transientErr(err error) bool {
-	var (
-		pg   *pgconn.PgError
-		conn *pgconn.ConnectError
-		ne   net.Error
-	)
-	switch {
-	case err == nil, errors.As(err, &pg), errors.Is(err, ErrNotAdmitted):
+func transientErr(g Guard, err error) bool {
+	var ne net.Error
+	if err == nil || errors.Is(err, ErrNotAdmitted) {
 		return false
-	case errors.As(err, &conn), errors.As(err, &ne), errors.Is(err, action.ErrUnavailable),
+	}
+	if _, _, _, isDB := dbError(g, err); isDB {
+		return false
+	}
+	switch {
+	case errors.As(err, &ne), errors.Is(err, action.ErrUnavailable),
 		errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled),
-		errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), pgconn.SafeToRetry(err), pgconn.Timeout(err):
+		errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), noAnswer(g, err):
 		return true
 	}
 	return false
@@ -394,7 +409,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	all := func(err error) agentPass {
 		out := make([]unrecordedEntry, 0, len(served))
 		for _, k := range served {
-			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(err)})
+			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(l.ports.Guard, err)})
 		}
 		return agentPass{withheld: out}
 	}
@@ -462,7 +477,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		if kind, ok := entryEvent(last, k, d); ok {
 			if err := l.ports.Guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
 				log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
-				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(err)})
+				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(l.ports.Guard, err), transient: transientErr(l.ports.Guard, err)})
 				continue
 			}
 		}

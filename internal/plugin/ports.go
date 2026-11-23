@@ -10,12 +10,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
-// Querier is an agent's database handle: a connection or a pool. The engine
-// never runs SQL itself; it hands the handle to the Ledger.
-type Querier = pgquerier.Querier
+// Querier is an agent's database handle: a connection or a pool. It is opaque
+// here, so the host links no database driver: the engine never runs SQL
+// itself; it hands the handle to the Guard, whose adapter knows its type.
+type Querier = any
 
 // Guard is the port to the guard in an agent's database, where the plugin
 // records, the approvals of plugin entries and the feed's events are kept. An
@@ -35,6 +35,12 @@ type Guard interface {
 	PluginApprovalsVersion() int
 	// IsGuardError reports whether err is an error the guard raised.
 	IsGuardError(err error) bool
+	// DBError reads err as the database's own reply (a Postgres error): its
+	// SQLSTATE, message and detail; ok is false when err is not one.
+	DBError(err error) (code, message, detail string, ok bool)
+	// NoAnswer reports whether the driver says the database did not answer:
+	// a connection that failed, a send safe to retry or a timeout.
+	NoAnswer(err error) bool
 
 	OpenPluginApproval(ctx context.Context, q Querier, d guardmodel.PluginApprovalDetail, s guardmodel.PluginSettings) (guardmodel.PluginApproval, error)
 	ReadPluginApproval(ctx context.Context, q Querier, id uuid.UUID) (guardmodel.PluginApprovalRecord, bool, error)

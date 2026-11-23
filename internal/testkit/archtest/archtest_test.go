@@ -322,6 +322,7 @@ func TestNewTreeLayers(t *testing.T) {
 	want := map[string][]string{
 		"internal/platform/postgres/other": {"o.go calls sqlguard.Check"},
 		"internal/platform/vault":          {"imports internal/setup"},
+		"internal/platform/mcpserver":      {"imports internal/setup (an internal/platform package imports no domain service)"},
 		"internal/setup": {
 			"imports internal/platform/vault",
 			"s.go imports net/http (a service reaches the database and the network through a port)",

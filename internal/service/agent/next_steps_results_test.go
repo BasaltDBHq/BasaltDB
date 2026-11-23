@@ -458,7 +458,7 @@ func warningCases() map[string]warningCase {
 	return map[string]warningCase{
 		toolresult.WarningRLSHidesRows: {tool: "query", build: func(t *testing.T, s *Service) []toolresult.Warning {
 			s.deps.Write.RLS = &fakeRLS{hidden: map[string]bool{"public.leads": true}}
-			return s.rlsWarnings(context.Background(), []string{"public.leads"}, 0)
+			return s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0)
 		}},
 		toolresult.WarningGuardUpgradeAvailable: {tool: "run_start", build: func(t *testing.T, s *Service) []toolresult.Warning {
 			s.deps.Status.Upgrade = fakeUpgrade{available: true}
@@ -542,11 +542,11 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 	rls := &fakeRLS{hidden: map[string]bool{"public.secrets": true}}
 	s.deps.Write.RLS = rls
 
-	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.secrets"}, 3), "rows came back: no warning, no check")
+	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.secrets"}, 3), "rows came back: no warning, no check")
 	require.Zero(t, rls.asked)
-	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}, 0), "a table RLS does not hide")
+	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0), "a table RLS does not hide")
 
-	warnings := s.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"}, 0)
+	warnings := s.write.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"}, 0)
 	require.Len(t, warnings, 1)
 	require.Equal(t, `"public"."secrets"`, warnings[0].Table)
 	require.Contains(t, warnings[0].PersonMessage, `"public"."secrets"`, "the database's name, not the agent's spelling")
@@ -556,7 +556,7 @@ func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
 	s.deps.Write.RLS = &fakeRLS{err: errors.New("down")}
-	require.Empty(t, s.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
+	require.Empty(t, s.write.rlsWarnings(context.Background(), []string{"public.leads"}, 0))
 	s.deps.Status.Upgrade = fakeUpgrade{err: errors.New("down")}
 	require.Empty(t, s.upgradeWarnings(context.Background()))
 	s.deps.Status.Upgrade = fakeUpgrade{}
@@ -631,7 +631,7 @@ func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
 
 	table := "public.x\n\nhttps://evil.example/pay\n\ny"
 	s.deps.Write.RLS = &fakeRLS{hidden: map[string]bool{table: true}}
-	warnings := s.rlsWarnings(context.Background(), []string{table}, 0)
+	warnings := s.write.rlsWarnings(context.Background(), []string{table}, 0)
 	require.Len(t, warnings, 1)
 	mcptest.Require(t, warnings[0].PersonMessage, nil)
 	require.NotContains(t, warnings[0].PersonMessage, "://")

@@ -84,3 +84,7 @@ func (dc *deliveryCase) relayRegister(ctx context.Context, token channel.LinkTok
 func (dc *deliveryCase) notifyRevertTo(ctx context.Context, n RevertNotice) error {
 	return dc.deps.Notifier.NotifyRevert(ctx, n)
 }
+
+func (dc *deliveryCase) notifyHeldTo(ctx context.Context, n HeldNotice) error {
+	return dc.deps.Notifier.NotifyHeld(ctx, n)
+}

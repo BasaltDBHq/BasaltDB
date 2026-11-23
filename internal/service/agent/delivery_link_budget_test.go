@@ -288,7 +288,7 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	messages["describe not found"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	rls.wire()
-	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
+	w, err := rls.write.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)
 	messages["rls warning"] = w.PersonMessage
 	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", time.Now().Add(time.Hour))

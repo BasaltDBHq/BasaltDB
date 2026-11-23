@@ -21,35 +21,35 @@ import (
 // APPROVAL_REQUIRED with the approval link. It returns the held write's
 // approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
 // the error that kept it from being held.
-func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
-	assigned, err := s.deps.Approval.Store.HoldColumns(ctx, p.SQL, p.Params)
+func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
+	assigned, err := wc.approvals.HoldColumns(ctx, p.SQL, p.Params)
 	var notRepeatable *action.RefusalError
 	if errors.As(err, &notRepeatable) {
-		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
-	lines, err := s.deps.Approval.Store.Preview(ctx, in, p.SQL, p.Params, assigned)
+	lines, err := wc.approvals.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
-		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: guidance.CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
-		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+		return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 	}
-	held, err := s.deps.Approval.Store.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
+	held, err := wc.approvals.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
-			return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+			return uuid.Nil, time.Time{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 		}
 		return uuid.Nil, time.Time{}, err
 	}
 	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}
-	notice, err := s.approval.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
+	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
@@ -57,12 +57,12 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
 	sent := HeldNotice{
-		ApprovalID: held.ApprovalID, Agent: s.deps.Core.Name, Intent: p.Intent, Statement: p.SQL,
+		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: p.SQL,
 		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
 		ShortURL: notice.shortURL,
 	}
-	if err := s.deps.Delivery.Notifier.NotifyHeld(context.WithoutCancel(ctx), sent); err != nil {
-		s.deps.Core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
+	if err := wc.delivery.notifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
+		wc.core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
 	return held.ApprovalID, held.ExpiresAt, approvalRequiredError(notice)
 }
@@ -70,16 +70,16 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 // applyApproved runs a held write under its approval: the same statement,
 // parameters and run as held, once the person signed on the page (waiting
 // for it when asked). The guard checks it all again at commit.
-func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
+func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
-	run, err := findRun(ctx, s.deps.Core.Store, p.RunID)
+	run, err := findRun(ctx, wc.core.Store, p.RunID)
 	if err != nil {
 		return WriteOutcome{}, err
 	}
-	a, err := s.deps.Approval.Store.FindApproval(ctx, p.ApprovalID)
-	if guidance.Sentinel(err, s.deps.Approval.ErrNotFound) {
+	a, err := wc.approvals.FindApproval(ctx, p.ApprovalID)
+	if guidance.Sentinel(err, wc.approvals.notFound()) {
 		return WriteOutcome{}, approvalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
@@ -88,45 +88,45 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if err := sameAsHeld(a, p); err != nil {
 		return WriteOutcome{}, err
 	}
-	if a, err = s.waitForSignature(ctx, a, p); err != nil {
+	if a, err = wc.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
 	}
 	// The receipt is built from Postgres's record of the approval after the
 	// signature (CONTRACT.md, Receipts), and handed over only once the write
 	// is applied.
-	if a, err = s.deps.Approval.Store.FindApproval(ctx, a.ID); err != nil {
+	if a, err = wc.approvals.FindApproval(ctx, a.ID); err != nil {
 		return WriteOutcome{}, err
 	}
 	var receipt *Receipt
 	if a.Status == approvalApproved {
-		r, err := s.delivery.approvalReceiptOf(a)
+		r, err := wc.delivery.approvalReceiptOf(a)
 		if err != nil {
 			return WriteOutcome{}, err
 		}
 		receipt = &r
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
-	start := s.deps.Core.Now()
-	stmt, err := s.deps.Write.Store.Check(p.SQL, action.ToolWrite)
+	start := wc.core.Now()
+	stmt, err := wc.deps.Store.Check(p.SQL, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.deps.Write.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
+	res, err := wc.deps.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
 	if err != nil {
-		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, op, p.SQL, p.Params, start, err))
+		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, op, p.SQL, p.Params, start, err))
 	}
 	return WriteOutcome{
 		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,
-		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows), Receipt: receipt,
+		Warnings: wc.rlsWarnings(ctx, stmt.Tables, res.Rows), Receipt: receipt,
 	}, nil
 }
 
 // withApprovalLink gives an approval error that sends the person back to the
 // approval page (not signed yet, a bad signature, a passkey the database
 // does not accept) the page's link in its steps; any other error passes.
-func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
-	te := s.deps.Core.Errors.ToolError(err)
+func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
+	te := wc.core.Errors.ToolError(err)
 	if te.Code != guidance.CodeApprovalInvalid || len(te.NextSteps) > 0 {
 		return err
 	}
@@ -135,11 +135,11 @@ func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err e
 	default:
 		return err
 	}
-	n, linkErr := s.approval.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+	n, linkErr := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 	if linkErr != nil {
 		return linkErr
 	}
-	return s.approvalLinkError(te, n)
+	return wc.next.approvalLinkError(te, n)
 }
 
 // sameAsHeld checks the call repeats the held write.
@@ -181,11 +181,11 @@ func sameParams(held json.RawMessage, params []any) bool {
 	return ok && sameJSON(a, b)
 }
 
-func (s *Service) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
-	err := s.delivery.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
+func (wc *writeCase) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
+	err := wc.delivery.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
-		next, err := s.deps.Approval.Store.FindApproval(budget.With(ctx), a.ID)
+		next, err := wc.approvals.FindApproval(budget.With(ctx), a.ID)
 		if err != nil {
 			return err
 		}
@@ -195,16 +195,16 @@ func (s *Service) awaitSigned(ctx context.Context, a action.Approval, wait time.
 	return a, err
 }
 
-func (s *Service) waitForSignature(ctx context.Context, a action.Approval, p WriteParams) (action.Approval, error) {
+func (wc *writeCase) waitForSignature(ctx context.Context, a action.Approval, p WriteParams) (action.Approval, error) {
 	if a.Status != approvalPending || p.Wait == 0 {
 		return a, nil
 	}
-	a, err := s.awaitSigned(ctx, a, p.Wait)
+	a, err := wc.awaitSigned(ctx, a, p.Wait)
 	if err != nil {
 		return a, err
 	}
 	if a.Status == approvalPending {
-		n, err := s.approval.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+		n, err := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 		if err != nil {
 			return a, err
 		}

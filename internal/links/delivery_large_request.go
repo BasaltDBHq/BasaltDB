@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"context"
@@ -84,7 +84,7 @@ func LongOrTooLarge(r SizedRequest, build func() (string, error)) (string, bool,
 // for any other link (revoking the item's earlier one): the portal's when
 // the Vault registers it and the lines cost at most maxPortalRequestCost,
 // else one to the local pages; "" when there is none.
-func (dc *deliveryCase) LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error) {
+func (dc *Service) LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error) {
 	if cost <= maxPortalRequestCost {
 		if link := dc.RelayLink(ctx, page, id, expires); link != "" {
 			return link, nil
@@ -96,13 +96,13 @@ func (dc *deliveryCase) LargeShortLink(ctx context.Context, page func(string, uu
 // CarriesLarge reports whether a short link this engine hands over can
 // carry a request whose lines cost cost: the local pages always, the
 // portal's over a READY Vault up to maxPortalRequestCost.
-func (dc *deliveryCase) CarriesLarge(cost int64) bool {
+func (dc *Service) CarriesLarge(cost int64) bool {
 	return dc.core.PagesOrigin != "" || (cost <= maxPortalRequestCost && dc.deps.Relay.Connected())
 }
 
 // PageAddress is an item's page with no fragment: what a field that would
 // restate a long link carries for a request too large for one.
-func (dc *deliveryCase) PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string {
+func (dc *Service) PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string {
 	if dc.core.PagesOrigin != "" {
 		return page(dc.core.PagesOrigin, id)
 	}
@@ -124,13 +124,13 @@ func IsPageAddress(url string) bool {
 // TooLargeMessage is the REQUEST_TOO_LARGE personMessage for what (the held
 // write, or a revert), whose lines cost cost and which expires at expires,
 // by the engine's setup (CONTRACT.md, Large values, rule 5).
-func (dc *deliveryCase) TooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string {
+func (dc *Service) TooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string {
 	return dc.tooLargeText(what, cost, expires, isRevert)
 }
 
 // tooLargeText is tooLargeMessage's text. A setup change goes through the
 // agent's basalt init, whose link opens the page for it.
-func (dc *deliveryCase) tooLargeText(what string, cost int64, expires time.Time, isRevert bool) string {
+func (dc *Service) tooLargeText(what string, cost int64, expires time.Time, isRevert bool) string {
 	lead := what + " is too large for a link, so no link was given."
 	until := " It expires at " + expires.UTC().Format(guidance.PersonTime) + "."
 	narrower := ""
@@ -193,7 +193,7 @@ func RevertTooLargeSteps(id uuid.UUID, stop bool) ([]toolresult.NextStep, error)
 // RevertTooLargeError is request_revert's QUERY_TIMEOUT REQUEST_TOO_LARGE:
 // the revert is prepared and waits until it expires, but no link this
 // engine has can carry it.
-func (dc *deliveryCase) RevertTooLargeError(id uuid.UUID, cost int64, expires time.Time) error {
+func (dc *Service) RevertTooLargeError(id uuid.UUID, cost int64, expires time.Time) error {
 	steps, err := RevertTooLargeSteps(id, true)
 	if err != nil {
 		return err

@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"time"
@@ -22,19 +22,19 @@ import (
 type linkKind int
 
 const (
-	// linkShort is a short link: never measured.
-	linkShort linkKind = iota + 1
-	// linkLong is a long link within the budget.
-	linkLong
-	// linkHash is the hash link that stands in for a long link over the
+	// LinkShort is a short link: never measured.
+	LinkShort linkKind = iota + 1
+	// LinkLong is a long link within the budget.
+	LinkLong
+	// LinkHash is the hash link that stands in for a long link over the
 	// budget; File carries the request.
-	linkHash
-	// linkPage is a page's address with no fragment, for a request too
+	LinkHash
+	// LinkPage is a page's address with no fragment, for a request too
 	// large for a long link that a short link given earlier carries.
-	linkPage
-	// linkNone is the page's address of a request that no link this engine
+	LinkPage
+	// LinkNone is the page's address of a request that no link this engine
 	// has can carry (REQUEST_TOO_LARGE).
-	linkNone
+	LinkNone
 )
 
 // HandOver is the link the engine hands over, which of the three it is,
@@ -43,9 +43,9 @@ type HandOver struct {
 	URL  string
 	Kind linkKind
 	File *links.RequestFile
-	// sent is set when the agent already sent File's request with an
+	// Sent is set when the agent already sent File's request with an
 	// earlier result: the message points back to it.
-	sent bool
+	Sent bool
 }
 
 // ChooseLink picks the link to hand over: short when it is not empty, else
@@ -54,21 +54,21 @@ type HandOver struct {
 func ChooseLink(short, long string, budget int, fileName string) (HandOver, error) {
 	switch {
 	case short != "":
-		return HandOver{URL: short, Kind: linkShort}, nil
+		return HandOver{URL: short, Kind: LinkShort}, nil
 	case len(long) <= budget:
-		return HandOver{URL: long, Kind: linkLong}, nil
+		return HandOver{URL: long, Kind: LinkLong}, nil
 	}
 	hash, file, err := links.HashLink(long, fileName)
 	if err != nil {
 		return HandOver{}, err
 	}
-	return HandOver{URL: hash, Kind: linkHash, File: &file}, nil
+	return HandOver{URL: hash, Kind: LinkHash, File: &file}, nil
 }
 
 // Labels of links next to a personMessage: what opening the link does
 // (api/mcp/links/link.schema.json).
 const (
-	labelApprove = "Approve the held write"
+	LabelApprove = "Approve the held write"
 	labelRevert  = "Review and sign the revert"
 )
 
@@ -98,8 +98,8 @@ const (
 // Limits that keep what the agent supplies, and what the database names,
 // from pushing a message over its 500 characters.
 const (
-	maxHeadlineChars = 100
-	maxIntentChars   = 80
+	MaxHeadlineChars = 100
+	MaxIntentChars   = 80
 )
 
 // ApprovalMessage is the personMessage of a held write at the link handed
@@ -111,14 +111,14 @@ func ApprovalMessage(lead string, pick HandOver, tail ...string) (string, []tool
 func buildApprovalMessage(lead string, pick HandOver, tail []string) (string, []toolresult.Link) {
 	msg := guidance.NewMessage().Text(lead)
 	switch pick.Kind {
-	case linkHash:
-		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent))
-	case linkLong:
+	case LinkHash:
+		msg.Text(reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.Sent))
+	case LinkLong:
 		msg.Text(reviewOnly)
 	default:
 		msg.Text("Approve it with your passkey here:")
 	}
-	msg.Link(labelApprove, pick.URL)
+	msg.Link(LabelApprove, pick.URL)
 	for _, line := range tail {
 		msg.Text(line)
 	}
@@ -134,10 +134,10 @@ func RevertMessage(summary string, pick HandOver, extra ...string) (string, []to
 	}
 	sign := "Sign it with your passkey here:"
 	switch pick.Kind {
-	case linkShort, linkPage, linkNone:
-	case linkHash:
-		sign = reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.sent)
-	case linkLong:
+	case LinkShort, LinkPage, LinkNone:
+	case LinkHash:
+		sign = reviewOnlyBeside + requestBeside(pick.File.Blocks != nil, pick.Sent)
+	case LinkLong:
 		sign = reviewOnly
 	}
 	return msg.Text(sign).Link(labelRevert, pick.URL).Build()

@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -21,13 +23,13 @@ func (ac *approvalCase) deliverReissued(items []PendingEntry) {
 		switch {
 		case e.Approval != nil && e.Approval.issued:
 			d := pendingFromDomain(*e.Approval)
-			ac.delivery.Deliver(LinkNotice{
-				Kind: NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
+			ac.delivery.Deliver(linksvc.LinkNotice{
+				Kind: linksvc.NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
 			})
 		case e.Revert != nil && e.Revert.issued:
 			d := pendingRevertFromDomain(*e.Revert)
-			ac.delivery.Deliver(LinkNotice{
-				Kind: NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
+			ac.delivery.Deliver(linksvc.LinkNotice{
+				Kind: linksvc.NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
 			})
 		}
 	}
@@ -124,14 +126,14 @@ func (ac *approvalCase) pendingGuidance(ctx context.Context, e PendingEntry, rei
 			return err
 		}
 		a.Notice = n.ApprovalNotice
-		a.Restated = !reissue && (ac.delivery.ShortLinked(a.ID) || IsPageAddress(n.ApprovalURL))
-		if n.reason == ReasonRequestTooLarge {
-			a.tooLargeSteps = n.steps
+		a.Restated = !reissue && (ac.delivery.ShortLinked(a.ID) || linksvc.IsPageAddress(n.ApprovalURL))
+		if n.Reason == linksvc.ReasonRequestTooLarge {
+			a.tooLargeSteps = n.Steps
 		}
 		if !ac.waitsForPerson(*a) {
 			a.Notice.RequestFile = nil // nothing left to sign: no request to send
 		}
-		a.issued = reissue && n.shortURL != "" && ac.waitsForPerson(*a)
+		a.issued = reissue && n.ShortURL != "" && ac.waitsForPerson(*a)
 		a.PersonMessage, a.Links, a.NextSteps, err = ac.itemGuidance(*a)
 		return err
 	}

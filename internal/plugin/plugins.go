@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -538,7 +540,7 @@ func (ep *Plugins) PluginEntries(name string) []agent.PluginEntry {
 
 // DeliverLinks is the agent.LinkDeliverer of the agent named name: its
 // notices go to the approval.deliver entries served to it.
-func (ep *Plugins) DeliverLinks(name string) agent.LinkDeliverer {
+func (ep *Plugins) DeliverLinks(name string) linksvc.LinkDeliverer {
 	return ep.delivery.forAgent(name)
 }
 

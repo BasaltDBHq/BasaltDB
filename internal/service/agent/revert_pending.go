@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -78,14 +80,14 @@ func (rc *revertCase) pendingRevert(ctx context.Context, p *PendingRevert, reiss
 	if err != nil {
 		return err
 	}
-	if pick.Kind == linkNone {
-		return rc.pendingRevertTooLarge(p, p.Revert, pick.URL, RevertRequestOf(p.Revert).Cost)
+	if pick.Kind == linksvc.LinkNone {
+		return rc.pendingRevertTooLarge(p, p.Revert, pick.URL, linksvc.RevertRequestOf(p.Revert).Cost)
 	}
 	p.RevertURL, p.RequestFile = pick.URL, pick.File
 	p.PersonMessage = fmt.Sprintf("%s It waits for your passkey at the link the agent gave you, until %s. If you lost it, "+
 		"ask the agent for a new one.", headline, expires)
 	open := p.RevertURL
-	if rc.delivery.ShortLinked(p.ID) || pick.Kind == linkPage {
+	if rc.delivery.ShortLinked(p.ID) || pick.Kind == linksvc.LinkPage {
 		open = "" // the person has the short link the agent handed over
 	}
 	p.NextSteps = guidance.WithSendRequest(pendingRevertSteps(p.ID, open,
@@ -101,7 +103,7 @@ func (rc *revertCase) pendingRevertTooLarge(p *PendingRevert, r action.Revert, a
 	if err != nil {
 		return err
 	}
-	steps, err := RevertTooLargeSteps(r.ID, false)
+	steps, err := linksvc.RevertTooLargeSteps(r.ID, false)
 	if err != nil {
 		return err
 	}

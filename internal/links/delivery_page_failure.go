@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"errors"
@@ -51,7 +51,7 @@ func LinkReset() (*toolresult.ToolError, error) {
 // PageFailure is err as the pages answer it: the contract's error body with
 // the person's message and the steps the catalog gives it. The page shows
 // them to the person, so the caller keeps only the PERSON steps.
-func (dc *deliveryCase) PageFailure(err error) *toolresult.ToolError {
+func (dc *Service) PageFailure(err error) *toolresult.ToolError {
 	var pe *guidance.PageError
 	if errors.As(err, &pe) {
 		return pe.ToolError
@@ -67,7 +67,7 @@ func (dc *deliveryCase) PageFailure(err error) *toolresult.ToolError {
 // the person is already on: sign again there, so no link is named (the
 // engine knows no short link's secret to build one). It reports whether te
 // was such a refusal.
-func (dc *deliveryCase) pageSignatureFailure(te *toolresult.ToolError) bool {
+func (dc *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 	var what, again string
 	switch te.Code {
 	case guidance.CodeApprovalInvalid:

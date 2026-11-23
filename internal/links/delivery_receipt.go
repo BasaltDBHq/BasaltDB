@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"context"
@@ -52,7 +52,7 @@ type Receipt struct {
 // ApprovalReceipt reads approval id from Postgres, after the person's
 // signature was accepted, and signs its receipt. Only an approved (or
 // already applied) approval gets one.
-func (dc *deliveryCase) ApprovalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
+func (dc *Service) ApprovalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
 	a, err := dc.approvals.FindApproval(ctx, id)
 	if err != nil {
 		return Receipt{}, err
@@ -60,7 +60,7 @@ func (dc *deliveryCase) ApprovalReceipt(ctx context.Context, id uuid.UUID) (Rece
 	return dc.ApprovalReceiptOf(a)
 }
 
-func (dc *deliveryCase) ApprovalReceiptOf(a action.Approval) (Receipt, error) {
+func (dc *Service) ApprovalReceiptOf(a action.Approval) (Receipt, error) {
 	if a.Status != action.ApprovalApproved && a.Status != action.ApprovalApplied {
 		return Receipt{}, fmt.Errorf("approval %s is %s, not signed", a.ID, a.Status)
 	}
@@ -84,7 +84,7 @@ func (dc *deliveryCase) ApprovalReceiptOf(a action.Approval) (Receipt, error) {
 // SignReceipt fills in the agent, the engine and the time and signs p
 // with the engine's key. Without a usable key (KEY_ERROR) there is no
 // receipt, and the line says why.
-func (dc *deliveryCase) SignReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
+func (dc *Service) SignReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
 	if dc.deps.Receipts == nil {
 		return Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, nil
 	}

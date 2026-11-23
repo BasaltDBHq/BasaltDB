@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -35,12 +37,12 @@ func (ac *approvalCase) ApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
-func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) (Receipt, error) {
+func (ac *approvalCase) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
 	if _, err := ac.openApproval(ctx, r.ApprovalID); err != nil {
-		return Receipt{}, err
+		return linksvc.Receipt{}, err
 	}
 	if _, err := ac.deps.Store.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
-		return Receipt{}, err
+		return linksvc.Receipt{}, err
 	}
 	// Postgres accepted the signature: the receipt names the approval as
 	// Postgres records it, never as the page sent it.
@@ -58,7 +60,7 @@ func (ac *approvalCase) openApproval(ctx context.Context, id uuid.UUID) (action.
 	}
 	a, err := ac.deps.Store.FindApproval(ctx, id)
 	if guidance.Sentinel(err, ac.deps.ErrNotFound) {
-		return action.Approval{}, ErrNotThisAgent
+		return action.Approval{}, linksvc.ErrNotThisAgent
 	}
 	if err != nil {
 		return action.Approval{}, err

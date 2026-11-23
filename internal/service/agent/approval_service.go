@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -29,11 +31,11 @@ type approvalCase struct {
 
 // approvalDelivery is what the approval use case asks of the delivery use case.
 type approvalDelivery interface {
-	ApprovalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error)
+	ApprovalReceipt(ctx context.Context, id uuid.UUID) (linksvc.Receipt, error)
 	CarriesLarge(cost int64) bool
 	ColumnsOf(ctx context.Context, lines []string) approval.ColumnOrder
 	CredentialIDs(ctx context.Context) ([]passkey.Bytes, error)
-	Deliver(n LinkNotice)
+	Deliver(n linksvc.LinkNotice)
 	LargeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error)
 	PageAddress(page func(string, uuid.UUID) string, id uuid.UUID) string
 	PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string
@@ -74,7 +76,7 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
-func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (Receipt, error) {
+func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
 	return s.approval.RelayApproval(ctx, r)
 }
 
@@ -84,7 +86,7 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 }
 
 // RevealApproval reveals the rows of a held write to the page holding secret.
-func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
+func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return s.approval.RevealApproval(ctx, id, secret, in)
 }
 
@@ -98,7 +100,7 @@ func (ac *approvalCase) FindApproval(ctx context.Context, id uuid.UUID) (action.
 	return ac.deps.Store.FindApproval(ctx, id)
 }
 
-func (ac *approvalCase) hasColumns() bool { return ac.deps.Columns != nil }
+func (ac *approvalCase) HasColumns() bool { return ac.deps.Columns != nil }
 
 func (ac *approvalCase) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
 	return ac.deps.Columns.ColumnOrder(ctx, tables)

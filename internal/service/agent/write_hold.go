@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -48,18 +50,18 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 		}
 		return uuid.Nil, time.Time{}, err
 	}
-	req := SizedRequest{Binding: held.BindingText, Lines: lines, Cost: TextsCost(lines)}
-	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
+	req := linksvc.SizedRequest{Binding: held.BindingText, Lines: lines, Cost: linksvc.TextsCost(lines)}
+	notice, err := wc.approvals.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, linksvc.IssueLink)
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
 	// The notice carries the long link, which works anywhere, and the
 	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
-	sent := HeldNotice{
+	sent := linksvc.HeldNotice{
 		ApprovalID: held.ApprovalID, Agent: wc.core.Name, Intent: p.Intent, Statement: p.SQL,
-		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
-		ShortURL: notice.shortURL,
+		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.LongURL,
+		ShortURL: notice.ShortURL,
 	}
 	if err := wc.delivery.NotifyHeldTo(context.WithoutCancel(ctx), sent); err != nil {
 		wc.core.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
@@ -97,7 +99,7 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 	if a, err = wc.approvals.FindApproval(ctx, a.ID); err != nil {
 		return WriteOutcome{}, err
 	}
-	var receipt *Receipt
+	var receipt *linksvc.Receipt
 	if a.Status == action.ApprovalApproved {
 		r, err := wc.delivery.ApprovalReceiptOf(a)
 		if err != nil {
@@ -135,7 +137,7 @@ func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, er
 	default:
 		return err
 	}
-	n, linkErr := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+	n, linkErr := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, linksvc.KeepLink)
 	if linkErr != nil {
 		return linkErr
 	}
@@ -204,7 +206,7 @@ func (wc *writeCase) waitForSignature(ctx context.Context, a action.Approval, p 
 		return a, err
 	}
 	if a.Status == action.ApprovalPending {
-		n, err := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+		n, err := wc.approvals.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, linksvc.KeepLink)
 		if err != nil {
 			return a, err
 		}

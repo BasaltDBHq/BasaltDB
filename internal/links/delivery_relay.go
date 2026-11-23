@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"context"
@@ -29,7 +29,7 @@ type LinkRelay interface {
 // over, and the caller falls back (CONTRACT.md: the short link is not
 // issued). Issuing revokes the item's earlier link, whose token the link
 // store's OnDrop unregisters; so does revoking this one.
-func (dc *deliveryCase) RelayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string {
+func (dc *Service) RelayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string {
 	if !dc.deps.Relay.Connected() {
 		return ""
 	}
@@ -66,15 +66,15 @@ func (dc *deliveryCase) RelayLink(ctx context.Context, page func(string, uuid.UU
 // still works: the engine serves its own pages, or the item has a live
 // portal short link the relay carries. A result that issues no new link then
 // points back to that link, never to the long one.
-func (dc *deliveryCase) ShortLinked(id uuid.UUID) bool {
+func (dc *Service) ShortLinked(id uuid.UUID) bool {
 	return dc.core.PagesOrigin != "" || (dc.deps.Links != nil && dc.deps.Links.HasRelay(id))
 }
 
-// noRelay is LinkRelay with the Vault off: never connected.
-type noRelay struct{ notConnected error }
+// NoRelay is LinkRelay with the Vault off: never connected.
+type NoRelay struct{ NotConnected error }
 
-func (noRelay) Connected() bool { return false }
+func (NoRelay) Connected() bool { return false }
 
-func (r noRelay) Register(context.Context, channel.LinkToken, time.Time) error {
-	return r.notConnected
+func (r NoRelay) Register(context.Context, channel.LinkToken, time.Time) error {
+	return r.NotConnected
 }

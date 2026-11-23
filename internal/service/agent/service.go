@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -35,7 +37,7 @@ type Deps struct {
 	Write    WriteDeps
 	Approval ApprovalDeps
 	Revert   RevertDeps
-	Delivery DeliveryDeps
+	Delivery linksvc.Deps
 	Status   StatusDeps
 	Describe DescribeDeps
 	Plugin   PluginDeps
@@ -100,7 +102,7 @@ type ApprovalDeps struct {
 	SortSpec pagination.SortSpec
 	// Columns reads each table's columns in table order for the pages;
 	// optional, and the pages show the order the rows carry when nil.
-	Columns ColumnOrder
+	Columns linksvc.ColumnOrder
 }
 
 // RevertDeps is what reverts use.
@@ -114,36 +116,6 @@ type RevertDeps struct {
 	// token.
 	AfterAnswer   func(ctx context.Context, f func()) bool
 	RotateSession func(ctx context.Context, token channel.LinkToken) bool
-}
-
-// DeliveryDeps is how a held write or a revert reaches the person: the
-// notices, the short links and the receipts of what the person signed.
-type DeliveryDeps struct {
-	// Notifier is optional: no notification when nil.
-	Notifier Notifier
-	// Deliverer takes the notice of each answer that holds a write, prepares
-	// a revert or issues a new link on the agent's request, for the
-	// approval.deliver plugins; optional, none when nil.
-	Deliverer LinkDeliverer
-	// Links holds the short links' secrets, shared with the pages; a store
-	// of its own when nil.
-	Links *links.Secrets
-	// Relay registers portal short links with the Vault; optional, none
-	// when nil (the Vault is off).
-	Relay LinkRelay
-	// VaultConflict reports whether err is the Vault's answer that another
-	// engine holds a link's token. ErrVaultNotConnected is what a relay
-	// answers when no Vault is connected.
-	VaultConflict        func(err error) bool
-	ErrVaultNotConnected error
-	// Poll is how often a waiting call reads whether the person signed;
-	// DefaultPoll when zero.
-	Poll time.Duration
-	// Receipts is the engine's signing key, which signs the receipt of
-	// every signature the engine relays (CONTRACT.md, Vault channel,
-	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then
-	// carry noReceipt.
-	Receipts ReceiptSigner
 }
 
 // StatusDeps is what the status tool reports beyond the database, all
@@ -273,7 +245,7 @@ type Service struct {
 	// describe is the describe use case.
 	describe *describeCase
 	// delivery is how held actions reach the person.
-	delivery *deliveryCase
+	delivery *linksvc.Service
 	// approval is the held writes use case.
 	approval *approvalCase
 	// revert is the revert use case.
@@ -293,7 +265,7 @@ func NewService(d Deps) *Service {
 		panic("agent: required dependencies missing: " + strings.Join(missing, ", "))
 	}
 	if d.Delivery.Notifier == nil {
-		d.Delivery.Notifier = noNotifier{}
+		d.Delivery.Notifier = linksvc.NoNotifier{}
 	}
 	if d.Write.RLS == nil {
 		d.Write.RLS = noRLS{}
@@ -311,7 +283,7 @@ func NewService(d Deps) *Service {
 		d.Status.Build = buildinfo.Version
 	}
 	if d.Delivery.Relay == nil {
-		d.Delivery.Relay = noRelay{notConnected: d.Delivery.ErrVaultNotConnected}
+		d.Delivery.Relay = linksvc.NoRelay{NotConnected: d.Delivery.ErrVaultNotConnected}
 	}
 	if d.Write.PII == nil {
 		d.Write.PII = noPII{}
@@ -349,12 +321,21 @@ func NewService(d Deps) *Service {
 func (s *Service) wire() {
 	s.status = newStatusKeeper(&s.deps.Core, &s.deps.Status)
 	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.status.updateInfo)
-	s.delivery = newDeliveryCase(&s.deps.Core, &s.deps.Delivery, s.Failure)
+	// approval and delivery read each other: approval is built first and is
+	// given the delivery and revert use cases once they exist.
+	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, nil, nil, liveWrites{&s.deps.Write}, s)
+	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
 	s.revert = newRevertCase(&s.deps.Core, &s.deps.Revert, s.delivery, s.describe, s)
-	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, s.revert, liveWrites{&s.deps.Write}, s)
-	s.delivery.approvals = s.approval
+	s.approval.delivery = s.delivery
+	s.approval.reverts = s.revert
 	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
 	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
+}
+
+// linksCore is the part of the shared settings the delivery use case reads.
+func (s *Service) linksCore() linksvc.Core {
+	c := s.deps.Core
+	return linksvc.Core{Name: c.Name, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors, PagesBase: c.PagesBase, PagesOrigin: c.PagesOrigin}
 }
 
 // missing names the required ports d lacks.

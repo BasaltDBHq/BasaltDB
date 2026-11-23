@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
@@ -298,8 +300,8 @@ func TestDeliveryReachesEngineKeptEntries(t *testing.T) {
 	timing, tries := fastFeed, fastDeliver
 	r := f.runWith(os.Geteuid(), nil, func(o *Options) { o.stateDir, o.feedTiming, o.deliverTiming = f.state, &timing, &tries })
 	res := r.addWith(notifyHooks, "product_b")
-	notice := agent.LinkNotice{
-		Kind: agent.NoticeApprovalRequested, ApprovalID: uuid.MustParse(testApproval), Headline: "Update 27 rows in public·leads",
+	notice := linksvc.LinkNotice{
+		Kind: linksvc.NoticeApprovalRequested, ApprovalID: uuid.MustParse(testApproval), Headline: "Update 27 rows in public·leads",
 		ExpiresAt: time.Now().Add(time.Hour), Link: localShort,
 	}
 	// Not approved yet: not served, so nothing is sent or counted.

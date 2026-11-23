@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -40,11 +42,11 @@ type stubAgent struct {
 	err     error
 	relayed []approval.Response
 	// revealed are the reveal requests the agent received.
-	revealed []agent.RevealRequest
+	revealed []linksvc.RevealRequest
 	secrets  *links.Secrets
 	origin   string
 	// receipt is what RelayApproval returns.
-	receipt agent.Receipt
+	receipt linksvc.Receipt
 }
 
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
@@ -55,36 +57,36 @@ func (a *stubAgent) PageFailure(err error) *toolresult.ToolError {
 
 func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
 	if id != a.known {
-		return approval.Request{}, agent.ErrNotThisAgent
+		return approval.Request{}, linksvc.ErrNotThisAgent
 	}
 	return approval.Request{ApprovalID: id, Binding: "{}", Lines: []string{}}, a.err
 }
 
-func (a *stubAgent) RelayApproval(_ context.Context, r approval.Response) (agent.Receipt, error) {
+func (a *stubAgent) RelayApproval(_ context.Context, r approval.Response) (linksvc.Receipt, error) {
 	if r.ApprovalID != a.known {
-		return agent.Receipt{}, agent.ErrNotThisAgent
+		return linksvc.Receipt{}, linksvc.ErrNotThisAgent
 	}
 	a.relayed = append(a.relayed, r)
 	return a.receipt, a.err
 }
 
 func (a *stubAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
-	return revert.Request{}, agent.ErrNotThisAgent
+	return revert.Request{}, linksvc.ErrNotThisAgent
 }
 
 func (a *stubAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
-	return agent.ScopeResponse{}, agent.ErrNotThisAgent
+	return agent.ScopeResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *stubAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
 func (a *stubAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
-	return agent.RejectResponse{}, agent.ErrNotThisAgent
+	return agent.RejectResponse{}, linksvc.ErrNotThisAgent
 }
 
-func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, _ string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, _ string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	if id != a.known {
-		return approval.RevealAnswer{}, agent.ErrNotThisAgent
+		return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 	}
 	if a.err != nil {
 		return approval.RevealAnswer{}, a.err
@@ -93,12 +95,12 @@ func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, _ string, in
 	return approval.RevealAnswer{Rows: []approval.RevealedRow{{Line: 1, Row: `[{"id": 9}, {"id": 9}, null]`}}}, nil
 }
 
-func (a *stubAgent) RevealRevert(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
-	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+func (a *stubAgent) RevealRevert(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *stubAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, agent.Receipt, error) {
-	return action.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
+func (a *stubAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+	return action.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
 }
 
 // site is the pages behind the real listener policy on a loopback port, as
@@ -272,7 +274,7 @@ func TestPagesRelayChecks(t *testing.T) {
 	// The page's own post: forwarded to localhost, the browser's Origin
 	// is http://localhost:<port>, the page origin.
 	// The answer carries the engine's receipt of the signature.
-	a.receipt = agent.Receipt{Token: "basalt-receipt.1.cA.cw", Line: "Approved: ..."}
+	a.receipt = linksvc.Receipt{Token: "basalt-receipt.1.cA.cw", Line: "Approved: ..."}
 	status, out = s.do(t, http.MethodPost, path, host, s.origin, "application/json", body, secret)
 	require.Equal(t, http.StatusOK, status, out)
 	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED","receipt":"basalt-receipt.1.cA.cw"}`, id), out)
@@ -280,7 +282,7 @@ func TestPagesRelayChecks(t *testing.T) {
 
 	// Without a usable engine key the approval still goes through, and the
 	// answer says why there is no receipt.
-	a.receipt = agent.Receipt{Missing: agent.NoReceiptKeyError, Line: "No receipt: ..."}
+	a.receipt = linksvc.Receipt{Missing: linksvc.NoReceiptKeyError, Line: "No receipt: ..."}
 	status, out = s.do(t, http.MethodPost, path, host, s.origin, "application/json", body, secret)
 	require.Equal(t, http.StatusOK, status, out)
 	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED","noReceipt":"KEY_ERROR"}`, id), out)

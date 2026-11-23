@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
@@ -139,7 +141,7 @@ func caseNotice(url string) toolresult.ApprovalNotice {
 		ApprovalID: caseApproval, ExpiresAt: "2026-11-12T10:00:00Z", Rows: 3,
 		Headline: "Delete 3 rows in public.leads", ApprovalURL: url,
 		PersonMessage: "Held for your approval: Delete 3 rows in public.leads.\nApprove it with your passkey here:\n\n" + url + "\n\nExpires 2026-11-12 10:00 UTC.",
-		Links:         []toolresult.Link{{Label: labelApprove, URL: url}},
+		Links:         []toolresult.Link{{Label: linksvc.LabelApprove, URL: url}},
 	}
 }
 
@@ -147,7 +149,7 @@ const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AA
 
 func held(reason string, url string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := HeldAnswer{ApprovalNotice: caseNotice(url), reason: reason}
+		n := linksvc.HeldAnswer{ApprovalNotice: caseNotice(url), Reason: reason}
 		if reason == guidance.ReasonWaitEnded {
 			return approvalStillPendingError(n)
 		}
@@ -157,7 +159,7 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := HeldAnswer{ApprovalNotice: caseNotice(caseShortLink), longURL: caseShortLink, pick: HandOver{URL: caseShortLink, Kind: linkLong}}
+		n := linksvc.HeldAnswer{ApprovalNotice: caseNotice(caseShortLink), LongURL: caseShortLink, Pick: linksvc.HandOver{URL: caseShortLink, Kind: linksvc.LinkLong}}
 		return s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
@@ -184,13 +186,13 @@ var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascade
 
 // tooLargeNotice is the notice of a held write whose request no link this
 // engine has can carry: no local pages, no Vault.
-func tooLargeNotice(t *testing.T, s *Service, issue bool) HeldAnswer {
+func tooLargeNotice(t *testing.T, s *Service, issue bool) linksvc.HeldAnswer {
 	t.Helper()
-	s.deps.Core.PagesOrigin = ""
+	s = serviceWith(s, withoutLocalPages)
 	if p, _ := s.deps.Core.Store.(parts); p.approvalStore == nil {
 		setApprovals(&s.deps, catalogApprovals{})
 	}
-	req := SizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
+	req := linksvc.SizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
 	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
 		time.Now().Add(time.Hour), issue)
 	require.NoError(t, err)
@@ -262,8 +264,8 @@ func catalogCases() map[string]catalogCase {
 			},
 		},
 		caseKey("APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", ""): {"write", writeArgs0, func(t *testing.T, s *Service) error {
-			n := tooLargeNotice(t, s, issueLink)
-			require.Equal(t, ReasonRequestTooLarge, n.reason)
+			n := tooLargeNotice(t, s, linksvc.IssueLink)
+			require.Equal(t, linksvc.ReasonRequestTooLarge, n.Reason)
 			return approvalError(n, "")
 		}},
 		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(guidance.ReasonHeld, caseShortLink)},
@@ -352,10 +354,10 @@ func catalogCases() map[string]catalogCase {
 		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK", Message: "no such link"})},
 		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
 		caseKey("APPROVAL_INVALID", "REVEAL_REFUSED", ""): {"approval_page", nil, func(*testing.T, *Service) error {
-			return RevealRefused(guidance.CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+			return linksvc.RevealRefused(guidance.CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
 		}},
 		caseKey("REVERT_INVALID", "REVEAL_REFUSED", ""): {"revert_page", nil, func(*testing.T, *Service) error {
-			return RevealRefused(guidance.CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+			return linksvc.RevealRefused(guidance.CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
 		}},
 		caseKey("NOT_FOUND", "", "describe"): {
 			"describe",
@@ -457,13 +459,25 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 
 // serviceFor builds the service the cases run on: configPath "" is the
 // platform default config.
-func serviceFor(t *testing.T, goos, configPath string) *Service {
+func serviceFor(t *testing.T, goos, configPath string, opts ...func(*Deps)) *Service {
 	t.Helper()
-	return operatedService(t, goos, configPath, "")
+	return operatedService(t, goos, configPath, "", opts...)
 }
 
+// serviceWith is a service over s's dependencies after edit changed them. The
+// use cases copy what they read of the shared settings when they are built, so
+// a test that needs other settings builds its service again.
+func serviceWith(s *Service, edit func(*Deps)) *Service {
+	d := s.deps
+	edit(&d)
+	return NewService(d)
+}
+
+// withoutLocalPages is an engine that serves no local pages.
+func withoutLocalPages(d *Deps) { d.Core.PagesOrigin = "" }
+
 // operatedService is serviceFor on an engine whose operatedBy is operatedBy.
-func operatedService(t *testing.T, goos, configPath, operatedBy string) *Service {
+func operatedService(t *testing.T, goos, configPath, operatedBy string, opts ...func(*Deps)) *Service {
 	t.Helper()
 	cmds, err := NewCommands("bot", configPath, goos, testManager())
 	require.NoError(t, err)
@@ -472,6 +486,9 @@ func operatedService(t *testing.T, goos, configPath, operatedBy string) *Service
 	d.Status.OperatedBy = operatedBy
 	setApprovals(&d, catalogApprovals{})
 	setReverts(&d, catalogReverts{})
+	for _, opt := range opts {
+		opt(&d)
+	}
 	return NewService(d)
 }
 

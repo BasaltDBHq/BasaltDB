@@ -11,12 +11,13 @@ import (
 	"sync"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The numbers of approval.deliver (CONTRACT.md, Notifier messages, Limits
@@ -109,7 +110,7 @@ type madeNotice struct {
 	id    uuid.UUID
 	at    time.Time
 	agent string
-	n     agent.LinkNotice
+	n     linksvc.LinkNotice
 }
 
 // event is the notice's CloudEvent for the database of install id install,
@@ -124,11 +125,11 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 	}
 	var typ string
 	switch n.Kind {
-	case agent.NoticeApprovalRequested:
+	case linksvc.NoticeApprovalRequested:
 		typ = noticeTypeApproval
-	case agent.NoticeRevertRequested:
+	case linksvc.NoticeRevertRequested:
 		typ = noticeTypeRevert
-	case agent.NoticeLinkReplaced:
+	case linksvc.NoticeLinkReplaced:
 		typ = noticeTypeReplaced
 	default:
 		return nil, errors.New("plugin: a notice of an unknown kind")
@@ -208,7 +209,7 @@ type agentDeliverer struct {
 
 // forAgent is the agent.LinkDeliverer of the agent named name in
 // engine.json.
-func (d *pluginDelivery) forAgent(name string) agent.LinkDeliverer {
+func (d *pluginDelivery) forAgent(name string) linksvc.LinkDeliverer {
 	return agentDeliverer{d: d, agent: name}
 }
 
@@ -217,7 +218,7 @@ func (d *pluginDelivery) forAgent(name string) agent.LinkDeliverer {
 // only stamps it and puts it in a buffer: no lock, no read, no call, so it
 // returns at once whatever the plugins and the database do. A full buffer
 // drops the notice; the agent's answer has the link all the same.
-func (a agentDeliverer) DeliverLink(n agent.LinkNotice) {
+func (a agentDeliverer) DeliverLink(n linksvc.LinkNotice) {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return

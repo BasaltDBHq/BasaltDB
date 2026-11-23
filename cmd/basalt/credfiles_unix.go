@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
@@ -67,7 +68,7 @@ type rootConfigDir struct {
 // directory dir: dir's, or, when it does not exist yet, that of the
 // nearest directory above it that does. Read once, before either
 // directory is made.
-func rootTrustedOwner(dir string) (int, error) { return existingOwner(dir) }
+func rootTrustedOwner(dir string) (int, error) { return cli.ExistingOwner(dir) }
 
 // openRootConfigDir opens dir, the config directory, as root, making it
 // when missing.
@@ -90,7 +91,7 @@ func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (
 	// engine.json goes to the config directory's owner (the engine's user
 	// in service mode), as the files in agents/ do, so the engine can read
 	// it; never to root.
-	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return checkConfigFile(f, d.trusted) }, credentialOwner(dirUID), s, a)
+	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return cli.CheckConfigFile(f, d.trusted) }, credentialOwner(dirUID), s, a)
 }
 
 func (d *rootConfigDir) close() { _ = d.dir.Close() }
@@ -221,26 +222,6 @@ func (r rootCredFiles) ownedBy(uid uint32) (bool, string) {
 		return false, "root"
 	}
 	return false, fmt.Sprintf("root or uid %d (the owner of %s)", r.owner, r.dir.Path())
-}
-
-// existingOwner is the owner of path or, when it does not exist, of the
-// nearest directory above it that does, not following a link.
-func existingOwner(path string) (int, error) {
-	for {
-		fi, err := os.Lstat(path)
-		if errors.Is(err, fs.ErrNotExist) && filepath.Dir(path) != path {
-			path = filepath.Dir(path)
-			continue
-		}
-		if err != nil {
-			return 0, err
-		}
-		st, ok := fi.Sys().(*syscall.Stat_t)
-		if !ok {
-			return 0, errors.New("cannot read the directory's owner")
-		}
-		return int(st.Uid), nil
-	}
 }
 
 // name is path's file name, refusing a path outside the opened directory.

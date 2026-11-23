@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"time"
 
@@ -77,12 +76,12 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 // directory for every other command.
 func newRecorder(command string) (app.CrashRecorder, []string) {
 	rec := app.CrashRecorder{Version: buildinfo.Version, Scrub: app.CrashOSScrubber(), Now: time.Now}
-	user, state := userCrashDir(), filepath.Join(config.DefaultStateDir(goosNow()), app.CrashDirName)
+	user, state := userCrashDir(), filepath.Join(config.DefaultStateDir(cli.GoosNow()), app.CrashDirName)
 	dirs := []string{user, state}
 	if command == "engine" {
 		dirs = []string{state, user}
 	}
-	return rec, nonEmpty(dirs)
+	return rec, cli.NonEmpty(dirs)
 }
 
 func userCrashDir() string {
@@ -92,15 +91,3 @@ func userCrashDir() string {
 	}
 	return filepath.Join(base, perUserDirName, app.CrashDirName)
 }
-
-func nonEmpty(in []string) []string {
-	var out []string
-	for _, s := range in {
-		if s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func goosNow() string { return runtime.GOOS }

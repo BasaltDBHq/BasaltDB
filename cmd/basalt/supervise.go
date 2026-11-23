@@ -155,7 +155,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 	o := superviseOptions{
 		firstStartedBy: startedBy,
 		start:          childStarter(startedFrom, configPath, lockPath, stateDir, io, log),
-		sleep:          sleepCtx,
+		sleep:          cli.SleepCtx,
 		now:            time.Now,
 		log:            log,
 		lastStop:       func(reason string) { writeLastStop(stateDir, reason, configPath, time.Now(), log) },
@@ -179,17 +179,6 @@ func superviseConfig(euid int, configPath string) (engineConfig, error) {
 }
 
 const privateDirMode = 0o700
-
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
-	}
-}
 
 // superviseBinaryPath is the path the supervisor was started from: a
 // crash restart resolves it again, so a new file at the same path is run
@@ -253,7 +242,7 @@ func writeLastStop(stateDir, reason, configPath string, at time.Time, log *slog.
 		err = os.MkdirAll(stateDir, privateDirMode)
 	}
 	if err == nil {
-		err = writeFileAtomic(filepath.Join(stateDir, lastStopFile), raw)
+		err = cli.WriteFileAtomic(filepath.Join(stateDir, lastStopFile), raw)
 	}
 	if err != nil {
 		log.Warn("could not record why the engine stopped", "err", err)
@@ -266,34 +255,13 @@ func clearLastStop(stateDir string, log *slog.Logger) {
 	}
 }
 
-func writeFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, config.FileMode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
 // anotherEngineRuns is true when the engine lock is held at every one of a
 // few looks. A real engine holds it all the time; a probe by someone else
 // (basalt status, a starting basalt mcp) holds it for a moment and reads as
 // a holder, so one look that finds it free means no engine runs.
 func anotherEngineRuns(lockPath string) bool {
-	return heldAtEveryLook(func() bool {
+	return cli.HeldAtEveryLook(func() bool {
 		_, up, _ := pidlock.Running(lockPath)
 		return up
 	}, time.Sleep)
-}
-
-func heldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
-	const looks, gap = 3, 70 * time.Millisecond
-	for i := range looks {
-		if !held() {
-			return false
-		}
-		if i < looks-1 {
-			sleep(gap)
-		}
-	}
-	return true
 }

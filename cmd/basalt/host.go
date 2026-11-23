@@ -164,7 +164,7 @@ func (appSetupHost) TrustProfileFor(configPath, host string) *trustprofile.Profi
 type osHost struct{}
 
 func (osHost) Euid() int                      { return os.Geteuid() }
-func (osHost) Executable() (string, error)    { return shimExecutable() }
+func (osHost) Executable() (string, error)    { return cli.ShimExecutable() }
 func (osHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
 func (osHost) LookPath(name string) (string, error) {
 	return exec.LookPath(name)

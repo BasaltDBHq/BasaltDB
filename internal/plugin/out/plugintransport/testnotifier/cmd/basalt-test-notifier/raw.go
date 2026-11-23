@@ -14,7 +14,7 @@ import (
 
 	basaltplugin "github.com/basaltdbhq/basalt-plugin-go"
 
-	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
+	tn "github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/testnotifier"
 )
 
 // serveRaw speaks JSON-RPC without the SDK, for the modes whose answers the

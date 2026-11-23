@@ -49,7 +49,7 @@ import (
 )
 
 // Package is the command's import path, for go build.
-const Package = "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier/cmd/basalt-test-notifier"
+const Package = "github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/testnotifier/cmd/basalt-test-notifier"
 
 // The plugin's identity, as its manifest and its initialize answer say.
 const (

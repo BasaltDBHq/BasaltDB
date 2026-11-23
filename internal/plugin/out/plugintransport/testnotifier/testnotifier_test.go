@@ -15,14 +15,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
-	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/adaptertest"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/connect"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/jsonrpc"
+	tn "github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/testnotifier"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 

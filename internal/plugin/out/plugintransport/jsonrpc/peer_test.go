@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/adaptertest"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/adaptertest"
 )
 
 // The test binary doubles as the plugin: TestMain runs peerMain when the

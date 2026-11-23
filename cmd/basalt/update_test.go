@@ -56,7 +56,7 @@ func writeUserConfig(t *testing.T, h *fakeHost, body string, mode os.FileMode) {
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
 	}
-	dir := filepath.Join(h.configDir, perUserDirName)
+	dir := filepath.Join(h.configDir, config.UserDirName)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	path := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))

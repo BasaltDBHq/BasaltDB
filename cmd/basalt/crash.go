@@ -89,5 +89,5 @@ func userCrashDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(base, perUserDirName, app.CrashDirName)
+	return filepath.Join(base, config.UserDirName, app.CrashDirName)
 }

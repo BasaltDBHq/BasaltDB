@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -39,7 +40,7 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 
 	base, err := os.UserConfigDir()
 	require.NoError(t, err)
-	reports := crash.List(filepath.Join(base, perUserDirName, servicespec.CrashDirName))
+	reports := crash.List(filepath.Join(base, config.UserDirName, servicespec.CrashDirName))
 	require.Len(t, reports, 1)
 	require.Contains(t, line, reports[0].ID)
 	text := reports[0].Show()

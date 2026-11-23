@@ -87,7 +87,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h host) int {
 		if *pluginDebug {
 			o.PluginStderr = io.Err
 		}
-		return app.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
+		return app.RunWith(ctx, cfg, enginePath(*configPath), log, o)
 	}
 	// A reload (a connect-only agent's setup changed) serves the config as
 	// it is now.

@@ -23,7 +23,7 @@ func TestEngineFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 		t.Skip("a system engine config is installed on this machine")
 	}
 	h := newFakeHost(t)
-	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	user := filepath.Join(h.configDir, config.UserDirName, "engine.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
 	require.NoError(t, os.WriteFile(user, []byte(`not json`), 0o600))
 	run := func(args ...string) string {
@@ -45,7 +45,7 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 		t.Skip("a system engine config is installed on this machine")
 	}
 	h := newFakeHost(t)
-	dir := filepath.Join(h.configDir, perUserDirName)
+	dir := filepath.Join(h.configDir, config.UserDirName)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	path := filepath.Join(dir, "engine.json")
 	cfg := `{"socketDir": "` + filepath.Join(dir, "run") + `", "operatedBy": "AGENT", "pagesUrl": "https://portal.basaltvault.app", "mode": "SAME_USER",

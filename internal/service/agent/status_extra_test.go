@@ -106,21 +106,19 @@ func TestStatusLeavesAccessOutWhenItCannotBeRead(t *testing.T) {
 
 func TestStatusShowsPluginHealth(t *testing.T) {
 	t.Parallel()
+	want := []guidance.PluginHealth{
+		{Name: "acme-ner", Instance: "client_x", Health: "NOT_READY", Problem: "PLUGIN_UNAVAILABLE"},
+		{Name: "acme-ner", Instance: "default", Health: "READY"},
+	}
 	r, _ := extraStatus(t, func(d *Deps) {
-		d.Status.Plugins = listedPlugins{
-			fakePlugins: samplePluginProblem(ProblemPluginUnavailable),
-			entries:     []PluginEntry{{Name: "acme-ner", Instance: "client_x"}, {Name: "acme-ner", Instance: "default"}},
-		}
+		d.Status.Plugins = fakePlugins{health: map[string][]guidance.PluginHealth{"bot": want}}
 	})
-	require.Equal(t, []guidance.PluginHealth{
-		{Name: "acme-ner", Instance: "client_x", Health: PluginHealthNotReady, Problem: ProblemPluginUnavailable},
-		{Name: "acme-ner", Instance: "default", Health: PluginHealthReady},
-	}, r.Plugins)
+	require.Equal(t, want, r.Plugins)
 }
 
 func TestStatusLeavesPluginsOutWithoutEntries(t *testing.T) {
 	t.Parallel()
-	r, raw := extraStatus(t, func(d *Deps) { d.Status.Plugins = listedPlugins{} })
+	r, raw := extraStatus(t, func(d *Deps) { d.Status.Plugins = fakePlugins{} })
 	require.Nil(t, r.Plugins)
 	require.NotContains(t, raw, `"plugins"`)
 }

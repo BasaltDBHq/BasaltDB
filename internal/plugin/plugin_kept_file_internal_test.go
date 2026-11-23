@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // TestUnusableEntriesFileProblemNamesTheFile: the problem for an entries
@@ -21,8 +19,8 @@ func TestUnusableEntriesFileProblemNamesTheFile(t *testing.T) {
 	r.ep.applyNow(context.Background())
 
 	require.Eventually(t, func() bool {
-		for _, p := range r.ep.PluginProblems("product_a") {
-			if p.Code == agent.ProblemPluginUnavailable && p.Name == "" {
+		for _, p := range r.ep.pluginProblems("product_a") {
+			if p.Code == ProblemPluginUnavailable && p.Name == "" {
 				require.Equal(t, f.s.store.EntriesPath(), p.File)
 				require.False(t, p.EngineKept)
 				return true

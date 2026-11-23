@@ -27,7 +27,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // Hooks of the test plugin's manifest.
@@ -171,15 +170,15 @@ func requireNotWithheld(t *testing.T, ep *Plugins, k pluginmodel.EntryKey, agent
 	t.Helper()
 	require.Contains(t, servedTo(ep, k), agentName)
 	require.Empty(t, ep.unrecordedFor(k, agentName), agentName)
-	for _, pr := range ep.PluginProblems(agentName) {
-		require.Equal(t, agent.ProblemPluginUnavailable, pr.Code, agentName)
+	for _, pr := range ep.pluginProblems(agentName) {
+		require.Equal(t, ProblemPluginUnavailable, pr.Code, agentName)
 		require.Contains(t, pr.Message, "is not ready", agentName)
 	}
 }
 
-func problemFor(t *testing.T, ep *Plugins, agentName string) agent.PluginProblem {
+func problemFor(t *testing.T, ep *Plugins, agentName string) PluginProblem {
 	t.Helper()
-	probs := ep.PluginProblems(agentName)
+	probs := ep.pluginProblems(agentName)
 	require.Len(t, probs, 1, "%+v", probs)
 	return probs[0]
 }
@@ -238,7 +237,7 @@ func TestUnapprovedEntryIsWithheld(t *testing.T) {
 	require.Empty(t, servedTo(ep, p.Key()))
 	require.Empty(t, ep.entries, "an entry no agent is served is not started")
 	prob := problemFor(t, ep, "product_a")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, prob.Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, prob.Code)
 	require.Equal(t, "acme-ner", prob.Name)
 	require.Equal(t, "default", prob.Instance)
 	require.Contains(t, prob.Message, "acme-ner/default")
@@ -250,7 +249,7 @@ func TestUnapprovedEntryIsWithheld(t *testing.T) {
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
 	prob = problemFor(t, ep, "product_a")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, prob.Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, prob.Code)
 	require.Contains(t, prob.Message, "waiting for a person to sign it")
 	require.Contains(t, prob.Message, pending.ExpiresAt.UTC().Format("2006-01-02 15:04"), "the pending approval's expiry")
 
@@ -260,7 +259,7 @@ func TestUnapprovedEntryIsWithheld(t *testing.T) {
 	ep = f.plugins(nil)
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
 	require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING"}, kindsOf(l.events(t, "product_a")), "nothing recorded as served")
 }
 
@@ -281,7 +280,7 @@ func TestExpiredPendingIsReported(t *testing.T) {
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
 	prob := problemFor(t, ep, "product_a")
-	require.Equal(t, agent.ProblemPluginApprovalExpired, prob.Code)
+	require.Equal(t, ProblemPluginApprovalExpired, prob.Code)
 	require.Contains(t, prob.Message, "expired")
 	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs["product_a"].db, guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.Error(t, err, "the signature comes too late")
@@ -340,7 +339,7 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 			l.record(t, f, ep)
 			require.Empty(t, servedTo(ep, p.Key()))
 			prob := problemFor(t, ep, "product_a")
-			require.Equal(t, agent.ProblemPluginApprovalMismatch, prob.Code)
+			require.Equal(t, ProblemPluginApprovalMismatch, prob.Code)
 			require.Contains(t, prob.Message, c.field)
 			require.NotContains(t, prob.Message, c.value, "the mismatch names fields, never a value")
 			require.NotContains(t, kindsOf(l.events(t, "product_a")), "PLUGIN_ENABLED")
@@ -365,13 +364,13 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 		l.record(t, f, ep)
 		require.Empty(t, servedTo(ep, p.Key()))
 		prob := problemFor(t, ep, "product_a")
-		require.Equal(t, agent.ProblemPluginApprovalMismatch, prob.Code)
+		require.Equal(t, ProblemPluginApprovalMismatch, prob.Code)
 		require.Contains(t, prob.Message, "settingsSha256")
 		// The next check finds that approval ended by the PLUGIN_DISABLED,
 		// still names what differs, and writes nothing more.
 		ep = f.plugins(nil)
 		l.record(t, f, ep)
-		require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, ep, "product_a").Code)
+		require.Equal(t, ProblemPluginApprovalMismatch, problemFor(t, ep, "product_a").Code)
 		require.Contains(t, problemFor(t, ep, "product_a").Message, "settingsSha256")
 		rows := l.events(t, "product_a")
 		require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED", "PLUGIN_ENABLED", "PLUGIN_DISABLED"}, kindsOf(rows))
@@ -381,7 +380,7 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 		ep = f.plugins(nil)
 		l.record(t, f, ep)
 		require.Empty(t, servedTo(ep, p.Key()), "the disable ended the approval")
-		require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+		require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
 	})
 }
 
@@ -449,7 +448,7 @@ func TestRemovedAgentKeepsOthers(t *testing.T) {
 	l.record(t, f, ep)
 	require.Equal(t, []string{"product_a"}, servedTo(ep, p.Key()))
 	requireNotWithheld(t, ep, p.Key(), "product_a")
-	require.Empty(t, ep.PluginProblems("client_x"), "no longer listed, so nothing to report")
+	require.Empty(t, ep.pluginProblems("client_x"), "no longer listed, so nothing to report")
 	require.Equal(t, before, kindsOf(l.events(t, "product_a")))
 	cx := kindsOf(l.events(t, "client_x"))
 	require.Equal(t, "PLUGIN_DISABLED", cx[len(cx)-1])
@@ -474,7 +473,7 @@ func TestReenableNeedsNewApproval(t *testing.T) {
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
 	prob := problemFor(t, ep, "product_a")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, prob.Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, prob.Code)
 	require.Contains(t, prob.Message, "turned off")
 	require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED", "PLUGIN_ENABLED", "PLUGIN_DISABLED"}, kindsOf(l.events(t, "product_a")))
 
@@ -501,7 +500,7 @@ func TestAgentOperatedRequiresApprovalAlways(t *testing.T) {
 	ep := f.plugins(nil)
 	l.record(t, f, ep)
 	require.Empty(t, servedTo(ep, p.Key()))
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
 	require.NotContains(t, kindsOf(l.events(t, "product_a")), "PLUGIN_ENABLED")
 
 	l.approve(t, l.person(t), p, "product_a") // signer UNKNOWN: the trust store does not count
@@ -539,7 +538,7 @@ func TestServedPerDatabase(t *testing.T) {
 	l.record(t, f, ep)
 	require.Equal(t, []string{"product_a"}, servedTo(ep, p.Key()))
 	requireNotWithheld(t, ep, p.Key(), "product_a")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "client_x").Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, ep, "client_x").Code)
 }
 
 // An agent's approval of an entry never takes it from, or changes what is
@@ -563,7 +562,7 @@ func TestApprovalOfAnotherAgentLeavesThisOne(t *testing.T) {
 	l.record(t, f, ep)
 	require.Equal(t, []string{"product_a"}, servedTo(ep, p.Key()))
 	requireNotWithheld(t, ep, p.Key(), "product_a")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "client_x").Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, ep, "client_x").Code)
 	cx := kindsOf(l.events(t, "client_x"))
 	require.Equal(t, "PLUGIN_DISABLED", cx[len(cx)-1], "client_x stopped being served")
 
@@ -574,7 +573,7 @@ func TestApprovalOfAnotherAgentLeavesThisOne(t *testing.T) {
 	l.record(t, f, ep)
 	require.Equal(t, []string{"product_a"}, servedTo(ep, p.Key()))
 	requireNotWithheld(t, ep, p.Key(), "product_a")
-	require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, ep, "client_x").Code)
+	require.Equal(t, ProblemPluginApprovalMismatch, problemFor(t, ep, "client_x").Code)
 	require.Equal(t, before, l.events(t, "product_a"), "nothing new in product_a's ledger")
 }
 
@@ -597,12 +596,12 @@ func TestEntryWithoutApprovalUnchanged(t *testing.T) {
 	require.Equal(t, []string{"product_a"}, servedTo(ep, signed.Key()))
 	require.Empty(t, servedTo(ep, unsigned.Key()))
 	var unsignedCode string
-	for _, pr := range ep.PluginProblems("product_a") {
+	for _, pr := range ep.pluginProblems("product_a") {
 		if pr.Instance == "client_x" {
 			unsignedCode = pr.Code
 		}
 	}
-	require.Equal(t, agent.ProblemPluginNotTrusted, unsignedCode, "unsigned and not required: refused as before")
+	require.Equal(t, ProblemPluginNotTrusted, unsignedCode, "unsigned and not required: refused as before")
 	rows := l.events(t, "product_a")
 	require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(rows))
 	require.NotContains(t, rows[3].Detail, "signer\"", "no signer for an entry that does not require approval")
@@ -645,7 +644,7 @@ func TestApprovalsUnreadableWriteNothing(t *testing.T) {
 			l.record(t, f, ep)
 			require.Empty(t, servedTo(ep, p.Key()))
 			prob := problemFor(t, ep, "product_a")
-			require.Equal(t, agent.ProblemPluginUnavailable, prob.Code)
+			require.Equal(t, ProblemPluginUnavailable, prob.Code)
 			require.Contains(t, prob.Message, c.want)
 			if name == "guard older than 5" {
 				require.Contains(t, prob.Message, "basalt init")
@@ -678,7 +677,7 @@ func TestTrustedSignerWithoutApprovalIsWithheld(t *testing.T) {
 	}
 	require.Empty(t, servedTo(ep, p.Key()))
 	require.Empty(t, ep.entries)
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+	require.Equal(t, ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
 	require.NotContains(t, kindsOf(l.events(t, "product_a")), "PLUGIN_ENABLED")
 }
 
@@ -759,7 +758,7 @@ func TestRequiredEntryDeniedWithoutALedger(t *testing.T) {
 	require.Empty(t, servedTo(ep, p.Key()))
 	require.Empty(t, ep.entries)
 	for _, a := range []string{"product_a", "client_x"} {
-		require.Equal(t, agent.ProblemPluginUnavailable, problemFor(t, ep, a).Code, a)
+		require.Equal(t, ProblemPluginUnavailable, problemFor(t, ep, a).Code, a)
 	}
 }
 
@@ -785,5 +784,5 @@ func TestWithheldEntryBlocksNoAgentCall(t *testing.T) {
 	require.NoError(t, err)
 	st, err := svc.Status(ctx)
 	require.NoError(t, err)
-	require.Contains(t, problemCodes(st), agent.ProblemPluginAwaitingApproval)
+	require.Contains(t, problemCodes(st), ProblemPluginAwaitingApproval)
 }

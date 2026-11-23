@@ -20,7 +20,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // Options are how the engine reaches its plugins.
@@ -448,31 +447,31 @@ func (ep *Plugins) credentialFile(k pluginmodel.EntryKey) string {
 	return ep.configuredEntry(k).CredentialFile()
 }
 
-// PluginProblems implements agent.PluginReporter: for each enabled entry
+// pluginProblems lists the plugin problems of the agent name: for each enabled entry
 // that lists name, PLUGIN_NOT_TRUSTED when it failed verification, else
 // PLUGIN_UNAVAILABLE when it is not READY. Messages name the entry and the
 // failed check or failure class only, never another agent. While engine.json
 // holds plugins the engine cannot read, every agent also gets
 // PLUGIN_CONFIG_INVALID.
-func (ep *Plugins) PluginProblems(name string) []agent.PluginProblem {
-	var out []agent.PluginProblem
+func (ep *Plugins) pluginProblems(name string) []PluginProblem {
+	var out []PluginProblem
 	ep.mu.Lock()
 	configured, configProblem := slices.Clone(ep.configured), ep.configProblem
 	keptProblem, clashes := ep.keptProblem, slices.Clone(ep.clashes)
 	ep.mu.Unlock()
 	if configProblem != "" {
-		out = append(out, agent.PluginProblem{Code: agent.ProblemPluginConfigInvalid, Message: configProblem})
+		out = append(out, PluginProblem{Code: ProblemPluginConfigInvalid, Message: configProblem})
 	}
 	if keptProblem != "" {
-		out = append(out, agent.PluginProblem{
-			Code: agent.ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem, File: ep.kept.EntriesPath(),
+		out = append(out, PluginProblem{
+			Code: ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem, File: ep.kept.EntriesPath(),
 		})
 	}
 	for _, p := range clashes {
 		if slices.Contains(p.Agents, name) {
 			k := p.Key()
-			out = append(out, agent.PluginProblem{
-				Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
+			out = append(out, PluginProblem{
+				Code: ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
 				Message: "the engine-kept plugin " + k.String() + " is not served: engine.json holds an entry of the same name and instance, " +
 					"added by hand, and that one is served; remove one of them (the agent removes the engine-kept one with request_plugin, or the person edits engine.json)",
 			})
@@ -483,14 +482,14 @@ func (ep *Plugins) PluginProblems(name string) []agent.PluginProblem {
 			continue
 		}
 		k := p.Key()
-		prob := agent.PluginProblem{Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: ep.isKept(k)}
+		prob := PluginProblem{Code: ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: ep.isKept(k)}
 		ep.mu.Lock()
 		notTrusted, refused, dialWhy := ep.notTrusted[k], ep.refused[k], ep.dialWhy[k]
 		ep.mu.Unlock()
 		withheld := ep.unrecordedFor(k, name)
 		switch {
 		case notTrusted != nil:
-			prob.Code, prob.Message = agent.ProblemPluginNotTrusted, NotTrustedMessage(k, notTrusted, name)
+			prob.Code, prob.Message = ProblemPluginNotTrusted, NotTrustedMessage(k, notTrusted, name)
 		case refused != "":
 			prob.Message = "plugin " + k.String() + " was not started: " + refused
 		case withheld.why != "":
@@ -512,8 +511,8 @@ func (ep *Plugins) PluginProblems(name string) []agent.PluginProblem {
 		out = append(out, prob)
 	}
 	for _, dn := range ep.delivery.dropped(name) {
-		out = append(out, agent.PluginProblem{
-			Code: agent.ProblemPluginNoticesDropped, Name: dn.key.Name, Instance: dn.key.Instance, EngineKept: ep.isKept(dn.key),
+		out = append(out, PluginProblem{
+			Code: ProblemPluginNoticesDropped, Name: dn.key.Name, Instance: dn.key.Instance, EngineKept: ep.isKept(dn.key),
 			Message: fmt.Sprintf("plugin %s did not get %s of this agent in the last 24 hours: the engine dropped them "+
 				"(the plugin did not take them within about a minute, they expired first, or too many were waiting). "+
 				"The agent's answers carried the links all the same", dn.key, noticeCount(dn.count)),
@@ -522,17 +521,17 @@ func (ep *Plugins) PluginProblems(name string) []agent.PluginProblem {
 	return out
 }
 
-// PluginEntries implements agent.PluginLister: the enabled entries that list
+// pluginEntries lists the enabled entries that list
 // name, for status.plugins.
-func (ep *Plugins) PluginEntries(name string) []agent.PluginEntry {
+func (ep *Plugins) pluginEntries(name string) []PluginEntry {
 	ep.mu.Lock()
 	configured := slices.Clone(ep.configured)
 	ep.mu.Unlock()
-	var out []agent.PluginEntry
+	var out []PluginEntry
 	for _, p := range configured {
 		if slices.Contains(p.Agents, name) {
 			k := p.Key()
-			out = append(out, agent.PluginEntry{Name: k.Name, Instance: k.Instance})
+			out = append(out, PluginEntry{Name: k.Name, Instance: k.Instance})
 		}
 	}
 	return out

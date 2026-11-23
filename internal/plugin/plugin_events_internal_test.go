@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // pluginLedgers is a guard with the fixture's two agents, each with its own
@@ -241,7 +240,7 @@ func TestHeldEntryKeepsItsRecord(t *testing.T) {
 	l.record(t, f, f.plugins(nil))
 	require.NoError(t, os.WriteFile(f.installedFile(p), []byte("changed"), 0o755))
 	ep := f.plugins(nil)
-	require.Equal(t, []string{agent.ProblemPluginNotTrusted}, codes(ep.PluginProblems("product_a")))
+	require.Equal(t, []string{ProblemPluginNotTrusted}, codes(ep.pluginProblems("product_a")))
 	for range 2 {
 		l.record(t, f, ep)
 	}
@@ -263,7 +262,7 @@ func TestHeldEntryOfRemovedKeyGetsDisabled(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(f.trust.Dir(), keys[0]+".pem")))
 
 	ep := f.plugins(nil)
-	require.Equal(t, []string{agent.ProblemPluginNotTrusted}, codes(ep.PluginProblems("product_a")), "held: its key is gone")
+	require.Equal(t, []string{ProblemPluginNotTrusted}, codes(ep.pluginProblems("product_a")), "held: its key is gone")
 	for range 2 {
 		l.record(t, f, ep)
 	}
@@ -295,9 +294,9 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 
 	runPlugins(t, ep)
 	waitReady(t, ep, p.Key())
-	require.Empty(t, ep.PluginProblems("product_a"))
-	probs := ep.PluginProblems("client_x")
-	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	require.Empty(t, ep.pluginProblems("product_a"))
+	probs := ep.pluginProblems("client_x")
+	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "the guard refused its plugin record")
 	require.NotContains(t, probs[0].Message, "product_a")
 	err := ep.host.Call(context.Background(), p.Key(), []string{"client_x"}, "detect", nil, nil)
@@ -309,8 +308,8 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	ep = solo.plugins(nil)
 	RecordEvents(context.Background(), solo.cfg, solo.configPath, ep, map[string]AgentLedger{}, slog.New(slog.DiscardHandler))
 	require.Empty(t, ep.entries)
-	probs = ep.PluginProblems("client_x")
-	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	probs = ep.pluginProblems("client_x")
+	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "database is reachable")
 	require.NotEqual(t, StateReady, ep.host.State(q.Key()))
 
@@ -416,8 +415,8 @@ func TestOldGuardWithholdsWithTheUpgradeStep(t *testing.T) {
 	l.d.Exec(t, `DROP FUNCTION basalt_meta.record_plugin_event(text, jsonb)`)
 	ep := f.plugins(nil)
 	l.record(t, f, ep)
-	probs := ep.PluginProblems("product_a")
-	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	probs := ep.pluginProblems("product_a")
+	require.Equal(t, []string{ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "basalt init")
 	require.Empty(t, ep.entries)
 }
@@ -556,8 +555,8 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 	require.Empty(t, ep.unrecordedFor(refused.Key(), "client_x"), "client_x recorded the key: served")
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "client_x")))
 	var refusedProbs int
-	for _, p := range ep.PluginProblems("product_a") {
-		require.Equal(t, agent.ProblemPluginUnavailable, p.Code)
+	for _, p := range ep.pluginProblems("product_a") {
+		require.Equal(t, ProblemPluginUnavailable, p.Code)
 		if strings.Contains(p.Message, "the guard refused its plugin record") {
 			refusedProbs++
 		}

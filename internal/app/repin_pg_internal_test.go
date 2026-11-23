@@ -157,7 +157,7 @@ func (f rotationFixture) engineRepin(t *testing.T) *handoff.Repin {
 		Prober: handoff.Prober{
 			Resolver: staticResolver{netip.MustParseAddr("8.8.8.8")},
 			Dial:     f.newDial,
-			Profiles: trustdir.Set(f.cfg), ConnConfig: pgdial.ConnConfigTrusting,
+			Profiles: trustdir.Set(f.cfg), Login: pgdial.Login,
 		},
 		Files: memoryPending{RepinSetupFiles: handoff.RepinSetupFiles{SetupFiles: handoff.SetupFiles{ConfigPath: f.cfg, Agent: "bot", Pins: trustPins{}}}, setup: f.setup},
 		Log:   slog.New(slog.DiscardHandler), Now: time.Now,

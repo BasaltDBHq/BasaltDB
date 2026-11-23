@@ -1,4 +1,4 @@
-package agentkit
+package guidance
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -24,40 +23,40 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 	var (
 		te *toolresult.ToolError
 		re *action.RefusalError
-		ae *guidance.ArgumentError
+		ae *ArgumentError
 		pe *action.StoreError
-		se *guidance.SetupError
+		se *SetupError
 		dn *DatabaseNotConfirmedError
 	)
 	switch {
 	case errors.As(err, &te):
 		return te
 	case errors.As(err, &re):
-		return &toolresult.ToolError{Code: guidance.CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
+		return &toolresult.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
 	case errors.Is(err, action.ErrRowLimit):
-		return &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
+		return &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
 	case m.isRowTooLarge(err):
-		return &toolresult.ToolError{Code: guidance.CodeQueryTimeout, Reason: guidance.ReasonRowTooLarge, Message: m.rowTooLargeMessage(err) + rowTooLargeHint}
+		return &toolresult.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowTooLarge, Message: m.rowTooLargeMessage(err) + rowTooLargeHint}
 	case errors.Is(err, budget.ErrSizeLimit):
-		return guidance.SizeLimitError()
+		return SizeLimitError()
 	case errors.As(err, &se):
-		reason := guidance.ReasonSetupPending
+		reason := ReasonSetupPending
 		if se.Expired {
-			reason = guidance.ReasonSetupExpired
+			reason = ReasonSetupExpired
 		}
-		return &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: reason, Message: se.Error()}
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: reason, Message: se.Error()}
 	case errors.As(err, &dn):
-		return &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonDatabaseNotConfirmed, Message: dn.Error()}
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseNotConfirmed, Message: dn.Error()}
 	case errors.As(err, &ae):
-		return &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
-	case guidance.Sentinel(err, m.InvalidParams), guidance.Sentinel(err, m.InvalidIntent):
-		return &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
+		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
+	case Sentinel(err, m.InvalidParams), Sentinel(err, m.InvalidIntent):
+		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
 	case errors.As(err, &pe):
 		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, SQLState: pe.SQLState}
 	case errors.Is(err, action.ErrUnavailable), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		return &toolresult.ToolError{Code: guidance.CodeUnavailable, Reason: guidance.ReasonDatabaseUnreachable, Message: "the database cannot be reached"}
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseUnreachable, Message: "the database cannot be reached"}
 	}
-	return &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
+	return &toolresult.ToolError{Code: CodeInternal, Message: "internal engine error"}
 }
 
 // isRowTooLarge reports whether err is one row over the result budget on
@@ -82,7 +81,7 @@ func (m ErrorMap) rowTooLargeMessage(err error) string {
 // (kept from an earlier page or another list), else no reason.
 func argumentReason(err error) string {
 	if strings.Contains(err.Error(), "invalid cursor") {
-		return guidance.ReasonStaleCursor
+		return ReasonStaleCursor
 	}
 	return ""
 }

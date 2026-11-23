@@ -294,7 +294,7 @@ func notInstalledYet(st guardmodel.Status, err error) bool {
 	}
 	// Only the store's own refusals carry these reasons, so no adapter's error
 	// values are needed to tell them.
-	reason := ErrorMap{}.ToolError(err).Reason
+	reason := guidance.ErrorMap{}.ToolError(err).Reason
 	return reason == guidance.ReasonCredentialRejected || reason == guidance.ReasonGuardMissing
 }
 

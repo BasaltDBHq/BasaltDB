@@ -7,16 +7,14 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 // ErrorMap and DatabaseNotConfirmedError stay in agentkit until the collected
 // address moves to core.
-type (
-	ErrorMap                  = agentkit.ErrorMap
-	DatabaseNotConfirmedError = agentkit.DatabaseNotConfirmedError
-)
-
+// NewCommands returns the commands for agent. configPath is the absolute
+// path the engine was started with ("" when the default); goos picks the
+// default path and the service manager (runtime.GOOS when empty); manager
+// is the service manager's commands.
 // NewCommands returns the commands for agent. configPath is the absolute
 // path the engine was started with ("" when the default); goos picks the
 // default path and the service manager (runtime.GOOS when empty); manager

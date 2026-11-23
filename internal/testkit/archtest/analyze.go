@@ -314,6 +314,9 @@ func analyze(root string, reg *register) (violations, error) {
 				target := strings.TrimPrefix(ip, modulePath+"/")
 				checkLayer(v, rel, layer, target)
 			}
+			if layer == lService {
+				checkServiceImports(v, rel, f)
+			}
 			if rel != appPkg {
 				checkPathRulesInstall(v, rel, f)
 			}
@@ -438,6 +441,21 @@ func bannedImport(p string) bool {
 		return true
 	}
 	return false
+}
+
+// serviceBanned reports whether a service may not import p: a service reaches
+// Postgres and the network through a port, never through the driver itself.
+func serviceBanned(p string) bool {
+	return p == "github.com/jackc/pgx" || strings.HasPrefix(p, "github.com/jackc/pgx/") ||
+		p == "database/sql" || p == "net/http"
+}
+
+func checkServiceImports(v violations, rel string, f *goFile) {
+	for _, s := range f.ast.Imports {
+		if ip := importPath(s); serviceBanned(ip) {
+			v.add(rel, fmt.Sprintf("%s imports %s (a service reaches the database and the network through a port)", f.name, ip))
+		}
+	}
 }
 
 func checkPurity(v violations, reg *register, rel string, f *goFile) {

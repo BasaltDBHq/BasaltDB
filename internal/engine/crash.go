@@ -46,6 +46,9 @@ type Terminal interface {
 	// HeldAtEveryLook is true when held is true at every one of a few looks,
 	// sleep apart.
 	HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool
+	// LoadEngineConfigAs reads the engine config at path for a process with
+	// effective uid euid: as root, the hardened read.
+	LoadEngineConfigAs(euid int, path string) (config.Config, error)
 }
 
 // CrashDirHost is the machine's per-user config directory.

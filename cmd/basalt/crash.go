@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
@@ -66,6 +67,10 @@ func (engineTerminal) WriteFileAtomic(path string, data []byte) error {
 
 func (engineTerminal) HeldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
 	return cli.HeldAtEveryLook(held, sleep)
+}
+
+func (engineTerminal) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
+	return cli.LoadEngineConfigAs(appShell{}, euid, path)
 }
 
 // newRecorder is the crash recorder for this process.

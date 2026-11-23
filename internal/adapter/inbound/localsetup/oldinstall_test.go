@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
@@ -123,13 +123,13 @@ func TestSetupFailedLogsItsCauseWithoutSecrets(t *testing.T) {
 	req := f.request()
 	req.DatabaseURL = adminURL
 	var checked localsetup.CheckAnswer
-	require.Equal(t, http.StatusOK, post(t, h, pages.SetupCheckPath, req, &checked))
+	require.Equal(t, http.StatusOK, post(t, h, pageserver.SetupCheckPath, req, &checked))
 	req.Challenge = checked.Challenge
 	if checked.PasskeyNeeded {
 		req.Passkey = register(t, *checked.Challenge)
 	}
 	var refused struct{ Code, Message string }
-	require.Equal(t, http.StatusConflict, post(t, h, pages.SetupRunPath, req, &refused))
+	require.Equal(t, http.StatusConflict, post(t, h, pageserver.SetupRunPath, req, &refused))
 	require.Equal(t, localsetup.CodeSetupFailed, refused.Code)
 	require.Contains(t, refused.Message, "Postgres error P0001, install script, statement")
 	require.NotContains(t, refused.Message, "attach failed", "the cause stays in the log")

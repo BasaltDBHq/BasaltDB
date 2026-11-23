@@ -1,11 +1,11 @@
-// Package pages serves the approval and revert pages from the engine on a
+// Package pageserver serves the approval and revert pages from the engine on a
 // loopback listener, with a same-origin relay for them (CONTRACT.md, Local
 // pages): a short link /approvals/<id> or /reverts/<id> opens the page, the
 // page reads the request for that id from the engine, and after the
 // person's passkey signs it posts the signature back for the engine to
 // relay with the agent's credential. The relay decides nothing: Postgres
 // verifies the signature.
-package pages
+package pageserver
 
 import (
 	"bytes"

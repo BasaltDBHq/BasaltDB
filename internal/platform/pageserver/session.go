@@ -1,4 +1,4 @@
-package pages
+package pageserver
 
 import (
 	"bytes"

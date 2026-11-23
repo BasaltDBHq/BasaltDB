@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
@@ -29,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -48,7 +48,7 @@ type localPages struct {
 
 func newLocalPages(t *testing.T, env agentEnv) localPages {
 	t.Helper()
-	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler))
+	site := pageserver.New(pageOrigin, slog.New(slog.DiscardHandler))
 	site.MountApprovals(approvalpage.NewApprovalHandlers(site))
 	site.MountReverts(revertpage.NewRevertHandlers(site))
 	site.MountPlugins(pluginpage.NewPluginHandlers(site))

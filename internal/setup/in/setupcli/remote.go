@@ -60,6 +60,19 @@ func IsRemote(args []string) bool {
 	return false
 }
 
+// RunRemote is basalt init --remote: it makes a setup code for an
+// agent-operated engine and prints it. h is what it reaches outside the CLI.
+func RunRemote(c *cli.IO, h Host, args []string) int {
+	res, err := InitRemote(c, h, args)
+	if err != nil {
+		return c.Fail(err)
+	}
+	if err := PrintRemoteResult(c, res); err != nil {
+		return c.Fail(err)
+	}
+	return cli.ExitOK
+}
+
 // InitRemote runs basalt init --remote and returns what it prints.
 func InitRemote(c *cli.IO, h Host, args []string) (setup.RemoteInitResult, error) {
 	f, err := parseInitRemote(c, args)

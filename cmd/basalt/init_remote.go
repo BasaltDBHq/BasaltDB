@@ -456,7 +456,7 @@ func (r *remoteInit) paths() error {
 		r.osUser = r.entry.OSUser
 	}
 	if r.osUser == "" {
-		u, err := invokingUser()
+		u, err := cli.InvokingUser()
 		if err != nil {
 			return err
 		}

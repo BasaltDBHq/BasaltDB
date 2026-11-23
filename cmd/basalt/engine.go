@@ -300,7 +300,7 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, m mcpHost, s
 	// A plugin the agent asks for (request_plugin) is uploaded over a
 	// second connection to the agent's own socket.
 	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path)}
-	if exe, err := shimExecutable(); err == nil {
+	if exe, err := cli.ShimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = m.EngineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
@@ -359,25 +359,6 @@ func engineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, er
 		return agent.EngineDown{}, err
 	}
 	return agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now, ConfigPath: configPath, Host: app.AgentEngineHost()}, nil
-}
-
-// shimExecutable is the path of this binary as a starter runs it: the
-// symlink resolved when it can be (a link in ~/.local/bin to a rebuilt
-// path), else the path as the OS gave it, which the starter then finds gone.
-func shimExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return resolveExecutable(exe), nil
-}
-
-// resolveExecutable is exe with its links resolved, else exe as given.
-func resolveExecutable(exe string) string {
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved
-	}
-	return exe
 }
 
 func shimCommands(name, configPath string, cfg *config.Config) (guidance.Commands, error) {
@@ -486,7 +467,7 @@ func runServiceAt(ctx context.Context, args []string, io stdio, configPath strin
 		fail(io.err, "service", errors.New("--keep-credential and --credential-stdin cannot be used together"))
 		return cli.ExitUsage
 	}
-	bin, err := binaryPath(*binary)
+	bin, err := cli.BinaryPath(*binary)
 	if err != nil {
 		return fail(io.err, "service", err)
 	}
@@ -641,17 +622,6 @@ func waitingForAddress(spec app.OSSpec, name, cred string) bool {
 		}
 	}
 	return false
-}
-
-func binaryPath(flagValue string) (string, error) {
-	if flagValue != "" {
-		return filepath.Abs(flagValue)
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(exe)
 }
 
 // checkServicePersons refuses a service install without a person uid, or

@@ -215,9 +215,9 @@ func TestAnotherEngineNeedsEveryLookHeld(t *testing.T) {
 		return func() bool { v := seq[min(i, len(seq)-1)]; i++; return v }
 	}
 	nap := func(time.Duration) {}
-	require.True(t, heldAtEveryLook(looks(true, true, true), nap))
-	require.False(t, heldAtEveryLook(looks(true, false, true), nap), "a probe that ended is not an engine")
-	require.False(t, heldAtEveryLook(looks(false), nap))
+	require.True(t, cli.HeldAtEveryLook(looks(true, true, true), nap))
+	require.False(t, cli.HeldAtEveryLook(looks(true, false, true), nap), "a probe that ended is not an engine")
+	require.False(t, cli.HeldAtEveryLook(looks(false), nap))
 }
 
 func TestSuperviseGivesUpWhenBinaryIsGone(t *testing.T) {

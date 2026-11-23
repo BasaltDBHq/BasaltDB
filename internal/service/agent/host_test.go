@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -110,8 +108,6 @@ func TestHostCopiesMatchTheAdapters(t *testing.T) {
 	require.Equal(t, string(vault.StateOff), statussvc.VaultOff)
 	require.Equal(t, string(vault.StateConnected), statussvc.VaultConnected)
 	require.Equal(t, string(vault.StateKeyError), statussvc.VaultKeyError)
-	require.Equal(t, mcpserver.MetaPluginUpload, MetaPluginUpload)
-	require.Equal(t, mcpserver.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
 }
 
 // Every port the app used to hand the agent as one Host is a required

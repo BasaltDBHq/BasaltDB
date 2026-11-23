@@ -541,7 +541,8 @@ func unreachable(agentName string, err error) error {
 		"the database of agent %s cannot be used (%s); nothing was written. Run the command again once it answers", agentName, why))
 }
 
-// holdsPluginApprovals reports whether a guard has plugin approvals.
+// holdsPluginApprovals reports whether a guard has plugin approvals: schema
+// version is installed.
 func holdsPluginApprovals(st guardmodel.Status, version int) bool {
 	return st.Installed >= version &&
 		!slices.Contains(st.MissingBreaking, version) &&

@@ -10,12 +10,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"

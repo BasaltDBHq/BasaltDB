@@ -1,4 +1,4 @@
-package portalverify_test
+package status_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
+	"github.com/basaltdbhq/basaltdb/internal/status"
 )
 
 // The files checked come from the embedded filesystem itself, so a file
@@ -25,13 +25,13 @@ func TestVerifyChecksEveryFileOfTheFS(t *testing.T) {
 	srv := httptest.NewServer(http.FileServer(http.FS(embedded)))
 	t.Cleanup(srv.Close)
 
-	r, err := portalverify.Verify(context.Background(), portalverify.Options{Base: srv.URL, Files: embedded})
+	r, err := status.Verify(context.Background(), status.PortalverifyOptions{Base: srv.URL, Files: embedded})
 	require.NoError(t, err)
 	require.True(t, r.OK)
 	require.Equal(t, 3, r.Checked)
 
 	embedded["lib/new.js"] = &fstest.MapFile{Data: []byte("export const n = 2")}
-	r, err = portalverify.Verify(context.Background(), portalverify.Options{Base: srv.URL, Files: embedded})
+	r, err = status.Verify(context.Background(), status.PortalverifyOptions{Base: srv.URL, Files: embedded})
 	require.NoError(t, err)
 	require.Equal(t, 4, r.Checked)
 	require.True(t, r.OK, "the new file is served too")
@@ -41,10 +41,10 @@ func TestVerifyChecksEveryFileOfTheFS(t *testing.T) {
 		"approve/index.html": embedded["approve/index.html"], "lib/a.js": embedded["lib/a.js"], "style.css": embedded["style.css"],
 	})))
 	t.Cleanup(srvOld.Close)
-	r, err = portalverify.Verify(context.Background(), portalverify.Options{Base: srvOld.URL, Files: embedded})
+	r, err = status.Verify(context.Background(), status.PortalverifyOptions{Base: srvOld.URL, Files: embedded})
 	require.NoError(t, err)
 	require.False(t, r.OK)
-	require.Contains(t, r.Files, portalverify.File{Path: "lib/new.js", Status: portalverify.StatusMissing})
+	require.Contains(t, r.Files, status.File{Path: "lib/new.js", Status: status.StatusMissing})
 }
 
 // FileHeaders give one page its own policy, at its file's path and at every
@@ -76,16 +76,16 @@ func TestVerifyFileHeaders(t *testing.T) {
 		t.Cleanup(srv.Close)
 		return srv.URL
 	}
-	opts := func(base string) portalverify.Options {
-		return portalverify.Options{
+	opts := func(base string) status.PortalverifyOptions {
+		return status.PortalverifyOptions{
 			Base: base, Files: embedded,
 			Headers:     http.Header{"Content-Security-Policy": {def}},
 			FileHeaders: map[string]http.Header{"connect/index.html": {"Content-Security-Policy": {own}, "Cache-Control": {"no-store"}}},
-			Routes:      []portalverify.Route{{Path: "/connect", File: "connect/index.html"}},
+			Routes:      []status.Route{{Path: "/connect", File: "connect/index.html"}},
 		}
 	}
 
-	r, err := portalverify.Verify(context.Background(), opts(serve(own, "private, no-store")))
+	r, err := status.Verify(context.Background(), opts(serve(own, "private, no-store")))
 	require.NoError(t, err)
 	require.True(t, r.OK, "%+v", r.Files)
 
@@ -94,18 +94,18 @@ func TestVerifyFileHeaders(t *testing.T) {
 		"stored":             {own, "max-age=60", "Cache-Control is"},
 		"no Cache-Control":   {own, "", "Cache-Control is"},
 	} {
-		r, err := portalverify.Verify(context.Background(), opts(serve(c.csp, c.cc)))
+		r, err := status.Verify(context.Background(), opts(serve(c.csp, c.cc)))
 		require.NoError(t, err, name)
 		require.False(t, r.OK, name)
-		got := map[string]portalverify.File{}
+		got := map[string]status.File{}
 		for _, f := range r.Files {
 			got[f.Path] = f
 		}
 		for _, p := range []string{"connect/index.html", "/connect"} {
-			require.Equal(t, portalverify.StatusHeader, got[p].Status, "%s: %s", name, p)
+			require.Equal(t, status.StatusHeader, got[p].Status, "%s: %s", name, p)
 			require.Contains(t, got[p].Detail, c.detail, name)
 		}
-		require.Equal(t, portalverify.StatusOK, got["approve/index.html"].Status, name)
+		require.Equal(t, status.StatusOK, got["approve/index.html"].Status, name)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestValidateURL(t *testing.T) {
 		"http://localhost:9":              "http://localhost:9",
 		"http://[::1]:9":                  "http://[::1]:9",
 	} {
-		got, err := portalverify.ValidateURL(in)
+		got, err := status.ValidateURL(in)
 		require.NoError(t, err, in)
 		require.Equal(t, want, got)
 	}
@@ -126,7 +126,7 @@ func TestValidateURL(t *testing.T) {
 		"", "http://portal.basaltvault.app", "http://127.0.0.1.nip.io", "https://", "ftp://x",
 		"https://a@b.example", "https://b.example/x", "https://b.example?x=1", "https://b.example#f", "javascript:alert(1)",
 	} {
-		_, err := portalverify.ValidateURL(in)
+		_, err := status.ValidateURL(in)
 		require.Error(t, err, in)
 	}
 }
@@ -134,12 +134,12 @@ func TestValidateURL(t *testing.T) {
 func TestParseManifest(t *testing.T) {
 	t.Parallel()
 	h := "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"
-	m, err := portalverify.ParseManifest([]byte(h + "  a.js\r\n" + h + "  b.js\r\n"))
+	m, err := status.ParseManifest([]byte(h + "  a.js\r\n" + h + "  b.js\r\n"))
 	require.NoError(t, err)
 	require.Equal(t, strings.ToLower(h), m["a.js"])
 	require.Len(t, m, 2)
 	for _, bad := range []string{h + " a.js\n", "zz  a.js\n", h + "  a.js\n" + h + "  a.js\n", strings.Repeat("g", 64) + "  a.js\n"} {
-		_, err := portalverify.ParseManifest([]byte(bad))
+		_, err := status.ParseManifest([]byte(bad))
 		require.Error(t, err, bad)
 	}
 }

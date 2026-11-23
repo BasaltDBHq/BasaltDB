@@ -1,9 +1,4 @@
-// Package portalverify compares the files the hosted portal serves with the
-// copy of the pages embedded in the basalt binary (CONTRACT.md, CLI,
-// `basalt portal verify`). It reads over HTTPS (or a loopback test server)
-// and needs no database and no engine. It catches a portal that changed
-// broadly; it cannot catch one that serves a different page to one person.
-package portalverify
+package status
 
 import (
 	"context"
@@ -65,8 +60,8 @@ type Report struct {
 	Manifest  *Manifest `json:"manifest,omitempty"`
 }
 
-// Options configures Verify.
-type Options struct {
+// PortalverifyOptions configures Verify.
+type PortalverifyOptions struct {
 	// Base is the portal origin, without a trailing slash.
 	Base string
 	// Files is the embedded copy; every regular file in it is checked.
@@ -218,7 +213,7 @@ func Embedded(fsys fs.FS) ([]string, error) {
 }
 
 // Verify checks every embedded file against the portal.
-func Verify(ctx context.Context, o Options) (*Report, error) {
+func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 	paths, err := Embedded(o.Files)
 	if err != nil {
 		return nil, err
@@ -293,7 +288,7 @@ func get(ctx context.Context, c *http.Client, base, urlPath string) (answer, err
 }
 
 // headersFor is the header set the embedded file p must be served with.
-func (o Options) headersFor(p string) http.Header {
+func (o PortalverifyOptions) headersFor(p string) http.Header {
 	if h, ok := o.FileHeaders[p]; ok {
 		return h
 	}
@@ -302,7 +297,7 @@ func (o Options) headersFor(p string) http.Header {
 
 // checkFile fetches urlPath and compares it with want and its headers with
 // hdr; p names the result.
-func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string, want []byte, hdr http.Header) File {
+func checkFile(ctx context.Context, c *http.Client, o PortalverifyOptions, p, urlPath string, want []byte, hdr http.Header) File {
 	a, err := get(ctx, c, o.Base, urlPath)
 	if err != nil {
 		return File{Path: p, Status: StatusError, Detail: errText(err)}
@@ -333,7 +328,7 @@ func compare(p string, a answer, want []byte, hdr http.Header) File {
 // something else (a single-page fallback to the home page, say), which would
 // also hide the probes for files it must not serve; any other status is
 // reported as an error.
-func checkNotFound(ctx context.Context, c *http.Client, o Options, want []byte) File {
+func checkNotFound(ctx context.Context, c *http.Client, o PortalverifyOptions, want []byte) File {
 	a, err := get(ctx, c, o.Base, NotFoundPath)
 	if err != nil {
 		return File{Path: NotFoundFile, Status: StatusError, Detail: errText(err)}

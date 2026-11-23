@@ -29,5 +29,5 @@ func newPortalChecker(pagesBase, stateDir string, log *slog.Logger, now func() t
 	if pagesBase != links.Portal {
 		return nil
 	}
-	return &portalChecker{status.New(status.Options(pagesBase), stateDir, log.With("component", "portal-check"), now)}
+	return &portalChecker{status.New(status.PortalcheckOptions(pagesBase), stateDir, log.With("component", "portal-check"), now)}
 }

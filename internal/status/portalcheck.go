@@ -1,11 +1,3 @@
-// Package status is the engine's daily check of the hosted portal
-// (CONTRACT.md, CLI, `basalt portal verify`; Next steps, PORTAL_MISMATCH).
-// Once a day the engine runs the same comparison as `basalt portal verify`
-// against the portal in its config and keeps the answer: in memory for the
-// status tool, and in a file in the state directory for `basalt status` on
-// an engine that runs as the person. The check reads public pages only and
-// sends nothing about the engine. It never stops the engine and never blocks
-// a tool: a portal that differs is a warning, not a refusal.
 package status
 
 import (
@@ -23,7 +15,6 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/httpsec"
-	"github.com/basaltdbhq/basaltdb/internal/service/portalverify"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -46,7 +37,7 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 	// Findings are the paths with DIFFERS, MISSING, HEADER or UNEXPECTED, at
 	// most maxFindings in path order.
-	Findings []portalverify.File `json:"findings,omitempty"`
+	Findings []File `json:"findings,omitempty"`
 	// Total is how many paths had one of those statuses.
 	Total int `json:"total,omitempty"`
 	// Unchecked is how many paths could not be checked (status ERROR).
@@ -65,7 +56,7 @@ func (r Result) Summary() string {
 		counts[f.Status]++
 	}
 	var parts []string
-	for _, s := range []string{portalverify.StatusDiffers, portalverify.StatusMissing, portalverify.StatusHeader, portalverify.StatusUnexpected} {
+	for _, s := range []string{StatusDiffers, StatusMissing, StatusHeader, StatusUnexpected} {
 		if n := counts[s]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, s))
 		}
@@ -80,14 +71,14 @@ func (r Result) Summary() string {
 // mismatching are the statuses that make a result a mismatch.
 func mismatching(status string) bool {
 	switch status {
-	case portalverify.StatusDiffers, portalverify.StatusMissing, portalverify.StatusHeader, portalverify.StatusUnexpected:
+	case StatusDiffers, StatusMissing, StatusHeader, StatusUnexpected:
 		return true
 	}
 	return false
 }
 
 // resultOf reduces a verify report to a Result.
-func resultOf(rep *portalverify.Report, now time.Time) Result {
+func resultOf(rep *Report, now time.Time) Result {
 	r := Result{PortalURL: rep.PortalURL, CheckedAt: now}
 	for _, f := range rep.Files {
 		switch {
@@ -96,7 +87,7 @@ func resultOf(rep *portalverify.Report, now time.Time) Result {
 			if len(r.Findings) < maxFindings {
 				r.Findings = append(r.Findings, f)
 			}
-		case f.Status == portalverify.StatusError:
+		case f.Status == StatusError:
 			r.Unchecked++
 		}
 	}
@@ -107,31 +98,31 @@ func resultOf(rep *portalverify.Report, now time.Time) Result {
 // ConnectPageFile is the connect page's embedded file.
 const ConnectPageFile = "connect/index.html"
 
-// Options is what the check compares and how it is run for base, the
+// PortalcheckOptions is what the check compares and how it is run for base, the
 // portal's origin: the pages embedded in this binary, the routes people load
 // pages at and the headers they must carry. basalt portal verify uses the
 // same.
-func Options(base string) portalverify.Options {
-	o := portalverify.Options{
+func PortalcheckOptions(base string) PortalverifyOptions {
+	o := PortalverifyOptions{
 		Base: base, Files: web.Files, Headers: httpsec.ExpectedPortal(),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
 		FileHeaders: map[string]http.Header{ConnectPageFile: httpsec.ExpectedConnectPage()},
 	}
 	for _, r := range web.PortalPages() {
-		o.Routes = append(o.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
+		o.Routes = append(o.Routes, Route{Path: r.Path, ID: r.ID, File: r.File})
 	}
 	return o
 }
 
 // Checker runs the daily check and remembers its last result.
 type Checker struct {
-	opts     portalverify.Options
+	opts     PortalverifyOptions
 	stateDir string
 	log      *slog.Logger
 	now      func() time.Time
-	// verify is portalverify.Verify; tests replace it.
-	verify func(context.Context, portalverify.Options) (*portalverify.Report, error)
+	// verify is Verify; tests replace it.
+	verify func(context.Context, PortalverifyOptions) (*Report, error)
 
 	mu   sync.Mutex
 	last *Result
@@ -139,8 +130,8 @@ type Checker struct {
 
 // New returns a checker for the portal at opts.Base. Results are also
 // written to stateDir (FileName) unless it is empty.
-func New(opts portalverify.Options, stateDir string, log *slog.Logger, now func() time.Time) *Checker {
-	return &Checker{opts: opts, stateDir: stateDir, log: log, now: now, verify: portalverify.Verify}
+func New(opts PortalverifyOptions, stateDir string, log *slog.Logger, now func() time.Time) *Checker {
+	return &Checker{opts: opts, stateDir: stateDir, log: log, now: now, verify: Verify}
 }
 
 // Last is the result of the most recent check, false before the first.

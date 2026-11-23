@@ -99,7 +99,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	var receipt *Receipt
 	if a.Status == approvalApproved {
-		r, err := s.approvalReceiptOf(a)
+		r, err := s.delivery.approvalReceiptOf(a)
 		if err != nil {
 			return WriteOutcome{}, err
 		}
@@ -182,7 +182,7 @@ func sameParams(held json.RawMessage, params []any) bool {
 }
 
 func (s *Service) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
-	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
+	err := s.delivery.awaitWhile(ctx, wait, func() bool { return a.Status == approvalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
 		next, err := s.deps.Approval.Store.FindApproval(budget.With(ctx), a.ID)

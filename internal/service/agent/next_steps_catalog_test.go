@@ -258,7 +258,7 @@ func catalogCases() map[string]catalogCase {
 			"request_revert",
 			map[string]any{"runId": caseRunID, "intent": "Undo"},
 			func(t *testing.T, s *Service) error {
-				return s.revertTooLargeError(uuid.MustParse(caseRevertID), 2<<20, time.Now().Add(time.Hour))
+				return s.delivery.revertTooLargeError(uuid.MustParse(caseRevertID), 2<<20, time.Now().Add(time.Hour))
 			},
 		},
 		caseKey("APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", ""): {"write", writeArgs0, func(t *testing.T, s *Service) error {

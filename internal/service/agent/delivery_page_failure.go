@@ -51,23 +51,23 @@ func LinkReset() (*toolresult.ToolError, error) {
 // PageFailure is err as the pages answer it: the contract's error body with
 // the person's message and the steps the catalog gives it. The page shows
 // them to the person, so the caller keeps only the PERSON steps.
-func (s *Service) PageFailure(err error) *toolresult.ToolError {
+func (dc *deliveryCase) PageFailure(err error) *toolresult.ToolError {
 	var pe *guidance.PageError
 	if errors.As(err, &pe) {
 		return pe.ToolError
 	}
-	te := s.deps.Core.Errors.ToolError(err)
-	if s.pageSignatureFailure(te) {
+	te := dc.core.Errors.ToolError(err)
+	if dc.pageSignatureFailure(te) {
 		return te
 	}
-	return s.Failure("", nil, te)
+	return dc.failure("", nil, te)
 }
 
 // pageSignatureFailure gives a refused signature the guidance for the page
 // the person is already on: sign again there, so no link is named (the
 // engine knows no short link's secret to build one). It reports whether te
 // was such a refusal.
-func (s *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
+func (dc *deliveryCase) pageSignatureFailure(te *toolresult.ToolError) bool {
 	var what, again string
 	switch te.Code {
 	case guidance.CodeApprovalInvalid:
@@ -88,7 +88,7 @@ func (s *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 			TellAgent(guidance.AskAgentForRegisterLinkText).
 			Build()
 		if err != nil {
-			s.deps.Core.Log.Error("cannot build the page's passkey steps", "err", err)
+			dc.core.Log.Error("cannot build the page's passkey steps", "err", err)
 			return false
 		}
 		te.NextSteps = steps

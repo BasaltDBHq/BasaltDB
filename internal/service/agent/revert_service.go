@@ -244,7 +244,7 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 		return RequestedRevert{}, err
 	}
 	if out.tooLarge.tooLarge {
-		answer := s.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
+		answer := s.delivery.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
 		var te *toolresult.ToolError
 		if errors.As(answer, &te) {
 			// Prepared, with no link any page can open: a notice with none.
@@ -331,7 +331,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 		}
 		return out, err
 	}
-	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
+	err = s.delivery.awaitWhile(ctx, p.Wait, func() bool { return r.Status == revertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
 		next, err := s.deps.Revert.Store.FindRevert(budget.With(ctx), r.ID)
@@ -445,10 +445,10 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		if err != nil {
 			return RequestedRevert{}, err
 		}
-		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, s.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
+		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, s.delivery.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
 		return out, nil
 	}
-	if s.shortLinked(r.ID) || link.Kind == linkPage {
+	if s.delivery.shortLinked(r.ID) || link.Kind == linkPage {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
@@ -633,17 +633,17 @@ func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink
 	}
 	var short string
 	if tooLarge {
-		short, err = s.largeShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, req.Cost)
+		short, err = s.delivery.largeShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, req.Cost)
 	} else {
-		short, err = s.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
+		short, err = s.delivery.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
 	}
 	if err != nil {
 		return revertLink{}, err
 	}
 	if tooLarge && short == "" {
 		return revertLink{
-			URL: s.pageAddress(links.Revert, r.ID), Headline: bindingHeadline(b, r), tooLarge: true, cost: req.Cost,
-			Message: s.tooLargeMessage(guidance.Sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
+			URL: s.delivery.pageAddress(links.Revert, r.ID), Headline: bindingHeadline(b, r), tooLarge: true, cost: req.Cost,
+			Message: s.delivery.tooLargeMessage(guidance.Sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
 		}, nil
 	}
 	pick, err := chooseLink(short, long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))

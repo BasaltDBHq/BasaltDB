@@ -236,7 +236,7 @@ func TestRelayHandsOverTheRegisteredPortalShortLink(t *testing.T) {
 
 	// A revert's link goes the same way.
 	id := uuid.Must(uuid.NewV7())
-	link, err := e.svc.shortLink(context.Background(), links.Revert, id, e.clock.Now().Add(time.Hour), issueLink)
+	link, err := e.svc.delivery.shortLink(context.Background(), links.Revert, id, e.clock.Now().Add(time.Hour), issueLink)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(link, links.Portal+"/reverts/"+id.String()+"#s="), link)
 	_, rkeys := shortSecret(t, link)

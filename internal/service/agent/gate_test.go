@@ -52,7 +52,7 @@ func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
 
 	// The page tells the person the agent gives them a link to update it.
 	_, err = s.RelayApproval(ctx, approval.Response{ApprovalID: id})
-	pf := s.PageFailure(err)
+	pf := s.delivery.PageFailure(err)
 	require.Contains(t, pf.PersonMessage, "The agent gives you a link")
 	require.NotContains(t, pf.PersonMessage, "basalt ", "the person runs no command")
 }

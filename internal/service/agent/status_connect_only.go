@@ -252,10 +252,12 @@ type ConnectOnly struct {
 
 // guide is a Service with only what the error guidance reads.
 func (c ConnectOnly) guide() *Service {
-	return &Service{deps: Deps{
+	s := &Service{deps: Deps{
 		Core:   CoreDeps{Name: c.Name, Commands: c.Commands.OperatedBy(c.OperatedBy), Log: c.Log, Now: c.Now, Errors: c.Errors},
 		Status: StatusDeps{ConnectBudget: c.ConnectBudget},
 	}}
+	s.wire()
+	return s
 }
 
 // Tools are every IMPLEMENTED tool of the contracts: status and

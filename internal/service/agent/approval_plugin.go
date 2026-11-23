@@ -41,7 +41,7 @@ func (s *Service) PluginApprovalRequest(ctx context.Context, id uuid.UUID) (appr
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
-	ids, err := s.credentialIDs(ctx)
+	ids, err := s.delivery.credentialIDs(ctx)
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}

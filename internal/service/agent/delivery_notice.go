@@ -95,38 +95,38 @@ const (
 // set: the portal's short link when the Vault registered it (relayLink),
 // else one to the pages this engine
 // serves; else "", and the caller hands over the long link.
-func (s *Service) shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error) {
+func (dc *deliveryCase) shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error) {
 	if !issue {
 		return "", nil
 	}
-	if link := s.relayLink(ctx, page, id, expires); link != "" {
+	if link := dc.relayLink(ctx, page, id, expires); link != "" {
 		return link, nil
 	}
-	return s.localLink(page, id, expires)
+	return dc.localLink(page, id, expires)
 }
 
 // localLink issues a new short link to the pages this engine serves,
 // revoking the item's earlier link; "" when it serves none.
-func (s *Service) localLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
-	if s.deps.Core.PagesOrigin == "" {
+func (dc *deliveryCase) localLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
+	if dc.core.PagesOrigin == "" {
 		return "", nil
 	}
-	secret, err := s.deps.Delivery.Links.Issue(id, expires)
+	secret, err := dc.deps.Links.Issue(id, expires)
 	if err != nil {
 		return "", err
 	}
-	return links.WithSecret(page(s.deps.Core.PagesOrigin, id), secret), nil
+	return links.WithSecret(page(dc.core.PagesOrigin, id), secret), nil
 }
 
 // credentialIDs are the registered passkeys that can sign on the pages the
 // agent's links open (pagesPasskeys), for the request's allowCredentials:
 // none is a request nobody can sign yet.
-func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
-	all, err := s.deps.Approval.Store.Passkeys(ctx)
+func (dc *deliveryCase) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
+	all, err := dc.approvals.Passkeys(ctx)
 	if err != nil {
 		return nil, err
 	}
-	keys, _ := pagesPasskeys(all, s.deps.Core.PagesBase)
+	keys, _ := pagesPasskeys(all, dc.core.PagesBase)
 	ids := make([]passkey.Bytes, 0, len(keys))
 	for _, k := range keys {
 		ids = append(ids, k.ID)
@@ -134,15 +134,15 @@ func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
 	return ids, nil
 }
 
-// awaitWhile polls while pending reports true: every s.deps.Delivery.Poll it calls
-// refresh, until pending is false, the wait is over by s.deps.Core.Now, or ctx ends
+// awaitWhile polls while pending reports true: every dc.deps.Poll it calls
+// refresh, until pending is false, the wait is over by dc.core.Now, or ctx ends
 // (then ctx's error). It holds no transaction between reads. The waiting
 // write and request_revert's wait share it.
-func (s *Service) awaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error {
-	deadline := s.deps.Core.Now().Add(wait)
-	tick := time.NewTicker(s.deps.Delivery.Poll)
+func (dc *deliveryCase) awaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error {
+	deadline := dc.core.Now().Add(wait)
+	tick := time.NewTicker(dc.deps.Poll)
 	defer tick.Stop()
-	for pending() && s.deps.Core.Now().Before(deadline) {
+	for pending() && dc.core.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

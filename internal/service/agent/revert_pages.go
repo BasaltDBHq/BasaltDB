@@ -40,7 +40,7 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return revert.Request{}, err
 	}
-	ids, err := s.credentialIDs(ctx)
+	ids, err := s.delivery.credentialIDs(ctx)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -48,14 +48,14 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 	case r.Widened && held:
 		req := st.request
 		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
-		req.Columns = s.columnsOf(ctx, req.Lines)
+		req.Columns = s.delivery.columnsOf(ctx, req.Lines)
 		return req, nil
 	case r.Widened:
 		return revert.Request{}, widenAgain(nonce)
 	}
 	return revert.Request{
 		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: s.columnsOf(ctx, r.Lines),
+		Columns: s.delivery.columnsOf(ctx, r.Lines),
 	}, nil
 }
 

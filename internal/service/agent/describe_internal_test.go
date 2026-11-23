@@ -804,7 +804,8 @@ func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
 	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
 	require.NoError(t, err)
 	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds}}}
-	msg := newDescribeCase(s.deps.Core, DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
+	s.wire()
+	msg := newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	require.Contains(t, msg, "another database needs its own agent")
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
 	require.NoError(t, guidance.CheckPersonMessage(msg))

@@ -88,8 +88,8 @@ func revealRefused(code, link string) error {
 }
 
 // pageLink is the page's own short link, with the secret it holds.
-func (s *Service) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
-	return links.WithSecret(page(s.deps.Core.PagesBase, id), secret)
+func (dc *deliveryCase) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
+	return links.WithSecret(page(dc.core.PagesBase, id), secret)
 }
 
 // revealRowsChanged is a reveal whose hidden rows changed since the agent

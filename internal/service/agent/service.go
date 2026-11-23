@@ -285,6 +285,8 @@ type Service struct {
 	rescopes *rescopes
 	// describe is the describe use case.
 	describe *describeCase
+	// delivery is how held actions reach the person.
+	delivery *deliveryCase
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -341,8 +343,15 @@ func NewService(d Deps) *Service {
 		d.Delivery.Poll = DefaultPoll
 	}
 	s := &Service{deps: d, setup: d.Status.Setup, rescopes: newRescopes()}
-	s.describe = newDescribeCase(d.Core, d.Describe, s.updateInfo)
+	s.wire()
 	return s
+}
+
+// wire builds the use cases over the service's dependencies. Each holds a
+// reference to its own group of s.deps and to the shared core group.
+func (s *Service) wire() {
+	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.updateInfo)
+	s.delivery = newDeliveryCase(&s.deps.Core, &s.deps.Delivery, liveApprovals{&s.deps.Approval}, s.Failure)
 }
 
 // missing names the required ports d lacks.

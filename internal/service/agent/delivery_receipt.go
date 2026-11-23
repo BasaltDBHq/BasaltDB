@@ -52,15 +52,15 @@ type Receipt struct {
 // approvalReceipt reads approval id from Postgres, after the person's
 // signature was accepted, and signs its receipt. Only an approved (or
 // already applied) approval gets one.
-func (s *Service) approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
-	a, err := s.deps.Approval.Store.FindApproval(ctx, id)
+func (dc *deliveryCase) approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
+	a, err := dc.approvals.FindApproval(ctx, id)
 	if err != nil {
 		return Receipt{}, err
 	}
-	return s.approvalReceiptOf(a)
+	return dc.approvalReceiptOf(a)
 }
 
-func (s *Service) approvalReceiptOf(a action.Approval) (Receipt, error) {
+func (dc *deliveryCase) approvalReceiptOf(a action.Approval) (Receipt, error) {
 	if a.Status != approvalApproved && a.Status != approvalApplied {
 		return Receipt{}, fmt.Errorf("approval %s is %s, not signed", a.ID, a.Status)
 	}
@@ -75,7 +75,7 @@ func (s *Service) approvalReceiptOf(a action.Approval) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	return s.signReceipt(channel.Receipt{
+	return dc.signReceipt(channel.Receipt{
 		Kind: channel.ReceiptApproval, ItemID: a.ID.String(), Status: channel.ReceiptApproved,
 		Headline: summary.Headline(), RowsHash: b.RowsHash,
 	}, "Approved", "approval")
@@ -84,19 +84,19 @@ func (s *Service) approvalReceiptOf(a action.Approval) (Receipt, error) {
 // signReceipt fills in the agent, the engine and the time and signs p
 // with the engine's key. Without a usable key (KEY_ERROR) there is no
 // receipt, and the line says why.
-func (s *Service) signReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
-	if s.deps.Delivery.Receipts == nil {
+func (dc *deliveryCase) signReceipt(p channel.Receipt, verb, noun string) (Receipt, error) {
+	if dc.deps.Receipts == nil {
 		return Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, nil
 	}
 	p.Headline = guidance.Clip(p.Headline, channel.MaxReceiptHeadline)
-	p.Agent = s.deps.Core.Name
-	p.EngineID = s.deps.Delivery.Receipts.EngineID()
-	p.At = s.deps.Core.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
-	token, err := channel.SignReceipt(s.deps.Delivery.Receipts, p)
+	p.Agent = dc.core.Name
+	p.EngineID = dc.deps.Receipts.EngineID()
+	p.At = dc.core.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
+	token, err := channel.SignReceipt(dc.deps.Receipts, p)
 	if err != nil {
 		return Receipt{}, err
 	}
-	return Receipt{Token: token, Line: receiptLine(verb, noun, p, s.deps.Delivery.Receipts.Fingerprint())}, nil
+	return Receipt{Token: token, Line: receiptLine(verb, noun, p, dc.deps.Receipts.Fingerprint())}, nil
 }
 
 // receiptLine is the person's sentence for receipt p (CONTRACT.md,

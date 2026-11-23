@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
-	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/jackc/pgx/v5"
 
@@ -130,7 +129,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	}
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{
-		tools: mcpserver.ToolsFrom(co.Tools(), nil),
+		tools: co.Tools(),
 		run:   pending.Run,
 		close: func() {},
 	}, nil

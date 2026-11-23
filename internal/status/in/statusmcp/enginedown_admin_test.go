@@ -27,7 +27,7 @@ func TestEngineDownToolsRefuseAnAdminURL(t *testing.T) {
 
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Log: slog.New(slog.NewTextHandler(&logs, nil)), Now: func() time.Time { return statusNow }}
 	downTools := down.Tools()
-	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(downTools, nil)...)
+	downSrv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, downTools...)
 	for _, tool := range downTools {
 		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
 			body, isError := serveCall(t, downSrv, tool.Name, args)

@@ -78,9 +78,9 @@ func (a requestPluginArgs) check() error {
 // Tools are the tools that ask for a plugin. mount lists a tool under its
 // contract, around the agent's admission and error mapping; the tool list's
 // composer supplies it.
-func Tools(svc Plugins, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func Tools(svc Plugins, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []guidance.Tool{
+	return []mcpserver.Tool{
 		mount(toolRequestPlugin, h.requestPlugin),
 	}
 }

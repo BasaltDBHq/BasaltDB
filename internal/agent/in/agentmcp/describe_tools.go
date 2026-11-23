@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -100,9 +101,9 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 }
 
 // DescribeTools are the tools that describe the database.
-func DescribeTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func DescribeTools(svc Agent, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []guidance.Tool{
+	return []mcpserver.Tool{
 		mount(guidance.ToolDescribe, h.describe),
 	}
 }

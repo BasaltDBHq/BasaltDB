@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
 
 // Runs is the ledger's read side as run_history calls it, and the wire
@@ -57,9 +58,9 @@ func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, err
 // Tools are the tools that read a run's history. mount lists a tool under
 // its contract, around the agent's admission and error mapping; the tool
 // list's composer supplies it.
-func Tools(svc Runs, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+func Tools(svc Runs, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool) []mcpserver.Tool {
 	h := handlers{svc: svc}
-	return []guidance.Tool{
+	return []mcpserver.Tool{
 		mount("run_history", h.runHistory),
 	}
 }

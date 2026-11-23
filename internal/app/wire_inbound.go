@@ -11,12 +11,14 @@ import (
 )
 
 // newPages is the pages for origin with every page's handlers mounted: the
-// approval, revert and plugin approval routes.
+// approval, revert and plugin approval routes, and the setup routes of an
+// engine with no setup jobs (listenPages mounts the jobs).
 func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv := pages.New(origin, log)
 	srv.MountApprovals(pages.NewApprovalHandlers(srv))
 	srv.MountReverts(pages.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
+	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))
 	return srv
 }
 

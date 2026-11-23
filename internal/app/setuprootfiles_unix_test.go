@@ -27,7 +27,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(SetupHost{}, dir, trusted)
+	d, err := openRootConfigDir(setupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -40,7 +40,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.Empty(t, entries)
 	require.FileExists(t, filepath.Join(dir+".moved", "engine.json"))
 
-	_, err = openRootConfigDir(SetupHost{}, dir, trusted)
+	_, err = openRootConfigDir(setupHost{}, dir, trusted)
 	require.ErrorContains(t, err, "a symlink is refused")
 }
 
@@ -57,17 +57,17 @@ func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
 	dir := filepath.Join(root, "basalt")
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(SetupHost{}, dir, trusted)
+	d, err := openRootConfigDir(setupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
-	_, err = rootEngineKey(SetupHost{}, "/usr", runtime.GOOS, d, time.Now)
+	_, err = rootEngineKey(setupHost{}, "/usr", runtime.GOOS, d, time.Now)
 	require.ErrorContains(t, err, fmt.Sprintf("the state directory /usr is owned by uid 0, not uid %d (the owner of the config directory %s)", os.Geteuid(), dir))
 	require.NoFileExists(t, "/usr/"+channel.KeyFileName)
 
 	// Its own state directory: the key is made there.
 	state := filepath.Join(dir, "state")
 	require.NoError(t, os.Mkdir(state, 0o700))
-	spki, err := rootEngineKey(SetupHost{}, state, runtime.GOOS, d, time.Now)
+	spki, err := rootEngineKey(setupHost{}, state, runtime.GOOS, d, time.Now)
 	require.NoError(t, err)
 	require.NotEmpty(t, spki)
 }
@@ -94,7 +94,7 @@ func TestRootConfigDirUpsertStaysInTheOpenedDir(t *testing.T) {
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(SetupHost{}, dir, trusted)
+	d, err := openRootConfigDir(setupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
 	require.NoError(t, os.Rename(dir, dir+".moved"))

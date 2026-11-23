@@ -39,7 +39,7 @@ func connectOnlyEnv(t *testing.T) (agentEnv, config.Agent) {
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfgPath, raw))
 	require.NoError(t, config.WriteFile(config.SecretPath(cred, "bot"), []byte("pw\n")))
-	return agentEnv{cfg: cfg, configPath: cfgPath, handoff: HandoffOptions{
+	return agentEnv{cfg: cfg, configPath: cfgPath, handoff: handoffOptions{
 		Now: func() time.Time { return connectOnlyMade.Add(time.Minute) },
 	}}, a
 }

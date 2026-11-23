@@ -69,7 +69,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 		return spec, nil
 	}
 	// Root reads the existing config from the engine user's directory.
-	open := func(p string) (*os.File, error) { return OpenEngineFile(SetupHost{}, p, engineUser) }
+	open := func(p string) (*os.File, error) { return openEngineFile(setupHost{}, p, engineUser) }
 	raw, v, err := config.UpsertedVault(configPath, open,
 		config.Settings{
 			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,

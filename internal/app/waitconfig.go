@@ -39,7 +39,7 @@ type WaitOptions struct {
 // WaitForConfig is an engine with no config (CONTRACT.md, The local setup
 // page): it serves only GET /healthz and the setup routes on addr until
 // configPath exists, then stops serving and returns the listener, still
-// bound, for the engine's own pages (RestartOptions.PagesListener): the
+// bound, for the engine's own pages (restartOptions.PagesListener): the
 // port is never free for another process between the two. A taken port is
 // an error naming it; so is a config path that cannot be looked at. On any
 // error the listener is closed.

@@ -66,7 +66,7 @@ func (r *recoverRig) start(startedBy string) {
 	r.cancel = cancel
 	r.done = make(chan error, 1)
 	go func() {
-		r.done <- RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), RestartOptions{StartedBy: startedBy})
+		r.done <- runWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), restartOptions{StartedBy: startedBy})
 	}()
 	r.t.Cleanup(func() { cancel() })
 }
@@ -161,7 +161,7 @@ func TestRunForgetsAnEarlierGiveUp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() {
-		_ = RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), RestartOptions{StableAfter: 300 * time.Millisecond})
+		_ = runWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), restartOptions{StableAfter: 300 * time.Millisecond})
 	}()
 
 	require.Eventually(t, r.answers, 30*time.Second, 50*time.Millisecond)

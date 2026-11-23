@@ -6,6 +6,7 @@ import (
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -70,8 +71,8 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
 	out, err := h.svc.Write(ctx, agentsvc.WriteParams{
-		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: optionalID(args.RunID),
-		ApprovalID: optionalID(args.ApprovalID), Wait: args.wait(),
+		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: uniqueid.Optional(args.RunID),
+		ApprovalID: uniqueid.Optional(args.ApprovalID), Wait: args.wait(),
 	})
 	if err != nil {
 		return nil, err

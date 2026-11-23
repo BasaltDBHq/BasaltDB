@@ -20,7 +20,7 @@ func useTrustDir(args []string) {
 	if !given {
 		// Both configs found is the command's own error to report; the
 		// system one holds the profiles then.
-		path, _ = cli.DiscoverConfig(OSHost{}, config.DefaultPath(runtime.GOOS))
+		path, _ = cli.DiscoverConfig(osHost{}, config.DefaultPath(runtime.GOOS))
 		if path == "" {
 			path = config.DefaultPath(runtime.GOOS)
 		}

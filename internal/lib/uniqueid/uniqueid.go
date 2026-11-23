@@ -16,3 +16,12 @@ func New() string {
 	}
 	return id.String()
 }
+
+// Optional parses an optional uuid argument already validated by its tags: ""
+// is uuid.Nil.
+func Optional(s string) uuid.UUID {
+	if s == "" {
+		return uuid.Nil
+	}
+	return uuid.MustParse(s)
+}

@@ -165,7 +165,7 @@ type handoffEngine struct {
 	reloads chan struct{}
 }
 
-func startHandoffEngine(t *testing.T, cfgPath string, o HandoffOptions) handoffEngine {
+func startHandoffEngine(t *testing.T, cfgPath string, o handoffOptions) handoffEngine {
 	t.Helper()
 	sameUserConfig(t, cfgPath)
 	e := handoffEngine{reloads: make(chan struct{}, 4)}
@@ -178,7 +178,7 @@ func startHandoffEngine(t *testing.T, cfgPath string, o HandoffOptions) handoffE
 				done <- err
 				return
 			}
-			err = RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), RestartOptions{Handoff: o})
+			err = runWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), restartOptions{Handoff: o})
 			if !errors.Is(err, engine.ErrReload) || ctx.Err() != nil {
 				done <- err
 				return
@@ -297,8 +297,8 @@ func (e handoffEngine) waitForState(t *testing.T, state string) map[string]any {
 	return st
 }
 
-func (f handoffFixture) engineOptions(resolver handoff.Resolver) HandoffOptions {
-	return HandoffOptions{
+func (f handoffFixture) engineOptions(resolver handoff.Resolver) handoffOptions {
+	return handoffOptions{
 		ServiceURL: f.page.base,
 		Prober:     handoff.Prober{Resolver: resolver, Dial: f.proxy.Dial, Roots: f.proxy.Roots},
 	}

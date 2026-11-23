@@ -1,15 +1,14 @@
 package agentmcp
 
 import (
-	"reflect"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 )
 
 // TestArgsStructsMatchTheSchemas keeps each tool's Go argument struct and its
@@ -35,21 +34,6 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 		}
 		want = append(want, refused[name]...)
 		sort.Strings(want)
-		require.Equal(t, want, jsonFields(v), name)
+		require.Equal(t, want, mcptest.JSONFields(v), name)
 	}
-}
-
-func jsonFields(v any) []string {
-	rt := reflect.TypeOf(v)
-	out := make([]string, 0, rt.NumField())
-	for i := range rt.NumField() {
-		f := rt.Field(i)
-		if f.Anonymous { // an embedded struct (pagination.Params) adds its fields
-			out = append(out, jsonFields(reflect.New(f.Type).Elem().Interface())...)
-			continue
-		}
-		out = append(out, strings.Split(f.Tag.Get("json"), ",")[0])
-	}
-	sort.Strings(out)
-	return out
 }

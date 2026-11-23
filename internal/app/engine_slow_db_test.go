@@ -80,7 +80,7 @@ func TestRunServesBeforeTheDatabaseAnswers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), RestartOptions{})
+		done <- runWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), restartOptions{})
 	}()
 	t.Cleanup(func() {
 		cancel()

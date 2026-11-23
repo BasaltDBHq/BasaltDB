@@ -35,8 +35,8 @@ func commands() []cli.Command {
 }
 
 // runInitCommand is basalt init for the command table: init --remote
-// reaches the adapters through SetupHost.
-func runInitCommand(c *cli.IO, args []string) int { return runInit(c, SetupHost{}, args) }
+// reaches the adapters through setupHost.
+func runInitCommand(c *cli.IO, args []string) int { return runInit(c, setupHost{}, args) }
 
 func run(ctx context.Context, args []string, io cli.Stdio) int {
 	if len(args) == 0 {

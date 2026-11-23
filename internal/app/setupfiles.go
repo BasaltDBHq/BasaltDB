@@ -10,22 +10,22 @@ import (
 // (internal/setup/out/credfiles), forwarded to the CLI, which may not import
 // an adapter.
 
-// TrustedDir is a directory opened without following a link
+// trustedDir is a directory opened without following a link
 // (credfiles.TrustedDir).
-type TrustedDir = credfiles.TrustedDir
+type trustedDir = credfiles.TrustedDir
 
-// PathCredFiles reaches the credential files by path (credfiles.PathCredFiles).
-type PathCredFiles = credfiles.PathCredFiles
+// pathCredFiles reaches the credential files by path (credfiles.PathCredFiles).
+type pathCredFiles = credfiles.PathCredFiles
 
-// MaxCredentialBytes bounds a credential (credfiles.MaxCredentialBytes).
-const MaxCredentialBytes = credfiles.MaxCredentialBytes
+// maxCredentialBytes bounds a credential (credfiles.MaxCredentialBytes).
+const maxCredentialBytes = credfiles.MaxCredentialBytes
 
-// ReadKeptCredential is credfiles.ReadKeptCredential.
-func ReadKeptCredential(h credfiles.FilesHost, path, engineUser string) (string, error) {
+// readKeptCredential is credfiles.ReadKeptCredential.
+func readKeptCredential(h credfiles.FilesHost, path, engineUser string) (string, error) {
 	return credfiles.ReadKeptCredential(h, path, engineUser)
 }
 
-// OpenEngineFile is credfiles.OpenEngineFile.
-func OpenEngineFile(h credfiles.FilesHost, path, engineUser string) (*os.File, error) {
+// openEngineFile is credfiles.OpenEngineFile.
+func openEngineFile(h credfiles.FilesHost, path, engineUser string) (*os.File, error) {
 	return credfiles.OpenEngineFile(h, path, engineUser)
 }

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -383,10 +385,10 @@ func pluginCatalogCases() map[string]catalogCase {
 		}
 	}
 	cases := map[string]catalogCase{
-		caseKey(codePluginRefused, ReasonPluginAgentOperated, toolRequestPlugin): {toolRequestPlugin, source, own(agentOperated)},
-		caseKey(codePluginRefused, ReasonPluginSameUserMode, toolRequestPlugin):  {toolRequestPlugin, source, own(func(d *Deps) { d.Status.SameUser = true })},
-		caseKey(codePluginRefused, ReasonPluginNoLocalPages, toolRequestPlugin):  {toolRequestPlugin, source, own(withoutLocalPages)},
-		caseKey(codePluginRefused, ReasonPluginNoPortalLink, toolRequestPlugin): {toolRequestPlugin, source, own(func(d *Deps) {
+		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginAgentOperated, toolRequestPlugin): {toolRequestPlugin, source, own(agentOperated)},
+		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginSameUserMode, toolRequestPlugin):  {toolRequestPlugin, source, own(func(d *Deps) { d.Status.SameUser = true })},
+		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginNoLocalPages, toolRequestPlugin):  {toolRequestPlugin, source, own(withoutLocalPages)},
+		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginNoPortalLink, toolRequestPlugin): {toolRequestPlugin, source, own(func(d *Deps) {
 			agentOperated(d)
 			d.Status.SameUser, d.Core.PagesOrigin = true, ""
 		})},
@@ -395,7 +397,7 @@ func pluginCatalogCases() map[string]catalogCase {
 		ReasonPluginAgentNotAllowed, "BAD_MANIFEST", "NOT_TRUSTED", "UNKNOWN_AGENT", "UNSAFE_PATH", "TOO_MANY_PENDING", "GUARD_OUTDATED",
 		"DATABASE_UNREACHABLE", "NAME_TAKEN", "CONFIG_ENTRY", "TOO_LARGE", "TOO_MANY_UPLOADS", "ENGINE_IS_ROOT",
 	} {
-		cases[caseKey(codePluginRefused, reason, toolRequestPlugin)] = catalogCase{toolRequestPlugin, source, engine(reason)}
+		cases[stepcatalogtest.CaseKey(codePluginRefused, reason, toolRequestPlugin)] = catalogCase{toolRequestPlugin, source, engine(reason)}
 	}
 	return cases
 }

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
+
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -133,7 +135,7 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 	tools := Tools(NewService(d))
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...)
 	url := "postgres://admin:" + secret + "@db.example.com:5432/app"
-	entry, ok := catalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, ReasonAdminCredential, "")
+	entry, ok := stepcatalogtest.CatalogOf(t).ErrorEntry(guidance.CodeInvalidArgument, ReasonAdminCredential, "")
 	require.True(t, ok)
 
 	for _, tool := range tools {

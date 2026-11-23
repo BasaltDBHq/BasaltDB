@@ -228,7 +228,7 @@ func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustpr
 // PinNew is Pin for a pin that may add trust and never replace it: under
 // the config lock, when a profile covers host (built-in or operator, a pin
 // included), it writes nothing and returns false when that profile is this
-// very pin, else ErrCovered naming it. True when it wrote the pin.
+// very pin, else setupcode.ErrCovered naming it. True when it wrote the pin.
 func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool, error) {
 	pf, err := trustprofile.NewPin(host, cert, caOnly)
 	if err != nil {
@@ -254,9 +254,9 @@ func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool,
 // then the old PEM file removed, under the config lock), for a certificate
 // the person trusted on the connect page that the engine's own reading
 // matched. Under the lock, the profile that covers host must be that pin:
-// another one (built-in or operator) is ErrCovered and nothing is written,
-// so a replacement never reaches past the engine's own pin. It returns the
-// fingerprints it replaced.
+// another one (built-in or operator) is setupcode.ErrCovered and nothing is
+// written, so a replacement never reaches past the engine's own pin. It
+// returns the fingerprints it replaced.
 func Repin(configPath, host string, cert *x509.Certificate, caOnly bool) ([]string, error) {
 	pf, err := trustprofile.NewPin(host, cert, caOnly)
 	if err != nil {

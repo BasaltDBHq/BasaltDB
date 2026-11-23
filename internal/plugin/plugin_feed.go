@@ -357,7 +357,7 @@ func callFailure(err error) *string {
 // its SQLSTATE when it did. Never its message, which can quote a value.
 func dbFailure(g Guard, err error) *string {
 	c := "NO_ANSWER"
-	if code, _, _, ok := g.DBError(err); ok {
+	if code, _, _, ok := dbError(g, err); ok {
 		c = "SQLSTATE " + code
 	} else if !transientErr(g, err) {
 		c = "UNREADABLE"

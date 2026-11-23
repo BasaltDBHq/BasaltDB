@@ -532,7 +532,7 @@ func (s *KeptPlugins) checkDatabase(ctx context.Context, g *keptGroup) error {
 
 func unreachable(g Guard, agentName string, err error) error {
 	why := "it does not answer"
-	if _, message, _, ok := g.DBError(err); ok {
+	if _, message, _, ok := dbError(g, err); ok {
 		why = "it refused: " + message
 	}
 	return Refused(reasonDatabaseUnreachable, fmt.Sprintf(
@@ -613,7 +613,7 @@ func (s *KeptPlugins) openApprovals(ctx context.Context, groups []*keptGroup, p 
 
 // keptOpenRefusal maps a failed open_plugin_approval to its reason.
 func keptOpenRefusal(g Guard, err error, schemaVersion int) *PluginOpenRefusal {
-	code, message, detail, ok := g.DBError(err)
+	code, message, detail, ok := dbError(g, err)
 	r := &PluginOpenRefusal{Reason: reasonDatabaseUnreachable, Message: "the database does not answer"}
 	switch {
 	case ok && code == "BS007" && detail == guardmodel.DetailTooManyPending:

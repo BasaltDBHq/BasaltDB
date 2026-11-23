@@ -59,13 +59,29 @@ const (
 // ErrNotAdmitted: the agent is served status only (agent.Service.Admit).
 var ErrNotAdmitted = errors.New("the agent is served status only")
 
+// dbError is Guard.DBError for an error that may be nil, on a Guard that may
+// be unset (an agent with no connection has none): neither is a database
+// reply.
+func dbError(g Guard, err error) (code, message, detail string, ok bool) {
+	if g == nil || err == nil {
+		return "", "", "", false
+	}
+	return g.DBError(err)
+}
+
+// noAnswer is Guard.NoAnswer for an error that may be nil, on a Guard that
+// may be unset.
+func noAnswer(g Guard, err error) bool {
+	return g != nil && err != nil && g.NoAnswer(err)
+}
+
 // unrecordedWhy is why a record could not be written, for the agent's
 // status: never the error's text, which could name a value.
 func unrecordedWhy(g Guard, err error) string {
 	if errors.Is(err, ErrNotAdmitted) {
 		return whyNotAdmitted
 	}
-	code, _, _, ok := g.DBError(err)
+	code, _, _, ok := dbError(g, err)
 	if !ok {
 		return whyUnreachable
 	}
@@ -90,13 +106,13 @@ func transientErr(g Guard, err error) bool {
 	if err == nil || errors.Is(err, ErrNotAdmitted) {
 		return false
 	}
-	if _, _, _, isDB := g.DBError(err); isDB {
+	if _, _, _, isDB := dbError(g, err); isDB {
 		return false
 	}
 	switch {
 	case errors.As(err, &ne), errors.Is(err, action.ErrUnavailable),
 		errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled),
-		errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), g.NoAnswer(err):
+		errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), noAnswer(g, err):
 		return true
 	}
 	return false

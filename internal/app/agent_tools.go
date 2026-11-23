@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	"github.com/basaltdbhq/basaltdb/internal/agent/in/agentmcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalmcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/handoff/in/handoffmcp"
+	ledgersvc "github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/ledger/in/ledgermcp"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginmcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
@@ -27,14 +31,50 @@ func AgentTools(svc *Service) []mcpserver.Tool {
 	mount := func(name string, call func(context.Context, json.RawMessage) (any, error)) mcpserver.Tool {
 		return contractTool(name, agentmcp.Wrap(svc, name, call))
 	}
-	tools := agentmcp.RunStartTools(svc, mount)
+	agent := agentTools{Service: svc.agent, core: &svc.deps.Core}
+	tools := agentmcp.RunStartTools(agent, mount)
 	for _, list := range [][]mcpserver.Tool{
-		agentmcp.WriteTools(svc, mount), ledgermcp.Tools(svc, mount), agentmcp.RunTools(svc, mount), approvalmcp.Tools(svc, mount), revertmcp.Tools(svc, mount),
-		pluginmcp.Tools(svc, mount), agentmcp.DescribeTools(svc, mount), statusmcp.Tools(svc, mount), handoffmcp.Tools(mount),
+		agentmcp.WriteTools(agent, mount), ledgermcp.Tools(ledgerRuns{Reads: svc.ledger, write: &svc.deps.Write}, mount), agentmcp.RunTools(agent, mount),
+		approvalmcp.Tools(svc.approval, mount), revertmcp.Tools(svc.revert, mount), pluginmcp.Tools(pluginRequester{svc.plugin}, mount),
+		agentmcp.DescribeTools(agent, mount), statusmcp.Tools(svc.status, mount), handoffmcp.Tools(mount),
 	} {
 		tools = append(tools, list...)
 	}
 	return tools
+}
+
+// agentTools is the agent use case as its tools call it, with the kind of
+// the agent's store.
+type agentTools struct {
+	*agentsvc.Service
+	core *CoreDeps
+}
+
+// StoreKind is the kind of the agent's store: query and write are served
+// only for one that speaks SQL.
+func (a agentTools) StoreKind() action.StoreKind { return a.core.Store.Kind() }
+
+// ledgerRuns is the ledger's read side as run_history calls it, with the
+// wire record the ledger renders.
+type ledgerRuns struct {
+	*ledgersvc.Reads
+	write *agentsvc.WriteDeps
+}
+
+// Record is the wire record of one change and its rows, as the ledger
+// renders it (run_history).
+func (l ledgerRuns) Record(ch action.Change, rows []action.RowChange) any {
+	return l.write.Record(ch, rows)
+}
+
+// pluginRequester is the plugin use case as request_plugin calls it.
+type pluginRequester struct{ plugin *pluginsvc.Service }
+
+// RequestPlugin serves request_plugin: it prepares a plugin install or
+// change for the person to approve, waits once for it, or removes a plugin.
+// meta is the request's _meta object, nil when it had none.
+func (p pluginRequester) RequestPlugin(ctx context.Context, source, name, instance string, agents []string, remove *bool, approvalID string, waitForApproval *int, meta json.RawMessage) (any, error) {
+	return p.plugin.RequestPlugin(ctx, source, name, instance, agents, remove, approvalID, waitForApproval, meta)
 }
 
 // connectOnlyGuide is the error presenter of the connect-only agent c: an

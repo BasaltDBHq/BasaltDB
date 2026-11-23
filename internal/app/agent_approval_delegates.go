@@ -6,13 +6,10 @@ import (
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 
-	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
-
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 )
 
@@ -26,11 +23,6 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 // agent's held writes (submit_approval).
 func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (linksvc.Receipt, error) {
 	return s.approval.RelayApproval(ctx, r)
-}
-
-// ListPending lists the held writes and open reverts of the agent.
-func (s *Service) ListPending(ctx context.Context, p approvalsvc.PendingParams) (pagination.Page[approvalsvc.PendingEntry], error) {
-	return s.approval.ListPending(ctx, p)
 }
 
 // RevealApproval reveals the rows of a held write to the page holding secret.

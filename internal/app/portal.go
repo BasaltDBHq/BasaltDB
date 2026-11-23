@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 )
 
@@ -14,12 +13,12 @@ import (
 type portalChecker struct{ *status.Checker }
 
 // PortalFinding is the last check's result for status.
-func (p portalChecker) PortalFinding() (agent.PortalFinding, bool) {
+func (p portalChecker) PortalFinding() (status.PortalFinding, bool) {
 	r, ok := p.Last()
 	if !ok {
-		return agent.PortalFinding{}, false
+		return status.PortalFinding{}, false
 	}
-	return agent.PortalFinding{CheckedAt: r.CheckedAt, Mismatch: r.Mismatch(), Summary: r.Summary()}, true
+	return status.PortalFinding{CheckedAt: r.CheckedAt, Mismatch: r.Mismatch(), Summary: r.Summary()}, true
 }
 
 // newPortalChecker is the daily check of the portal the config names, nil

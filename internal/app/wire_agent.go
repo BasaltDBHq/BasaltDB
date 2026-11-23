@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -76,19 +78,19 @@ func AgentErrors() guidance.ErrorMap {
 
 // AgentEngineHost is what the status of an engine that is down reads from
 // the host.
-func AgentEngineHost() agent.EngineHost {
-	return agent.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.ReadLastStop, StartHoldOffUntil: agentStartHoldOffUntil}
+func AgentEngineHost() status.EngineHost {
+	return status.EngineHost{LatestGuardVersion: guard.LatestVersion, ReadLastStop: engine.ReadLastStop, StartHoldOffUntil: agentStartHoldOffUntil}
 }
 
 func agentStartHoldOffUntil(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
 	return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
 }
 
-func agentCrashReports(dirs ...string) []agent.CrashReport {
+func agentCrashReports(dirs ...string) []status.CrashReport {
 	reports := crash.List(dirs...)
-	out := make([]agent.CrashReport, 0, len(reports))
+	out := make([]status.CrashReport, 0, len(reports))
 	for _, r := range reports {
-		out = append(out, agent.CrashReport{
+		out = append(out, status.CrashReport{
 			ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
 			IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
 		})
@@ -96,7 +98,7 @@ func agentCrashReports(dirs ...string) []agent.CrashReport {
 	return out
 }
 
-func agentUpdateMessage(n agent.ReleaseNotice, exe string) string {
+func agentUpdateMessage(n status.ReleaseNotice, exe string) string {
 	return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
 }
 
@@ -214,30 +216,30 @@ func (c agentCatalog) Search(ctx context.Context, q string, exclude []agent.Cata
 }
 
 // agentAccess is pgcatalog.ListAccess as the agent reads it.
-func agentAccess(ctx context.Context, db pgcatalog.Querier) (agent.CatalogAccess, error) {
+func agentAccess(ctx context.Context, db pgcatalog.Querier) (status.CatalogAccess, error) {
 	a, err := pgcatalog.ListAccess(ctx, db)
-	return agent.CatalogAccess(a), err
+	return status.CatalogAccess(a), err
 }
 
 // agentEngineRecord is the engine's row as the agent reads it.
-func agentEngineRecord(r *guardmodel.RecordedEngine) *agent.EngineRecord {
+func agentEngineRecord(r *guardmodel.RecordedEngine) *status.EngineRecord {
 	if r == nil {
 		return nil
 	}
-	return &agent.EngineRecord{RecordedAt: r.RecordedAt, RevokedAt: r.RevokedAt}
+	return &status.EngineRecord{RecordedAt: r.RecordedAt, RevokedAt: r.RevokedAt}
 }
 
 // agentUpdate is the update checker's cached notice as the agent reads it.
-func agentUpdate(cached func() *updatecheck.Notice) func() *agent.ReleaseNotice {
+func agentUpdate(cached func() *updatecheck.Notice) func() *status.ReleaseNotice {
 	if cached == nil {
 		return nil
 	}
-	return func() *agent.ReleaseNotice {
+	return func() *status.ReleaseNotice {
 		n := cached()
 		if n == nil {
 			return nil
 		}
-		return &agent.ReleaseNotice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}
+		return &status.ReleaseNotice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}
 	}
 }
 
@@ -245,4 +247,4 @@ func agentUpdate(cached func() *updatecheck.Notice) func() *agent.ReleaseNotice 
 func NewAgentCatalog(c *postgres.Catalog) agent.Catalog { return agentCatalog{c} }
 
 // NewAgentProbe is the store's probe as the agent reads it.
-func NewAgentProbe(p postgres.Probe) agent.Probe { return agentProbe{p} }
+func NewAgentProbe(p postgres.Probe) status.Probe { return agentProbe{p} }

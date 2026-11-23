@@ -1,4 +1,4 @@
-package agent
+package status
 
 import (
 	"context"
@@ -53,11 +53,11 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	if cfg != nil {
 		if stop, ok := host.ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
 			r.Engine.LastStop = &stop
-			ps.Add(problemEngineGaveUp, engineGaveUpMessage(host, stop, configPath, now),
+			ps.Add(problemEngineGaveUp, EngineGaveUpMessage(host, stop, configPath, now),
 				func(b *guidance.Steps) string { return guidance.EngineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 		}
-		r.OperatedBy = operatedBy(cfg.OperatedBy)
-		r.Enforcement = enforcement(cfg.OperatedBy, !cfg.Service())
+		r.OperatedBy = OperatedBy(cfg.OperatedBy)
+		r.Enforcement = Enforcement(cfg.OperatedBy, !cfg.Service())
 		if base, err := cfg.PagesBase(); err == nil {
 			r.Pages.URL = base
 		}
@@ -71,7 +71,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	if err != nil {
 		return guidance.StatusReport{}, err
 	}
-	r.Problems, r.Ready = list, ready(list)
+	r.Problems, r.Ready = list, Ready(list)
 	return r, nil
 }
 
@@ -112,8 +112,8 @@ func engineRevokedSteps(b *guidance.Steps) string {
 		"Did you revoke it on purpose? If you replaced the engine, the agent sets it up again and gives you a new link."
 }
 
-// startedByEnum is the status enum of a --started-by value ("" for none).
-func startedByEnum(v string) string {
+// StartedByEnum is the status enum of a --started-by value ("" for none).
+func StartedByEnum(v string) string {
 	switch v {
 	case "hand", "mcp", "crash":
 		return strings.ToUpper(v)
@@ -121,12 +121,22 @@ func startedByEnum(v string) string {
 	return ""
 }
 
-// engineGaveUpMessage is the ENGINE_GAVE_UP status message: the supervisor's
+// EngineGaveUpMessage is the ENGINE_GAVE_UP status message: the supervisor's
 // reason, and when the next try happens during the hold-off.
-func engineGaveUpMessage(host EngineHost, stop guidance.LastStop, configPath string, now time.Time) string {
+func EngineGaveUpMessage(host EngineHost, stop guidance.LastStop, configPath string, now time.Time) string {
 	msg := "the engine stopped and was not restarted: " + stop.Reason
 	if until, ok := host.StartHoldOffUntil(stop, configPath, now); ok {
 		msg += ". The next try is at " + until.UTC().Format(time.RFC3339) + "."
 	}
 	return msg
+}
+
+// EngineHost is what the status of an engine that is down reads from the
+// host: the guard version this build installs, why the supervisor gave up
+// (last-stop.json in the state directory), and when it tries the engine
+// again after that.
+type EngineHost struct {
+	LatestGuardVersion func() int
+	ReadLastStop       func(stateDir string) (guidance.LastStop, bool)
+	StartHoldOffUntil  func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool)
 }

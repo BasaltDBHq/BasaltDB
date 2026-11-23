@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -359,7 +361,7 @@ func (pc *pluginCase) pluginOpened(ctx context.Context, o PluginOpened) (request
 	steps := guidance.NewSteps()
 	if ids, err := pc.delivery.CredentialIDs(ctx); err == nil && len(ids) == 0 {
 		lines = append(lines, "Nobody can approve this yet: no passkey is registered for this database.")
-		noPasskeySteps(steps, pc.core.Commands)
+		statussvc.NoPasskeySteps(steps, pc.core.Commands)
 	}
 	lines = append(lines, lead, pluginLevelLine(level), ask, "", link, "",
 		fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", o.ExpiresAt.UTC().Format(guidance.PersonTime)))

@@ -551,13 +551,13 @@ type agentEnv struct {
 	// REPAIR.
 	rotated *setup.Rotations
 	// vault reports the Vault connection in every agent's status.
-	vault agent.VaultReporter
+	vault status.VaultReporter
 	// portal reports the daily portal check in every agent's status; nil
 	// without a portal in the config.
-	portal agent.PortalReporter
+	portal status.PortalReporter
 	// plugins reports the plugin entries listed for each agent in its
 	// status; nil when no plugin is enabled.
-	plugins agent.PluginReporter
+	plugins status.PluginReporter
 	// deliverer gives each agent where its approval notices go, for the
 	// approval.deliver plugins; nil when the engine keeps no plugins.
 	deliverer func(name string) linksvc.LinkDeliverer
@@ -680,7 +680,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	observer := pii.NewObserver(classes, env.dict)
 	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
-	readRecord := func(ctx context.Context, id string) (*agent.EngineRecord, error) {
+	readRecord := func(ctx context.Context, id string) (*status.EngineRecord, error) {
 		r, err := guard.EngineRecord(ctx, pool, id)
 		return agentEngineRecord(r), postgres.MapError(err)
 	}
@@ -717,7 +717,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.StartedBy, deps.Status.Setup, deps.Status.Probe = env.startedBy, a.Setup, agentProbe{probe}
 	deps.Status.Vault, deps.Status.Portal, deps.Status.Plugins = env.vault, env.portal, env.plugins
 	deps.Status.CrashDirs = crashDirs(env.stateDir)
-	deps.Status.Access = func(ctx context.Context) (agent.CatalogAccess, error) { return agentAccess(ctx, pool) }
+	deps.Status.Access = func(ctx context.Context) (status.CatalogAccess, error) { return agentAccess(ctx, pool) }
 	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, TrustOf(pool)
 	deps.Status.Database = handoff.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
 	deps.Status.Finisher = finisher
@@ -767,7 +767,7 @@ func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 // that is missing or misses a breaking migration, or a database the engine
 // cannot reach, does not stop the engine: the agent gets status and its
 // problems, and the guard is read again on each call.
-func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
+func logGuard(ctx context.Context, probe status.Probe, log *slog.Logger) {
 	st, err := probe.GuardStatus(ctx)
 	switch {
 	case err != nil:

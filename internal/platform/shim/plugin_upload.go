@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"time"
 
-	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
@@ -46,7 +45,7 @@ func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []
 		Source string `json:"source"`
 	}
 	_ = json.Unmarshal(params["arguments"], &args)
-	if args.Source != "" && r.upload != nil && sess.uploadsPlugins() {
+	if args.Source != "" && r.upload != nil && r.uploadAllowed != nil && sess.uploadsPlugins(r.uploadAllowed) {
 		up, err := r.upload(ctx, args.Source)
 		var te *toolresult.ToolError
 		switch {
@@ -99,11 +98,11 @@ func asToolError(err error, te **toolresult.ToolError) bool {
 	return ok
 }
 
-// uploadsPlugins reports whether the engine said in its hello answer that a
-// person operates it and gave its local page origin, or that an agent
-// operates it (its approval link is the portal's): only then is a plugin
-// uploaded for it. An engine that has not answered the hello yet gets none.
-func (s *session) uploadsPlugins() bool {
+// uploadsPlugins reports whether allowed (Options.UploadAllowed) lets a
+// plugin be uploaded for the engine, given who its hello answer said
+// operates it and its local page origin. An engine that has not answered
+// the hello yet gets none.
+func (s *session) uploadsPlugins(allowed func(operatedBy, pagesOrigin string) bool) bool {
 	t := time.NewTimer(helloWait)
 	defer t.Stop()
 	select {
@@ -111,11 +110,5 @@ func (s *session) uploadsPlugins() bool {
 	case <-t.C:
 		return false
 	}
-	switch s.engine.OperatedBy {
-	case mcpcontract.OperatedByPerson:
-		return s.engine.PagesOrigin != ""
-	case mcpcontract.OperatedByAgent:
-		return true
-	}
-	return false
+	return allowed(s.engine.OperatedBy, s.engine.PagesOrigin)
 }

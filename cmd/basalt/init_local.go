@@ -32,7 +32,8 @@ const (
 // yet, waits for the engine's setup page, then prints the setup link and
 // opens it in the browser. The person does the rest on the page. It asks
 // nothing in the terminal and never reads the admin connection string.
-func runInitLocal(c *cliIO, args []string) int {
+// The service's fixed scripts and paths come from h.
+func runInitLocal(c *cliIO, h localHost, args []string) int {
 	job, err := parseInitLocal(c, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
@@ -48,7 +49,7 @@ func runInitLocal(c *cliIO, args []string) int {
 		return c.fail(fmt.Errorf("your OS user cannot be read: %w", err))
 	}
 	job.OSUser = me.Username
-	if err := ensureEngineService(c); err != nil {
+	if err := ensureEngineService(c, h); err != nil {
 		return c.fail(err)
 	}
 	state, err := waitForSetupPage(c)
@@ -57,7 +58,7 @@ func runInitLocal(c *cliIO, args []string) int {
 	}
 	switch state {
 	case engineSetUp:
-		if code, reset := changeLink(c, job); !reset {
+		if code, reset := changeLink(c, h, job); !reset {
 			return code
 		}
 		// The person answered "No, this isn't mine" and reset the engine
@@ -71,7 +72,7 @@ func runInitLocal(c *cliIO, args []string) int {
 			return c.fail(errors.New("the engine was set up again before this init could open the install page; run basalt init again"))
 		}
 	case engineRemoved:
-		return removeEngineService(c)
+		return removeEngineService(c, h)
 	case engineWaiting, engineResetAsked:
 		// engineResetAsked is never the answer here: waitForSetupPage
 		// takes a "No" it finds at the start as an engine set up.
@@ -96,7 +97,7 @@ func runInitLocal(c *cliIO, args []string) int {
 // answered "No, this isn't mine" on the page and reset the engine through
 // the administrator dialog (Not your database), and init goes on to the
 // install.
-func changeLink(c *cliIO, job localsetup.Job) (code int, reset bool) {
+func changeLink(c *cliIO, h localHost, job localsetup.Job) (code int, reset bool) {
 	job.Job, job.Demo = localsetup.JobChange, false
 	link, err := localsetup.Link(app.SetupOrigin, job)
 	if err != nil {
@@ -109,9 +110,9 @@ func changeLink(c *cliIO, job localsetup.Job) (code int, reset bool) {
 	fmt.Fprintln(c.stderr, "basalt: the engine on this computer is already set up. On the page that opened, update the guard or remove BasaltDB: type your database's admin connection string there, never here.")
 	switch waitForRemoval(c) {
 	case engineRemoved:
-		return removeEngineService(c), false
+		return removeEngineService(c, h), false
 	case engineResetAsked:
-		if code := resetEngineService(c); code != exitOK {
+		if code := resetEngineService(c, h); code != exitOK {
 			return code, false
 		}
 		return exitOK, true
@@ -150,9 +151,9 @@ func waitForRemoval(c *cliIO) engineState {
 // administrator dialog with its fixed script (service.ResetScript): it
 // deletes the engine's config, credentials and pins and restarts the
 // service. The person's password is the proof the page cannot give.
-func resetEngineService(c *cliIO) int {
+func resetEngineService(c *cliIO, h localHost) int {
 	return runServiceDialog(c, serviceDialog{
-		script:    app.OSResetScript,
+		script:    h.OSResetScript,
 		prompt:    app.OSResetPrompt,
 		noDialog:  "BasaltDB on this computer is reset through the system's administrator dialog, which cannot be shown here (%w), so nothing was reset. Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: you answered that the database this computer's BasaltDB serves is not yours. Asking for your password in the system's administrator dialog to reset BasaltDB on this computer: it deletes the engine's config, its agents' credentials and its certificate pins, and restarts the engine. No database is touched.",
@@ -165,9 +166,9 @@ func resetEngineService(c *cliIO) int {
 // removeEngineService removes the engine service after the setup page
 // removed BasaltDB, through the administrator dialog with its fixed
 // script (service.RemoveScript), which refuses while engine.json exists.
-func removeEngineService(c *cliIO) int {
+func removeEngineService(c *cliIO, h localHost) int {
 	return runServiceDialog(c, serviceDialog{
-		script:    app.OSRemoveScript,
+		script:    h.OSRemoveScript,
 		prompt:    app.OSRemovePrompt,
 		noDialog:  "BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine",
 		asking:    "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.",
@@ -175,6 +176,23 @@ func removeEngineService(c *cliIO) int {
 		failed:    "the engine service was not removed: %w",
 		done:      "basalt: the engine service is removed.",
 	})
+}
+
+// localHost is what basalt init on a person-operated engine reaches
+// outside the CLI: the engine service's fixed scripts, its unit's path and
+// its default OS user.
+type localHost interface {
+	// OSInstallScript is the first install's fixed script for binary.
+	OSInstallScript(goos, binary string) (string, error)
+	// OSRemoveScript is the fixed script that removes the engine service.
+	OSRemoveScript(goos string) (string, error)
+	// OSResetScript is the fixed script that resets BasaltDB on this
+	// computer.
+	OSResetScript(goos string) (string, error)
+	// OSDefaultUser is the OS user the engine service runs as.
+	OSDefaultUser(goos string) string
+	// OSUnitPath is the installed engine service unit's path.
+	OSUnitPath(goos string) string
 }
 
 // serviceDialog is one fixed script run through the administrator dialog,
@@ -238,19 +256,19 @@ func parseInitLocal(c *cliIO, args []string) (localsetup.Job, error) {
 // ensureEngineService installs the engine service through the system's
 // administrator dialog when it is not installed yet: one password, in the
 // dialog. It never falls back to running the engine as the person.
-func ensureEngineService(c *cliIO) error {
-	if c.host.System(io.Discard, io.Discard).Exists(app.OSUnitPath(c.goos)) {
+func ensureEngineService(c *cliIO, h localHost) error {
+	if c.host.System(io.Discard, io.Discard).Exists(h.OSUnitPath(c.goos)) {
 		return nil
 	}
 	if err := c.host.DialogAvailable(c.goos); err != nil {
 		return noDialog(err)
 	}
-	bin, script, err := dialogScript(c)
+	bin, script, err := dialogScript(c, h)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(c.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as %s; it runs:\n  %s\n",
-		app.OSDefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
+		h.OSDefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
 	if err := c.host.AdminDialog(c.ctx, c.goos, app.OSInstallPrompt, script, c.stderr); err != nil {
 		if errors.Is(err, app.ErrOSNoDialog) {
 			return noDialog(err)

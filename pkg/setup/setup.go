@@ -340,7 +340,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if err != nil {
 		return Checked{}, asError(err)
 	}
-	p, err := s.Prepare(ctx, conn, adminAt(conn))
+	p, err := s.Prepare(ctx, pgquerier.Neutralize(conn), adminAt(conn))
 	if err != nil {
 		return Checked{}, asError(err)
 	}
@@ -580,7 +580,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	if in.Passkey != nil && !in.Passkey.verified() {
 		return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
 	}
-	p, err := s.Prepare(ctx, conn, adminAt(conn))
+	p, err := s.Prepare(ctx, pgquerier.Neutralize(conn), adminAt(conn))
 	if err != nil {
 		return Result{}, asError(err)
 	}

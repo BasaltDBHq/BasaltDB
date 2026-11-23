@@ -7,16 +7,24 @@ import (
 	"encoding/json"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 )
+
+// confirmArgs are confirm_database's arguments.
+type confirmArgs struct {
+	SetupID  string            `json:"setupId" validate:"required,uuid"`
+	Database setupcode.Address `json:"database" validate:"required"`
+	Answer   string            `json:"answer" validate:"required,oneof=YES NO"`
+}
 
 // --- the served agent's confirm_database ---
 
 // confirmDatabase answers confirm_database on an agent with no connect-only
 // setup waiting: INVALID_ARGUMENT.
 func confirmDatabase(_ context.Context, raw json.RawMessage) (any, error) {
-	var args handoff.ConfirmArgs
+	var args confirmArgs
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}

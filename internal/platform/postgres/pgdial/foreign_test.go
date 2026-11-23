@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
 // CheckForeignDSN takes only a URL pgx reads no file for: an exact

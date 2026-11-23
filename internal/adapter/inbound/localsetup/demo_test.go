@@ -10,9 +10,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
 // fixtureOn is newFixture on database d with a config of its own, as a

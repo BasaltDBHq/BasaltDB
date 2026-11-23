@@ -15,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -23,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
 // zoned is the agent's connection string with the session settings a

@@ -12,8 +12,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
 var leads = []string{"public.leads"}

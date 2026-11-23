@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/osservice"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
 // rootFiles reaches the files of an engine started as root

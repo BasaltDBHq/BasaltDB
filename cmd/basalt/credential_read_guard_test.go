@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 
 // appImport is where cmd reaches pgdial.CheckForeignDSN from: app re-exports it.
 const appImport = "github.com/basaltdbhq/basaltdb/internal/app"

@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 
 // wireHandoff fills the ports the connect probe declares with the Postgres

@@ -202,7 +202,7 @@ linters:
               desc: statements are checked by the store (SQLStore.Check)
             - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store
               desc: the run.go wiring picks the adapter; the service sees ports only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial
               desc: the agent service opens no connection
         # The ledger, the signed-message codecs and the PII code do not depend
         # on a store adapter or on the agent service.

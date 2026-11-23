@@ -37,8 +37,8 @@ type (
 	OSSpec       = osservice.Spec
 	OSFile       = osservice.File
 	OSTrustedDir = osservice.TrustedDir
-	OSPluginHost = osservice.PluginHost
-	OSPluginUnit = osservice.PluginEntry
+	OSPluginHost = servicespec.PluginHost
+	OSPluginUnit = servicespec.PluginEntry
 )
 
 const (

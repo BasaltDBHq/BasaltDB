@@ -212,7 +212,7 @@ func InstallPlan(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		return nil, err
 	}
 	if len(s.Plugins) > 0 {
-		if err := s.pluginHost().validate(); err != nil {
+		if err := validateHost(s.pluginHost()); err != nil {
 			return nil, err
 		}
 	}

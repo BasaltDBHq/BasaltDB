@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The tables of an install of a real database (CONTRACT.md, The install of
@@ -96,7 +96,7 @@ const listSQL = `SELECT n.nspname || '.' || c.relname,
  ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C"
  LIMIT $2`
 
-func readListing(ctx context.Context, q setuprun.Querier, schemas []string) (listing, error) {
+func readListing(ctx context.Context, q setup.Querier, schemas []string) (listing, error) {
 	rows, err := q.Query(ctx, listSQL, schemas, maxTables+1)
 	if err != nil {
 		return listing{}, err
@@ -244,7 +244,7 @@ func (l listing) access(picks []TablePick) (write, read []string, err error) {
 func questions(blind []guardmodel.BlindTable, agent string) []Question {
 	out := make([]Question, 0, len(blind))
 	for _, b := range blind {
-		out = append(out, Question{Kind: "ROW_LEVEL_SECURITY", Table: b.Table, Text: setuprun.RLSQuestion(b, agent), Choices: []string{ChoiceAllRows, ChoiceNone}})
+		out = append(out, Question{Kind: "ROW_LEVEL_SECURITY", Table: b.Table, Text: setup.RLSQuestion(b, agent), Choices: []string{ChoiceAllRows, ChoiceNone}})
 	}
 	return out
 }

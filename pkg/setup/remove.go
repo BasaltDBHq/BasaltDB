@@ -9,7 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // Removing BasaltDB from a database (CONTRACT.md, Setup jobs, Remove Basalt)

@@ -12,7 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -30,7 +30,7 @@ func (s *Service) repairable(ctx context.Context, j agentJob) (string, error) {
 		return "", nil // no credential to try: the fix writes a new one
 	}
 	dsn, err := s.be.ReadCredential(j.agent.Store.CredentialFile)
-	if errors.Is(err, setuprun.ErrForeignCredential) {
+	if errors.Is(err, setup.ErrForeignCredential) {
 		return "", refuse(CodeSetupFailed, "The agent's credential on this computer is not one this engine wrote. Nothing changed.")
 	}
 	if err != nil {
@@ -130,7 +130,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		if err != nil {
 			return err
 		}
-		if err := setuprun.ApplyInitTx(ctx, s.be, tx, script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, tx, script); err != nil {
 			return refuse(CodeSetupFailed, fmt.Sprintf("The role %s is not a plain agent role this admin can repair (elevated attributes, other memberships, owned objects or settings it cannot reset). Nothing changed.", j.role))
 		}
 		wrote = true

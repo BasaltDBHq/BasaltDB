@@ -25,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // Refusal codes and their statuses (CONTRACT.md, The local setup page,
@@ -201,11 +201,11 @@ func (s *Service) verifyPasskey(req Request) (*passkey.Credential, error) {
 	if !s.opts.Now().Before(c.ExpiresAt) {
 		return nil, refuse(CodeChallengeExpired, "This page waited more than 15 minutes. Check again, then create the passkey.")
 	}
-	rr, err := setuprun.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+	rr, err := setup.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return nil, refuse(CodeChallengeInvalid, "This passkey was made for another setup page. Reload the page and start again.")
 	}
-	cred, err := setuprun.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
+	cred, err := setup.VerifyRegistration(rr, req.Passkey.RegistrationResponse, s.rp)
 	if err != nil {
 		return nil, refuse(CodePasskeyInvalid, "The passkey could not be checked. Create it again on this page.")
 	}
@@ -336,7 +336,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
-		if err := setuprun.ApplyInitTx(ctx, s.be, tx, script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, tx, script); err != nil {
 			return setupFailed("install script", err)
 		}
 		if !req.Demo {

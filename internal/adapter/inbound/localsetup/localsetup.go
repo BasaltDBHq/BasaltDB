@@ -23,7 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -216,7 +216,7 @@ func New(o Options) (*Service, error) {
 	if o.Backend == nil {
 		return nil, errors.New("localsetup: backend required")
 	}
-	rp, err := setuprun.LocalRelying(o.Origin)
+	rp, err := setup.LocalRelying(o.Origin)
 	if err != nil {
 		return nil, err
 	}
@@ -679,7 +679,7 @@ func (s *Service) currentDatabase(ctx context.Context, tx pgx.Tx) (string, error
 
 // passkeyNeeded: the database has no active passkey for origin (none at
 // all on a fresh database, whose passkeys table does not exist yet).
-func passkeyNeeded(ctx context.Context, b setuprun.Backend, tx pgx.Tx, origin string) (bool, error) {
+func passkeyNeeded(ctx context.Context, b setup.Backend, tx pgx.Tx, origin string) (bool, error) {
 	// A savepoint: on a fresh database the lookup fails and must not abort tx.
 	sub, err := tx.Begin(ctx)
 	if err != nil {

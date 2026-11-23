@@ -2,8 +2,8 @@ package setupstore_test
 
 import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // Store is the backend the setup service runs on.
-var _ setuprun.Backend = setupstore.Store{}
+var _ setup.Backend = setupstore.Store{}

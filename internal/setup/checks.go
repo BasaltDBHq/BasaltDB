@@ -50,35 +50,3 @@ func CheckServicePersons(uids []uint32, engineUser string) error {
 	}
 	return nil
 }
-
-// Cli is what the setup checks reach of the CLI's own rules: the refusal of
-// an agent's OS user carries the CLI's usage error.
-type Cli interface {
-	// CheckAgentOSUserWith refuses an agent's OS user that is the engine's
-	// own user or is in the engine's group, looking groups up through the
-	// two functions.
-	CheckAgentOSUserWith(osUser, engineUser string, lookupGroup func(string) (*user.Group, error),
-		groups func(string) ([]string, error)) error
-}
-
-// CheckAgentOSUser refuses an agent's OS user that is the engine's own
-// user or is in the engine's group (named as the engine's user): that
-// group reaches every plugin socket in service mode, and the engine's
-// config directory. When the group does not exist yet (the install makes
-// it), no one is in it. A lookup that fails otherwise refuses.
-func CheckAgentOSUser(c Cli, osUser, engineUser string) error {
-	return c.CheckAgentOSUserWith(osUser, engineUser, user.LookupGroup, osUserGroups)
-}
-
-// osUserGroups are an OS user's group ids, its primary group included.
-func osUserGroups(name string) ([]string, error) {
-	u, err := user.Lookup(name)
-	if err != nil {
-		return nil, err
-	}
-	gids, err := u.GroupIds()
-	if err != nil {
-		return nil, err
-	}
-	return append(gids, u.Gid), nil
-}

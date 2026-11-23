@@ -3,12 +3,10 @@ package main
 import (
 	"fmt"
 	"io"
-	"os/user"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
@@ -61,13 +59,4 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 		}
 	}
 	return out
-}
-
-// cliAdapter is setup.Cli through setupcli.
-type cliAdapter struct{}
-
-func (cliAdapter) CheckAgentOSUserWith(osUser, engineUser string, lookupGroup func(string) (*user.Group, error),
-	groups func(string) ([]string, error),
-) error {
-	return setupcli.CheckAgentOSUserWith(osUser, engineUser, lookupGroup, groups)
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
@@ -319,7 +320,7 @@ func agentSpecFromStdin(in io.Reader, spec app.OSSpec, a agentInstall, credStdin
 	if _, err := user.Lookup(a.osUser); err != nil {
 		return spec, fmt.Errorf("os user %q: %w", a.osUser, err)
 	}
-	if err := setup.CheckAgentOSUser(cliAdapter{}, a.osUser, spec.User); err != nil {
+	if err := setupcli.CheckAgentOSUser(a.osUser, spec.User); err != nil {
 		return spec, err
 	}
 	if err := setup.CheckServicePersons(a.personUIDs, spec.User); err != nil {

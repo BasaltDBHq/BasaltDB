@@ -145,14 +145,14 @@ func waitForRemoval(c *cli.IO) setup.BasaltEngineState {
 // deletes the engine's config, credentials and pins and restarts the
 // service. The person's password is the proof the page cannot give.
 func resetEngineService(c *cli.IO, h LocalHost) int {
-	return runServiceDialog(c, setup.ServiceDialog{
-		Script:    h.OSResetScript,
-		Prompt:    servicespec.ResetPrompt,
-		NoDialog:  "BasaltDB on this computer is reset through the system's administrator dialog, which cannot be shown here (%w), so nothing was reset. Run basalt init again in a desktop session on this machine",
-		Asking:    "basalt: you answered that the database this computer's BasaltDB serves is not yours. Asking for your password in the system's administrator dialog to reset BasaltDB on this computer: it deletes the engine's config, its agents' credentials and its certificate pins, and restarts the engine. No database is touched.",
-		Cancelled: "the administrator dialog was closed, so nothing was reset. Run basalt init again and answer the question on the page again",
-		Failed:    "BasaltDB on this computer was not reset: %w",
-		Done:      "basalt: BasaltDB on this computer is reset; nothing changed in any database. Opening the setup page for your own database.",
+	return runServiceDialog(c, serviceDialog{
+		script:    h.OSResetScript,
+		prompt:    servicespec.ResetPrompt,
+		noDialog:  "BasaltDB on this computer is reset through the system's administrator dialog, which cannot be shown here (%w), so nothing was reset. Run basalt init again in a desktop session on this machine",
+		asking:    "basalt: you answered that the database this computer's BasaltDB serves is not yours. Asking for your password in the system's administrator dialog to reset BasaltDB on this computer: it deletes the engine's config, its agents' credentials and its certificate pins, and restarts the engine. No database is touched.",
+		cancelled: "the administrator dialog was closed, so nothing was reset. Run basalt init again and answer the question on the page again",
+		failed:    "BasaltDB on this computer was not reset: %w",
+		done:      "basalt: BasaltDB on this computer is reset; nothing changed in any database. Opening the setup page for your own database.",
 	})
 }
 
@@ -160,14 +160,14 @@ func resetEngineService(c *cli.IO, h LocalHost) int {
 // removed BasaltDB, through the administrator dialog with its fixed
 // script (service.RemoveScript), which refuses while engine.json exists.
 func removeEngineService(c *cli.IO, h LocalHost) int {
-	return runServiceDialog(c, setup.ServiceDialog{
-		Script:    h.OSRemoveScript,
-		Prompt:    servicespec.RemovePrompt,
-		NoDialog:  "BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine",
-		Asking:    "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.",
-		Cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init again to remove it",
-		Failed:    "the engine service was not removed: %w",
-		Done:      "basalt: the engine service is removed.",
+	return runServiceDialog(c, serviceDialog{
+		script:    h.OSRemoveScript,
+		prompt:    servicespec.RemovePrompt,
+		noDialog:  "BasaltDB is removed from the database, but the engine service is removed through the system's administrator dialog, which cannot be shown here (%w). Run basalt init again in a desktop session on this machine",
+		asking:    "basalt: BasaltDB is removed from the database. Asking for your password in the system's administrator dialog to remove the engine service: it stops the service and removes its files and OS users.",
+		cancelled: "the administrator dialog was closed, so the engine service stays. Run basalt init again to remove it",
+		failed:    "the engine service was not removed: %w",
+		done:      "basalt: the engine service is removed.",
 	})
 }
 
@@ -183,22 +183,29 @@ type LocalHost interface {
 	OSResetScript(goos string) (string, error)
 }
 
-func runServiceDialog(c *cli.IO, d setup.ServiceDialog) int {
+// serviceDialog is one fixed script run through the administrator dialog,
+// with what init says around it.
+type serviceDialog struct {
+	script                                            func(goos string) (string, error)
+	prompt, noDialog, asking, cancelled, failed, done string
+}
+
+func runServiceDialog(c *cli.IO, d serviceDialog) int {
 	if err := c.Host.DialogAvailable(c.Goos); err != nil {
-		return c.Fail(fmt.Errorf(d.NoDialog, err))
+		return c.Fail(fmt.Errorf(d.noDialog, err))
 	}
-	script, err := d.Script(c.Goos)
+	script, err := d.script(c.Goos)
 	if err != nil {
 		return c.Fail(err)
 	}
-	fmt.Fprintln(c.Stderr, d.Asking)
-	if err := c.Host.AdminDialog(c.Ctx, c.Goos, d.Prompt, script, c.Stderr); err != nil {
+	fmt.Fprintln(c.Stderr, d.asking)
+	if err := c.Host.AdminDialog(c.Ctx, c.Goos, d.prompt, script, c.Stderr); err != nil {
 		if errors.Is(err, servicespec.ErrDialogCancelled) {
-			return c.Fail(errors.New(d.Cancelled))
+			return c.Fail(errors.New(d.cancelled))
 		}
-		return c.Fail(fmt.Errorf(d.Failed, err))
+		return c.Fail(fmt.Errorf(d.failed, err))
 	}
-	fmt.Fprintln(c.Stderr, d.Done)
+	fmt.Fprintln(c.Stderr, d.done)
 	return cli.ExitOK
 }
 

@@ -9,7 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
-	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 )
 
 func TestPluginUnitEntries(t *testing.T) {
@@ -61,6 +61,6 @@ func TestPluginUnitEntries(t *testing.T) {
 // engine's: root.
 func agentOSUser(t *testing.T) string {
 	t.Helper()
-	require.NoError(t, setup.CheckAgentOSUser(cliAdapter{}, "root", me(t)), "root stands in for an agent's OS user")
+	require.NoError(t, setupcli.CheckAgentOSUser("root", me(t)), "root stands in for an agent's OS user")
 	return "root"
 }

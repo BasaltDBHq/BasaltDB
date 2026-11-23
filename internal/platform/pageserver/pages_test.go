@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -30,7 +32,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -74,14 +75,14 @@ func (a *stubAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Re
 	return revert.Request{}, linksvc.ErrNotThisAgent
 }
 
-func (a *stubAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
-	return agent.ScopeResponse{}, linksvc.ErrNotThisAgent
+func (a *stubAgent) RescopeRevert(context.Context, uuid.UUID, string, revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error) {
+	return revertsvc.ScopeResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *stubAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
-func (a *stubAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
-	return agent.RejectResponse{}, linksvc.ErrNotThisAgent
+func (a *stubAgent) RejectRevert(context.Context, uuid.UUID, string, revertsvc.RejectRequest) (revertsvc.RejectResponse, error) {
+	return revertsvc.RejectResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, _ string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {

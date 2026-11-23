@@ -10,8 +10,5 @@ import (
 // SetDeliverer replaces s's link deliverer.
 func SetDeliverer(s *Service, d linksvc.LinkDeliverer) { s.deps.Delivery.Deliverer = d }
 
-// SetLinkBudget replaces s's link budget.
-func SetLinkBudget(s *Service, n int) { s.deps.Core.LinkBudget = n }
-
 // LinkSecrets is s's short links' secrets.
 func LinkSecrets(s *Service) *links.Secrets { return s.deps.Delivery.Links }

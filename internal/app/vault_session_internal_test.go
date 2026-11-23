@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -34,7 +36,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // heldAgent holds one write for approval. Its relay checks the person's
@@ -86,14 +87,14 @@ func (a *heldAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Re
 	return revert.Request{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
-	return agent.ScopeResponse{}, linksvc.ErrNotThisAgent
+func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error) {
+	return revertsvc.ScopeResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
-func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
-	return agent.RejectResponse{}, linksvc.ErrNotThisAgent
+func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, revertsvc.RejectRequest) (revertsvc.RejectResponse, error) {
+	return revertsvc.RejectResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) RevealApproval(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {

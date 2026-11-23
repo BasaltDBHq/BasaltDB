@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -103,7 +105,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 	case guidance.CodeApprovalInvalid:
 		person = approvalInvalidSteps(b, te, f)
 	case guidance.CodeRevertInvalid:
-		revertInvalidSteps(b, te, f.arg(guidance.ArgRevertID))
+		revertsvc.InvalidSteps(b, te, f.arg(guidance.ArgRevertID))
 	case guidance.CodePermissionDenied:
 		person = s.permissionDeniedSteps(b, te, f)
 	case guidance.CodeNotFound:

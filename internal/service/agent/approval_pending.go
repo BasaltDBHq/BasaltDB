@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -26,7 +28,7 @@ func (ac *approvalCase) deliverReissued(items []PendingEntry) {
 			ac.delivery.Deliver(linksvc.LinkNotice{
 				Kind: linksvc.NoticeLinkReplaced, ApprovalID: e.Approval.ID, Headline: d.Headline, ExpiresAt: e.Approval.ExpiresAt, Link: d.ApprovalURL,
 			})
-		case e.Revert != nil && e.Revert.issued:
+		case e.Revert != nil && e.Revert.Issued:
 			d := pendingRevertFromDomain(*e.Revert)
 			ac.delivery.Deliver(linksvc.LinkNotice{
 				Kind: linksvc.NoticeLinkReplaced, RevertID: e.Revert.ID, Headline: d.Headline, ExpiresAt: e.Revert.ExpiresAt, Link: d.RevertURL,
@@ -51,7 +53,7 @@ type PendingParams struct {
 // Revert is set.
 type PendingEntry struct {
 	Approval *PendingItem
-	Revert   *PendingRevert
+	Revert   *revertsvc.PendingRevert
 }
 
 func (e PendingEntry) id() uuid.UUID {
@@ -92,7 +94,7 @@ func (ac *approvalCase) ListPending(ctx context.Context, p PendingParams) (pagin
 			return pagination.Page[PendingEntry]{}, err
 		}
 		for i := range page.Items {
-			entries = append(entries, PendingEntry{Revert: &PendingRevert{Revert: page.Items[i]}})
+			entries = append(entries, PendingEntry{Revert: &revertsvc.PendingRevert{Revert: page.Items[i]}})
 		}
 		more = more || page.NextCursor != ""
 	}

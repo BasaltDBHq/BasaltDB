@@ -16,7 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
+	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -53,12 +55,21 @@ func (d *delivered) take() []linksvc.LinkNotice {
 // the engine serves its local pages and hands short links over.
 func deliveryHarness(t *testing.T, pages bool) (agentEnv, *delivered) {
 	t.Helper()
+	return deliveryHarnessWith(t, pages, nil)
+}
+
+// deliveryHarnessWith is deliveryHarness with an edit of the dependencies,
+// made before the service is built.
+func deliveryHarnessWith(t *testing.T, pages bool, edit func(*agent.Deps)) (agentEnv, *delivered) {
+	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	var origin []string
 	if pages {
 		origin = []string{pageOrigin}
 	}
-	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads), origin...)
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	env := agentHarnessWith(t, d, d.NewAgent(t, "bot", leads, leads), keys, sqlguard.DefaultLimits(), edit, origin...)
 	rec := &delivered{}
 	agent.SetDeliverer(env.svc, rec)
 	return env, rec
@@ -221,8 +232,7 @@ func TestWaitingWriteSignedFromItsNotice(t *testing.T) {
 // link.
 func TestNoticeWithoutStandaloneLinkHasNone(t *testing.T) {
 	t.Parallel()
-	env, rec := deliveryHarness(t, false)
-	agent.SetLinkBudget(env.svc, 200)
+	env, rec := deliveryHarnessWith(t, false, func(d *agent.Deps) { d.Core.LinkBudget = 200 })
 	body, isError := env.h.call(t, "write", holdWrite(t, env.h, nil))
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)

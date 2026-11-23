@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 // revertReceipt is the receipt of r as Postgres shows it after the
 // person's signature: APPLIED or APPLYING. A widened revert has none: the
 // agent role's view holds no binding of it (RS-5).
-func (rc *revertCase) revertReceipt(r action.Revert) (linksvc.Receipt, error) {
+func (rc *Service) revertReceipt(r action.Revert) (linksvc.Receipt, error) {
 	if r.Status != action.RevertApplied && r.Status != action.RevertApplying {
 		return linksvc.Receipt{}, fmt.Errorf("revert %s is %s, not signed", r.ID, r.Status)
 	}

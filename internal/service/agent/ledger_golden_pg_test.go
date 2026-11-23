@@ -16,7 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // What the engine records in basalt_meta, and what the page API answers,
@@ -127,13 +127,13 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 
 	// A widen with no proof from the person.
 	task := uuid.Must(uuid.NewV7())
-	c.post("revert_rescope_without_proof", scopePath(revertID), secret, agent.ScopeRequest{
+	c.post("revert_rescope_without_proof", scopePath(revertID), secret, revertsvc.ScopeRequest{
 		Select: revert.Select{Scope: revert.ScopeTask, ScopeID: task, Agents: []string{e.a.Role}},
 	})
 
 	// The person rejects it on the page.
 	note := "Not now"
-	c.post("revert_reject", rejectPath(revertID), secret, agent.RejectRequest{Note: &note})
+	c.post("revert_reject", rejectPath(revertID), secret, revertsvc.RejectRequest{Note: &note})
 	c.get("revert_request_after_reject", revertPath(revertID), secret)
 
 	requireGoldenFile(t, "pages", "ledger_after_pages", dumpLedger(t, d))

@@ -39,6 +39,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -216,12 +217,12 @@ func (e *rescopeEnv) widenBody(t *testing.T, signer *passkeytest.Authenticator, 
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
 	as, err := signer.Sign(reverttest.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
+	return scopeBody(t, revertsvc.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 }
 
-func scopeBody(t *testing.T, in agent.ScopeRequest) []byte {
+func scopeBody(t *testing.T, in revertsvc.ScopeRequest) []byte {
 	t.Helper()
 	b, err := json.Marshal(in)
 	require.NoError(t, err)
@@ -258,7 +259,7 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	// Back to the proposal: own work, the link secret is enough. The answer
 	// carries the nonce the widen proof signs; the page reads it there.
 	var own scopeAnswer
-	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, agentSecret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &own))
+	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, agentSecret, scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &own))
 	require.Nil(t, own.Catalog, "no catalog without a proof or token")
 	require.Len(t, own.Request.RescopeNonce, 16)
 	require.Equal(t, e.adminNonce(t, id), []byte(own.Request.RescopeNonce))
@@ -287,7 +288,7 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), agentSecret, &perr))
 	require.Equal(t, "NOT_FOUND", perr.Code)
 	require.Equal(t, "LINK", perr.Reason)
-	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, agentSecret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
+	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, agentSecret, scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr))
 
 	// The rotated link reads the widened request from the engine's memory.
 	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), newSecret, &read))
@@ -297,7 +298,7 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	// Narrow inside the person's scope: the engine adds the token.
 	helperOnly := revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}
 	var narrow scopeAnswer
-	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, newSecret, scopeBody(t, agent.ScopeRequest{Select: helperOnly}), &narrow))
+	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, newSecret, scopeBody(t, revertsvc.ScopeRequest{Select: helperOnly}), &narrow))
 	nb, err := narrow.Request.Check()
 	require.NoError(t, err)
 	require.Equal(t, helperOnly.Agents, nb.Select.Agents)
@@ -323,24 +324,24 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 	require.NoError(t, err)
 	signedFor := newLinkSecret(t)
 	swapped := e.widenBody(t, e.person, id, nonce, e.every(), signedFor)
-	var in agent.ScopeRequest
+	var in revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(swapped, &in))
 	in.NewSecret = newLinkSecret(t)
 	otherSelect := e.widenBody(t, e.person, id, nonce, revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}, signedFor)
-	var other agent.ScopeRequest
+	var other revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(otherSelect, &other))
 	other.Select = e.every()
 
 	cases := map[string][]byte{
-		"no proof":                     scopeBody(t, agent.ScopeRequest{Select: e.every()}),
+		"no proof":                     scopeBody(t, revertsvc.ScopeRequest{Select: e.every()}),
 		"another passkey":              e.widenBody(t, thief, id, nonce, e.every(), newLinkSecret(t)),
 		"a proof for another secret":   scopeBody(t, in),
 		"a proof for another select":   scopeBody(t, other),
 		"a stale nonce":                e.widenBody(t, e.person, id, make([]byte, 16), e.every(), newLinkSecret(t)),
-		"another agent's run as own":   scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Runs: []uuid.UUID{uuid.Must(uuid.NewV7())}}}),
-		"the helper only, no proof":    scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
-		"another task, no proof":       scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: uuid.Must(uuid.NewV7())}}),
-		"a table bot never wrote, own": scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Tables: []string{"public.lead_owner"}}}),
+		"another agent's run as own":   scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Runs: []uuid.UUID{uuid.Must(uuid.NewV7())}}}),
+		"the helper only, no proof":    scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
+		"another task, no proof":       scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: uuid.Must(uuid.NewV7())}}),
+		"a table bot never wrote, own": scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Tables: []string{"public.lead_owner"}}}),
 	}
 	var first *pageError
 	for name, body := range cases {
@@ -360,7 +361,7 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 		"a proof without a secret": `{"select":{"scope":"TASK","scopeId":"` + e.task.String() + `","agents":null,"runs":null,"tables":null},"proof":{"credentialId":"AA","authenticatorData":"AA","clientDataJson":"AA","signature":"AA"}}`,
 		"a secret without a proof": `{"select":{"scope":"TASK","scopeId":"` + e.task.String() + `","agents":null,"runs":null,"tables":null},"newSecret":"` + newLinkSecret(t) + `"}`,
 		"not json":                 `select`,
-		"twenty-one tables, with a proof": string(scopeBody(t, agent.ScopeRequest{
+		"twenty-one tables, with a proof": string(scopeBody(t, revertsvc.ScopeRequest{
 			Select:    revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Tables: manyTables(revert.MaxFilter + 1)},
 			NewSecret: newLinkSecret(t), Proof: &linksvc.ScopeProof{CredentialID: []byte{1}, AuthenticatorData: []byte{1}, ClientDataJSON: []byte{1}, Signature: []byte{1}},
 		})),
@@ -420,7 +421,7 @@ func TestResetGivesTheRotatedLinkLinkReset(t *testing.T) {
 	require.Len(t, perr.NextSteps, 1)
 	require.Equal(t, toolresult.ActorPerson, perr.NextSteps[0].Actor)
 	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, personSecret,
-		scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
+		scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "LINK_RESET", perr.Reason)
 
 	var read revert.Request
@@ -457,9 +458,9 @@ func TestScopeTokenIsLostOnRestart(t *testing.T) {
 	require.Equal(t, http.StatusConflict, e.p.get(revertPath(id), personSecret, &perr), "the lines were in memory only")
 	require.Equal(t, "REVERT_INVALID", perr.Code)
 	require.Contains(t, perr.PersonMessage, "Include other agents' changes again")
-	helperOnly := scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}})
+	helperOnly := scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}})
 	require.Equal(t, http.StatusConflict, e.p.post(scopePath(id), pageOrigin, personSecret, helperOnly, &perr), "no token, no narrow")
-	require.Equal(t, http.StatusConflict, e.p.post(scopePath(id), pageOrigin, personSecret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr),
+	require.Equal(t, http.StatusConflict, e.p.post(scopePath(id), pageOrigin, personSecret, scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr),
 		"after a widen even the agent's own work needs the token")
 
 	// The 409 carries the nonce, read as the agent role: the page widens
@@ -500,7 +501,7 @@ func TestDirectResetInPostgresBeatsTheEnginesMemory(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), personSecret, &perr))
 	require.Equal(t, "LINK_RESET", perr.Reason)
 	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, personSecret,
-		scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
+		scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "LINK_RESET", perr.Reason, "the held token is gone with it")
 
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
@@ -556,8 +557,8 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
 		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
 	selects := [][]byte{
-		scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
-		scopeBody(t, agent.ScopeRequest{Select: e.every()}),
+		scopeBody(t, revertsvc.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
+		scopeBody(t, revertsvc.ScopeRequest{Select: e.every()}),
 	}
 	const posts = 8
 	var wg sync.WaitGroup
@@ -592,7 +593,7 @@ func TestScopeRouteTimeLimit(t *testing.T) {
 	id, secret := e.request(t)
 	e.start(t, func(s agent.SQLStore) agent.SQLStore { return slowReverts{s} })
 	var perr pageError
-	require.Equal(t, http.StatusGatewayTimeout, e.p.post(scopePath(id), pageOrigin, secret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
+	require.Equal(t, http.StatusGatewayTimeout, e.p.post(scopePath(id), pageOrigin, secret, scopeBody(t, revertsvc.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "QUERY_TIMEOUT", perr.Code)
 	require.Equal(t, "TIME_LIMIT", perr.Reason)
 	require.Equal(t, "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. "+

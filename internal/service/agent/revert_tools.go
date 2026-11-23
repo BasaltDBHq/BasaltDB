@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -56,7 +58,7 @@ func (a scopeIDs) filtered(scope action.Scope) (action.Scope, error) {
 			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with tables"}
 	}
 	if len(a.Runs) > revert.MaxFilter || len(a.Tables) > revert.MaxFilter {
-		return action.Scope{}, ScopeFilterCapped()
+		return action.Scope{}, revertsvc.ScopeFilterCapped()
 	}
 	if (a.Runs != nil && len(a.Runs) == 0) || (a.Tables != nil && len(a.Tables) == 0) {
 		return action.Scope{}, &guidance.ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +
@@ -159,7 +161,7 @@ func (h handlers) previewRevert(ctx context.Context, raw json.RawMessage) (any, 
 	if err != nil {
 		return nil, err
 	}
-	params := PreviewRevertParams{Params: args.Params, Scope: scope}
+	params := revertsvc.PreviewRevertParams{Params: args.Params, Scope: scope}
 	params.ApplyDefaultsAndClamp()
 	p, err := h.svc.PreviewRevert(ctx, params)
 	if err != nil {
@@ -210,17 +212,17 @@ func (a requestRevertArgs) requestScope() (action.Scope, error) {
 
 // awaitParams is the wait form's arguments as the service takes them. A
 // new link returns at once, so it takes no waitForSignature.
-func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
+func (a requestRevertArgs) awaitParams() (revertsvc.AwaitRevertParams, error) {
 	if len(a.named()) > 0 || a.hasFilters() || a.Intent != "" {
-		return AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
+		return revertsvc.AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
 			"tables or intent; the revert already has them"}
 	}
 	reissue := a.ReissueLink != nil && *a.ReissueLink
 	if a.WaitForSignature != nil && reissue {
-		return AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: waitForSignature does not go with " +
+		return revertsvc.AwaitRevertParams{}, &guidance.ArgumentError{Message: "invalid arguments: waitForSignature does not go with " +
 			"reissueLink: a new link returns at once (show it before waiting for it)"}
 	}
-	out := AwaitRevertParams{RevertID: uuid.MustParse(a.RevertID), Wait: DefaultRevertWait, Reissue: reissue}
+	out := revertsvc.AwaitRevertParams{RevertID: uuid.MustParse(a.RevertID), Wait: revertsvc.DefaultRevertWait, Reissue: reissue}
 	if a.WaitForSignature != nil {
 		out.Wait = time.Duration(*a.WaitForSignature) * time.Second
 	}
@@ -259,7 +261,7 @@ type revertProgressDTO struct {
 	Batches  int `json:"batches"`
 }
 
-func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
+func requestRevertFromDomain(r revertsvc.RequestedRevert) requestRevertResult {
 	rv := r.Revert
 	out := requestRevertResult{
 		RevertID: rv.ID.String(), Status: rv.Status, Scope: rv.Scope, ScopeID: rv.ScopeID.String(),
@@ -307,7 +309,7 @@ func (h handlers) requestRevertForm(ctx context.Context, raw json.RawMessage) (a
 	if err != nil {
 		return nil, err
 	}
-	r, err := h.svc.RequestRevert(ctx, RequestRevertParams{Scope: scope, Intent: args.Intent})
+	r, err := h.svc.RequestRevert(ctx, revertsvc.RequestRevertParams{Scope: scope, Intent: args.Intent})
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +372,7 @@ type revertPlanItemDTO struct {
 	Plan     *revertLineDTO `json:"plan,omitempty"`
 }
 
-func revertPlanFromDomain(p RevertPlan) revertPlanResult {
+func revertPlanFromDomain(p revertsvc.RevertPlan) revertPlanResult {
 	r := p.Revert
 	out := revertPlanResult{
 		RevertID: r.ID.String(), Status: r.Status, Scope: r.Scope, ScopeID: r.ScopeID.String(),
@@ -443,7 +445,7 @@ func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (an
 	if err := guidance.DecodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	res, err := h.svc.ApplyRevertBatch(ctx, ApplyRevertBatchParams{RevertID: uuid.MustParse(args.RevertID), Lines: args.Lines})
+	res, err := h.svc.ApplyRevertBatch(ctx, revertsvc.ApplyRevertBatchParams{RevertID: uuid.MustParse(args.RevertID), Lines: args.Lines})
 	if err != nil {
 		return nil, err
 	}

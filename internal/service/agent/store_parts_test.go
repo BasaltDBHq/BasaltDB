@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -42,7 +44,7 @@ type parts struct {
 	runStore
 	readRecorder
 	approvalStore
-	Reverts
+	revertsvc.Store
 }
 
 func (parts) Kind() action.StoreKind { return action.StorePostgres }
@@ -53,7 +55,7 @@ func (parts) Capabilities() action.Capabilities { return action.Capabilities{} }
 // reverts part for a revert's.
 func (p parts) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error) {
 	if kind == approval.KindRevert {
-		return p.Reverts.RevealNonce(ctx, kind, id)
+		return p.Store.RevealNonce(ctx, kind, id)
 	}
 	return p.approvalStore.RevealNonce(ctx, kind, id)
 }
@@ -76,14 +78,8 @@ func setApprovals(d *Deps, a approvalStore) {
 	useStore(d, p)
 }
 
-func setReverts(d *Deps, r Reverts) {
+func setReverts(d *Deps, r revertsvc.Store) {
 	p, _ := d.Core.Store.(parts)
-	p.Reverts = r
-	useStore(d, p)
-}
-
-func setRuns(d *Deps, r runStore) {
-	p, _ := d.Core.Store.(parts)
-	p.runStore = r
+	p.Store = r
 	useStore(d, p)
 }

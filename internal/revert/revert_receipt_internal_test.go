@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"encoding/json"
@@ -21,13 +21,11 @@ import (
 
 func receiptService(t *testing.T, keys *channel.EngineKeys) *Service {
 	t.Helper()
-	now := time.Date(2026, 11, 14, 9, 30, 0, 500, time.UTC)
-	s := &Service{deps: Deps{Core: CoreDeps{Name: "bot", Now: func() time.Time { return now }}}}
-	s.wire()
+	opts := []option{withNow(time.Date(2026, 11, 14, 9, 30, 0, 500, time.UTC))}
 	if keys != nil {
-		s.deps.Delivery.Receipts = keys
+		opts = append(opts, withReceipts(keys))
 	}
-	return s
+	return newService(t, "linux", "", opts...)
 }
 
 // signedRevert is a revert of run as Postgres shows it once signed.
@@ -54,7 +52,7 @@ func TestRevertReceiptWhileApplying(t *testing.T) {
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
 	r := signedRevert(t, ledger.RevertApplying, false)
-	got, err := receiptService(t, keys).revert.revertReceipt(r)
+	got, err := receiptService(t, keys).revertReceipt(r)
 	require.NoError(t, err)
 	p, err := channeltest.VerifyReceipt(got.Token, keys.PublicKeySPKI())
 	require.NoError(t, err)
@@ -71,7 +69,7 @@ func TestRevertReceiptRefusesAnUnsignedRevert(t *testing.T) {
 	t.Parallel()
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
-	_, err = receiptService(t, keys).revert.revertReceipt(signedRevert(t, ledger.RevertPending, false))
+	_, err = receiptService(t, keys).revertReceipt(signedRevert(t, ledger.RevertPending, false))
 	require.Error(t, err, "a receipt is made only once Postgres accepted the signature")
 }
 
@@ -79,7 +77,7 @@ func TestRevertReceiptWidened(t *testing.T) {
 	t.Parallel()
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
-	got, err := receiptService(t, keys).revert.revertReceipt(signedRevert(t, ledger.RevertApplying, true))
+	got, err := receiptService(t, keys).revertReceipt(signedRevert(t, ledger.RevertApplying, true))
 	require.NoError(t, err)
 	require.Empty(t, got.Token)
 	require.Equal(t, linksvc.NoReceiptWidened, got.Missing)
@@ -89,7 +87,7 @@ func TestRevertReceiptWidened(t *testing.T) {
 
 func TestReceiptOnKeyError(t *testing.T) {
 	t.Parallel()
-	got, err := receiptService(t, nil).revert.revertReceipt(signedRevert(t, ledger.RevertApplied, false))
+	got, err := receiptService(t, nil).revertReceipt(signedRevert(t, ledger.RevertApplied, false))
 	require.NoError(t, err)
 	require.Equal(t, linksvc.NoReceiptKeyError, got.Missing)
 	require.NotEmpty(t, got.Line)

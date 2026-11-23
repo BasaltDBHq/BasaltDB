@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -34,7 +36,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -54,10 +55,10 @@ type Agent interface {
 	RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error)
 	// RescopeRevert changes the revert's scope for the page holding secret
 	// (CONTRACT.md, Rescope, widen and reject).
-	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in agent.ScopeRequest) (agent.ScopeResponse, error)
+	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error)
 	// RejectRevert rejects the revert for the page holding secret and
 	// revokes its link (CONTRACT.md, Rescope, widen and reject).
-	RejectRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RejectRequest) (agent.RejectResponse, error)
+	RejectRevert(ctx context.Context, id uuid.UUID, secret string, in revertsvc.RejectRequest) (revertsvc.RejectResponse, error)
 	// RevealApproval and RevealRevert return the values of the item's
 	// redacted lines for the person's reveal proof (CONTRACT.md, Rows hidden
 	// from the agent), for the page holding secret.

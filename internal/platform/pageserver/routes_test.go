@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -28,7 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -58,12 +59,12 @@ func (probeAgent) RelayRevert(context.Context, revert.Response) (action.AppliedR
 	return action.AppliedRevert{}, linksvc.Receipt{}, errors.New("RelayRevert")
 }
 
-func (probeAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
-	return agent.ScopeResponse{}, errors.New("RescopeRevert")
+func (probeAgent) RescopeRevert(context.Context, uuid.UUID, string, revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error) {
+	return revertsvc.ScopeResponse{}, errors.New("RescopeRevert")
 }
 
-func (probeAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
-	return agent.RejectResponse{}, errors.New("RejectRevert")
+func (probeAgent) RejectRevert(context.Context, uuid.UUID, string, revertsvc.RejectRequest) (revertsvc.RejectResponse, error) {
+	return revertsvc.RejectResponse{}, errors.New("RejectRevert")
 }
 
 func (probeAgent) RevealApproval(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {

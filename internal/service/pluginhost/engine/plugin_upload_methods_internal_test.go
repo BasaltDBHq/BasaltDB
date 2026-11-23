@@ -12,8 +12,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // uploadSource writes a plugin folder basalt mcp can read.
@@ -36,12 +36,12 @@ func uploadSource(t *testing.T) string {
 
 // uploadRequests is a Requests over a real upload store, bot running
 // as keptPerson (admitted) and other as keptOtherUID (not).
-func uploadRequests(t *testing.T) (*Requests, *pluginhost.Store, string) {
+func uploadRequests(t *testing.T) (*Requests, *plugin.Store, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := &Requests{uids: map[string]uint32{"bot": keptPerson, "other": keptOtherUID}, admitted: []uint32{keptPerson}}
 	p.kept.Store(&KeptPlugins{ports: testPorts, store: store})

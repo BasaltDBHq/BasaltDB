@@ -30,7 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/contractdoc"
 )
 
@@ -232,7 +232,7 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 // and drops the waiting ones, each told why.
 func TestSenderNeverBlocks(t *testing.T) {
 	t.Parallel()
-	h := pluginhost.NewHost()
+	h := plugin.NewHost()
 	p := &feedPlugin{key: pluginmodel.EntryKey{Name: "acme-feed", Instance: "default"}, m: feedManifest("acme-feed"), mode: hangMode, schema: feedSchema(t)}
 	require.NoError(t, h.Register(context.Background(), pluginmodel.Entry{Key: p.key, Manifest: p.m, Agents: []string{"product_a"}, Timeout: time.Minute}, p))
 	s := newPluginSender(h, p.key, time.Now)
@@ -240,7 +240,7 @@ func TestSenderNeverBlocks(t *testing.T) {
 	call := func(notAfter time.Time) pluginCall {
 		return pluginCall{
 			notAfter: notAfter,
-			run: func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error {
+			run: func(ctx context.Context, h *plugin.Host, k pluginmodel.EntryKey) error {
 				_, err := h.ObserveFeedOn(ctx, k, 0, "product_a", json.RawMessage(`[{"data":{"seq":1}}]`))
 				return err
 			},
@@ -325,7 +325,7 @@ func TestBatchNeverReachesALaterRegistration(t *testing.T) {
 	e.stop()
 	e.applied("product_a")
 
-	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, newPluginSenders(e.host, time.Now), pluginhost.RealClock(), e.log)
+	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, newPluginSenders(e.host, time.Now), plugin.RealClock(), e.log)
 	f.senders.sync([]pluginmodel.EntryKey{p.key})
 	t.Cleanup(f.senders.stop)
 	r := &feedReader{f: f, pair: feedPair{key: p.key, agent: "product_a"}, ledger: e.pools["product_a"], log: e.log}

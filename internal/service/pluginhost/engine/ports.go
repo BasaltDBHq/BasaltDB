@@ -11,7 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // Querier is an agent's database handle: a connection or a pool. The engine
@@ -122,7 +122,7 @@ func (p Ports) approvalsVersion() int { return p.Guard.PluginApprovalsVersion() 
 // stderr (nil discards it), euid is the engine's user id, stateDir is where
 // it keeps its state ("" feeds no plugin), kept is a service engine's own
 // entries (nil in same-user mode) and dialer reaches the entries.
-func NewOptions(stderr io.Writer, euid int, stateDir string, kept *pluginhost.Store, dialer Dialer, ports Ports) Options {
+func NewOptions(stderr io.Writer, euid int, stateDir string, kept *plugin.Store, dialer Dialer, ports Ports) Options {
 	return Options{Stderr: stderr, euid: euid, stateDir: stateDir, kept: kept, Dialer: dialer, Ports: ports}
 }
 

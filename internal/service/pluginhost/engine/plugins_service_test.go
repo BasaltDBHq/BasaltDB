@@ -19,8 +19,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 const svcCopy = "/opt/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3"
@@ -100,7 +100,7 @@ func installed(t *testing.T, cfg config.Config, v pluginmodel.Verified, uid int)
 
 func serviceEngine(cfg config.Config, f *fakeUnits, euid int) *Plugins {
 	ep := &Plugins{
-		host: pluginhost.NewHost(), log: slog.New(slog.DiscardHandler), mode: pluginmodel.ModeService,
+		host: plugin.NewHost(), log: slog.New(slog.DiscardHandler), mode: pluginmodel.ModeService,
 		o:     Options{Ports: testPorts, Dialer: dial.Dialer{}, goos: "linux", euid: euid, units: f.source()},
 		first: map[pluginmodel.EntryKey]pluginmodel.Verified{}, notTrusted: map[pluginmodel.EntryKey]error{}, refused: map[pluginmodel.EntryKey]string{},
 		configured: cfg.Plugins,
@@ -173,7 +173,7 @@ func TestServiceEngineRefusesWhenAnAgentIsInItsGroup(t *testing.T) {
 	v := svcVerified()
 	p := cfg.Plugins[0]
 	f := installed(t, cfg, v, 990)
-	f.inGroup = &pluginhost.AgentInGroupError{Agent: "product_a"}
+	f.inGroup = &plugin.AgentInGroupError{Agent: "product_a"}
 	ep := serviceEngine(cfg, f, 995)
 	e, err := p.Entry(v.Manifest)
 	require.NoError(t, err)
@@ -232,7 +232,7 @@ func TestServiceEngineConnectsToTheUnitSocket(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("the engine did not connect to the unit's socket")
 	}
-	_, isProcess := tr.(pluginhost.Exiter)
+	_, isProcess := tr.(plugin.Exiter)
 	require.False(t, isProcess, "no process is started in service mode")
 
 	// A unit whose OS user is now another one is refused before any
@@ -317,7 +317,7 @@ func TestServiceEngineChecksTheUnitAtEachConnection(t *testing.T) {
 	f := installed(t, cfg, v, me)
 	f.gid = int(dirGID(t, dir))
 	ep := serviceEngine(cfg, f, 995)
-	ep.sup = pluginhost.NewSupervisor(ep.host, ep.dial, pluginhost.RealClock())
+	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, plugin.RealClock())
 	require.Empty(t, ep.localRefusal(p, v))
 	ep.targets[k] = serviceTarget{socket: sock, uid: uint32(me), gid: uint32(f.gid)}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -383,7 +383,7 @@ func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
 	f := installed(t, cfg, v, me)
 	f.gid = int(dirGID(t, dir))
 	ep := serviceEngine(cfg, f, 995)
-	ep.sup = pluginhost.NewSupervisor(ep.host, ep.dial, pluginhost.RealClock())
+	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, plugin.RealClock())
 	ep.first[k] = v
 	ep.targets[k] = serviceTarget{socket: filepath.Join(dir, "p.sock"), uid: uint32(me), gid: uint32(f.gid)}
 	_, err = ep.dial(context.Background(), e)

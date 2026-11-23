@@ -6,6 +6,6 @@
 //
 // It reaches the world through ports the app hands over in Options (ports.go):
 // the guard's plugin ledger, the transports, the OS units and the network
-// rule. The path rule is the host's (pluginhost.PathRules). The app builds
+// rule. The path rule is the host's (plugin.PathRules). The app builds
 // them and starts the feature; nothing else about plugins lives there.
 package engine

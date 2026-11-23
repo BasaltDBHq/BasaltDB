@@ -16,8 +16,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // The numbers of approval.deliver (CONTRACT.md, Notifier messages, Limits
@@ -162,11 +162,11 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 // counted. It is held in memory only. It carries the link of the agent's
 // answer and issues none. Nothing an agent does waits on it.
 type pluginDelivery struct {
-	host    *pluginhost.Host
+	host    *plugin.Host
 	served  func() []pluginmodel.Entry
 	senders *pluginSenders
 	now     func() time.Time
-	clock   pluginhost.Clock
+	clock   plugin.Clock
 	timing  deliverTiming
 	log     *slog.Logger
 
@@ -188,8 +188,8 @@ type pluginDelivery struct {
 	readInstall func(ctx context.Context, agent string) (uuid.UUID, error)
 }
 
-func newPluginDelivery(host *pluginhost.Host, served func() []pluginmodel.Entry, senders *pluginSenders, now func() time.Time,
-	clock pluginhost.Clock, log *slog.Logger,
+func newPluginDelivery(host *plugin.Host, served func() []pluginmodel.Entry, senders *pluginSenders, now func() time.Time,
+	clock plugin.Clock, log *slog.Logger,
 ) *pluginDelivery {
 	if host == nil || served == nil || senders == nil || now == nil || clock == nil || log == nil {
 		panic("engine: the plugin delivery needs a host, the served entries, senders, clocks and a log")
@@ -269,7 +269,7 @@ func (d *pluginDelivery) run(ctx context.Context, ledgers map[string]AgentLedger
 func (d *pluginDelivery) targets(agentName string) []pluginmodel.EntryKey {
 	var out []pluginmodel.EntryKey
 	for _, e := range d.served() {
-		if _, ok := e.Manifest.Hooks[string(pluginhost.HookApprovalDeliver)]; ok && slices.Contains(e.Agents, agentName) {
+		if _, ok := e.Manifest.Hooks[string(plugin.HookApprovalDeliver)]; ok && slices.Contains(e.Agents, agentName) {
 			out = append(out, e.Key)
 		}
 	}
@@ -339,7 +339,7 @@ func (d *pluginDelivery) expired(m madeNotice) bool { return !d.now().Before(m.n
 // first try that could read the install id and sent unchanged after.
 func (d *pluginDelivery) try(ctx context.Context, m madeNotice, k pluginmodel.EntryKey, raw *json.RawMessage) error {
 	s := d.senders.sender(k)
-	if s == nil || d.host.State(k) != pluginhost.StateReady {
+	if s == nil || d.host.State(k) != plugin.StateReady {
 		return &pluginmodel.CallError{Entry: k, Class: pluginmodel.ClassUnavailable}
 	}
 	if *raw == nil {
@@ -357,7 +357,7 @@ func (d *pluginDelivery) try(ctx context.Context, m madeNotice, k pluginmodel.En
 	event := *raw
 	outcome := make(chan error, 1)
 	err := s.SendNotice(pluginCall{
-		run: func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error {
+		run: func(ctx context.Context, h *plugin.Host, k pluginmodel.EntryKey) error {
 			// Checked again here, after any wait for a worker, and the
 			// call itself ends at the expiry: nothing leaves after it.
 			left := m.n.ExpiresAt.Sub(d.now())

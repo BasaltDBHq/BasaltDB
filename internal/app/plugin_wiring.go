@@ -18,12 +18,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
-// The plugin host (internal/service/pluginhost and its engine package) holds
+// The plugin host (internal/plugin and internal/service/pluginhost/engine) holds
 // the plugin feature: verifying, running and feeding plugins, and their
 // approvals. This file builds what it reaches the outside world with and
 // hands it over: the path rule, the guard's plugin ledger, the transports,
@@ -33,7 +33,7 @@ func init() {
 	// The path rule is the one port the host's free functions read, so it is
 	// installed once for the process; every other port travels in the
 	// options.
-	pluginhost.UsePathRules(pluginpath.Rules{})
+	plugin.UsePathRules(pluginpath.Rules{})
 }
 
 // pluginPorts are the adapters the plugin feature is built on.
@@ -83,7 +83,7 @@ type pluginOptions struct {
 	runs     *child.Runs
 	stateDir string
 	// kept is a service engine's own entries; nil in same-user mode.
-	kept *pluginhost.Store
+	kept *plugin.Store
 }
 
 func (o pluginOptions) engine() engine.Options {
@@ -144,7 +144,7 @@ type keptAgent struct {
 	role     string
 }
 
-func openKeptPlugins(cfg config.Config, configPath string, store *pluginhost.Store, ep *engine.Plugins, agents map[string]keptAgent, log *slog.Logger) *engine.KeptPlugins {
+func openKeptPlugins(cfg config.Config, configPath string, store *plugin.Store, ep *engine.Plugins, agents map[string]keptAgent, log *slog.Logger) *engine.KeptPlugins {
 	kept := make(map[string]engine.KeptAgent, len(agents))
 	for name, a := range agents {
 		kept[name] = engine.NewKeptAgent(a.db, a.host, a.port, a.database, a.role)

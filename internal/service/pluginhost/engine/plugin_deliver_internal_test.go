@@ -26,9 +26,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // fastDeliver is the delivery's timing in tests: four tries, shrunk.
@@ -146,7 +146,7 @@ func (p *deliverPlugin) received() []gotNotice {
 // over them, with a clock the test moves and an install id it controls.
 type deliverEnv struct {
 	t       *testing.T
-	host    *pluginhost.Host
+	host    *plugin.Host
 	senders *pluginSenders
 	d       *pluginDelivery
 	logs    *syncBuffer
@@ -162,10 +162,10 @@ func (e *deliverEnv) now() time.Time { return time.Now().Add(time.Duration(e.off
 
 func newDeliverEnv(t *testing.T) *deliverEnv {
 	t.Helper()
-	e := &deliverEnv{t: t, host: pluginhost.NewHost(), logs: &syncBuffer{}, install: uuid.Must(uuid.NewV7())}
+	e := &deliverEnv{t: t, host: plugin.NewHost(), logs: &syncBuffer{}, install: uuid.Must(uuid.NewV7())}
 	log := slog.New(slog.NewJSONHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e.senders = newPluginSenders(e.host, e.now)
-	e.d = newPluginDelivery(e.host, e.served, e.senders, e.now, pluginhost.RealClock(), log)
+	e.d = newPluginDelivery(e.host, e.served, e.senders, e.now, plugin.RealClock(), log)
 	e.d.timing = fastDeliver
 	e.d.readInstall = func(context.Context, string) (uuid.UUID, error) { return e.install, nil }
 	return e
@@ -196,7 +196,7 @@ func (e *deliverEnv) serve(name string, agents ...string) *deliverPlugin {
 	e.t.Helper()
 	k := pluginmodel.EntryKey{Name: name, Instance: "default"}
 	m := feedManifest(name)
-	m.Hooks = map[string]pluginproto.HookDecl{string(pluginhost.HookApprovalDeliver): {Contract: "deliver/1"}}
+	m.Hooks = map[string]pluginproto.HookDecl{string(plugin.HookApprovalDeliver): {Contract: "deliver/1"}}
 	p := &deliverPlugin{key: k, m: m, schema: deliverSchema(e.t)}
 	en := pluginmodel.Entry{Key: k, Manifest: m, Agents: agents, Timeout: time.Second}
 	require.NoError(e.t, e.host.Register(context.Background(), en, p))
@@ -483,7 +483,7 @@ func TestFeedNeverStarvesANotice(t *testing.T) {
 	hold := make(chan struct{})
 	t.Cleanup(func() { close(hold) })
 	var held atomic.Int64
-	feedCall := pluginCall{run: func(ctx context.Context, _ *pluginhost.Host, _ pluginmodel.EntryKey) error {
+	feedCall := pluginCall{run: func(ctx context.Context, _ *plugin.Host, _ pluginmodel.EntryKey) error {
 		held.Add(1)
 		select {
 		case <-hold:
@@ -655,16 +655,16 @@ func TestListHealthFollowsTheEngine(t *testing.T) {
 	k := pluginmodel.EntryKey{Name: "slack-notify", Instance: "default"}
 	failing := pluginmodel.EntryKey{Name: "never-starts", Instance: "default"}
 	ep := &Plugins{host: e.host, keptKeys: map[pluginmodel.EntryKey]bool{k: true, failing: true}}
-	ep.sup = pluginhost.NewSupervisor(e.host, func(context.Context, pluginmodel.Entry) (pluginmodel.Transport, error) {
+	ep.sup = plugin.NewSupervisor(e.host, func(context.Context, pluginmodel.Entry) (pluginmodel.Transport, error) {
 		return nil, errors.New("the plugin does not start")
-	}, pluginhost.RealClock())
+	}, plugin.RealClock())
 	require.Equal(t, person.HealthNotStarted, ep.healthOf(k, true))
 
 	e.serve(k.Name, "product_a")
 	require.Equal(t, person.HealthReady, ep.healthOf(k, true))
 	require.Equal(t, person.HealthNotStarted, ep.healthOf(k, false),
 		"an entry of engine.json with the name of the engine-kept one that runs is not the one running")
-	e.host.SetState(k, pluginhost.StateUnavailable)
+	e.host.SetState(k, plugin.StateUnavailable)
 	require.Equal(t, person.HealthUnavailable, ep.healthOf(k, true))
 
 	// An entry whose start fails is never registered: the engine keeps

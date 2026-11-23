@@ -10,7 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // Why a service engine does not reach a local entry's unit.
@@ -77,7 +77,7 @@ func osUnitSource(p Ports) *UnitSource {
 			}
 			return u.Username, nil
 		},
-		CheckAgents: pluginhost.CheckAgentUsers,
+		CheckAgents: plugin.CheckAgentUsers,
 		InGroup:     p.InGroup,
 		LookupGID: func(group string) (int, error) {
 			g, err := user.LookupGroup(group)

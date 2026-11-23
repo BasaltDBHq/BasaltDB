@@ -28,7 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // fastFeed is the feed's timing in tests: the contract's numbers, shrunk.
@@ -180,7 +180,7 @@ type feedEnv struct {
 	t        *testing.T
 	l        pluginLedgers
 	pools    map[string]AgentLedger
-	host     *pluginhost.Host
+	host     *plugin.Host
 	stateDir string
 	schema   *jsonschema.Schema
 	logs     *syncBuffer
@@ -200,7 +200,7 @@ func newFeedEnv(t *testing.T) *feedEnv {
 	l := newPluginLedgers(t, f)
 	logs := &syncBuffer{}
 	e := &feedEnv{
-		t: t, l: l, pools: l.pools(t), host: pluginhost.NewHost(), stateDir: t.TempDir(), schema: feedSchema(t),
+		t: t, l: l, pools: l.pools(t), host: plugin.NewHost(), stateDir: t.TempDir(), schema: feedSchema(t),
 		logs: logs, log: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
 	t.Cleanup(func() {
@@ -214,7 +214,7 @@ func newFeedEnv(t *testing.T) *feedEnv {
 func feedManifest(name string) pluginmodel.Manifest {
 	return pluginmodel.Manifest{
 		ManifestVersion: 1, Name: name, Version: "1.0.0", Publisher: "t", Protocol: []string{pluginproto.Version1},
-		Hooks:    map[string]pluginproto.HookDecl{string(pluginhost.HookFeedObserve): {Contract: "feed/1"}},
+		Hooks:    map[string]pluginproto.HookDecl{string(plugin.HookFeedObserve): {Contract: "feed/1"}},
 		Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/p"}},
 	}
 }
@@ -267,7 +267,7 @@ func (e *feedEnv) start() {
 
 func (e *feedEnv) startWith(ledgers map[string]AgentLedger) {
 	e.t.Helper()
-	f := newPluginFeed(e.host, e.served, ledgers, e.stateDir, newPluginSenders(e.host, time.Now), pluginhost.RealClock(), e.log)
+	f := newPluginFeed(e.host, e.served, ledgers, e.stateDir, newPluginSenders(e.host, time.Now), plugin.RealClock(), e.log)
 	f.timing = fastFeed
 	e.feed = f
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1059,7 +1059,7 @@ func TestFeedNeverSlowsAnAgentCall(t *testing.T) {
 				require.Less(t, time.Since(begun), time.Second, "write %d", i)
 				if mode == crashMode {
 					// The supervisor would start it again: it crashes again.
-					e.host.SetState(p.key, pluginhost.StateReady)
+					e.host.SetState(p.key, plugin.StateReady)
 				}
 				time.Sleep(fastFeed.poll / 4)
 			}

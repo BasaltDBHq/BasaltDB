@@ -23,7 +23,7 @@ import (
 	tn "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/testnotifier"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 var bin string
@@ -64,7 +64,7 @@ func entry(hooks ...string) pluginmodel.Entry {
 }
 
 type started struct {
-	h       *pluginhost.Host
+	h       *plugin.Host
 	key     pluginmodel.EntryKey
 	record  string
 	control string
@@ -88,7 +88,7 @@ func start(t *testing.T, o tn.Options) *started {
 		hooks = []string{tn.HookFeedObserve, tn.HookApprovalDeliver}
 	}
 	e := entry(hooks...)
-	h := pluginhost.NewHost()
+	h := plugin.NewHost()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, h.Register(ctx, e, tr))
@@ -184,7 +184,7 @@ func TestFaultModes(t *testing.T) {
 		_, err := s.observe(5)
 		require.Equal(t, pluginmodel.ClassExited, classOf(err), "%v", err)
 		require.Len(t, s.records(t), 1)
-		require.Equal(t, pluginhost.StateUnavailable, s.h.State(s.key))
+		require.Equal(t, plugin.StateUnavailable, s.h.State(s.key))
 	})
 	t.Run("not-ready", func(t *testing.T) {
 		s := start(t, tn.Options{Mode: tn.ModeNotReady})
@@ -266,7 +266,7 @@ func TestRawModeOverAUnixSocket(t *testing.T) {
 	tr, err := jsonrpc.Dial(context.Background(), sock)
 	require.NoError(t, err)
 	e := entry(tn.HookFeedObserve, tn.HookApprovalDeliver)
-	h := pluginhost.NewHost()
+	h := plugin.NewHost()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, h.Register(ctx, e, tr))
@@ -288,9 +288,9 @@ func TestManifestMatchesTheOptions(t *testing.T) {
 	dir := t.TempDir()
 	o := tn.Options{Mode: tn.ModeHang, Record: "/r", Control: "/c", Hooks: []string{tn.HookApprovalDeliver}, Transport: "jsonrpc-unix"}
 	require.NoError(t, tn.WriteDir(dir, bin, o))
-	b, err := os.ReadFile(filepath.Join(dir, pluginhost.ManifestFile))
+	b, err := os.ReadFile(filepath.Join(dir, plugin.ManifestFile))
 	require.NoError(t, err)
-	m, err := pluginhost.ParseManifest(b)
+	m, err := plugin.ParseManifest(b)
 	require.NoError(t, err)
 	require.Equal(t, tn.Name, m.Name)
 	require.Equal(t, map[string]pluginproto.HookDecl{tn.HookApprovalDeliver: {Contract: "deliver/1"}}, m.Hooks)

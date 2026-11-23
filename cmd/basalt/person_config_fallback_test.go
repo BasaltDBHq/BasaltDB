@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
@@ -54,7 +55,7 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	run := func(args ...string) string {
 		var out, errOut bytes.Buffer
 		in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}` + "\n"
-		code := runMCPOn(context.Background(), args, cli.Stdio{In: strings.NewReader(in), Out: &out, Err: &errOut}, h, appMCPHost{})
+		code := enginecli.RunMCPOn(context.Background(), args, cli.Stdio{In: strings.NewReader(in), Out: &out, Err: &errOut}, h, engineCLIHost{})
 		require.Equal(t, cli.ExitOK, code, errOut.String())
 		return out.String()
 	}

@@ -82,8 +82,7 @@ func ReadPluginRecords(ctx context.Context, q Querier) (guardmodel.PluginRecords
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	// A key is trusted on the record when its latest PLUGIN_TRUST_ADDED or
-	// PLUGIN_TRUST_REMOVED is an ADDED.
+	// Each key's latest PLUGIN_TRUST_ADDED or PLUGIN_TRUST_REMOVED.
 	sql, args, err = psql.Select("kind", "detail->>'signerKeyId'").
 		Options("DISTINCT ON (detail->>'signerKeyId')").
 		From("basalt_meta.agent_ledger").
@@ -103,8 +102,8 @@ func ReadPluginRecords(ctx context.Context, q Querier) (guardmodel.PluginRecords
 		if err := keys.Scan(&kind, &k); err != nil {
 			return out, err
 		}
-		if k != nil && kind == string(guardmodel.PluginTrustAdded) {
-			out.TrustKeys = append(out.TrustKeys, *k)
+		if k != nil {
+			out.LatestTrustEvents = append(out.LatestTrustEvents, guardmodel.PluginTrustEvent{KeyID: *k, Kind: guardmodel.PluginEventKind(kind)})
 		}
 	}
 	return out, keys.Err()

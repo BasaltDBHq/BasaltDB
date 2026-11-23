@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // basalt init --remote runs on the engine's machine, which the agent may
@@ -636,7 +637,7 @@ func (r *remoteInit) promote(pending *credential) error {
 
 // agentConn is the agent's own connection init --remote reads with.
 type agentConn interface {
-	app.Querier
+	pgquerier.Querier
 	Close(ctx context.Context) error
 }
 

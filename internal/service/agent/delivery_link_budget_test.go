@@ -100,8 +100,11 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	s.wire()
 
 	messages := map[string]string{}
-	messages["not granted"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).notGrantedSteps(guidance.NewSteps(), 12)
-	messages["describe not found"] = newDescribeCase(&s.deps.Core, &DescribeDeps{}, nil).DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
+	describe := describeUseCase(cmds, &fakeCatalog{notGranted: 12})
+	granted, err := describe.DescribeOverview(context.Background())
+	require.NoError(t, err)
+	messages["not granted"] = granted.PersonMessage
+	messages["describe not found"] = describe.DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
 	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	rls.wire()
 	w, err := rls.write.rlsWarning("public." + strings.Repeat("t", 60))

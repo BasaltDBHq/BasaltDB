@@ -67,7 +67,7 @@ func runRemote(t *testing.T, h setupcli.Host, cfg string, login func(context.Con
 	e := noDB(t)
 	e.login = login
 	c := e.io(&stdout, &stderr)
-	return setupcli.InitRemote(c, h, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	return setupcli.InitRemote(c, h, takePathFlags(c, app.RunInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 }
 
 // A .pending credential that logs in is moved over the credential file
@@ -161,7 +161,7 @@ func TestInitRemoteChangedCertificateOnThePendingLogin(t *testing.T) {
 		return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): connect: %w", x509.UnknownAuthorityError{})
 	}
 	io.FetchChain = second.fetch
-	res, err := setupcli.InitRemote(io, app.SetupHost{}, takePathFlags(io, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	res, err := setupcli.InitRemote(io, app.SetupHost{}, takePathFlags(io, app.RunInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.NoError(t, err, stderr.String())
 	require.Equal(t, []string{pending}, dialed, "the .pending login decides")
 	p, err := setupcode.Decode(res.Code)

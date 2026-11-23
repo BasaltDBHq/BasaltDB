@@ -21,7 +21,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
-	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -125,17 +124,6 @@ const (
 
 func CrashOSScrubber() *crash.Scrubber { return crash.OSScrubber() }
 
-// The update notice.
-type (
-	UpdateChecker = updatecheck.Checker
-	UpdateNotice  = updatecheck.Notice
-)
-
-const UpdateDevVersion = updatecheck.DevVersion
-
-func UpdateCacheDir(override string) (string, error) { return updatecheck.CacheDir(override) }
-func UpdateDisabled(getenv func(string) string) bool { return updatecheck.Disabled(getenv) }
-
 // DemoAgent is the sample database's agent name.
 const DemoAgent = setupcode.DemoAgent
 
@@ -172,12 +160,6 @@ func CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerifi
 // Connect opens one connection, usable through a transaction pooler.
 func Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	return pgdial.Connect(ctx, dsn)
-}
-
-// UseTrustDir makes every connection read the trust profiles in the trust.d
-// next to the config at path, again for each connection.
-func UseTrustDir(path string) {
-	pgdial.SetTrust(trustdir.Source(path))
 }
 
 // TrustProfileFor is the profile in the trust.d next to the config at

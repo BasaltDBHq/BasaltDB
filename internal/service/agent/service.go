@@ -11,6 +11,7 @@ import (
 
 	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
@@ -41,7 +42,7 @@ type Deps struct {
 	Revert   revertsvc.Deps
 	Delivery linksvc.Deps
 	Status   statussvc.Deps
-	Describe DescribeDeps
+	Describe agentsvc.DescribeDeps
 	Plugin   PluginDeps
 }
 
@@ -93,17 +94,6 @@ type WriteDeps struct {
 	Record func(ch action.Change, rows []action.RowChange) any
 }
 
-// DescribeDeps is what the describe tool reads.
-type DescribeDeps struct {
-	// Catalog reads the database's structure for describe; optional, and
-	// describe answers INTERNAL when nil.
-	Catalog Catalog
-	// Classes are the agent's PII classes for describe; optional, and
-	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
-	// column.
-	Classes ClassResolver
-}
-
 // PluginDeps is what the plugin tools and the plugin approval pages use.
 type PluginDeps struct {
 	// Approvals are the guard's plugin approvals on the agent's credential,
@@ -134,7 +124,7 @@ func (noPII) Observe(context.Context, []action.Column, []map[string]any) error {
 type Service struct {
 	deps Deps
 	// describe is the describe use case.
-	describe *describeCase
+	describe *agentsvc.Service
 	// delivery is how held actions reach the person.
 	delivery *linksvc.Service
 	// approval is the held writes use case.
@@ -169,12 +159,6 @@ func NewService(d Deps) *Service {
 	if d.Write.PII == nil {
 		d.Write.PII = noPII{}
 	}
-	if d.Describe.Catalog == nil {
-		d.Describe.Catalog = noCatalog{}
-	}
-	if d.Describe.Classes == nil {
-		d.Describe.Classes = noClasses{}
-	}
 	if d.Core.PagesBase == "" {
 		d.Core.PagesBase = links.DefaultLocal
 	}
@@ -201,7 +185,7 @@ func NewService(d Deps) *Service {
 // reference to its own group of s.deps and to the shared core group.
 func (s *Service) wire() {
 	s.status = statussvc.NewService(s.statusCore(), &s.deps.Status)
-	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.status.UpdateInfo)
+	s.describe = agentsvc.New(s.agentCore(), &s.deps.Describe, s.status.UpdateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
 	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveWrites{&s.deps.Write}, runChecker{s.deps.Core.Store}, s)
@@ -212,6 +196,12 @@ func (s *Service) wire() {
 	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
 	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
+}
+
+// agentCore is the part of the shared settings the agent use cases read.
+func (s *Service) agentCore() agentsvc.Core {
+	c := s.deps.Core
+	return agentsvc.Core{Store: c.Store, Commands: c.Commands, Errors: c.Errors}
 }
 
 // statusCore is the part of the shared settings the status use case reads.

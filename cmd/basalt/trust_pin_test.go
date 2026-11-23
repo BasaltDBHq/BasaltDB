@@ -70,7 +70,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	installedAgent(t, noDB(t), cfg, agentDSN(t, "postgres://postgres@"+host+":5432/postgres?sslmode=require", guardmodel.DefaultPrefix, "bot", "0123abcd"))
 	var events []string
 	var out, errb bytes.Buffer
-	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb}, func(string) string { return "" })
+	c := app.NewIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb}, func(string) string { return "" })
 	c.Probe, c.Host = noNetworkProbe, systemSocketHost(t)
 	c.AgentLogin = func(ctx context.Context, dsn string) (cli.AgentConn, error) {
 		events = append(events, "login")
@@ -80,7 +80,7 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 		events = append(events, "handshake")
 		return trustpin.Fetch(ctx, s.dial, h, p)
 	}
-	code := runInit(c, app.SetupHost{}, takePathFlags(c, runInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
+	code := app.RunInit(c, app.SetupHost{}, takePathFlags(c, app.RunInit, []string{"--remote", "--config", cfg, "--agent", "bot"}))
 	require.Equal(t, cli.ExitOK, code, errb.String())
 	require.NotEmpty(t, events)
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)

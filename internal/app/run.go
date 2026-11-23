@@ -238,9 +238,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		dispatch = gatedDispatcher{gate: gate, next: sessionDispatcher{sessionPages}}
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
-	env.vault, env.receipts = ev, ev.receipts()
-	if ev.keys != nil {
-		env.keys = ev.keys
+	env.vault, env.receipts = ev, ev.Receipts()
+	if ev.Keys != nil {
+		env.keys = ev.Keys
 	}
 	env.handoff = wireHandoff(restart.Handoff)
 	// A connect-only agent's setup that changes (the person confirmed its
@@ -254,10 +254,10 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		}
 	}
 	restart.Upgrade = engine.UpgradeOrReload(restart.Upgrade, reload, reloading)
-	if ev.client != nil {
-		env.relay, env.relayLinks = ev.client, relay
+	if ev.Client != nil {
+		env.relay, env.relayLinks = ev.Client, relay
 	}
-	st := ev.status()
+	st := ev.Status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
 	srv, err := startAgents(ctx, cfg, env, agentUIDs, newAgentRuntime, log)
 	closers = append(closers, srv.closers...)
@@ -319,8 +319,8 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 			env.update.Run(ctx, func(err error) { log.Debug("update check failed", "err", err) })
 		})
 	}
-	if ev.client != nil {
-		wg.Go(func() { _ = ev.client.Run(ctx) })
+	if ev.Client != nil {
+		wg.Go(func() { _ = ev.Client.Run(ctx) })
 		wg.Go(func() { relay.PruneEvery(ctx, pruneInterval) })
 	}
 	if keepsPlugins {

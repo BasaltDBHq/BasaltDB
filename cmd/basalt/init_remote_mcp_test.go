@@ -74,10 +74,10 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
 	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
 	var stdout, stderr bytes.Buffer
-	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr},
+	c := app.NewIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr},
 		func(string) string { return "" })
 	c.Host, c.AgentLogin, c.Probe, c.SystemConfigPath = h, refusedLogin, noNetworkProbe, system
-	code := runInit(c, app.SetupHost{}, []string{"--remote", "--agent", "bot"})
+	code := app.RunInit(c, app.SetupHost{}, []string{"--remote", "--agent", "bot"})
 	require.Equal(t, cli.ExitError, code, stderr.String())
 	require.Contains(t, stderr.String(), system)
 	_, err := os.Stat(filepath.Join(h.configDir, config.UserDirName, "engine.json"))

@@ -136,9 +136,9 @@ type setupFilesHost interface {
 	OSLookupUID(name string) int
 }
 
-// ProbeLogin tries a login with dsn and closes it: the error says how far
+// probeLogin tries a login with dsn and closes it: the error says how far
 // it got (setup.HardenedCredential).
-func ProbeLogin(c *cli.IO) func(context.Context, string) error {
+func probeLogin(c *cli.IO) func(context.Context, string) error {
 	return func(ctx context.Context, dsn string) error {
 		ctx, cancel := context.WithTimeout(ctx, setup.LoginTimeout)
 		defer cancel()

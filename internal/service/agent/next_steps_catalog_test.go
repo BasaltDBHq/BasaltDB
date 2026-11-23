@@ -210,7 +210,10 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("NOT_FOUND", "", "describe"): {
 			"describe",
 			map[string]any{"resource": "billing.invoices"},
-			plainFunc(func() error { return describeNotFound("billing.invoices") }),
+			plainFunc(func() error {
+				_, err := describeUseCase(guidance.Commands{}, &fakeCatalog{}).DescribeResource(context.Background(), "billing.invoices", "")
+				return err
+			}),
 		},
 
 		stepcatalogtest.CaseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},

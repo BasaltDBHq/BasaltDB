@@ -10,7 +10,6 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
@@ -129,7 +128,7 @@ func (m *Map) Load(ctx context.Context, db PiidictQuerier) error {
 // load loads a snapshot. fresh asks for a load begun after this call (an
 // unknown oid, a moved catalog); otherwise a load already running will do.
 func (m *Map) load(ctx context.Context, db PiidictQuerier, fresh bool) error {
-	if _, ok := beginnerOf(db); !ok {
+	if _, ok := snapshotOf(db); !ok {
 		// Inside the caller's transaction: read on its own connection.
 		m.mu.Lock()
 		seq := m.nextSeq
@@ -364,38 +363,41 @@ type IdentifierColumn struct {
 	Class Class
 }
 
-// beginner is a pool, which can open a read-only snapshot transaction.
-type beginner interface {
-	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+// snapshotter is a handle that can open a read-only snapshot of its own: a
+// pool or a connection, not a transaction (pgquerier.Neutral implements it).
+type snapshotter interface {
+	ReadOnlySnapshot() (func(ctx context.Context, fn func(PiidictQuerier) error) error, bool)
+}
+
+// The handles pii is given are pgquerier.Neutral: a change to its method
+// would otherwise silently stop every snapshot.
+var _ snapshotter = pgquerier.Neutral{}
+
+// snapshotOf is the runner of db's own read-only snapshots, false when db
+// is a transaction (or a handle that cannot open one).
+func snapshotOf(db PiidictQuerier) (func(ctx context.Context, fn func(PiidictQuerier) error) error, bool) {
+	s, ok := db.(snapshotter)
+	if !ok {
+		return nil, false
+	}
+	return s.ReadOnlySnapshot()
 }
 
 // withSnapshot runs read in one repeatable-read, read-only transaction when
 // db is a pool, so the map and its marks come from one snapshot; inside a
 // caller's transaction (a write's RETURNING) it runs there.
 func withSnapshot[T any](ctx context.Context, db PiidictQuerier, read func(context.Context, PiidictQuerier) (T, error)) (T, error) {
-	b, ok := beginnerOf(db)
+	run, ok := snapshotOf(db)
 	if !ok {
 		return read(ctx, db)
 	}
 	var out T
-	tx, err := b.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return out, err
-	}
-	// Read-only: nothing to commit.
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	return read(ctx, pgquerier.Neutralize(tx))
-}
-
-// beginnerOf is db as a pool. A pgx handle comes wrapped
-// (pgquerier.Neutralize), so the pool is the handle inside.
-func beginnerOf(db PiidictQuerier) (beginner, bool) {
-	if n, ok := db.(pgquerier.Neutral); ok {
-		b, ok := n.Pgx().(beginner)
-		return b, ok
-	}
-	b, ok := db.(beginner)
-	return b, ok
+	err := run(ctx, func(tx PiidictQuerier) error {
+		var err error
+		out, err = read(ctx, tx)
+		return err
+	})
+	return out, err
 }
 
 // readSnapshot reads the marks first, then the classes. Inside a write's

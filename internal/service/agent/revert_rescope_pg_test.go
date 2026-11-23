@@ -16,7 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

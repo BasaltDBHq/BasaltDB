@@ -86,7 +86,7 @@ func NewSecrets(now func() time.Time, rand io.Reader) *Secrets {
 	return &Secrets{now: now, rand: rand, live: map[uuid.UUID]secretEntry{}, resets: map[uuid.UUID][]secretEntry{}}
 }
 
-// Persister keeps a store's encoded hashes (statefile/secretfile: the file
+// Persister keeps a store's encoded hashes (links/out/secretfile: the file
 // <stateDir>/<agent>.links.json; CONTRACT.md, Link secrets).
 type Persister interface {
 	// Save replaces what is kept with raw.

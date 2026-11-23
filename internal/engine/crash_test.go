@@ -3,6 +3,7 @@ package engine_test
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -42,6 +43,8 @@ type fakeCrashHost struct {
 func (h fakeCrashHost) NewRecorder(string) (engine.Recorder, []string) { return h.rec, h.dirs }
 
 func (fakeCrashHost) TerminalText(s string) string { return "<" + s + ">" }
+
+func (fakeCrashHost) InfoOwnerUID(os.FileInfo) (int, bool) { return 0, false }
 
 func TestReportPanicNamesTheSavedReport(t *testing.T) {
 	t.Parallel()

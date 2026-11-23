@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 )
 
 // statusThroughShim asks the engine-down server for status.
@@ -74,6 +75,6 @@ func TestMCPStatusWithoutAConfig(t *testing.T) {
 
 func TestShimAgentNamesTheSocket(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "bot", shimAgent("bot", "/x/other.sock"))
-	require.Equal(t, "other", shimAgent("", "/x/other.sock"))
+	require.Equal(t, "bot", engine.ShimAgent("bot", "/x/other.sock"))
+	require.Equal(t, "other", engine.ShimAgent("", "/x/other.sock"))
 }

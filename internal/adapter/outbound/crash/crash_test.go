@@ -184,39 +184,6 @@ func TestStackIsBoundedAndIssueLinkFits(t *testing.T) {
 	require.Contains(t, short, "title=")
 }
 
-func TestSaveListFindAndRetention(t *testing.T) {
-	r := testRecorder(t)
-	ids := make([]string, 0, Keep+5)
-	for range Keep + 5 {
-		rep, err := r.Save(Input{Command: "log", Value: "x"})
-		require.NoError(t, err)
-		ids = append(ids, rep.ID)
-	}
-	listed := List(r.Dir, r.Dir)
-	require.Len(t, listed, Keep)
-	require.Equal(t, ids[len(ids)-1], listed[0].ID, "newest first")
-	require.Equal(t, ids[5], listed[Keep-1].ID, "the oldest five are gone")
-
-	info, err := os.Stat(r.Dir)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(dirMode), info.Mode().Perm())
-	info, err = os.Stat(filepath.Join(r.Dir, ids[len(ids)-1]+".json"))
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(fileMode), info.Mode().Perm())
-
-	got, err := Find(strings.ToUpper(ids[len(ids)-1]), r.Dir)
-	require.NoError(t, err)
-	require.Equal(t, ids[len(ids)-1], got.ID)
-	_, err = Find(ids[0], r.Dir)
-	require.ErrorIs(t, err, ErrNotFound, "pruned")
-	_, err = Find(ids[len(ids)-1][:12], r.Dir)
-	require.ErrorIs(t, err, ErrNotFound, "no prefix match")
-
-	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "stray.json"), []byte("{}"), fileMode))
-	require.Len(t, List(r.Dir), Keep)
-	require.Empty(t, List(filepath.Join(t.TempDir(), "missing")))
-}
-
 func TestEnvValuesDoNotMangleFunctionNames(t *testing.T) {
 	s := NewScrubber("/Users/alice", "", []string{"USER=basalt"})
 	out := s.Stack("goroutine 1 [running]:\ngithub.com/basaltdbhq/basaltdb/cmd/basalt.run(0x1)\n\t/src/basalt/cmd/basalt/main.go:7 +0x1\n")
@@ -275,4 +242,29 @@ func TestIssueURLWithinLeavesTheLinkOutWhenNothingFits(t *testing.T) {
 	require.False(t, ok)
 	whole, _ := rep.IssueURL()
 	require.NotEmpty(t, whole, "the CLI link is unchanged")
+}
+
+func TestSaveListAndRetention(t *testing.T) {
+	r := testRecorder(t)
+	ids := make([]string, 0, Keep+5)
+	for range Keep + 5 {
+		rep, err := r.Save(Input{Command: "log", Value: "x"})
+		require.NoError(t, err)
+		ids = append(ids, rep.ID)
+	}
+	listed := List(r.Dir, r.Dir)
+	require.Len(t, listed, Keep)
+	require.Equal(t, ids[len(ids)-1], listed[0].ID, "newest first")
+	require.Equal(t, ids[5], listed[Keep-1].ID, "the oldest five are gone")
+
+	info, err := os.Stat(r.Dir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(dirMode), info.Mode().Perm())
+	info, err = os.Stat(filepath.Join(r.Dir, ids[len(ids)-1]+".json"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(fileMode), info.Mode().Perm())
+
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "stray.json"), []byte("{}"), fileMode))
+	require.Len(t, List(r.Dir), Keep)
+	require.Empty(t, List(filepath.Join(t.TempDir(), "missing")))
 }

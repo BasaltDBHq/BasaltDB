@@ -135,7 +135,7 @@ var redactedJSON = []byte(`"` + redacted + `"`)
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 // unb64 decodes base64url without padding and refuses a non-canonical form.
-func unb64(s string) ([]byte, error) {
+func Unb64(s string) ([]byte, error) {
 	b, err := base64.RawURLEncoding.Strict().DecodeString(s)
 	if err != nil {
 		return nil, fmt.Errorf("base64url: %w", err)

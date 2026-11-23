@@ -7,37 +7,6 @@ import (
 	"unicode/utf8"
 )
 
-// printableLabel replaces every control character, line break and
-// non-ASCII byte of text from the database with "?", so it is safe in a
-// message.
-func printableLabel(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r >= 0x7f {
-			return '?'
-		}
-		return r
-	}, s)
-}
-
-// visibleText shows text an agent wrote (values, table names) as it is,
-// except the characters that hide text or change how it reads: controls
-// (C0, DEL, C1, line breaks), format characters (bidi controls such as
-// U+202E, zero-width characters), line and paragraph separators, spaces
-// other than U+0020, every default-ignorable character (variation
-// selectors such as U+FE0F, U+E0100 and U+180B, Hangul fillers), and each
-// combining mark after the first maxMarks in a row. Each shows as
-// <U+XXXX>, and a byte that is not UTF-8 as <0xNN>, so 0001 with a U+202E
-// in it cannot read as 1000. The web pages escape the same way
-// (web/lib/codec.js, visibleText).
-//
-// Right-to-left letters stay as they are: a terminal shows characters in
-// the order they come or reorders them by its own rules, and the CLI cannot
-// isolate them reliably (an isolate such as U+2066 shows as a stray glyph
-// on a terminal without bidi support).
-func visibleText(s string) string {
-	return escapeText(s, "")
-}
-
 // terminalText is visibleText for text of several lines (an error, a
 // problem's message): line feeds and tabs stay as they are, every other
 // character visibleText escapes is escaped, so text from the database or

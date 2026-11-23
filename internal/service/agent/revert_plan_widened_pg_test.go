@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // widenedPlanHelperRows is how many rows the helper changes in
@@ -64,7 +65,7 @@ func newWidenedPlan(t *testing.T) widenedPlan {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT rescope_nonce FROM basalt_meta.reverts WHERE revert_id = $1`, prep.RevertID).Scan(&nonce))
 	key, err := revert.RescopeKey([]byte("the page's new secret"))
 	require.NoError(t, err)
-	as, err := env.person.Sign(revert.RescopeChallenge(prep.RevertID, nonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(reverttest.RescopeChallenge(prep.RevertID, nonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	out, err := guard.RescopeRevert(ctx, bot.Conn, action.RescopeRequest{RevertID: prep.RevertID, Select: every, Proof: &as, RescopeKey: key})
 	require.NoError(t, err)

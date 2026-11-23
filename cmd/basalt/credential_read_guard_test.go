@@ -36,9 +36,6 @@ var (
 // call pgdial.CheckForeignDSN, each with why root never connects with a
 // string another user wrote there. Every other read must call it.
 var uncheckedCredentialReads = map[string]string{
-	"cmd/basalt/personfiles.go:engineConfig.credential:config.ReadCredential":                 "not root; as root it is readCredentialAsRoot",
-	"cmd/basalt/personfiles.go:readCredentialFlag:config.ReadCredential":                      "not root; as root it is readCredentialAsRoot",
-	"cmd/basalt/personfiles_other.go:readCredentialAsRoot:config.ReadCredential":              "no root on this platform",
 	"cmd/basalt/keptcred_unix.go:readKeptCredential:readOwnedCredential":                      "service install writes it back for the engine's user and never connects with it",
 	"cmd/basalt/engine.go:keptCredentialSpec:readKeptCredential":                              "service install writes it back for the engine's user and never connects with it",
 	"cmd/basalt/keptcred_unix.go:readOwnCredential:readCredentialFile":                        "only a file this process's user owns (ownedByThisUser): root's own as root",
@@ -54,7 +51,6 @@ var uncheckedCredentialReads = map[string]string{
 // checkedCredentialReads are root's reads of another user's file, which call
 // pgdial.CheckForeignDSN. Listed so the scan is seen to find them.
 var checkedCredentialReads = []string{
-	"cmd/basalt/personfiles_unix.go:readCredentialAsRoot:readOwnedCredential",
 	"cmd/basalt/credfiles_unix.go:rootCredFiles.read:readCredentialFrom",
 	"internal/app/credfiles_unix.go:rootFiles.read:config.ReadCredentialAt",
 	"internal/app/setupbackend/setupbackend.go:Backend.ReadCredential:config.ReadCredential",

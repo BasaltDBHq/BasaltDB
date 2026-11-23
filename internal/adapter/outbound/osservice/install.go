@@ -358,12 +358,6 @@ func darwinAccountSteps(name, id, realName string) []Step {
 	}
 }
 
-// PickFreeID returns the lowest id in the system-account range that does not
-// appear in dscl -list output (lines of "name id").
-func PickFreeID(dsclOutput string) (int, error) {
-	return freeID(usedIDs(dsclOutput))
-}
-
 // usedIDs are the ids in dscl -list output.
 func usedIDs(dsclOutput string) map[int]bool {
 	used := map[int]bool{}

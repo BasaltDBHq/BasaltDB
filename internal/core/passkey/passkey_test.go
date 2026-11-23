@@ -197,7 +197,7 @@ func TestRegistrationCodes(t *testing.T) {
 	frag, err := req.Fragment()
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(frag, passkey.RegistrationRequestPrefix))
-	got, err := passkey.ParseRegistrationRequest("#" + frag)
+	got, err := passkeytest.ParseRegistrationRequest("#" + frag)
 	require.NoError(t, err)
 	require.Equal(t, req, got)
 
@@ -230,7 +230,7 @@ func TestRegistrationCodes(t *testing.T) {
 		requireRejected(t, err, tc.detail)
 	}
 
-	_, err = passkey.ParseRegistrationRequest(passkey.RegistrationRequestPrefix + passkey.Bytes(`{"challenge":"AA","userId":"AA","userName":"a","displayName":"a"}`).String())
+	_, err = passkeytest.ParseRegistrationRequest(passkey.RegistrationRequestPrefix + passkey.Bytes(`{"challenge":"AA","userId":"AA","userName":"a","displayName":"a"}`).String())
 	requireRejected(t, err, "32-byte challenge")
 	_, err = passkey.NewRegistrationRequest(rand.Reader, "", "x")
 	requireRejected(t, err, "labels")
@@ -244,7 +244,7 @@ func TestRegistrationHandBack(t *testing.T) {
 	req.HandBack = passkey.Bytes(make([]byte, 16)).String()
 	frag, err := req.Fragment()
 	require.NoError(t, err)
-	got, err := passkey.ParseRegistrationRequest(frag)
+	got, err := passkeytest.ParseRegistrationRequest(frag)
 	require.NoError(t, err)
 	require.Equal(t, req, got)
 
@@ -252,7 +252,7 @@ func TestRegistrationHandBack(t *testing.T) {
 		req.HandBack = bad
 		frag, err := req.Fragment()
 		require.NoError(t, err)
-		_, err = passkey.ParseRegistrationRequest(frag)
+		_, err = passkeytest.ParseRegistrationRequest(frag)
 		requireRejected(t, err, "handBack")
 	}
 }

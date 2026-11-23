@@ -15,7 +15,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -87,7 +87,7 @@ func TestNoticeCarriesTheAgentsLink(t *testing.T) {
 		require.Equal(t, str(t, ap["expiresAt"]), got[0].ExpiresAt.UTC().Format(time.RFC3339))
 
 		var req approval.Request
-		require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, links.SecretOf(link), &req),
+		require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, linkstest.SecretOf(link), &req),
 			"the agent's link still works: the notice issued no link of its own")
 	})
 	t.Run("long link", func(t *testing.T) {
@@ -204,7 +204,7 @@ func TestWaitingWriteSignedFromItsNotice(t *testing.T) {
 	require.Len(t, held, 1, "noticed while the call is open")
 	require.Empty(t, done, "the call is still open")
 
-	id, secret := held[0].ApprovalID.String(), links.SecretOf(held[0].Link)
+	id, secret := held[0].ApprovalID.String(), linkstest.SecretOf(held[0].Link)
 	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, p.signApproval(id, secret, env.person), nil),
 		"the notice's link is the held write's own")
 	got := <-done

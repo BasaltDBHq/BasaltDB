@@ -3,43 +3,10 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 )
-
-// agentURL finds the agent's connection string: --credential-file, then
-// the credential file of --agent in the engine config, then
-// BASALT_DATABASE_URL. A flag always wins over the environment. A
-// credential file readable by group or others is refused. As root, the
-// files are read without following links (loadEngineConfig).
-func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
-	if credFile != "" {
-		return readCredentialFlag(c, credFile)
-	}
-	if agent != "" {
-		return agentConfigURL(c, agent, configPath)
-	}
-	if v := c.getenv(envAgentURL); v != "" {
-		return v, nil
-	}
-	return "", fmt.Errorf("%w: give --agent or %s", errUsage, envAgentURL)
-}
-
-// agentConfigURL reads the credential file the engine config names for agent.
-func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
-	cfg, err := loadEngineConfig(c, configPath)
-	if err != nil {
-		return "", err
-	}
-	for _, a := range cfg.Agents {
-		if a.Name == agent {
-			return cfg.credential(a.Store.CredentialFile)
-		}
-	}
-	return "", errAgentNotInConfig(agent, configPath)
-}
 
 // configOrFallback is the config a person command reads: the --config value,
 // or, when --config was not given, perUserConfigFallback of the default.

@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 )
 
@@ -52,7 +53,7 @@ func TestRevertReceiptWhileApplying(t *testing.T) {
 	r := signedRevert(t, ledger.RevertApplying, false)
 	got, err := receiptService(t, keys).revertReceipt(r)
 	require.NoError(t, err)
-	p, err := channel.VerifyReceipt(got.Token, keys.PublicKeySPKI())
+	p, err := channeltest.VerifyReceipt(got.Token, keys.PublicKeySPKI())
 	require.NoError(t, err)
 	require.Equal(t, channel.ReceiptApplying, p.Status)
 	require.Equal(t, r.ChangeID.String(), p.ChangeID)

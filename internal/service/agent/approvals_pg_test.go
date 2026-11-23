@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -212,12 +213,12 @@ func approvalOf(t *testing.T, body map[string]any) map[string]any {
 func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) approval.Response {
 	t.Helper()
 	frag := link[strings.Index(link, "#")+1:]
-	req, b, err := approval.ParseRequest(frag)
+	req, b, err := approvaltest.ParseRequest(frag)
 	require.NoError(t, err)
 	require.NotEmpty(t, req.CredentialIDs, "the link names the database's passkeys, for allowCredentials")
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	return approval.NewResponse(b.ApprovalID, as)
+	return approvaltest.NewResponse(b.ApprovalID, as)
 }
 
 // reviewOnlyText is what a message that hands over a long link says: with

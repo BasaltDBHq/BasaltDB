@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // bulkRows is a run larger than one call takes (revert.MaxLines).
@@ -114,7 +115,7 @@ func TestPrepareBatchedPlan(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, all, bulkRows)
 	require.Equal(t, b.RowsHash, approval.RowsHash(all))
-	sample, err := revert.Sample(all)
+	sample, err := reverttest.Sample(all)
 	require.NoError(t, err)
 	require.Equal(t, sample, prep.Lines)
 
@@ -161,7 +162,7 @@ func TestBatchedSampleKeepsRestores(t *testing.T) {
 	require.NoError(t, err)
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
-	sample, err := revert.Sample(all)
+	sample, err := reverttest.Sample(all)
 	require.NoError(t, err)
 	require.Equal(t, sample, prep.Lines)
 

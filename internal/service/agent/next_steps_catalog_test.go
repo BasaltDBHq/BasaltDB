@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 // This file is the contract test of the engine's error guidance
@@ -577,12 +578,12 @@ func requireStepObeysRules(t *testing.T, st toolresult.NextStep, kase catalogCas
 	t.Helper()
 	require.Contains(t, mcpcontract.ActorActions[st.Actor], st.Action, where)
 	require.NotEmpty(t, st.Text, where)
-	require.LessOrEqual(t, len([]rune(st.Text)), MaxStepTextLength, where)
+	require.LessOrEqual(t, len([]rune(st.Text)), agentkit.MaxStepTextLength, where)
 	require.Empty(t, conditionalWords.FindString(st.Text), "%s: no conditional steps: %q", where, st.Text)
 	require.Empty(t, removedCommand.FindString(st.Text+" "+st.Command), "%s: a step names no removed command: %q %q", where, st.Text, st.Command)
 	require.Empty(t, secretPattern.FindString(st.Command), "%s: a command never carries a secret: %q", where, st.Command)
 	require.NotContains(t, strings.ReplaceAll(strings.ToLower(st.Command), "--rotate-password", ""), "password", where)
-	require.LessOrEqual(t, st.WaitSeconds, MaxWaitSeconds, where)
+	require.LessOrEqual(t, st.WaitSeconds, agentkit.MaxWaitSeconds, where)
 
 	switch st.Action {
 	case toolresult.ActionCallTool, toolresult.ActionReviseCall:

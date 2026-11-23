@@ -58,9 +58,9 @@ func (c Lines) MarshalJSON() ([]byte, error) {
 		shapes = []Shape{}
 	}
 	if len(c.CredentialIDs) > 0 {
-		return marshal([]any{shapes, c.Lines, c.CredentialIDs})
+		return Marshal([]any{shapes, c.Lines, c.CredentialIDs})
 	}
-	return marshal([]any{shapes, c.Lines})
+	return Marshal([]any{shapes, c.Lines})
 }
 
 // UnmarshalJSON reads [shapes, lines], both arrays, and an optional third
@@ -429,13 +429,13 @@ func jsonString(raw json.RawMessage) (string, error) {
 // MarshalJSON writes "name" or ["name", ["column", ...]].
 func (e Entry) MarshalJSON() ([]byte, error) {
 	if !e.Object {
-		return marshal(e.Name)
+		return Marshal(e.Name)
 	}
 	cols := e.Columns
 	if cols == nil {
 		cols = []string{}
 	}
-	return marshal([]any{e.Name, cols})
+	return Marshal([]any{e.Name, cols})
 }
 
 // UnmarshalJSON reads "name" or ["name", ["column", ...]].
@@ -471,14 +471,14 @@ func (e *Entry) UnmarshalJSON(raw []byte) error {
 // MarshalJSON writes "text" or [shape, value, ...].
 func (l Line) MarshalJSON() ([]byte, error) {
 	if l.Verbatim {
-		return marshal(l.Text)
+		return Marshal(l.Text)
 	}
 	items := make([]any, 0, len(l.Values)+1)
 	items = append(items, l.Shape)
 	for _, v := range l.Values {
 		items = append(items, v)
 	}
-	return marshal(items)
+	return Marshal(items)
 }
 
 // UnmarshalJSON reads "text" or [shape, value, ...].
@@ -577,7 +577,7 @@ func compactValue(raw json.RawMessage, depth int) json.RawMessage {
 		for i, item := range items {
 			items[i] = compactValue(item, depth+1)
 		}
-		out, err := marshal(items)
+		out, err := Marshal(items)
 		if err != nil {
 			return rawValue(raw)
 		}
@@ -593,7 +593,7 @@ func compactValue(raw json.RawMessage, depth int) json.RawMessage {
 }
 
 func rawValue(raw json.RawMessage) json.RawMessage {
-	out, err := marshal(map[string]string{"raw": string(raw)})
+	out, err := Marshal(map[string]string{"raw": string(raw)})
 	if err != nil {
 		return raw
 	}

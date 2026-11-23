@@ -437,7 +437,7 @@ func startConnectEngine(t *testing.T, cfgPath string) connectEngine {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- app.Run(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler)) }()
+	go func() { done <- app.RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), app.RestartOptions{}) }()
 	t.Cleanup(func() {
 		cancel()
 		require.NoError(t, <-done)

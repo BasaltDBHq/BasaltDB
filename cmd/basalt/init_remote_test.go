@@ -33,6 +33,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 const (
@@ -409,7 +410,7 @@ func requireConnectGuidance(t *testing.T, res RemoteInitResult) {
 	require.Contains(t, pm, "\n\n"+res.ConnectURL+"\n\n", "the link stands on a line of its own")
 	require.Contains(t, pm, "Basalt Vault, a hosted service")
 	require.NotContains(t, pm, "basalt init", "the person runs no command")
-	mcptest.Require(t, pm, []toolresult.Link{{Label: agent.LabelConnect, URL: res.ConnectURL}})
+	mcptest.Require(t, pm, []toolresult.Link{{Label: agentkit.LabelConnect, URL: res.ConnectURL}})
 }
 
 // An agent-operated engine with the Vault on hands the connect link; an

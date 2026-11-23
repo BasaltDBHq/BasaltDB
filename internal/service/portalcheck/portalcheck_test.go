@@ -87,34 +87,6 @@ func TestLastIsEmptyBeforeTheFirstCheckAndKeepsTheLatest(t *testing.T) {
 	require.Equal(t, t0, got.CheckedAt)
 }
 
-func TestTheResultIsSavedAndLoadedForTheSamePortalOnly(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	checker(dir, report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil).Check(context.Background())
-
-	st, err := os.Stat(filepath.Join(dir, FileName))
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
-
-	got, ok := Load(dir, "https://portal.example")
-	require.True(t, ok)
-	require.True(t, got.Mismatch())
-	require.True(t, got.CheckedAt.Equal(t0))
-
-	_, ok = Load(dir, "https://other.example")
-	require.False(t, ok, "a result of another portal says nothing")
-	_, ok = Load(t.TempDir(), "https://portal.example")
-	require.False(t, ok, "no file")
-}
-
-func TestLoadIgnoresAFileThatIsNotAResult(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, FileName), []byte("not json"), 0o600))
-	_, ok := Load(dir, "https://portal.example")
-	require.False(t, ok)
-}
-
 func TestRunChecksAtOnceAndAgainEachInterval(t *testing.T) {
 	t.Parallel()
 	calls := make(chan struct{}, 8)
@@ -135,4 +107,16 @@ func TestRunChecksAtOnceAndAgainEachInterval(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// TestTheResultIsSavedOwnerOnly: a check saves its result in the state
+// directory, readable by the engine's user only.
+func TestTheResultIsSavedOwnerOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	checker(dir, report(portalverify.File{Path: "a", Status: portalverify.StatusDiffers}), nil).Check(context.Background())
+
+	st, err := os.Stat(filepath.Join(dir, FileName))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
 }

@@ -15,10 +15,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // revealKeyOf is the key the engine derives from the page's reveal secret
@@ -35,7 +37,7 @@ func revealKeyOf(t *testing.T, secret string) []byte {
 // revealChallenge is the challenge a reveal proof signs.
 func revealChallenge(t *testing.T, kind string, id uuid.UUID, nonce, key, rowsHash []byte) []byte {
 	t.Helper()
-	ch, err := approval.RevealChallenge(kind, id, nonce, key, hex.EncodeToString(rowsHash))
+	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, hex.EncodeToString(rowsHash))
 	require.NoError(t, err)
 	return ch
 }
@@ -226,7 +228,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 		"a proof of the APPROVE kind":   {sign(revealChallenge(t, approval.KindApprove, id, nonce, key, hash)), key},
 		"the revert signature":          {sign(approval.Challenge(e.prep.BindingText)), key},
 		"an approval signature":         {sign(sha256Of(held.BindingText)), key},
-		"a widen proof":                 {sign(revert.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
+		"a widen proof":                 {sign(reverttest.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
 		"a crafted signature, s = n":    {withSig(valid, derSig([]byte{1}, p256Order)), key},
 		"an assertion with broken DER":  {withSig(valid, []byte{0x30, 0x00}), key},
 	}

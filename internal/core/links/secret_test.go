@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 )
 
 func TestSecrets(t *testing.T) {
@@ -41,7 +42,7 @@ func TestLinkHelpers(t *testing.T) {
 	t.Parallel()
 	link := links.WithSecret("http://localhost:8787/approvals/x", "abc")
 	require.Equal(t, "http://localhost:8787/approvals/x#s=abc", link)
-	require.Equal(t, "abc", links.SecretOf(link))
-	require.Empty(t, links.SecretOf("http://localhost:8787/approvals/x#1.data"), "a long link has none")
-	require.Empty(t, links.SecretOf("http://localhost:8787/approvals/x"))
+	require.Equal(t, "abc", linkstest.SecretOf(link))
+	require.Empty(t, linkstest.SecretOf("http://localhost:8787/approvals/x#1.data"), "a long link has none")
+	require.Empty(t, linkstest.SecretOf("http://localhost:8787/approvals/x"))
 }

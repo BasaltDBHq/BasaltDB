@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // counterAt is the offset of the 4-byte signature counter in authenticator
@@ -80,7 +81,7 @@ func (e widenEnv) proof(t *testing.T, revertID uuid.UUID, sel revert.Select, sec
 	t.Helper()
 	key, err := revert.RescopeKey([]byte(secret))
 	require.NoError(t, err)
-	as, err := e.p.Sign(revert.RescopeChallenge(revertID, nonceOf(t, e.d, revertID), key, normText(t, e.d, sel)),
+	as, err := e.p.Sign(reverttest.RescopeChallenge(revertID, nonceOf(t, e.d, revertID), key, normText(t, e.d, sel)),
 		passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)
 	return as, key

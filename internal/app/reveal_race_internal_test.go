@@ -18,6 +18,7 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -102,7 +103,7 @@ func (e raceEnv) proof(t *testing.T, kind string, id uuid.UUID, table, idCol str
 		`SELECT reveal_nonce, rows_hash FROM basalt_meta.`+table+` WHERE `+idCol+` = $1`, id).Scan(&nonce, &rowsHash))
 	key, err := approval.RevealKey(make([]byte, links.SecretBytes))
 	require.NoError(t, err)
-	ch, err := approval.RevealChallenge(kind, id, nonce, key, hexOf(rowsHash))
+	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, hexOf(rowsHash))
 	require.NoError(t, err)
 	as, err := e.person.Sign(ch, passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)

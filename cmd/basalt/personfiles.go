@@ -28,20 +28,3 @@ func loadEngineConfigAs(euid int, path string) (engineConfig, error) {
 	cfg, trusted, err := loadConfigAsRoot(path)
 	return engineConfig{Config: cfg, asRoot: true, trusted: trusted}, err
 }
-
-// credential reads the credential file the config names for an agent.
-func (e engineConfig) credential(path string) (string, error) {
-	if !e.asRoot {
-		return config.ReadCredential(path)
-	}
-	return readCredentialAsRoot(path, e.trusted, true)
-}
-
-// readCredentialFlag reads --credential-file: config.ReadCredential, or
-// as root readCredentialAsRoot.
-func readCredentialFlag(c *cliIO, path string) (string, error) {
-	if c.host.Euid() != 0 {
-		return config.ReadCredential(path)
-	}
-	return readCredentialAsRoot(path, 0, false)
-}

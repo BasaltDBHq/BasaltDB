@@ -7,7 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // The pages' GET requests carry each table's columns in table order
@@ -40,12 +41,12 @@ func TestPagesRequestsCarryTheColumnOrder(t *testing.T) {
 	// lines only, and decoded it has no columns.
 	long, err := req.Fragment()
 	require.NoError(t, err)
-	back, _, err := approval.ParseRequest(long)
+	back, _, err := approvaltest.ParseRequest(long)
 	require.NoError(t, err)
 	require.Nil(t, back.Columns)
 	rvLong, err := rv.Fragment()
 	require.NoError(t, err)
-	rvBack, _, err := revert.ParseRequest(rvLong)
+	rvBack, _, err := reverttest.ParseRequest(rvLong)
 	require.NoError(t, err)
 	require.Nil(t, rvBack.Columns)
 }

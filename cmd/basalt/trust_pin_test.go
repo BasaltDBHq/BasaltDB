@@ -83,24 +83,6 @@ func TestInitRemotePinsBeforeLogin(t *testing.T) {
 	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
 }
 
-func TestTargetOf(t *testing.T) {
-	t.Parallel()
-	for dsn, want := range map[string]pinTarget{
-		"postgres://u@DB.Example.com/postgres":       {"db.example.com", 5432},
-		"postgres://u@db.example.com:6543/postgres":  {"db.example.com", 6543},
-		"postgres://u@[2001:db8::1]:5433/postgres":   {"2001:db8::1", 5433},
-		"postgres://u@a.example.com,b.example.com/x": {"a.example.com", 5432},
-	} {
-		got, ok := targetOf(dsn)
-		require.True(t, ok, dsn)
-		require.Equal(t, want, got, dsn)
-	}
-	for _, dsn := range []string{"postgres:///postgres?host=/var/run/postgresql", "postgres:///postgres"} {
-		_, ok := targetOf(dsn)
-		require.False(t, ok, dsn)
-	}
-}
-
 // A connection to a pinned host that presents another root says
 // TRUST_ROOT_CHANGED with both fingerprints; the pinned root says nothing.
 // Not parallel: it sets this process's trust profiles.

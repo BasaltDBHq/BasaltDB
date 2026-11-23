@@ -15,9 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 var update = flag.Bool("update", false, "rewrite api/mcp/links/compact-request.json")
@@ -92,7 +94,7 @@ func approvalBinding(lines []string) string {
 
 func fragmentOf(t *testing.T, v any) string {
 	t.Helper()
-	frag, err := linkcodec.Encode(linkcodec.Format2, v)
+	frag, err := linkcodectest.Encode(linkcodec.Format2, v)
 	require.NoError(t, err)
 	return frag
 }
@@ -161,7 +163,7 @@ func buildVectors(t *testing.T) vectors {
 	setValue := func(raw string) func(c *linkcodec.Lines) {
 		return func(c *linkcodec.Lines) { last(c).Values[2] = json.RawMessage(raw) }
 	}
-	format1, err := linkcodec.Encode(linkcodec.Format1, approval.Request{Binding: vBinding, Lines: vLines})
+	format1, err := linkcodectest.Encode(linkcodec.Format1, approval.Request{Binding: vBinding, Lines: vLines})
 	require.NoError(t, err)
 	tooMany := make([]string, approval.MaxRows+1)
 	for i := range tooMany {
@@ -245,10 +247,10 @@ func mustJSON(t *testing.T, v any) []byte {
 
 func parse(kind, fragment string) (string, []string, []passkey.Bytes, error) {
 	if kind == kindRevert {
-		r, _, err := revert.ParseRequest(fragment)
+		r, _, err := reverttest.ParseRequest(fragment)
 		return r.Binding, r.Lines, r.CredentialIDs, err
 	}
-	r, _, err := approval.ParseRequest(fragment)
+	r, _, err := approvaltest.ParseRequest(fragment)
 	return r.Binding, r.Lines, r.CredentialIDs, err
 }
 

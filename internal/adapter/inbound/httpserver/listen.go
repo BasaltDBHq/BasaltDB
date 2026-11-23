@@ -29,12 +29,6 @@ func hostIP(host string) (net.IP, bool) {
 	return ip, true
 }
 
-// hostIsUnspecified reports whether host is empty, 0.0.0.0, or :: (every interface).
-func hostIsUnspecified(host string) bool {
-	ip, ok := hostIP(host)
-	return ok && ip.IsUnspecified()
-}
-
 func ipIsLoopback(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() {
 		return false

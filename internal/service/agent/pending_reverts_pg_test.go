@@ -10,7 +10,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 )
 
 // listPending calls list_pending and returns its items.
@@ -96,7 +96,7 @@ func TestListPendingListsRevertsWithHeldWrites(t *testing.T) {
 	_, reissued := listPending(t, env.h, map[string]any{"kind": "REVERT", "reissueLink": true})
 	require.Len(t, reissued, 1)
 	short := str(t, reissued[0]["revertUrl"])
-	require.Equal(t, pageOrigin+"/reverts/"+revertID+"#s="+links.SecretOf(short), short)
+	require.Equal(t, pageOrigin+"/reverts/"+revertID+"#s="+linkstest.SecretOf(short), short)
 	require.Contains(t, str(t, reissued[0]["personMessage"]), short)
 	sent = env.sent.revertNotices()
 	require.Len(t, sent, 2, "the reissue notifies the person")

@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -33,9 +32,6 @@ const Interval = 24 * time.Hour
 
 // FileName is the result's file in the engine's state directory.
 const FileName = "portal-check.json"
-
-// maxFileBytes bounds what is read back from the result file.
-const maxFileBytes = 64 << 10
 
 // maxFindings bounds the paths a result keeps.
 const maxFindings = 100
@@ -225,24 +221,4 @@ func save(dir string, res Result) error {
 		return err
 	}
 	return nil
-}
-
-// Load reads the result the engine saved in dir. It is false when there is
-// none, when it cannot be read, or when it was made for another portal than
-// base: a result of a portal the config no longer names says nothing.
-func Load(dir, base string) (Result, bool) {
-	f, err := os.Open(filepath.Join(dir, FileName))
-	if err != nil {
-		return Result{}, false
-	}
-	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
-	if err != nil || len(b) > maxFileBytes {
-		return Result{}, false
-	}
-	var res Result
-	if err := json.Unmarshal(b, &res); err != nil || res.PortalURL != base {
-		return Result{}, false
-	}
-	return res, true
 }

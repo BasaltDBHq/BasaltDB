@@ -23,25 +23,6 @@ import (
 // a committed credential.
 var leakedAdmin = "postgres://postgres" + ":" + "hunter2-admin" + "@" + "db.example.com:5432/app"
 
-// TestAgentMarkerNeedsAValue: a blank marker is not a marker.
-func TestAgentMarkerNeedsAValue(t *testing.T) {
-	t.Parallel()
-	c := &cliIO{getenv: func(k string) string {
-		if k == "CLAUDECODE" {
-			return "  "
-		}
-		return ""
-	}}
-	require.Empty(t, c.agentMarker(), "a blank value is not a marker")
-	c.getenv = func(k string) string {
-		if k == "CLAUDECODE" {
-			return "1"
-		}
-		return ""
-	}
-	require.Equal(t, "CLAUDECODE", c.agentMarker())
-}
-
 // TestInitRemoteWarnsAboutAnAdminEnv: init --remote never uses
 // BASALT_ADMIN_DATABASE_URL and says to change that password.
 func TestInitRemoteWarnsAboutAnAdminEnv(t *testing.T) {

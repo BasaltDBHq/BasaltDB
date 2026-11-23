@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // filterEnv is an agent "bot" that wrote leads and lead_owner in two runs
@@ -148,7 +149,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 		require.Equal(t, "PENDING", body["status"])
 		require.EqualValues(t, "1", body["rows"])
 		link := str(t, body["revertUrl"])
-		_, b, err := revert.ParseRequest(link[strings.Index(link, "#")+1:])
+		_, b, err := reverttest.ParseRequest(link[strings.Index(link, "#")+1:])
 		require.NoError(t, err)
 		require.Equal(t, tc.scope, b.Select.Scope)
 		require.Equal(t, []string{env.a.Role}, b.Select.Agents)

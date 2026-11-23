@@ -125,9 +125,6 @@ func NewMap(log *slog.Logger) *Map {
 	return &Map{log: log, tried: map[uint32]struct{}{}, warned: map[ColumnRef]struct{}{}, nextSeq: 1, between: func() {}}
 }
 
-// Loads is how many times the map was loaded.
-func (m *Map) Loads() int64 { return m.loads.Load() }
-
 // Load reads agent_pii_columns, pii_fingerprint() and agent_pii_catalog
 // in one snapshot, begun after this call, and replaces the map.
 func (m *Map) Load(ctx context.Context, db Querier) error {

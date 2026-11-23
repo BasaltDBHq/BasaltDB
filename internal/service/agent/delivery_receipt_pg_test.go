@@ -14,8 +14,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 )
 
 // verifiedReceipt checks token against the engine's key, which the test
@@ -24,7 +26,7 @@ func verifiedReceipt(t *testing.T, env agentEnv, token any) channel.Receipt {
 	t.Helper()
 	s, ok := token.(string)
 	require.True(t, ok, "a receipt: %v", token)
-	r, err := channel.VerifyReceipt(s, env.keys.PublicKeySPKI())
+	r, err := channeltest.VerifyReceipt(s, env.keys.PublicKeySPKI())
 	require.NoError(t, err)
 	return r
 }
@@ -38,7 +40,7 @@ func heldApproval(t *testing.T, env agentEnv, first, last int) (map[string]any, 
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	return args, str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	return args, str(t, ap["approvalId"]), linkstest.SecretOf(str(t, ap["approvalUrl"]))
 }
 
 // postgresBinding is the approval's binding as Postgres holds it, read
@@ -170,12 +172,12 @@ func TestRevertReceipt(t *testing.T) {
 
 	runID, _ := winLeads(t, env.h, "87, 88")
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
+	id, secret := str(t, req["revertId"]), linkstest.SecretOf(str(t, req["revertUrl"]))
 	var rreq revert.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &rreq))
 	b, err := rreq.Check()
 	require.NoError(t, err)
-	signed, err := json.Marshal(revert.NewResponse(b.RevertID, signBinding(t, env.person, rreq.Binding)))
+	signed, err := json.Marshal(reverttest.NewResponse(b.RevertID, signBinding(t, env.person, rreq.Binding)))
 	require.NoError(t, err)
 	var out map[string]any
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))

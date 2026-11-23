@@ -5,31 +5,6 @@ import (
 	"testing"
 )
 
-func TestHostIsUnspecified(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		addr string
-		want bool
-	}{
-		{":8081", true},
-		{"0.0.0.0:8081", true},
-		{"[::]:8081", true},
-		{"127.0.0.1:8081", false},
-		{"[::1]:8081", false},
-		{"localhost:8081", false},
-		{"10.0.0.5:8080", false},
-	}
-	for _, tc := range cases {
-		host, ok := listenHost(tc.addr)
-		if !ok {
-			t.Fatalf("listenHost(%q)", tc.addr)
-		}
-		if got := hostIsUnspecified(host); got != tc.want {
-			t.Errorf("%q unspecified=%v want %v", tc.addr, got, tc.want)
-		}
-	}
-}
-
 func TestAddrIsLoopback(t *testing.T) {
 	t.Parallel()
 	loop, err := net.ResolveTCPAddr("tcp", "127.0.0.1:9")
@@ -163,5 +138,17 @@ func TestListenPolicyIgnoresForwardedHeaders(t *testing.T) {
 	}
 	if !plaintextListenRefused(Options{}, "127.0.0.1:8080", bound) {
 		t.Fatal("non-loopback bound must refuse regardless of requested host")
+	}
+}
+
+// TestListenHostTakesEveryAddressForm: listenHost accepts every listen
+// address form the server is given (the unspecified-host cases went with
+// hostIsUnspecified).
+func TestListenHostTakesEveryAddressForm(t *testing.T) {
+	t.Parallel()
+	for _, addr := range []string{":8081", "0.0.0.0:8081", "[::]:8081", "127.0.0.1:8081", "[::1]:8081", "localhost:8081", "10.0.0.5:8080"} {
+		if _, ok := listenHost(addr); !ok {
+			t.Fatalf("listenHost(%q)", addr)
+		}
 	}
 }

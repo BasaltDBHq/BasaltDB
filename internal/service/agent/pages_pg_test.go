@@ -21,9 +21,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
@@ -96,7 +99,7 @@ func (p localPages) signApproval(id, secret string, person *passkeytest.Authenti
 	require.NoError(p.t, err, "the served request passes the same checks as the long link")
 	as, err := person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(p.t, err)
-	body, err := json.Marshal(approval.NewResponse(b.ApprovalID, as))
+	body, err := json.Marshal(approvaltest.NewResponse(b.ApprovalID, as))
 	require.NoError(p.t, err)
 	return body
 }
@@ -137,7 +140,7 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	ap := approvalOf(t, body)
 	id := str(t, ap["approvalId"])
 	link := str(t, ap["approvalUrl"])
-	secret := links.SecretOf(link)
+	secret := linkstest.SecretOf(link)
 	require.Len(t, secret, 22, "a 128-bit secret")
 	require.Equal(t, pageOrigin+"/approvals/"+id+"#s="+secret, link, "the short link carries its secret in the fragment")
 	msg := str(t, ap["personMessage"])
@@ -213,7 +216,7 @@ func TestPagesRefuseUnknownAndExpired(t *testing.T) {
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	id, secret := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	id, secret := str(t, ap["approvalId"]), linkstest.SecretOf(str(t, ap["approvalUrl"]))
 	d.Exec(t, `UPDATE basalt_meta.approvals SET expires_at = now() - interval '1 minute' WHERE approval_id = '`+id+`'`)
 	perr = pageError{}
 	require.Equal(t, http.StatusGone, p.get("/api/v1/approvals/"+id, secret, &perr), "the right secret on an expired write")
@@ -233,7 +236,7 @@ func TestWaitingWriteAppliesWhenThePersonApproves(t *testing.T) {
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	id, secret := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	id, secret := str(t, ap["approvalId"]), linkstest.SecretOf(str(t, ap["approvalUrl"]))
 
 	// The agent repeats the write with approvalId and the default wait; the
 	// person signs on the page a moment later.
@@ -302,7 +305,7 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	require.NoError(t, err)
 	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
+	signed, err := json.Marshal(reverttest.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusNotFound, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, "", signed, &perr), "no secret, no relay")
@@ -325,7 +328,7 @@ func TestRevertPageErrorCarriesThePersonsSteps(t *testing.T) {
 	p := newLocalPages(t, env)
 	runID, _ := winLeads(t, env.h, "46, 47")
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
+	id, secret := str(t, req["revertId"]), linkstest.SecretOf(str(t, req["revertUrl"]))
 	expireRevert(t, env, id)
 
 	var perr pageError
@@ -347,7 +350,7 @@ func TestListPendingReissuesTheLink(t *testing.T) {
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	id, first := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	id, first := str(t, ap["approvalId"]), linkstest.SecretOf(str(t, ap["approvalUrl"]))
 	var req approval.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, first, &req))
 
@@ -365,7 +368,7 @@ func TestListPendingReissuesTheLink(t *testing.T) {
 	require.False(t, isError, "%v", pending)
 	list = items(t, pending)
 	require.Len(t, list, 1)
-	second := links.SecretOf(str(t, list[0]["approvalUrl"]))
+	second := linkstest.SecretOf(str(t, list[0]["approvalUrl"]))
 	require.NotEmpty(t, second)
 	require.NotEqual(t, first, second)
 	require.Contains(t, list[0]["personMessage"], str(t, list[0]["approvalUrl"]))

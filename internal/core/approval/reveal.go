@@ -4,18 +4,14 @@ import (
 	"bytes"
 	"crypto/hkdf"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 // The reveal of rows hidden from the agent (CONTRACT.md, Approvals, Rows
 // hidden from the agent; owner decision HR-1).
 const (
-	revealPrefix  = "basalt-reveal.1"
 	revealKeyInfo = "basalt-reveal-key.1"
 	// KindRevert is the kind a revert's reveal proof names; the revert
 	// binding's kind is the same word.
@@ -25,8 +21,6 @@ const (
 	// RevealKeyLen is the length of the key derived from it; Postgres
 	// refuses any other.
 	RevealKeyLen = 32
-	// RevealNonceLen is the length of an item's reveal nonce.
-	RevealNonceLen = 16
 	// revealRowValues is how many values a revealed row holds: key, then
 	// old or now, then set.
 	revealRowValues = 3
@@ -37,38 +31,12 @@ const (
 // "basalt-reveal-key.1". The secret itself never reaches Postgres.
 func RevealKey(secret []byte) ([]byte, error) {
 	if len(secret) != RevealSecretLen {
-		return nil, invalid("reveal secret is %d bytes, want %d", len(secret), RevealSecretLen)
+		return nil, Invalid("reveal secret is %d bytes, want %d", len(secret), RevealSecretLen)
 	}
 	return hkdf.Key(sha256.New, secret, nil, revealKeyInfo, RevealKeyLen)
 }
 
-// RevealChallenge is the WebAuthn challenge of a reveal proof:
-// sha256(utf8("basalt-reveal.1\n" + kind + "\n" + id + "\n" +
-// base64url(nonce) + "\n" + hex(sha256(revealKey)) + "\n" + rowsHash)), with
-// rowsHash the binding's (a large plan's too, never its sampleHash).
-func RevealChallenge(kind string, id uuid.UUID, nonce, revealKey []byte, rowsHash string) ([]byte, error) {
-	if kind != KindApprove && kind != KindRevert {
-		return nil, invalid("reveal kind %q", kind)
-	}
-	if len(nonce) != RevealNonceLen {
-		return nil, invalid("reveal nonce is %d bytes, want %d", len(nonce), RevealNonceLen)
-	}
-	if len(revealKey) != RevealKeyLen {
-		return nil, invalid("reveal key is %d bytes, want %d", len(revealKey), RevealKeyLen)
-	}
-	if !isHashHex(rowsHash) {
-		return nil, invalid("rowsHash is not a lowercase sha256 hex digest")
-	}
-	keyHash := sha256.Sum256(revealKey)
-	msg := strings.Join([]string{
-		revealPrefix, kind, id.String(), base64.RawURLEncoding.EncodeToString(nonce),
-		hex.EncodeToString(keyHash[:]), rowsHash,
-	}, "\n")
-	sum := sha256.Sum256([]byte(msg))
-	return sum[:], nil
-}
-
-func isHashHex(s string) bool {
+func IsHashHex(s string) bool {
 	if len(s) != sha256.Size*2 || strings.ToLower(s) != s {
 		return false
 	}
@@ -96,11 +64,11 @@ type RevealedRow struct {
 func redactedRowHash(line string) (string, error) {
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(line), &keys); err != nil {
-		return "", invalid("revealed line: %v", err)
+		return "", Invalid("revealed line: %v", err)
 	}
 	var hash string
-	if !bytes.Equal(keys["redacted"], []byte("true")) || json.Unmarshal(keys["rowHash"], &hash) != nil || !isHashHex(hash) {
-		return "", invalid("revealed line is not a redacted line")
+	if !bytes.Equal(keys["redacted"], []byte("true")) || json.Unmarshal(keys["rowHash"], &hash) != nil || !IsHashHex(hash) {
+		return "", Invalid("revealed line is not a redacted line")
 	}
 	return hash, nil
 }
@@ -114,7 +82,7 @@ func CheckRevealAnswer(lines []string, a RevealAnswer) ([]bool, error) {
 	last := -1
 	for _, r := range a.Rows {
 		if r.Line <= last || r.Line >= len(lines) {
-			return nil, invalid("revealed line %d is out of order or out of range", r.Line)
+			return nil, Invalid("revealed line %d is out of order or out of range", r.Line)
 		}
 		last = r.Line
 		ok, err := CheckRevealedRow(lines[r.Line], r)
@@ -142,12 +110,12 @@ func CheckRevealedRow(line string, r RevealedRow) (bool, error) {
 		return false, err
 	}
 	if r.SecretColumns != nil && len(r.SecretColumns) == 0 {
-		return false, invalid("secretColumns is empty: name the SECRET columns, or leave it out")
+		return false, Invalid("secretColumns is empty: name the SECRET columns, or leave it out")
 	}
 	if r.SecretColumns == nil {
 		sum := sha256.Sum256([]byte(r.Row))
 		if hex.EncodeToString(sum[:]) != rowHash {
-			return false, invalid("revealed row does not hash to its line's rowHash")
+			return false, Invalid("revealed row does not hash to its line's rowHash")
 		}
 		return true, nil
 	}
@@ -158,10 +126,10 @@ func CheckRevealedRow(line string, r RevealedRow) (bool, error) {
 func revealedValues(row string) ([]map[string]json.RawMessage, error) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal([]byte(row), &raw); err != nil {
-		return nil, invalid("revealed row: %v", err)
+		return nil, Invalid("revealed row: %v", err)
 	}
 	if len(raw) != revealRowValues {
-		return nil, invalid("revealed row has %d values, want %d", len(raw), revealRowValues)
+		return nil, Invalid("revealed row has %d values, want %d", len(raw), revealRowValues)
 	}
 	values := make([]map[string]json.RawMessage, 0, revealRowValues)
 	for _, v := range raw {
@@ -170,7 +138,7 @@ func revealedValues(row string) ([]map[string]json.RawMessage, error) {
 		}
 		var obj map[string]json.RawMessage
 		if err := json.Unmarshal(v, &obj); err != nil {
-			return nil, invalid("revealed row value is not an object or null")
+			return nil, Invalid("revealed row value is not an object or null")
 		}
 		values = append(values, obj)
 	}
@@ -183,7 +151,7 @@ func checkSecretColumns(values []map[string]json.RawMessage, cols []string) erro
 	seen := make(map[string]bool, len(cols))
 	for _, col := range cols {
 		if col == "" || seen[col] {
-			return invalid("secret column %q is empty or named twice", col)
+			return Invalid("secret column %q is empty or named twice", col)
 		}
 		seen[col] = true
 		found := false
@@ -193,12 +161,12 @@ func checkSecretColumns(values []map[string]json.RawMessage, cols []string) erro
 				continue
 			}
 			if !bytes.Equal(v, []byte("null")) {
-				return invalid("secret column %q has a value", col)
+				return Invalid("secret column %q has a value", col)
 			}
 			found = true
 		}
 		if !found {
-			return invalid("secret column %q is not in the row", col)
+			return Invalid("secret column %q is not in the row", col)
 		}
 	}
 	return nil

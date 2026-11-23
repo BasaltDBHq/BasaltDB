@@ -21,11 +21,14 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -67,7 +70,7 @@ func newRevealSetup(t *testing.T) revealSetup {
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	id, secret := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	id, secret := str(t, ap["approvalId"]), linkstest.SecretOf(str(t, ap["approvalUrl"]))
 	require.Equal(t, http.StatusOK, s.pages.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret,
 		s.pages.signApproval(id, secret, env.person), nil))
 	args["approvalId"] = id
@@ -75,7 +78,7 @@ func newRevealSetup(t *testing.T) revealSetup {
 	require.False(t, isError, "%v", body)
 
 	rv := requestRevert(t, env.h, map[string]any{"runId": s.doneRun, "intent": "Undo the duplicate drop"})
-	s.revertID, s.rvSecret = str(t, rv["revertId"]), links.SecretOf(str(t, rv["revertUrl"]))
+	s.revertID, s.rvSecret = str(t, rv["revertId"]), linkstest.SecretOf(str(t, rv["revertUrl"]))
 	require.NotEmpty(t, s.rvSecret, "a short link to the revert")
 
 	// The second run: a held delete of lead 20.
@@ -83,7 +86,7 @@ func newRevealSetup(t *testing.T) revealSetup {
 	body, isError = env.h.call(t, "write", map[string]any{"sql": dropLead, "params": []any{20}, "intent": "Lead 20 left", "runId": s.heldRun})
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap = approvalOf(t, body)
-	s.approval, s.apSecret = str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	s.approval, s.apSecret = str(t, ap["approvalId"]), linkstest.SecretOf(str(t, ap["approvalUrl"]))
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
 	s.heldBody = string(raw)
@@ -136,7 +139,7 @@ func revealBody(t *testing.T, sign func(challenge []byte) passkey.Assertion, kin
 	require.NoError(t, err)
 	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)
-	ch, err := approval.RevealChallenge(kind, id, nonce, key, rowsHash)
+	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, rowsHash)
 	require.NoError(t, err)
 	as := sign(ch)
 	body, err := json.Marshal(agent.RevealRequest{RevealSecret: base64.RawURLEncoding.EncodeToString(raw), Proof: agent.ScopeProof{
@@ -284,7 +287,7 @@ func TestAgentCannotRevealHiddenRows(t *testing.T) {
 			"no Origin":               {"", valid, http.StatusForbidden},
 			"a proof the agent made":  {pageOrigin, revealBody(t, agentMade, it.kind, it.id, nonce, hash), http.StatusConflict},
 			"the item's signature":    {pageOrigin, revealBody(t, signed(approval.Challenge(it.binding)), it.kind, it.id, nonce, hash), http.StatusConflict},
-			"a widen proof":           {pageOrigin, revealBody(t, signed(revert.RescopeChallenge(it.id, nonce, widenKey, `{}`)), it.kind, it.id, nonce, hash), http.StatusConflict},
+			"a widen proof":           {pageOrigin, revealBody(t, signed(reverttest.RescopeChallenge(it.id, nonce, widenKey, `{}`)), it.kind, it.id, nonce, hash), http.StatusConflict},
 			"a proof of another kind": {pageOrigin, revealBody(t, s.personSigns(t), otherKind, it.id, nonce, hash), http.StatusConflict},
 		} {
 			var out map[string]any
@@ -382,7 +385,7 @@ func TestRevertPlanStaysRedactedAfterAReveal(t *testing.T) {
 		require.True(t, ok, "%v", body)
 		link, ok := given[0].(map[string]any)
 		require.True(t, ok)
-		return string(raw), links.SecretOf(str(t, link["url"]))
+		return string(raw), linkstest.SecretOf(str(t, link["url"]))
 	}
 	before, secret := plan()
 	require.Contains(t, before, `"redacted":true`, "the plan's lines are redacted for bot")
@@ -444,7 +447,7 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	require.NoError(t, err)
 	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)
-	ch, err := approval.RevealChallenge(approval.KindApprove, id, req.RevealNonce, key, b.RowsHash)
+	ch, err := approvaltest.RevealChallenge(approval.KindApprove, id, req.RevealNonce, key, b.RowsHash)
 	require.NoError(t, err)
 	ticket, err := store.OpenReveal(ctx, id, s.personSigns(t)(ch), key)
 	require.NoError(t, err)

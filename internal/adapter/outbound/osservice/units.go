@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -84,10 +83,6 @@ func (s Spec) pluginHost() PluginHost {
 	return h
 }
 
-// PluginHost is s's plugin host: the engine's user and the paths its
-// plugin units hide.
-func (s Spec) PluginHost() PluginHost { return s.pluginHost() }
-
 // The unit's memory limits, as multiples of pii.maxMemoryMB: the Go heap
 // is soft-limited to twice the budget (GOMEMLIMIT, a dictionary build and
 // the rest of the engine), and the mapped dictionary file takes up to the
@@ -143,27 +138,6 @@ func RestartArgs(goos string) []string {
 		return []string{"launchctl", "kickstart", "-k", "system/" + LaunchdLabel}
 	}
 	return []string{"systemctl", "restart", SystemdUnitName}
-}
-
-// Dir is a directory the engine's OS user owns, with its mode.
-type Dir struct {
-	Path string
-	Mode os.FileMode
-}
-
-// EngineDirs are the engine's socket and state directories on goos, with the
-// modes its service gives them: the systemd unit's RuntimeDirectory and
-// StateDirectory on Linux, the launchd install's directories on macOS.
-// The install and the unit are tested against one list.
-func EngineDirs(goos string) []Dir {
-	state := os.FileMode(stateDirMode)
-	if goos == goosDarwin {
-		state = darwinStateDirMode
-	}
-	return []Dir{
-		{Path: config.DefaultSocketDir(goos), Mode: runtimeDirMode},
-		{Path: config.DefaultStateDir(goos), Mode: state},
-	}
 }
 
 func (s Spec) args() []string {

@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -66,7 +67,7 @@ func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (agent
 	if a.approved {
 		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
 	}
-	if _, err := approval.Verify(a.binding, a.cred, r); err != nil {
+	if _, err := approvaltest.Verify(a.binding, a.cred, r); err != nil {
 		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
 	}
 	a.approved = true
@@ -240,7 +241,7 @@ func signed(t *testing.T, signer *passkeytest.Authenticator, req approval.Reques
 	t.Helper()
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	body, err := json.Marshal(approval.NewResponse(req.ApprovalID, as))
+	body, err := json.Marshal(approvaltest.NewResponse(req.ApprovalID, as))
 	require.NoError(t, err)
 	return string(body)
 }

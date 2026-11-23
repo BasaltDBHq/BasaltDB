@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -173,7 +174,7 @@ func TestApprovalFlow(t *testing.T) {
 	require.NoError(t, err, "the person's signature, relayed by the agent itself")
 	t.Logf("submit_approval with the P-256 check in PL/pgSQL: %s", time.Since(start).Round(time.Millisecond))
 	require.WithinDuration(t, time.Now(), at, time.Minute)
-	_, err = approval.Verify(held.BindingText, p.Credential(), approval.NewResponse(held.ApprovalID, signed))
+	_, err = approvaltest.Verify(held.BindingText, p.Credential(), approvaltest.NewResponse(held.ApprovalID, signed))
 	require.NoError(t, err, "the Go mirror agrees")
 
 	t.Run("replayed assertion", func(t *testing.T) {

@@ -12,9 +12,11 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -43,7 +45,7 @@ func (e *rescopeEnv) syncedWidenBody(t *testing.T, id uuid.UUID, nonce []byte, s
 	require.NoError(t, err)
 	var norm string
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
-	as, err := e.person.Sign(revert.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, syncedPasskey)
+	as, err := e.person.Sign(reverttest.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, syncedPasskey)
 	require.NoError(t, err)
 	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
@@ -139,7 +141,7 @@ func agentSecretOf(t *testing.T, e *rescopeEnv, id uuid.UUID) string {
 	t.Helper()
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
 	require.False(t, isError, "%v", body)
-	return links.SecretOf(str(t, body["revertUrl"]))
+	return linkstest.SecretOf(str(t, body["revertUrl"]))
 }
 
 // A widen proof is good for one widen. With a synced passkey (counter 0),

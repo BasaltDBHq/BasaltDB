@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -149,7 +150,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	var proposal revert.Request
 	require.NoError(t, json.Unmarshal([]byte(r0.Body), &proposal))
 	require.Len(t, proposal.RescopeNonce, 16)
-	as, err := person.Sign(revert.RescopeChallenge(id, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(reverttest.RescopeChallenge(id, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	widen, err := json.Marshal(agent.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &agent.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,

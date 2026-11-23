@@ -105,14 +105,6 @@ const linkInstructions = "When you show the person a link from Basalt, put it on
 	"never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. " +
 	"Show personMessage verbatim and keep its line breaks."
 
-// Run serves every agent in cfg until ctx is done. It takes the engine lock
-// in the socket directory, so one engine runs per machine. configPath is the
-// absolute path cfg was read from, which the person's basalt commands name
-// with --config unless it is the platform default.
-func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger) error {
-	return RunWith(ctx, cfg, configPath, log, RestartOptions{})
-}
-
 // RunWith is Run with the restart onto a new binary: when restart.Upgrade
 // returns, the engine stops between calls, closes everything Run opened,
 // releases its lock and returns ErrRestart.

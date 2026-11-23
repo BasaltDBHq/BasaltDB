@@ -1,19 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"os/user"
-	"path/filepath"
-
-	"github.com/basaltdbhq/basaltdb/internal/app"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The Vault in basalt init and basalt status (CONTRACT.md, Vault channel,
@@ -128,39 +119,4 @@ func chooseVault(given VaultMode, operatedBy OperatedBy, pagesURL, defaultWhy st
 		return vaultChoice{given: given, def: VaultModeOn, why: "default for --operated-by=agent; --vault=off to turn it off"}, nil
 	}
 	return vaultChoice{given: given, def: VaultModeOff, why: defaultWhy}, nil
-}
-
-// localVault is status.vault for basalt status in same-user mode, from
-// the files the engine reads itself: KEY_ERROR when the engine's key file
-// is refused (it is never replaced, so the engine refuses it too), OFF with
-// the engine id when the engine does not dial out. With the Vault on, the
-// connection state is known only to the running engine: the report leaves
-// vault out and identity carries the engine id for the text output. No
-// key file yet (the engine makes it on its first start), or one owned by
-// another OS user, which this user cannot judge: nothing.
-func localVault(cfg config.Config, stateDir string) (report, identity *agent.VaultStatus) {
-	path := filepath.Join(stateDir, channel.KeyFileName)
-	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) || !ownedByMe(path) {
-		return nil, nil
-	}
-	keys, err := app.ReadEngineKeys(path)
-	if err != nil {
-		return &agent.VaultStatus{State: app.VaultStateKeyError}, nil
-	}
-	id := &agent.VaultStatus{EngineID: keys.EngineID(), Fingerprint: keys.Fingerprint()}
-	if cfg.VaultEnabled() {
-		return nil, id
-	}
-	id.State = app.VaultStateOff
-	return id, nil
-}
-
-// ownedByMe reports whether this OS user owns path.
-func ownedByMe(path string) bool {
-	me, err := user.Current()
-	if err != nil {
-		return false
-	}
-	owner := fileOwner(path)
-	return owner != "" && (owner == me.Username || owner == me.Uid)
 }

@@ -19,9 +19,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -63,7 +65,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.Equal(t, link, steps[0]["url"])
 	require.Equal(t, "request_revert", steps[1]["tool"])
 	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("90")}, steps[1]["arguments"])
-	secret := links.SecretOf(link)
+	secret := linkstest.SecretOf(link)
 	require.Len(t, secret, 22, "a 128-bit secret")
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
 	msg := str(t, body["personMessage"])
@@ -88,7 +90,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	// The person signs on the page and the page relays it.
 	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
+	signed, err := json.Marshal(reverttest.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
 	var out action.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
@@ -120,7 +122,7 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	// The person's signature, relayed with the agent credential, reverts
 	// the change.
 	frag := link[strings.Index(link, "#")+1:]
-	req, b, err := revert.ParseRequest(frag)
+	req, b, err := reverttest.ParseRequest(frag)
 	require.NoError(t, err)
 	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
@@ -225,7 +227,7 @@ func TestRequestRevertOfOwnTask(t *testing.T) {
 	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
 
 	link := str(t, body["revertUrl"])
-	_, b, err := revert.ParseRequest(link[strings.Index(link, "#")+1:])
+	_, b, err := reverttest.ParseRequest(link[strings.Index(link, "#")+1:])
 	require.NoError(t, err)
 	require.Equal(t, revert.ScopeTask, b.Select.Scope)
 	require.Equal(t, []string{env.a.Role}, b.Select.Agents, "the proposal holds only the requesting agent")
@@ -341,7 +343,7 @@ func TestRequestedRevertNeedsThePersonsSignature(t *testing.T) {
 	body, isError := env.h.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo"})
 	require.False(t, isError, "%v", body)
 	link := str(t, body["revertUrl"])
-	req, b, err := revert.ParseRequest(link[strings.Index(link, "#")+1:])
+	req, b, err := reverttest.ParseRequest(link[strings.Index(link, "#")+1:])
 	require.NoError(t, err)
 
 	forger, err := passkeytest.New(passkey.Production)

@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 // connectOnlyArgs make a connect-only code: a new engine is
@@ -101,7 +102,7 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.Contains(t, pm, "connection string")
 	require.NotContains(t, pm, "--setup-code")
 	require.NoError(t, agent.CheckPersonMessage(pm), pm)
-	mcptest.Require(t, pm, []toolresult.Link{{Label: agent.LabelConnect, URL: r.res.ConnectURL}})
+	mcptest.Require(t, pm, []toolresult.Link{{Label: agentkit.LabelConnect, URL: r.res.ConnectURL}})
 
 	// Text: the link and the fingerprint, no laptop command.
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")

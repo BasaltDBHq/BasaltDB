@@ -10,11 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.DiscardHandler) }

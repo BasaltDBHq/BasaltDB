@@ -115,7 +115,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 // writeRun finds the named run, or starts a one-write run.
 func (s *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
-		return s.findRun(ctx, p.RunID)
+		return findRun(ctx, s.deps.Core.Store, p.RunID)
 	}
 	info, err := s.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {

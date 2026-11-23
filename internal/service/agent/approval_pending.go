@@ -70,7 +70,7 @@ func (e PendingEntry) id() uuid.UUID {
 // its earlier one stops working, a widened revert first reset to the
 // agent's proposal (CONTRACT.md, Link secrets).
 func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.Page[PendingEntry], error) {
-	if _, err := s.findRun(ctx, p.RunID); err != nil {
+	if _, err := findRun(ctx, s.deps.Core.Store, p.RunID); err != nil {
 		return pagination.Page[PendingEntry]{}, err
 	}
 	sort, err := p.ParseSort(s.deps.Approval.SortSpec)

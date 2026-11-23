@@ -19,7 +19,7 @@ import (
 
 // addUnreachable is the problem of a guard read that failed: the database
 // refused the credential, or cannot be reached.
-func (s statusDeps) addUnreachable(ctx context.Context, ps *Problems, err error, trust *TrustReport) {
+func (s statusDeps) addUnreachable(ctx context.Context, ps *guidance.Problems, err error, trust *TrustReport) {
 	if trustprofile.CertificateNotVerified(err) {
 		s.addCertificateNotVerified(ctx, ps, err, trust)
 		return
@@ -28,34 +28,34 @@ func (s statusDeps) addUnreachable(ctx context.Context, ps *Problems, err error,
 	switch te.Reason {
 	case guidance.ReasonCredentialRejected:
 		ps.Add(problemCredentialRejected, "the database refuses the agent's credential",
-			func(b *guidance.Steps) string { return fixSteps(b, s.cmds, guidance.ReasonCredentialRejected) })
+			func(b *guidance.Steps) string { return guidance.FixSteps(b, s.cmds, guidance.ReasonCredentialRejected) })
 	case guidance.ReasonTooManyConnections:
 		ps.Add(problemTooManyConnections, "the agent's role has used all the database connections it is allowed",
 			func(b *guidance.Steps) string {
-				b.AskPerson(tooManyConnectionsAsk)
-				return tooManyConnectionsMessage(s.cmds)
+				b.AskPerson(guidance.TooManyConnectionsAsk)
+				return guidance.TooManyConnectionsMessage(s.cmds)
 			})
 	case guidance.ReasonGuardMissing:
 		ps.Add(problemGuardMissing, "the guard is not installed in this database",
-			func(b *guidance.Steps) string { return fixSteps(b, s.cmds, guidance.ReasonGuardMissing) })
+			func(b *guidance.Steps) string { return guidance.FixSteps(b, s.cmds, guidance.ReasonGuardMissing) })
 	default:
 		s.log.Error("status: read the guard", "err", err)
 		ps.Add(problemDatabaseUnreachable, "the database cannot be reached",
 			func(b *guidance.Steps) string {
 				b.AskPerson("Tell the person the database cannot be reached and ask them to check that Postgres is running.")
-				return databaseUnreachableMessage
+				return guidance.DatabaseUnreachableMessage
 			})
 	}
 }
 
-func addGuardProblem(ps *Problems, st guardmodel.Status) {
+func addGuardProblem(ps *guidance.Problems, st guardmodel.Status) {
 	switch st.State {
 	case guardmodel.GuardMissing:
 		ps.Add(problemGuardMissing, "the guard is not installed in this database; no tool but status works",
-			func(b *guidance.Steps) string { return fixSteps(b, ps.Cmds, guidance.ReasonGuardMissing) })
+			func(b *guidance.Steps) string { return guidance.FixSteps(b, ps.Cmds, guidance.ReasonGuardMissing) })
 	case guardmodel.GuardOutdated:
 		ps.Add(problemGuardOutdated, fmt.Sprintf("the guard misses breaking migrations %s; no tool but status works until it is upgraded", versions(st.MissingBreaking)),
-			func(b *guidance.Steps) string { return fixSteps(b, ps.Cmds, guidance.ReasonGuardOutdated) })
+			func(b *guidance.Steps) string { return guidance.FixSteps(b, ps.Cmds, guidance.ReasonGuardOutdated) })
 	case guardmodel.GuardUpgradeAvailable:
 		ps.Add(problemUpgradeAvailable, fmt.Sprintf("the guard misses non-breaking migrations %s; every tool works", versions(st.MissingNonBreaking)),
 			func(b *guidance.Steps) string { return upgradeSteps(b, ps.Cmds) })
@@ -100,14 +100,14 @@ func (v setupView) blocks() bool {
 	return v.explainsGuard() || (v.confirmed && v.status.State == setupPending)
 }
 
-func (v setupView) addProblem(ps *Problems) {
+func (v setupView) addProblem(ps *guidance.Problems) {
 	switch {
 	case v.refused:
 		ps.Add(problemDatabaseRefused, "the person said the database the setup reached is not theirs; a new setup code is needed",
 			func(b *guidance.Steps) string { return databaseRefusedSteps(b, ps.Cmds) })
 	case v.status.State == setupExpired:
 		ps.Add(problemSetupExpired, "the agent's setup code expired before it was used; a new one is needed",
-			func(b *guidance.Steps) string { return setupExpiredSteps(b, ps.Cmds) })
+			func(b *guidance.Steps) string { return guidance.SetupExpiredSteps(b, ps.Cmds) })
 	case v.status.State != setupPending:
 	case v.awaiting:
 		ps.AddLinked(problemSetupNotRun, connectOnlyWaitingMessage(v.code),
@@ -120,12 +120,12 @@ func (v setupView) addProblem(ps *Problems) {
 	case v.status.Kind == guardmodel.SetupInstall:
 		ps.AddLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
 			func(b *guidance.Steps) (string, []toolresult.Link) {
-				return setupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, true, ps.ConnectBudget)
+				return guidance.SetupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, true, ps.ConnectBudget)
 			})
 	default:
 		ps.AddLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
 			func(b *guidance.Steps) (string, []toolresult.Link) {
-				return setupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, false, ps.ConnectBudget)
+				return guidance.SetupPendingSteps(b, ps.Cmds, v.code, v.fingerprint, false, ps.ConnectBudget)
 			})
 	}
 }
@@ -307,4 +307,13 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return st.State == guardmodel.GuardUpgradeAvailable, nil
+}
+
+// statusTools are the tools that report the agent's state and confirm the
+// collected database.
+func (h handlers) statusTools() []guidance.Tool {
+	return []guidance.Tool{
+		contractTool(guidance.ToolStatus, h.wrap(guidance.ToolStatus, h.status)),
+		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
+	}
 }

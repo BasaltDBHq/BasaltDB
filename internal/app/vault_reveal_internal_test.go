@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
@@ -32,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 

@@ -158,14 +158,14 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		v := s.vault.VaultStatus()
 		r.Vault = &v
 	}
-	ps := Problems{Cmds: s.cmds, ConnectBudget: s.connectBudget}
+	ps := guidance.Problems{Cmds: s.cmds, ConnectBudget: s.connectBudget}
 	if s.devLocalPages {
 		ps.Add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
 			func(b *guidance.Steps) string { return devLocalPagesSteps(b, s.cmds) })
 	}
 	if !s.engineReachable && !s.engineUnknown {
 		ps.Add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
-			func(b *guidance.Steps) string { return engineUnreachableSteps(b, s.cmds, guidance.ToolStatus) })
+			func(b *guidance.Steps) string { return guidance.EngineUnreachableSteps(b, s.cmds, guidance.ToolStatus) })
 	}
 	s.addPortalProblem(&ps)
 	s.addPluginProblems(&ps)
@@ -252,7 +252,7 @@ func enforcement(operated string, sameUser bool) string {
 	return EnforcementEngineAndGuard
 }
 
-func ready(list []Problem) bool {
+func ready(list []guidance.Problem) bool {
 	for _, p := range list {
 		if p.Severity == mcpcontract.SeverityError {
 			return false
@@ -292,7 +292,7 @@ const reinstalledAsk = "Show the person this notice and ask whether someone on t
 // addReinstalled is LEDGER_REINSTALLED when the ledger or the engine's kept
 // copy records a reinstall. A guard older than version 36 records none; a
 // read that fails is logged and adds nothing.
-func (s statusDeps) addReinstalled(ctx context.Context, ps *Problems) {
+func (s statusDeps) addReinstalled(ctx context.Context, ps *guidance.Problems) {
 	msg, ok, err := s.probe.ReinstallNotice(ctx, guidance.MaxPersonMessageLength)
 	if err != nil {
 		s.log.Error("status: read the reinstalls", "err", err)
@@ -311,7 +311,7 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *Problems) {
 // passkeys counts the active passkeys that can sign the agent's links:
 // those registered on the origin of its pages (pagesPasskeys); none is
 // NO_PASSKEY. A count that fails is logged and leaves active out.
-func (s statusDeps) countPasskeys(ctx context.Context, ps *Problems, setupDone bool) PasskeysStatus {
+func (s statusDeps) countPasskeys(ctx context.Context, ps *guidance.Problems, setupDone bool) PasskeysStatus {
 	all, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
@@ -411,7 +411,7 @@ const nothingSignableLead = "No passkey is registered for this agent, so nothing
 func noPasskeySteps(b *guidance.Steps, cmds guidance.Commands) string {
 	const lead = nothingSignableLead
 	if cmds.AgentOperated() {
-		return remoteSetupSteps(b, cmds, lead)
+		return guidance.RemoteSetupSteps(b, cmds, lead)
 	}
 	b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they register a passkey: held writes and reverts are signed with one.")
 	return lead + " The agent gives you a link to register one."

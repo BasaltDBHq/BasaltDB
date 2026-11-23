@@ -191,10 +191,10 @@ type StatusReport struct {
 	// Crash is the newest saved crash report, Access what the agent can
 	// read and write, Plugins the health of the plugin entries served to
 	// it; each absent when there is nothing to show.
-	Crash    *CrashStatus   `json:"crash,omitempty"`
-	Access   *AccessStatus  `json:"access,omitempty"`
-	Plugins  []PluginHealth `json:"plugins,omitempty"`
-	Problems []Problem      `json:"problems"`
+	Crash    *CrashStatus       `json:"crash,omitempty"`
+	Access   *AccessStatus      `json:"access,omitempty"`
+	Plugins  []PluginHealth     `json:"plugins,omitempty"`
+	Problems []guidance.Problem `json:"problems"`
 	// Update is set when a newer release is out (CONTRACT.md, Update
 	// notice).
 	Update *UpdateInfo `json:"update,omitempty"`

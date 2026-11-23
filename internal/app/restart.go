@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 // RestartOptions turn on the restart onto a new binary.

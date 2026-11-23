@@ -285,7 +285,7 @@ func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
 
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
-	var found *Problem
+	var found *guidance.Problem
 	for i := range r.Problems {
 		if r.Problems[i].Code == problemLockFileUnusable {
 			found = &r.Problems[i]

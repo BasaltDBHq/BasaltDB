@@ -85,7 +85,7 @@ type TrustRootStatus struct {
 // trustStatus is status.trust, adding TRUST_PROFILE_REFUSED for each
 // refused file and TRUST_ROOT_EXPIRING for roots in use that expire soon,
 // and the report it read; nil without a reporter.
-func (s statusDeps) trustStatus(ctx context.Context, ps *Problems) (*TrustStatus, *TrustReport) {
+func (s statusDeps) trustStatus(ctx context.Context, ps *guidance.Problems) (*TrustStatus, *TrustReport) {
 	if s.trust == nil {
 		return nil, nil
 	}
@@ -149,7 +149,7 @@ const trustInitText = "Run this once and show the person the link it prints: the
 // addPinMismatch is TRUST_PIN_MISMATCH when the ledger records, for the
 // pinned host and port, another certificate than the engine's pin. No
 // record is no problem: only basalt init records one.
-func (s statusDeps) addPinMismatch(ctx context.Context, ps *Problems, rep TrustReport) {
+func (s statusDeps) addPinMismatch(ctx context.Context, ps *guidance.Problems, rep TrustReport) {
 	p := pinned(&rep)
 	if p == nil || rep.Recorded == nil {
 		return
@@ -173,7 +173,7 @@ func (s statusDeps) addPinMismatch(ctx context.Context, ps *Problems, rep TrustR
 		})
 }
 
-func (s statusDeps) addTrustRefused(ps *Problems, r trustprofile.Refused) {
+func (s statusDeps) addTrustRefused(ps *guidance.Problems, r trustprofile.Refused) {
 	ps.Add(problemTrustProfileRefused, "the trust profile file "+r.File+" is refused: "+r.Reason,
 		func(b *guidance.Steps) string {
 			b.TellAgent("Fix or remove the file on the engine's machine, then tell the agent.")
@@ -182,7 +182,7 @@ func (s statusDeps) addTrustRefused(ps *Problems, r trustprofile.Refused) {
 		})
 }
 
-func (s statusDeps) addTrustExpiring(ps *Problems, a trustprofile.Applied, sorted []*x509.Certificate) {
+func (s statusDeps) addTrustExpiring(ps *guidance.Problems, a trustprofile.Applied, sorted []*x509.Certificate) {
 	now := s.now()
 	var soon []*x509.Certificate
 	for _, c := range sorted {
@@ -221,7 +221,7 @@ func (s statusDeps) addTrustExpiring(ps *Problems, a trustprofile.Applied, sorte
 // work: the setup page's trust step when the system's authorities or a
 // profile verified it or its sslmode is weaker than verify-full, and the
 // connection string's own roots when it names them.
-func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *Problems, err error, trust *TrustReport) {
+func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *guidance.Problems, err error, trust *TrustReport) {
 	s.log.Error("status: the database's certificate does not verify", "err", err)
 	a := trustprofile.Applied{Host: "the database", Applies: trustprofile.AppliesSystem}
 	if trust != nil {
@@ -264,7 +264,7 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *Problems,
 // and the chain top it presents now is not the pinned one: refused, naming
 // both; the person accepts the new one on the setup page basalt init links
 // to. Never automatic.
-func (s statusDeps) addRootChanged(ctx context.Context, ps *Problems, rep *TrustReport) bool {
+func (s statusDeps) addRootChanged(ctx context.Context, ps *guidance.Problems, rep *TrustReport) bool {
 	p := pinned(rep)
 	if p == nil || rep.Presented == nil {
 		return false

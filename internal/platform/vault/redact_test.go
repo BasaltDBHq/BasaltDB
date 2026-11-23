@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 // TestLinkTokensRedactInLogs: a token logged as itself, or in a vault.Link

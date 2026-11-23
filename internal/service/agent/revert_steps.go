@@ -327,7 +327,7 @@ func (s *Service) passkeyRevokedWith(open toolresult.NextStep, r action.Revert) 
 			"revoked), so nothing was reverted. The agent gives you a link to register the passkey you use; then sign again.",
 			guidance.Sentence(revertTitle(r))),
 		NextSteps: []toolresult.NextStep{
-			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: passkeyInitText, Command: s.deps.Core.Commands.Init()},
+			{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: guidance.PasskeyInitText, Command: s.deps.Core.Commands.Init()},
 			open,
 			guidance.AgentStep(toolresult.ActionEndTurn, guidance.StepEndTurnPersonActsNext),
 		},

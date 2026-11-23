@@ -6,8 +6,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 // newPages is the pages for origin with every page's handlers mounted: the

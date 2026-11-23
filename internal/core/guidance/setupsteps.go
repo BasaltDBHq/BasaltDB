@@ -1,19 +1,18 @@
-package agentkit
+package guidance
 
 import (
 	"errors"
 	"fmt"
 	"regexp"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // ApprovalExpiredSteps are the steps of an approval that expired before it was approved.
-func ApprovalExpiredSteps(b *guidance.Steps) {
+func ApprovalExpiredSteps(b *Steps) {
 	b.AskPerson("Tell the person the approval expired and the write stays blocked; ask whether to send it again.")
-	b.ReviseCall(guidance.ToolWrite, nil, "On yes, send the write again without approvalId, so it is held anew.")
+	b.ReviseCall(ToolWrite, nil, "On yes, send the write again without approvalId, so it is held anew.")
 }
 
 // DatabaseUnreachableMessage is the person's message when the database
@@ -26,7 +25,7 @@ const TooManyConnectionsAsk = "Tell the person the agent has used all the databa
 
 // TooManyConnectionsMessage is the person's message when the agent role is at
 // its connection limit, in an error and in status (CONTRACT.md, Error codes).
-func TooManyConnectionsMessage(cmds guidance.Commands) string {
+func TooManyConnectionsMessage(cmds Commands) string {
 	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
 		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
 		"Stop any second engine; stale sessions close on their own within a few minutes.",
@@ -38,16 +37,16 @@ func TooManyConnectionsMessage(cmds guidance.Commands) string {
 // problems of the same name. basalt init fixes each: its link opens the
 // setup page, or the connect page on an agent-operated engine, for that job.
 var fixes = map[string]string{
-	guidance.ReasonCredentialRejected: "The database refuses the agent's credential (its password changed or was never right), so the agent needs a new one.",
-	guidance.ReasonGuardMissing:       "Basalt's guard is not installed in this database (or was removed), so the agent cannot work.",
-	guidance.ReasonGuardOutdated:      "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is updated.",
+	ReasonCredentialRejected: "The database refuses the agent's credential (its password changed or was never right), so the agent needs a new one.",
+	ReasonGuardMissing:       "Basalt's guard is not installed in this database (or was removed), so the agent cannot work.",
+	ReasonGuardOutdated:      "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is updated.",
 }
 
 // FixSteps: the agent runs basalt init, whose link the person opens to fix
 // reason; the person tells the agent when it is done and the agent stops
 // until then. On an agent-operated engine the agent follows what init
 // prints instead (RI-17 for CREDENTIAL_REJECTED).
-func FixSteps(b *guidance.Steps, cmds guidance.Commands, reason string) string {
+func FixSteps(b *Steps, cmds Commands, reason string) string {
 	problem, ok := fixes[reason]
 	if !ok {
 		b.Fail(fmt.Errorf("no fix for %s", reason))
@@ -66,7 +65,7 @@ func FixSteps(b *guidance.Steps, cmds guidance.Commands, reason string) string {
 		b.Stop("Do not retry: BasaltDB is removed from this database.")
 		return removedPersonText
 	}
-	if reason == guidance.ReasonGuardOutdated && cmds.UpdateLinkURL() != "" {
+	if reason == ReasonGuardOutdated && cmds.UpdateLinkURL() != "" {
 		b.OpenLink(cmds.UpdateLinkURL(), "Show the person this link: its page updates the guard once they type the admin connection string there.")
 		b.TellAgent("Tell the agent when it is done.")
 		b.Stop("Do not retry until the person says it is fixed.")
@@ -104,7 +103,7 @@ const initPersonText = "The agent gives you a link: open it, follow the page, th
 // now; what it prints (the connect link, its personMessage and nextSteps)
 // replaces the rest of these steps (RI-2). The person's message names no
 // command on the agent's machine.
-func RemoteSetupSteps(b *guidance.Steps, cmds guidance.Commands, problem string) string {
+func RemoteSetupSteps(b *Steps, cmds Commands, problem string) string {
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the link it prints and follow its steps.")
 	return problem + " " + initPersonText
 }
@@ -112,20 +111,20 @@ func RemoteSetupSteps(b *guidance.Steps, cmds guidance.Commands, problem string)
 // EngineUnreachableSteps: the person starts the engine; on an agent-operated
 // engine the agent starts it, once, then repeats tool (status when tool is
 // empty or status itself).
-func EngineUnreachableSteps(b *guidance.Steps, cmds guidance.Commands, tool string) string {
+func EngineUnreachableSteps(b *Steps, cmds Commands, tool string) string {
 	if !cmds.AgentOperated() {
 		return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
 	}
 	b.AgentRunCommand(cmds.EngineStart(), "Start the Basalt engine on this machine, once; ask the person when it still does not answer.")
-	if tool == "" || tool == guidance.ToolStatus {
-		b.CallTool(guidance.ToolStatus, map[string]any{}, "Then call status to check that the engine answers.")
+	if tool == "" || tool == ToolStatus {
+		b.CallTool(ToolStatus, map[string]any{}, "Then call status to check that the engine answers.")
 		return ""
 	}
 	b.RepeatCall(tool, nil, 0, "Then make the same call again, once.")
 	return ""
 }
 
-func personFix(b *guidance.Steps, command, problem string) string {
+func personFix(b *Steps, command, problem string) string {
 	b.RunCommand(command, "Run this to fix it.")
 	b.TellAgent("Tell the agent when it is done.")
 	b.Stop("Do not retry until the person says it is fixed.")
@@ -136,7 +135,7 @@ func personFix(b *guidance.Steps, command, problem string) string {
 var SetupCode = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // SetupExpiredSteps: the agent runs basalt init again for a new link.
-func SetupExpiredSteps(b *guidance.Steps, cmds guidance.Commands) string {
+func SetupExpiredSteps(b *Steps, cmds Commands) string {
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "The setup link for this agent expired before it was used. " + initPersonText
@@ -152,14 +151,14 @@ func SetupExpiredSteps(b *guidance.Steps, cmds guidance.Commands) string {
 // hosted service (CONTRACT.md, Next steps with the connect link). Without
 // one there is no page to hand over: the agent runs basalt init, which
 // prints the link. The links are those of the message.
-func SetupPendingSteps(b *guidance.Steps, cmds guidance.Commands, code, fingerprint string, blocking bool, budget int) (string, []toolresult.Link) {
+func SetupPendingSteps(b *Steps, cmds Commands, code, fingerprint string, blocking bool, budget int) (string, []toolresult.Link) {
 	if !SetupCode.MatchString(code) || fingerprint == "" {
 		b.Fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil
 	}
-	url := guidance.ConnectLink(code, budget)
+	url := ConnectLink(code, budget)
 	if url != "" {
-		b.OpenLink(url, guidance.ConnectStepText)
+		b.OpenLink(url, ConnectStepText)
 	} else {
 		b.AgentRunCommand(cmds.Init(), "Run this once and show the person the link it prints, where they finish the setup.")
 	}
@@ -167,11 +166,11 @@ func SetupPendingSteps(b *guidance.Steps, cmds guidance.Commands, code, fingerpr
 	lead := "A change to this agent's setup is waiting for you."
 	if blocking {
 		b.EndTurn("End your turn: the person acts next.")
-		b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+		b.CallTool(ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 		lead = "This agent's setup has not run yet."
 	}
 	if url != "" {
-		return guidance.ConnectMessage(lead, url, fingerprint)
+		return ConnectMessage(lead, url, fingerprint)
 	}
 	return lead + " The agent gives you a link: open it, check that it shows the setup fingerprint " + fingerprint +
 		", and follow the page, then tell the agent. Never paste your database password into this chat.", nil

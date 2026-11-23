@@ -19,9 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -34,6 +31,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 

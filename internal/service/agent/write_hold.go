@@ -74,7 +74,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
-	run, err := s.findRun(ctx, p.RunID)
+	run, err := findRun(ctx, s.deps.Core.Store, p.RunID)
 	if err != nil {
 		return WriteOutcome{}, err
 	}

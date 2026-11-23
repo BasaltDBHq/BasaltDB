@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 // requestError sends one request and returns the JSON-RPC error that comes

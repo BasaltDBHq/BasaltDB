@@ -395,7 +395,7 @@ func TestEngineSocketRefusals(t *testing.T) {
 }
 
 func TestCloseCodesMatchRegistry(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "api", "mcp", "vault", "close-codes.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "api", "mcp", "vault", "close-codes.json"))
 	require.NoError(t, err)
 	var reg struct {
 		Codes []struct {

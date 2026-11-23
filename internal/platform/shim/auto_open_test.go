@@ -16,8 +16,8 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 const (

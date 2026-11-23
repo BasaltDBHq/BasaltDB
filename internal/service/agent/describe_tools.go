@@ -102,3 +102,10 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 	}
 	return describeOverviewResult{Form: formOverview, Overview: o}, nil
 }
+
+// describeTools are the tools that describe the database.
+func (h handlers) describeTools() []guidance.Tool {
+	return []guidance.Tool{
+		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
+	}
+}

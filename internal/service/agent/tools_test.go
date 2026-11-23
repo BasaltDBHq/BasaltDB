@@ -83,6 +83,26 @@ func TestServedToolsMatchTheContracts(t *testing.T) {
 	require.NoError(t, mcpcontract.CheckServed(contracts, served))
 }
 
+// TestServedToolListOrder pins the order of the tool list: it is what an agent
+// reads in tools/list, so the per-domain lists must join in this order.
+func TestServedToolListOrder(t *testing.T) {
+	t.Parallel()
+	d := deps()
+	tools := Tools(NewService(d))
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	want := []string{
+		"run_start", "run_history", "list_runs", "list_pending", "preview_revert", "revert_plan",
+		"apply_revert_batch", "request_revert", "request_plugin", "describe", "status", "confirm_database",
+	}
+	if speaksSQL(d.Core.Store.Kind()) {
+		want = append([]string{"run_start", "query", "write"}, want[1:]...)
+	}
+	require.Equal(t, want, names)
+}
+
 // TestHeldWriteDescriptionsWaitOnce: after handing over a link (write's
 // APPROVAL_REQUIRED or list_pending), the agent waits once with approvalId
 // in the same turn, and never loops on a wait that ran out.

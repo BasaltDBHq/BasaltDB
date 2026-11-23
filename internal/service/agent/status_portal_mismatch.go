@@ -8,7 +8,7 @@ import "github.com/basaltdbhq/basaltdb/internal/core/guidance"
 // found the portal serving pages other than the ones this build embeds
 // (CONTRACT.md, CLI, basalt portal verify). A check that could not run, or
 // no check yet, adds nothing.
-func (s statusDeps) addPortalProblem(ps *Problems) {
+func (s statusDeps) addPortalProblem(ps *guidance.Problems) {
 	if s.portal == nil {
 		return
 	}

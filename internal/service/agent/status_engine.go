@@ -43,7 +43,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	if cfg != nil {
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
 	}
-	ps := Problems{Cmds: cmds}
+	ps := guidance.Problems{Cmds: cmds}
 	msg := "the engine does not answer, so no tool but status works"
 	if config.IsOldCredentialFile(cfgErr) {
 		// The engine cannot start on this config: say what to edit.
@@ -51,15 +51,15 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 	}
 	if startFailure != "" {
 		ps.Add(problemEngineStartFailed, startFailure,
-			func(b *guidance.Steps) string { return engineUnreachableSteps(b, cmds, guidance.ToolStatus) })
+			func(b *guidance.Steps) string { return guidance.EngineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 	}
 	ps.Add(problemEngineUnreachable, msg,
-		func(b *guidance.Steps) string { return engineUnreachableSteps(b, cmds, guidance.ToolStatus) })
+		func(b *guidance.Steps) string { return guidance.EngineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 	if cfg != nil {
 		if stop, ok := ReadLastStop(cfg.StateDirFor(runtime.GOOS)); ok {
 			r.Engine.LastStop = &stop
 			ps.Add(problemEngineGaveUp, engineGaveUpMessage(host, stop, configPath, now),
-				func(b *guidance.Steps) string { return engineUnreachableSteps(b, cmds, guidance.ToolStatus) })
+				func(b *guidance.Steps) string { return guidance.EngineUnreachableSteps(b, cmds, guidance.ToolStatus) })
 		}
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
 		r.Enforcement = enforcement(cfg.OperatedBy, !cfg.Service())
@@ -84,7 +84,7 @@ func EngineDownStatusAfterStart(host EngineHost, name string, cmds guidance.Comm
 // problem ENGINE_REVOKED. Without the engine's
 // key (the key file is refused) or a readable guard of version 33 or later,
 // the state is UNKNOWN and no problem is added.
-func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *Problems) *EngineRecordStatus {
+func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *guidance.Problems) *EngineRecordStatus {
 	unknown := &EngineRecordStatus{State: engineUnknown}
 	if engineID == "" || !guardReadable || s.engineRecord == nil {
 		return unknown

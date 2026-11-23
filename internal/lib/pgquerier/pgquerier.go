@@ -68,6 +68,31 @@ func (n Neutral) QueryRow(ctx context.Context, sql string, args ...any) Row {
 	return n.q.QueryRow(ctx, sql, args...)
 }
 
+// SnapshotRunner runs fn in one repeatable-read, read-only transaction and
+// rolls it back after; it returns fn's error, or the error of beginning it.
+type SnapshotRunner = func(ctx context.Context, fn func(Port) error) error
+
+// ReadOnlySnapshot is the runner of read-only snapshots on n's handle when
+// it can begin a transaction of its own (a pool or a connection); false
+// when it cannot (it is a transaction).
+func (n Neutral) ReadOnlySnapshot() (SnapshotRunner, bool) {
+	b, ok := n.q.(interface {
+		BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+	})
+	if !ok {
+		return nil, false
+	}
+	return func(ctx context.Context, fn func(Port) error) error {
+		tx, err := b.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+		if err != nil {
+			return err
+		}
+		// Read-only: nothing to commit.
+		defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+		return fn(Neutralize(tx))
+	}, true
+}
+
 // Unwrap returns the Querier inside q, which must come from Neutralize.
 func Unwrap(q any) Querier {
 	n, ok := q.(Neutral)

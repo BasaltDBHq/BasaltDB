@@ -751,7 +751,11 @@ func recordTrustPinAlone(ctx context.Context, conn *pgx.Conn, t *TrustPin) error
 }
 
 // writeLabels writes in.ColumnClasses and in.RestPublic in the setup's
-// transaction.
+// transaction. Its tables are the agent role's (setuprun.Setup.AgentTables): for an
+// AGENT code that keeps the role's grants, the grants it holds, since such
+// a code names no tables; otherwise the code's tables. An UPGRADE code
+// names no agent, so its tables are the readable ones, read after the
+// migrations. The local setup page takes the person's picks instead.
 func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput, now time.Time) error {
 	if len(in.ColumnClasses) == 0 && !in.RestPublic {
 		return nil

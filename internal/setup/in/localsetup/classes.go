@@ -10,13 +10,13 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // The column labels of an install of a real database (CONTRACT.md, The
@@ -30,8 +30,6 @@ const (
 	maxColumnClasses = 500
 	// maxColumns bounds the columns a check lists and samples.
 	maxColumns = 500
-	// maxIdentifierBytes is Postgres's NAMEDATALEN - 1.
-	maxIdentifierBytes = 63
 	// sampleChars cuts each sampled value before it is scored.
 	sampleChars = 256
 	// sampleBudget is how long one check samples in all.
@@ -111,19 +109,12 @@ func checkClasses(req Request, picks []TablePick) error {
 			return bad("a column of a table the agent does not get")
 		case seen[key]:
 			return bad("a column given twice")
-		case !plainColumn(c.Column) || !guardmodel.ValidLabel(c.label()) || !guardmodel.ValidWas(c.Was.guard()):
+		case !setup.PlainColumn(c.Column) || !guardmodel.ValidLabel(c.label()) || !guardmodel.ValidWas(c.Was.guard()):
 			return bad("a class, entity type or phone region the page does not set")
 		}
 		seen[key] = true
 	}
 	return nil
-}
-
-// plainColumn is a column name the engine passes on: not empty, at most 63
-// bytes (a Postgres identifier), and no control character, which the
-// challenge's separators could be confused with.
-func plainColumn(name string) bool {
-	return name != "" && len(name) <= maxIdentifierBytes && !strings.ContainsFunc(name, unicode.IsControl)
 }
 
 // classesKey is the labels as the challenge binds them: a hash of the

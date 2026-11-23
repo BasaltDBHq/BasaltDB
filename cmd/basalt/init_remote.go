@@ -660,12 +660,6 @@ func (r *remoteInit) promote(pending *credential) error {
 	return nil
 }
 
-// agentConn is the agent's own connection init --remote reads with.
-type agentConn interface {
-	pgquerier.Querier
-	Close(ctx context.Context) error
-}
-
 // errLoginRefused is a login the database refused: the agent's role does
 // not exist or has another password.
 var errLoginRefused = errors.New("the database refused the agent's login")
@@ -676,7 +670,7 @@ const supavisorNoTenant = "Tenant or user not found"
 
 // loginAsAgent connects with dsn: errLoginRefused when the database
 // refuses the login (class 28, or the pooler not knowing the role).
-func loginAsAgent(ctx context.Context, sh cli.Host, dsn string) (agentConn, error) {
+func loginAsAgent(ctx context.Context, sh cli.Host, dsn string) (cli.AgentConn, error) {
 	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	defer cancel()
 	conn, err := cli.Connect(ctx, sh, dsn)
@@ -693,7 +687,7 @@ func loginAsAgent(ctx context.Context, sh cli.Host, dsn string) (agentConn, erro
 
 // inspect reads, as the agent, the guard version and whether the pending
 // setup is recorded.
-func (r *remoteInit) inspect(conn agentConn) error {
+func (r *remoteInit) inspect(conn cli.AgentConn) error {
 	r.loggedIn = true
 	v, err := r.setup.GuardAgentVersion(r.c.Ctx, conn)
 	if err != nil {

@@ -28,7 +28,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -113,7 +112,7 @@ func (h appSetupHost) OpenRootCredFiles(dir string, trusted int) (setup.CredFile
 
 func (appSetupHost) RootTrustedOwner(dir string) (int, error) { return rootTrustedOwner(dir) }
 
-func (h appSetupHost) OpenRootConfigDir(dir string, trusted int) (setupcli.RootConfigDir, error) {
+func (h appSetupHost) OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error) {
 	d, err := openRootConfigDir(h, dir, trusted)
 	if err != nil {
 		return nil, err
@@ -121,7 +120,7 @@ func (h appSetupHost) OpenRootConfigDir(dir string, trusted int) (setupcli.RootC
 	return d, nil
 }
 
-func (h appSetupHost) RootEngineKey(stateDir, goos string, cfg setupcli.RootConfigDir, now func() time.Time) ([]byte, error) {
+func (h appSetupHost) RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error) {
 	d, _ := cfg.(*rootConfigDir)
 	return rootEngineKey(h, stateDir, goos, d, now)
 }

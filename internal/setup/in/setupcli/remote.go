@@ -131,7 +131,7 @@ type remoteInit struct {
 	// configDir is, as root, the config directory opened without following
 	// a link anyone but root controls: engine.json is locked, read and
 	// written relative to it (nil not as root: by path).
-	configDir RootConfigDir
+	configDir setup.RootConfigDir
 	osUser    string
 	base      *url.URL
 	target    setupcode.Target
@@ -212,21 +212,12 @@ type Host interface {
 	// OpenRootConfigDir opens dir, the config directory, as root, making it
 	// when missing; engine.json is then locked, read and written relative
 	// to it, checked as the hardened read checks it.
-	OpenRootConfigDir(dir string, trusted int) (RootConfigDir, error)
+	OpenRootConfigDir(dir string, trusted int) (setup.RootConfigDir, error)
 	// RootEngineKey is the engine's public key for a root init --remote:
 	// the key file in stateDir read or, when there is none, created relative
 	// to the state directory opened without following a link anyone but
 	// root controls, owned by the config directory's owner.
-	RootEngineKey(stateDir, goos string, cfg RootConfigDir, now func() time.Time) ([]byte, error)
-}
-
-// RootConfigDir is the config directory init --remote opened as root.
-type RootConfigDir interface {
-	// Upsert is config.UpsertAgentVault on the config file name, relative to
-	// the opened directory.
-	Upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error)
-	// Close closes the directory.
-	Close()
+	RootEngineKey(stateDir, goos string, cfg setup.RootConfigDir, now func() time.Time) ([]byte, error)
 }
 
 func newRemoteInit(c *cli.IO, h Host, f setup.RemoteFlags) (*remoteInit, error) {

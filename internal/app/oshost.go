@@ -15,9 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/lib/browser"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 )
 
@@ -46,13 +48,13 @@ func (OSHost) ResolvedExecutable() (string, error) {
 const darwinConsole = "/dev/console"
 
 func (OSHost) DialogAvailable(goos string) error {
-	paths, err := OSDialogPaths(goos)
+	paths, err := osservice.DialogPaths(goos)
 	if err != nil {
 		return err
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
-			return fmt.Errorf("%w (%s is missing)", ErrOSNoDialog, p)
+			return fmt.Errorf("%w (%s is missing)", servicespec.ErrNoDialog, p)
 		}
 	}
 	if goos != goosDarwin {
@@ -61,10 +63,10 @@ func (OSHost) DialogAvailable(goos string) error {
 	// The dialog shows on the Mac's screen: only for the person logged in there.
 	uid, err := cli.FileOwnerUID(darwinConsole)
 	if err != nil {
-		return fmt.Errorf("%w (%s: %w)", ErrOSNoDialog, darwinConsole, err)
+		return fmt.Errorf("%w (%s: %w)", servicespec.ErrNoDialog, darwinConsole, err)
 	}
 	if uid != os.Geteuid() {
-		return fmt.Errorf("%w (you are not the user logged in at this Mac's screen)", ErrOSNoDialog)
+		return fmt.Errorf("%w (you are not the user logged in at this Mac's screen)", servicespec.ErrNoDialog)
 	}
 	return nil
 }
@@ -74,7 +76,7 @@ func (OSHost) DialogAvailable(goos string) error {
 var dialogEnv = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
 
 func (OSHost) AdminDialog(ctx context.Context, goos, prompt, script string, out io.Writer) error {
-	argv, err := OSDialogCommand(goos, prompt, script)
+	argv, err := osservice.DialogCommand(goos, prompt, script)
 	if err != nil {
 		return err
 	}
@@ -88,7 +90,7 @@ func (OSHost) AdminDialog(ctx context.Context, goos, prompt, script string, out 
 	if errors.As(err, &exitErr) {
 		code = exitErr.ExitCode()
 	}
-	return OSDialogError(goos, code, said.String(), err)
+	return osservice.DialogError(goos, code, said.String(), err)
 }
 
 func (OSHost) SetupState(ctx context.Context, origin string) (string, error) {
@@ -118,13 +120,13 @@ func (OSHost) ServiceRuns(ctx context.Context, goos string) (int, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
 	defer cancel()
 	if goos == goosDarwin {
-		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/"+OSLaunchdLabel).Output()
+		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/"+servicespec.LaunchdLabel).Output()
 		if err != nil {
 			return 0, 0, err
 		}
 		return parseLaunchdRuns(string(out))
 	}
-	out, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "NRestarts", "-p", "ExecMainStatus", OSUnitName).Output()
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "NRestarts", "-p", "ExecMainStatus", servicespec.SystemdUnitName).Output()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -219,7 +221,7 @@ func (OSHost) PagesUp(ctx context.Context, origin string) bool {
 }
 
 func (OSHost) System(out, errw io.Writer) cli.System {
-	return OSExecSystem{Stdout: out, Stderr: errw}
+	return osservice.OSSystem{Stdout: out, Stderr: errw}
 }
 
 // Probe timing: a service manager starts the engine within seconds.
@@ -252,7 +254,7 @@ const (
 
 func (OSHost) EngineLog(ctx context.Context, goos string) (string, error) {
 	if goos != goosDarwin {
-		out, err := exec.CommandContext(ctx, "journalctl", "-u", OSUnitName,
+		out, err := exec.CommandContext(ctx, "journalctl", "-u", servicespec.SystemdUnitName,
 			"-n", engineJournalLines, "-o", "cat", "--no-pager").Output()
 		return string(out), err
 	}

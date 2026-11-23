@@ -9,22 +9,23 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // servicePluginHost is service.HostFor.
-func servicePluginHost(cfg config.Config, goos, configPath, engineUser string) OSPluginHost {
-	return OSHostFor(cfg, goos, configPath, engineUser)
+func servicePluginHost(cfg config.Config, goos, configPath, engineUser string) servicespec.PluginHost {
+	return plugin.HostFor(cfg, goos, configPath, engineUser)
 }
 
 // unitEntry is service.EntryFor.
-func unitEntry(p config.Plugin, v pluginmodel.Verified) (OSPluginUnit, bool) {
-	return OSEntryFor(p, v)
+func unitEntry(p config.Plugin, v pluginmodel.Verified) (servicespec.PluginEntry, bool) {
+	return plugin.EntryFor(p, v)
 }
 
 // withPluginUnits is spec with cfg's plugin units: every local entry whose
 // copy verifies.
-func withPluginUnits(spec OSSpec, cfg config.Config, warn io.Writer) OSSpec {
+func withPluginUnits(spec servicespec.Spec, cfg config.Config, warn io.Writer) servicespec.Spec {
 	h := servicePluginHost(cfg, spec.GOOS, spec.ConfigPath, spec.User)
 	spec.StateDir, spec.SocketDir, spec.CredentialFiles = h.StateDir, h.SocketDir, h.CredentialFiles
 	spec.Plugins = serviceUnitEntries(cfg, spec.GOOS, spec.ConfigPath, warn)
@@ -34,14 +35,14 @@ func withPluginUnits(spec OSSpec, cfg config.Config, warn io.Writer) OSSpec {
 // serviceUnitEntries are cfg's local entries whose installed copies verify,
 // for basalt service install. An entry that fails is left out with a line
 // on warn: the engine refuses it too (PLUGIN_NOT_TRUSTED).
-func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writer) []OSPluginUnit {
+func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writer) []servicespec.PluginEntry {
 	if len(cfg.Plugins) == 0 {
 		return nil
 	}
 	dir := filepath.Dir(configPath)
 	root, rootErr := plugin.Root(pluginmodel.ModeService, goos, dir)
 	trust, trustErr := plugin.NewTrustStore(pluginmodel.ModeService, goos, dir)
-	var out []OSPluginUnit
+	var out []servicespec.PluginEntry
 	for _, p := range cfg.Plugins {
 		k := p.Key()
 		if rootErr != nil || trustErr != nil {

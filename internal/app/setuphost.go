@@ -13,7 +13,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -22,19 +26,19 @@ import (
 type Shell struct{}
 
 func (Shell) Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
-	return Connect(ctx, dsn)
+	return pgdial.Connect(ctx, dsn)
 }
 
 func (Shell) WithCertificateHint(dsn string, err error) error {
-	return WithCertificateHint(dsn, err)
+	return pgdial.WithCertificateHint(dsn, err)
 }
 
-func (Shell) CertificateNotVerified(err error) bool { return CertificateNotVerified(err) }
+func (Shell) CertificateNotVerified(err error) bool { return pgdial.CertificateNotVerified(err) }
 
-func (Shell) CurrentTrustProfileSet() *trustprofile.Set { return CurrentTrustProfileSet() }
+func (Shell) CurrentTrustProfileSet() *trustprofile.Set { return pgdial.Trust() }
 
 func (Shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
-	return OSOpenTrustedFile(path, owner)
+	return osservice.OpenTrustedFile(path, owner)
 }
 
 // SetupHost is basalt init --remote's real host: the adapters, reached
@@ -42,17 +46,17 @@ func (Shell) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
 type SetupHost struct{}
 
 func (SetupHost) GuardAgentConnString(adminURL, role, password string) (string, error) {
-	return GuardAgentConnString(adminURL, role, password)
+	return guard.AgentConnString(adminURL, role, password)
 }
 
 func (SetupHost) GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error) {
-	return GuardAgentVersion(ctx, q)
+	return guard.AgentVersion(ctx, q)
 }
 
-func (SetupHost) GuardLatestVersion() int { return GuardLatestVersion() }
+func (SetupHost) GuardLatestVersion() int { return guard.LatestVersion() }
 
 func (SetupHost) GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error) {
-	return GuardSetupRecorded(ctx, q, id)
+	return guard.SetupRecorded(ctx, q, id)
 }
 
 func (SetupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error) {
@@ -60,11 +64,11 @@ func (SetupHost) LoadOrCreateEngineKeys(path string, now func() time.Time) (*cha
 }
 
 func (SetupHost) TrustProfileFor(configPath, host string) *trustprofile.Profile {
-	return TrustProfileFor(configPath, host)
+	return trustdir.Set(configPath).For(host)
 }
 
 func (SetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDir, error) {
-	d, err := OSOpenTrustedDir(dir, owner, create)
+	d, err := osservice.OpenTrustedDir(dir, owner, create)
 	if err != nil {
 		return nil, err
 	}
@@ -72,22 +76,22 @@ func (SetupHost) OSOpenTrustedDir(dir string, owner int, create bool) (TrustedDi
 }
 
 func (SetupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) {
-	return OSOpenTrustedFile(path, owner)
+	return osservice.OpenTrustedFile(path, owner)
 }
 
-func (SetupHost) OSLookupUID(name string) int { return OSLookupUID(name) }
+func (SetupHost) OSLookupUID(name string) int { return osservice.LookupUID(name) }
 
 func (SetupHost) OSInstallScript(goos, binary string) (string, error) {
-	return OSInstallScript(goos, binary)
+	return osservice.InstallScript(goos, binary)
 }
 
-func (SetupHost) OSRemoveScript(goos string) (string, error) { return OSRemoveScript(goos) }
+func (SetupHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
 
-func (SetupHost) OSResetScript(goos string) (string, error) { return OSResetScript(goos) }
+func (SetupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 
-func (SetupHost) OSDefaultUser(goos string) string { return OSDefaultUser(goos) }
+func (SetupHost) OSDefaultUser(goos string) string { return osservice.DefaultUser(goos) }
 
-func (SetupHost) OSUnitPath(goos string) string { return OSUnitPath(goos) }
+func (SetupHost) OSUnitPath(goos string) string { return osservice.UnitPath(goos) }
 
 func (SetupHost) ConnTarget(dsn string) (setup.ConnTarget, error) {
 	cfg, err := pgconn.ParseConfig(dsn)

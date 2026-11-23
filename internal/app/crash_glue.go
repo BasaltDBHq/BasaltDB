@@ -11,6 +11,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
@@ -72,10 +74,10 @@ type engineHost struct{ OSHost }
 
 func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
 
-func (engineHost) LastStopHashEngineJSON(path string) string { return LastStopHashEngineJSON(path) }
+func (engineHost) LastStopHashEngineJSON(path string) string { return laststop.HashEngineJSON(path) }
 
 func (engineHost) LastStopStartHoldOffUntil(rec servicespec.LastStopFileRecord, configPath string, now time.Time) (time.Time, bool) {
-	return LastStopStartHoldOffUntil(rec, configPath, now)
+	return laststop.StartHoldOffUntil(rec, configPath, now)
 }
 
 // engineTerminal is engine.Terminal on the CLI shell.
@@ -99,5 +101,5 @@ func (engineTerminal) LoadEngineConfigAs(euid int, path string) (config.Config, 
 
 // newRecorder is the crash recorder for this process.
 func newRecorder() engine.Recorder {
-	return CrashRecorder{Version: buildinfo.Version, Scrub: CrashOSScrubber(), Now: time.Now}
+	return crash.Recorder{Version: buildinfo.Version, Scrub: crash.OSScrubber(), Now: time.Now}
 }

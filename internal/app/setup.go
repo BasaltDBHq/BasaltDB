@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -57,12 +58,12 @@ type agentInstall struct {
 // the service's own directories: the engine config (the existing one with
 // the agent upserted) and the credential, both owned by the engine's user.
 // For a plan that is only printed, contents are left out.
-func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, printOnly bool) (OSSpec, error) {
-	spec := OSSpec{GOOS: goos, Binary: bin, ConfigPath: configPath, User: engineUser}
+func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, printOnly bool) (servicespec.Spec, error) {
+	spec := servicespec.Spec{GOOS: goos, Binary: bin, ConfigPath: configPath, User: engineUser}
 	cred := filepath.Join(filepath.Dir(configPath), "agents", a.name+".url")
-	spec.Files = []OSFile{{Path: configPath}}
+	spec.Files = []servicespec.File{{Path: configPath}}
 	if !a.keepCredential {
-		spec.Files = append(spec.Files, OSFile{Path: cred})
+		spec.Files = append(spec.Files, servicespec.File{Path: cred})
 	}
 	if printOnly {
 		return spec, nil

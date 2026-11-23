@@ -221,7 +221,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	cmdline, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(ppid)).Output()
 	require.NoError(t, err)
 	require.Contains(t, string(cmdline), "--supervise", "the engine runs under a supervisor")
-	_, err = os.Stat(filepath.Join(dir, "state", engineLogName))
+	_, err = os.Stat(filepath.Join(dir, "state", "engine.log"))
 	require.NoError(t, err, "its output goes to the engine log")
 
 	require.NoError(t, inW.Close())

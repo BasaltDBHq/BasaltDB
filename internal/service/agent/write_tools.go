@@ -91,10 +91,15 @@ func (a writeArgs) wait() time.Duration {
 	return guidance.DefaultApprovalWait
 }
 
-// writeTools are the tools of a store that speaks SQL: query and write.
-func (h handlers) writeTools() []guidance.Tool {
+// WriteTools are the tools of a store that speaks SQL: query and write;
+// none for another store (CONTRACT.md, Stores).
+func WriteTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+	if !speaksSQL(svc.deps.Core.Store.Kind()) {
+		return nil
+	}
+	h := handlers{svc: svc}
 	return []guidance.Tool{
-		contractTool("query", h.wrap("query", h.query)),
-		contractTool("write", h.wrap("write", h.write)),
+		mount("query", h.query),
+		mount("write", h.write),
 	}
 }

@@ -11,54 +11,24 @@ import (
 
 	"github.com/google/uuid"
 
-	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
-// Tools returns the MCP tools served to one agent: every contract in api/mcp
-// that is IMPLEMENTED, each listed with the contract's description and
-// input schema, and query and write only for a store that speaks SQL
-// (CONTRACT.md, Stores). Handlers parse, validate, make one service call
-// and render.
-func Tools(svc *Service) []guidance.Tool {
-	if svc == nil {
-		panic("agent: service required")
-	}
+// RunStartTools are the tools that start a run. mount lists a tool under its
+// contract, around Service.Wrap; the tool list's composer supplies it.
+// Handlers parse, validate, make one service call and render.
+func RunStartTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
 	h := handlers{svc: svc}
-	tools := h.runStartTools()
-	if speaksSQL(svc.deps.Core.Store.Kind()) {
-		tools = append(tools, h.writeTools()...)
-	}
-	for _, list := range [][]guidance.Tool{
-		h.runTools(), h.approvalTools(), h.revertTools(), h.pluginTools(), h.describeTools(), h.statusTools(),
-	} {
-		tools = append(tools, list...)
-	}
-	return tools
-}
-
-// runStartTools are the tools that start a run.
-func (h handlers) runStartTools() []guidance.Tool {
-	return []guidance.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
+	return []guidance.Tool{mount("run_start", h.runStart)}
 }
 
 // speaksSQL reports whether a store of kind runs SQL: the query and write
 // tools are served for it, in its dialect.
 func speaksSQL(kind action.StoreKind) bool {
 	return kind == action.StorePostgres || kind == action.StoreMySQL
-}
-
-// contractTool builds a tool from its contract. A missing contract is a
-// build defect: the contract test keeps served tools and contracts aligned.
-func contractTool(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool {
-	c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
-	if !ok {
-		panic("agent: no contract for tool " + name)
-	}
-	return guidance.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: call}
 }
 
 type handlers struct {
@@ -92,6 +62,12 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 		}
 		return nil, te
 	}
+}
+
+// Wrap is wrap for the tool list's composer: every served tool's call goes
+// through it.
+func (s *Service) Wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
+	return handlers{svc: s}.wrap(tool, call)
 }
 
 func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessage, call func(context.Context, json.RawMessage) (any, error)) (any, error) {

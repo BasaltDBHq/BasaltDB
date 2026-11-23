@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
@@ -212,7 +213,7 @@ func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 			edit(d)
 		}
 	})).Svc
-	return agentEnv{d: d, a: a, h: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(agent.Tools(svc), agent.WithMeta)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
+	return agentEnv{d: d, a: a, h: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {

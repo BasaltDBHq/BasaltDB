@@ -202,7 +202,7 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 func callDescribe(t *testing.T, s *Service, args map[string]any) (string, bool) {
 	t.Helper()
 	var describe guidance.Tool
-	for _, tool := range Tools(s) {
+	for _, tool := range servedTools(s) {
 		if tool.Name == guidance.ToolDescribe {
 			describe = tool
 		}

@@ -456,12 +456,13 @@ func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (an
 	}, nil
 }
 
-// revertTools are the tools that preview, plan, request and apply a revert.
-func (h handlers) revertTools() []guidance.Tool {
+// RevertTools are the tools that preview, plan, request and apply a revert.
+func RevertTools(svc *Service, mount func(name string, call func(context.Context, json.RawMessage) (any, error)) guidance.Tool) []guidance.Tool {
+	h := handlers{svc: svc}
 	return []guidance.Tool{
-		contractTool("preview_revert", h.wrap("preview_revert", h.previewRevert)),
-		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
-		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
-		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
+		mount("preview_revert", h.previewRevert),
+		mount("revert_plan", h.revertPlan),
+		mount("apply_revert_batch", h.applyRevertBatch),
+		mount("request_revert", h.requestRevert),
 	}
 }

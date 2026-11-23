@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
@@ -60,7 +62,7 @@ func deps() Deps {
 	useStore(&d, parts{
 		reader: nopReader{}, runStore: nopStore{}, readRecorder: nopRecorder{},
 		approvalStore: struct{ approvalStore }{}, // never called by these tests
-		Reverts:       struct{ Reverts }{},
+		Store:         struct{ revertsvc.Store }{},
 	})
 	return d
 }

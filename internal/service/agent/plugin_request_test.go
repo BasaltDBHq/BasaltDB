@@ -89,14 +89,14 @@ func openedPlugin() PluginOpened {
 	}
 }
 
-// pluginService is a person-operated service engine with local pages and
-// the fake engine-kept plugins.
 // agentOperated is an engine whose operatedBy is AGENT.
 func agentOperated(d *Deps) {
 	d.Status.OperatedBy = mcpcontract.OperatedByAgent
 	d.Core.Commands = d.Core.Commands.OperatedBy(mcpcontract.OperatedByAgent)
 }
 
+// pluginService is a person-operated service engine with local pages and
+// the fake engine-kept plugins.
 func pluginService(t *testing.T, f *fakePluginRequests, opts ...func(*Deps)) *Service {
 	t.Helper()
 	base := func(d *Deps) {

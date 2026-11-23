@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"context"
@@ -26,8 +26,8 @@ type PendingRevert struct {
 	PersonMessage string
 	Links         []toolresult.Link
 	NextSteps     []toolresult.NextStep
-	// issued is set when this list_pending issued the revert a new link.
-	issued bool
+	// Issued is set when this list_pending issued the revert a new link.
+	Issued bool
 }
 
 // PendingRevert fills an open revert's headline, link, message and steps
@@ -35,7 +35,7 @@ type PendingRevert struct {
 // agent's batch loop; a PENDING revert goes to the person, at a new short
 // link on reissue, at its long link otherwise, and on the page they
 // widened on for a widened revert.
-func (rc *revertCase) PendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
+func (rc *Service) PendingRevert(ctx context.Context, p *PendingRevert, reissue bool) error {
 	if p.Status == action.RevertApplying {
 		headline, err := revertHeadline(p.Revert)
 		if err != nil {
@@ -59,7 +59,7 @@ func (rc *revertCase) PendingRevert(ctx context.Context, p *PendingRevert, reiss
 			return rc.pendingRevertTooLarge(p, r, n.URL, n.cost)
 		}
 		rc.notifyRevert(ctx, r, n)
-		p.issued = n.short != ""
+		p.Issued = n.short != ""
 		p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.PersonMessage, p.Links = r, n.Headline, n.URL, n.File, n.Message, n.Links
 		p.NextSteps = guidance.WithSendRequest(pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey."), n.File)
 		return nil
@@ -98,7 +98,7 @@ func (rc *revertCase) PendingRevert(ctx context.Context, p *PendingRevert, reiss
 // pendingRevertTooLarge fills a pending revert whose request no link this
 // engine has can carry (REQUEST_TOO_LARGE): the page's address, no
 // request file, and the setup change as message and steps.
-func (rc *revertCase) pendingRevertTooLarge(p *PendingRevert, r action.Revert, address string, cost int64) error {
+func (rc *Service) pendingRevertTooLarge(p *PendingRevert, r action.Revert, address string, cost int64) error {
 	headline, err := revertHeadline(r)
 	if err != nil {
 		return err

@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"context"
@@ -41,7 +41,7 @@ type RejectResponse struct {
 // it holds for this link; Postgres refuses the reject without it. On
 // success the link is revoked: inside a Vault session once the answer went
 // out, since revoking it ends the session.
-func (rc *revertCase) RejectRevert(ctx context.Context, id uuid.UUID, secret string, in RejectRequest) (RejectResponse, error) {
+func (rc *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string, in RejectRequest) (RejectResponse, error) {
 	note, err := rejectNote(in.Note)
 	if err != nil {
 		return RejectResponse{}, err
@@ -102,7 +102,7 @@ func refusedInNote(r rune) bool {
 
 // revokeRejected revokes a rejected revert's link. A failure leaves a link
 // to a revert Postgres refuses everything for: it is logged.
-func (rc *revertCase) revokeRejected(ctx context.Context, id uuid.UUID) {
+func (rc *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 	revoke := func() {
 		if err := rc.delivery.LinkRevoke(id); err != nil {
 			rc.core.Log.Warn("revoke a rejected revert's link", "id", id, "err", err)
@@ -120,7 +120,7 @@ func (rc *revertCase) revokeRejected(ctx context.Context, id uuid.UUID) {
 // reject without a token is one fixed answer. A revert Postgres no longer
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
-func (rc *revertCase) rejectError(r action.Revert, heldToken bool, err error) error {
+func (rc *Service) rejectError(r action.Revert, heldToken bool, err error) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)
 	switch {

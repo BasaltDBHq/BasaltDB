@@ -16,7 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 func rejectPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() + "/reject" }
@@ -30,7 +30,7 @@ func requireGuardCode(t *testing.T, err error, want guardmodel.Code) {
 
 func rejectBody(t *testing.T, note *string) []byte {
 	t.Helper()
-	b, err := json.Marshal(agent.RejectRequest{Note: note})
+	b, err := json.Marshal(revertsvc.RejectRequest{Note: note})
 	require.NoError(t, err)
 	return b
 }
@@ -53,7 +53,7 @@ func (e *rescopeEnv) rejectVia(t *testing.T) []string {
 
 // requireRejectedWait is the agent's wait form on a rejected revert: at
 // once, REJECTED with when and the note, and a STOP.
-func (e *rescopeEnv) requireRejectedWait(t *testing.T, id uuid.UUID, out agent.RejectResponse, note string) {
+func (e *rescopeEnv) requireRejectedWait(t *testing.T, id uuid.UUID, out revertsvc.RejectResponse, note string) {
 	t.Helper()
 	body := requestRevert(t, e.h, map[string]any{"revertId": id.String(), "waitForSignature": 0})
 	require.Equal(t, "REJECTED", body["status"])
@@ -103,9 +103,9 @@ func TestRejectRouteBeforeAWiden(t *testing.T) {
 	require.Empty(t, e.rejectVia(t), "nothing was rejected")
 
 	note := "Not this one: I fixed the leads by hand."
-	var out agent.RejectResponse
+	var out revertsvc.RejectResponse
 	require.Equal(t, http.StatusOK, e.p.post(rejectPath(id), pageOrigin, secret, rejectBody(t, &note), &out))
-	require.Equal(t, agent.RejectResponse{RevertID: id.String(), Status: "REJECTED", RejectedAt: out.RejectedAt}, out)
+	require.Equal(t, revertsvc.RejectResponse{RevertID: id.String(), Status: "REJECTED", RejectedAt: out.RejectedAt}, out)
 	at, err := time.Parse(time.RFC3339, out.RejectedAt)
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), at, time.Minute)
@@ -162,7 +162,7 @@ func TestRejectRouteAfterAWiden(t *testing.T) {
 	again := newLinkSecret(t)
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, newSecret,
 		e.widenBody(t, e.person, id, e.nonce(t, id, newSecret), e.every(), again), nil))
-	var out agent.RejectResponse
+	var out revertsvc.RejectResponse
 	require.Equal(t, http.StatusOK, e.p.post(rejectPath(id), pageOrigin, again, rejectBody(t, nil), &out))
 	require.Equal(t, "REJECTED", out.Status)
 	require.Equal(t, []string{guardmodel.RejectViaScopeToken}, e.rejectVia(t))

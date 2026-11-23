@@ -1,21 +1,17 @@
 package agent
 
 import (
-	"context"
 	"regexp"
 	"testing"
-	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
 
 // TestRemovedCommandCatchesEveryRemovedForm: the check the catalog tests
@@ -127,25 +123,6 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 }
 
 var urlPattern = regexp.MustCompile(`https?://\S+`)
-
-// Every personMessage of a revert's states obeys the contract, without a
-// database.
-func TestRevertStateMessagesObeyTheContract(t *testing.T) {
-	t.Parallel()
-	at := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	for _, origin := range []string{localPages, ""} {
-		s := noticeService(origin, links.DefaultBudget)
-		for _, status := range []string{ledger.RevertApplied, ledger.RevertApplying, ledger.RevertExpired, ledger.RevertPending} {
-			for _, batched := range []bool{false, true} {
-				r := revertOf(t, "Undo", revertLines(3), batched)
-				r.Status, r.ApplyBy = status, &at
-				out, err := s.revert.revertState(context.Background(), r)
-				require.NoError(t, err)
-				stepcatalogtest.RequirePersonMessage(t, out.PersonMessage, out.Links)
-			}
-		}
-	}
-}
 
 // The person message states the agent's name and the limit the role SQL
 // sets, word for word as CONTRACT.md has it.

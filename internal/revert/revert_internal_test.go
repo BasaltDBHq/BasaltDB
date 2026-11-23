@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 // slowPrepare is a revert store whose prepare runs into its time limit,
 // recording the limit it was given; nothing else is called.
 type slowPrepare struct {
-	Reverts
+	Store
 	timeout *time.Duration
 }
 
@@ -35,15 +35,10 @@ func (s slowPrepare) PrepareRevert(_ context.Context, _ action.Scope, _ string, 
 func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	t.Parallel()
 	var limit time.Duration
-	d := deps()
-	setReverts(&d, slowPrepare{timeout: &limit})
-	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
-	require.NoError(t, err)
-	d.Core.Commands = cmds
-	svc := NewService(d)
+	svc := newService(t, "linux", "/etc/basalt-test/engine.json", withStore(slowPrepare{timeout: &limit}))
 	run := uuid.Must(uuid.NewV7())
 
-	_, err = svc.RequestRevert(context.Background(), RequestRevertParams{
+	_, err := svc.RequestRevert(context.Background(), RequestRevertParams{
 		Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
 	})
 	require.Equal(t, guardmodel.MCPPrepareTimeout, limit)
@@ -71,46 +66,30 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, guidance.CodeUnavailable, testErrors().ToolError(err).Code)
 }
 
-// limitsCatalog is a catalog that only reports the agent's limits.
-type limitsCatalog struct {
-	noCatalog
-	limits action.Limits
-}
-
-func (c limitsCatalog) Limits() action.Limits { return c.limits }
-
 // A preview that runs out names the agent's statement timeout it ran
 // under, never request_revert's 100 seconds; request_revert keeps them.
 func TestPreviewRevertTimeLimitNamesTheStatementTimeout(t *testing.T) {
 	t.Parallel()
-	s := &Service{deps: Deps{Describe: DescribeDeps{Catalog: limitsCatalog{limits: action.Limits{StatementTimeout: 5 * time.Second}}}}}
-	s.wire()
+	s := newService(t, "linux", "", withStatementTimeout(5*time.Second))
 	scope := action.Scope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())}
 
-	preview := testErrors().ToolError(s.revert.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
+	preview := testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014"))
 	require.Equal(t, guidance.CodeQueryTimeout, preview.Code)
 	require.Equal(t, guidance.ReasonTimeLimit, preview.Reason)
 	require.Equal(t, "previewing the revert of run "+scope.ID.String()+" took longer than the agent's statement timeout of 5 seconds; "+
 		"nothing was previewed. A narrower revert, with runs or tables, may fit.", preview.Message)
 	require.NotContains(t, preview.Message, "100")
 
-	request := testErrors().ToolError(s.revert.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
+	request := testErrors().ToolError(s.prepareTimeout(guidance.ToolRequestRevert, scope, "57014"))
 	require.Contains(t, request.Message, "took longer than the 100 seconds an MCP call may take")
 
-	s.deps.Describe.Catalog = limitsCatalog{limits: action.Limits{StatementTimeout: 1500 * time.Millisecond}}
-	require.Contains(t, testErrors().ToolError(s.revert.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014")).Message, "the agent's statement timeout of 1.5s;")
-}
-
-// noRuns is a Store that finds none of the agent's runs.
-type noRuns struct{ nopStore }
-
-func (noRuns) FindRun(context.Context, uuid.UUID) (action.Run, error) {
-	return action.Run{}, action.ErrRunNotFound
+	s = newService(t, "linux", "", withStatementTimeout(1500*time.Millisecond))
+	require.Contains(t, testErrors().ToolError(s.prepareTimeout(guidance.ToolPreviewRevert, scope, "57014")).Message, "the agent's statement timeout of 1.5s;")
 }
 
 // countedReverts owns nothing and counts the guard calls it receives.
 type countedReverts struct {
-	Reverts
+	Store
 	guardCalls *int
 }
 
@@ -133,10 +112,7 @@ func (r countedReverts) PrepareRevert(context.Context, action.Scope, string, tim
 func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	t.Parallel()
 	var calls int
-	d := deps()
-	setRuns(&d, noRuns{})
-	setReverts(&d, countedReverts{guardCalls: &calls})
-	svc := NewService(d)
+	svc := newService(t, "linux", "", withRuns(noRuns{}), withStore(countedReverts{guardCalls: &calls}))
 	ctx := context.Background()
 	for kind, reason := range map[revert.Scope]string{
 		revert.ScopeChange: "CHANGE", revert.ScopeRun: "RUN", revert.ScopeTask: "TASK",

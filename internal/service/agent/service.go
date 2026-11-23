@@ -10,13 +10,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
-	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -36,7 +37,7 @@ type Deps struct {
 	Core     CoreDeps
 	Write    WriteDeps
 	Approval ApprovalDeps
-	Revert   RevertDeps
+	Revert   revertsvc.Deps
 	Delivery linksvc.Deps
 	Status   StatusDeps
 	Describe DescribeDeps
@@ -103,19 +104,6 @@ type ApprovalDeps struct {
 	// Columns reads each table's columns in table order for the pages;
 	// optional, and the pages show the order the rows carry when nil.
 	Columns linksvc.ColumnOrder
-}
-
-// RevertDeps is what reverts use.
-type RevertDeps struct {
-	Store Reverts
-	// ErrNotFound is the ledger's answer for a revert the role did not
-	// prepare.
-	ErrNotFound error
-	// AfterAnswer runs f after the answer of the Vault session ctx belongs
-	// to (false: there is none). RotateSession moves that session onto
-	// token.
-	AfterAnswer   func(ctx context.Context, f func()) bool
-	RotateSession func(ctx context.Context, token channel.LinkToken) bool
 }
 
 // StatusDeps is what the status tool reports beyond the database, all
@@ -249,7 +237,7 @@ type Service struct {
 	// approval is the held writes use case.
 	approval *approvalCase
 	// revert is the revert use case.
-	revert *revertCase
+	revert *revertsvc.Service
 	// write is the query and write use case.
 	write *writeCase
 	// plugin is the plugin use case.
@@ -325,11 +313,17 @@ func (s *Service) wire() {
 	// given the delivery and revert use cases once they exist.
 	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, nil, nil, liveWrites{&s.deps.Write}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
-	s.revert = newRevertCase(&s.deps.Core, &s.deps.Revert, s.delivery, s.describe, s)
+	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.describe, s)
 	s.approval.delivery = s.delivery
 	s.approval.reverts = s.revert
 	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
 	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
+}
+
+// revertCore is the part of the shared settings the revert use case reads.
+func (s *Service) revertCore() revertsvc.Core {
+	c := s.deps.Core
+	return revertsvc.Core{Name: c.Name, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors, PagesBase: c.PagesBase, LinkBudget: c.LinkBudget}
 }
 
 // linksCore is the part of the shared settings the delivery use case reads.

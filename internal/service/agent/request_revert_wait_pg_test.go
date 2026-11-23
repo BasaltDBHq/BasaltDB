@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -404,7 +405,7 @@ func TestRequestRevertWaitCancelled(t *testing.T) {
 	afterPolls := env.afterRevertPolls()
 	go func() { afterPolls(); cancel() }()
 	start := time.Now()
-	_, err := env.svc.AwaitRevert(ctx, agent.AwaitRevertParams{RevertID: id, Wait: agent.DefaultRevertWait})
+	_, err := env.svc.AwaitRevert(ctx, revertsvc.AwaitRevertParams{RevertID: id, Wait: revertsvc.DefaultRevertWait})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Less(t, time.Since(start), 5*time.Second)
 }

@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"testing"
 	"time"
+
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
@@ -70,7 +73,7 @@ func (c catalogCase) step() stepcatalogtest.Case {
 // failure is raised by the test, so only the lookups the engine makes while
 // building steps answer.
 type catalogReverts struct {
-	Reverts
+	revertsvc.Store
 	lines []string
 	by    uuid.UUID
 }
@@ -124,22 +127,6 @@ func guardApproval(detail string) func(*testing.T, *Service) error {
 	return pgFail("BS005", "APPROVAL_INVALID", detail)
 }
 
-func guardRevert(detail string) func(*testing.T, *Service) error {
-	return pgFail("BS005", "REVERT_INVALID", detail)
-}
-
-func caseRevert(signed bool) action.Revert {
-	r := action.Revert{
-		ID: uuid.MustParse(caseRevertID), Status: "PENDING", Scope: "RUN", ScopeID: uuid.MustParse(caseRunID),
-		ExpiresAt: time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC),
-	}
-	if signed {
-		at := r.ExpiresAt
-		r.SignedAt = &at
-	}
-	return r
-}
-
 func caseNotice(url string) toolresult.ApprovalNotice {
 	return toolresult.ApprovalNotice{
 		ApprovalID: caseApproval, ExpiresAt: "2026-11-12T10:00:00Z", Rows: 3,
@@ -168,20 +155,6 @@ func approvalLink(reason string) func(*testing.T, *Service) error {
 	}
 }
 
-func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *Service) error {
-	return func(t *testing.T, s *Service) error {
-		setReverts(&s.deps, catalogReverts{lines: lines, by: by})
-		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return s.revert.nothingToRevert(context.Background(), tool, scope, store.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
-	}
-}
-
-const alreadyRevertedLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "table": "public.leads", ` +
-	`"action": "SKIP", "cascaded": false, "conflict": "ALREADY_REVERTED", "sqlState": null, "changeIds": ["` + caseChangeID + `"]}`
-
-const changedAfterLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "table": "public.leads", ` +
-	`"action": "SKIP", "cascaded": false, "conflict": "CHANGED_AFTER", "sqlState": null, "changeIds": ["` + caseChangeID + `"]}`
-
 // tooLargeHeads are the heads of a held write's lines an agent's read left
 // out (ledger.withRequest).
 var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascaded": false}`}
@@ -204,12 +177,6 @@ func tooLargeNotice(t *testing.T, s *Service, issue bool) linksvc.HeldAnswer {
 // catalogCases has one case per error entry of the catalog. A new code or
 // reason needs its case here or TestEveryCatalogErrorHasACase fails.
 func catalogCases() map[string]catalogCase {
-	revertArgs := map[string]any{"revertId": caseRevertID}
-	timeoutRevert := func(tool string) func(*testing.T, *Service) error {
-		return func(t *testing.T, s *Service) error {
-			return s.revert.prepareTimeout(tool, action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
-		}
-	}
 	cases := map[string]catalogCase{
 		stepcatalogtest.CaseKey("INTENT_REQUIRED", "", ""): {"write", map[string]any{"sql": "DELETE FROM leads WHERE id = 1"}, pgFail("BS001", "INTENT_REQUIRED", "")},
 		stepcatalogtest.CaseKey("STALE_READ", "", ""): {
@@ -247,16 +214,6 @@ func catalogCases() map[string]catalogCase {
 			plain(&resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}}),
 		},
 		stepcatalogtest.CaseKey("QUERY_TIMEOUT", "TIME_LIMIT", ""): {"query", queryArgs0, pgFail("57014", "canceling statement due to statement timeout", "")},
-		stepcatalogtest.CaseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {
-			"preview_revert",
-			map[string]any{"runId": caseRunID},
-			timeoutRevert("preview_revert"),
-		},
-		stepcatalogtest.CaseKey("QUERY_TIMEOUT", "TIME_LIMIT", "request_revert"): {
-			"request_revert",
-			map[string]any{"runId": caseRunID, "intent": "Undo"},
-			timeoutRevert("request_revert"),
-		},
 
 		stepcatalogtest.CaseKey("QUERY_TIMEOUT", "REQUEST_TOO_LARGE", "request_revert"): {
 			"request_revert",
@@ -291,68 +248,11 @@ func catalogCases() map[string]catalogCase {
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonBadSignature)},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonPasskeyRevoked)},
 
-		stepcatalogtest.CaseKey("REVERT_INVALID", "LINE_INVALID", ""): {
-			"apply_revert_batch",
-			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("line 9 is not in the plan"),
-		},
-		stepcatalogtest.CaseKey("REVERT_INVALID", "PLAN_NOT_SIGNED", ""): {
-			"apply_revert_batch",
-			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("the person has not signed this revert yet: they sign it on the revert page"),
-		},
-		stepcatalogtest.CaseKey("REVERT_INVALID", "PLAN_FINISHED", ""): {
-			"apply_revert_batch",
-			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("revert already applied: no line is pending"),
-		},
-		stepcatalogtest.CaseKey("REVERT_INVALID", "NOT_THIS_AGENT", ""): {
-			"apply_revert_batch",
-			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("no such revert"),
-		},
-		stepcatalogtest.CaseKey("REVERT_INVALID", "ROWS_CHANGED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.revert.rowsChanged(caseRevert(false), "rows changed")
-		}},
-		stepcatalogtest.CaseKey("REVERT_INVALID", "BAD_SIGNATURE", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.revert.badSignatureWith(guidance.OpenLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
-		}},
-		stepcatalogtest.CaseKey("REVERT_INVALID", "PASSKEY_REVOKED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.revert.passkeyRevokedWith(guidance.OpenLink(caseShortLink, signRevokedText), caseRevert(false))
-		}},
-
-		stepcatalogtest.CaseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revert.revertExpired(caseRevert(false)) }},
-		stepcatalogtest.CaseKey("REVERT_EXPIRED", "NOT_FINISHED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revert.revertExpired(caseRevert(true)) }},
-
-		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {
-			"request_revert",
-			map[string]any{"runId": caseRunID, "intent": "Undo"},
-			nothingToRevert("request_revert", nil, "the run changed no rows", uuid.Nil),
-		},
-		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE", ""): {
-			"preview_revert",
-			map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{changedAfterLine}, "every line skipped", uuid.Nil),
-		},
-		stepcatalogtest.CaseKey("NOTHING_TO_REVERT", "ALREADY_REVERTED", ""): {
-			"preview_revert",
-			map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, "every line skipped", uuid.MustParse(caseChangeID)),
-		},
-
 		stepcatalogtest.CaseKey("PERMISSION_DENIED", "", ""): {"query", queryArgs0, pgFail("42501", "permission denied for table events", "")},
 
-		stepcatalogtest.CaseKey("NOT_FOUND", "RUN", ""):      {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "RUN", Message: "no such run"})},
-		stepcatalogtest.CaseKey("NOT_FOUND", "CHANGE", ""):   {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
-		stepcatalogtest.CaseKey("NOT_FOUND", "APPROVAL", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
-		stepcatalogtest.CaseKey("NOT_FOUND", "REVERT", ""):   {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
-		stepcatalogtest.CaseKey("NOT_FOUND", "TASK", ""): {
-			"preview_revert",
-			map[string]any{"taskId": caseRunID},
-			plainFunc(func() error {
-				return notOwnTask(action.Scope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
-			}),
-		},
+		stepcatalogtest.CaseKey("NOT_FOUND", "RUN", ""):        {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "RUN", Message: "no such run"})},
+		stepcatalogtest.CaseKey("NOT_FOUND", "CHANGE", ""):     {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
+		stepcatalogtest.CaseKey("NOT_FOUND", "APPROVAL", ""):   {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
 		stepcatalogtest.CaseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK", Message: "no such link"})},
 		stepcatalogtest.CaseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&toolresult.ToolError{Code: guidance.CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
 		stepcatalogtest.CaseKey("APPROVAL_INVALID", "REVEAL_REFUSED", ""): {"approval_page", nil, func(*testing.T, *Service) error {
@@ -375,21 +275,17 @@ func catalogCases() map[string]catalogCase {
 			map[string]any{"runId": caseRunID, "cursor": "x"},
 			plain(fmt.Errorf("%w: %w", ledger.ErrInvalidParams, errors.New("invalid cursor: missing id"))),
 		},
+
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {
 			"preview_revert",
 			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
-			plainFunc(func() error {
-				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, store.MapError(&pgconn.PgError{
-					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guardmodel.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
-				}))
-			}),
+			plain(&guidance.ArgumentError{Reason: guidance.ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was prepared: public.ghost has no change of yours in this scope. runs lists only your own runs in the task, and tables only tables you wrote in this scope; run_history shows them"}),
 		},
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {
 			"request_revert",
 			map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
-			plainFunc(ScopeFilterCapped),
+			plainFunc(revertsvc.ScopeFilterCapped),
 		},
-
 		stepcatalogtest.CaseKey("INVALID_ARGUMENT", "ADMIN_CREDENTIAL", ""): {"query", queryArgs0, plain(adminCredentialError())},
 
 		stepcatalogtest.CaseKey("UNAVAILABLE", "DATABASE_UNREACHABLE", ""): {"query", queryArgs0, plain(context.DeadlineExceeded)},
@@ -435,11 +331,14 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 	var missing []string
 	for _, e := range stepcatalogtest.CatalogOf(t).Errors {
 		seen[stepcatalogtest.EntryKey(e)] = true
-		if _, ok := cases[stepcatalogtest.EntryKey(e)]; !ok {
+		if _, ok := cases[stepcatalogtest.EntryKey(e)]; !ok && !slices.Contains(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.EntryKey(e)) {
 			missing = append(missing, stepcatalogtest.EntryKey(e))
 		}
 	}
-	require.Empty(t, missing, "catalog errors without a case in catalogCases")
+	require.Empty(t, missing, "catalog errors without a case in catalogCases or in the revert package's")
+	for _, k := range stepcatalogtest.RevertErrorKeys() {
+		require.NotContains(t, cases, k, "a revert error case runs in the revert package only")
+	}
 	var stale []string
 	for k := range cases {
 		if !seen[k] {

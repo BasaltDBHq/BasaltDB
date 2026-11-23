@@ -1,4 +1,4 @@
-package agent
+package revert
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 // served from the engine's memory, since the agent role's view shows no
 // binding or lines (RS-5): an engine that restarted since asks the person
 // to widen again (owner, Q13), with the nonce that widen signs.
-func (rc *revertCase) RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error) {
+func (rc *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error) {
 	release, err := rc.rescopes.lock(ctx, id)
 	if err != nil {
 		return revert.Request{}, err
@@ -64,7 +64,7 @@ func (rc *revertCase) RevertRequest(ctx context.Context, id uuid.UUID, secret st
 // RelayRevert applies the person's signed revert (apply_revert): Postgres
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
-func (rc *revertCase) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+func (rc *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
 	open, err := rc.openRevert(ctx, r.RevertID)
 	if err != nil {
 		return action.AppliedRevert{}, linksvc.Receipt{}, err
@@ -88,7 +88,7 @@ func (rc *revertCase) RelayRevert(ctx context.Context, r revert.Response) (actio
 
 // openRevert is a revert this agent's role prepared that can still be
 // signed, admitted first as openApproval is.
-func (rc *revertCase) openRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
+func (rc *Service) openRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	if err := rc.admit.Admit(ctx); err != nil {
 		return action.Revert{}, err
 	}

@@ -19,7 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // Abuse tests of the revert scope routes (revert scope plan, Tests,
@@ -49,7 +49,7 @@ func (e *rescopeEnv) syncedWidenBody(t *testing.T, id uuid.UUID, nonce []byte, s
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
 	as, err := e.person.Sign(reverttest.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, syncedPasskey)
 	require.NoError(t, err)
-	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
+	return scopeBody(t, revertsvc.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 }
@@ -97,20 +97,20 @@ func TestAnAgentHoldingTheLinkCannotWiden(t *testing.T) {
 	// The person's real proof, as they might paste it into the chat: the
 	// page's new secret it names never left the page.
 	personSecret := newLinkSecret(t)
-	var pasted agent.ScopeRequest
+	var pasted revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(e.widenBody(t, e.person, id, nonce, e.every(), personSecret), &pasted))
 	ownSecret := pasted
 	ownSecret.NewSecret = newLinkSecret(t)
-	var foreign agent.ScopeRequest
+	var foreign revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(e.widenBody(t, e.person, other, e.nonce(t, other, agentSecretOf(t, e, other)), e.every(), personSecret), &foreign))
 	approvalLike, err := e.person.Sign(approval.Challenge("{}"), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 
 	cases := map[string][]byte{
-		"no proof": scopeBody(t, agent.ScopeRequest{Select: e.every()}),
+		"no proof": scopeBody(t, revertsvc.ScopeRequest{Select: e.every()}),
 		"the pasted proof, with a secret of the agent's own": scopeBody(t, ownSecret),
 		"another revert's proof":                             scopeBody(t, foreign),
-		"a signature over a binding as the proof": scopeBody(t, agent.ScopeRequest{
+		"a signature over a binding as the proof": scopeBody(t, revertsvc.ScopeRequest{
 			Select: e.every(), NewSecret: newLinkSecret(t),
 			Proof: &linksvc.ScopeProof{
 				CredentialID: approvalLike.CredentialID, AuthenticatorData: approvalLike.AuthenticatorData,
@@ -161,7 +161,7 @@ func TestAWidenProofIsNotReplayable(t *testing.T) {
 	widened := e.storedScope(t, id)
 
 	// Replayed under the rotated link, naming a fresh secret: refused.
-	var replay agent.ScopeRequest
+	var replay revertsvc.ScopeRequest
 	require.NoError(t, json.Unmarshal(proof, &replay))
 	replay.NewSecret = newLinkSecret(t)
 	var out map[string]any

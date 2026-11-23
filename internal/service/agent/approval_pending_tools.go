@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -90,7 +92,7 @@ type pendingRevertDTO struct {
 	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 }
 
-func pendingRevertFromDomain(p PendingRevert) pendingRevertDTO {
+func pendingRevertFromDomain(p revertsvc.PendingRevert) pendingRevertDTO {
 	d := pendingRevertDTO{
 		Kind: guidance.KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
 		Batched: p.Batched, Widened: p.Widened, CreatedAt: guidance.TimeText(p.CreatedAt), ExpiresAt: guidance.TimeText(p.ExpiresAt),

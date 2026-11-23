@@ -469,7 +469,7 @@ func checkDecisionCalls(v violations, rel string, f *goFile, decisions map[strin
 	})
 }
 
-var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", "net", "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
+var bannedExact = []string{"os", "io/fs", "io/ioutil", "path/filepath", netPkg, "os/exec", "math/rand", "database/sql", "database/sql/driver", "syscall"}
 
 func bannedImport(p string) bool {
 	switch {
@@ -520,12 +520,27 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 		if !ok {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
+		id, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		ip := names[id.Name]
+		if ip == "time" && in([]string{"Now", "Since", "Until"}, sel.Sel.Name) {
 			v.add(rel, f.name+" calls time."+sel.Sel.Name+" (core must stay pure)")
+		}
+		if only, limited := extraOnly[ip]; limited && in(extras, ip) && !in(only, sel.Sel.Name) {
+			v.add(rel, fmt.Sprintf("%s uses %s.%s (the register grants %s for %s only)", f.name, ip, sel.Sel.Name, ip, strings.Join(only, ", ")))
 		}
 		return true
 	})
 }
+
+// extraOnly limits an extra import to the names listed: setupcode may
+// import net for net.JoinHostPort and nothing else of it.
+var extraOnly = map[string][]string{netPkg: {"JoinHostPort"}}
+
+// netPkg is the standard library's net package.
+const netPkg = "net"
 
 // extraAllowed reports whether the register may grant core package name the
 // extra import e: crypto/rand for key and salt generation in channel and
@@ -534,7 +549,7 @@ func extraAllowed(name, e string) bool {
 	switch e {
 	case "crypto/rand":
 		return name == "channel" || name == "setupcode"
-	case "net":
+	case netPkg:
 		return name == "setupcode"
 	}
 	return false

@@ -177,6 +177,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/core/leaky/l.go":                      "package leaky\n\nimport (\n\t\"os\"\n\t\"syscall\"\n\t\"time\"\n\t. \"strings\"\n)\n\nvar _ = os.Getenv\nvar _ = syscall.Getpid\nvar Now = time.Now\nvar Since = time.Since\n",
 		"internal/core/rnd/r.go":                        "package rnd\n\n" + imp("crypto/rand"),
 		"internal/core/granted/r.go":                    "package granted\n\n" + imp("crypto/rand"),
+		"internal/core/setupcode/a.go":                  "package setupcode\n\nimport \"net\"\n\nvar _ = net.JoinHostPort\nvar _ = net.Dial\n",
 		"internal/service/svc/s.go":                     "package svc\n\n" + imp(m+"internal/adapter/outbound/db") + "import \"" + m + "internal/core/sqlguard\"\n" + use("", "Check"),
 		"internal/adapter/inbound/in/i.go":              "package in\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + "var _ sqlguard.Limits\n",
 		"internal/adapter/outbound/other/o.go":          "package other\n\nimport \"" + m + "internal/core/sqlguard\"\n" + use("", "Check") + use("", "Other"),
@@ -199,7 +200,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/service/pluginhost/p.go":               "package pluginhost\n\nfunc UsePathRules() {}\n",
 		"internal/adapter/outbound/rules/r.go":           "package rules\n\nimport \"" + m + "internal/service/pluginhost\"\n\nfunc init() { pluginhost.UsePathRules() }\n",
 		"internal/app/p.go":                              "package app\n\nimport \"" + m + "internal/service/pluginhost\"\n\nfunc init() { pluginhost.UsePathRules() }\n",
-		"ARCHITECTURE.md":                                "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n",
+		"ARCHITECTURE.md":                                "| `sqlguard` | sql | decision | 1 | - | `Other` |\n| `leaky` | x | types | 2 | - | - |\n| `rnd` | x | codec | 3 | `crypto/rand` | - |\n| `granted` | x | codec | 3 | - | - |\n| `setupcode` | x | codec | 3 | `net` | - |\n",
 	}
 	root := fixture(t, files)
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
@@ -228,6 +229,7 @@ func TestRulesCatchViolations(t *testing.T) {
 		"internal/oddball":                {"package is under internal/ but not in a layer"},
 		"internal/adapter/outbound/rules": {"imports internal/service/pluginhost", "r.go calls pluginhost.UsePathRules (only internal/app installs the path rule)"},
 		"internal/core/granted":           {"r.go imports crypto/rand (core must stay pure)"},
+		"internal/core/setupcode":         {"a.go uses net.Dial (the register grants net for JoinHostPort only)"},
 		"internal/core/leaky": {
 			"l.go calls time.Now (core must stay pure)",
 			"l.go calls time.Since (core must stay pure)",

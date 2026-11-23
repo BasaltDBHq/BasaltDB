@@ -22,14 +22,12 @@ type Address struct {
 }
 
 // The shape limits of a collected address (CONTRACT.md, The engine and a
-// connect-only code, Checking the address itself). The port's limit is
-// maxPort, the same as a setup code's target.
-const maxHost = 253
-
+// connect-only code, Checking the address itself). The host's and port's
+// limits (maxHostLen, maxPort) and the Supabase ref's shape
+// (supabaseRefPattern) are the same as a setup code's target.
 var (
 	hostShape     = regexp.MustCompile(`^[A-Za-z0-9.-]{1,253}$`)
 	databaseShape = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,63}$`)
-	refShape      = regexp.MustCompile(`^[a-z0-9]{20}$`)
 )
 
 // ErrAddressInvalid is an address the engine refuses: its shape, or a host
@@ -42,10 +40,10 @@ var ErrAddressInvalid = errors.New("the address the connect service handed over 
 // not of the contract's shape, before anything of it is shown or used.
 func (a Address) Check() error {
 	switch {
-	case !hostShape.MatchString(a.Host) || len(a.Host) > maxHost || strings.HasPrefix(a.Host, "-") || strings.Contains(a.Host, ".."),
+	case !hostShape.MatchString(a.Host) || len(a.Host) > maxHostLen || strings.HasPrefix(a.Host, "-") || strings.Contains(a.Host, ".."),
 		a.Port < 1 || a.Port > maxPort,
 		!databaseShape.MatchString(a.Database),
-		a.SupabaseRef != "" && !refShape.MatchString(a.SupabaseRef):
+		a.SupabaseRef != "" && !supabaseRefPattern.MatchString(a.SupabaseRef):
 		return ErrAddressInvalid
 	}
 	if err := a.checkRef(); err != nil {

@@ -156,7 +156,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	var site *pagesSite
 	var jobs setuppage.SetupJobs
 	rotated := setup.NewRotations()
-	pagesLn := httpserver.TakeHandedListener(handed, pagesCfg.Addr)
+	pagesLn := httpserver.TakeHandedListener(handed, pagesCfg.Addr, setup.PageAddr)
 	handed = nil
 	if pagesCfg.Addr != "" {
 		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed)

@@ -3,18 +3,16 @@ package httpserver
 import (
 	"net"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // TakeHandedListener is the listener a waiting engine handed on, when the
-// config serves its pages at that same address; else it is closed and the
-// pages bind as usual.
-func TakeHandedListener(ln net.Listener, addr string) net.Listener {
+// config serves its pages at that same address (want, the address the
+// waiting engine served on); else it is closed and the pages bind as usual.
+func TakeHandedListener(ln net.Listener, addr, want string) net.Listener {
 	if ln == nil {
 		return nil
 	}
-	if addr == setup.PageAddr && ln.Addr().String() == addr {
+	if addr == want && ln.Addr().String() == addr {
 		return ln
 	}
 	_ = ln.Close()

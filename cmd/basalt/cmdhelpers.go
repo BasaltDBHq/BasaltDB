@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/basaltdbhq/basaltdb/internal/config"
 )
 
 // configOrFallback is the config a person command reads: the --config value,
@@ -33,7 +35,7 @@ func perUserConfigFallback(h host, system string) string {
 	if err != nil {
 		return system
 	}
-	user := filepath.Join(base, perUserDirName, "engine.json")
+	user := filepath.Join(base, config.UserDirName, "engine.json")
 	if _, err := os.Stat(user); err != nil {
 		return system
 	}

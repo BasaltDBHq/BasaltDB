@@ -30,9 +30,6 @@ import (
 // Without a terminal, --yes or --no-service must say which: init never
 // falls back to the foreground on its own (checkServiceAnswer).
 
-// perUserDirName is the per-user config directory under os.UserConfigDir.
-const perUserDirName = config.UserDirName
-
 // mcpBinary is the program of the printed basalt mcp command: the absolute,
 // link-resolved path of the running binary, which the agent app finds
 // whatever its PATH is. Bare basalt only when the path is unknown.

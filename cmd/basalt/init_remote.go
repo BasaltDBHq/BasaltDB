@@ -350,7 +350,7 @@ func (r *remoteInit) paths() error {
 		if err != nil {
 			return err
 		}
-		dir = filepath.Join(base, perUserDirName)
+		dir = filepath.Join(base, config.UserDirName)
 		r.f.configPath = filepath.Join(dir, "engine.json")
 		r.settings.SocketDir = filepath.Join(dir, "run")
 	}
@@ -372,7 +372,7 @@ func (r *remoteInit) paths() error {
 	case err != nil:
 		return err
 	default:
-		r.prev, r.existed = cfg.Config, true
+		r.prev, r.existed = cfg, true
 		r.stateDir = cfg.StateDirFor(r.c.goos)
 		r.settings.SocketDir = cfg.SocketDir
 		r.linkBudget = cfg.LinkBudgetOrDefault()

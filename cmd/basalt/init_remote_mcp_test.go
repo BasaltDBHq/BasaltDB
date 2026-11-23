@@ -39,7 +39,7 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	require.Equal(t, want, r.res.MCPCommand)
 	require.Contains(t, r.stdout, "  "+cli.ShellJoin(want)+"\n")
 	require.NotContains(t, r.stdout, "--config")
-	require.FileExists(t, filepath.Join(h.configDir, perUserDirName, "engine.json"))
+	require.FileExists(t, filepath.Join(h.configDir, config.UserDirName, "engine.json"))
 }
 
 // A config in another place gives the same command: basalt mcp finds it.
@@ -79,6 +79,6 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	code := runInit(c, appSetupHost{}, []string{"--remote", "--agent", "bot"})
 	require.Equal(t, cli.ExitError, code, stderr.String())
 	require.Contains(t, stderr.String(), system)
-	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
+	_, err := os.Stat(filepath.Join(h.configDir, config.UserDirName, "engine.json"))
 	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
 }

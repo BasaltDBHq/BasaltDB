@@ -2,17 +2,8 @@ package main
 
 import "github.com/basaltdbhq/basaltdb/internal/config"
 
-// engineConfig is the engine config the person CLI reads in same-user
-// mode: config.Load, or as root loadConfigAsRoot. trusted is the user
-// the agents' credential files must belong to when root reads them.
-type engineConfig struct {
-	config.Config
-	asRoot  bool
-	trusted int
-}
-
 // loadEngineConfig reads the engine config at path for this person CLI.
-func loadEngineConfig(c *cliIO, path string) (engineConfig, error) {
+func loadEngineConfig(c *cliIO, path string) (config.Config, error) {
 	return loadEngineConfigAs(c.shell, c.host.Euid(), path)
 }
 
@@ -20,11 +11,10 @@ func loadEngineConfig(c *cliIO, path string) (engineConfig, error) {
 // effective uid euid: config.Load, or as root the hardened read
 // (loadConfigAsRoot, opening through sh). basalt engine started as root
 // reads its config here too.
-func loadEngineConfigAs(sh shellHost, euid int, path string) (engineConfig, error) {
+func loadEngineConfigAs(sh shellHost, euid int, path string) (config.Config, error) {
 	if euid != 0 {
-		cfg, err := config.Load(path)
-		return engineConfig{Config: cfg}, err
+		return config.Load(path)
 	}
-	cfg, trusted, err := loadConfigAsRoot(sh, path)
-	return engineConfig{Config: cfg, asRoot: true, trusted: trusted}, err
+	cfg, _, err := loadConfigAsRoot(sh, path)
+	return cfg, err
 }

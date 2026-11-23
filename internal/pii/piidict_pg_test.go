@@ -327,7 +327,7 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	log, out := newLog()
 	var slept time.Duration
 	clock := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{
 			PageRows: 2, RowsPerSecond: 4, Now: func() time.Time { return clock },
 			Sleep: func(_ context.Context, d time.Duration) error { slept += d; clock = clock.Add(d); return nil },
@@ -368,7 +368,7 @@ func TestScanOverBudgetKeepsThePreviousDictionary(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
-	src := []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}}
+	src := []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: classes, Limits: sqlguard.DefaultLimits()}}
 	_, err := NewScanner(dict, src, ScanOptions{}, slog.New(slog.DiscardHandler)).Cycle(ctx)
 	require.NoError(t, err)
 	require.NoError(t, dict.Add(corepii.EntityEmail, "delta@corp.ee", ""))
@@ -529,7 +529,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict).On(pgquerier.Neutralize(f.pool))
 	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
-	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
+	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pgquerier.Neutralize(f.pool), ReadOnly: pgquerier.ReadOnlyTx(f.pool), Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
 

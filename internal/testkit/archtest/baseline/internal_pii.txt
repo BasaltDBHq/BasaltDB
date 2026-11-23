@@ -1,3 +1,0 @@
-scan.go imports github.com/jackc/pgx/v5 (a service reaches the database and the network through a port)
-scan.go imports github.com/jackc/pgx/v5/pgconn (a service reaches the database and the network through a port)
-scan.go imports github.com/jackc/pgx/v5/pgtype (a service reaches the database and the network through a port)

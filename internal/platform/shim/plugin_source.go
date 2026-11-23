@@ -35,33 +35,34 @@ const maxSourceBytes = 256 << 20
 // engine says why it cannot take a plugin.
 var ErrNoUploads = errors.New("the engine takes no plugin uploads")
 
-// PluginFile is one file of a plugin to upload: its path in the copy and
-// its bytes.
-type PluginFile struct {
-	Path string
-	Data []byte
-}
-
 // uploadWait bounds one upload: the engine answers each part at once.
 const uploadWait = 2 * time.Minute
 
-// NewPluginUploader uploads plugin folders to the engine over a second
-// connection to the agent's own socket at socketPath, as this process's OS
-// user (the agent's), which the socket admits and the upload belongs to.
-func NewPluginUploader(socketPath string) PluginUploader {
-	return func(ctx context.Context, source string) (mcpserver.PluginUpload, error) {
-		src, err := ReadPluginSource(source)
-		if err != nil {
-			return mcpserver.PluginUpload{}, err
-		}
-		ctx, cancel := context.WithTimeout(ctx, uploadWait)
-		defer cancel()
-		id, err := upload(ctx, socketPath, src.Files)
-		if err != nil {
-			return mcpserver.PluginUpload{}, err
-		}
-		return mcpserver.PluginUpload{UploadID: id, Name: src.Manifest.Name, Executables: src.Executables}, nil
+// Uploader is the plugin service's upload channel (plugin.PluginUploadChannel):
+// it reads plugin folders, and uploads them to the engine over a second
+// connection to the agent's own socket, as this process's OS user (the
+// agent's), which the socket admits and the upload belongs to.
+type Uploader struct{ socketPath string }
+
+// NewUploader is the upload channel to the engine at the agent's socket
+// socketPath.
+func NewUploader(socketPath string) Uploader { return Uploader{socketPath: socketPath} }
+
+// ReadSource reads the plugin folder dir for an upload (ReadPluginSource).
+func (u Uploader) ReadSource(dir string) (plugin.UploadSource, error) {
+	src, err := ReadPluginSource(dir)
+	if err != nil {
+		return plugin.UploadSource{}, err
 	}
+	return plugin.UploadSource{Files: src.Files, Executables: src.Executables, Name: src.Manifest.Name}, nil
+}
+
+// Upload sends files to the engine as one upload, within uploadWait, and
+// returns its id.
+func (u Uploader) Upload(ctx context.Context, files []plugin.UploadFile) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, uploadWait)
+	defer cancel()
+	return upload(ctx, u.socketPath, files)
 }
 
 // uploadConn is the second connection: one request, one answer.
@@ -73,7 +74,7 @@ type uploadConn struct {
 
 // upload begins an upload and sends files in parts of at most the engine's
 // maxPartBytes, in order, and returns the upload's id.
-func upload(ctx context.Context, socketPath string, files []PluginFile) (string, error) {
+func upload(ctx context.Context, socketPath string, files []plugin.UploadFile) (string, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socketPath)
 	if err != nil {
@@ -211,7 +212,7 @@ func badFolder(format string, args ...any) *toolresult.ToolError {
 
 // PluginSource is a plugin folder as read for an upload.
 type PluginSource struct {
-	Files []PluginFile
+	Files []plugin.UploadFile
 	// Executables are the listed files with an execute bit.
 	Executables []string
 	Manifest    pluginmodel.Manifest
@@ -275,13 +276,13 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 			NextSteps:     []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
 		}
 	}
-	files := []PluginFile{{Path: plugin.ManifestFile, Data: manifest}}
+	files := []plugin.UploadFile{{Path: plugin.ManifestFile, Data: manifest}}
 	if _, err := root.Lstat(plugin.SignatureFile); err == nil {
 		sig, _, err := read(plugin.SignatureFile, plugin.MaxSignatureFileBytes)
 		if err != nil {
 			return PluginSource{}, err
 		}
-		files = append(files, PluginFile{Path: plugin.SignatureFile, Data: sig})
+		files = append(files, plugin.UploadFile{Path: plugin.SignatureFile, Data: sig})
 	}
 	var execs []string
 	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {
@@ -289,7 +290,7 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 		if err != nil {
 			return PluginSource{}, err
 		}
-		files = append(files, PluginFile{Path: rel, Data: b})
+		files = append(files, plugin.UploadFile{Path: rel, Data: b})
 		if exec {
 			execs = append(execs, rel)
 		}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 
 	"github.com/stretchr/testify/require"
 

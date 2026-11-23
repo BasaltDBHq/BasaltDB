@@ -16,7 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"

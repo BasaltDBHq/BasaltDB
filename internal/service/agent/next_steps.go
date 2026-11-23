@@ -18,7 +18,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/uniqueid"
 )
@@ -108,7 +107,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f guidance.Failure) ([
 	case guidance.CodeSQLError:
 		sqlErrorSteps(b, te, f)
 	case guidance.CodeInvalidArgument:
-		person = invalidArgumentSteps(b, te, f)
+		person = guidance.InvalidArgumentSteps(b, te, f)
 	case guidance.CodeUnavailable:
 		person = s.unavailableSteps(b, te, f)
 	case guidance.CodeInternal:
@@ -233,22 +232,9 @@ func rowLimitSteps(b *guidance.Steps) string {
 		"you approve each batch with your passkey.", guidance.MaxRetryRows, guidance.MaxRetryRows)
 }
 
-// describeTimeoutText is the revision a describe that ran out of time asks
-// for, by form: a narrower search, or a search in place of the whole
-// overview or table.
-func describeTimeoutText(f guidance.Failure) string {
-	switch {
-	case f.Arg(guidance.ArgQuery) != "":
-		return "Search with a longer, more specific query so the catalog answers in time, then call describe again."
-	case f.Arg(guidance.ArgResource) != "":
-		return "The catalog was slow: call describe for this table once more, or search with a query for the columns you need."
-	}
-	return "The catalog was slow: call describe once more, or search with a query for the tables you need."
-}
-
 func queryTimeoutSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) {
 	if f.Tool == guidance.ToolDescribe {
-		b.ReviseCall(f.Tool, nil, describeTimeoutText(f))
+		b.ReviseCall(f.Tool, nil, guidance.DescribeTimeoutText(f))
 		return
 	}
 	switch te.Reason {
@@ -266,15 +252,11 @@ func queryTimeoutSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.F
 	b.ReviseCall(f.Tool, nil, "Narrow the statement (a tighter WHERE, fewer joins, a LIMIT) so it finishes in time, then call it again.")
 }
 
-// rowTooLargeTools are the tools whose own statement's rows the agent
-// reads: query, and a write's RETURNING.
-var rowTooLargeTools = map[string]bool{guidance.ToolQuery: true, guidance.ToolWrite: true}
-
 // rowTooLargeFor keeps ROW_TOO_LARGE for the tools whose statement it
 // refuses (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE); any other tool's
 // read too large for the budget is SIZE_LIMIT.
 func rowTooLargeFor(tool string, te *toolresult.ToolError) *toolresult.ToolError {
-	if te.Code == guidance.CodeQueryTimeout && te.Reason == guidance.ReasonRowTooLarge && !rowTooLargeTools[tool] {
+	if te.Code == guidance.CodeQueryTimeout && te.Reason == guidance.ReasonRowTooLarge && !guidance.RowTooLargeTool(tool) {
 		te = guidance.SizeLimitError()
 	}
 	if te.Code == guidance.CodeQueryTimeout && te.Reason == guidance.ReasonSizeLimit && pagedTools[tool] {
@@ -356,32 +338,6 @@ func sqlErrorSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failu
 		return
 	}
 	b.ReviseCall(f.Tool, nil, "Fix the statement as the database's message says, then call again.")
-}
-
-func invalidArgumentSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
-	switch te.Reason {
-	case guidance.ReasonStaleCursor:
-		b.RepeatCall(f.Tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
-		return ""
-	case guidance.ReasonScopeFilter:
-		b.ReviseCall(f.Tool, nil, "Call again without the refused entries the message names, or without that filter.")
-		if id := f.Arg(guidance.ArgRunID); id != "" {
-			b.CallTool(guidance.ToolRunHistory, map[string]any{guidance.ArgRunID: id}, "Read the run's history to see the tables you wrote in it.")
-			return ""
-		}
-		b.CallTool(guidance.ToolListRuns, map[string]any{}, "List your runs to see your own runs in the task; run_history shows the tables each one wrote.")
-		return ""
-	case guidance.ReasonScopeFilterCap:
-		b.ReviseCall(f.Tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
-			"can narrow it on the signing page.", revert.MaxFilter, revert.MaxFilter))
-		return ""
-	case ReasonAdminCredential:
-		b.AskPerson(adminCredentialAsk)
-		b.ReviseCall(f.Tool, nil, adminCredentialRevise)
-		return adminCredentialPerson
-	}
-	b.ReviseCall(f.Tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
-	return ""
 }
 
 // unavailableSteps: a database the engine cannot reach is retried once; the

@@ -26,7 +26,7 @@ func (sc *Service) Status(ctx context.Context) (guidance.StatusReport, error) {
 }
 
 // statusDeps are what a status report reads: the Service's own in the
-// engine, LocalStatus's for basalt status on an engine run as the person.
+// engine, localStatus's for basalt status on an engine run as the person.
 type statusDeps struct {
 	name, operatedBy, build   string
 	startedBy                 string
@@ -44,7 +44,7 @@ type statusDeps struct {
 	update                    *guidance.UpdateInfo
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
-	// engine record (LocalStatus.EngineKey); the engine uses vault.
+	// engine record (localStatus.EngineKey); the engine uses vault.
 	engineKey    *string
 	engineRecord EngineRecordReader
 	trust        TrustReporter
@@ -73,12 +73,12 @@ func (sc *Service) statusDeps() statusDeps {
 	}
 }
 
-// LocalStatus is what basalt status reads for an agent whose engine runs as
+// localStatus is what basalt status reads for an agent whose engine runs as
 // the person's own OS user (same-user mode): the config, the agent's own
 // credential and whether the engine process runs. Its report is the status
 // tool's, with engine.reachable from the process and ENGINE_UNREACHABLE
 // when it does not run.
-type LocalStatus struct {
+type localStatus struct {
 	Name       string
 	Commands   guidance.Commands
 	OperatedBy string
@@ -116,9 +116,9 @@ type LocalStatus struct {
 	LatestGuardVersion func() int
 }
 
-// Report is the status report. It panics on a missing probe, passkey
+// report is the status report. It panics on a missing probe, passkey
 // reader, logger or clock.
-func (l LocalStatus) Report(ctx context.Context) (guidance.StatusReport, error) {
+func (l localStatus) report(ctx context.Context) (guidance.StatusReport, error) {
 	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil || l.LatestGuardVersion == nil {
 		panic("agent: local status needs a probe, a passkey reader, a logger, a clock and the guard version")
 	}
@@ -239,9 +239,9 @@ func OperatedBy(v string) string {
 // directly: it operates the machine, or the engine runs as the person.
 func Enforcement(operated string, sameUser bool) string {
 	if operated == mcpcontract.OperatedByAgent || sameUser {
-		return EnforcementGuardOnly
+		return enforcementGuardOnly
 	}
-	return EnforcementEngineAndGuard
+	return enforcementEngineAndGuard
 }
 
 // Ready is whether no problem of the list is an error.

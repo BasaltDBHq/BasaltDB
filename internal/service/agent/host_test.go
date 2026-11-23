@@ -107,9 +107,9 @@ func TestHostCopiesMatchTheAdapters(t *testing.T) {
 	require.Equal(t, ledger.RevertApplied, action.RevertApplied)
 	require.Equal(t, ledger.RevertRejected, action.RevertRejected)
 	require.Equal(t, ledger.RevertExpired, action.RevertExpired)
-	require.Equal(t, string(vault.StateOff), vaultStateOff)
-	require.Equal(t, string(vault.StateConnected), vaultStateConnected)
-	require.Equal(t, string(vault.StateKeyError), vaultStateKeyError)
+	require.Equal(t, string(vault.StateOff), statussvc.VaultOff)
+	require.Equal(t, string(vault.StateConnected), statussvc.VaultConnected)
+	require.Equal(t, string(vault.StateKeyError), statussvc.VaultKeyError)
 	require.Equal(t, mcpserver.MetaPluginUpload, MetaPluginUpload)
 	require.Equal(t, mcpserver.PluginUpload(PluginUpload{UploadID: "a"}).UploadID, "a", "the same fields as the protocol's")
 }

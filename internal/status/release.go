@@ -15,13 +15,13 @@ func (sc *Service) UpdateInfo() *guidance.UpdateInfo {
 	if n == nil {
 		return nil
 	}
-	info := NewUpdateInfo(*n, executablePath(), sc.deps.UpdateMessage)
+	info := newUpdateInfo(*n, executablePath(), sc.deps.UpdateMessage)
 	return &info
 }
 
-// NewUpdateInfo is the update field for notice n, with the message for
+// newUpdateInfo is the update field for notice n, with the message for
 // the binary at exe, as message words it.
-func NewUpdateInfo(n ReleaseNotice, exe string, message func(n ReleaseNotice, exe string) string) guidance.UpdateInfo {
+func newUpdateInfo(n ReleaseNotice, exe string, message func(n ReleaseNotice, exe string) string) guidance.UpdateInfo {
 	return guidance.UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: message(n, exe)}
 }
 

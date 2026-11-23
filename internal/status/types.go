@@ -13,7 +13,7 @@ import (
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
 // The engine answers it with what it reads from the agent's database; the
-// shim answers it with EngineDownStatus when the engine socket does not.
+// shim answers it with EngineDownStatusAfterStart when the engine socket does not.
 
 // Problem codes of the status tool (api/mcp/errors/next-steps.json, problems).
 const (
@@ -62,8 +62,8 @@ const (
 
 // Enforcement values of the status tool.
 const (
-	EnforcementEngineAndGuard = "ENGINE_AND_GUARD"
-	EnforcementGuardOnly      = "GUARD_ONLY"
+	enforcementEngineAndGuard = "ENGINE_AND_GUARD"
+	enforcementGuardOnly      = "GUARD_ONLY"
 )
 
 // Probe reads, on the agent's own credential, what status reports from the

@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginmcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertmcp"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/status/in/statusmcp"
 )
 
 // agentTools returns the MCP tools served to one agent: every contract in
@@ -30,7 +31,7 @@ func agentTools(svc *agent.Service) []guidance.Tool {
 	tools := agent.RunStartTools(svc, mount)
 	for _, list := range [][]guidance.Tool{
 		agent.WriteTools(svc, mount), ledgermcp.Tools(svc, mount), agent.RunTools(svc, mount), approvalmcp.Tools(svc, mount), revertmcp.Tools(svc, mount),
-		pluginmcp.Tools(svc, mount), agent.DescribeTools(svc, mount), agent.StatusTools(svc, mount), handoffmcp.Tools(mount),
+		pluginmcp.Tools(svc, mount), agent.DescribeTools(svc, mount), statusmcp.Tools(svc, mount), handoffmcp.Tools(mount),
 	} {
 		tools = append(tools, list...)
 	}

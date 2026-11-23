@@ -17,10 +17,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/pluginpath"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/connect"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/jsonrpc"
 )
 
 // Transport names in a manifest's endpoint.

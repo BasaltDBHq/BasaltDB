@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 )
 
 // Dialer is how the plugin host reaches its entries (its Dialer port): Entry

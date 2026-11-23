@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/jsonrpc"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/lib/peercred"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/connect"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/jsonrpc"
 )
 
 // errNotSocket: the path is not itself a Unix socket.

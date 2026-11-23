@@ -17,8 +17,8 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 

@@ -19,8 +19,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/connect"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 )
 
 // The plugin isolation check runs as root in a throwaway Linux container

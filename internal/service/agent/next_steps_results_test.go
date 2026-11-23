@@ -63,21 +63,17 @@ func resultCases() map[string]resultCase {
 		resultKey("describe", "OVERVIEW_LARGE"): {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				b := guidance.NewSteps()
-				overviewLargeSteps(b, []SchemaCount{{Schema: "app", Tables: 40}, {Schema: "billing", Tables: 12}})
-				steps, err := b.Build()
+				o, err := describeUseCase(guidance.Commands{}, &fakeCatalog{visible: manySchemas(2, map[string]int{"tenant_00000": 39, "tenant_00001": 11})}).DescribeOverview(context.Background())
 				require.NoError(t, err)
-				return "", nil, steps
+				return o.PersonMessage, nil, o.NextSteps
 			},
 		},
 		resultKey("describe", "NOT_GRANTED"): {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				b := guidance.NewSteps()
-				person := s.describe.notGrantedSteps(b, 3)
-				steps, err := b.Build()
+				o, err := describeUseCase(guidance.Commands{}, &fakeCatalog{notGranted: 3}).DescribeOverview(context.Background())
 				require.NoError(t, err)
-				return person, nil, steps
+				return o.PersonMessage, nil, o.NextSteps
 			},
 		},
 	}

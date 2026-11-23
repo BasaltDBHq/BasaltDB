@@ -14,7 +14,7 @@
 //     receipts, large requests) and the answers the pages give back.
 //   - status_: the status tool, the guard and setup checks behind it, and
 //     the problems it reports.
-//   - describe_: the describe tool and the catalog it reads.
+//   - describe_: the describe tool; the use case and the catalog it reads are internal/agent.
 //   - plugin_: the plugin request tool.
 //
 // service.go holds the shared Service and its dependencies, tools.go and

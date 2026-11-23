@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
@@ -38,18 +40,18 @@ func (a describeArgs) check() error {
 
 type describeOverviewResult struct {
 	Form string `json:"form"`
-	Overview
+	agentsvc.Overview
 }
 
 type describeSearchResult struct {
-	Form       string       `json:"form"`
-	Items      []SearchItem `json:"items"`
-	NextCursor string       `json:"nextCursor,omitempty"`
+	Form       string                `json:"form"`
+	Items      []agentsvc.SearchItem `json:"items"`
+	NextCursor string                `json:"nextCursor,omitempty"`
 }
 
 type describeResourceResult struct {
 	Form string `json:"form"`
-	Resource
+	agentsvc.Resource
 }
 
 // describe serves the three forms, told apart by their arguments, with every
@@ -72,13 +74,13 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 	}
 	switch {
 	case args.Query != nil:
-		p := DescribeSearchParams{Params: args.Params, Query: *args.Query}
+		p := agentsvc.DescribeSearchParams{Params: args.Params, Query: *args.Query}
 		p.ApplyDefaultsAndClamp()
 		page, err := h.svc.DescribeSearch(ctx, p)
 		if err != nil {
 			return nil, err
 		}
-		return describeSearchResult{Form: FormSearch, Items: page.Items, NextCursor: page.NextCursor}, nil
+		return describeSearchResult{Form: agentsvc.FormSearch, Items: page.Items, NextCursor: page.NextCursor}, nil
 	case args.Resource != nil:
 		ifFingerprint := ""
 		if args.IfFingerprint != nil {
@@ -88,13 +90,13 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 		if err != nil {
 			return nil, err
 		}
-		return describeResourceResult{Form: FormResource, Resource: res}, nil
+		return describeResourceResult{Form: agentsvc.FormResource, Resource: res}, nil
 	}
 	o, err := h.svc.DescribeOverview(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return describeOverviewResult{Form: FormOverview, Overview: o}, nil
+	return describeOverviewResult{Form: agentsvc.FormOverview, Overview: o}, nil
 }
 
 // describeTools are the tools that describe the database.

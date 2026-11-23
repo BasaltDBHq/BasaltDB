@@ -20,7 +20,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/pinfile"
+	"github.com/basaltdbhq/basaltdb/internal/ledger/out/pinfile"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/httpserver"

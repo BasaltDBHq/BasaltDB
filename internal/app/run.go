@@ -127,13 +127,13 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// Every configured agent's OS user, before any agent is skipped: the
 	// person socket scopes a peer that runs an agent to that agent (SM-4),
 	// served or not, so a skipped agent's user never looks like the person.
-	agentUIDs, err := agentOSUIDs(cfg.Agents, lookupUID)
+	agentUIDs, err := engine.AgentOSUIDs(cfg.Agents, lookupUID)
 	if err != nil {
 		return err
 	}
 	// Folders first: an update of the computer drops empty ones and resets
 	// the rest to 0755, and the lock below makes the socket directory.
-	if err := ensureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
+	if err := engine.EnsureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
 		return err
 	}
 	lock, err := pidlock.AcquireLock(LockPath(cfg.SocketDir))
@@ -259,7 +259,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		default:
 		}
 	}
-	restart.Upgrade = upgradeOrReload(restart.Upgrade, reload, reloading)
+	restart.Upgrade = engine.UpgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
 	}
@@ -343,48 +343,13 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	select {
 	case <-reloading:
 		if errors.Is(err, engine.ErrRestart) {
-			return ErrReload
+			return engine.ErrReload
 		}
 	default:
 	}
 	return err
 }
 
-// upgradeOrReload is the restart's trigger: an upgraded binary (up, when
-// set) or a reload asked for on reload. A reload closes reloading first,
-// so RunWith returns ErrReload, not ErrRestart.
-func upgradeOrReload(up engine.UpgradeFunc, reload <-chan struct{}, reloading chan struct{}) engine.UpgradeFunc {
-	return func(ctx context.Context) error {
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		upgraded := make(chan error, 1)
-		if up == nil {
-			upgraded = nil
-		} else {
-			go func() { upgraded <- up(ctx) }()
-		}
-		select {
-		case <-reload:
-			close(reloading)
-			// The watch ends before the next run watches the same binary.
-			cancel()
-			if upgraded != nil {
-				if err := <-upgraded; err != nil {
-					return nil // the cancel above: a reload, not an error
-				}
-			}
-			return nil
-		case err := <-upgraded:
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-}
-
-// agentOSUIDs is the uid of every configured agent's OS user, by agent
-// name. An OS user that does not resolve stops the engine: the person
-// socket must never mistake an agent's user for the person (fail closed).
 // keepsPluginEntries reports whether the engine keeps plugin entries of
 // its own: a service engine, and an agent-operated engine that runs as the
 // agent's own OS user (the bot's computer). A person-operated engine that
@@ -403,18 +368,6 @@ func pluginCallers(cfg config.Config, euid uint32) []uint32 {
 		return cfg.PersonUIDs
 	}
 	return []uint32{euid}
-}
-
-func agentOSUIDs(agents []config.Agent, lookup func(string) (uint32, error)) (map[string]uint32, error) {
-	out := make(map[string]uint32, len(agents))
-	for _, a := range agents {
-		uid, err := lookup(a.OSUser)
-		if err != nil {
-			return nil, fmt.Errorf("agent %s: %w", a.Name, err)
-		}
-		out[a.Name] = uid
-	}
-	return out, nil
 }
 
 // runtimeFunc builds one agent's runtime (newAgentRuntime outside tests).
@@ -860,14 +813,11 @@ func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 	}
 }
 
-// stateDirMode keeps the engine's state to its own OS user.
-const stateDirMode = 0o700
-
 // statePins keeps verified chain heads in dir. When dir cannot be created
 // the engine still serves, pinning in memory only, and says so: a rewrite
 // made while it is stopped is then caught only by the full check on start.
 func statePins(dir string, log *slog.Logger) ledger.Pins {
-	if err := os.MkdirAll(dir, stateDirMode); err != nil {
+	if err := os.MkdirAll(dir, engine.StateDirMode); err != nil {
 		log.Error("no state directory; ledger chain heads are pinned in memory only", "dir", dir, "err", err)
 		return &chainpin.Memory{}
 	}
@@ -919,7 +869,7 @@ func lookupUID(name string) (uint32, error) {
 // A directory it cannot create, or a file it cannot read, is logged: the
 // store then starts empty, and those links are issued again.
 func linkSecrets(dir, agent string, log *slog.Logger) *links.Secrets {
-	if err := os.MkdirAll(dir, stateDirMode); err != nil {
+	if err := os.MkdirAll(dir, engine.StateDirMode); err != nil {
 		log.Error("no state directory; short links last until the engine stops", "dir", dir, "err", err)
 		return links.NewSecrets(time.Now, rand.Reader)
 	}
@@ -947,23 +897,4 @@ func (env agentEnv) updateNotice() func() *updatecheck.Notice {
 		return nil
 	}
 	return env.update.Cached
-}
-
-// ensureOwnDirs makes and tightens the folders a same-user engine owns: its
-// state directory, and its socket directory when every agent's OS user is
-// the engine's own (a socket directory other users reach stays 0755). A
-// service engine's folders are the service manager's.
-func ensureOwnDirs(cfg config.Config, agentUIDs map[string]uint32, euid int) error {
-	if cfg.Service() {
-		return nil
-	}
-	dirs := []string{cfg.StateDirFor(runtime.GOOS)}
-	own := true
-	for _, uid := range agentUIDs {
-		own = own && int(uid) == euid
-	}
-	if own {
-		dirs = append(dirs, cfg.SocketDir)
-	}
-	return ensurePrivateDirs(euid, dirs...)
 }

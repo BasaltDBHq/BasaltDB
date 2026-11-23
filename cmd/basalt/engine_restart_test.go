@@ -56,7 +56,7 @@ func TestTheEngineServesItsConfigAgainAfterAReload(t *testing.T) {
 	run := func(context.Context, app.RestartOptions) error {
 		runs++
 		if runs == 1 {
-			return app.ErrReload
+			return engine.ErrReload
 		}
 		return errors.New("stopped")
 	}

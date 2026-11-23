@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
@@ -97,7 +98,7 @@ func (v vaultLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) {
 // loadEngineKeys reads <stateDir>/channel.json, creating the directory and
 // the file when they do not exist.
 func loadEngineKeys(stateDir string, now func() time.Time) (*channel.EngineKeys, error) {
-	if err := os.MkdirAll(stateDir, stateDirMode); err != nil {
+	if err := os.MkdirAll(stateDir, engine.StateDirMode); err != nil {
 		return nil, err
 	}
 	return keyfile.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)

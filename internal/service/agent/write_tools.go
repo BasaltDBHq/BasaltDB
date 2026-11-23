@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -42,7 +44,7 @@ type writeResult struct {
 	NoReceipt     string `json:"noReceipt,omitempty"`
 }
 
-func writeResultFromDomain(o WriteOutcome) writeResult {
+func writeResultFromDomain(o agentsvc.WriteOutcome) writeResult {
 	out := writeResult{
 		ChangeID: o.ChangeID.String(), RunID: o.RunID.String(), Op: string(o.Op), Rows: o.Rows,
 		DurationMs: o.Duration.Milliseconds(), Status: StatusApplied, Returning: o.Returning, Warnings: o.Warnings,
@@ -66,7 +68,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
-	out, err := h.svc.Write(ctx, WriteParams{
+	out, err := h.svc.Write(ctx, agentsvc.WriteParams{
 		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: optionalID(args.RunID),
 		ApprovalID: optionalID(args.ApprovalID), Wait: args.wait(),
 	})

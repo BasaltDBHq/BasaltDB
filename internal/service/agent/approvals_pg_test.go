@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
@@ -78,7 +80,7 @@ type agentEnv struct {
 	person *passkeytest.Authenticator
 	sent   *notices
 	svc    *agent.Service
-	blind  *agent.BlindCache
+	blind  *agentsvc.BlindCache
 	// finds counts the agent's approval reads: one when a call looks its
 	// approval up, one more for every poll while it waits.
 	finds *finds
@@ -194,12 +196,12 @@ func agentHarnessWith(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 	sent := &notices{}
 	var watched *finds
 	var watchedReverts *revertFinds
-	var blind *agent.BlindCache
+	var blind *agentsvc.BlindCache
 	// As the engine runs it: every read of a call charged to its budget.
 	svc := agenttest.PgService(t, a.URL, agenttest.WithLimits(limits), agenttest.WithBudget(), agenttest.WithDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
 		watched = &finds{SQLStore: d.Core.Store.(agent.SQLStore)}
 		watchedReverts = &revertFinds{SQLStore: watched}
-		blind = agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+		blind = agentsvc.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 			return guard.RLSBlindTables(ctx, pool, "", tables)
 		})
 		agenttest.UseStore(d, watchedReverts)

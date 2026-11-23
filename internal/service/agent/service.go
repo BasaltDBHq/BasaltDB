@@ -3,11 +3,9 @@ package agent
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
@@ -22,8 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 )
 
 // History is one page of a run's change records with the rows each wrote.
@@ -35,7 +31,7 @@ type History = action.History[action.Change, action.RowChange]
 // is required and NewService refuses a Deps without it.
 type Deps struct {
 	Core     CoreDeps
-	Write    WriteDeps
+	Write    agentsvc.WriteDeps
 	Approval approvalsvc.Deps
 	Revert   revertsvc.Deps
 	Delivery linksvc.Deps
@@ -75,23 +71,6 @@ type CoreDeps struct {
 	LinkBudget int
 }
 
-// WriteDeps is what the query and write tools use.
-type WriteDeps struct {
-	// Store checks a statement against the policy and runs it, through the
-	// guard for a write.
-	Store WriteStore
-	// RLS says whether row-level security hides a table from the agent
-	// (the RLS_HIDES_ROWS warning); optional, nothing is hidden when nil.
-	RLS RLSChecker
-	// PII sees every read's rows before they are returned and adds the
-	// values of IDENTIFIER columns to the dictionary (M5.1); optional,
-	// nothing is added when nil.
-	PII PIIObserver
-	// Record is the wire record of one change and its rows, as the ledger
-	// renders it (run_history).
-	Record func(ch action.Change, rows []action.RowChange) any
-}
-
 // PluginDeps is what the plugin tools and the plugin approval pages use.
 type PluginDeps struct {
 	// Approvals are the guard's plugin approvals on the agent's credential,
@@ -107,30 +86,17 @@ type PluginDeps struct {
 	ApprovalsVersion int
 }
 
-// PIIObserver adds the PII values of rows the agent is about to get to the
-// engine's dictionary. An error means a value could not be added: the rows
-// are not returned (fail closed). It never logs a value.
-type PIIObserver interface {
-	Observe(ctx context.Context, cols []action.Column, rows []map[string]any) error
-}
-
-type noPII struct{}
-
-func (noPII) Observe(context.Context, []action.Column, []map[string]any) error { return nil }
-
 // Service runs one agent's tool calls.
 type Service struct {
 	deps Deps
-	// describe is the describe use case.
-	describe *agentsvc.Service
+	// agent is the describe, run, query and write use case.
+	agent *agentsvc.Service
 	// delivery is how held actions reach the person.
 	delivery *linksvc.Service
 	// approval is the held writes use case.
 	approval *approvalsvc.Service
 	// revert is the revert use case.
 	revert *revertsvc.Service
-	// write is the query and write use case.
-	write *writeCase
 	// ledger is the read side of the ledger: run history.
 	ledger *ledgersvc.Reads
 	// plugin is the plugin use case.
@@ -148,14 +114,8 @@ func NewService(d Deps) *Service {
 	if d.Delivery.Notifier == nil {
 		d.Delivery.Notifier = linksvc.NoNotifier{}
 	}
-	if d.Write.RLS == nil {
-		d.Write.RLS = noRLS{}
-	}
 	if d.Delivery.Relay == nil {
 		d.Delivery.Relay = linksvc.NoRelay{NotConnected: d.Delivery.ErrVaultNotConnected}
-	}
-	if d.Write.PII == nil {
-		d.Write.PII = noPII{}
 	}
 	if d.Core.PagesBase == "" {
 		d.Core.PagesBase = links.DefaultLocal
@@ -183,23 +143,23 @@ func NewService(d Deps) *Service {
 // reference to its own group of s.deps and to the shared core group.
 func (s *Service) wire() {
 	s.status = statussvc.NewService(s.statusCore(), &s.deps.Status)
-	s.describe = agentsvc.New(s.agentCore(), &s.deps.Describe, s.status.UpdateInfo)
+	s.agent = agentsvc.New(s.agentCore(), &s.deps.Describe, &s.deps.Write, s.status.UpdateInfo)
 	// approval and delivery read each other: approval is built first and is
 	// given the delivery and revert use cases once they exist.
 	s.approval = approvalsvc.New(s.approvalCore(), &s.deps.Approval, liveWrites{&s.deps.Write}, runChecker{s.deps.Core.Store}, s)
 	s.delivery = linksvc.New(s.linksCore(), &s.deps.Delivery, s.approval, s.Failure)
-	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.describe, s)
+	s.revert = revertsvc.New(s.revertCore(), &s.deps.Revert, s.deps.Core.Store, s.delivery, s.agent, s)
 	s.approval.SetDelivery(s.delivery)
 	s.approval.SetReverts(s.revert)
 	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
-	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s.status, s)
+	s.agent.SetPorts(s.delivery, s.approval, s.status, s)
 }
 
 // agentCore is the part of the shared settings the agent use cases read.
 func (s *Service) agentCore() agentsvc.Core {
 	c := s.deps.Core
-	return agentsvc.Core{Store: c.Store, Commands: c.Commands, Errors: c.Errors}
+	return agentsvc.Core{Name: c.Name, Store: c.Store, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors}
 }
 
 // statusCore is the part of the shared settings the status use case reads.
@@ -266,144 +226,4 @@ func (d Deps) missing() []string {
 	need("Status.UpdateMessage", d.Status.UpdateMessage == nil)
 	need("Status.StartHoldOffUntil", d.Status.StartHoldOffUntil == nil)
 	return out
-}
-
-// RunInfo is a started run.
-type RunInfo struct {
-	RunID     uuid.UUID
-	TaskID    uuid.UUID
-	Intent    string
-	StartedAt time.Time
-	// Warnings are what the person should hear about the setup, with the
-	// steps for it (GUARD_UPGRADE_AVAILABLE).
-	Warnings []toolresult.Warning
-}
-
-// StartRun starts a run with intent. taskID joins a task another agent
-// started; uuid.Nil starts a new task.
-func (wc *writeCase) StartRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
-	run, err := wc.startRun(ctx, intent, taskID)
-	if err != nil {
-		return RunInfo{}, err
-	}
-	run.Warnings = wc.upgrade.UpgradeWarnings(ctx)
-	return run, nil
-}
-
-// startRun is StartRun without the setup warnings, for the run a write
-// starts for itself.
-func (wc *writeCase) startRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
-	if taskID == uuid.Nil {
-		taskID = newID()
-	}
-	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: wc.core.Now().UTC()}
-	if err := wc.core.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
-		return RunInfo{}, err
-	}
-	return run, nil
-}
-
-// QueryParams are one query call's validated arguments.
-type QueryParams struct {
-	SQL    string
-	Params []any
-	RunID  uuid.UUID // uuid.Nil when the read is outside a run
-}
-
-// QueryOutcome is one recorded read.
-type QueryOutcome struct {
-	action.ReadResult
-	ChangeID uuid.UUID
-	Warnings []toolresult.Warning
-}
-
-// Query checks sql against the policy, runs it read-only within the limits
-// and records the read with the version of each row it could identify. A
-// refused or failed statement is recorded as a REFUSED change. A read that
-// cannot be recorded is not returned: the ledger must know what the agent
-// saw.
-func (wc *writeCase) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
-	run, err := ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
-	if err != nil {
-		return QueryOutcome{}, err
-	}
-	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
-	start := wc.core.Now()
-	stmt, err := wc.deps.Store.Check(p.SQL, action.ToolQuery)
-	if err == nil {
-		err = checkArgs(stmt, p.Params)
-	}
-	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
-	}
-	res, err := wc.deps.Store.Read(ctx, p.SQL, p.Params, stmt)
-	if err != nil {
-		return QueryOutcome{}, wc.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
-	}
-	// The values of IDENTIFIER columns go in the dictionary before the rows
-	// leave the engine (M5.1 plan, section 6). One that cannot be added
-	// keeps the rows from the agent.
-	if err := wc.deps.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
-		wc.core.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
-		// An engine failure, not the agent's SQL: INTERNAL even when a
-		// Postgres error (a map reload) caused it. The cause is logged above.
-		return QueryOutcome{}, &toolresult.ToolError{Code: guidance.CodeInternal, Message: "internal engine error"}
-	}
-	change, err := wc.core.Store.RecordRead(ctx, action.Read{
-		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
-		Rows: len(res.Rows), Duration: res.Duration, Versions: res.Versions,
-	})
-	if err != nil {
-		return QueryOutcome{}, fmt.Errorf("record read: %w", err)
-	}
-	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: wc.rlsWarnings(ctx, stmt.Tables, len(res.Rows))}, nil
-}
-
-// ListRuns returns one page of the agent's own runs with what each did.
-func (wc *writeCase) ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
-	return wc.core.Store.ListRuns(ctx, p)
-}
-
-// recorded reports whether a failure is an action the ledger keeps as
-// REFUSED: anything the policy, the guard or the database refused. Bad
-// arguments, a missing run, and an unreachable database are not actions.
-func recorded(code string) bool {
-	switch code {
-	case guidance.CodeInvalidArgument, guidance.CodeNotFound, guidance.CodeUnavailable, guidance.CodeInternal:
-		return false
-	}
-	return true
-}
-
-// refused records a REFUSED change for err when it is an action the ledger
-// keeps, and returns err. A failure to record is logged; the agent still
-// gets the original refusal.
-func (wc *writeCase) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
-	te := guidance.MessageTooLarge(actionTool(op), err, wc.core.Errors.ToolError(err))
-	if !recorded(te.Code) {
-		return err
-	}
-	r := action.Refusal{
-		Intent: in, Op: refusalOp(op), Statement: sql, Params: params,
-		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: wc.core.Now().Sub(start),
-	}
-	if recErr := wc.core.Store.RecordRefusal(context.WithoutCancel(ctx), r); recErr != nil {
-		wc.core.Log.Error("record refusal", "code", te.Code, "err", recErr)
-	}
-	return err
-}
-
-// truncate cuts s to at most n bytes on a rune boundary.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
-}
-
-func newID() uuid.UUID {
-	return uuid.Must(uuid.NewV7())
 }

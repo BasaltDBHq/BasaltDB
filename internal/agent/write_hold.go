@@ -26,7 +26,7 @@ import (
 // APPROVAL_REQUIRED with the approval link. It returns the held write's
 // approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
 // the error that kept it from being held.
-func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
+func (wc *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
 	assigned, err := wc.approvals.HoldColumns(ctx, p.SQL, p.Params)
 	var notRepeatable *action.RefusalError
 	if errors.As(err, &notRepeatable) {
@@ -75,7 +75,7 @@ func (wc *writeCase) hold(ctx context.Context, in action.Intent, p WriteParams, 
 // applyApproved runs a held write under its approval: the same statement,
 // parameters and run as held, once the person signed on the page (waiting
 // for it when asked). The guard checks it all again at commit.
-func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
+func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
@@ -112,12 +112,12 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.deps.Store.Check(p.SQL, action.ToolWrite)
+	stmt, err := wc.write.Store.Check(p.SQL, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := wc.deps.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
+	res, err := wc.write.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
 	if err != nil {
 		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, op, p.SQL, p.Params, start, err))
 	}
@@ -130,7 +130,7 @@ func (wc *writeCase) applyApproved(ctx context.Context, p WriteParams) (WriteOut
 // withApprovalLink gives an approval error that sends the person back to the
 // approval page (not signed yet, a bad signature, a passkey the database
 // does not accept) the page's link in its steps; any other error passes.
-func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
+func (wc *Service) withApprovalLink(ctx context.Context, a action.Approval, err error) error {
 	te := wc.core.Errors.ToolError(err)
 	if te.Code != guidance.CodeApprovalInvalid || len(te.NextSteps) > 0 {
 		return err
@@ -144,7 +144,7 @@ func (wc *writeCase) withApprovalLink(ctx context.Context, a action.Approval, er
 	if linkErr != nil {
 		return linkErr
 	}
-	return wc.next.approvalLinkError(te, n)
+	return wc.next.ApprovalLinkError(te, n)
 }
 
 // sameAsHeld checks the call repeats the held write.
@@ -186,7 +186,7 @@ func sameParams(held json.RawMessage, params []any) bool {
 	return ok && sameJSON(a, b)
 }
 
-func (wc *writeCase) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
+func (wc *Service) awaitSigned(ctx context.Context, a action.Approval, wait time.Duration) (action.Approval, error) {
 	err := wc.delivery.AwaitWhile(ctx, wait, func() bool { return a.Status == action.ApprovalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
@@ -200,7 +200,7 @@ func (wc *writeCase) awaitSigned(ctx context.Context, a action.Approval, wait ti
 	return a, err
 }
 
-func (wc *writeCase) waitForSignature(ctx context.Context, a action.Approval, p WriteParams) (action.Approval, error) {
+func (wc *Service) waitForSignature(ctx context.Context, a action.Approval, p WriteParams) (action.Approval, error) {
 	if a.Status != action.ApprovalPending || p.Wait == 0 {
 		return a, nil
 	}

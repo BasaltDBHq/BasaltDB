@@ -27,14 +27,14 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 	if err != nil {
 		return Resource{}, &guidance.ArgumentError{Message: "invalid arguments: resource " + err.Error()}
 	}
-	rel, ok, err := ds.deps.Catalog.Find(ctx, schema, name)
+	rel, ok, err := ds.describe.Catalog.Find(ctx, schema, name)
 	if err != nil {
 		return Resource{}, err
 	}
 	if !ok {
 		return Resource{}, describeNotFound(resource)
 	}
-	d, err := ds.deps.Catalog.Describe(ctx, rel.OID)
+	d, err := ds.describe.Catalog.Describe(ctx, rel.OID)
 	if errors.Is(err, action.ErrNotFound) { // dropped since Find
 		return Resource{}, describeNotFound(resource)
 	}
@@ -45,17 +45,17 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 	for i, c := range d.Columns {
 		refs[i] = pii.ColumnRef{TableOID: d.OID, Attnum: c.Attnum}
 	}
-	classes, err := ds.deps.Classes.Resolve(ctx, refs)
+	classes, err := ds.describe.Classes.Resolve(ctx, refs)
 	if err != nil {
 		return Resource{}, err
 	}
-	pii, err := ds.deps.Classes.CatalogFingerprint(ctx)
+	pii, err := ds.describe.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Resource{}, err
 	}
 	detail := hideColumns(d, classes)
 	if slices.ContainsFunc(detail.Actions, func(a string) bool { return a != privSelect }) {
-		guarded, err := ds.deps.Catalog.Guarded(ctx, d.OID)
+		guarded, err := ds.describe.Catalog.Guarded(ctx, d.OID)
 		if err != nil {
 			return Resource{}, err
 		}

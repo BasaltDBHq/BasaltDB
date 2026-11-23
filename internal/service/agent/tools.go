@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
 
 	"github.com/google/uuid"
@@ -164,7 +166,7 @@ type columnDTO struct {
 	Type string `json:"type"`
 }
 
-func queryResultFromDomain(r QueryOutcome) queryResult {
+func queryResultFromDomain(r agentsvc.QueryOutcome) queryResult {
 	return queryResult{
 		ChangeID: r.ChangeID.String(), Columns: columnsDTO(r.Columns), Rows: r.Rows, RowCount: len(r.Rows),
 		DurationMs: r.Duration.Milliseconds(), Warnings: r.Warnings,
@@ -188,7 +190,7 @@ func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
-	res, err := h.svc.Query(ctx, QueryParams{SQL: args.SQL, Params: params, RunID: optionalID(args.RunID)})
+	res, err := h.svc.Query(ctx, agentsvc.QueryParams{SQL: args.SQL, Params: params, RunID: optionalID(args.RunID)})
 	if err != nil {
 		return nil, err
 	}

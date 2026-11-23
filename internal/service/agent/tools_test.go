@@ -250,13 +250,6 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 	require.Panics(t, func() { Tools(nil) })
 }
 
-func TestTruncateKeepsRunes(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "abc", truncate("abc", 5))
-	require.Equal(t, "ab", truncate("abé", 3), "never cut inside a rune")
-	require.Equal(t, "abé", truncate("abé", 4))
-}
-
 // An INTERNAL or UNAVAILABLE error carries a UUIDv7 errorId that the engine
 // logs with the error, so the person can find the log line.
 func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {

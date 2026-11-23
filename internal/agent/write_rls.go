@@ -12,13 +12,13 @@ import (
 // security hides from the agent, when the statement returned or changed no
 // row: an empty result there says nothing about the data. A check that fails
 // is logged and gives no warning: the call itself worked.
-func (wc *writeCase) rlsWarnings(ctx context.Context, tables []string, rows int) []toolresult.Warning {
+func (wc *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []toolresult.Warning {
 	if rows > 0 {
 		return nil
 	}
 	var out []toolresult.Warning
 	for _, table := range tables {
-		name, err := wc.deps.RLS.Hides(ctx, table)
+		name, err := wc.write.RLS.Hides(ctx, table)
 		if err != nil {
 			wc.core.Log.Error("check row-level security", "table", table, "err", err)
 			continue
@@ -36,7 +36,7 @@ func (wc *writeCase) rlsWarnings(ctx context.Context, tables []string, rows int)
 	return out
 }
 
-func (wc *writeCase) rlsWarning(dbName string) (toolresult.Warning, error) {
+func (wc *Service) rlsWarning(dbName string) (toolresult.Warning, error) {
 	table := guidance.Shown(dbName, guidance.MaxTableChars)
 	b := guidance.NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
 	b.AgentRunCommand(wc.core.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")

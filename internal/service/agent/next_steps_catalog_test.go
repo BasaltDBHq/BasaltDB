@@ -136,7 +136,7 @@ const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AA
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
 		n := linksvc.HeldAnswer{ApprovalNotice: caseNotice(caseShortLink), LongURL: caseShortLink, Pick: linksvc.HandOver{URL: caseShortLink, Kind: linksvc.LinkLong}}
-		return s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
+		return s.ApprovalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
 

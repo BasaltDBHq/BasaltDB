@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 )
 
@@ -397,7 +398,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	srv := pages.New(origin, slog.New(slog.DiscardHandler))
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
-	srv.MountPlugins(pages.NewPluginHandlers(srv))
+	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewSetupHandlers(origin, jobs, slog.New(slog.DiscardHandler).With("component", "setup")))
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: time.Second}
 	served := make(chan struct{})

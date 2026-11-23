@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -24,11 +23,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
-	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -143,104 +141,7 @@ func osRestart(log *slog.Logger) engine.BinaryRestart {
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io cli.Stdio) int {
-	return runMCPOn(ctx, args, io, osHost{}, appMCPHost{})
-}
-
-// runMCPOn is runMCP with the host that tells root and the config dir, and
-// m, what it reaches outside the CLI.
-func runMCPOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m mcpHost) int {
-	return runMCPAt(ctx, args, io, h, m, config.DefaultPath(runtime.GOOS))
-}
-
-// mcpHost is what basalt mcp reaches outside the CLI: its log, the
-// engine-down service and its MCP server, and the engine's autostart.
-type mcpHost interface {
-	// EngineLog is the log basalt mcp writes to w.
-	EngineLog(w io.Writer) *slog.Logger
-	// EngineDown is the engine-down service for the agent name of the
-	// engine whose config is at configPath.
-	EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error)
-	// EngineStarter starts the engine for socket when it does not answer;
-	// failure says why the last start failed.
-	EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string)
-	// NewEngineDownServer is down's tools, served as the agent's MCP server.
-	NewEngineDownServer(down agent.EngineDown) shim.Fallback
-}
-
-// appMCPHost is mcpHost through app.
-type appMCPHost struct{}
-
-func (appMCPHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
-
-func (appMCPHost) EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
-	return engineDown(name, configPath, log)
-}
-
-func (appMCPHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
-	return engineStarter(configPath, socket, cfg, euid, exe, log)
-}
-
-func (appMCPHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
-	return app.NewEngineDownServer(down)
-}
-
-// runMCPAt is runMCPOn with the system path of engine.json (tests give
-// their own). The config is found by itself ([Config discovery]); the socket
-// directory and, when the engine serves one agent, the agent come from it.
-func runMCPAt(ctx context.Context, args []string, io cli.Stdio, h cli.Machine, m mcpHost, system string) int {
-	fs := cli.NewFlagSet("mcp")
-	fs.SetOutput(io.Err)
-	name := fs.String("agent", "", "agent name (needed only when the engine serves more than one agent)")
-	if fs.Parse(args) != nil || fs.NArg() > 0 {
-		return cli.ExitUsage
-	}
-	cfgPath, err := cli.DiscoverConfig(h, system)
-	if err != nil {
-		return fail(io.Err, "mcp", err)
-	}
-	socketDir := config.DefaultSocketDir(runtime.GOOS)
-	var names []string
-	if cfg, err := config.Load(cfgPath); err == nil {
-		socketDir = cmp.Or(cfg.SocketDir, socketDir)
-		for _, a := range cfg.Agents {
-			names = append(names, a.Name)
-		}
-	} else {
-		// A service engine's config is the engine's own: the person can
-		// list its socket directory, not read the config.
-		names = engine.SocketAgents(socketDir)
-	}
-	if *name == "" {
-		if len(names) != 1 {
-			fail(io.Err, "mcp", fmt.Errorf("%w: --agent NAME is needed: the engine serves %s", cli.ErrUsage, cmp.Or(strings.Join(names, ", "), "no agent")))
-			return cli.ExitUsage
-		}
-		*name = names[0]
-	}
-	if !config.ValidAgentName(*name) {
-		fs.Usage()
-		return cli.ExitUsage
-	}
-	path := config.SocketPath(socketDir, *name)
-	log := m.EngineLog(io.Err)
-	down, err := m.EngineDown(engine.ShimAgent(*name, path), engine.EnginePath(cfgPath), log)
-	if err != nil {
-		return fail(io.Err, "mcp", err)
-	}
-	// Links to the engine's own local pages open in the browser on a
-	// person-operated engine; the engine says which in its hello answer.
-	// A plugin the agent asks for (request_plugin) is uploaded over a
-	// second connection to the agent's own socket.
-	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path), UploadAllowed: plugin.UploadAllowed}
-	if exe, err := cli.ShimExecutable(); err == nil {
-		var failure func() string
-		opts.Start, failure = m.EngineStarter(engine.EnginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
-		down.StartFailure = failure
-	}
-	if err := shim.ServeWith(ctx, path, m.NewEngineDownServer(down), io.In, io.Out, opts); err != nil {
-		return fail(io.Err, "mcp", err)
-	}
-	return cli.ExitOK
+	return enginecli.RunMCPOn(ctx, args, io, osHost{}, engineCLIHost{})
 }
 
 // engineDownServer is what basalt mcp answers while the engine is down.

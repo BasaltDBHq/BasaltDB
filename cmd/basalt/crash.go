@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
@@ -19,10 +24,26 @@ func runGuarded(ctx context.Context, args []string, std cli.Stdio) int {
 	return enginecli.Guarded(engineCLIHost{}, engineHost{}, engineTerminal{}, args, std, func() int { return run(ctx, args, std) })
 }
 
-// engineCLIHost is enginecli.Host for the command table.
+// engineCLIHost is enginecli.Host for the command table, through app.
 type engineCLIHost struct{}
 
 func (engineCLIHost) CommandName(args []string) string { return commandName(args) }
+
+func (engineCLIHost) Fail(w io.Writer, name string, err error) int { return fail(w, name, err) }
+
+func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
+
+func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
+	return engineDown(name, configPath, log)
+}
+
+func (engineCLIHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
+	return engineStarter(configPath, socket, cfg, euid, exe, log)
+}
+
+func (engineCLIHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
+	return app.NewEngineDownServer(down)
+}
 
 // commandName is the command a command line runs, for the report: only a
 // name from the command list, never an argument.

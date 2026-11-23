@@ -19,6 +19,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -99,7 +100,7 @@ func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h cli.Mac
 	began := time.Now()
 	go func() {
 		// argv is the printed command without the program and "mcp" subcommand.
-		exited <- runMCPOn(ctx, mcpCommand[2:], cli.Stdio{In: in, Out: outW, Err: &errBuf}, h, appMCPHost{})
+		exited <- enginecli.RunMCPOn(ctx, mcpCommand[2:], cli.Stdio{In: in, Out: outW, Err: &errBuf}, h, engineCLIHost{})
 		_ = outW.Close()
 	}()
 	_, err := fmt.Fprintf(inW, "%s\n%s\n",

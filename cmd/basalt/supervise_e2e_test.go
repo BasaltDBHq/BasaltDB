@@ -24,6 +24,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -172,7 +173,7 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	outR, outW := io.Pipe()
 	done := make(chan int, 1)
 	go func() {
-		done <- runMCPAt(context.Background(), []string{"--agent", "product_a"}, cli.Stdio{In: in, Out: outW, Err: &out}, osHost{}, appMCPHost{}, cfgPath)
+		done <- enginecli.RunMCPAt(context.Background(), []string{"--agent", "product_a"}, cli.Stdio{In: in, Out: outW, Err: &out}, osHost{}, engineCLIHost{}, cfgPath)
 		_ = outW.Close()
 	}()
 	_, err = fmt.Fprintf(inW, "%s\n%s\n",

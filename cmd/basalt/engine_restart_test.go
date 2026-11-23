@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 )
 
 func TestTheEngineRunsTheNewBinaryAfterItStopsForARestart(t *testing.T) {
@@ -19,7 +20,7 @@ func TestTheEngineRunsTheNewBinaryAfterItStopsForARestart(t *testing.T) {
 		runs++
 		require.NotNil(t, o.Upgrade, "the engine is told when to restart")
 		if runs == 1 {
-			return app.ErrRestart
+			return engine.ErrRestart
 		}
 		return errors.New("stopped")
 	}

@@ -3,7 +3,7 @@
 // (owner decision #2). A connection is served only when the peer's OS user
 // is the one configured for the agent; the agent's MCP client reaches the
 // socket through the stdio shim and never holds a database credential.
-package app
+package engine
 
 import (
 	"context"
@@ -75,7 +75,7 @@ type Engine struct {
 	drainFor time.Duration
 
 	restart Restart
-	gate    *callGate
+	gate    *CallGate
 }
 
 // refusedDrains is how many refused connections of one agent are drained
@@ -94,7 +94,7 @@ func New(log *slog.Logger, m MCP, agents []Agent) *Engine {
 			panic("engine: agent needs a name, a socket path and a server")
 		}
 	}
-	e := &Engine{log: log, mcp: m, agents: agents, peerUID: peercred.UID, gate: newCallGate(), drainFor: refuseDrain}
+	e := &Engine{log: log, mcp: m, agents: agents, peerUID: peercred.UID, gate: NewCallGate(), drainFor: refuseDrain}
 	return e.WithRefusedDrains(refusedDrains)
 }
 
@@ -187,9 +187,9 @@ func (e *Engine) Serve(ctx context.Context) error {
 	return ErrRestart
 }
 
-// withGate makes the engine share g with the other servers whose requests
+// WithGate makes the engine share g with the other servers whose requests
 // a restart waits for (the person socket, page sessions).
-func (e *Engine) withGate(g *callGate) *Engine {
+func (e *Engine) WithGate(g *CallGate) *Engine {
 	e.gate = g
 	return e
 }
@@ -290,7 +290,7 @@ func (e *Engine) serveConn(ctx, draining context.Context, a Agent, conn *net.Uni
 	// Closing the connection on shutdown unblocks the server's read.
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
-	gate := connGate{callGate: e.gate, conn: conn}
+	gate := connGate{CallGate: e.gate, conn: conn}
 	stopDrain := context.AfterFunc(draining, gate.stopReading)
 	defer stopDrain()
 	err = a.Server.ServeGated(ctx, conn, conn, gate)

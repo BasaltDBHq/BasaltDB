@@ -319,6 +319,17 @@ type RowSecurityQuestion struct {
 	Text string
 }
 
+// adminAt is where the admin connection conn points, for the setup's
+// target check.
+func adminAt(conn *pgx.Conn) setuprun.ConnConfig {
+	cfg := conn.Config()
+	at := setuprun.ConnConfig{Host: cfg.Host, Port: cfg.Port, Database: cfg.Database, User: cfg.User}
+	for _, fb := range cfg.Fallbacks {
+		at.Fallbacks = append(at.Fallbacks, setuprun.ConnHost{Host: fb.Host, Port: fb.Port})
+	}
+	return at
+}
+
 // Check applies Describe's checks, then the database's, in the contract's
 // order: the connection's database against the code's target
 // (TARGET_MISMATCH), PREFIX_MISMATCH, USED, SUPERSEDED, ROLE_EXISTS,
@@ -329,7 +340,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if err != nil {
 		return Checked{}, asError(err)
 	}
-	p, err := s.Prepare(ctx, conn)
+	p, err := s.Prepare(ctx, conn, adminAt(conn))
 	if err != nil {
 		return Checked{}, asError(err)
 	}
@@ -569,7 +580,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	if in.Passkey != nil && !in.Passkey.verified() {
 		return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
 	}
-	p, err := s.Prepare(ctx, conn)
+	p, err := s.Prepare(ctx, conn, adminAt(conn))
 	if err != nil {
 		return Result{}, asError(err)
 	}

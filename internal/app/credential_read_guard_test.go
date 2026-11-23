@@ -17,7 +17,8 @@ import (
 
 const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 
-// appImport is where cmd reaches credfiles' reader from: app forwards it.
+// appImport is this package: it forwards credfiles' reader, so a call through
+// it from another package is a read too.
 const appImport = "github.com/basaltdbhq/basaltdb/internal/app"
 
 // credentialReaders are the functions that read an agent's credential file:
@@ -52,8 +53,8 @@ type readerPkg struct {
 }
 
 // readerPkgs are the packages with credential readers, by import path. app
-// forwards credfiles' readers to cmd, which may not import an adapter: a
-// call through app is a read too.
+// forwards credfiles' reader, which only it may reach (it imports the
+// adapter): a call through app is a read too.
 var readerPkgs = map[string]readerPkg{
 	credfilesImport: {name: "credfiles", folder: "internal/setup/out/credfiles", readers: credfilesCredentialReaders},
 	appImport:       {name: "app", folder: "internal/app", readers: map[string]bool{"ReadKeptCredential": true}},
@@ -75,9 +76,9 @@ func folderReaders(folder string) map[string]bool {
 var uncheckedCredentialReads = map[string]string{
 	"internal/setup/out/credfiles/keptcred_unix.go:ReadKeptCredential:readOwnedCredential": "service install writes it back for the engine's user and never connects with it",
 	"internal/app/engine_commands.go:keptCredentialSpec:ReadKeptCredential":                "service install writes it back for the engine's user and never connects with it",
-	// app forwards credfiles.ReadKeptCredential to cmd, which may not import
-	// an adapter: a read site of its own, added with the move.
-	"internal/app/setupfiles.go:ReadKeptCredential:credfiles.ReadKeptCredential":          "a one-line forward for cmd; its one caller, keptCredentialSpec, is listed above",
+	// app forwards credfiles.ReadKeptCredential: a read site of its own, added
+	// with the move.
+	"internal/app/setupfiles.go:ReadKeptCredential:credfiles.ReadKeptCredential":          "a one-line forward; its one caller, keptCredentialSpec, is listed above",
 	"internal/setup/out/credfiles/keptcred_unix.go:readOwnCredential:readCredentialFile":  "only a file this process's user owns (ownedByThisUser): root's own as root",
 	"internal/setup/out/credfiles/keptcred_unix.go:readCredentialFile:readCredentialFrom": "its owner rule is its caller's, and its callers are listed here",
 	"internal/setup/out/credfiles/pathfiles.go:PathCredFiles.Read:readOwnCredential":      "init --remote not as root",
@@ -212,7 +213,7 @@ func credentialReadsIn(name string, f *ast.File, folder string) map[string]bool 
 // Root connects with the credential it reads, and pgx reads files for the
 // caller from some parameters, so every root read of a credential file
 // another user owns must pass pgdial.CheckForeignDSN. Every read of a
-// credential file in cmd and internal (the config package aside, which
+// credential file in cmd/basalt and internal (the config package aside, which
 // defines the readers) either is in a function that calls it, or is listed
 // in uncheckedCredentialReads with the reason root never connects with what
 // another user wrote there.

@@ -18,11 +18,13 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/lib/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/links/in/linkscli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setupcli"
@@ -170,7 +172,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 	action := args[0]
 	fs := cli.NewFlagSet("service " + action)
 	fs.SetOutput(io.Err)
-	user := fs.String("user", OSDefaultUser(runtime.GOOS), "OS user the engine runs as")
+	user := fs.String("user", osservice.DefaultUser(runtime.GOOS), "OS user the engine runs as")
 	binary := fs.String("binary", "", "absolute path of the basalt binary (default: this binary)")
 	dryRun := fs.Bool("dry-run", false, "print the steps without running them")
 	var a agentInstall
@@ -227,7 +229,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 	if err != nil {
 		return fail(io.Err, "service", err)
 	}
-	spec := OSSpec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: configPath, User: *user}
+	spec := servicespec.Spec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: configPath, User: *user}
 	// The unit's memory limits follow the installed config's
 	// pii.maxMemoryMB (the default when there is none yet), so running
 	// install again after raising it rewrites them.
@@ -252,7 +254,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 			// Hold the config lock from reading engine.json until the new
 			// one is in place, as every config writer does; the lock file
 			// goes to the engine's user (CONTRACT.md, Lock files).
-			held, err := config.LockConfigAs(configPath, OSLookupUID(*user))
+			held, err := config.LockConfigAs(configPath, osservice.LookupUID(*user))
 			if err != nil {
 				return fail(io.Err, "service", err)
 			}
@@ -271,18 +273,18 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 	} else if !errors.Is(err, os.ErrNotExist) {
 		_, _ = fmt.Fprintf(io.Err, "basalt: %s cannot be read, so plugin service units are left as they are\n", configPath)
 	}
-	sys := OSExecSystem{Stdout: io.Out, Stderr: io.Err}
+	sys := osservice.OSSystem{Stdout: io.Out, Stderr: io.Err}
 
-	steps, err := OSInstallPlan(ctx, sys, spec)
+	steps, err := osservice.InstallPlan(ctx, sys, spec)
 	if err != nil {
 		return fail(io.Err, "service", err)
 	}
-	if err := OSSettle(OSApply(ctx, sys, steps, *dryRun, io.Out), sys, runtime.GOOS); err != nil {
+	if err := osservice.Settle(osservice.Apply(ctx, sys, steps, *dryRun, io.Out), sys, runtime.GOOS); err != nil {
 		return fail(io.Err, "service", err)
 	}
 	// The install may have just made the engine's user.
 	if lock != nil {
-		if err := lock.HandTo(OSLookupUID(*user)); err != nil {
+		if err := lock.HandTo(osservice.LookupUID(*user)); err != nil {
 			return fail(io.Err, "service", fmt.Errorf("give %s.lock to %s: %w", configPath, *user, err))
 		}
 	}
@@ -292,7 +294,7 @@ func runServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath s
 // agentSpecFromStdin is basalt service install --agent: the agent and its
 // credential (one line on stdin, never an argument) go into the service's
 // own directories, owned by the engine's user.
-func agentSpecFromStdin(in io.Reader, spec OSSpec, a agentInstall, credStdin, dryRun bool) (OSSpec, error) {
+func agentSpecFromStdin(in io.Reader, spec servicespec.Spec, a agentInstall, credStdin, dryRun bool) (servicespec.Spec, error) {
 	switch {
 	case !config.ValidAgentName(a.name):
 		return spec, fmt.Errorf("agent name %q is not valid", a.name)
@@ -339,7 +341,7 @@ func agentSpecFromStdin(in io.Reader, spec OSSpec, a agentInstall, credStdin, dr
 // keptCredentialSpec is the install when the agent's role kept its password:
 // the existing credential file must exist. It is written back unchanged, so
 // it is owned by the engine's user even when the user changed.
-func keptCredentialSpec(spec OSSpec, a agentInstall, dryRun bool) (OSSpec, error) {
+func keptCredentialSpec(spec servicespec.Spec, a agentInstall, dryRun bool) (servicespec.Spec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
 	raw, err := ReadKeptCredential(SetupHost{}, cred, spec.User)
 	if err != nil && waitingForAddress(spec, a.name, cred) {
@@ -363,7 +365,7 @@ func keptCredentialSpec(spec OSSpec, a agentInstall, dryRun bool) (OSSpec, error
 // waitingForAddress reports whether the config gives agent name a pending
 // connect-only setup and no credential file exists at cred: the agent
 // waits for its database's address.
-func waitingForAddress(spec OSSpec, name, cred string) bool {
+func waitingForAddress(spec servicespec.Spec, name, cred string) bool {
 	cfg, err := cli.LoadEngineConfigAs(Shell{}, os.Geteuid(), spec.ConfigPath)
 	if err != nil {
 		return false

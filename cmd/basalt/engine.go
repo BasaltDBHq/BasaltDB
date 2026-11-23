@@ -606,13 +606,13 @@ func agentSpecFromStdin(in io.Reader, spec app.OSSpec, a agentInstall, credStdin
 // it is owned by the engine's user even when the user changed.
 func keptCredentialSpec(spec app.OSSpec, a agentInstall, dryRun bool) (app.OSSpec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
-	raw, err := readKeptCredential(cred, spec.User)
+	raw, err := readKeptCredential(appSetupHost{}, cred, spec.User)
 	if err != nil && waitingForAddress(spec, a.name, cred) {
 		// A connect-only setup waits for its address: no credential yet,
 		// and the engine writes it after the person's YES (CONTRACT.md,
 		// Connect-only setup codes), with the password in .secret, which
 		// must be the engine user's own for that.
-		if _, serr := readKeptCredential(config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
+		if _, serr := readKeptCredential(appSetupHost{}, config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
 			return spec, fmt.Errorf("agent %s waits for its database's address, but its .secret is not usable by the engine's user %s (%w); run basalt init --remote as that user", a.name, spec.User, serr)
 		}
 		a.keepCredential, a.waiting = true, true

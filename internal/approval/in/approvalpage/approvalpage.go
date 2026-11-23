@@ -9,29 +9,31 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // approvalPage serves the approval page's API on the server's agents.
-type approvalPage struct{ s *pages.Server }
+type approvalPage struct{ s *pageserver.Server }
 
 // NewApprovalHandlers are the approval routes' handlers on s's agents, for
 // s.MountApprovals.
-func NewApprovalHandlers(s *pages.Server) pages.ApprovalHandlers {
+func NewApprovalHandlers(s *pageserver.Server) pageserver.ApprovalHandlers {
 	p := approvalPage{s: s}
-	return pages.ApprovalHandlers{Get: p.getApproval, Approve: p.postApproval, Reveal: p.postApprovalReveal}
+	return pageserver.ApprovalHandlers{Get: p.getApproval, Approve: p.postApproval, Reveal: p.postApprovalReveal}
 }
 
 func (p approvalPage) getApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, pages.ApprovalParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.ApprovalParam)
 	if !ok {
 		return
 	}
-	req, err := pages.Find(r.Context(), p.s, func(ctx context.Context, a pages.Agent) (approval.Request, error) { return a.ApprovalRequest(ctx, id) })
+	req, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (approval.Request, error) {
+		return a.ApprovalRequest(ctx, id)
+	})
 	if err != nil {
 		p.s.Fail(w, err)
 		return
@@ -40,7 +42,7 @@ func (p approvalPage) getApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p approvalPage) postApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, pages.ApprovalParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.ApprovalParam)
 	if !ok {
 		return
 	}
@@ -53,7 +55,9 @@ func (p approvalPage) postApproval(w http.ResponseWriter, r *http.Request) {
 		p.s.Fail(w, &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
 		return
 	}
-	receipt, err := pages.Find(r.Context(), p.s, func(ctx context.Context, a pages.Agent) (agent.Receipt, error) { return a.RelayApproval(ctx, resp) })
+	receipt, err := pageserver.Find(r.Context(), p.s, func(ctx context.Context, a pageserver.Agent) (agent.Receipt, error) {
+		return a.RelayApproval(ctx, resp)
+	})
 	if err != nil {
 		p.s.Fail(w, err)
 		return
@@ -73,7 +77,7 @@ type approvedDTO struct {
 // postApprovalReveal shows the person the values of the approval's
 // redacted lines (Server.Reveal).
 func (p approvalPage) postApprovalReveal(w http.ResponseWriter, r *http.Request) {
-	p.s.Reveal(w, r, pages.ApprovalParam, func(ctx context.Context, a pages.Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+	p.s.Reveal(w, r, pageserver.ApprovalParam, func(ctx context.Context, a pageserver.Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
 		return a.RevealApproval(ctx, id, secret, in)
 	})
 }

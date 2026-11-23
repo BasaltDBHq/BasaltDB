@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // unlabeled is the passkey as the setup page sends it: the browser's
@@ -48,15 +49,15 @@ func TestTheSetupPageInstallsWithAnUnlabeledPasskey(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	var logs bytes.Buffer
-	h := pages.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
+	h := setuppage.SetupOnlyHandler(origin, f.svc, slog.New(slog.NewTextHandler(&logs, nil)))
 
 	var checked localsetup.CheckAnswer
-	require.Equal(t, http.StatusOK, post(t, h, pages.SetupCheckPath, f.request(), &checked))
+	require.Equal(t, http.StatusOK, post(t, h, pageserver.SetupCheckPath, f.request(), &checked))
 	require.True(t, checked.PasskeyNeeded)
 	req := f.request()
 	req.Challenge, req.Passkey = checked.Challenge, unlabeled(t, *checked.Challenge)
 	var done localsetup.RunAnswer
-	code := post(t, h, pages.SetupRunPath, req, &done)
+	code := post(t, h, pageserver.SetupRunPath, req, &done)
 	require.Equal(t, http.StatusOK, code, logs.String())
 	require.Len(t, done.Passkeys, 1)
 	require.NotEmpty(t, done.Passkeys[0].Label, "the engine names the passkey")

@@ -1,4 +1,4 @@
-package pages_test
+package pageserver_test
 
 import (
 	"context"
@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -26,7 +25,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
@@ -110,7 +113,7 @@ type site struct {
 // testAgent is an agent the test pages serve, told the pages' secrets and
 // origin once they are known.
 type testAgent interface {
-	pages.Agent
+	pageserver.Agent
 	wire(secrets *links.Secrets, origin string)
 }
 
@@ -129,12 +132,12 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 
 // newMounted is the pages for origin with every page's handlers mounted,
 // as app mounts them: the setup routes of an engine with no setup jobs.
-func newMounted(origin string, log *slog.Logger) *pages.Server {
-	p := pages.New(origin, log)
+func newMounted(origin string, log *slog.Logger) *pageserver.Server {
+	p := pageserver.New(origin, log)
 	p.MountApprovals(approvalpage.NewApprovalHandlers(p))
-	p.MountReverts(pages.NewRevertHandlers(p))
-	p.MountPlugins(pages.NewPluginHandlers(p))
-	p.MountSetup(pages.NewConfiguredSetupHandlers(origin))
+	p.MountReverts(revertpage.NewRevertHandlers(p))
+	p.MountPlugins(pluginpage.NewPluginHandlers(p))
+	p.MountSetup(setuppage.NewConfiguredSetupHandlers(origin))
 	return p
 }
 
@@ -320,7 +323,7 @@ func TestPagesUnknownLinkCarriesThePersonsMessageAndSteps(t *testing.T) {
 // paths the local pages server serves, to the same files.
 func TestRedirectsMatchRoutes(t *testing.T) {
 	t.Parallel()
-	b, err := os.ReadFile("../../../../web/_redirects")
+	b, err := os.ReadFile("../../../web/_redirects")
 	require.NoError(t, err)
 	got := map[string]string{}
 	for _, line := range strings.Split(string(b), "\n") {
@@ -341,7 +344,7 @@ func TestRedirectsMatchRoutes(t *testing.T) {
 			src += "*"
 		}
 		want[src] = "/" + strings.TrimSuffix(r.File, "index.html")
-		_, err := os.Stat("../../../../web/" + r.File)
+		_, err := os.Stat("../../../web/" + r.File)
 		require.NoError(t, err)
 	}
 	require.Equal(t, want, got)

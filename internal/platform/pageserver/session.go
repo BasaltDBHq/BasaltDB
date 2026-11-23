@@ -1,4 +1,4 @@
-package pages
+package pageserver
 
 import (
 	"bytes"
@@ -143,7 +143,7 @@ func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link S
 	}
 	for name, value := range req.Headers {
 		if _, ok := sessionHeaders[name]; !ok || len(value) > maxSessionHeader {
-			writeError(w, http.StatusBadRequest, guidance.CodeInvalidArgument,
+			WriteError(w, http.StatusBadRequest, guidance.CodeInvalidArgument,
 				"a request may carry only the basalt-link-secret, origin and content-type headers")
 			return
 		}
@@ -154,11 +154,11 @@ func (s *Server) serveSession(ctx context.Context, w http.ResponseWriter, link S
 		return
 	}
 	if req.Headers["origin"] != s.origin {
-		writeError(w, http.StatusForbidden, guidance.CodePermissionDenied, "the request does not come from the approval page")
+		WriteError(w, http.StatusForbidden, guidance.CodePermissionDenied, "the request does not come from the approval page")
 		return
 	}
 	if len(req.Body) > maxBody {
-		writeError(w, http.StatusRequestEntityTooLarge, guidance.CodeInvalidArgument, "the body is too large")
+		WriteError(w, http.StatusRequestEntityTooLarge, guidance.CodeInvalidArgument, "the body is too large")
 		return
 	}
 	r, err := http.NewRequestWithContext(ctx, req.Method, req.Path, bytes.NewReader(req.Body))

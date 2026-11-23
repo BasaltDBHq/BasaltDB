@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
@@ -29,7 +28,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
+	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // pageOrigin is the origin the test pages claim, as the engine's config
@@ -45,11 +48,11 @@ type localPages struct {
 
 func newLocalPages(t *testing.T, env agentEnv) localPages {
 	t.Helper()
-	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler))
+	site := pageserver.New(pageOrigin, slog.New(slog.DiscardHandler))
 	site.MountApprovals(approvalpage.NewApprovalHandlers(site))
-	site.MountReverts(pages.NewRevertHandlers(site))
-	site.MountPlugins(pages.NewPluginHandlers(site))
-	site.MountSetup(pages.NewConfiguredSetupHandlers(pageOrigin))
+	site.MountReverts(revertpage.NewRevertHandlers(site))
+	site.MountPlugins(pluginpage.NewPluginHandlers(site))
+	site.MountSetup(setuppage.NewConfiguredSetupHandlers(pageOrigin))
 	site.Add(env.svc)
 	srv := httptest.NewServer(site.Handler())
 	t.Cleanup(srv.Close)

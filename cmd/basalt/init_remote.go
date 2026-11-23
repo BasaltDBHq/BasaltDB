@@ -290,6 +290,7 @@ type remoteInit struct {
 // guard's versions, records and agent connection string, the engine's
 // keys, and the trust profiles next to the config.
 type remoteHost interface {
+	setupFilesHost
 	// GuardAgentConnString is adminURL with the agent's role and password.
 	GuardAgentConnString(adminURL, role, password string) (string, error)
 	// GuardAgentVersion is the guard version q's database has, 0 when none.
@@ -304,6 +305,35 @@ type remoteHost interface {
 	// TrustProfileFor is the profile in the trust.d next to the config at
 	// configPath that names host, or nil.
 	TrustProfileFor(configPath, host string) *trustprofile.Profile
+}
+
+// setupFilesHost is how setup reaches the files root reads and writes for
+// the engine's user: directories and files opened from / without following
+// a link anyone but root or their owner controls, and OS user ids.
+type setupFilesHost interface {
+	// OSOpenTrustedDir opens dir for root, refusing a directory on the way
+	// that someone other than root or owner could swap; create makes it
+	// when missing.
+	OSOpenTrustedDir(dir string, owner int, create bool) (trustedDir, error)
+	// OSOpenTrustedFile opens path read-only for root: its directory as
+	// OSOpenTrustedDir does, the file itself never through a symlink.
+	OSOpenTrustedFile(path string, owner int) (*os.File, error)
+	// OSLookupUID is the uid of the OS user name, or -1 when there is no
+	// such user.
+	OSLookupUID(name string) int
+}
+
+// trustedDir is a directory opened by OSOpenTrustedDir: files in it are
+// reached relative to its descriptor, never by path.
+type trustedDir interface {
+	config.Dir
+	// CreateFile makes name with data, owned by owner (< 0: this process),
+	// refusing one that exists.
+	CreateFile(name string, data []byte, mode os.FileMode, owner int) error
+	// Remove removes name from the directory.
+	Remove(name string) error
+	// Close closes the directory's descriptor.
+	Close() error
 }
 
 func newRemoteInit(c *cliIO, h remoteHost, f remoteFlags) (*remoteInit, error) {
@@ -449,12 +479,12 @@ func (r *remoteInit) paths() error {
 				"The engine runs as uid %d and records you as its person; restart its service after this run\n",
 				dir, trusted, r.settings.PersonUIDs[0], config.ModeService, trusted)
 		}
-		files, err := openRootCredFiles(filepath.Dir(r.credFile), trusted)
+		files, err := openRootCredFiles(r.setup, filepath.Dir(r.credFile), trusted)
 		if err != nil {
 			return err
 		}
 		r.files = files
-		if r.configDir, err = openRootConfigDir(dir, trusted); err != nil {
+		if r.configDir, err = openRootConfigDir(r.setup, dir, trusted); err != nil {
 			files.close()
 			return err
 		}
@@ -1299,7 +1329,7 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 	if r.c.host.Euid() == 0 {
 		// As root, through the state directory opened without following a
 		// link the engine's user controls; a new key file is that user's.
-		spki, err := rootEngineKey(r.stateDir, r.c.goos, r.configDir, r.c.now)
+		spki, err := rootEngineKey(r.setup, r.stateDir, r.c.goos, r.configDir, r.c.now)
 		if err != nil {
 			return nil, keyRefused(err)
 		}

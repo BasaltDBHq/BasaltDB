@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -31,6 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
@@ -183,13 +183,13 @@ func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSe
 
 // serveOverVault connects an engine whose pages serve a to a fake Vault
 // that records into w, and issues and registers a relay link for item id.
-func serveOverVault(t *testing.T, w *wire, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+func serveOverVault(t *testing.T, w *wire, a pageserver.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
 	t.Helper()
 	return serveOverVaultWith(t, w, vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe}, a, store, id)
 }
 
 // serveOverVaultWith is serveOverVault with the fake Vault's options.
-func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pageserver.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
 	t.Helper()
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)

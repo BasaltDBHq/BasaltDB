@@ -118,7 +118,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 		return spec, nil
 	}
 	// Root reads the existing config from the engine user's directory.
-	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
+	open := func(p string) (*os.File, error) { return openEngineFile(appSetupHost{}, p, engineUser) }
 	raw, v, err := config.UpsertedVault(configPath, open,
 		config.Settings{
 			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,
@@ -158,8 +158,9 @@ const (
 )
 
 // dialogScript is the first install's fixed script for the running
-// binary, with every link resolved and checked as root would run it.
-func dialogScript(c *cliIO) (bin, script string, err error) {
+// binary, with every link resolved and checked as root would run it. The
+// script comes from h.
+func dialogScript(c *cliIO, h localHost) (bin, script string, err error) {
 	bin, err = c.host.ResolvedExecutable()
 	if err != nil {
 		return "", "", fmt.Errorf("the engine service runs this basalt binary by its own path, and its links do not resolve: %w", err)
@@ -167,7 +168,7 @@ func dialogScript(c *cliIO) (bin, script string, err error) {
 	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
 		return "", "", err
 	}
-	script, err = app.OSInstallScript(c.goos, bin)
+	script, err = h.OSInstallScript(c.goos, bin)
 	return bin, script, err
 }
 

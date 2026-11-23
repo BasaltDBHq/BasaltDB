@@ -1,4 +1,7 @@
-package pages
+// Package pluginpage serves the plugin approval page's API (CONTRACT.md,
+// Local pages): the request and the signed approval, on the page server's
+// agents. app mounts its handlers on the page server.
+package pluginpage
 
 import (
 	"context"
@@ -8,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -16,13 +20,13 @@ import (
 // relay decides nothing: submit_plugin_approval verifies the signature.
 
 // pluginPage serves the plugin approval page's API on the server's agents.
-type pluginPage struct{ s *Server }
+type pluginPage struct{ s *pageserver.Server }
 
 // NewPluginHandlers are the plugin approval routes' handlers on s's
 // agents, for s.MountPlugins.
-func NewPluginHandlers(s *Server) PluginHandlers {
+func NewPluginHandlers(s *pageserver.Server) pageserver.PluginHandlers {
 	p := pluginPage{s: s}
-	return PluginHandlers{Get: p.getPlugin, Approve: p.postPlugin}
+	return pageserver.PluginHandlers{Get: p.getPlugin, Approve: p.postPlugin}
 }
 
 // pluginApprovedDTO is the relay's answer for a plugin approval: no
@@ -35,9 +39,9 @@ type pluginApprovedDTO struct {
 
 // asPlugins asks an agent's plugin approvals; an agent that serves none
 // answers as one that does not know the id.
-func asPlugins[T any](ask func(context.Context, PluginApprovals) (T, error)) func(context.Context, Agent) (T, error) {
-	return func(ctx context.Context, a Agent) (T, error) {
-		p, ok := a.(PluginApprovals)
+func asPlugins[T any](ask func(context.Context, pageserver.PluginApprovals) (T, error)) func(context.Context, pageserver.Agent) (T, error) {
+	return func(ctx context.Context, a pageserver.Agent) (T, error) {
+		p, ok := a.(pageserver.PluginApprovals)
 		if !ok {
 			var zero T
 			return zero, agent.ErrNotThisAgent
@@ -47,11 +51,11 @@ func asPlugins[T any](ask func(context.Context, PluginApprovals) (T, error)) fun
 }
 
 func (p pluginPage) getPlugin(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, ApprovalParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.ApprovalParam)
 	if !ok {
 		return
 	}
-	req, err := Find(r.Context(), p.s, asPlugins(func(ctx context.Context, pa PluginApprovals) (approval.PluginRequest, error) {
+	req, err := pageserver.Find(r.Context(), p.s, asPlugins(func(ctx context.Context, pa pageserver.PluginApprovals) (approval.PluginRequest, error) {
 		return pa.PluginApprovalRequest(ctx, id)
 	}))
 	if err != nil {
@@ -62,7 +66,7 @@ func (p pluginPage) getPlugin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p pluginPage) postPlugin(w http.ResponseWriter, r *http.Request) {
-	id, ok := p.s.LinkedID(w, r, ApprovalParam)
+	id, ok := p.s.LinkedID(w, r, pageserver.ApprovalParam)
 	if !ok {
 		return
 	}
@@ -75,7 +79,7 @@ func (p pluginPage) postPlugin(w http.ResponseWriter, r *http.Request) {
 		p.s.Fail(w, &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
 		return
 	}
-	at, err := Find(r.Context(), p.s, asPlugins(func(ctx context.Context, pa PluginApprovals) (time.Time, error) {
+	at, err := pageserver.Find(r.Context(), p.s, asPlugins(func(ctx context.Context, pa pageserver.PluginApprovals) (time.Time, error) {
 		return pa.RelayPluginApproval(ctx, resp)
 	}))
 	if err != nil {

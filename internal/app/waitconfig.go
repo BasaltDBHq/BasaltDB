@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/platform/httpserver"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // WaitOptions are where and how an engine with no config serves its setup
@@ -58,7 +58,7 @@ func WaitForConfig(ctx context.Context, o WaitOptions) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	ln, h, err := httpserver.Listen(httpserver.Options{}, "setup page", addr, pages.SetupOnlyHandler(o.Origin, jobs, log.With("component", "setup")))
+	ln, h, err := httpserver.Listen(httpserver.Options{}, "setup page", addr, setuppage.SetupOnlyHandler(o.Origin, jobs, log.With("component", "setup")))
 	if err != nil {
 		return nil, setupPortError(addr, err)
 	}

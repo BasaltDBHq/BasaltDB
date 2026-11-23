@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
+	"github.com/basaltdbhq/basaltdb/internal/engine/out/binwatch"
 )
 
 func script(t *testing.T, dir, name, body string) string {

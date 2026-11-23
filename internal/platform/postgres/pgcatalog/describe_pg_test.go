@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 )
 

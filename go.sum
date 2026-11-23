@@ -4,8 +4,8 @@ github.com/FastFilter/xorfilter v0.5.1 h1:UjtPttI1SnKWUmeQKu8Y+4ZvMJv7KP6/NZTsGB
 github.com/FastFilter/xorfilter v0.5.1/go.mod h1:h+9l02/leuyyhepO30BKr25MkZdy7LHcfPRBDRuflXw=
 github.com/Masterminds/squirrel v1.5.4 h1:uUcX/aBc8O7Fg9kaISIUsHXdKuqehiXAMQTYX8afzqM=
 github.com/Masterminds/squirrel v1.5.4/go.mod h1:NNaOrjSoIDfDA40n7sr2tPNZRfjzjA400rg+riTZj10=
-github.com/basaltdbhq/basalt-plugin-go v0.1.0-alpha h1:1rCsDxN9Qrpi/jRD0DPCXlocAivhlOoquxNDBcrx2hg=
-github.com/basaltdbhq/basalt-plugin-go v0.1.0-alpha/go.mod h1:ALmw3+qUSQLo2uGt8K/CNw+mvoziWW6cFVEPcQI6WvA=
+github.com/basaltdbhq/basalt-plugin-go v0.1.0-alpha.1 h1:IAIGczruwINPext2jz7nH5Pflos+PJstuFZqiqVuV3A=
+github.com/basaltdbhq/basalt-plugin-go v0.1.0-alpha.1/go.mod h1:ALmw3+qUSQLo2uGt8K/CNw+mvoziWW6cFVEPcQI6WvA=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=

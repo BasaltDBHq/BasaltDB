@@ -181,7 +181,7 @@ func (s *starter) start(ctx context.Context) error {
 	}
 	// A supervisor may hold its lock before its child takes the engine
 	// lock (it is starting, or waiting to restart). Do not launch another.
-	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, superviseLock))
+	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, engine.SuperviseLock))
 	if err != nil {
 		return s.record(err)
 	}
@@ -201,7 +201,7 @@ func (s *starter) start(ctx context.Context) error {
 		return s.record(fmt.Errorf("open the engine log: %w", err))
 	}
 	defer logFile.Close()
-	if err := s.deps.launch(s.exe, []string{"engine", "--supervise", "--config", s.configPath, "--started-by", startedByMCP}, logFile); err != nil {
+	if err := s.deps.launch(s.exe, []string{"engine", "--supervise", "--config", s.configPath, "--started-by", engine.StartedByMCP}, logFile); err != nil {
 		return s.record(fmt.Errorf("start %s: %w", s.exe, err))
 	}
 	return s.waitSocket(ctx)

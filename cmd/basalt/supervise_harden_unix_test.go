@@ -147,7 +147,7 @@ func TestSuperviseStopsWhenStartedFromPathIsGone(t *testing.T) {
 		}
 	})
 	require.Eventually(t, func() bool {
-		held, err := lockHeld(filepath.Join(socketDir, superviseLock))
+		held, err := lockHeld(filepath.Join(socketDir, engine.SuperviseLock))
 		return err == nil && held
 	}, 5*time.Second, 20*time.Millisecond)
 	if pid, up, _ := pidlock.Running(engine.LockPath(socketDir)); up {
@@ -161,7 +161,7 @@ func TestSuperviseStopsWhenStartedFromPathIsGone(t *testing.T) {
 	}, 8*time.Second, 50*time.Millisecond)
 	err = cmd.Wait()
 	require.Error(t, err, "the supervisor exits 1 when the binary is gone")
-	held, err := lockHeld(filepath.Join(socketDir, superviseLock))
+	held, err := lockHeld(filepath.Join(socketDir, engine.SuperviseLock))
 	require.NoError(t, err)
 	require.False(t, held, "the next basalt mcp call can start a fresh supervisor")
 }

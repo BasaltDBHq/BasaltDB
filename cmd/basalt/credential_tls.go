@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -147,8 +148,8 @@ func proves(c tlsCandidate, err error) bool {
 	if c.binding {
 		return pg.Code == sqlstateInvalidPassword
 	}
-	return c.mode == sslVerifyFull && (strings.HasPrefix(pg.Code, sqlstateClassAuth) ||
-		(pg.Code == sqlstateInternal && strings.Contains(pg.Message, supavisorNoTenant)))
+	return c.mode == sslVerifyFull && (strings.HasPrefix(pg.Code, setup.SQLStateClassAuth) ||
+		(pg.Code == setup.SQLStateInternal && strings.Contains(pg.Message, setup.SupavisorNoTenant)))
 }
 
 // unreachable is a probe that reached no server: every address pgx tried
@@ -208,7 +209,7 @@ func (p protection) line() string {
 // it got (hardenedCredential).
 func probeLogin(c *cli.IO) func(context.Context, string) error {
 	return func(ctx context.Context, dsn string) error {
-		ctx, cancel := context.WithTimeout(ctx, loginTimeout)
+		ctx, cancel := context.WithTimeout(ctx, setup.LoginTimeout)
 		defer cancel()
 		conn, err := c.Dial(ctx, dsn)
 		if err != nil {

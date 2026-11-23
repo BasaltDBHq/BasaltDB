@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -28,22 +29,22 @@ type superviseRig struct {
 	childEnds []func(ctx context.Context, r *superviseRig) error
 }
 
-func (r *superviseRig) options() superviseOptions {
-	return superviseOptions{
-		firstStartedBy: startedByMCP,
-		start: func(ctx context.Context, by string) (func() error, error) {
+func (r *superviseRig) options() engine.SuperviseOptions {
+	return engine.SuperviseOptions{
+		FirstStartedBy: engine.StartedByMCP,
+		Start: func(ctx context.Context, by string) (func() error, error) {
 			i := len(r.starts)
 			r.starts = append(r.starts, by)
 			return func() error { return r.childEnds[min(i, len(r.childEnds)-1)](ctx, r) }, nil
 		},
-		sleep: func(ctx context.Context, d time.Duration) bool {
+		Sleep: func(ctx context.Context, d time.Duration) bool {
 			r.sleeps = append(r.sleeps, d)
 			r.clock = r.clock.Add(d)
 			return ctx.Err() == nil
 		},
-		now:      func() time.Time { return r.clock },
-		log:      slog.New(slog.DiscardHandler),
-		lastStop: func(reason string) { r.stops = append(r.stops, reason) },
+		Now:      func() time.Time { return r.clock },
+		Log:      slog.New(slog.DiscardHandler),
+		LastStop: func(reason string) { r.stops = append(r.stops, reason) },
 	}
 }
 
@@ -64,7 +65,7 @@ func TestSuperviseRestartsAfterCrash(t *testing.T) {
 	}
 	opts := r.options()
 
-	require.NoError(t, supervise(ctx, opts))
+	require.NoError(t, engine.Supervise(ctx, opts))
 
 	require.Equal(t, []string{"mcp", "crash"}, r.starts)
 	require.Equal(t, []time.Duration{time.Second}, r.sleeps)
@@ -76,7 +77,7 @@ func TestSuperviseGivesUpAfterFastCrashes(t *testing.T) {
 	r := &superviseRig{clock: time.Unix(1000, 0)}
 	r.childEnds = []func(context.Context, *superviseRig) error{failsAfter(time.Second)}
 
-	err := supervise(context.Background(), r.options())
+	err := engine.Supervise(context.Background(), r.options())
 
 	require.ErrorContains(t, err, "crashed 5 times within 10s")
 	require.Len(t, r.starts, 5)
@@ -97,7 +98,7 @@ func TestSuperviseLongRunResetsTheCrashCount(t *testing.T) {
 		func(context.Context, *superviseRig) error { return nil },
 	}
 
-	require.NoError(t, supervise(context.Background(), r.options()))
+	require.NoError(t, engine.Supervise(context.Background(), r.options()))
 
 	require.Len(t, r.starts, 10)
 	require.Empty(t, r.stops)
@@ -118,7 +119,7 @@ func TestSuperviseCleanExitStops(t *testing.T) {
 	r := &superviseRig{clock: time.Unix(1000, 0)}
 	r.childEnds = []func(context.Context, *superviseRig) error{func(context.Context, *superviseRig) error { return nil }}
 
-	require.NoError(t, supervise(context.Background(), r.options()))
+	require.NoError(t, engine.Supervise(context.Background(), r.options()))
 
 	require.Equal(t, []string{"mcp"}, r.starts)
 	require.Empty(t, r.sleeps)
@@ -127,9 +128,9 @@ func TestSuperviseCleanExitStops(t *testing.T) {
 func TestSuperviseAnotherEngineStopsWithoutCrashLooping(t *testing.T) {
 	t.Parallel()
 	r := &superviseRig{clock: time.Unix(1000, 0)}
-	r.childEnds = []func(context.Context, *superviseRig) error{func(context.Context, *superviseRig) error { return errAnotherEngine }}
+	r.childEnds = []func(context.Context, *superviseRig) error{func(context.Context, *superviseRig) error { return engine.ErrAnotherEngine }}
 
-	require.NoError(t, supervise(context.Background(), r.options()))
+	require.NoError(t, engine.Supervise(context.Background(), r.options()))
 
 	require.Len(t, r.starts, 1)
 	require.Empty(t, r.stops, "another engine running is not a crash")
@@ -148,7 +149,7 @@ func TestSuperviseStopSignalStopsChild(t *testing.T) {
 		return errors.New("signal: terminated")
 	}}
 	done := make(chan error, 1)
-	go func() { done <- supervise(ctx, r.options()) }()
+	go func() { done <- engine.Supervise(ctx, r.options()) }()
 	<-running
 	cancel()
 
@@ -169,7 +170,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 		`"agents":[{"name":"bot","osUser":"someone","store":{"kind":"POSTGRES","credentialFile":"` + filepath.Join(dir, "bot.url") + `"}}]}`
 	require.NoError(t, config.WriteFile(cfgPath, []byte(raw)))
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "run"), 0o700))
-	release, err := config.LockFile(filepath.Join(dir, "run", superviseLock))
+	release, err := config.LockFile(filepath.Join(dir, "run", engine.SuperviseLock))
 	require.NoError(t, err)
 	defer release()
 	var stderr bytes.Buffer
@@ -195,13 +196,13 @@ func TestLastStopIsWrittenAndCleared(t *testing.T) {
 	cfg := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(cfg, []byte("cfg-v1\n"), 0o600))
 	writeLastStop(dir, "the engine crashed 5 times within 10s", cfg, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
-	raw, err := os.ReadFile(filepath.Join(dir, lastStopFile))
+	raw, err := os.ReadFile(filepath.Join(dir, engine.LastStopFile))
 	require.NoError(t, err)
 	want := `{"reason":"the engine crashed 5 times within 10s","at":"2026-11-20T01:02:03Z","engineSha256":"` + laststop.HashEngineJSON(cfg) + `"}`
 	require.JSONEq(t, want, string(raw))
 
 	clearLastStop(dir, log)
-	_, err = os.Stat(filepath.Join(dir, lastStopFile))
+	_, err = os.Stat(filepath.Join(dir, engine.LastStopFile))
 	require.ErrorIs(t, err, os.ErrNotExist)
 	clearLastStop(dir, log) // nothing to remove: no error
 }
@@ -224,19 +225,19 @@ func TestSuperviseGivesUpWhenBinaryIsGone(t *testing.T) {
 	t.Parallel()
 	var stops []string
 	var starts int
-	err := supervise(context.Background(), superviseOptions{
-		firstStartedBy: startedByMCP,
-		start: func(context.Context, string) (func() error, error) {
+	err := engine.Supervise(context.Background(), engine.SuperviseOptions{
+		FirstStartedBy: engine.StartedByMCP,
+		Start: func(context.Context, string) (func() error, error) {
 			starts++
-			return nil, &binaryGoneError{path: "/workspace/basalt/bin/basalt"}
+			return nil, &engine.BinaryGoneError{Path: "/workspace/basalt/bin/basalt"}
 		},
-		sleep: func(context.Context, time.Duration) bool {
+		Sleep: func(context.Context, time.Duration) bool {
 			t.Fatal("a missing binary must not be retried")
 			return false
 		},
-		now:      time.Now,
-		log:      slog.New(slog.DiscardHandler),
-		lastStop: func(reason string) { stops = append(stops, reason) },
+		Now:      time.Now,
+		Log:      slog.New(slog.DiscardHandler),
+		LastStop: func(reason string) { stops = append(stops, reason) },
 	})
 
 	require.ErrorContains(t, err, "the basalt binary /workspace/basalt/bin/basalt is gone")
@@ -251,16 +252,16 @@ func TestSuperviseGivesUpWhenBinaryIsGoneOnRestart(t *testing.T) {
 	r := &superviseRig{clock: time.Unix(1000, 0)}
 	var starts int
 	opts := r.options()
-	opts.start = func(ctx context.Context, by string) (func() error, error) {
+	opts.Start = func(ctx context.Context, by string) (func() error, error) {
 		starts++
 		r.starts = append(r.starts, by)
 		if starts == 1 {
 			return func() error { r.clock = r.clock.Add(time.Second); return errors.New("exit status 2") }, nil
 		}
-		return nil, &binaryGoneError{path: "/opt/basalt"}
+		return nil, &engine.BinaryGoneError{Path: "/opt/basalt"}
 	}
 
-	err := supervise(context.Background(), opts)
+	err := engine.Supervise(context.Background(), opts)
 
 	require.ErrorContains(t, err, "the basalt binary /opt/basalt is gone")
 	require.Equal(t, []string{"mcp", "crash"}, r.starts)
@@ -272,9 +273,9 @@ func TestResolveSuperviseBinary(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "basalt")
 	_, err := resolveSuperviseBinary(path)
-	var gone *binaryGoneError
+	var gone *engine.BinaryGoneError
 	require.ErrorAs(t, err, &gone)
-	require.Equal(t, path, gone.path)
+	require.Equal(t, path, gone.Path)
 	require.Equal(t, "the basalt binary "+path+" is gone", gone.Error())
 
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o755))
@@ -290,12 +291,12 @@ func TestChildStarterResolvesThePathAtEachRestart(t *testing.T) {
 	writeSh(t, bin, "echo first >> '"+trace+"'; exit 1")
 	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 
-	wait, err := start(context.Background(), startedByMCP)
+	wait, err := start(context.Background(), engine.StartedByMCP)
 	require.NoError(t, err)
 	require.Error(t, wait())
 
 	writeSh(t, bin, "echo second >> '"+trace+"'; exit 0")
-	wait, err = start(context.Background(), startedByCrash)
+	wait, err = start(context.Background(), engine.StartedByCrash)
 	require.NoError(t, err)
 	require.NoError(t, wait())
 
@@ -309,15 +310,15 @@ func TestChildStarterStopsWhenThePathIsGone(t *testing.T) {
 	bin := filepath.Join(dir, "basalt")
 	writeSh(t, bin, "exit 1")
 	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
-	wait, err := start(context.Background(), startedByMCP)
+	wait, err := start(context.Background(), engine.StartedByMCP)
 	require.NoError(t, err)
 	require.Error(t, wait())
 	require.NoError(t, os.Remove(bin))
 
-	_, err = start(context.Background(), startedByCrash)
-	var gone *binaryGoneError
+	_, err = start(context.Background(), engine.StartedByCrash)
+	var gone *engine.BinaryGoneError
 	require.ErrorAs(t, err, &gone)
-	require.Equal(t, bin, gone.path)
+	require.Equal(t, bin, gone.Path)
 }
 
 func writeSh(t *testing.T, path, body string) {

@@ -271,7 +271,10 @@ func (s *Setup) RunsAsInstall() bool { return s.asInstall }
 // questions the person answers before the setup runs.
 type Prepared struct {
 	*Setup
-	Conn  *pgx.Conn
+	// Conn is the admin connection the setup was checked on.
+	Conn Querier
+	// At is where Conn points.
+	At    ConnConfig
 	State setupcode.SummaryState
 	// Engine is what the database records about the code's engine.
 	Engine SetuprunEngineState
@@ -286,16 +289,15 @@ type Prepared struct {
 	Blind []guardmodel.BlindTable
 }
 
-// Prepare checks s against the database conn opens, in the contract's
-// order: the target (step 3), the database's state and the engine (step
-// 4), then whether an UPGRADE code has anything to do, and reads the
-// row-level security questions. Every refusal leaves the database as it
-// was.
-func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) {
-	if err := CheckConnTarget(s.P, conn.Config()); err != nil {
+// Prepare checks s against the database the admin connection q opens, at,
+// in the contract's order: the target (step 3), the database's state and
+// the engine (step 4), then whether an UPGRADE code has anything to do,
+// and reads the row-level security questions. Every refusal leaves the
+// database as it was.
+func (s *Setup) Prepare(ctx context.Context, q Querier, at ConnConfig) (*Prepared, error) {
+	if err := CheckConnTarget(s.P, at); err != nil {
 		return nil, err
 	}
-	q := pgquerier.Neutralize(conn)
 	db, state, err := s.readDatabase(ctx, q)
 	if err != nil {
 		return nil, err
@@ -324,7 +326,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err != nil {
 		return nil, err
 	}
-	p := &Prepared{Setup: s, Conn: conn, State: state, Engine: engine}
+	p := &Prepared{Setup: s, Conn: q, At: at, State: state, Engine: engine}
 	if UpgradeDone(s.be, s.P, state.GuardVersion) {
 		p.EngineOnly = p.engineToRecord()
 		p.NothingToDo = !p.EngineOnly
@@ -337,7 +339,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	}
 	blind, err := s.be.AgentBlindTables(ctx, q, s.Names, s.Spec())
 	if err != nil {
-		return nil, MissingTablesHint(s.be, err, conn.Config().Database)
+		return nil, MissingTablesHint(s.be, err, at.Database)
 	}
 	p.Blind = blind
 	return p, nil
@@ -594,7 +596,7 @@ func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Scrip
 	}
 	script, err := p.plan(ctx, policies)
 	if err != nil {
-		return guardmodel.Script{}, MissingTablesHint(p.be, err, p.Conn.Config().Database)
+		return guardmodel.Script{}, MissingTablesHint(p.be, err, p.At.Database)
 	}
 	return script, nil
 }
@@ -611,7 +613,7 @@ func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (
 		opts.AgentPolicies = policies
 		agent = p.P.Agent.Name
 	}
-	script, err := p.be.PlanInit(ctx, pgquerier.Neutralize(p.Conn), opts)
+	script, err := p.be.PlanInit(ctx, p.Conn, opts)
 	if err != nil {
 		return guardmodel.Script{}, err
 	}

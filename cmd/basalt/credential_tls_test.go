@@ -23,6 +23,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // fakeProbe answers a probe by its sslmode and channel binding: answers maps
@@ -45,7 +47,7 @@ func fakeProbe(t *testing.T, answers map[string]error, seen *[]string) func(cont
 
 var (
 	errRefusedPassword = &pgconn.PgError{Code: sqlstateInvalidPassword, Message: "password authentication failed"}
-	errNoTenant        = &pgconn.PgError{Code: sqlstateInternal, Message: supavisorNoTenant}
+	errNoTenant        = &pgconn.PgError{Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant}
 	errTooMany         = &pgconn.PgError{Code: "53300", Message: "too many connections"}
 )
 
@@ -285,7 +287,7 @@ func serveFake(conn net.Conn, ca testCA, kind fakeServer) {
 	}
 	switch kind {
 	case supavisor:
-		b.Send(&pgproto3.ErrorResponse{Severity: "FATAL", Code: sqlstateInternal, Message: supavisorNoTenant})
+		b.Send(&pgproto3.ErrorResponse{Severity: "FATAL", Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant})
 		_ = b.Flush()
 		return
 	case postgresPlus:

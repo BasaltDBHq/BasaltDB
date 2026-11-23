@@ -63,10 +63,10 @@ type remoteRun struct {
 type remoteEnv struct {
 	host      *fakeHost
 	env       map[string]string
-	login     func(context.Context, string) (agentConn, error)
+	login     func(context.Context, string) (cli.AgentConn, error)
 	probe     func(context.Context, string) error
 	noNetwork bool
-	// prefix is the role prefix of a first code (cliIO.rolePrefix).
+	// prefix is the role prefix of a first code (cli.IO.RolePrefix).
 	prefix string
 }
 
@@ -83,8 +83,8 @@ func withDB(t *testing.T) remoteEnv {
 	return remoteEnv{host: systemSocketHost(t)}
 }
 
-// io is the cliIO of a run in e, writing to stdout and stderr.
-func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cliIO {
+// io is the cli.IO of a run in e, writing to stdout and stderr.
+func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cli.IO {
 	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: stdout, Err: stderr},
 		func(k string) string {
 			if k == envAdminURL {
@@ -92,16 +92,16 @@ func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cliIO {
 			}
 			return e.env[k]
 		})
-	c.host = e.host
-	c.rolePrefix = e.prefix
+	c.Host = e.host
+	c.RolePrefix = e.prefix
 	if e.login != nil {
-		c.agentLogin = e.login
+		c.AgentLogin = e.login
 	}
 	if e.probe != nil {
-		c.probe = e.probe
+		c.Probe = e.probe
 	}
 	if e.noNetwork {
-		c.fetchChain = nil
+		c.FetchChain = nil
 	}
 	return c
 }
@@ -119,7 +119,7 @@ func (e remoteEnv) cli(t *testing.T, args ...string) result {
 // refusedLogin stands in for a database that refuses the agent's login
 // (its role does not exist, or has another password), so tests without
 // Postgres reach no network.
-func refusedLogin(context.Context, string) (agentConn, error) { return nil, errLoginRefused }
+func refusedLogin(context.Context, string) (cli.AgentConn, error) { return nil, errLoginRefused }
 
 // noNetworkProbe stands in for the TLS probe of a new credential
 // (hardenedCredential): a database that cannot be reached, so tests without

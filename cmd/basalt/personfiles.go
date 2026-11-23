@@ -6,8 +6,8 @@ import (
 )
 
 // loadEngineConfig reads the engine config at path for this person CLI.
-func loadEngineConfig(c *cliIO, path string) (config.Config, error) {
-	return loadEngineConfigAs(c.shell, c.host.Euid(), path)
+func loadEngineConfig(c *cli.IO, path string) (config.Config, error) {
+	return loadEngineConfigAs(c.Shell, c.Host.Euid(), path)
 }
 
 // loadEngineConfigAs reads the engine config at path for a process with

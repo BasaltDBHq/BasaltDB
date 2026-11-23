@@ -30,7 +30,7 @@ func commands() []cli.Command {
 		{Name: "engine", Summary: "Run the engine service in the foreground", Run: runEngine, Hidden: true},
 		{Name: "mcp", Summary: "MCP server for an agent: relays stdio to the engine", Run: runMCP},
 		{Name: "service", Summary: "Install the engine service (install)", Run: runService},
-		{Name: "init", Summary: "Start setup: install the engine service when needed, then print and open the setup link", Run: withIO(newIO, runInitCommand)},
+		{Name: "init", Summary: "Start setup: install the engine service when needed, then print and open the setup link", Run: cli.WithIO(newIO, runInitCommand)},
 		{Name: "version", Summary: "Print the version", Run: runVersion},
 		{Name: "help", Summary: "Show this help"},
 	}
@@ -38,7 +38,7 @@ func commands() []cli.Command {
 
 // runInitCommand is basalt init for the command table: init --remote
 // reaches the adapters through appSetupHost.
-func runInitCommand(c *cliIO, args []string) int { return runInit(c, appSetupHost{}, args) }
+func runInitCommand(c *cli.IO, args []string) int { return runInit(c, appSetupHost{}, args) }
 
 func run(ctx context.Context, args []string, io cli.Stdio) int {
 	if len(args) == 0 {

@@ -31,12 +31,12 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 			}
 			return cache
 		})
-	c.host = h
+	c.Host = h
 	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}
 }
 
-var guardCommands = map[string]func(*cliIO, []string) int{
+var guardCommands = map[string]func(*cli.IO, []string) int{
 	"init": runInitCommand,
 }
 
@@ -57,8 +57,8 @@ func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {
 	}
 }
 
-// runGuard runs args[0] on c with the path flags moved into c.paths.
-func runGuard(c *cliIO, args []string) int {
+// runGuard runs args[0] on c with the path flags moved into c.Paths.
+func runGuard(c *cli.IO, args []string) int {
 	cmd := guardCommands[args[0]]
 	return cmd(c, takePathFlags(c, cmd, args[1:]))
 }

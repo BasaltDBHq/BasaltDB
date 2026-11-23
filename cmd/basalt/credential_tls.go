@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
+	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -205,11 +206,11 @@ func (p protection) line() string {
 
 // probeLogin tries a login with dsn and closes it: the error says how far
 // it got (hardenedCredential).
-func probeLogin(c *cliIO) func(context.Context, string) error {
+func probeLogin(c *cli.IO) func(context.Context, string) error {
 	return func(ctx context.Context, dsn string) error {
 		ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 		defer cancel()
-		conn, err := c.dial(ctx, dsn)
+		conn, err := c.Dial(ctx, dsn)
 		if err != nil {
 			return err
 		}

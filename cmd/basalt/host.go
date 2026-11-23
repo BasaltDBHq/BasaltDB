@@ -173,6 +173,18 @@ func (appSetupHost) OSOpenTrustedFile(path string, owner int) (*os.File, error) 
 
 func (appSetupHost) OSLookupUID(name string) int { return app.OSLookupUID(name) }
 
+func (appSetupHost) OSInstallScript(goos, binary string) (string, error) {
+	return app.OSInstallScript(goos, binary)
+}
+
+func (appSetupHost) OSRemoveScript(goos string) (string, error) { return app.OSRemoveScript(goos) }
+
+func (appSetupHost) OSResetScript(goos string) (string, error) { return app.OSResetScript(goos) }
+
+func (appSetupHost) OSDefaultUser(goos string) string { return app.OSDefaultUser(goos) }
+
+func (appSetupHost) OSUnitPath(goos string) string { return app.OSUnitPath(goos) }
+
 // osHost is the real machine.
 type osHost struct{}
 

@@ -8,13 +8,19 @@ import (
 
 // runInit: basalt init. --remote makes a setup code for an agent-operated
 // engine; without it, init starts the local setup (runInitLocal), which
-// never reads the admin connection string. h is what init --remote reaches
-// outside the CLI.
-func runInit(c *cliIO, h remoteHost, args []string) int {
+// never reads the admin connection string. h is what init reaches outside
+// the CLI.
+func runInit(c *cliIO, h initHost, args []string) int {
 	if isRemote(args) {
 		return runInitRemote(c, h, args)
 	}
-	return runInitLocal(c, args)
+	return runInitLocal(c, h, args)
+}
+
+// initHost is what basalt init reaches outside the CLI, local and --remote.
+type initHost interface {
+	remoteHost
+	localHost
 }
 
 // shellQuote quotes s for a POSIX shell when it has anything but plain

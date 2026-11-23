@@ -80,7 +80,8 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
-	run := func(ctx context.Context, o app.RestartOptions) error {
+	run := func(ctx context.Context, r engine.Restart) error {
+		o := app.RestartOptions{Restart: r}
 		o.StartedBy = *startedBy
 		o.PagesListener, handed = handed, nil
 		if *pluginDebug {
@@ -98,74 +99,40 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 		cfg = next
 		return nil
 	}
-	if err := serveRestarting(ctx, run, osRestart(log), reload, log); err != nil {
+	if err := engine.ServeRestarting(ctx, run, osRestart(log), reload, log); err != nil {
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
 }
 
-// restart is how the engine restarts onto an upgraded binary: upgrade says
-// when (nil turns it off) and exec runs the new binary in this process.
-type restart struct {
-	upgrade engine.UpgradeFunc
-	exec    func() error
-}
-
 // osRestart watches the binary this engine was started from. When it
 // cannot (its path cannot be read), the engine runs without the restart.
-func osRestart(log *slog.Logger) restart {
+func osRestart(log *slog.Logger) engine.BinaryRestart {
 	sys := binwatch.OS{}
 	exe, err := os.Executable()
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
-		return restart{}
+		return engine.BinaryRestart{}
 	}
 	path, err := binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, sys.Stat)
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
-		return restart{}
+		return engine.BinaryRestart{}
 	}
 	w, err := binwatch.New(path, exe, sys, os.Geteuid() == 0, log)
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its binary cannot be watched", "path", path, "err", err)
-		return restart{}
+		return engine.BinaryRestart{}
 	}
 	path = w.Path()
 	log.Info("the engine restarts onto an upgraded binary installed at its path", "path", path)
 	argv := slices.Clone(os.Args)
-	return restart{upgrade: w.Wait, exec: func() error {
+	return engine.BinaryRestart{Upgrade: w.Wait, Exec: func() error {
 		if err := w.Recheck(); err != nil {
 			return err
 		}
 		return binwatch.Exec(path, argv, os.Environ())
 	}}
-}
-
-// serveRestarting runs the engine and, each time it stops for an upgrade,
-// runs the new binary in this process; each time it stops for a reload, it
-// reads the config again and runs the engine anew. When that fails, this binary serves
-// on, until the binary changes again.
-func serveRestarting(ctx context.Context, run func(context.Context, app.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
-	for {
-		err := run(ctx, app.RestartOptions{Restart: engine.Restart{Upgrade: r.upgrade}})
-		if errors.Is(err, engine.ErrReload) && ctx.Err() == nil {
-			// Same binary, same process: the config is read again and the
-			// engine serves anew. A config it cannot read now stops it.
-			log.Info("serving the engine config again: an agent's connect-only setup changed")
-			if err := reload(); err != nil {
-				return err
-			}
-			continue
-		}
-		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
-			// A stop that came during the restart wins: never run the new
-			// binary after the engine was told to stop.
-			return err
-		}
-		log.Info("restarting onto the upgraded binary")
-		err = r.exec()
-		log.Error("could not run the upgraded binary; this one serves on", "err", err)
-	}
 }
 
 // runMCP is the agent's MCP server: a relay from stdio to the agent's engine

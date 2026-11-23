@@ -33,6 +33,8 @@ type Host interface {
 	EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string)
 	// NewEngineDownServer is down's tools, served as the agent's MCP server.
 	NewEngineDownServer(down agent.EngineDown) shim.Fallback
+	// RunServiceAt is basalt service on the engine config at configPath.
+	RunServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int
 }
 
 // Guarded runs f, which runs the command line args, and turns a panic into

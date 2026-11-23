@@ -170,14 +170,9 @@ func refuseSecretInitArgs(args []string) error {
 // socket whose name is not an agent name.
 const fallbackAgentName = "agent"
 
-// runService installs the engine as a system service, always on the
-// system config path: it takes no --config, so the removal script's
-// engine.json check (service.RemoveScript) is about the config it runs. It prints every
-// step first; --dry-run stops there. The removal is the setup page's
-// Remove, after which basalt init removes the service through the
-// administrator dialog (service.RemoveScript).
+// runService is basalt service for the command table.
 func runService(ctx context.Context, args []string, io cli.Stdio) int {
-	return runServiceAt(ctx, args, io, config.DefaultPath(runtime.GOOS))
+	return enginecli.RunService(ctx, args, io, engineCLIHost{})
 }
 
 // runServiceAt is runService on the engine config at configPath: the

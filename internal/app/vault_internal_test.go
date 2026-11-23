@@ -23,9 +23,9 @@ func TestOpenVaultMakesKeysOnFirstStartWhateverVaultSays(t *testing.T) {
 	t.Parallel()
 	stateDir := filepath.Join(t.TempDir(), "state") // not there yet
 	ev := openVault(config.Config{}, stateDir, time.Now, quietLog(), nil, nil)
-	require.Nil(t, ev.client, "vault unset: no socket")
+	require.Nil(t, ev.Client, "vault unset: no socket")
 
-	st := ev.status()
+	st := ev.Status()
 	require.Equal(t, vault.StateOff, st.State)
 	require.Len(t, st.EngineID, 22)
 	require.NotEmpty(t, st.Fingerprint)
@@ -36,7 +36,7 @@ func TestOpenVaultMakesKeysOnFirstStartWhateverVaultSays(t *testing.T) {
 
 	// The next start loads the same keys.
 	again := openVault(config.Config{}, stateDir, time.Now, quietLog(), nil, nil)
-	require.Equal(t, st.EngineID, again.status().EngineID)
+	require.Equal(t, st.EngineID, again.Status().EngineID)
 }
 
 func TestOpenVaultReportsKeyErrorAndLeavesTheFile(t *testing.T) {
@@ -50,8 +50,8 @@ func TestOpenVaultReportsKeyErrorAndLeavesTheFile(t *testing.T) {
 
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal}
 	ev := openVault(cfg, stateDir, time.Now, quietLog(), nil, nil)
-	require.Nil(t, ev.client, "KEY_ERROR never dials out")
-	require.Equal(t, vault.Status{State: vault.StateKeyError}, ev.status())
+	require.Nil(t, ev.Client, "KEY_ERROR never dials out")
+	require.Equal(t, vault.Status{State: vault.StateKeyError}, ev.Status())
 
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -62,8 +62,8 @@ func TestOpenVaultStaysOffWithLocalPages(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: "http://localhost:7777"}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), nil, nil)
-	require.Nil(t, ev.client)
-	require.Equal(t, vault.StateOff, ev.status().State)
+	require.Nil(t, ev.Client)
+	require.Equal(t, vault.StateOff, ev.Status().State)
 }
 
 func TestOpenVaultDialsTheVault(t *testing.T) {
@@ -72,14 +72,14 @@ func TestOpenVaultDialsTheVault(t *testing.T) {
 	t.Cleanup(v.Close)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), nil, nil)
-	require.NotNil(t, ev.client)
-	require.Equal(t, vault.StateConnecting, ev.status().State)
+	require.NotNil(t, ev.Client)
+	require.Equal(t, vault.StateConnecting, ev.Status().State)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- ev.client.Run(ctx) }()
-	require.Eventually(t, func() bool { return ev.status().State == vault.StateConnected }, 5*time.Second, 5*time.Millisecond)
-	require.True(t, v.Connected(ev.status().EngineID))
+	go func() { done <- ev.Client.Run(ctx) }()
+	require.Eventually(t, func() bool { return ev.Status().State == vault.StateConnected }, 5*time.Second, 5*time.Millisecond)
+	require.True(t, v.Connected(ev.Status().EngineID))
 	cancel()
 	require.NoError(t, <-done)
 }

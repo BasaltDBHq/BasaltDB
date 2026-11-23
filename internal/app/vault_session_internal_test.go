@@ -199,26 +199,26 @@ func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pageser
 	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, sessionDispatcher{site})
-	require.NotNil(t, ev.client)
-	relay.Add("bot", store, ev.client.Unregister)
+	require.NotNil(t, ev.Client)
+	relay.Add("bot", store, ev.Client.Unregister)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = ev.client.Run(ctx)
+		_ = ev.Client.Run(ctx)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		<-done
 	})
-	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, ev.Client.Connected, 5*time.Second, 5*time.Millisecond)
 
 	secret, token, err := store.IssueRelay(id, time.Now().Add(time.Hour))
 	require.NoError(t, err)
-	require.NoError(t, ev.client.Register(context.Background(), token, time.Now().Add(time.Hour)))
+	require.NoError(t, ev.Client.Register(context.Background(), token, time.Now().Add(time.Hour)))
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
-	return &vaultSession{v: v, client: ev.client, wire: w, store: store, secret: secret, keys: keys}
+	return &vaultSession{v: v, client: ev.Client, wire: w, store: store, secret: secret, keys: keys}
 }
 
 func (s *vaultSession) open(t *testing.T) *pagetest.Page {

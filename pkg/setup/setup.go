@@ -590,9 +590,11 @@ type Result struct {
 // (RunInput.Passkey), and record_setup last. Any failure in it leaves the
 // database as it was. It first applies every refusal of Describe, then
 // refuses a Passkey that PasskeyRequest.Verify did not make
-// (PASSKEY_INVALID), then applies every refusal of Check, in their order,
-// and refuses an answer to a question Check would not ask
-// (ANSWERS_INVALID). A refusal is an *Error. Only with RunInput.AskPasskey
+// (PASSKEY_INVALID), then refuses a column label whose column name is not a
+// plain one (ANSWERS_INVALID) before any read, then applies every refusal
+// of Check, in their order, and refuses an answer to a question Check
+// would not ask, or to one question twice (ANSWERS_INVALID). A refusal is
+// an *Error. Only with RunInput.AskPasskey
 // can the setup run without the passkey it needs: Run then returns
 // PASSKEY_NOT_REGISTERED, and Result says the setup ran.
 func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result, error) {

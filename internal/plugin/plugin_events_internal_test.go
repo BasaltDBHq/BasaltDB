@@ -272,7 +272,7 @@ func TestHeldEntryOfRemovedKeyGetsDisabled(t *testing.T) {
 	require.JSONEq(t, rows[1].Detail, rows[3].Detail, "PLUGIN_DISABLED carries what was last recorded")
 	recs, err := guard.ReadPluginRecords(context.Background(), l.dbs["product_a"].db)
 	require.NoError(t, err)
-	require.Empty(t, recs.TrustKeys)
+	require.Empty(t, ledgerTrustedKeys(recs.LatestTrustEvents))
 	for _, r := range recs.Entries {
 		require.False(t, r.Enabled(), "no entry is on record as served")
 	}
@@ -628,7 +628,7 @@ func TestForgedTrustEventIsCorrected(t *testing.T) {
 	}, l.trustRows(t, "product_a"))
 	recs, err := guard.ReadPluginRecords(context.Background(), agentConn)
 	require.NoError(t, err)
-	require.Equal(t, []string{held[0]}, recs.TrustKeys)
+	require.Equal(t, []string{held[0]}, ledgerTrustedKeys(recs.LatestTrustEvents))
 
 	require.NoError(t, guard.RecordPluginTrustRemoved(context.Background(), agentConn, held[0]))
 	ep := f.plugins(nil)

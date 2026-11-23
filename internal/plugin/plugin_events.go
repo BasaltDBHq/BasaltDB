@@ -421,7 +421,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	for _, r := range recs.Entries {
 		last[pluginmodel.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
 	}
-	recorded, unrecordedKeys := writeTrustEvents(ctx, l.ports.Guard, db, want.trust, recs.TrustKeys, log)
+	recorded, unrecordedKeys := writeTrustEvents(ctx, l.ports.Guard, db, want.trust, ledgerTrustedKeys(recs.LatestTrustEvents), log)
 	approvals := &agentApprovals{db: db, ports: l.ports}
 	out := agentPass{reached: true}
 	approvedBy := map[pluginmodel.EntryKey]uuid.UUID{}
@@ -685,4 +685,16 @@ func (ep *Plugins) unrecordedFor(k pluginmodel.EntryKey, name string) withheldWh
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	return ep.unrecorded[k][name]
+}
+
+// ledgerTrustedKeys are the signer keys the ledger records as trusted: their
+// latest trust event is a PLUGIN_TRUST_ADDED. In the order of latest.
+func ledgerTrustedKeys(latest []guardmodel.PluginTrustEvent) []string {
+	var out []string
+	for _, e := range latest {
+		if e.Kind == guardmodel.PluginTrustAdded {
+			out = append(out, e.KeyID)
+		}
+	}
+	return out
 }

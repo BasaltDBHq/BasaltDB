@@ -287,6 +287,8 @@ type Service struct {
 	describe *describeCase
 	// delivery is how held actions reach the person.
 	delivery *deliveryCase
+	// approval is the held writes use case.
+	approval *approvalCase
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -352,6 +354,7 @@ func NewService(d Deps) *Service {
 func (s *Service) wire() {
 	s.describe = newDescribeCase(&s.deps.Core, &s.deps.Describe, s.updateInfo)
 	s.delivery = newDeliveryCase(&s.deps.Core, &s.deps.Delivery, liveApprovals{&s.deps.Approval}, s.Failure)
+	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, serviceReverts{s}, liveWrites{&s.deps.Write}, s)
 }
 
 // missing names the required ports d lacks.

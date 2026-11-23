@@ -49,7 +49,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 		return uuid.Nil, time.Time{}, err
 	}
 	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}
-	notice, err := s.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
+	notice, err := s.approval.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
 	if err != nil {
 		return uuid.Nil, time.Time{}, err
 	}
@@ -135,7 +135,7 @@ func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err e
 	default:
 		return err
 	}
-	n, linkErr := s.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+	n, linkErr := s.approval.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 	if linkErr != nil {
 		return linkErr
 	}
@@ -204,7 +204,7 @@ func (s *Service) waitForSignature(ctx context.Context, a action.Approval, p Wri
 		return a, err
 	}
 	if a.Status == approvalPending {
-		n, err := s.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
+		n, err := s.approval.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 		if err != nil {
 			return a, err
 		}

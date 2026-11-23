@@ -85,7 +85,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 		s.staleReadSteps(b, te, f)
 	case guidance.CodeStatementRefused:
 		if te.Reason == action.ReasonHoldTooLarge {
-			person = s.holdTooLargeSteps(b, te)
+			person = s.approval.holdTooLargeSteps(b, te)
 			break
 		}
 		person = refusedSteps(b, te, f)
@@ -334,7 +334,7 @@ func (s *Service) approvalRequiredSteps(b *guidance.Steps, te *toolresult.ToolEr
 		b.OpenLink(n.ApprovalURL, "Then open the link and approve the held write.")
 		b.EndTurn("End your turn: the person acts next.")
 	case guidance.ReasonWaitEnded:
-		s.openHeldLink(b, n, "Open the link to review the rows. It cannot be signed yet: ask the agent for a new link later.")
+		s.approval.openHeldLink(b, n, "Open the link to review the rows. It cannot be signed yet: ask the agent for a new link later.")
 		b.TellAgent("Tell the agent when you have approved.")
 		b.EndTurn("Do not wait again: end your turn, showing personMessage.")
 		b.RepeatCall(guidance.ToolWrite, map[string]any{guidance.ArgApprovalID: n.ApprovalID, guidance.ArgWaitApproval: 0}, 0,

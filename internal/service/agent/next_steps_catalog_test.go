@@ -191,7 +191,7 @@ func tooLargeNotice(t *testing.T, s *Service, issue bool) heldNotice {
 		setApprovals(&s.deps, catalogApprovals{})
 	}
 	req := sizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
-	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
+	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
 		time.Now().Add(time.Hour), issue)
 	require.NoError(t, err)
 	return n

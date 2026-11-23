@@ -209,18 +209,51 @@ func enginePath(path string) string {
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io stdio) int {
-	return runMCPOn(ctx, args, io, osHost{})
+	return runMCPOn(ctx, args, io, osHost{}, appMCPHost{})
 }
 
-// runMCPOn is runMCP with the host that tells root and the config dir.
-func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
-	return runMCPAt(ctx, args, io, h, config.DefaultPath(runtime.GOOS))
+// runMCPOn is runMCP with the host that tells root and the config dir, and
+// m, what it reaches outside the CLI.
+func runMCPOn(ctx context.Context, args []string, io stdio, h host, m mcpHost) int {
+	return runMCPAt(ctx, args, io, h, m, config.DefaultPath(runtime.GOOS))
+}
+
+// mcpHost is what basalt mcp reaches outside the CLI: its log, the
+// engine-down service and its MCP server, and the engine's autostart.
+type mcpHost interface {
+	// EngineLog is the log basalt mcp writes to w.
+	EngineLog(w io.Writer) *slog.Logger
+	// EngineDown is the engine-down service for the agent name of the
+	// engine whose config is at configPath.
+	EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error)
+	// EngineStarter starts the engine for socket when it does not answer;
+	// failure says why the last start failed.
+	EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string)
+	// NewEngineDownServer is down's tools, served as the agent's MCP server.
+	NewEngineDownServer(down agent.EngineDown) shim.Fallback
+}
+
+// appMCPHost is mcpHost through app.
+type appMCPHost struct{}
+
+func (appMCPHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
+
+func (appMCPHost) EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {
+	return engineDown(name, configPath, log)
+}
+
+func (appMCPHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
+	return engineStarter(configPath, socket, cfg, euid, exe, log)
+}
+
+func (appMCPHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
+	return app.NewEngineDownServer(down)
 }
 
 // runMCPAt is runMCPOn with the system path of engine.json (tests give
 // their own). The config is found by itself ([Config discovery]); the socket
 // directory and, when the engine serves one agent, the agent come from it.
-func runMCPAt(ctx context.Context, args []string, io stdio, h host, system string) int {
+func runMCPAt(ctx context.Context, args []string, io stdio, h host, m mcpHost, system string) int {
 	fs := newFlagSet("mcp")
 	fs.SetOutput(io.err)
 	name := fs.String("agent", "", "agent name (needed only when the engine serves more than one agent)")
@@ -255,8 +288,8 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 		return exitUsage
 	}
 	path := config.SocketPath(socketDir, *name)
-	log := engineLog(io.err)
-	down, err := engineDown(shimAgent(*name, path), enginePath(cfgPath), log)
+	log := m.EngineLog(io.err)
+	down, err := m.EngineDown(shimAgent(*name, path), enginePath(cfgPath), log)
 	if err != nil {
 		return fail(io.err, "mcp", err)
 	}
@@ -267,10 +300,10 @@ func runMCPAt(ctx context.Context, args []string, io stdio, h host, system strin
 	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(path)}
 	if exe, err := shimExecutable(); err == nil {
 		var failure func() string
-		opts.Start, failure = engineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
+		opts.Start, failure = m.EngineStarter(enginePath(cfgPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
-	if err := shim.ServeWith(ctx, path, app.NewEngineDownServer(down), io.in, io.out, opts); err != nil {
+	if err := shim.ServeWith(ctx, path, m.NewEngineDownServer(down), io.in, io.out, opts); err != nil {
 		return fail(io.err, "mcp", err)
 	}
 	return exitOK

@@ -53,7 +53,7 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	run := func(args ...string) string {
 		var out, errOut bytes.Buffer
 		in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}` + "\n"
-		code := runMCPOn(context.Background(), args, stdio{in: strings.NewReader(in), out: &out, err: &errOut}, h)
+		code := runMCPOn(context.Background(), args, stdio{in: strings.NewReader(in), out: &out, err: &errOut}, h, appMCPHost{})
 		require.Equal(t, exitOK, code, errOut.String())
 		return out.String()
 	}

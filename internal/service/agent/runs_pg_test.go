@@ -13,6 +13,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -84,9 +86,9 @@ func TestListRunsCountsWhatEachRunDid(t *testing.T) {
 
 	// The person reverts the third write in full.
 	prep, err := guard.PrepareRevert(ctx, e.a.Conn,
-		guard.RevertScope{Kind: revert.ScopeChange, ID: uuid.MustParse(str(t, undo["changeId"]))}, "Undo lead 66")
+		action.Scope{Kind: revert.ScopeChange, ID: uuid.MustParse(str(t, undo["changeId"]))}, "Undo lead 66")
 	require.NoError(t, err)
-	as, err := e.person.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, e.a.Conn, prep.RevertID, as)
 	require.NoError(t, err)

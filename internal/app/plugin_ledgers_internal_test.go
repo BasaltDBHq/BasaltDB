@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
@@ -25,7 +25,7 @@ func TestRuntimeGivesThePluginWriterTheAgentsLedger(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", demoTables, nil)
-	r := newRemoteAgent(t, a.URL, guard.SetupAgent)
+	r := newRemoteAgent(t, a.URL, guardmodel.SetupAgent)
 	cfg, err := config.Load(r.cfgPath)
 	require.NoError(t, err)
 	env := agentEnv{cfg: cfg, configPath: r.cfgPath, pagesBase: links.DefaultLocal, stateDir: r.dir, pins: &chainpin.Memory{}}
@@ -42,7 +42,7 @@ func TestRuntimeGivesThePluginWriterTheAgentsLedger(t *testing.T) {
 	require.NotNil(t, l.admit)
 	require.NoError(t, l.admit(context.Background()), "an installed guard admits the agent")
 
-	pending := newRemoteAgent(t, d.NewAgent(t, "other", demoTables, nil).URL, guard.SetupInstall)
+	pending := newRemoteAgent(t, d.NewAgent(t, "other", demoTables, nil).URL, guardmodel.SetupInstall)
 	rt := pending.start(t)
 	require.ErrorIs(t, pluginAdmit(rt.svc)(context.Background()), engine.ErrNotAdmitted)
 }

@@ -17,9 +17,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -41,7 +41,7 @@ var db = Address{Host: "db.example.com", Port: 5432, Database: "app"}
 
 func fixtureSetup() config.Setup {
 	return config.Setup{
-		SetupID: fixtureID, Kind: guard.SetupInstall, GuardVersion: 16, ExpiresAt: "2026-11-20T06:12:11Z",
+		SetupID: fixtureID, Kind: guardmodel.SetupInstall, GuardVersion: 16, ExpiresAt: "2026-11-20T06:12:11Z",
 		Code: fixtureCode, Fingerprint: fixtureFingerprint, AwaitingAddress: true,
 	}
 }

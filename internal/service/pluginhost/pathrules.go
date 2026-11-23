@@ -15,13 +15,13 @@ import (
 // implements it and the app installs it with UsePathRules.
 type PathRules interface {
 	// Owner is the uid the rule requires for mode.
-	Owner(mode Mode) (uint32, error)
+	Owner(mode pluginmodel.Mode) (uint32, error)
 	// CurrentUID is the engine's own uid.
 	CurrentUID() (uint32, error)
 	// NoFollowFlags are the flags to open a file without following a symlink.
 	NoFollowFlags() int
 	// RuleRefusal is a refusal for who can write path, with what was found.
-	RuleRefusal(path, why string, kind PathFaultKind, fi fs.FileInfo, owners ...uint32) *VerifyError
+	RuleRefusal(path, why string, kind pluginmodel.PathFaultKind, fi fs.FileInfo, owners ...uint32) *pluginmodel.VerifyError
 	CheckAbove(base string, owner uint32) error
 	CheckStrict(p string, owner uint32) (fs.FileInfo, error)
 	CheckStrictInfo(p string, fi fs.FileInfo, owner uint32) error
@@ -52,16 +52,16 @@ func rules() PathRules {
 }
 
 // errNoPathRules is what every check returns while no rule is installed.
-var errNoPathRules = pathRefusal("", "cannot be checked: no path rule is installed")
+var errNoPathRules = pluginmodel.PathRefusal("", "cannot be checked: no path rule is installed")
 
 // refusingRules refuses every check; it stands in until UsePathRules.
 type refusingRules struct{}
 
-func (refusingRules) Owner(Mode) (uint32, error)  { return 0, errNoPathRules }
-func (refusingRules) CurrentUID() (uint32, error) { return 0, errNoPathRules }
-func (refusingRules) NoFollowFlags() int          { return os.O_RDONLY }
-func (refusingRules) RuleRefusal(path, why string, _ PathFaultKind, _ fs.FileInfo, _ ...uint32) *VerifyError {
-	return pathRefusal(path, why)
+func (refusingRules) Owner(pluginmodel.Mode) (uint32, error) { return 0, errNoPathRules }
+func (refusingRules) CurrentUID() (uint32, error)            { return 0, errNoPathRules }
+func (refusingRules) NoFollowFlags() int                     { return os.O_RDONLY }
+func (refusingRules) RuleRefusal(path, why string, _ pluginmodel.PathFaultKind, _ fs.FileInfo, _ ...uint32) *pluginmodel.VerifyError {
+	return pluginmodel.PathRefusal(path, why)
 }
 func (refusingRules) CheckAbove(string, uint32) error { return errNoPathRules }
 func (refusingRules) CheckStrict(string, uint32) (fs.FileInfo, error) {
@@ -73,9 +73,7 @@ func (refusingRules) CheckSocketBase(string) error                      { return
 func (refusingRules) CheckSocketBaseInfo(string, fs.FileInfo) error     { return errNoPathRules }
 
 var (
-	pathRefusal = pluginmodel.PathRefusal
-
-	ruleRefusal = func(path, why string, kind PathFaultKind, fi fs.FileInfo, owners ...uint32) *VerifyError {
+	ruleRefusal = func(path, why string, kind pluginmodel.PathFaultKind, fi fs.FileInfo, owners ...uint32) *pluginmodel.VerifyError {
 		return rules().RuleRefusal(path, why, kind, fi, owners...)
 	}
 	checkAbove      = func(base string, owner uint32) error { return rules().CheckAbove(base, owner) }
@@ -87,7 +85,7 @@ var (
 
 func noFollowFlags() int { return rules().NoFollowFlags() }
 
-func requiredOwner(mode Mode) (uint32, error) { return rules().Owner(mode) }
+func requiredOwner(mode pluginmodel.Mode) (uint32, error) { return rules().Owner(mode) }
 
 // CheckSocketBase applies the path rule to a socket base directory.
 func CheckSocketBase(dir string) error { return rules().CheckSocketBase(dir) }
@@ -110,7 +108,7 @@ const (
 // base is the directory the plugin root and the trust store sit in: the
 // service base per OS in service mode, the config directory (the directory
 // that holds engine.json) in same-user mode. Another mode is refused.
-func base(mode Mode, goos, configDir string) (string, error) {
+func base(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	switch mode {
 	case pluginmodel.ModeService:
 		if goos == goosDarwin {
@@ -127,7 +125,7 @@ func base(mode Mode, goos, configDir string) (string, error) {
 // Root is the directory installed copies live under: /opt/basalt/plugins on
 // Linux and /Library/Basalt/plugins on macOS in service mode,
 // <configDir>/plugins in same-user mode.
-func Root(mode Mode, goos, configDir string) (string, error) {
+func Root(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	b, err := base(mode, goos, configDir)
 	if err != nil {
 		return "", err
@@ -138,7 +136,7 @@ func Root(mode Mode, goos, configDir string) (string, error) {
 // TrustDir is the trust store's directory, next to Root:
 // /opt/basalt/plugin-trust on Linux and /Library/Basalt/plugin-trust on macOS
 // in service mode, <configDir>/plugin-trust in same-user mode.
-func TrustDir(mode Mode, goos, configDir string) (string, error) {
+func TrustDir(mode pluginmodel.Mode, goos, configDir string) (string, error) {
 	b, err := base(mode, goos, configDir)
 	if err != nil {
 		return "", err

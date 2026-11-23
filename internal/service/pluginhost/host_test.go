@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
@@ -56,22 +57,22 @@ func (f *fake) methods() []string {
 	return append([]string(nil), f.calls...)
 }
 
-func manifest(name string) Manifest {
-	return Manifest{
+func manifest(name string) pluginmodel.Manifest {
+	return pluginmodel.Manifest{
 		ManifestVersion: 1, Name: name, Version: "1.0.0", Publisher: "t",
 		Protocol: []string{pluginproto.Version1},
 		Hooks: map[string]pluginproto.HookDecl{
 			string(HookWireDetect): {Contract: "detector/1", Roles: []string{"VALUE"}, EntityTypes: []string{"EMAIL", "PHONE"}},
 		},
-		Endpoint: Endpoint{Local: &LocalEndpoint{Transport: "jsonrpc-stdio", Command: "p"}},
+		Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "p"}},
 	}
 }
 
-func entry(name, instance string, agents ...string) Entry {
-	return Entry{Key: EntryKey{Name: name, Instance: instance}, Manifest: manifest(name), Agents: agents, Timeout: 100 * time.Millisecond}
+func entry(name, instance string, agents ...string) pluginmodel.Entry {
+	return pluginmodel.Entry{Key: pluginmodel.EntryKey{Name: name, Instance: instance}, Manifest: manifest(name), Agents: agents, Timeout: 100 * time.Millisecond}
 }
 
-func goodInit(m Manifest) *pluginproto.InitializeResponse {
+func goodInit(m pluginmodel.Manifest) *pluginproto.InitializeResponse {
 	hooks := map[string]pluginproto.HookDecl{}
 	for h, d := range m.Hooks {
 		hooks[h] = d
@@ -79,7 +80,7 @@ func goodInit(m Manifest) *pluginproto.InitializeResponse {
 	return &pluginproto.InitializeResponse{Protocol: pluginproto.Version1, Name: m.Name, Version: m.Version, Hooks: hooks}
 }
 
-func register(t *testing.T, h *Host, e Entry) *fake {
+func register(t *testing.T, h *Host, e pluginmodel.Entry) *fake {
 	t.Helper()
 	f := &fake{initResp: goodInit(e.Manifest)}
 	if err := h.Register(context.Background(), e, f); err != nil {
@@ -95,7 +96,7 @@ func TestCallRefusesUnlistedAgent(t *testing.T) {
 	before := len(f.methods())
 
 	err := h.Call(context.Background(), e.Key, []string{"product-a", "client-x"}, "detect", nil, nil)
-	if !errors.Is(err, ErrAgentNotListed) {
+	if !errors.Is(err, pluginmodel.ErrAgentNotListed) {
 		t.Fatalf("err = %v, want ErrAgentNotListed", err)
 	}
 	if strings.Contains(err.Error(), "client-x") || strings.Contains(err.Error(), "product-a") {
@@ -104,7 +105,7 @@ func TestCallRefusesUnlistedAgent(t *testing.T) {
 	if got := len(f.methods()); got != before {
 		t.Fatalf("transport saw %d calls after the refused call", got-before)
 	}
-	if err := h.Call(context.Background(), e.Key, nil, "detect", nil, nil); !errors.Is(err, ErrAgentNotListed) {
+	if err := h.Call(context.Background(), e.Key, nil, "detect", nil, nil); !errors.Is(err, pluginmodel.ErrAgentNotListed) {
 		t.Fatalf("no agents: err = %v", err)
 	}
 	if err := h.Call(context.Background(), e.Key, []string{"product-a"}, "detect", nil, nil); err != nil {
@@ -140,7 +141,7 @@ func TestDeadlineEnforced(t *testing.T) {
 		return ctx.Err()
 	}
 	err := h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil)
-	assertClass(t, err, ClassTimeout)
+	assertClass(t, err, pluginmodel.ClassTimeout)
 }
 
 func TestFifthCallWaitsThenTimesOut(t *testing.T) {
@@ -183,8 +184,8 @@ func TestFifthCallWaitsThenTimesOut(t *testing.T) {
 	}
 	var timeouts int
 	for err := range errs {
-		var ce *CallError
-		if errors.As(err, &ce) && ce.Class == ClassTimeout {
+		var ce *pluginmodel.CallError
+		if errors.As(err, &ce) && ce.Class == pluginmodel.ClassTimeout {
 			timeouts++
 		}
 	}
@@ -296,7 +297,7 @@ func TestCallErrorHasNoPayload(t *testing.T) {
 		return errors.New("secret-token jane@example.com")
 	}
 	err := h.Call(context.Background(), e.Key, []string{"a"}, "detect", map[string]string{"v": "jane@example.com"}, nil)
-	var ce *CallError
+	var ce *pluginmodel.CallError
 	if !errors.As(err, &ce) {
 		t.Fatalf("err = %v", err)
 	}
@@ -309,15 +310,15 @@ func TestCallErrorHasNoPayload(t *testing.T) {
 }
 
 func TestTransportClassIsKept(t *testing.T) {
-	for _, c := range []FailureClass{ClassExited, ClassBadResponse, ClassOverLimit, ClassUnavailable} {
+	for _, c := range []pluginmodel.FailureClass{pluginmodel.ClassExited, pluginmodel.ClassBadResponse, pluginmodel.ClassOverLimit, pluginmodel.ClassUnavailable} {
 		h := NewHost()
 		e := entry("acme", "default", "a")
 		f := register(t, h, e)
-		f.onCall = func(context.Context, string) error { return Fail(c) }
+		f.onCall = func(context.Context, string) error { return pluginmodel.Fail(c) }
 		err := h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil)
 		assertClass(t, err, c)
 		want := StateReady
-		if c == ClassExited || c == ClassUnavailable {
+		if c == pluginmodel.ClassExited || c == pluginmodel.ClassUnavailable {
 			want = StateUnavailable
 		}
 		if h.State(e.Key) != want {
@@ -332,11 +333,11 @@ func TestUnavailableEntryRefusesCalls(t *testing.T) {
 	f := register(t, h, e)
 	h.SetState(e.Key, StateUnavailable)
 	n := len(f.methods())
-	assertClass(t, h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil), ClassUnavailable)
+	assertClass(t, h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil), pluginmodel.ClassUnavailable)
 	if len(f.methods()) != n {
 		t.Fatal("call reached an unavailable plugin")
 	}
-	assertClass(t, h.Call(context.Background(), EntryKey{Name: "nope", Instance: "default"}, []string{"a"}, "detect", nil, nil), ClassUnavailable)
+	assertClass(t, h.Call(context.Background(), pluginmodel.EntryKey{Name: "nope", Instance: "default"}, []string{"a"}, "detect", nil, nil), pluginmodel.ClassUnavailable)
 }
 
 func TestInstancesShareNothing(t *testing.T) {
@@ -347,12 +348,12 @@ func TestInstancesShareNothing(t *testing.T) {
 	fb := register(t, h, eb)
 
 	// Agent lists are per instance.
-	if err := h.Call(context.Background(), ea.Key, []string{"client-x"}, "detect", nil, nil); !errors.Is(err, ErrAgentNotListed) {
+	if err := h.Call(context.Background(), ea.Key, []string{"client-x"}, "detect", nil, nil); !errors.Is(err, pluginmodel.ErrAgentNotListed) {
 		t.Fatalf("default served client-x: %v", err)
 	}
 	// A failure in one leaves the other READY and untouched.
-	fb.onCall = func(context.Context, string) error { return Fail(ClassExited) }
-	assertClass(t, h.Call(context.Background(), eb.Key, []string{"client-x"}, "detect", nil, nil), ClassExited)
+	fb.onCall = func(context.Context, string) error { return pluginmodel.Fail(pluginmodel.ClassExited) }
+	assertClass(t, h.Call(context.Background(), eb.Key, []string{"client-x"}, "detect", nil, nil), pluginmodel.ClassExited)
 	if h.State(ea.Key) != StateReady || h.State(eb.Key) != StateUnavailable {
 		t.Fatalf("states = %s, %s", h.State(ea.Key), h.State(eb.Key))
 	}
@@ -393,15 +394,17 @@ func TestInstancesShareNothing(t *testing.T) {
 
 func TestRegisterValidation(t *testing.T) {
 	h := NewHost()
-	bad := map[string]func(e *Entry){
-		"no agents":    func(e *Entry) { e.Agents = nil },
-		"wrong name":   func(e *Entry) { e.Manifest.Name = "other" },
-		"no instance":  func(e *Entry) { e.Key.Instance = "" },
-		"timeout low":  func(e *Entry) { e.Timeout = 49 * time.Millisecond },
-		"timeout high": func(e *Entry) { e.Timeout = 60001 * time.Millisecond },
-		"verdict hook": func(e *Entry) { e.Manifest.Hooks = map[string]pluginproto.HookDecl{string(HookWireVerdict): {}} },
-		"unknown hook": func(e *Entry) { e.Manifest.Hooks = map[string]pluginproto.HookDecl{"x.y": {}} },
-		"no hooks":     func(e *Entry) { e.Manifest.Hooks = nil },
+	bad := map[string]func(e *pluginmodel.Entry){
+		"no agents":    func(e *pluginmodel.Entry) { e.Agents = nil },
+		"wrong name":   func(e *pluginmodel.Entry) { e.Manifest.Name = "other" },
+		"no instance":  func(e *pluginmodel.Entry) { e.Key.Instance = "" },
+		"timeout low":  func(e *pluginmodel.Entry) { e.Timeout = 49 * time.Millisecond },
+		"timeout high": func(e *pluginmodel.Entry) { e.Timeout = 60001 * time.Millisecond },
+		"verdict hook": func(e *pluginmodel.Entry) {
+			e.Manifest.Hooks = map[string]pluginproto.HookDecl{string(HookWireVerdict): {}}
+		},
+		"unknown hook": func(e *pluginmodel.Entry) { e.Manifest.Hooks = map[string]pluginproto.HookDecl{"x.y": {}} },
+		"no hooks":     func(e *pluginmodel.Entry) { e.Manifest.Hooks = nil },
 	}
 	for name, mutate := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -426,7 +429,7 @@ func TestDefaultTimeouts(t *testing.T) {
 	if err != nil || n.Timeout != 300*time.Millisecond {
 		t.Fatalf("local default = %v, %v", n.Timeout, err)
 	}
-	e.Manifest.Endpoint = Endpoint{Remote: &RemoteEndpoint{Transport: "connectrpc", URL: "https://p.test"}}
+	e.Manifest.Endpoint = pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: "connectrpc", URL: "https://p.test"}}
 	n, err = normalize(e)
 	if err != nil || n.Timeout != 2*time.Second {
 		t.Fatalf("remote default = %v, %v", n.Timeout, err)
@@ -482,9 +485,9 @@ func TestNoGoroutineLeak(t *testing.T) {
 	waitFor(t, func() bool { return runtime.NumGoroutine() <= base+2 })
 }
 
-func assertClass(t *testing.T, err error, want FailureClass) {
+func assertClass(t *testing.T, err error, want pluginmodel.FailureClass) {
 	t.Helper()
-	var ce *CallError
+	var ce *pluginmodel.CallError
 	if !errors.As(err, &ce) || ce.Class != want {
 		t.Fatalf("err = %v, want class %s", err, want)
 	}
@@ -507,7 +510,7 @@ func TestManifestExamplesDecode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var m Manifest
+		var m pluginmodel.Manifest
 		if err := json.Unmarshal(b, &m); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}

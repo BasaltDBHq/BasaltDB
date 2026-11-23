@@ -12,14 +12,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // winLeads starts a run and sets leads ids to won through MCP, as the
@@ -68,7 +71,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 		"(changed after the agent). Why: Undo yesterday's lead status merge. Expires "), msg)
 	require.True(t, strings.HasSuffix(msg, "\nSign it with your passkey here:\n\n"+link), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
-	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
+	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 	require.Equal(t, "won", leadStatus(t, d, 71), "a request reverts nothing")
 
 	// The short link's secret opens the request; a wrong one is an
@@ -83,11 +86,11 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.Equal(t, "Undo yesterday's lead status merge.", b.Intent, "the agent's intent is in the binding the person signs")
 
 	// The person signs on the page and the page relays it.
-	as, err := env.person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
-	var out guard.AppliedRevert
+	var out action.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
 	require.Equal(t, 2, out.Rows)
 	require.Equal(t, "open", leadStatus(t, d, 71))
@@ -112,14 +115,14 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	require.Contains(t, msg, "Why: Wrong leads. ")
 	require.True(t, strings.HasSuffix(msg, "\nReview only: this link cannot be signed. Ask the agent for a new link later.\n\n"+link), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
-	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
+	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 
 	// The person's signature, relayed with the agent credential, reverts
 	// the change.
 	frag := link[strings.Index(link, "#")+1:]
 	req, b, err := revert.ParseRequest(frag)
 	require.NoError(t, err)
-	as, err := env.person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(context.Background(), env.a.Conn, b.RevertID, as)
 	require.NoError(t, err)
@@ -344,13 +347,13 @@ func TestRequestedRevertNeedsThePersonsSignature(t *testing.T) {
 	forger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	forger.ID = env.person.ID
-	forged, err := forger.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	forged, err := forger.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, b.RevertID, forged)
 	requireRevertInvalid(t, err)
 	require.Equal(t, "won", leadStatus(t, env.d, 79), "a forged signature writes nothing")
 
-	as, err := env.person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, b.RevertID, as)
 	require.NoError(t, err)
@@ -394,9 +397,9 @@ func TestRequestRevertOfALargeRun(t *testing.T) {
 	require.True(t, ok)
 	first, ok := steps[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, mcp.ActionSendRequest, first["action"], "the agent sends the request first")
+	require.Equal(t, toolresult.ActionSendRequest, first["action"], "the agent sends the request first")
 	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
-	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
+	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 	requireResultSteps(t, body, "REQUESTED")
 }
 
@@ -414,5 +417,5 @@ func requireRevertInvalid(t *testing.T, err error) {
 	t.Helper()
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
-	require.Equal(t, guard.CodeRevertInvalid, code, "%v", err)
+	require.Equal(t, guardmodel.CodeRevertInvalid, code, "%v", err)
 }

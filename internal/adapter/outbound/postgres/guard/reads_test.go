@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // readLeads reads the given leads as the agent and records the read in the
@@ -71,7 +72,7 @@ func TestStaleReadRefusesAChangedRow(t *testing.T) {
 	d.Exec(t, `UPDATE public.leads SET status = 'won' WHERE id = 20`)
 
 	err := guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'lost' WHERE id = 20`)
-	requireCode(t, err, guard.CodeStaleRead)
+	requireCode(t, err, guardmodel.CodeStaleRead)
 	var pg *pgconn.PgError
 	require.True(t, errors.As(err, &pg))
 	require.Contains(t, pg.Detail, `public.leads {"id": 20} read at xmin `)
@@ -80,7 +81,7 @@ func TestStaleReadRefusesAChangedRow(t *testing.T) {
 
 	// A stale DELETE says STALE_READ, not APPROVAL_REQUIRED.
 	err = guardtest.Guarded(ctx, a.Conn, in, `DELETE FROM public.leads WHERE id = 20`)
-	requireCode(t, err, guard.CodeStaleRead)
+	requireCode(t, err, guardmodel.CodeStaleRead)
 
 	// Reading again catches up.
 	readLeads(t, a, in, 20)
@@ -177,7 +178,7 @@ func TestReadsBelongToTheirRun(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, other, `UPDATE public.leads SET score = 5 WHERE id = 7`),
 		"another run's reads do not apply")
 	err := guardtest.Guarded(ctx, a.Conn, first, `UPDATE public.leads SET score = 6 WHERE id = 7`)
-	requireCode(t, err, guard.CodeStaleRead)
+	requireCode(t, err, guardmodel.CodeStaleRead)
 }
 
 func TestRecordReadWritesAChangeAndALedgerRow(t *testing.T) {
@@ -242,7 +243,7 @@ func TestRecordReadValidates(t *testing.T) {
 	good := guard.RowVersion{TableOID: oid("public.leads"), Key: json.RawMessage(`{"id": 1}`), Version: "123"}
 
 	_, err := guard.RecordRead(ctx, a.Conn, guard.Read{RunID: theirs.RunID, Statement: "SELECT 1", Versions: []guard.RowVersion{good}})
-	requireCode(t, err, guard.CodeNotAllowed)
+	requireCode(t, err, guardmodel.CodeNotAllowed)
 
 	cases := map[string]guard.RowVersion{
 		"unguarded table":  {TableOID: oid("public.payroll"), Key: json.RawMessage(`{"id": 1}`), Version: "1"},
@@ -256,13 +257,13 @@ func TestRecordReadValidates(t *testing.T) {
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Versions: []guard.RowVersion{v}})
-			requireCode(t, err, guard.CodeLedgerInputInvalid)
+			requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 		})
 	}
 	_, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "", Versions: nil})
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	_, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Rows: -1})
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 
 	// The same row twice in one read (a self-join) is fine.
 	_, err = guard.RecordRead(ctx, a.Conn, guard.Read{RunID: in.RunID, Statement: "SELECT 1", Versions: []guard.RowVersion{good, good}})

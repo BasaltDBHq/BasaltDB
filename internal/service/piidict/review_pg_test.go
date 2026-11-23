@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
@@ -197,7 +197,7 @@ func TestClassifyBetweenALoadsReadsIsReloadedAtTheNextTick(t *testing.T) {
 	note := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "note")}
 	var once sync.Once
 	m.between = func() {
-		once.Do(func() { f.classifyWith(t, time.Now(), map[string]string{"customers.note": guard.EntityOther}) })
+		once.Do(func() { f.classifyWith(t, time.Now(), map[string]string{"customers.note": guardmodel.EntityOther}) })
 	}
 
 	tx, err := f.pool.BeginTx(ctx, pgx.TxOptions{}) // read committed, as a write's
@@ -205,7 +205,7 @@ func TestClassifyBetweenALoadsReadsIsReloadedAtTheNextTick(t *testing.T) {
 	got, err := m.Resolve(ctx, tx, []ColumnRef{note})
 	require.NoError(t, err)
 	require.NoError(t, tx.Rollback(ctx))
-	require.Equal(t, guard.ClassIdentifier, got[0].Class, "the classes were read after the classify committed")
+	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class, "the classes were read after the classify committed")
 
 	reloaded, err := m.Tick(ctx, f.pool)
 	require.NoError(t, err)
@@ -215,7 +215,7 @@ func TestClassifyBetweenALoadsReadsIsReloadedAtTheNextTick(t *testing.T) {
 	require.False(t, reloaded, "classes and marks agree again")
 	got, err = m.Resolve(ctx, f.pool, []ColumnRef{note})
 	require.NoError(t, err)
-	require.Equal(t, guard.EntityOther, got[0].EntityType)
+	require.Equal(t, guardmodel.EntityOther, got[0].EntityType)
 }
 
 func TestDictionaryErrorsAreEngineErrors(t *testing.T) {

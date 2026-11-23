@@ -1,5 +1,5 @@
 // Package pluginledger is the guard's plugin records, approvals and feed
-// reads as the plugin host's ledger port (engine.Guard).
+// reads as the plugin host's guard port (engine.Guard).
 package pluginledger
 
 import (
@@ -17,7 +17,8 @@ import (
 
 type q = pgquerier.Querier
 
-// Ledger forwards each call to the guard package. It holds no state.
+// Ledger is engine.Guard: it forwards each call to the guard package and
+// holds no state.
 type Ledger struct{}
 
 func (Ledger) AgentVersion(ctx context.Context, db q) (int, error) {

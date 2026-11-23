@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // TestLongValuesGateBeforeEveryPublicRule: a column where at least 10% of
@@ -22,13 +22,13 @@ func TestLongValuesGateBeforeEveryPublicRule(t *testing.T) {
 	// (a) 70% +62812… and 30% decimals.
 	a = append(a, "12.5", "3.75", "0.5")
 	got := Suggest(col, Sample{Values: a}, Options{})
-	require.Equal(t, []any{guard.ClassIdentifier, guard.EntityPhone, true}, []any{got.Class, got.EntityType, got.NeedsReview}, got.Reason)
+	require.Equal(t, []any{guardmodel.ClassIdentifier, guardmodel.EntityPhone, true}, []any{got.Class, got.EntityType, got.NeedsReview}, got.Reason)
 	// (b) 30% bare phones and 70% words.
 	b := []string{"6281234567801", "6281299991234", "6281355512345", "apple", "pear", "plum", "fig", "kiwi", "lime", "date"}
 	got = Suggest(col, Sample{Values: b}, Options{})
-	require.Equal(t, []any{guard.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, got.Reason)
+	require.Equal(t, []any{guardmodel.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, got.Reason)
 	// Small amounts alone stay PUBLIC.
-	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "amount", DataType: "numeric"},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "amount", DataType: "numeric"},
 		Sample{Values: []string{"1125.00", "3.75", "12.50"}}, Options{}).Class)
 }
 
@@ -51,17 +51,17 @@ func TestConsecutivePhonesAreNoSequence(t *testing.T) {
 	} {
 		for _, typ := range []string{"bigint", "text"} {
 			got := Suggest(Column{Schema: "public", Table: "t", Name: "ref", DataType: typ}, Sample{Values: vs}, Options{})
-			require.Equal(t, []any{guard.ClassIdentifier, guard.EntityPhone, "ID", true},
+			require.Equal(t, []any{guardmodel.ClassIdentifier, guardmodel.EntityPhone, "ID", true},
 				[]any{got.Class, got.EntityType, got.PhoneRegion, got.NeedsReview}, "%s %d values: %s", typ, len(vs), got.Reason)
 		}
 	}
-	require.Equal(t, Suggestion{Class: guard.ClassPublic, Reason: reasonSequential},
+	require.Equal(t, Suggestion{Class: guardmodel.ClassPublic, Reason: reasonSequential},
 		Suggest(Column{Name: "order_number", DataType: "bigint"}, Sample{Values: block(1000, 1, 50)}, Options{}))
 	// A key holding MSISDNs is a phone to review; an identity is an id.
-	require.Equal(t, guard.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true},
+	require.Equal(t, guardmodel.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true},
 		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
 	// An identity filled with MSISDNs meets the gate too.
-	require.Equal(t, guard.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true, Generated: true},
+	require.Equal(t, guardmodel.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true, Generated: true},
 		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
 }
 
@@ -87,11 +87,11 @@ func TestKeysAreJudgedLikeAnyColumn(t *testing.T) {
 		{"consecutive MSISDN bigint PK", Column{Name: "id", DataType: "bigint", Key: true}, msisdns},
 	} {
 		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
-		require.Equal(t, []any{guard.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, "%s: %s", tc.name, got.Reason)
+		require.Equal(t, []any{guardmodel.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, "%s: %s", tc.name, got.Reason)
 	}
-	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
 		Sample{Values: []string{"3", "17", "1200", "9"}}, Options{}).Class, "identity")
-	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
 		Sample{}, Options{}).Class, "empty identity")
 	// The exemption never overrides a name rule, a validator or the gate.
 	for _, tc := range []struct {
@@ -100,16 +100,16 @@ func TestKeysAreJudgedLikeAnyColumn(t *testing.T) {
 		class  string
 		entity string
 	}{
-		{Column{Name: "zip", DataType: "integer", Key: true}, []string{"40115", "10110", "80361"}, guard.ClassIdentifier, guard.EntityAddress},
-		{Column{Name: "pin", DataType: "integer", Key: true}, []string{"4821", "1093", "7710"}, guard.ClassSecret, ""},
-		{Column{Name: "phone", DataType: "bigint", Key: true, Generated: true}, msisdns, guard.ClassIdentifier, guard.EntityPhone},
-		{Column{Name: "contact", DataType: "text", Generated: true}, []string{"a@example.com", "b@example.org"}, guard.ClassIdentifier, guard.EntityEmail},
+		{Column{Name: "zip", DataType: "integer", Key: true}, []string{"40115", "10110", "80361"}, guardmodel.ClassIdentifier, guardmodel.EntityAddress},
+		{Column{Name: "pin", DataType: "integer", Key: true}, []string{"4821", "1093", "7710"}, guardmodel.ClassSecret, ""},
+		{Column{Name: "phone", DataType: "bigint", Key: true, Generated: true}, msisdns, guardmodel.ClassIdentifier, guardmodel.EntityPhone},
+		{Column{Name: "contact", DataType: "text", Generated: true}, []string{"a@example.com", "b@example.org"}, guardmodel.ClassIdentifier, guardmodel.EntityEmail},
 	} {
 		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
 		require.Equal(t, []string{tc.class, tc.entity}, []string{got.Class, got.EntityType}, "%s: %s", tc.col.Name, got.Reason)
 	}
-	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "uuid", Key: true}, Sample{}, Options{}).Class, "uuid")
-	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true},
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "uuid", Key: true}, Sample{}, Options{}).Class, "uuid")
+	require.Equal(t, guardmodel.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true},
 		Sample{Values: []string{"7", "42", "99999"}}, Options{}).Class, "short integer key")
 }
 
@@ -159,7 +159,7 @@ func TestPhonesInAnyFillerAreNeverPublic(t *testing.T) {
 		rng.Shuffle(len(values), func(i, j int) { values[i], values[j] = values[j], values[i] })
 		for _, typ := range []string{"text", "character varying"} {
 			got := Suggest(Column{Schema: "public", Table: "t", Name: "ref", DataType: typ}, Sample{Values: values}, Options{})
-			require.NotEqual(t, guard.ClassPublic, got.Class, "%d of %d phones: %s", phonesN, n, got.Reason)
+			require.NotEqual(t, guardmodel.ClassPublic, got.Class, "%d of %d phones: %s", phonesN, n, got.Reason)
 		}
 	}
 }

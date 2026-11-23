@@ -15,15 +15,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // pageOrigin is the origin the test pages claim, as the engine's config
@@ -100,11 +101,11 @@ func (p localPages) signApproval(id, secret string, person *passkeytest.Authenti
 }
 
 type pageError struct {
-	Code          string         `json:"code"`
-	Message       string         `json:"message"`
-	Reason        string         `json:"reason"`
-	PersonMessage string         `json:"personMessage"`
-	NextSteps     []mcp.NextStep `json:"nextSteps"`
+	Code          string                `json:"code"`
+	Message       string                `json:"message"`
+	Reason        string                `json:"reason"`
+	PersonMessage string                `json:"personMessage"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps"`
 }
 
 // holdWrite starts a run and returns the arguments of a write the guard
@@ -143,7 +144,7 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 		"\n\nExpires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, ap))
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
 	require.Len(t, env.sent.sent, 1)
 	require.Contains(t, env.sent.sent[0].ApprovalURL, "#2.", "the notice keeps the long link")
 	require.Equal(t, link, env.sent.sent[0].ShortURL, "the notice carries the short link")
@@ -285,7 +286,7 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Mark leads won"}
 	require.NoError(t, guard.StartRun(ctx, a.Conn, in))
 	require.NoError(t, guardtest.Guarded(ctx, a.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id BETWEEN 40 AND 45`))
-	prep, err := guard.PrepareRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}, "Revert the run")
+	prep, err := guard.PrepareRevert(ctx, a.Conn, action.Scope{Kind: revert.ScopeRun, ID: in.RunID}, "Revert the run")
 	require.NoError(t, err)
 	id := prep.RevertID.String()
 
@@ -298,14 +299,14 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &req))
 	b, err := req.Check()
 	require.NoError(t, err)
-	as, err := env.person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := env.person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusNotFound, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, "", signed, &perr), "no secret, no relay")
 	require.Equal(t, http.StatusForbidden, p.post("/api/v1/reverts/"+id+"/apply", "http://localhost:9999", secret, signed, &perr))
-	var out guard.AppliedRevert
+	var out action.AppliedRevert
 	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
 	require.Equal(t, 6, out.Rows)
 	require.Equal(t, "open", leadStatus(t, d, 40))

@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
@@ -137,16 +138,16 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	part := func(raw string) json.RawMessage { return json.RawMessage(raw) }
 	ctx := context.Background()
 
-	call := func(caller, method string, served func() error, raw json.RawMessage) *mcp.ToolError {
+	call := func(caller, method string, served func() error, raw json.RawMessage) *toolresult.ToolError {
 		t.Helper()
 		_, err := p.uploadMethods(caller, served)[method](ctx, raw)
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		require.ErrorAs(t, err, &te)
 		return te
 	}
 
 	te := call("bot", mcp.MethodPluginUploadBegin, func() error {
-		return &mcp.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
+		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
 	}, nil)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
 	require.Equal(t, agent.ReasonPluginAgentOperated, te.Reason, "the tool's own refusal is passed on")

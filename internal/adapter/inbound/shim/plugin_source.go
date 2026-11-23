@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -177,33 +179,33 @@ func (c *uploadConn) answer() (json.RawMessage, error) {
 const codePluginRefused = "PLUGIN_REFUSED"
 
 // uploadFailed is the answer to an upload that broke off.
-func uploadFailed(err error) *mcp.ToolError {
-	return &mcp.ToolError{
+func uploadFailed(err error) *toolresult.ToolError {
+	return &toolresult.ToolError{
 		Code: "INTERNAL", Message: "the plugin's files could not be handed to the engine: " + err.Error(),
 		PersonMessage: "Basalt could not hand the plugin's files to its engine, so nothing was changed.",
-		NextSteps:     []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the upload failed; do not retry in a loop."}},
+		NextSteps:     []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the upload failed; do not retry in a loop."}},
 	}
 }
 
 // refusal is PLUGIN_REFUSED as the engine words it, with the catalog's
 // steps for these reasons: stop, and ask the person.
-func refusal(reason, message string) *mcp.ToolError {
-	return &mcp.ToolError{
+func refusal(reason, message string) *toolresult.ToolError {
+	return &toolresult.ToolError{
 		Code: codePluginRefused, Reason: reason, Message: message,
 		PersonMessage: "Basalt did not add or change the plugin: " + message,
-		NextSteps: []mcp.NextStep{
-			{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the engine refused this plugin change; do not work around it."},
-			{Actor: mcp.ActorAgent, Action: mcp.ActionAskPerson, Text: "Show the person the personMessage; only they can decide about this plugin."},
+		NextSteps: []toolresult.NextStep{
+			{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the engine refused this plugin change; do not work around it."},
+			{Actor: toolresult.ActorAgent, Action: toolresult.ActionAskPerson, Text: "Show the person the personMessage; only they can decide about this plugin."},
 		},
 	}
 }
 
 // badFolder is INVALID_ARGUMENT for a folder that cannot be read as a
 // plugin.
-func badFolder(format string, args ...any) *mcp.ToolError {
-	return &mcp.ToolError{
+func badFolder(format string, args ...any) *toolresult.ToolError {
+	return &toolresult.ToolError{
 		Code: "INVALID_ARGUMENT", Message: fmt.Sprintf(format, args...),
-		NextSteps: []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionReviseCall, Tool: toolRequestPlugin, Text: "Call again with source naming the plugin's folder."}},
+		NextSteps: []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionReviseCall, Tool: toolRequestPlugin, Text: "Call again with source naming the plugin's folder."}},
 	}
 }
 
@@ -212,7 +214,7 @@ type PluginSource struct {
 	Files []PluginFile
 	// Executables are the listed files with an execute bit.
 	Executables []string
-	Manifest    pluginhost.Manifest
+	Manifest    pluginmodel.Manifest
 }
 
 // ReadPluginSource reads a plugin folder for an upload: the manifest, its
@@ -267,10 +269,10 @@ func ReadPluginSource(dir string) (PluginSource, error) {
 	}
 	m, err := pluginhost.ParseManifest(manifest)
 	if err != nil {
-		return PluginSource{}, &mcp.ToolError{
+		return PluginSource{}, &toolresult.ToolError{
 			Code: codePluginRefused, Reason: "BAD_MANIFEST", Message: "the plugin is refused: " + err.Error() + ". Nothing was written",
 			PersonMessage: "The plugin was refused because its manifest breaks a rule (" + err.Error() + "). Its publisher must fix the manifest.",
-			NextSteps:     []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
+			NextSteps:     []toolresult.NextStep{{Actor: toolresult.ActorAgent, Action: toolresult.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
 		}
 	}
 	files := []PluginFile{{Path: pluginhost.ManifestFile, Data: manifest}}

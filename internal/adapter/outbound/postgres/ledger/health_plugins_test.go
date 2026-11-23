@@ -9,14 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // A failed plugin read is one named problem, not a failed health check.
 func TestPluginsHealthFailsOnItsOwn(t *testing.T) {
 	t.Parallel()
 	ps, more, problem := pluginsHealth(context.Background(), nil,
-		func(context.Context, guard.Querier) (guard.PluginRecords, error) {
-			return guard.PluginRecords{}, errors.New("relation is gone")
+		func(context.Context, guard.Querier) (guardmodel.PluginRecords, error) {
+			return guardmodel.PluginRecords{}, errors.New("relation is gone")
 		})
 	require.Nil(t, ps)
 	require.Zero(t, more)
@@ -27,15 +28,15 @@ func TestPluginsHealthFailsOnItsOwn(t *testing.T) {
 // rest counted.
 func TestPluginsHealthCapsTheList(t *testing.T) {
 	t.Parallel()
-	var recs guard.PluginRecords
+	var recs guardmodel.PluginRecords
 	for i := range MaxPluginsListed + 5 {
-		recs.Entries = append(recs.Entries, guard.PluginRecord{
-			Kind:   guard.PluginEnabled,
-			Detail: guard.PluginDetail{Name: fmt.Sprintf("p%03d", i), Instance: "default", Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointRemote}},
+		recs.Entries = append(recs.Entries, guardmodel.PluginRecord{
+			Kind:   guardmodel.PluginEnabled,
+			Detail: guardmodel.PluginDetail{Name: fmt.Sprintf("p%03d", i), Instance: "default", Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote}},
 		})
 	}
 	ps, more, problem := pluginsHealth(context.Background(), nil,
-		func(context.Context, guard.Querier) (guard.PluginRecords, error) { return recs, nil })
+		func(context.Context, guard.Querier) (guardmodel.PluginRecords, error) { return recs, nil })
 	require.Empty(t, problem)
 	require.Len(t, ps, MaxPluginsListed)
 	require.Equal(t, 5, more)

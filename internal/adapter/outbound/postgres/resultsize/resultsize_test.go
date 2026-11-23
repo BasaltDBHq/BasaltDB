@@ -6,6 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 )
 
 func TestRowCostChargesEveryValueItsNameAndItsEscapes(t *testing.T) {
@@ -17,15 +19,15 @@ func TestRowCostChargesEveryValueItsNameAndItsEscapes(t *testing.T) {
 
 func TestBudgetIsSharedByTheCallAndStopsPastItsMax(t *testing.T) {
 	t.Parallel()
-	ctx := WithMax(context.Background(), 100)
-	b := From(ctx)
+	ctx := budget.WithMax(context.Background(), 100)
+	b := budget.From(ctx)
 	require.NoError(t, b.Charge(60))
-	require.Same(t, b, From(Ensure(ctx)), "Ensure keeps the call's budget")
-	require.ErrorIs(t, b.Charge(41), ErrSizeLimit, "both charges count against one budget")
+	require.Same(t, b, budget.From(budget.Ensure(ctx)), "Ensure keeps the call's budget")
+	require.ErrorIs(t, b.Charge(41), budget.ErrSizeLimit, "both charges count against one budget")
 	require.True(t, IsSizeLimit(b.Charge(1)))
 
-	require.Nil(t, From(context.Background()), "no budget: the person's reads")
-	require.NoError(t, From(context.Background()).Charge(MaxBytes*2), "a nil budget charges nothing")
-	require.NotNil(t, From(Ensure(context.Background())))
-	require.Equal(t, int64(MaxBytes), From(With(context.Background())).Max())
+	require.Nil(t, budget.From(context.Background()), "no budget: the person's reads")
+	require.NoError(t, budget.From(context.Background()).Charge(budget.MaxBytes*2), "a nil budget charges nothing")
+	require.NotNil(t, budget.From(budget.Ensure(context.Background())))
+	require.Equal(t, int64(budget.MaxBytes), budget.From(budget.With(context.Background())).Max())
 }

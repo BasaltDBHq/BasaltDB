@@ -60,7 +60,7 @@ type Health struct {
 	// Reinstalls are the reinstalls the ledger and the reader's kept copy
 	// record, for the notice.
 	Reinstalls guard.Reinstalls
-	Uncovered  []guard.Uncovered
+	Uncovered  []guardmodel.Uncovered
 	// RLSBlind are tables the agent can SELECT where row-level security
 	// hides every row from it (schema.table).
 	RLSBlind []string
@@ -102,7 +102,7 @@ type PluginHealth struct {
 // when it records no plugin event. It lists at most MaxPluginsListed and
 // returns how many more there are.
 func pluginsFrom(ctx context.Context, q guard.Querier,
-	read func(context.Context, guard.Querier) (guard.PluginRecords, error),
+	read func(context.Context, guard.Querier) (guardmodel.PluginRecords, error),
 ) ([]PluginHealth, int, error) {
 	recs, err := read(ctx, q)
 	if err != nil || len(recs.Entries) == 0 {
@@ -265,7 +265,7 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 // pluginsHealth reads the plugin entries and fails on its own: a read error
 // comes back as one problem text and the rest of the health stays.
 func pluginsHealth(ctx context.Context, q guard.Querier,
-	read func(context.Context, guard.Querier) (guard.PluginRecords, error),
+	read func(context.Context, guard.Querier) (guardmodel.PluginRecords, error),
 ) (ps []PluginHealth, more int, problem string) {
 	ps, more, err := pluginsFrom(ctx, q, read)
 	if err != nil {

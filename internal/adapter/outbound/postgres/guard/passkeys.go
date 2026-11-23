@@ -5,6 +5,8 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // maxPasskeys bounds a passkey list; a database has a handful.
@@ -12,7 +14,7 @@ const maxPasskeys = 100
 
 // ActivePasskeys lists the active passkeys with the admin connection
 // (basalt passkey remove), oldest first.
-func ActivePasskeys(ctx context.Context, q Querier) ([]RegisteredPasskey, error) {
+func ActivePasskeys(ctx context.Context, q Querier) ([]guardmodel.RegisteredPasskey, error) {
 	sql, args, err := psql.Select("credential_id", "label", "rp_id", "origin", "user_handle", "created_at", "last_used_at").
 		From("basalt_meta.passkeys").
 		Where(sq.Eq{"revoked_at": nil}).
@@ -26,8 +28,8 @@ func ActivePasskeys(ctx context.Context, q Querier) ([]RegisteredPasskey, error)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (RegisteredPasskey, error) {
-		var k RegisteredPasskey
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.RegisteredPasskey, error) {
+		var k guardmodel.RegisteredPasskey
 		err := row.Scan(&k.ID, &k.Label, &k.RPID, &k.Origin, &k.UserHandle, &k.CreatedAt, &k.LastUsedAt)
 		return k, err
 	})

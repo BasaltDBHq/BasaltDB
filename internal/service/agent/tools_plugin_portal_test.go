@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // pluginRelay is the Vault link relay as request_plugin sees it: connected
@@ -61,7 +61,7 @@ func TestRequestPluginHandsOverThePortalLink(t *testing.T) {
 	require.Equal(t, PluginStatePending, out.State)
 	require.True(t, strings.HasPrefix(out.ApprovalURL, links.Portal+"/plugins/"+casePluginApproval+"#s="), out.ApprovalURL)
 	require.Contains(t, out.PersonMessage, "\n"+out.ApprovalURL+"\n")
-	require.Equal(t, mcp.ActionOpenLink, out.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionOpenLink, out.NextSteps[0].Action)
 	require.Equal(t, out.ApprovalURL, out.NextSteps[0].URL)
 }
 

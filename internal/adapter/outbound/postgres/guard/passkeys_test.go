@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -58,9 +59,9 @@ func TestRevokedPasskeyCannotApproveOrRevert(t *testing.T) {
 
 	// Revoked stays revoked: re-registering the same id is refused.
 	err = guard.RegisterPasskey(ctx, d.Admin, p.Credential(), "again")
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 	_, err = guard.RevokePasskey(ctx, d.Admin, p.ID, false)
-	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	requireCode(t, err, guardmodel.CodeLedgerInputInvalid)
 
 	// The revocation is in the chained ledger.
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger
@@ -77,7 +78,7 @@ func TestLastPasskeyNeedsForce(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := guard.RevokePasskey(ctx, d.Admin, p.ID, false)
-	requireCode(t, err, guard.CodeNotAllowed)
+	requireCode(t, err, guardmodel.CodeNotAllowed)
 	require.Nil(t, scalarOf[*time.Time](t, d.Admin, `SELECT revoked_at FROM basalt_meta.passkeys WHERE credential_id = $1`, p.ID))
 
 	remaining, err := guard.RevokePasskey(ctx, d.Admin, p.ID, true)
@@ -141,7 +142,7 @@ func TestAgentCannotRegisterOrRevokePasskeys(t *testing.T) {
 func TestRegisterPasskeyStoresUserHandle(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)
-	d.Init(t, guard.AgentSpec{})
+	d.Init(t, guardmodel.AgentSpec{})
 	ctx := context.Background()
 	p, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
@@ -156,5 +157,5 @@ func TestRegisterPasskeyStoresUserHandle(t *testing.T) {
 
 	cred.UserHandle = make([]byte, 65)
 	cred.ID = []byte{9}
-	requireCode(t, guard.RegisterPasskey(ctx, d.Admin, cred, "too long"), guard.CodeLedgerInputInvalid)
+	requireCode(t, guard.RegisterPasskey(ctx, d.Admin, cred, "too long"), guardmodel.CodeLedgerInputInvalid)
 }

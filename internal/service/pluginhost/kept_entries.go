@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // EntriesPath is the entries file.
@@ -224,7 +225,7 @@ func (s *Store) Stage(t *Taken, name, instance string, executables []string) (*S
 	if err := os.MkdirAll(s.Root(), copiesDirMode); err != nil {
 		return nil, refused(ReasonUnsafePath, "%s cannot be made", s.Root())
 	}
-	st, err := Stage(t.Dir, s.Root(), instance, trust, ModeSameUser, RequireApproval(true))
+	st, err := Stage(t.Dir, s.Root(), instance, trust, pluginmodel.ModeSameUser, RequireApproval(true))
 	if err != nil {
 		return nil, refusalOf(err)
 	}
@@ -258,10 +259,10 @@ func (t *Taken) Manifest() ([]byte, error) {
 }
 
 // Commit puts a staged copy in place and recounts the storage.
-func (s *Store) Commit(st *Staged) (Verified, error) {
+func (s *Store) Commit(st *Staged) (pluginmodel.Verified, error) {
 	dir, err := st.Commit()
 	if err != nil {
-		return Verified{}, refusalOf(err)
+		return pluginmodel.Verified{}, refusalOf(err)
 	}
 	s.recountCopies()
 	v := st.Verified
@@ -271,17 +272,17 @@ func (s *Store) Commit(st *Staged) (Verified, error) {
 
 // Verify checks the installed copy of an engine-kept entry, as the engine
 // does before it serves or starts one.
-func (s *Store) Verify(k EntryKey, manifestSHA256 string) (Verified, error) {
+func (s *Store) Verify(k pluginmodel.EntryKey, manifestSHA256 string) (pluginmodel.Verified, error) {
 	trust, err := s.Trust()
 	if err != nil {
-		return Verified{}, err
+		return pluginmodel.Verified{}, err
 	}
-	return Verify(s.Root(), k, manifestSHA256, trust, ModeSameUser, RequireApproval(true))
+	return Verify(s.Root(), k, manifestSHA256, trust, pluginmodel.ModeSameUser, RequireApproval(true))
 }
 
 // Tidy removes entry k's instance and name directories when they hold
 // nothing: what a refused staging leaves.
-func (s *Store) Tidy(k EntryKey) {
+func (s *Store) Tidy(k pluginmodel.EntryKey) {
 	inst := filepath.Join(s.Root(), k.Name, k.Instance)
 	if filepath.Dir(filepath.Dir(inst)) != s.Root() {
 		return
@@ -292,8 +293,8 @@ func (s *Store) Tidy(k EntryKey) {
 
 // RemoveCopies removes entry k's copies but keep ("" removes every one),
 // and recounts the storage.
-func (s *Store) RemoveCopies(k EntryKey, keep string) error {
-	err := Sweep(s.Root(), k, keep, ModeSameUser)
+func (s *Store) RemoveCopies(k pluginmodel.EntryKey, keep string) error {
+	err := Sweep(s.Root(), k, keep, pluginmodel.ModeSameUser)
 	s.recountCopies()
 	return err
 }
@@ -305,7 +306,7 @@ func (s *Store) Sweep(entries []config.Plugin) {
 	if err != nil {
 		return
 	}
-	keep := map[EntryKey]string{}
+	keep := map[pluginmodel.EntryKey]string{}
 	for _, p := range entries {
 		keep[p.Key()] = p.ManifestSHA256
 	}
@@ -315,12 +316,12 @@ func (s *Store) Sweep(entries []config.Plugin) {
 			continue
 		}
 		for _, i := range insts {
-			k := EntryKey{Name: n.Name(), Instance: i.Name()}
+			k := pluginmodel.EntryKey{Name: n.Name(), Instance: i.Name()}
 			sha, ok := keep[k]
 			if !ok {
 				sha = ""
 			}
-			_ = Sweep(s.Root(), k, sha, ModeSameUser)
+			_ = Sweep(s.Root(), k, sha, pluginmodel.ModeSameUser)
 		}
 	}
 	s.recountCopies()
@@ -329,7 +330,7 @@ func (s *Store) Sweep(entries []config.Plugin) {
 // refusalOf maps a verification failure to its PLUGIN_REFUSED reason:
 // BAD_MANIFEST, UNSAFE_PATH for the path rule, NOT_TRUSTED otherwise.
 func refusalOf(err error) error {
-	var ve *VerifyError
+	var ve *pluginmodel.VerifyError
 	if !errors.As(err, &ve) {
 		return err
 	}

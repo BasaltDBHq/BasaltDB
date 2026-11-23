@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -112,12 +112,12 @@ func TestRelayPluginApproval(t *testing.T) {
 
 	// The guard's refusals keep the contract's codes and statuses.
 	for _, c := range []struct {
-		err    *mcp.ToolError
+		err    *toolresult.ToolError
 		status int
 	}{
-		{&mcp.ToolError{Code: agent.CodeApprovalExpired, Message: "this plugin approval expired"}, http.StatusGone},
-		{&mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "already signed"}, http.StatusConflict},
-		{&mcp.ToolError{Code: agent.CodeUnavailable, Reason: "GUARD_OUTDATED", Message: "the guard is older than schema version 5"}, http.StatusServiceUnavailable},
+		{&toolresult.ToolError{Code: agent.CodeApprovalExpired, Message: "this plugin approval expired"}, http.StatusGone},
+		{&toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "already signed"}, http.StatusConflict},
+		{&toolresult.ToolError{Code: agent.CodeUnavailable, Reason: "GUARD_OUTDATED", Message: "the guard is older than schema version 5"}, http.StatusServiceUnavailable},
 	} {
 		a.pluginErr = c.err
 		status, out := p.do(t, http.MethodPost, path, host, p.origin, "application/json", body, secret)
@@ -149,7 +149,7 @@ func TestPluginApprovalRequestRoute(t *testing.T) {
 	require.Equal(t, http.StatusOK, status, out)
 	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"binding":%q,"settings":%q}`, id, pluginBinding, pluginSettings), out)
 
-	a.pluginErr = &mcp.ToolError{Code: agent.CodeApprovalExpired, Message: "expired"}
+	a.pluginErr = &toolresult.ToolError{Code: agent.CodeApprovalExpired, Message: "expired"}
 	status, _ = p.do(t, http.MethodGet, path, host, "", "", "", secret)
 	require.Equal(t, http.StatusGone, status)
 

@@ -21,9 +21,10 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -111,12 +112,12 @@ func (lp *livePlugins) poll() { lp.w.pass(lp.ctx, false) }
 
 // callAs is a hook call to entry k naming agentName, as the engine makes
 // it: refused before anything is sent when the entry does not serve it.
-func (lp *livePlugins) callAs(k pluginhost.EntryKey, agentName string) error {
+func (lp *livePlugins) callAs(k pluginmodel.EntryKey, agentName string) error {
 	return lp.ep.host.Call(context.Background(), k, []string{agentName}, "feed.observe", nil, nil)
 }
 
 // requireServing: k runs and serves exactly agents.
-func (lp *livePlugins) requireServing(k pluginhost.EntryKey, agents ...string) {
+func (lp *livePlugins) requireServing(k pluginmodel.EntryKey, agents ...string) {
 	lp.t.Helper()
 	slices.Sort(agents)
 	require.Equal(lp.t, agents, servedTo(lp.ep, k))
@@ -126,13 +127,13 @@ func (lp *livePlugins) requireServing(k pluginhost.EntryKey, agents ...string) {
 		if slices.Contains(agents, a.Name) {
 			require.NoError(lp.t, err, a.Name)
 		} else {
-			require.ErrorIs(lp.t, err, pluginhost.ErrAgentNotListed, a.Name)
+			require.ErrorIs(lp.t, err, pluginmodel.ErrAgentNotListed, a.Name)
 		}
 	}
 }
 
 // requireStopped: k runs for no agent, and its process got shutdown.
-func (lp *livePlugins) requireStopped(k pluginhost.EntryKey) {
+func (lp *livePlugins) requireStopped(k pluginmodel.EntryKey) {
 	lp.t.Helper()
 	require.Empty(lp.t, servedTo(lp.ep, k))
 	require.NotContains(lp.t, lp.ep.sup.Supervised(), k)
@@ -176,7 +177,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	// approval through the engine's own derivation.
 	p := f.installApproval(feedHooks, "product_a")
 	f.writeConfig()
-	v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
+	v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), p.ApprovalSettings())
 	require.Eventually(t, func() bool {
@@ -286,7 +287,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	lp.change()
 	lp.requireStopped(p.Key())
 	require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
-	v, err := pluginhost.Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
+	v, err := pluginhost.Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), f.cfg.Plugins[0].ApprovalSettings())
 	lp.poll()
@@ -300,7 +301,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	require.Len(t, started, 2, "a new process for the new copy")
 	require.False(t, alive(old[0]))
 	rows := l.events(t, "product_a")
-	var d guard.PluginDetail
+	var d guardmodel.PluginDetail
 	require.NoError(t, json.Unmarshal([]byte(rows[len(rows)-1].Detail), &d))
 	require.Equal(t, "PLUGIN_ENABLED", rows[len(rows)-1].Kind)
 	require.Equal(t, next.ManifestSHA256, d.ManifestSHA256)

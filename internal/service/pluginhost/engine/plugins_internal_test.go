@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/pluginpath"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -129,7 +130,7 @@ type testPluginKeeps struct {
 // serveTestPlugin answers initialize from the manifest, health READY,
 // feed.observe with the last seq of its batch, and shutdown (then exits),
 // one line each.
-func serveTestPlugin(r io.Reader, w io.Writer, m pluginhost.Manifest, onShutdown func(), onFeed testPluginKeeps) {
+func serveTestPlugin(r io.Reader, w io.Writer, m pluginmodel.Manifest, onShutdown func(), onFeed testPluginKeeps) {
 	in := bufio.NewReader(r)
 	for {
 		line, err := in.ReadBytes('\n')
@@ -201,9 +202,9 @@ func newPluginFixture(t *testing.T) *pluginFixture {
 	require.NoError(t, os.Mkdir(configDir, 0o700))
 	f := &pluginFixture{t: t, configPath: filepath.Join(configDir, "engine.json"), report: filepath.Join(base, "report")}
 	require.NoError(t, os.Mkdir(f.report, 0o700))
-	f.root, err = pluginhost.Root(pluginhost.ModeSameUser, runtime.GOOS, configDir)
+	f.root, err = pluginhost.Root(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
-	f.trust, err = pluginhost.NewTrustStore(pluginhost.ModeSameUser, runtime.GOOS, configDir)
+	f.trust, err = pluginhost.NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, configDir)
 	require.NoError(t, err)
 	// Socket paths must be short; t.TempDir() is too long on macOS.
 	f.sockBase, err = os.MkdirTemp("", "bs")
@@ -245,7 +246,7 @@ func (f *pluginFixture) install(instance, transport string, agents ...string) co
 	sig, err := pluginhost.SignManifest([]byte(manifest), key)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
-	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginhost.ModeSameUser)
+	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
 	require.NoError(t, err)
 	p := config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: agents, TimeoutMs: config.MaxPluginTimeoutMs}
 	f.cfg.Plugins = append(f.cfg.Plugins, p)
@@ -284,7 +285,7 @@ func runPlugins(t *testing.T, ep *Plugins) func() time.Duration {
 	return stop
 }
 
-func waitReady(t *testing.T, ep *Plugins, k pluginhost.EntryKey) {
+func waitReady(t *testing.T, ep *Plugins, k pluginmodel.EntryKey) {
 	t.Helper()
 	require.Eventually(t, func() bool { return ep.host.State(k) == pluginhost.StateReady }, 60*time.Second, 10*time.Millisecond, "%s never READY", k)
 }
@@ -512,12 +513,12 @@ func TestNoPluginsChangeNothing(t *testing.T) {
 // and in service mode without its own unit; a remote one is not.
 func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 	t.Parallel()
-	local := pluginhost.Verified{Dir: "/x", Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}}}}
-	remote := pluginhost.Verified{Manifest: pluginhost.Manifest{Endpoint: pluginhost.Endpoint{Remote: &pluginhost.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}}
+	local := pluginmodel.Verified{Dir: "/x", Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}}}}
+	remote := pluginmodel.Verified{Manifest: pluginmodel.Manifest{Endpoint: pluginmodel.Endpoint{Remote: &pluginmodel.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}}
 	p := config.Plugin{Name: "acme-ner", Enabled: true, Agents: []string{"product_a"}}
 	service := serviceEngine(svcConfig(), &fakeUnits{}, 1000)
-	root := &Plugins{mode: pluginhost.ModeSameUser, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 0}}
-	user := &Plugins{mode: pluginhost.ModeSameUser, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 1000}}
+	root := &Plugins{mode: pluginmodel.ModeSameUser, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 0}}
+	user := &Plugins{mode: pluginmodel.ModeSameUser, o: Options{Ports: testPorts, Dialer: dial.Dialer{}, euid: 1000}}
 	require.Equal(t, whyNoUnit, service.localRefusal(p, local))
 	require.Equal(t, whyLocalAsRoot, root.localRefusal(p, local))
 	require.Empty(t, user.localRefusal(p, local))

@@ -36,6 +36,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
@@ -371,7 +372,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 
 // checkLabels are the columns Check shows: the agent's tables', or, for an
 // UPGRADE code, every readable column's table.
-func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guard.ColumnLabel, error) {
+func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guardmodel.ColumnLabel, error) {
 	if s.P.Agent == nil {
 		return guard.ReadReadableLabels(ctx, conn, s.Names)
 	}
@@ -516,7 +517,7 @@ func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
 			return invalid("a column of a table the agent does not get")
 		case seen[key]:
 			return invalid("a column given twice")
-		case c.Column == "" || !guard.ValidLabel(guard.Label(c.Label)) || !guard.ValidWas(guard.Label(c.Was)):
+		case c.Column == "" || !guardmodel.ValidLabel(guardmodel.Label(c.Label)) || !guardmodel.ValidWas(guardmodel.Label(c.Was)):
 			return invalid("a class, entity type or phone region the page does not set")
 		}
 		seen[key] = true
@@ -663,9 +664,9 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 	if len(in.ColumnClasses) == 0 && !in.RestPublic {
 		return nil
 	}
-	changes := make([]guard.LabelChange, 0, len(in.ColumnClasses))
+	changes := make([]guardmodel.LabelChange, 0, len(in.ColumnClasses))
 	for _, c := range in.ColumnClasses {
-		changes = append(changes, guard.LabelChange{Table: c.Table, Column: c.Column, Label: guard.Label(c.Label), Was: guard.Label(c.Was)})
+		changes = append(changes, guardmodel.LabelChange{Table: c.Table, Column: c.Column, Label: guardmodel.Label(c.Label), Was: guardmodel.Label(c.Was)})
 	}
 	var tables []string
 	switch {
@@ -680,7 +681,7 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 		}
 	}
 	_, err := guard.WriteLabels(ctx, tx, s.Names, tables, changes, in.RestPublic, now)
-	if errors.Is(err, guard.ErrClassesChanged) {
+	if errors.Is(err, guardmodel.ErrClassesChanged) {
 		return &setuprun.RefusalError{
 			Code: CodeClassesChanged, Err: err,
 			Message: "a column's label changed since the page showed it (someone classified it, or the column is gone), so the setup did not run and nothing changed: read the labels again",

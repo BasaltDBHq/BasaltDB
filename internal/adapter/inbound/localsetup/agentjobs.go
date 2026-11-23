@@ -295,7 +295,7 @@ type agentPlan struct {
 	lines []string
 	notes []string
 	// UPDATE
-	script            setuprun.Script
+	script            guardmodel.Script
 	installed, latest int
 	// REMOVE
 	remove  setuprun.RemovePlan
@@ -385,7 +385,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	if err := s.agentRole(ctx, tx, j, database); err != nil {
 		return agentPlan{}, err
 	}
-	script, err := s.be.PlanInit(ctx, tx, setuprun.InitOptions{Names: j.names})
+	script, err := s.be.PlanInit(ctx, tx, guardmodel.InitOptions{Names: j.names})
 	if err != nil {
 		return agentPlan{}, setupFailed("plan the update", err)
 	}
@@ -449,7 +449,7 @@ func (s *Service) checkAgentJob(ctx context.Context, req Request) (CheckAnswer, 
 		return CheckAnswer{}, setupFailed("begin", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	database, err := currentDatabase(ctx, tx)
+	database, err := s.currentDatabase(ctx, tx)
 	if err != nil {
 		return CheckAnswer{}, timeLimit(ctx, err)
 	}
@@ -490,7 +490,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 	var database string
 	demoKept := false
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		if database, err = currentDatabase(ctx, tx); err != nil {
+		if database, err = s.currentDatabase(ctx, tx); err != nil {
 			return err
 		}
 		if req.Job == JobRemove {

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -56,7 +57,7 @@ var defaultFeedTiming = feedTiming{poll: feedPoll, minBackoff: feedMinBackoff, m
 // the ledger. Nothing an agent does waits on it.
 type pluginFeed struct {
 	host    *pluginhost.Host
-	served  func() []pluginhost.Entry
+	served  func() []pluginmodel.Entry
 	ledgers map[string]AgentLedger
 	// dir is <stateDir>/plugin-cursors.
 	dir     string
@@ -73,14 +74,14 @@ type pluginFeed struct {
 
 // feedPair is one entry and one agent it is served to.
 type feedPair struct {
-	key   pluginhost.EntryKey
+	key   pluginmodel.EntryKey
 	agent string
 }
 
 // newPluginFeed feeds the entries served returns, with the agents' ledgers,
 // keeping cursors under stateDir; with no stateDir it feeds nothing and
 // only keeps the senders.
-func newPluginFeed(host *pluginhost.Host, served func() []pluginhost.Entry, ledgers map[string]AgentLedger, stateDir string,
+func newPluginFeed(host *pluginhost.Host, served func() []pluginmodel.Entry, ledgers map[string]AgentLedger, stateDir string,
 	senders *pluginSenders, clock pluginhost.Clock, log *slog.Logger,
 ) *pluginFeed {
 	if host == nil || served == nil || senders == nil || clock == nil || log == nil {
@@ -121,7 +122,7 @@ func (f *pluginFeed) run(ctx context.Context) {
 // others, and keeps a sender for each served entry that declares a
 // notifier hook.
 func (f *pluginFeed) follow(ctx context.Context) {
-	var notifiers []pluginhost.EntryKey
+	var notifiers []pluginmodel.EntryKey
 	want := map[feedPair]bool{}
 	for _, e := range f.served() {
 		_, feeds := e.Manifest.Hooks[string(pluginhost.HookFeedObserve)]
@@ -286,7 +287,7 @@ func (r *feedReader) send(ctx context.Context, reg pluginhost.Registration, b fe
 	outcome := make(chan error, 1)
 	agent := r.pair.agent
 	err = s.Send(ctx, pluginCall{
-		run: func(ctx context.Context, h *pluginhost.Host, k pluginhost.EntryKey) error {
+		run: func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error {
 			var err error
 			last, err = h.ObserveFeedOn(ctx, k, reg, agent, raw)
 			return err
@@ -340,16 +341,16 @@ func (r *feedReader) failed(why string, class *string) roundResult {
 // callFailure is a failed call's class.
 func callFailure(err error) *string {
 	c := ""
-	var ce *pluginhost.CallError
+	var ce *pluginmodel.CallError
 	switch {
 	case errors.As(err, &ce):
 		c = string(ce.Class)
-	case errors.Is(err, pluginhost.ErrAgentNotListed):
+	case errors.Is(err, pluginmodel.ErrAgentNotListed):
 		c = "NOT_LISTED"
 	case errors.Is(err, errSenderStopped):
 		c = "STOPPED"
 	default:
-		c = string(pluginhost.ClassUnavailable)
+		c = string(pluginmodel.ClassUnavailable)
 	}
 	return &c
 }

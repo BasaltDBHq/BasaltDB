@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // Why an entry that requires approval is not served to one agent
@@ -68,7 +68,7 @@ type agentApprovals struct {
 	transient   bool
 	// newest is, per entry, the newest approval that names the agent's
 	// role (guard.ReadPluginApprovals).
-	newest map[pluginhost.EntryKey]guardmodel.PluginApprovalRecord
+	newest map[pluginmodel.EntryKey]guardmodel.PluginApprovalRecord
 }
 
 func (a *agentApprovals) load(ctx context.Context) {
@@ -90,10 +90,10 @@ func (a *agentApprovals) load(ctx context.Context) {
 		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
 	}
-	a.newest = make(map[pluginhost.EntryKey]guardmodel.PluginApprovalRecord, len(recs))
+	a.newest = make(map[pluginmodel.EntryKey]guardmodel.PluginApprovalRecord, len(recs))
 	for _, r := range recs {
 		if r.NamesCaller {
-			a.newest[pluginhost.EntryKey{Name: r.Name, Instance: r.Instance}] = r
+			a.newest[pluginmodel.EntryKey{Name: r.Name, Instance: r.Instance}] = r
 		}
 	}
 }
@@ -104,7 +104,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 // derives from the installed copy and engine.json. Anything else withholds
 // it, with why. An error reading the approvals or hashing the settings is
 // PLUGIN_UNAVAILABLE.
-func (a *agentApprovals) check(ctx context.Context, k pluginhost.EntryKey, d guardmodel.PluginDetail, s guardmodel.PluginSettings) (withheldWhy, bool) {
+func (a *agentApprovals) check(ctx context.Context, k pluginmodel.EntryKey, d guardmodel.PluginDetail, s guardmodel.PluginSettings) (withheldWhy, bool) {
 	a.load(ctx)
 	if a.unavailable != "" {
 		return withheldWhy{why: a.unavailable, transient: a.transient}, false
@@ -195,8 +195,8 @@ func sameIsolation(a, b *guardmodel.PluginIsolation) bool {
 // withSigner, in same-user mode: the engine runs an entry that requires
 // approval itself, as its own child, in either mode), so an honest approval
 // always matches what the engine serves.
-func PluginApprovalDetail(k pluginhost.EntryKey, v pluginhost.Verified, roles []string) guardmodel.PluginApprovalDetail {
-	d := withSigner(pluginDetail(k, v, pluginhost.ModeSameUser, runtime.GOOS, nil), v)
+func PluginApprovalDetail(k pluginmodel.EntryKey, v pluginmodel.Verified, roles []string) guardmodel.PluginApprovalDetail {
+	d := withSigner(pluginDetail(k, v, pluginmodel.ModeSameUser, runtime.GOOS, nil), v)
 	return guardmodel.PluginApprovalDetail{
 		Agents: slices.Clone(roles), Name: d.Name, Instance: d.Instance, Version: d.Version,
 		ManifestSHA256: d.ManifestSHA256, Hooks: d.Hooks, Roles: d.Roles, Egress: d.Egress,
@@ -207,9 +207,9 @@ func PluginApprovalDetail(k pluginhost.EntryKey, v pluginhost.Verified, roles []
 // withSigner is d as recorded for an entry that requires approval: with
 // the copy's signer state, and its key id only for a KNOWN signer
 // (CONTRACT.md, In the ledger, signer).
-func withSigner(d guardmodel.PluginDetail, v pluginhost.Verified) guardmodel.PluginDetail {
+func withSigner(d guardmodel.PluginDetail, v pluginmodel.Verified) guardmodel.PluginDetail {
 	d.Signer, d.SignerKeyID = string(v.Signer), ""
-	if v.Signer == pluginhost.SignerKnown {
+	if v.Signer == pluginmodel.SignerKnown {
 		d.SignerKeyID = v.SignerKeyID
 	}
 	return d

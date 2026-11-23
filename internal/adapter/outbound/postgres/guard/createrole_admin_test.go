@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // createRoleAdmin makes a login role that is not a superuser but has
@@ -56,8 +57,8 @@ func TestInitByCreateRoleAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	agentPW := guard.NewPassword()
-	s, err := guard.PlanInit(ctx, conn, guard.InitOptions{
-		Names: d.Names, Agent: guard.AgentSpec{Name: "bot", Password: agentPW, Write: []string{"app.leads"}},
+	s, err := guard.PlanInit(ctx, conn, guardmodel.InitOptions{
+		Names: d.Names, Agent: guardmodel.AgentSpec{Name: "bot", Password: agentPW, Write: []string{"app.leads"}},
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))

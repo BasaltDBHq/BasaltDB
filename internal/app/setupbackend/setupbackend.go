@@ -69,7 +69,7 @@ func (Backend) AgentStatus(ctx context.Context, q setuprun.Querier, migs []guard
 	return guard.AgentStatus(ctx, q, migs)
 }
 
-func (Backend) RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (setuprun.Script, error) {
+func (Backend) RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (guardmodel.Script, error) {
 	return guard.RepairScript(n, agent, password, timeoutMs)
 }
 
@@ -116,7 +116,7 @@ func (Backend) WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Nam
 
 // Passkeys.
 
-func (Backend) ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.RegisteredPasskey, error) {
+func (Backend) ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]guardmodel.RegisteredPasskey, error) {
 	return guard.ActivePasskeys(ctx, q)
 }
 
@@ -144,7 +144,7 @@ func (Backend) ListPasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun
 
 func (Backend) DemoTables() []string { return demo.Tables }
 
-func (Backend) SeedDemo(ctx context.Context, tx pgx.Tx) (setuprun.DemoPlan, error) {
+func (Backend) SeedDemo(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, error) {
 	return demo.Seed(ctx, tx)
 }
 

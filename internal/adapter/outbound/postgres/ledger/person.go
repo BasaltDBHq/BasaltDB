@@ -9,6 +9,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -44,7 +46,7 @@ func (l *Person) CheckHealth(ctx context.Context, opts HealthOptions) (Health, e
 }
 
 // ListChanges is ListChanges.
-func (l *Person) ListChanges(ctx context.Context, p ChangeListParams) (pagination.Page[Change], error) {
+func (l *Person) ListChanges(ctx context.Context, p action.ChangeListParams) (pagination.Page[action.Change], error) {
 	return ListChanges(ctx, l.db, p)
 }
 
@@ -55,7 +57,7 @@ func (l *Person) ListAccess(ctx context.Context) (pgcatalog.Access, error) {
 }
 
 // RowChanges is RowChanges.
-func (l *Person) RowChanges(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]RowChange, error) {
+func (l *Person) RowChanges(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]action.RowChange, error) {
 	return RowChanges(ctx, l.db, ids)
 }
 
@@ -65,7 +67,7 @@ func (l *Person) ListPasskeys(ctx context.Context) ([]Passkey, error) {
 }
 
 // FindApproval is FindApproval.
-func (l *Person) FindApproval(ctx context.Context, id uuid.UUID) (Approval, error) {
+func (l *Person) FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error) {
 	return FindApproval(ctx, l.db, id)
 }
 
@@ -75,12 +77,12 @@ func (l *Person) SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Ass
 }
 
 // FindRevert is FindRevert.
-func (l *Person) FindRevert(ctx context.Context, id uuid.UUID) (Revert, error) {
+func (l *Person) FindRevert(ctx context.Context, id uuid.UUID) (action.Revert, error) {
 	return FindRevert(ctx, l.db, id)
 }
 
 // PreviewRevert is guard.PreviewRevert, in a pinned transaction.
-func (l *Person) PreviewRevert(ctx context.Context, s guard.RevertScope) ([]string, error) {
+func (l *Person) PreviewRevert(ctx context.Context, s action.Scope) ([]string, error) {
 	var lines []string
 	err := pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
@@ -91,13 +93,13 @@ func (l *Person) PreviewRevert(ctx context.Context, s guard.RevertScope) ([]stri
 }
 
 // PrepareRevert is guard.PrepareRevertWithin the CLI's time limit.
-func (l *Person) PrepareRevert(ctx context.Context, s guard.RevertScope, intent string) (guard.PreparedRevert, error) {
-	return guard.PrepareRevertWithin(ctx, l.db, s, intent, guard.CLIPrepareTimeout)
+func (l *Person) PrepareRevert(ctx context.Context, s action.Scope, intent string) (action.PreparedRevert, error) {
+	return guard.PrepareRevertWithin(ctx, l.db, s, intent, guardmodel.CLIPrepareTimeout)
 }
 
 // ApplyRevert is guard.ApplyRevert, in its own pinned transaction.
-func (l *Person) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error) {
-	var out guard.AppliedRevert
+func (l *Person) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
+	var out action.AppliedRevert
 	err := pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
 		out, err = guard.ApplyRevert(ctx, tx, id, a)
@@ -109,13 +111,13 @@ func (l *Person) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assert
 // RescopeRevert narrows the agent's own pending revert id to runs and
 // tables (nil for all) inside the agent's own work, keeping its scope kind
 // and id: guard.RescopeOwn, which never widens.
-func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (guard.PreparedRevert, error) {
+func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (action.PreparedRevert, error) {
 	r, err := FindRevert(ctx, l.db, id)
 	if err != nil {
-		return guard.PreparedRevert{}, err
+		return action.PreparedRevert{}, err
 	}
-	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
-	var out guard.PreparedRevert
+	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
+	var out action.PreparedRevert
 	err = pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
 		out, err = guard.RescopeOwn(ctx, tx, id, scope)
@@ -126,11 +128,11 @@ func (l *Person) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UU
 
 // RejectRevert is guard.RejectRevert with no scope token: it never rejects
 // a revert the person widened.
-func (l *Person) RejectRevert(ctx context.Context, id uuid.UUID, note string) (guard.RejectedRevert, error) {
+func (l *Person) RejectRevert(ctx context.Context, id uuid.UUID, note string) (action.RejectedRevert, error) {
 	return guard.RejectRevert(ctx, l.db, id, note, nil)
 }
 
 // ListRevertLines is ListRevertLines.
-func (l *Person) ListRevertLines(ctx context.Context, p RevertLineParams) (pagination.Page[RevertLine], error) {
+func (l *Person) ListRevertLines(ctx context.Context, p action.RevertLineParams) (pagination.Page[action.RevertLine], error) {
 	return ListRevertLines(ctx, l.db, p)
 }

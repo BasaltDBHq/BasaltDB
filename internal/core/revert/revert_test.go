@@ -49,7 +49,7 @@ func revertLines() []string {
 
 func bindingText(lines []string) string {
 	return fmt.Sprintf(`{"kind": "REVERT", "rows": 3, "intent": "Undo the bad merge", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "skipped": 1, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`,
-		runID.String(), revertID.String(), revert.RowsHash(lines))
+		runID.String(), revertID.String(), approval.RowsHash(lines))
 }
 
 // Size of the batched fixture plan: more lines than one call takes.
@@ -76,7 +76,7 @@ func planLines() []string {
 
 func batchedBinding(all, sample []string) string {
 	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "batched": true, "skipped": %d, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
-		planRestores, runID.String(), planSkips, revertID.String(), revert.RowsHash(all), revert.RowsHash(sample))
+		planRestores, runID.String(), planSkips, revertID.String(), approval.RowsHash(all), approval.RowsHash(sample))
 }
 
 func planSample(t *testing.T) ([]string, []string) {
@@ -201,7 +201,7 @@ const (
 // mixedBinding is the binding of a batched plan of mixedLines(skips, rows).
 func mixedBinding(all, sample []string, skips, rows int) string {
 	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "batched": true, "skipped": %d, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
-		rows, runID.String(), skips, revertID.String(), revert.RowsHash(all), revert.RowsHash(sample))
+		rows, runID.String(), skips, revertID.String(), approval.RowsHash(all), approval.RowsHash(sample))
 }
 
 func buildFixtures(t *testing.T) fixtures {
@@ -219,8 +219,8 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Request.Lines = lines
 	f.Request.CredentialIDs = []string{passkey.Bytes(seq(16, 1)).String()}
 	f.Request.Fragment = frag
-	f.Request.RowsHash = revert.RowsHash(lines)
-	f.Request.Challenge = passkey.Bytes(revert.Challenge(binding)).String()
+	f.Request.RowsHash = approval.RowsHash(lines)
+	f.Request.Challenge = passkey.Bytes(approval.Challenge(binding)).String()
 
 	resp := revert.Response{
 		RevertID:          revertID,
@@ -244,7 +244,7 @@ func buildFixtures(t *testing.T) fixtures {
 	require.NoError(t, err)
 	f.Batched.RevertID = revertID.String()
 	f.Batched.Binding = plan.Binding
-	f.Batched.SampleHash = revert.RowsHash(sample)
+	f.Batched.SampleHash = approval.RowsHash(sample)
 	f.Batched.Lines = len(all)
 	f.Batched.Skipped = planSkips
 
@@ -316,7 +316,7 @@ func TestParseLineRefuses(t *testing.T) {
 	}
 	for name, line := range cases {
 		_, err := revert.ParseLine(line)
-		require.ErrorIs(t, err, revert.ErrInvalid, name)
+		require.ErrorIs(t, err, approval.ErrInvalid, name)
 	}
 }
 
@@ -379,7 +379,7 @@ func TestRequestRefusesMismatch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, err := revert.ParseRequest(tc.fragment)
-			require.ErrorIs(t, err, revert.ErrInvalid)
+			require.ErrorIs(t, err, approval.ErrInvalid)
 			require.ErrorContains(t, err, tc.detail)
 		})
 	}
@@ -394,7 +394,7 @@ func TestBindingLimits(t *testing.T) {
 		"negative skipped":         {strings.Replace(binding, `"skipped": 1`, `"skipped": -1`, 1), "skipped -1"},
 		"unknown scope":            {strings.Replace(binding, `"RUN"`, `"DATABASE"`, 1), "scope"},
 		"no agents":                {strings.Replace(binding, `["basalt_agent_bot"]`, `[]`, 1), "agents"},
-		"rowsHash not hex":         {strings.Replace(binding, revert.RowsHash(revertLines()), "xyz", 1), "rowsHash"},
+		"rowsHash not hex":         {strings.Replace(binding, approval.RowsHash(revertLines()), "xyz", 1), "rowsHash"},
 		"unknown field":            {strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), "unknown field"},
 		"an approval's fields":     {`{"kind": "REVERT", "approvalId": "` + revertID.String() + `"}`, "unknown field"},
 		"the old top-level scope":  {strings.Replace(binding, `"widened": false`, `"widened": false, "scope": "RUN"`, 1), "unknown field"},
@@ -409,7 +409,7 @@ func TestBindingLimits(t *testing.T) {
 	}
 	for name, tc := range cases {
 		_, err := revert.ParseBinding(tc.binding)
-		require.ErrorIs(t, err, revert.ErrInvalid, name)
+		require.ErrorIs(t, err, approval.ErrInvalid, name)
 		require.ErrorContains(t, err, tc.detail, name)
 	}
 }
@@ -537,7 +537,7 @@ func TestBatchedRequestChecksTheSplit(t *testing.T) {
 		}
 	}
 	_, err = revert.Request{RevertID: revertID, Binding: binding(skipsOnly), Lines: skipsOnly}.Check()
-	require.ErrorIs(t, err, revert.ErrInvalid)
+	require.ErrorIs(t, err, approval.ErrInvalid)
 	require.ErrorContains(t, err, "request has 1000 SKIP lines, the binding's sample 950")
 }
 
@@ -648,10 +648,10 @@ func FuzzParseRequest(f *testing.F) {
 	f.Fuzz(func(t *testing.T, fragment string) {
 		req, b, err := revert.ParseRequest(fragment)
 		if err != nil {
-			require.ErrorIs(t, err, revert.ErrInvalid)
+			require.ErrorIs(t, err, approval.ErrInvalid)
 			return
 		}
-		require.Equal(t, b.RowsHash, revert.RowsHash(req.Lines))
+		require.Equal(t, b.RowsHash, approval.RowsHash(req.Lines))
 	})
 }
 
@@ -679,7 +679,7 @@ func TestBatchedRequestRefuses(t *testing.T) {
 	}
 	for _, tc := range cases {
 		_, err := revert.Request{RevertID: revertID, Binding: tc.binding, Lines: tc.lines}.Check()
-		require.ErrorIs(t, err, revert.ErrInvalid, tc.name)
+		require.ErrorIs(t, err, approval.ErrInvalid, tc.name)
 		require.ErrorContains(t, err, tc.detail, tc.name)
 	}
 }
@@ -691,13 +691,13 @@ func TestBatchedBindingLimits(t *testing.T) {
 	small := bindingText(revertLines())
 	cases := map[string]struct{ binding, detail string }{
 		"batched with few lines": {strings.Replace(binding, `"rows": 1490`, `"rows": 990`, 1), "only a plan of more than 1000"},
-		"batched without sample": {strings.Replace(binding, revert.RowsHash(sample), "", 1), "sampleHash"},
-		"sample without batched": {strings.Replace(small, `"kind"`, `"sampleHash": "`+revert.RowsHash(sample)+`", "kind"`, 1), "not batched"},
+		"batched without sample": {strings.Replace(binding, approval.RowsHash(sample), "", 1), "sampleHash"},
+		"sample without batched": {strings.Replace(small, `"kind"`, `"sampleHash": "`+approval.RowsHash(sample)+`", "kind"`, 1), "not batched"},
 		"large but not batched":  {strings.Replace(binding, `"batched": true, `, ``, 1), "not batched"},
 	}
 	for name, tc := range cases {
 		_, err := revert.ParseBinding(tc.binding)
-		require.ErrorIs(t, err, revert.ErrInvalid, name)
+		require.ErrorIs(t, err, approval.ErrInvalid, name)
 		require.ErrorContains(t, err, tc.detail, name)
 	}
 }
@@ -722,7 +722,7 @@ func TestVerifyWithSoftwareKey(t *testing.T) {
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 
-	as, err := person.Sign(revert.Challenge(binding), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	body, err := json.Marshal(revert.NewResponse(revertID, as))
 	require.NoError(t, err)
@@ -751,12 +751,12 @@ func TestVerifyWithSoftwareKey(t *testing.T) {
 		approvalBody, err := json.Marshal(approval.NewResponse(revertID, as))
 		require.NoError(t, err)
 		_, err = revert.DecodeResponse(approvalBody)
-		require.ErrorIs(t, err, revert.ErrInvalid)
+		require.ErrorIs(t, err, approval.ErrInvalid)
 	})
 	t.Run("a signature over an approval binding", func(t *testing.T) {
 		t.Parallel()
 		approvalBinding := `{"kind": "APPROVE"}`
-		signed, err := person.Sign(revert.Challenge(approvalBinding), passkeytest.FlagsUPUV, nil)
+		signed, err := person.Sign(approval.Challenge(approvalBinding), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = revert.Verify(binding, person.Credential(), revert.NewResponse(revertID, signed))
 		require.ErrorIs(t, err, passkey.ErrRejected)
@@ -766,7 +766,7 @@ func TestVerifyWithSoftwareKey(t *testing.T) {
 		agent, err := passkeytest.New(passkey.Production)
 		require.NoError(t, err)
 		agent.ID = person.ID
-		forged, err := agent.Sign(revert.Challenge(binding), passkeytest.FlagsUPUV, nil)
+		forged, err := agent.Sign(approval.Challenge(binding), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		_, err = revert.Verify(binding, person.Credential(), revert.NewResponse(revertID, forged))
 		require.ErrorContains(t, err, "bad passkey signature")
@@ -782,6 +782,6 @@ func TestDecodeResponseRefuses(t *testing.T) {
 		`{"revertId":"` + revertID.String() + `","credentialId":"AQ","authenticatorData":"AQ","clientDataJson":"AQ","signature":"AQ","extra":1}`,
 	} {
 		_, err := revert.DecodeResponse([]byte(body))
-		require.ErrorIs(t, err, revert.ErrInvalid, body)
+		require.ErrorIs(t, err, approval.ErrInvalid, body)
 	}
 }

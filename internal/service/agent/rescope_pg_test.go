@@ -27,10 +27,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -233,8 +235,8 @@ func revertPath(id uuid.UUID) string { return "/api/v1/reverts/" + id.String() }
 
 // scopeAnswer is the scope route's 200 answer as the page reads it.
 type scopeAnswer struct {
-	Request revert.Request       `json:"request"`
-	Catalog *guard.RevertCatalog `json:"catalog"`
+	Request revert.Request        `json:"request"`
+	Catalog *action.RevertCatalog `json:"catalog"`
 }
 
 // A widen with the person's proof rotates the revert's link to the page's
@@ -410,7 +412,7 @@ func TestResetGivesTheRotatedLinkLinkReset(t *testing.T) {
 	require.Equal(t, "The agent reset this revert to its own work. Ask it for the new link, and widen again if you "+
 		"still want to include other agents.", perr.PersonMessage)
 	require.Len(t, perr.NextSteps, 1)
-	require.Equal(t, mcp.ActorPerson, perr.NextSteps[0].Actor)
+	require.Equal(t, toolresult.ActorPerson, perr.NextSteps[0].Actor)
 	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, personSecret,
 		scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "LINK_RESET", perr.Reason)
@@ -589,5 +591,5 @@ func TestScopeRouteTimeLimit(t *testing.T) {
 	require.Equal(t, "TIME_LIMIT", perr.Reason)
 	require.Equal(t, "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. "+
 		"Choose fewer agents, runs or tables, or try again.", perr.PersonMessage)
-	require.Equal(t, 100*time.Second, agent.RescopeTimeout)
+	require.Equal(t, 100*time.Second, guardmodel.MCPPrepareTimeout)
 }

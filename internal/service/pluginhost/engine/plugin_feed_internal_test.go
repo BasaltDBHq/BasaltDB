@@ -25,6 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -87,8 +89,8 @@ type gotCall struct {
 // the host's cap, timeout and agent check. It checks every request it gets
 // against feed.schema.json and keeps its bytes.
 type feedPlugin struct {
-	key    pluginhost.EntryKey
-	m      pluginhost.Manifest
+	key    pluginmodel.EntryKey
+	m      pluginmodel.Manifest
 	schema *jsonschema.Schema
 
 	mu      sync.Mutex
@@ -133,7 +135,7 @@ func (p *feedPlugin) Call(ctx context.Context, method string, params, result any
 	var last int64
 	switch mode {
 	case crashMode:
-		return pluginhost.Fail(pluginhost.ClassExited)
+		return pluginmodel.Fail(pluginmodel.ClassExited)
 	case hangMode:
 		<-ctx.Done()
 		return ctx.Err()
@@ -185,7 +187,7 @@ type feedEnv struct {
 	log      *slog.Logger
 
 	mu      sync.Mutex
-	entries []pluginhost.Entry
+	entries []pluginmodel.Entry
 
 	stop func()
 	// feed is the feed last started.
@@ -209,11 +211,11 @@ func newFeedEnv(t *testing.T) *feedEnv {
 	return e
 }
 
-func feedManifest(name string) pluginhost.Manifest {
-	return pluginhost.Manifest{
+func feedManifest(name string) pluginmodel.Manifest {
+	return pluginmodel.Manifest{
 		ManifestVersion: 1, Name: name, Version: "1.0.0", Publisher: "t", Protocol: []string{pluginproto.Version1},
 		Hooks:    map[string]pluginproto.HookDecl{string(pluginhost.HookFeedObserve): {Contract: "feed/1"}},
-		Endpoint: pluginhost.Endpoint{Local: &pluginhost.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/p"}},
+		Endpoint: pluginmodel.Endpoint{Local: &pluginmodel.LocalEndpoint{Transport: "jsonrpc-stdio", Command: "bin/p"}},
 	}
 }
 
@@ -221,7 +223,7 @@ func feedManifest(name string) pluginhost.Manifest {
 // the supervisor does, and makes the engine serve it.
 func (e *feedEnv) serve(name string, agents ...string) *feedPlugin {
 	e.t.Helper()
-	k := pluginhost.EntryKey{Name: name, Instance: "default"}
+	k := pluginmodel.EntryKey{Name: name, Instance: "default"}
 	p := &feedPlugin{key: k, m: feedManifest(name), schema: e.schema, mode: answerAll}
 	e.t.Cleanup(func() {
 		p.mu.Lock()
@@ -235,7 +237,7 @@ func (e *feedEnv) serve(name string, agents ...string) *feedPlugin {
 // serveAgain registers p again, a new registration, served to agents.
 func (e *feedEnv) serveAgain(p *feedPlugin, agents ...string) {
 	e.t.Helper()
-	en := pluginhost.Entry{Key: p.key, Manifest: p.m, Agents: agents, Timeout: 2 * time.Second}
+	en := pluginmodel.Entry{Key: p.key, Manifest: p.m, Agents: agents, Timeout: 2 * time.Second}
 	require.NoError(e.t, e.host.Register(context.Background(), en, p))
 	e.mu.Lock()
 	e.entries = append(e.entries, en)
@@ -243,14 +245,14 @@ func (e *feedEnv) serveAgain(p *feedPlugin, agents ...string) {
 }
 
 // unserve stops serving entry k: the engine no longer runs it.
-func (e *feedEnv) unserve(k pluginhost.EntryKey) {
+func (e *feedEnv) unserve(k pluginmodel.EntryKey) {
 	e.mu.Lock()
-	e.entries = slices.DeleteFunc(e.entries, func(en pluginhost.Entry) bool { return en.Key == k })
+	e.entries = slices.DeleteFunc(e.entries, func(en pluginmodel.Entry) bool { return en.Key == k })
 	e.mu.Unlock()
 	e.host.Unregister(k)
 }
 
-func (e *feedEnv) served() []pluginhost.Entry {
+func (e *feedEnv) served() []pluginmodel.Entry {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return slices.Clone(e.entries)
@@ -283,7 +285,7 @@ func (e *feedEnv) startWith(ledgers map[string]AgentLedger) {
 }
 
 // cursor is entry k's cursor for agent, false while there is none.
-func (e *feedEnv) cursor(k pluginhost.EntryKey, agent string) (feedCursor, bool) {
+func (e *feedEnv) cursor(k pluginmodel.EntryKey, agent string) (feedCursor, bool) {
 	raw, err := os.ReadFile(filepath.Join(e.stateDir, pluginCursorsDirName, k.Name, k.Instance, agent+".json"))
 	if err != nil {
 		return feedCursor{}, false
@@ -293,7 +295,7 @@ func (e *feedEnv) cursor(k pluginhost.EntryKey, agent string) (feedCursor, bool)
 }
 
 // started waits until entry k's cursor for agent is written, and returns it.
-func (e *feedEnv) started(k pluginhost.EntryKey, agent string) feedCursor {
+func (e *feedEnv) started(k pluginmodel.EntryKey, agent string) feedCursor {
 	e.t.Helper()
 	var c feedCursor
 	require.Eventually(e.t, func() bool {
@@ -305,7 +307,7 @@ func (e *feedEnv) started(k pluginhost.EntryKey, agent string) feedCursor {
 }
 
 // waitCursor waits until entry k's cursor for product_a is written at seq.
-func (e *feedEnv) waitCursor(k pluginhost.EntryKey, seq int64) feedCursor {
+func (e *feedEnv) waitCursor(k pluginmodel.EntryKey, seq int64) feedCursor {
 	e.t.Helper()
 	var c feedCursor
 	require.Eventually(e.t, func() bool {
@@ -334,7 +336,7 @@ func (e *feedEnv) appendRow(agent, kind string, op any, changeID any, detail map
 // applied appends a write's CHANGE row for agent and returns its seq.
 func (e *feedEnv) applied(agent string) int64 {
 	e.t.Helper()
-	return e.appendRow(agent, guard.KindChange, "UPDATE", uuid.Must(uuid.NewV7()), map[string]any{
+	return e.appendRow(agent, guardmodel.KindChange, "UPDATE", uuid.Must(uuid.NewV7()), map[string]any{
 		"runId": uuid.Must(uuid.NewV7()), "taskId": nil, "intent": "set the score", "statement": "UPDATE public.leads SET score = 1",
 		"table": "public.leads", "rows": 1, "cascadedRows": 0, "durationMs": 3, "status": "APPLIED",
 	})
@@ -612,16 +614,16 @@ func TestNewCursorStartsAtHead(t *testing.T) {
 
 // recordServed writes the record that begins serving entry k to product_a, as
 // the engine writes it before it serves the entry, and returns its seq.
-func (e *feedEnv) recordServed(k pluginhost.EntryKey, kind guard.PluginEventKind, egress ...string) int64 {
+func (e *feedEnv) recordServed(k pluginmodel.EntryKey, kind guardmodel.PluginEventKind, egress ...string) int64 {
 	e.t.Helper()
 	if egress == nil {
 		egress = []string{}
 	}
-	d := guard.PluginDetail{
+	d := guardmodel.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: "1.0.0", ManifestSHA256: strings.Repeat("ab", 32),
 		SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA", Hooks: []string{"feed.observe"}, Egress: egress,
-		Endpoint:  guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
+		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
 	}
 	require.NoError(e.t, guard.RecordPluginEntryEvent(context.Background(), e.l.dbs["product_a"].db, kind, d))
 	return e.head()
@@ -635,7 +637,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	t.Parallel()
 	e := newFeedEnv(t)
 	p := e.serve("acme-feed", "product_a")
-	e.recordServed(p.key, guard.PluginEnabled)
+	e.recordServed(p.key, guardmodel.PluginEnabled)
 	e.start()
 	e.started(p.key, "product_a")
 	a := e.applied("product_a")
@@ -646,9 +648,9 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 
 	e.unserve(p.key)
 	settle()
-	e.recordServed(p.key, guard.PluginDisabled)
+	e.recordServed(p.key, guardmodel.PluginDisabled)
 	e.applied("product_a") // while not served
-	e.recordServed(p.key, guard.PluginEnabled)
+	e.recordServed(p.key, guardmodel.PluginEnabled)
 	b := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b)
@@ -658,7 +660,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	e.unserve(p.key)
 	settle()
 	c := e.applied("product_a")
-	e.recordServed(p.key, guard.PluginChanged)
+	e.recordServed(p.key, guardmodel.PluginChanged)
 	d := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b, c, d)
@@ -668,7 +670,7 @@ func TestServedAgainStartsAtHead(t *testing.T) {
 	e.unserve(p.key)
 	settle()
 	e.applied("product_a")
-	e.recordServed(p.key, guard.PluginChanged, "hooks.example:443")
+	e.recordServed(p.key, guardmodel.PluginChanged, "hooks.example:443")
 	f := e.applied("product_a")
 	e.serveAgain(p, "product_a")
 	waitSeqs(t, p, "product_a", a, b, c, d, f)
@@ -685,11 +687,11 @@ func TestNewInstallStartsAtHead(t *testing.T) {
 	dir := filepath.Join(e.stateDir, pluginCursorsDirName)
 	old, err := json.Marshal(feedCursor{InstallID: uuid.Must(uuid.NewV7()), Seq: 1})
 	require.NoError(t, err)
-	for _, k := range []pluginhost.EntryKey{p.key, q.key} {
+	for _, k := range []pluginmodel.EntryKey{p.key, q.key} {
 		require.NoError(t, writeFileAtomic(filepath.Join(dir, k.Name, k.Instance), "product_a.json", old))
 	}
 	e.applied("product_a")
-	enabled := e.recordServed(p.key, guard.PluginEnabled)
+	enabled := e.recordServed(p.key, guardmodel.PluginEnabled)
 	a := e.applied("product_a")
 	head := e.head()
 	e.start()

@@ -23,8 +23,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
@@ -87,7 +89,7 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.SignatureFile), sig, 0o644))
 	}
-	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(!signed))
+	v, err := pluginhost.Install(src, f.root, instance, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(!signed))
 	require.NoError(t, err)
 	// The longest timeout: the plugin is this test binary, built with -race.
 	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
@@ -96,13 +98,13 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 // honestDetail is what basalt plugin would open for entry p of the test
 // plugin with hooks feed.observe in same-user mode, naming roles: written
 // out here, not derived by the engine's code.
-func honestDetail(p config.Plugin, roles ...string) guard.PluginApprovalDetail {
-	return guard.PluginApprovalDetail{
+func honestDetail(p config.Plugin, roles ...string) guardmodel.PluginApprovalDetail {
+	return guardmodel.PluginApprovalDetail{
 		Agents: roles, Name: "acme-ner", Instance: p.Key().Instance, Version: "1.4.0",
 		ManifestSHA256: p.ManifestSHA256, Hooks: []string{"feed.observe"}, Egress: []string{},
-		Endpoint:  guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
-		Signer:    guard.PluginSignerUnknown,
+		Endpoint:  guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
+		Signer:    guardmodel.PluginSignerUnknown,
 	}
 }
 
@@ -122,7 +124,7 @@ func registerPerson(t *testing.T, d *guardtest.DB) *passkeytest.Authenticator {
 }
 
 // open opens a plugin approval on opener's connection.
-func (l pluginLedgers) open(t *testing.T, opener string, d guard.PluginApprovalDetail, s guard.PluginSettings) guard.PluginApproval {
+func (l pluginLedgers) open(t *testing.T, opener string, d guardmodel.PluginApprovalDetail, s guardmodel.PluginSettings) guardmodel.PluginApproval {
 	t.Helper()
 	a, err := guard.OpenPluginApproval(context.Background(), l.dbs[opener].db, d, s)
 	require.NoError(t, err)
@@ -131,11 +133,11 @@ func (l pluginLedgers) open(t *testing.T, opener string, d guard.PluginApprovalD
 
 // sign signs a with the person's passkey and relays it through relay's
 // connection.
-func (l pluginLedgers) sign(t *testing.T, pk *passkeytest.Authenticator, relay string, a guard.PluginApproval) {
+func (l pluginLedgers) sign(t *testing.T, pk *passkeytest.Authenticator, relay string, a guardmodel.PluginApproval) {
 	t.Helper()
 	as, err := pk.Sign(approval.Challenge(a.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs[relay].db, guard.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
+	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs[relay].db, guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.NoError(t, err)
 }
 
@@ -152,7 +154,7 @@ func (l pluginLedgers) approve(t *testing.T, pk *passkeytest.Authenticator, p co
 
 // servedTo are the agents the host serves entry k to, none when it is not
 // started.
-func servedTo(ep *Plugins, k pluginhost.EntryKey) []string {
+func servedTo(ep *Plugins, k pluginmodel.EntryKey) []string {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	for _, e := range ep.entries {
@@ -166,7 +168,7 @@ func servedTo(ep *Plugins, k pluginhost.EntryKey) []string {
 // requireNotWithheld: entry k is served to agentName, and status reports
 // no approval or record problem for it (the plugin itself is not running
 // in these tests, so it is not READY).
-func requireNotWithheld(t *testing.T, ep *Plugins, k pluginhost.EntryKey, agentName string) {
+func requireNotWithheld(t *testing.T, ep *Plugins, k pluginmodel.EntryKey, agentName string) {
 	t.Helper()
 	require.Contains(t, servedTo(ep, k), agentName)
 	require.Empty(t, ep.unrecordedFor(k, agentName), agentName)
@@ -210,7 +212,7 @@ func TestApprovedEntryIsServed(t *testing.T) {
 		kinds := kindsOf(rows)
 		require.NotContains(t, kinds, "PLUGIN_TRUST_ADDED", a)
 		require.Equal(t, "PLUGIN_ENABLED", kinds[len(kinds)-1], a)
-		require.Equal(t, 1, slices.Index(kinds, "PLUGIN_ENABLED")-slices.Index(kinds, string(guard.PluginApproved)), "served once, after the approval")
+		require.Equal(t, 1, slices.Index(kinds, "PLUGIN_ENABLED")-slices.Index(kinds, string(guardmodel.PluginApproved)), "served once, after the approval")
 		var d map[string]any
 		require.NoError(t, json.Unmarshal([]byte(rows[len(rows)-1].Detail), &d))
 		require.Equal(t, "UNKNOWN", d["signer"], a)
@@ -282,7 +284,7 @@ func TestExpiredPendingIsReported(t *testing.T) {
 	prob := problemFor(t, ep, "product_a")
 	require.Equal(t, agent.ProblemPluginApprovalExpired, prob.Code)
 	require.Contains(t, prob.Message, "expired")
-	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs["product_a"].db, guard.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
+	_, err = guard.SubmitPluginApproval(context.Background(), l.dbs["product_a"].db, guardmodel.PluginApprovalResponse{ApprovalID: a.ID, Assertion: as})
 	require.Error(t, err, "the signature comes too late")
 	l.record(t, f, f.plugins(nil))
 	require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING"}, kindsOf(l.events(t, "product_a")))
@@ -296,27 +298,31 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 	for _, c := range []struct {
 		field string
 		hooks string
-		lie   func(*guard.PluginApprovalDetail, *guard.PluginSettings)
+		lie   func(*guardmodel.PluginApprovalDetail, *guardmodel.PluginSettings)
 		value string
 	}{
-		{"version", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) { d.Version = "1.4.1" }, "1.4.1"},
-		{"manifestSha256", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
+		{"version", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) { d.Version = "1.4.1" }, "1.4.1"},
+		{"manifestSha256", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
 			d.ManifestSHA256 = strings.Repeat("cd", 32)
 		}, "cdcd"},
-		{"settingsSha256", feedHooks, func(_ *guard.PluginApprovalDetail, s *guard.PluginSettings) { v := 400; s.TimeoutMs = &v }, "400"},
-		{"hooks", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) { d.Hooks = []string{"approval.deliver"} }, "approval.deliver"},
-		{"roles", detectHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) { d.Roles = []string{"NAME_CUE", "VALUE"} }, "NAME_CUE"},
-		{"endpoint", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
-			d.Endpoint, d.Isolation = guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, nil
+		{"settingsSha256", feedHooks, func(_ *guardmodel.PluginApprovalDetail, s *guardmodel.PluginSettings) { v := 400; s.TimeoutMs = &v }, "400"},
+		{"hooks", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
+			d.Hooks = []string{"approval.deliver"}
+		}, "approval.deliver"},
+		{"roles", detectHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
+			d.Roles = []string{"NAME_CUE", "VALUE"}
+		}, "NAME_CUE"},
+		{"endpoint", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
+			d.Endpoint, d.Isolation = guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "ner.acme.example:443"}, nil
 		}, "ner.acme.example"},
-		{"egress", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
+		{"egress", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
 			d.Egress = []string{"ner.acme.example:443"}
 		}, "ner.acme.example"},
-		{"isolation", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
-			d.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkEnforced}
+		{"isolation", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
+			d.Isolation = &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkEnforced}
 		}, "ENFORCED"},
-		{"signer", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
-			d.Signer, d.SignerKeyID = guard.PluginSignerKnown, "jNZPxNG5htlwfhg4ZgknAA"
+		{"signer", feedHooks, func(d *guardmodel.PluginApprovalDetail, _ *guardmodel.PluginSettings) {
+			d.Signer, d.SignerKeyID = guardmodel.PluginSignerKnown, "jNZPxNG5htlwfhg4ZgknAA"
 		}, "jNZPx"},
 	} {
 		t.Run(c.field, func(t *testing.T) {
@@ -384,30 +390,32 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 // guard would not let a detail lie in included.
 func TestApprovalMismatchNamesEveryField(t *testing.T) {
 	t.Parallel()
-	base := guard.PluginApprovalBound{
+	base := guardmodel.PluginApprovalBound{
 		Name: "acme-ner", Instance: "default", Version: "1.4.0", ManifestSHA256: strings.Repeat("ab", 32),
 		SettingsSHA256: strings.Repeat("01", 32), Hooks: []string{"wire.detect"}, Roles: []string{"VALUE"},
-		Egress: []string{}, Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
-		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
-		Signer:    guard.PluginSignerKnown, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA",
+		Egress: []string{}, Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
+		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone, Network: guardmodel.PluginNetworkNotEnforced},
+		Signer:    guardmodel.PluginSignerKnown, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA",
 	}
 	require.Empty(t, approvalMismatch(base, base))
 	nilEgress := base
 	nilEgress.Egress = nil
 	require.Empty(t, approvalMismatch(base, nilEgress), "no egress and an empty egress are the same")
-	for field, change := range map[string]func(*guard.PluginApprovalBound){
-		"name":           func(b *guard.PluginApprovalBound) { b.Name = "other" },
-		"instance":       func(b *guard.PluginApprovalBound) { b.Instance = "client_x" },
-		"version":        func(b *guard.PluginApprovalBound) { b.Version = "1.4.1" },
-		"manifestSha256": func(b *guard.PluginApprovalBound) { b.ManifestSHA256 = strings.Repeat("cd", 32) },
-		"settingsSha256": func(b *guard.PluginApprovalBound) { b.SettingsSHA256 = strings.Repeat("02", 32) },
-		"hooks":          func(b *guard.PluginApprovalBound) { b.Hooks = []string{"feed.observe"} },
-		"roles":          func(b *guard.PluginApprovalBound) { b.Roles = []string{"NAME_CUE", "VALUE"} },
-		"endpoint":       func(b *guard.PluginApprovalBound) { b.Endpoint.Kind = guard.PluginEndpointRemote },
-		"egress":         func(b *guard.PluginApprovalBound) { b.Egress = []string{"x.example:443"} },
-		"isolation":      func(b *guard.PluginApprovalBound) { b.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesNone} },
-		"signer":         func(b *guard.PluginApprovalBound) { b.Signer = guard.PluginSignerUnknown },
-		"signerKeyId":    func(b *guard.PluginApprovalBound) { b.SignerKeyID = "other" },
+	for field, change := range map[string]func(*guardmodel.PluginApprovalBound){
+		"name":           func(b *guardmodel.PluginApprovalBound) { b.Name = "other" },
+		"instance":       func(b *guardmodel.PluginApprovalBound) { b.Instance = "client_x" },
+		"version":        func(b *guardmodel.PluginApprovalBound) { b.Version = "1.4.1" },
+		"manifestSha256": func(b *guardmodel.PluginApprovalBound) { b.ManifestSHA256 = strings.Repeat("cd", 32) },
+		"settingsSha256": func(b *guardmodel.PluginApprovalBound) { b.SettingsSHA256 = strings.Repeat("02", 32) },
+		"hooks":          func(b *guardmodel.PluginApprovalBound) { b.Hooks = []string{"feed.observe"} },
+		"roles":          func(b *guardmodel.PluginApprovalBound) { b.Roles = []string{"NAME_CUE", "VALUE"} },
+		"endpoint":       func(b *guardmodel.PluginApprovalBound) { b.Endpoint.Kind = guardmodel.PluginEndpointRemote },
+		"egress":         func(b *guardmodel.PluginApprovalBound) { b.Egress = []string{"x.example:443"} },
+		"isolation": func(b *guardmodel.PluginApprovalBound) {
+			b.Isolation = &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesNone}
+		},
+		"signer":      func(b *guardmodel.PluginApprovalBound) { b.Signer = guardmodel.PluginSignerUnknown },
+		"signerKeyId": func(b *guardmodel.PluginApprovalBound) { b.SignerKeyID = "other" },
 	} {
 		got := base
 		got.Hooks, got.Roles, got.Egress = slices.Clone(base.Hooks), slices.Clone(base.Roles), slices.Clone(base.Egress)
@@ -419,7 +427,7 @@ func TestApprovalMismatchNamesEveryField(t *testing.T) {
 	noIsolation.Isolation = nil
 	require.Equal(t, []string{"isolation"}, approvalMismatch(base, noIsolation))
 	host := base
-	host.Endpoint = guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "a.example:443"}
+	host.Endpoint = guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointRemote, Host: "a.example:443"}
 	other := host
 	other.Endpoint.Host = "b.example:443"
 	require.Equal(t, []string{"endpoint"}, approvalMismatch(host, other))
@@ -700,7 +708,7 @@ func TestCommandsApprovalIsServed(t *testing.T) {
 			f.cfg.Plugins = append(f.cfg.Plugins, p)
 			l := newPluginLedgers(t, f)
 
-			v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
+			v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
 			require.NoError(t, err)
 			d := PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]})
 			l.sign(t, l.person(t), "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
@@ -728,7 +736,7 @@ func (f *pluginFixture) installRemote() config.Plugin {
 }
 `
 	require.NoError(t, os.WriteFile(filepath.Join(src, pluginhost.ManifestFile), []byte(manifest), 0o644))
-	v, err := pluginhost.Install(src, f.root, "default", f.trust, pluginhost.ModeSameUser, pluginhost.RequireApproval(true))
+	v, err := pluginhost.Install(src, f.root, "default", f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
 	require.NoError(t, err)
 	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
 }

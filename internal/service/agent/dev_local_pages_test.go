@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // devLocalSaved are init's saved flags on a development engine.
@@ -22,7 +22,7 @@ func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.DevLocalPages = true
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux")
@@ -42,8 +42,8 @@ func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 	steps, err := b.Build()
 	require.NoError(t, err)
 	require.Len(t, steps, 2)
-	require.Equal(t, mcp.ActionAskPerson, steps[0].Action)
-	require.Equal(t, mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: steps[1].Text, Command: "basalt init --agent bot --remote"}, steps[1])
+	require.Equal(t, toolresult.ActionAskPerson, steps[0].Action)
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: steps[1].Text, Command: "basalt init --agent bot --remote"}, steps[1])
 	require.NotContains(t, person, "basalt ", "the person runs no command")
 }
 
@@ -52,7 +52,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	d := deps()
 	d.OperatedBy = mcpcontract.OperatedByAgent
 	d.DevLocalPages = true
-	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Probe = &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 0}) // NO_PASSKEY too: two problems
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux")
@@ -78,7 +78,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 
 func TestNoWarningWithoutDevLocalPages(t *testing.T) {
 	t.Parallel()
-	srv, _ := degraded(t, &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, nil)
+	srv, _ := degraded(t, &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, nil)
 	body, _ := serveCall(t, srv, toolStatus, map[string]any{})
 	require.NotContains(t, body, "DEV_LOCAL_PAGES")
 	for _, p := range body["problems"].([]any) {
@@ -88,13 +88,13 @@ func TestNoWarningWithoutDevLocalPages(t *testing.T) {
 
 func TestDevLocalErrorWarnsOnACopy(t *testing.T) {
 	t.Parallel()
-	te := &mcp.ToolError{Code: "APPROVAL_REQUIRED", PersonMessage: "Approve it.", Approval: &mcp.ApprovalNotice{PersonMessage: "Approve it."}}
+	te := &toolresult.ToolError{Code: "APPROVAL_REQUIRED", PersonMessage: "Approve it.", Approval: &toolresult.ApprovalNotice{PersonMessage: "Approve it."}}
 	out := devLocalError(te)
 	require.Equal(t, config.DevLocalPagesWarning+"\n\nApprove it.", out.PersonMessage)
 	require.Equal(t, config.DevLocalPagesWarning+"\n\nApprove it.", out.Approval.PersonMessage)
 	require.Equal(t, "Approve it.", te.PersonMessage, "the shared error is left as it is")
 	require.Equal(t, "Approve it.", te.Approval.PersonMessage)
-	require.Empty(t, devLocalError(&mcp.ToolError{Code: "INVALID_ARGUMENT"}).PersonMessage, "no message gets none")
+	require.Empty(t, devLocalError(&toolresult.ToolError{Code: "INVALID_ARGUMENT"}).PersonMessage, "no message gets none")
 }
 
 func TestDevLocalResultWarnsAtAnyDepth(t *testing.T) {

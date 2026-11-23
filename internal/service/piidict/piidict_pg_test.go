@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
@@ -66,13 +67,13 @@ func newFixture(t *testing.T) fixture {
 // entity type); every other readable column is PUBLIC, except the plain
 // table, which stays unclassified (no row).
 var identifiers = map[string]string{
-	"customers.email": guard.EntityEmail,
-	"customers.phone": guard.EntityPhone,
-	"customers.name":  guard.EntityPersonName,
-	"nokey.email":     guard.EntityEmail,
-	"orders.email":    guard.EntityEmail,
-	"emails_v.mail":   guard.EntityEmail,
-	"slow_v.mail":     guard.EntityEmail,
+	"customers.email": guardmodel.EntityEmail,
+	"customers.phone": guardmodel.EntityPhone,
+	"customers.name":  guardmodel.EntityPersonName,
+	"nokey.email":     guardmodel.EntityEmail,
+	"orders.email":    guardmodel.EntityEmail,
+	"emails_v.mail":   guardmodel.EntityEmail,
+	"slow_v.mail":     guardmodel.EntityEmail,
 }
 
 // classify writes a class for the readable columns, as basalt classify does.
@@ -89,24 +90,24 @@ func (f fixture) classifyWith(t *testing.T, at time.Time, extra map[string]strin
 	rows, err := f.db.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type
 		FROM basalt_meta.pii_readable_columns() WHERE table_name <> 'plain'`)
 	require.NoError(t, err)
-	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
-		var c guard.PIIColumn
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.PIIColumn, error) {
+		var c guardmodel.PIIColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
-		c.Class = guard.ClassPublic
+		c.Class = guardmodel.ClassPublic
 		if et, ok := identifiers[c.Table+"."+c.Column]; ok {
-			c.Class, c.EntityType = guard.ClassIdentifier, et
+			c.Class, c.EntityType = guardmodel.ClassIdentifier, et
 		}
 		if et, ok := extra[c.Table+"."+c.Column]; ok {
-			c.Class, c.EntityType = guard.ClassIdentifier, et
+			c.Class, c.EntityType = guardmodel.ClassIdentifier, et
 		}
-		if c.EntityType == guard.EntityPhone {
+		if c.EntityType == guardmodel.EntityPhone {
 			c.PhoneRegion = "EE"
 		}
 		return c, err
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guard.Classification{Columns: cols, At: at})
+		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: at})
 	}))
 }
 
@@ -201,15 +202,15 @@ func TestMapReloadsOnceForANewTableOIDPerTick(t *testing.T) {
 	got, err := m.Resolve(ctx, f.pool, []ColumnRef{ref})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, m.Loads(), "an unknown oid reloads the map")
-	require.Equal(t, guard.ClassIdentifier, got[0].Class)
-	require.Equal(t, guard.EntityEmail, got[0].EntityType)
+	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
+	require.Equal(t, guardmodel.EntityEmail, got[0].EntityType)
 
 	// A table with no classes reloads once per tick, not on every query.
 	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
 	for range 5 {
 		got, err = m.Resolve(ctx, f.pool, []ColumnRef{plain})
 		require.NoError(t, err)
-		require.Equal(t, guard.ClassUnclassified, got[0].Class)
+		require.Equal(t, guardmodel.ClassUnclassified, got[0].Class)
 	}
 	require.EqualValues(t, 3, m.Loads(), "at most once per oid per tick")
 
@@ -256,7 +257,7 @@ func TestMapReloadsWhenClassifiedAtMoves(t *testing.T) {
 	require.True(t, reloaded, "basalt classify ran: the catalog moved")
 	got, err := m.Resolve(ctx, f.pool, []ColumnRef{email})
 	require.NoError(t, err)
-	require.Equal(t, guard.ClassIdentifier, got[0].Class)
+	require.Equal(t, guardmodel.ClassIdentifier, got[0].Class)
 
 	// Only classified_at moves (the same classes again): still a reload.
 	f.classify(t, time.Now().Add(time.Minute))
@@ -549,18 +550,18 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 
 	rows, err := f.db.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type FROM basalt_meta.pii_readable_columns()`)
 	require.NoError(t, err)
-	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
-		var c guard.PIIColumn
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.PIIColumn, error) {
+		var c guardmodel.PIIColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
-		c.Class = guard.ClassPublic
+		c.Class = guardmodel.ClassPublic
 		if c.Table == "orders" && c.Column == "email" {
-			c.Class = guard.ClassSecret
+			c.Class = guardmodel.ClassSecret
 		}
 		return c, err
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(ctx, tx, f.db.Names, guard.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(ctx, tx, f.db.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 	_, err = m.m.Tick(ctx, f.pool)
 	require.NoError(t, err)
@@ -574,5 +575,5 @@ func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
 
 	got, err := m.Resolve(ctx, secrets)
 	require.NoError(t, err)
-	require.Equal(t, guard.ClassSecret, got[0].Class)
+	require.Equal(t, guardmodel.ClassSecret, got[0].Class)
 }

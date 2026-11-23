@@ -15,8 +15,8 @@ const (
 	maxIdentLen = 63
 	// maxPrefixLen leaves room for "_agent_" and an agent name.
 	maxPrefixLen = 20
-	// AgentInfix joins the prefix and the agent name in an agent role.
-	AgentInfix = "_agent_"
+	// agentInfix joins the prefix and the agent name in an agent role.
+	agentInfix = "_agent_"
 )
 
 // identPattern is the only shape a role-name part may take. Lowercase and
@@ -48,12 +48,15 @@ func (n Names) Guard() string { return n.Prefix + "_guard" }
 // Agents is the NOLOGIN group every agent role belongs to.
 func (n Names) Agents() string { return n.Prefix + "_agents" }
 
+// AgentPrefix is what every agent role's name starts with.
+func (n Names) AgentPrefix() string { return n.Prefix + agentInfix }
+
 // Agent is the LOGIN role of one agent.
 func (n Names) Agent(name string) (string, error) {
 	if err := n.Validate(); err != nil {
 		return "", err
 	}
-	role := n.Prefix + AgentInfix + name
+	role := n.AgentPrefix() + name
 	if !identPattern.MatchString(name) || len(role) > maxIdentLen {
 		return "", fmt.Errorf("%w: agent %q must match %s and the role %q fit in %d bytes",
 			ErrInvalidName, name, identPattern, role, maxIdentLen)

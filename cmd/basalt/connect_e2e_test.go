@@ -33,6 +33,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
@@ -401,7 +402,7 @@ func TestConnectPageRefusesHostileSetupsClosed(t *testing.T) {
 	})
 }
 
-func installedPasskeys(t *testing.T, d *guardtest.DB) []guard.RegisteredPasskey {
+func installedPasskeys(t *testing.T, d *guardtest.DB) []guardmodel.RegisteredPasskey {
 	t.Helper()
 	keys, err := guard.ActivePasskeys(context.Background(), d.Admin)
 	require.NoError(t, err)

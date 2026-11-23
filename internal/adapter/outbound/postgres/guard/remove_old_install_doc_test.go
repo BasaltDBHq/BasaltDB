@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // docSQL is the SQL blocks of docs/remove-old-install.md, in order.
@@ -43,11 +44,11 @@ func TestTheRemoveOldInstallDocSQLRemovesAnInstall(t *testing.T) {
 		INSERT INTO app.leads VALUES (1, 'NEW'), (2, 'NEW');`)
 	require.NoError(t, err)
 	install := func() {
-		spec := guard.AgentSpec{Name: "demo_bot", Password: guard.NewPassword(), Write: []string{"app.leads"}}
+		spec := guardmodel.AgentSpec{Name: "demo_bot", Password: guard.NewPassword(), Write: []string{"app.leads"}}
 		blind, err := guard.AgentBlindTables(ctx, conn, d.Names, spec)
 		require.NoError(t, err)
 		require.NotEmpty(t, blind, "the agent gets a row-level security policy, which the removal drops")
-		s, err := guard.PlanInit(ctx, conn, guard.InitOptions{Names: d.Names, Agent: spec, AgentPolicies: blind})
+		s, err := guard.PlanInit(ctx, conn, guardmodel.InitOptions{Names: d.Names, Agent: spec, AgentPolicies: blind})
 		require.NoError(t, err)
 		require.NoError(t, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 	}

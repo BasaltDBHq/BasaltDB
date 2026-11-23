@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 )
 
@@ -29,8 +30,8 @@ const allTablesSQL = `SELECT n.nspname || '.' || c.relname,
  ORDER BY 1`
 
 // AllTablesIn reads the tables of schema for an agent.allTables setup.
-func AllTablesIn(ctx context.Context, q Querier, schema string) (SchemaTables, error) {
-	var out SchemaTables
+func AllTablesIn(ctx context.Context, q Querier, schema string) (guardmodel.SchemaTables, error) {
+	var out guardmodel.SchemaTables
 	rows, err := q.Query(ctx, allTablesSQL, schema)
 	if err != nil {
 		return out, fmt.Errorf("list the tables of schema %s: %w", schema, err)
@@ -40,7 +41,7 @@ func AllTablesIn(ctx context.Context, q Querier, schema string) (SchemaTables, e
 		var table, owner string
 		var mine, keyed bool
 		if err := rows.Scan(&table, &owner, &mine, &keyed); err != nil {
-			return SchemaTables{}, err
+			return guardmodel.SchemaTables{}, err
 		}
 		switch {
 		case !mine:

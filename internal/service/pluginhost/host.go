@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 )
 
@@ -22,8 +23,8 @@ const (
 )
 
 type slot struct {
-	entry Entry
-	t     Transport
+	entry pluginmodel.Entry
+	t     pluginmodel.Transport
 	// reg is this registration of the entry, never reused by the host.
 	reg Registration
 	// sem caps the hook calls in flight (initialize included, which runs
@@ -52,7 +53,7 @@ type slot struct {
 // state.
 type Host struct {
 	mu      sync.RWMutex
-	entries map[EntryKey]*slot
+	entries map[pluginmodel.EntryKey]*slot
 	// regs numbers the registrations.
 	regs atomic.Uint64
 }
@@ -63,14 +64,14 @@ type Host struct {
 type Registration uint64
 
 // NewHost returns an empty host.
-func NewHost() *Host { return &Host{entries: map[EntryKey]*slot{}} }
+func NewHost() *Host { return &Host{entries: map[pluginmodel.EntryKey]*slot{}} }
 
 // Register adds an entry over its transport and runs initialize on it,
 // within ctx and the entry's timeout. The entry is READY only when the
 // plugin answers a protocol the engine offered, with the manifest's name and
 // version and exactly the manifest's hooks. On error nothing is registered
 // and the caller still owns t.
-func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
+func (h *Host) Register(ctx context.Context, e pluginmodel.Entry, t pluginmodel.Transport) error {
 	e, err := normalize(e)
 	if err != nil {
 		return err
@@ -104,7 +105,7 @@ func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
 		return err
 	}
 	if !initializeMatches(e, resp) {
-		return &CallError{Entry: e.Key, Class: ClassBadResponse}
+		return &pluginmodel.CallError{Entry: e.Key, Class: pluginmodel.ClassBadResponse}
 	}
 	s.state = StateReady
 
@@ -119,7 +120,7 @@ func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
 
 // Unregister removes an entry and closes its transport. Calls in flight fail;
 // Drain first to let them finish.
-func (h *Host) Unregister(k EntryKey) {
+func (h *Host) Unregister(k pluginmodel.EntryKey) {
 	h.mu.Lock()
 	s := h.entries[k]
 	delete(h.entries, k)
@@ -137,7 +138,7 @@ func (h *Host) Unregister(k EntryKey) {
 // the deadline for the whole call, including the wait for a free slot (at most
 // four hook calls are in flight per entry; health and shutdown are not counted).
 // Other failures are *CallError or ErrAgentNotListed.
-func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method string, params, result any) error {
+func (h *Host) Call(ctx context.Context, k pluginmodel.EntryKey, agents []string, method string, params, result any) error {
 	return h.CallOn(ctx, k, 0, agents, method, params, result)
 }
 
@@ -145,25 +146,25 @@ func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method str
 // entry was registered again since (it restarted, or started for other
 // agents), the call fails UNAVAILABLE before anything is sent. A zero reg
 // is any registration, as Call.
-func (h *Host) CallOn(ctx context.Context, k EntryKey, reg Registration, agents []string, method string, params, result any) error {
+func (h *Host) CallOn(ctx context.Context, k pluginmodel.EntryKey, reg Registration, agents []string, method string, params, result any) error {
 	switch method {
 	case pluginproto.MethodInitialize, pluginproto.MethodHealth, pluginproto.MethodShutdown:
 		return fmt.Errorf("plugin %s: %q is a lifecycle method, not a hook call", k, method)
 	}
 	s := h.lookup(k)
 	if s == nil || (reg != 0 && s.reg != reg) {
-		return &CallError{Entry: k, Class: ClassUnavailable}
+		return &pluginmodel.CallError{Entry: k, Class: pluginmodel.ClassUnavailable}
 	}
 	if len(agents) == 0 {
-		return ErrAgentNotListed
+		return pluginmodel.ErrAgentNotListed
 	}
 	for _, a := range agents {
 		if !s.lists(a) {
-			return ErrAgentNotListed
+			return pluginmodel.ErrAgentNotListed
 		}
 	}
 	if !s.admit() {
-		return &CallError{Entry: k, Class: ClassUnavailable}
+		return &pluginmodel.CallError{Entry: k, Class: pluginmodel.ClassUnavailable}
 	}
 	defer s.inflight.Done()
 	return s.do(ctx, s.sem, method, params, result)
@@ -173,7 +174,7 @@ func (h *Host) CallOn(ctx context.Context, k EntryKey, reg Registration, agents 
 // waits until the calls already admitted have finished, or ctx is done. An
 // unknown entry is drained at once. Lifecycle calls (Control) still work, so
 // shutdown can follow.
-func (h *Host) Drain(ctx context.Context, k EntryKey) error {
+func (h *Host) Drain(ctx context.Context, k pluginmodel.EntryKey) error {
 	s := h.lookup(k)
 	if s == nil {
 		return nil
@@ -194,7 +195,7 @@ func (h *Host) Drain(ctx context.Context, k EntryKey) error {
 
 // Down is closed the first time a call to the entry finds the plugin gone.
 // For an unknown entry it is closed already.
-func (h *Host) Down(k EntryKey) <-chan struct{} {
+func (h *Host) Down(k pluginmodel.EntryKey) <-chan struct{} {
 	if s := h.lookup(k); s != nil {
 		return s.down
 	}
@@ -206,10 +207,10 @@ func (h *Host) Down(k EntryKey) <-chan struct{} {
 // Control sends a lifecycle call (health, shutdown) to an entry. It names no
 // agent and carries no hook data. It does not wait behind hook calls: each of
 // the two methods has one slot of its own, outside the cap of four.
-func (h *Host) Control(ctx context.Context, k EntryKey, method string, params, result any) error {
+func (h *Host) Control(ctx context.Context, k pluginmodel.EntryKey, method string, params, result any) error {
 	s := h.lookup(k)
 	if s == nil {
-		return &CallError{Entry: k, Class: ClassUnavailable}
+		return &pluginmodel.CallError{Entry: k, Class: pluginmodel.ClassUnavailable}
 	}
 	var sem chan struct{}
 	switch method {
@@ -225,7 +226,7 @@ func (h *Host) Control(ctx context.Context, k EntryKey, method string, params, r
 
 // State reports whether the entry can take calls. An unknown entry is
 // UNAVAILABLE.
-func (h *Host) State(k EntryKey) State {
+func (h *Host) State(k pluginmodel.EntryKey) State {
 	if s := h.lookup(k); s != nil {
 		return s.State()
 	}
@@ -234,7 +235,7 @@ func (h *Host) State(k EntryKey) State {
 
 // SetState lets the supervisor mark an entry READY or UNAVAILABLE. A
 // draining entry stays UNAVAILABLE.
-func (h *Host) SetState(k EntryKey, st State) {
+func (h *Host) SetState(k pluginmodel.EntryKey, st State) {
 	if s := h.lookup(k); s != nil {
 		s.setState(st)
 	}
@@ -242,14 +243,14 @@ func (h *Host) SetState(k EntryKey, st State) {
 
 // Registration is the entry's current registration, false when it is not
 // registered.
-func (h *Host) Registration(k EntryKey) (Registration, bool) {
+func (h *Host) Registration(k pluginmodel.EntryKey) (Registration, bool) {
 	if s := h.lookup(k); s != nil {
 		return s.reg, true
 	}
 	return 0, false
 }
 
-func (h *Host) lookup(k EntryKey) *slot {
+func (h *Host) lookup(k pluginmodel.EntryKey) *slot {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.entries[k]
@@ -319,27 +320,27 @@ func (s *slot) do(ctx context.Context, sem chan struct{}, method string, params,
 	if ctx.Err() != nil {
 		return s.ctxErr(ctx)
 	}
-	class := ClassUnavailable
-	var c Classed
+	class := pluginmodel.ClassUnavailable
+	var c pluginmodel.Classed
 	if errors.As(err, &c) {
 		class = c.FailureClass()
 	}
-	if class == ClassExited || class == ClassUnavailable {
+	if class == pluginmodel.ClassExited || class == pluginmodel.ClassUnavailable {
 		s.markDown()
 	}
-	return &CallError{Entry: s.entry.Key, Class: class}
+	return &pluginmodel.CallError{Entry: s.entry.Key, Class: class}
 }
 
 // ctxErr maps a finished context: the entry's deadline is TIMEOUT; a caller
 // that gave up gets its own context error back, which holds no payload.
 func (s *slot) ctxErr(ctx context.Context) error {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return &CallError{Entry: s.entry.Key, Class: ClassTimeout}
+		return &pluginmodel.CallError{Entry: s.entry.Key, Class: pluginmodel.ClassTimeout}
 	}
 	return ctx.Err()
 }
 
-func normalize(e Entry) (Entry, error) {
+func normalize(e pluginmodel.Entry) (pluginmodel.Entry, error) {
 	if e.Key.Name == "" || e.Key.Instance == "" {
 		return e, errors.New("plugin: entry needs a name and an instance")
 	}
@@ -360,18 +361,18 @@ func normalize(e Entry) (Entry, error) {
 	e.Agents = append([]string(nil), e.Agents...)
 	e.Config = append([]byte(nil), e.Config...)
 	if e.Timeout == 0 {
-		e.Timeout = DefaultLocalTimeout
+		e.Timeout = pluginmodel.DefaultLocalTimeout
 		if e.Manifest.Endpoint.IsRemote() {
-			e.Timeout = DefaultRemoteTimeout
+			e.Timeout = pluginmodel.DefaultRemoteTimeout
 		}
 	}
-	if e.Timeout < MinTimeout || e.Timeout > MaxTimeout {
+	if e.Timeout < pluginmodel.MinTimeout || e.Timeout > pluginmodel.MaxTimeout {
 		return e, fmt.Errorf("plugin %s: timeout out of range", e.Key)
 	}
 	return e, nil
 }
 
-func hookNames(m Manifest) []string {
+func hookNames(m pluginmodel.Manifest) []string {
 	out := make([]string, 0, len(m.Hooks))
 	for h := range m.Hooks {
 		out = append(out, h)
@@ -380,7 +381,7 @@ func hookNames(m Manifest) []string {
 	return out
 }
 
-func initializeMatches(e Entry, r pluginproto.InitializeResponse) bool {
+func initializeMatches(e pluginmodel.Entry, r pluginproto.InitializeResponse) bool {
 	if r.Protocol != pluginproto.Version1 || r.Name != e.Manifest.Name || r.Version != e.Manifest.Version {
 		return false
 	}

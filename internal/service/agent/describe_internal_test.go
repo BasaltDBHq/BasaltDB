@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
 )
 
@@ -96,7 +96,7 @@ func (f fakeClasses) Resolve(_ context.Context, refs []piidict.ColumnRef) ([]pii
 func (f fakeClasses) Secrets(context.Context) ([]piidict.ColumnRef, error) {
 	var out []piidict.ColumnRef
 	for r, c := range f.classes {
-		if c.Class == guard.ClassSecret {
+		if c.Class == guardmodel.ClassSecret {
 			out = append(out, r)
 		}
 	}
@@ -172,9 +172,9 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 		guarded: map[uint32]bool{ordersOID: true},
 	}
 	classes := fakeClasses{classes: map[piidict.ColumnRef]piidict.Class{
-		{TableOID: ordersOID, Attnum: 1}: {Class: guard.ClassPublic},
-		{TableOID: ordersOID, Attnum: 2}: {Class: guard.ClassSecret},
-		{TableOID: ordersOID, Attnum: 5}: {Class: guard.ClassPublic},
+		{TableOID: ordersOID, Attnum: 1}: {Class: guardmodel.ClassPublic},
+		{TableOID: ordersOID, Attnum: 2}: {Class: guardmodel.ClassSecret},
+		{TableOID: ordersOID, Attnum: 5}: {Class: guardmodel.ClassPublic},
 	}, print: "abc"}
 	return cat, classes
 }
@@ -194,7 +194,7 @@ func callDescribe(t *testing.T, s *Service, args map[string]any) (string, bool) 
 	require.NoError(t, err)
 	out, err := describe.Call(context.Background(), raw)
 	if err != nil {
-		var te *mcp.ToolError
+		var te *toolresult.ToolError
 		require.ErrorAs(t, err, &te)
 		body, mErr := json.Marshal(te)
 		require.NoError(t, mErr)

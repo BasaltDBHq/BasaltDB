@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -28,15 +29,15 @@ import (
 // migration, so Service.Admit refuses every page call.
 type unsafeGuard struct{}
 
-func (unsafeGuard) GuardStatus(context.Context) (guard.Status, error) {
+func (unsafeGuard) GuardStatus(context.Context) (guardmodel.Status, error) {
 	v := guard.LatestVersion()
-	return guard.Status{State: guard.GuardOutdated, Installed: v - 1, Build: v, MissingBreaking: []int{v}}, nil
+	return guardmodel.Status{State: guardmodel.GuardOutdated, Installed: v - 1, Build: v, MissingBreaking: []int{v}}, nil
 }
 
 func (unsafeGuard) SetupRecorded(context.Context, uuid.UUID) (bool, error) { return false, nil }
 
-func (unsafeGuard) LatestSetup(context.Context) (guard.AgentSetup, bool, error) {
-	return guard.AgentSetup{}, false, nil
+func (unsafeGuard) LatestSetup(context.Context) (guardmodel.AgentSetup, bool, error) {
+	return guardmodel.AgentSetup{}, false, nil
 }
 
 func (unsafeGuard) LedgerBytes(context.Context) (int64, error) { return 0, nil }

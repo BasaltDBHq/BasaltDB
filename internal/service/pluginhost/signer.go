@@ -3,6 +3,8 @@ package pluginhost
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Option changes how Stage, Install and Verify check a copy.
@@ -44,35 +46,35 @@ func optionsOf(opts []Option) options {
 // pass its schema and verify, or it is refused: that is damage or
 // tampering. Anything else is UNKNOWN with no key id, and the trust store is
 // not read for it.
-func signerOf(sigPath string, manifest, raw []byte, signed bool, trust TrustStore, o options) (SignerState, string, error) {
+func signerOf(sigPath string, manifest, raw []byte, signed bool, trust TrustStore, o options) (pluginmodel.SignerState, string, error) {
 	if !o.requireApproval {
 		keyID, err := checkSignature(sigPath, manifest, raw, trust)
 		if err != nil {
 			return "", "", err
 		}
 		if _, ok := trust.embedded[keyID]; ok {
-			return SignerKnown, keyID, nil
+			return pluginmodel.SignerKnown, keyID, nil
 		}
-		return SignerUnknown, keyID, nil
+		return pluginmodel.SignerUnknown, keyID, nil
 	}
 	if !signed {
-		return SignerUnknown, "", nil
+		return pluginmodel.SignerUnknown, "", nil
 	}
 	keyID, sig, err := parseSignatureFile(raw)
 	if err != nil {
 		if namesBuiltInKey(raw, trust) {
 			return "", "", inFile(err, sigPath)
 		}
-		return SignerUnknown, "", nil
+		return pluginmodel.SignerUnknown, "", nil
 	}
 	pub, ok := trust.embedded[keyID]
 	if !ok {
-		return SignerUnknown, "", nil
+		return pluginmodel.SignerUnknown, "", nil
 	}
 	if !verifyManifestSig(pub, manifest, sig) {
-		return "", "", &VerifyError{Reason: RefusedNotTrusted, File: sigPath, Why: "the signature does not verify over the manifest"}
+		return "", "", &pluginmodel.VerifyError{Reason: pluginmodel.RefusedNotTrusted, File: sigPath, Why: "the signature does not verify over the manifest"}
 	}
-	return SignerKnown, keyID, nil
+	return pluginmodel.SignerKnown, keyID, nil
 }
 
 // namesBuiltInKey reports whether a .sig that fails its schema still names

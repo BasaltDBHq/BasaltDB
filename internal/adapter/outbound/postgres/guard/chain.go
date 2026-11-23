@@ -30,11 +30,6 @@ const hashBytes = 32
 // full check.
 func Genesis() ChainHead { return ChainHead{Seq: 0, Hash: make([]byte, hashBytes)} }
 
-// ErrNoInstall is InstallID's error when basalt_meta has no install row:
-// it was recreated outside the install, or the row deleted. basalt init
-// writes a new one, a new install.
-var ErrNoInstall = guardmodel.ErrNoInstall
-
 // InstallID identifies this install of the guard: the random id the
 // install wrote (basalt_meta.install_id), which no other install has, a new
 // install after a removal or DROP SCHEMA included, and which a copy
@@ -50,7 +45,7 @@ func InstallID(ctx context.Context, q Querier) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 	if !id.Valid {
-		return uuid.Nil, ErrNoInstall
+		return uuid.Nil, guardmodel.ErrNoInstall
 	}
 	return id.UUID, nil
 }
@@ -110,7 +105,7 @@ func CheckHead(ctx context.Context, q Querier, last ChainHead) (bool, error) {
 
 // UncoveredTables lists agent-writable tables and cascade targets that do
 // not carry the guard (new since the last basalt init).
-func UncoveredTables(ctx context.Context, q Querier) ([]Uncovered, error) {
+func UncoveredTables(ctx context.Context, q Querier) ([]guardmodel.Uncovered, error) {
 	sql, args, err := psql.Select("table_oid::text", "why").From("basalt_meta.uncovered_tables()").OrderBy("1").ToSql()
 	if err != nil {
 		return nil, err
@@ -119,8 +114,8 @@ func UncoveredTables(ctx context.Context, q Querier) ([]Uncovered, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Uncovered, error) {
-		var u Uncovered
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (guardmodel.Uncovered, error) {
+		var u guardmodel.Uncovered
 		err := row.Scan(&u.Table, &u.Why)
 		return u, err
 	})

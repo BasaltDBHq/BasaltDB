@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // EngineState is what the database records about the code's engine
@@ -16,9 +17,9 @@ type EngineState struct {
 	Key []byte
 	ID  string
 	// Recorded is the database's row for this engine, nil when none.
-	Recorded *RecordedEngine
+	Recorded *guardmodel.RecordedEngine
 	// LastRevoked is the most recently revoked engine, nil when none.
-	LastRevoked *RecordedEngine
+	LastRevoked *guardmodel.RecordedEngine
 }
 
 // readEngine reads the engines the database records when the code carries
@@ -82,11 +83,11 @@ func (p *Prepared) EngineLines() []string {
 // engineStatements are record_engine for the code's engine, run on a
 // guard at the installed version or the code's guard.to, whichever is
 // later; nothing when the code carries none.
-func (p *Prepared) engineStatements() []Statement {
+func (p *Prepared) engineStatements() []guardmodel.Statement {
 	if p.Engine.Key == nil {
 		return nil
 	}
-	return []Statement{p.be.RecordEngineStatement(p.Engine.Key, max(p.State.GuardVersion, p.P.Guard.To))}
+	return []guardmodel.Statement{p.be.RecordEngineStatement(p.Engine.Key, max(p.State.GuardVersion, p.P.Guard.To))}
 }
 
 func UTCMinute(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }

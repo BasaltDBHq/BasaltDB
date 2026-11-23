@@ -48,7 +48,7 @@ var runAggregate = sq.Select(
 ).From("basalt_meta.agent_changes c").Where("c.run_id = r.run_id")
 
 // listRunsRaw is ListRuns before MapError.
-func (s *Store) listRunsRaw(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+func (s *Store) listRunsRaw(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
 		return pagination.Page[action.RunSummary]{}, fmt.Errorf("%w: limit %d", ledger.ErrInvalidParams, p.Limit)
 	}

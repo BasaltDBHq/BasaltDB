@@ -74,7 +74,7 @@ type Setup struct {
 	// tables are, for a code that lists schemas (listedSchemas), what
 	// Prepare read from the database: the agent's write and read-only
 	// tables, and those left out.
-	tables SchemaTables
+	tables guardmodel.SchemaTables
 	// asInstall is an AGENT code with a verifier whose role does not
 	// exist: it runs as an INSTALL (Prepare).
 	asInstall bool
@@ -262,7 +262,7 @@ func (s *Setup) AgentTables() []string {
 
 // Tables are, for an agent.allTables code after Prepare, the tables the
 // agent gets and those left out; empty otherwise.
-func (s *Setup) Tables() SchemaTables { return s.tables }
+func (s *Setup) Tables() guardmodel.SchemaTables { return s.tables }
 
 // RunsAsInstall is whether Prepare found the role of an AGENT code with a
 // verifier missing, so the setup creates it as an INSTALL does.
@@ -284,7 +284,7 @@ type Prepared struct {
 	NothingToDo bool
 	// Blind are the agent's tables where row-level security hides every
 	// row from its role: one question each.
-	Blind []BlindTable
+	Blind []guardmodel.BlindTable
 }
 
 // Prepare checks s against the database conn opens, in the contract's
@@ -366,13 +366,13 @@ func (s *Setup) readAllTables(ctx context.Context, q Querier, state *setupcode.S
 }
 
 // listAllTables lists the tables of the listed schemas (listedSchemas).
-func (s *Setup) listAllTables(ctx context.Context, q Querier) (SchemaTables, error) {
+func (s *Setup) listAllTables(ctx context.Context, q Querier) (guardmodel.SchemaTables, error) {
 	schemas := s.listedSchemas()
-	out := SchemaTables{Write: []string{}, ReadOnly: []string{}}
+	out := guardmodel.SchemaTables{Write: []string{}, ReadOnly: []string{}}
 	for _, schema := range schemas {
 		got, err := s.be.AllTablesIn(ctx, q, schema)
 		if err != nil {
-			return SchemaTables{}, err
+			return guardmodel.SchemaTables{}, err
 		}
 		out.Write = append(out.Write, got.Write...)
 		out.ReadOnly = append(out.ReadOnly, got.ReadOnly...)
@@ -381,7 +381,7 @@ func (s *Setup) listAllTables(ctx context.Context, q Querier) (SchemaTables, err
 		}
 	}
 	if len(out.Write)+len(out.ReadOnly) == 0 {
-		return SchemaTables{}, refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
+		return guardmodel.SchemaTables{}, refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
 			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(schemas, ", "), AgentWord(s.P)))
 	}
 	return out, nil
@@ -391,8 +391,8 @@ func (s *Setup) listAllTables(ctx context.Context, q Querier) (SchemaTables, err
 // its access (write, or read only without a primary key); the excluded
 // ones stay as listed. An included table the listing lacks is
 // TABLES_CHANGED.
-func pickIncluded(all SchemaTables, included []string) (SchemaTables, error) {
-	out := SchemaTables{Write: []string{}, ReadOnly: []string{}, Excluded: all.Excluded}
+func pickIncluded(all guardmodel.SchemaTables, included []string) (guardmodel.SchemaTables, error) {
+	out := guardmodel.SchemaTables{Write: []string{}, ReadOnly: []string{}, Excluded: all.Excluded}
 	for _, t := range included {
 		switch {
 		case slices.Contains(all.Write, t):
@@ -400,7 +400,7 @@ func pickIncluded(all SchemaTables, included []string) (SchemaTables, error) {
 		case slices.Contains(all.ReadOnly, t):
 			out.ReadOnly = append(out.ReadOnly, t)
 		default:
-			return SchemaTables{}, errTablesChanged()
+			return guardmodel.SchemaTables{}, errTablesChanged()
 		}
 	}
 	slices.Sort(out.Write)
@@ -570,7 +570,7 @@ func (p *Prepared) Summary() []string {
 
 // RLSQuestion is the row-level security question for one table, as basalt
 // init asks it.
-func RLSQuestion(b BlindTable, agent string) string {
+func RLSQuestion(b guardmodel.BlindTable, agent string) string {
 	return fmt.Sprintf("%s hides its rows with row-level security. Let %s see all %s of this table?", b.Table, agent, rowCount(b.Rows))
 }
 
@@ -587,24 +587,24 @@ func rowCount(n int64) string {
 // agent), the grants, the policies on allRows, attach, the engine, and
 // record_setup last. An answer about a table p did not ask about is
 // refused.
-func (p *Prepared) Plan(ctx context.Context, allRows []string) (Script, error) {
+func (p *Prepared) Plan(ctx context.Context, allRows []string) (guardmodel.Script, error) {
 	policies, err := p.policies(allRows)
 	if err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	script, err := p.plan(ctx, policies)
 	if err != nil {
-		return Script{}, MissingTablesHint(p.be, err, p.Conn.Config().Database)
+		return guardmodel.Script{}, MissingTablesHint(p.be, err, p.Conn.Config().Database)
 	}
 	return script, nil
 }
 
-func (p *Prepared) plan(ctx context.Context, policies []BlindTable) (Script, error) {
+func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (guardmodel.Script, error) {
 	if (p.asInstall || p.noGrants) && p.Ticked() && !p.ticks {
 		// Never every table in public: only the ones the person ticked.
-		return Script{}, errTicksRequired(p.P.Agent.Name)
+		return guardmodel.Script{}, errTicksRequired(p.P.Agent.Name)
 	}
-	opts := InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
+	opts := guardmodel.InitOptions{Names: p.Names, UpTo: p.P.Guard.To}
 	agent := ""
 	if p.P.Agent != nil {
 		opts.Agent = p.Spec()
@@ -613,13 +613,13 @@ func (p *Prepared) plan(ctx context.Context, policies []BlindTable) (Script, err
 	}
 	script, err := p.be.PlanInit(ctx, p.Conn, opts)
 	if err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	record, err := p.be.RecordSetupStatement(p.Names, guardmodel.Setup{
 		ID: p.ID, Kind: string(p.P.Kind), Agent: agent, GuardVersion: p.P.Guard.To, ExpiresAt: p.Expires,
 	})
 	if err != nil {
-		return Script{}, err
+		return guardmodel.Script{}, err
 	}
 	script.Statements = append(script.Statements, p.engineStatements()...)
 	script.Statements = append(script.Statements, record)
@@ -636,8 +636,8 @@ func RefuseAnswers(allRows []string) error {
 }
 
 // policies are the blind tables the person let the agent see every row of.
-func (p *Prepared) policies(allRows []string) ([]BlindTable, error) {
-	var out []BlindTable
+func (p *Prepared) policies(allRows []string) ([]guardmodel.BlindTable, error) {
+	var out []guardmodel.BlindTable
 	for _, table := range allRows {
 		i := blindIndex(p.Blind, table)
 		if i < 0 {
@@ -650,7 +650,7 @@ func (p *Prepared) policies(allRows []string) ([]BlindTable, error) {
 	return out, nil
 }
 
-func blindIndex(tables []BlindTable, table string) int {
+func blindIndex(tables []guardmodel.BlindTable, table string) int {
 	for i, b := range tables {
 		if b.Table == table {
 			return i
@@ -667,12 +667,12 @@ func blindIndex(tables []BlindTable, table string) int {
 // record_setup (a passkey registered with the setup). An error from it
 // rolls everything back. first, when set, runs in the transaction before
 // anything else (the tables read again before the grants name them).
-func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script Script, first, inTx func(context.Context, pgx.Tx) error) error {
+func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script guardmodel.Script, first, inTx func(context.Context, pgx.Tx) error) error {
 	n := len(script.Statements)
 	if n == 0 {
 		return errors.New("nothing to run")
 	}
-	body, record := Script{Statements: script.Statements[:n-1]}, script.Statements[n-1]
+	body, record := guardmodel.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1]
 	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		if first != nil {
 			if err := first(ctx, tx); err != nil {

@@ -15,6 +15,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
@@ -23,7 +25,7 @@ import (
 // schema_version (its objects stay, which the engine never looks at to
 // decide). It returns the agent's MCP server, as the engine builds it, and
 // the admin to change the guard with.
-func guardWithout(t *testing.T, version int, migs []guard.Migration) (harness, *guardtest.DB) {
+func guardWithout(t *testing.T, version int, migs []guardmodel.Migration) (harness, *guardtest.DB) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE leads (id bigint PRIMARY KEY, name text); INSERT INTO leads VALUES (1, 'Ada')`)
@@ -38,9 +40,9 @@ func guardWithout(t *testing.T, version int, migs []guard.Migration) (harness, *
 
 // nextBuild is this build's migrations and one more version, the one a
 // real guard lacks, as an engine built with it sees the guard.
-func nextBuild(breaking bool) (int, []guard.Migration) {
+func nextBuild(breaking bool) (int, []guardmodel.Migration) {
 	next := guard.LatestVersion() + 1
-	return next, append(guard.Migrations(), guard.Migration{Version: next, Breaking: breaking})
+	return next, append(guard.Migrations(), guardmodel.Migration{Version: next, Breaking: breaking})
 }
 
 func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
@@ -66,7 +68,7 @@ func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 	body, isError := h.call(t, "status", map[string]any{})
 	require.False(t, isError, "%v", body)
 	g := body["guard"].(map[string]any)
-	require.Equal(t, guard.GuardOutdated, g["state"])
+	require.Equal(t, guardmodel.GuardOutdated, g["state"])
 	require.Equal(t, []any{jsonNumber(latest)}, g["missingBreaking"])
 	require.Equal(t, false, body["ready"])
 
@@ -76,7 +78,7 @@ func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 	require.False(t, isError, "%v", body)
 	body, isError = h.call(t, "status", map[string]any{})
 	require.False(t, isError)
-	require.Equal(t, guard.GuardOK, body["guard"].(map[string]any)["state"])
+	require.Equal(t, guardmodel.GuardOK, body["guard"].(map[string]any)["state"])
 }
 
 func TestAGuardMissingOnlyANonBreakingMigrationIsServedWithTheWarning(t *testing.T) {
@@ -107,7 +109,7 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 	require.False(t, isError, "%v", body)
 	warnings := body["warnings"].([]any)
 	require.Len(t, warnings, 1)
-	require.Equal(t, mcp.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
+	require.Equal(t, toolresult.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
 	runID := body["runId"]
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT id FROM leads", "runId": runID})
 	require.False(t, isError, "%v", body)
@@ -129,7 +131,7 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 	body, isError = h.call(t, "status", map[string]any{})
 	require.False(t, isError)
 	g := body["guard"].(map[string]any)
-	require.Equal(t, guard.GuardUpgradeAvailable, g["state"])
+	require.Equal(t, guardmodel.GuardUpgradeAvailable, g["state"])
 	require.Equal(t, []any{jsonNumber(version)}, g["missingNonBreaking"])
 	// A WARNING leaves the agent ready: the only ERROR is the passkey
 	// this database has none of.
@@ -149,7 +151,7 @@ func TestStatusOnAFullGuard(t *testing.T) {
 	})).Svc
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardOK, r.Guard.State)
+	require.Equal(t, guardmodel.GuardOK, r.Guard.State)
 	require.Equal(t, guard.LatestVersion(), *r.Guard.Installed)
 	require.False(t, r.Passkeys.Registered)
 	require.Equal(t, 0, *r.Passkeys.Active)

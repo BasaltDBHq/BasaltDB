@@ -23,8 +23,11 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -114,13 +117,13 @@ func TestNothingLeaksToNotifier(t *testing.T) {
 
 	// A revert of the update, signed and applied; one of the insert,
 	// rejected with a note.
-	prep, err := guard.PrepareRevert(ctx, c, guard.RevertScope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
+	prep, err := guard.PrepareRevert(ctx, c, action.Scope{Kind: revert.ScopeChange, ID: updated}, "undo the rename "+marker)
 	require.NoError(t, err)
-	sig, err := pk.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	sig, err := pk.Sign(approval.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	_, err = guard.ApplyRevert(ctx, c, prep.RevertID, sig)
 	require.NoError(t, err)
-	rejected, err := guard.PrepareRevert(ctx, c, guard.RevertScope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
+	rejected, err := guard.PrepareRevert(ctx, c, action.Scope{Kind: revert.ScopeChange, ID: inserted}, "undo the insert "+marker)
 	require.NoError(t, err)
 	_, err = guard.RejectRevert(ctx, c, rejected.RevertID, "not this one "+marker, nil)
 	require.NoError(t, err)
@@ -181,16 +184,16 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	id := func() *string { return s(uuid.Must(uuid.NewV7()).String()) }
 	change := uuid.NullUUID{UUID: uuid.Must(uuid.NewV7()), Valid: true}
 	at := time.Date(2026, 11, 19, 6, 2, 11, 513958000, time.UTC)
-	rows := []guard.FeedRow{
-		{Seq: 1, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
-		{Seq: 2, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("DELETE")},
-		{Seq: 3, At: at, Kind: guard.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("SQL_ERROR")},
-		{Seq: 4, At: at, Kind: guard.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},
-		{Seq: 5, At: at, Kind: guard.KindApproved, ChangeID: change, ApprovalID: id()},
-		{Seq: 6, At: at, Kind: guard.KindRevertPending, RevertID: id()},
-		{Seq: 7, At: at, Kind: guard.KindRevertSigned, ChangeID: change, RevertID: id()},
-		{Seq: 8, At: at, Kind: guard.KindReverted, ChangeID: change, RevertID: id()},
-		{Seq: 9, At: at, Kind: guard.KindRevertRejected, RevertID: id()},
+	rows := []guardmodel.FeedRow{
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("INSERT"), RunID: id(), TaskID: id(), Table: s("public.\"we\x01ird\""), Rows: s("3"), CascadedRows: s("2")},
+		{Seq: 2, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("DELETE")},
+		{Seq: 3, At: at, Kind: guardmodel.KindRefused, ChangeID: change, Op: s("OTHER"), RunID: id(), TaskID: id(), Code: s("SQL_ERROR")},
+		{Seq: 4, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), RunID: id(), ApprovalID: id(), Rows: s("27"), ExpiresAt: s("2026-11-20T06:02:11+00:00")},
+		{Seq: 5, At: at, Kind: guardmodel.KindApproved, ChangeID: change, ApprovalID: id()},
+		{Seq: 6, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
+		{Seq: 7, At: at, Kind: guardmodel.KindRevertSigned, ChangeID: change, RevertID: id()},
+		{Seq: 8, At: at, Kind: guardmodel.KindReverted, ChangeID: change, RevertID: id()},
+		{Seq: 9, At: at, Kind: guardmodel.KindRevertRejected, RevertID: id()},
 	}
 	events := make([]feedEvent, 0, 1+len(rows))
 	events = append(events, skippedEvent(install, "product_a", 0, 1))
@@ -210,14 +213,14 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 	}
 	require.Equal(t, "public.\"we�ird\"", events[1].Data.Table)
 
-	for _, bad := range []guard.FeedRow{
+	for _, bad := range []guardmodel.FeedRow{
 		{Seq: 1, At: at, Kind: "READ", ChangeID: change, Op: s("SELECT")},
-		{Seq: 1, At: at, Kind: guard.KindChange, Op: s("UPDATE")},                                          // no change id
-		{Seq: 1, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("REVERT")},                        // no such op
-		{Seq: 1, At: at, Kind: guard.KindChange, ChangeID: change, Op: s("UPDATE"), RunID: s("x")},         // not an id
-		{Seq: 1, At: at, Kind: guard.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Rows: s("1")}, // no approval, run or expiry
-		{Seq: 1, At: at, Kind: guard.KindRevertPending},                                                    // no revert id
-		{Seq: 0, At: at, Kind: guard.KindRevertPending, RevertID: id()},
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, Op: s("UPDATE")},                                          // no change id
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("REVERT")},                        // no such op
+		{Seq: 1, At: at, Kind: guardmodel.KindChange, ChangeID: change, Op: s("UPDATE"), RunID: s("x")},         // not an id
+		{Seq: 1, At: at, Kind: guardmodel.KindApprovalPending, ChangeID: change, Op: s("UPDATE"), Rows: s("1")}, // no approval, run or expiry
+		{Seq: 1, At: at, Kind: guardmodel.KindRevertPending},                                                    // no revert id
+		{Seq: 0, At: at, Kind: guardmodel.KindRevertPending, RevertID: id()},
 	} {
 		_, ok := feedEventOf(install, "product_a", bad)
 		require.False(t, ok, "%+v", bad)
@@ -230,14 +233,14 @@ func TestFeedEventsMatchTheSchema(t *testing.T) {
 func TestSenderNeverBlocks(t *testing.T) {
 	t.Parallel()
 	h := pluginhost.NewHost()
-	p := &feedPlugin{key: pluginhost.EntryKey{Name: "acme-feed", Instance: "default"}, m: feedManifest("acme-feed"), mode: hangMode, schema: feedSchema(t)}
-	require.NoError(t, h.Register(context.Background(), pluginhost.Entry{Key: p.key, Manifest: p.m, Agents: []string{"product_a"}, Timeout: time.Minute}, p))
+	p := &feedPlugin{key: pluginmodel.EntryKey{Name: "acme-feed", Instance: "default"}, m: feedManifest("acme-feed"), mode: hangMode, schema: feedSchema(t)}
+	require.NoError(t, h.Register(context.Background(), pluginmodel.Entry{Key: p.key, Manifest: p.m, Agents: []string{"product_a"}, Timeout: time.Minute}, p))
 	s := newPluginSender(h, p.key, time.Now)
 	var stopped, expired atomic.Int32
 	call := func(notAfter time.Time) pluginCall {
 		return pluginCall{
 			notAfter: notAfter,
-			run: func(ctx context.Context, h *pluginhost.Host, k pluginhost.EntryKey) error {
+			run: func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error {
 				_, err := h.ObserveFeedOn(ctx, k, 0, "product_a", json.RawMessage(`[{"data":{"seq":1}}]`))
 				return err
 			},
@@ -291,7 +294,7 @@ func TestFeedStopsWithoutLeaks(t *testing.T) {
 	hang.setMode(hangMode)
 	snapshot := goleak.IgnoreCurrent()
 	e.start()
-	for _, k := range []pluginhost.EntryKey{ok.key, hang.key} {
+	for _, k := range []pluginmodel.EntryKey{ok.key, hang.key} {
 		e.started(k, "product_a")
 		e.started(k, "client_x")
 	}
@@ -323,7 +326,7 @@ func TestBatchNeverReachesALaterRegistration(t *testing.T) {
 	e.applied("product_a")
 
 	f := newPluginFeed(e.host, e.served, e.pools, e.stateDir, newPluginSenders(e.host, time.Now), pluginhost.RealClock(), e.log)
-	f.senders.sync([]pluginhost.EntryKey{p.key})
+	f.senders.sync([]pluginmodel.EntryKey{p.key})
 	t.Cleanup(f.senders.stop)
 	r := &feedReader{f: f, pair: feedPair{key: p.key, agent: "product_a"}, ledger: e.pools["product_a"], log: e.log}
 	ctx := context.Background()

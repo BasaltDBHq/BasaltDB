@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // The stale-version check and the upgrade that clears it, with a test-only
@@ -33,7 +34,7 @@ func TestCheckAgentVersion(t *testing.T) {
 		"guard schema v%d is older than this build's v%d: run basalt init again to upgrade it (same flags as before)", latest-1, latest))
 
 	// Running init again upgrades it, running only the missing version.
-	d.Init(t, guard.AgentSpec{Name: "bot", Password: a.Password, Write: leads, Read: leads})
+	d.Init(t, guardmodel.AgentSpec{Name: "bot", Password: a.Password, Write: leads, Read: leads})
 	require.NoError(t, guard.CheckAgentVersion(ctx, a.Conn))
 
 	// An agent that cannot read schema_version, which every version grants
@@ -53,8 +54,8 @@ func TestPlanInitAppliesOnlyMissingVersions(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	next := guardtest.NextVersion(t, false)
 	ctx := context.Background()
-	apply := func(upTo int) guard.Script {
-		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, UpTo: upTo})
+	apply := func(upTo int) guardmodel.Script {
+		s, err := guard.PlanInit(ctx, d.Admin, guardmodel.InitOptions{Names: d.Names, UpTo: upTo})
 		require.NoError(t, err)
 		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return guard.ApplyScript(ctx, tx, s) }))
 		return s

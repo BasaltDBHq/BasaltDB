@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
 )
 
@@ -117,5 +117,5 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 // removalPrefix is the installed guard's prefix, or the default; a
 // basalt_meta whose owner is not a guard role is refused PREFIX_MISMATCH.
 func removalPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	return setuprun.InstalledRemovalPrefix(ctx, store, tx, guard.DefaultPrefix)
+	return setuprun.InstalledRemovalPrefix(ctx, store, tx, guardmodel.DefaultPrefix)
 }

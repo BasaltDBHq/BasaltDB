@@ -17,6 +17,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/shim"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 const (
@@ -57,23 +58,23 @@ func linkEngine(t *testing.T, socket, operatedBy, pagesOrigin, link string) {
 	t.Helper()
 	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine", OperatedBy: operatedBy, PagesOrigin: pagesOrigin},
 		mcp.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
-			ls := []mcp.Link{{Label: "Approve the held write", URL: link}}
-			return nil, &mcp.ToolError{
+			ls := []toolresult.Link{{Label: "Approve the held write", URL: link}}
+			return nil, &toolresult.ToolError{
 				Code: "APPROVAL_REQUIRED", Message: "held",
-				Approval:      &mcp.ApprovalNotice{ApprovalID: "a", ApprovalURL: link, PersonMessage: "Approve:\n" + link, Links: ls},
+				Approval:      &toolresult.ApprovalNotice{ApprovalID: "a", ApprovalURL: link, PersonMessage: "Approve:\n" + link, Links: ls},
 				PersonMessage: "Approve:\n" + link, Links: ls,
-				NextSteps: []mcp.NextStep{{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Text: "Open it.", URL: "https://docs.basaltvault.app/x"}},
+				NextSteps: []toolresult.NextStep{{Actor: toolresult.ActorPerson, Action: toolresult.ActionOpenLink, Text: "Open it.", URL: "https://docs.basaltvault.app/x"}},
 			}
 		}},
 		mcp.Tool{Name: "list_pending", Call: func(context.Context, json.RawMessage) (any, error) {
-			ls := []mcp.Link{{Label: "Approve the held write", URL: link}}
+			ls := []toolresult.Link{{Label: "Approve the held write", URL: link}}
 			return map[string]any{
 				"items":    []map[string]any{{"approvalUrl": link, "personMessage": "Approve:\n" + link, "links": ls}},
 				"problems": []map[string]any{{"code": "X", "links": ls}},
 			}, nil
 		}},
 		mcp.Tool{Name: "query", Call: func(context.Context, json.RawMessage) (any, error) {
-			return map[string]any{"rows": []map[string]any{{"links": []mcp.Link{{Label: "x", URL: localPages + "/approvals/row"}}}}}, nil
+			return map[string]any{"rows": []map[string]any{{"links": []toolresult.Link{{Label: "x", URL: localPages + "/approvals/row"}}}}}, nil
 		}},
 	)
 	ln, err := net.Listen("unix", socket)
@@ -211,7 +212,7 @@ func TestRequestPluginUploadsAndOpensThePluginPage(t *testing.T) {
 			}
 			return map[string]any{
 				"state": "PENDING", "name": "local-ner", "instance": "default", "approvalUrl": pluginLink,
-				"personMessage": "Approve it:\n\n" + pluginLink + "\n", "links": []mcp.Link{{Label: "Approve the plugin local-ner", URL: pluginLink}},
+				"personMessage": "Approve it:\n\n" + pluginLink + "\n", "links": []toolresult.Link{{Label: "Approve the plugin local-ner", URL: pluginLink}},
 			}, nil
 		}},
 	)

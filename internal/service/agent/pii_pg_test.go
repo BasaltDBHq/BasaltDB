@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -35,18 +36,18 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned store.ReturnedFunc
 	a := d.NewAgent(t, "bot", []string{"public.people"}, nil)
 	rows, err := d.Admin.Query(context.Background(), `SELECT table_schema, table_name, column_name, data_type FROM basalt_meta.pii_readable_columns()`)
 	require.NoError(t, err)
-	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
-		var c guard.PIIColumn
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.PIIColumn, error) {
+		var c guardmodel.PIIColumn
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
-		c.Class = guard.ClassPublic
+		c.Class = guardmodel.ClassPublic
 		if c.Column == "email" {
-			c.Class, c.EntityType = guard.ClassIdentifier, guard.EntityEmail
+			c.Class, c.EntityType = guardmodel.ClassIdentifier, guardmodel.EntityEmail
 		}
 		return c, err
 	})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(context.Background(), d.Admin, func(tx pgx.Tx) error {
-		return guard.WriteClassification(context.Background(), tx, d.Names, guard.Classification{Columns: cols, At: time.Now()})
+		return guard.WriteClassification(context.Background(), tx, d.Names, guardmodel.Classification{Columns: cols, At: time.Now()})
 	}))
 	dir := t.TempDir()
 	keys, err := dictfile.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)

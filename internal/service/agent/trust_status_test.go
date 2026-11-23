@@ -17,10 +17,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -65,7 +65,7 @@ func reporter(a trustprofile.Applied, refused ...trustprofile.Refused) TrustRepo
 // warns 90 days before a root in use expires.
 func TestStatusTrust(t *testing.T) {
 	t.Parallel()
-	ok := &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	ok := &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	host := "db.internal.example.com"
 	later := caExpiring(t, statusNow.Add(400*24*time.Hour))
 	soon := caExpiring(t, statusNow.Add(30*24*time.Hour))
@@ -83,7 +83,7 @@ func TestStatusTrust(t *testing.T) {
 	require.Equal(t, "WARNING", w.Severity)
 	require.Contains(t, w.Message, trustprofile.Fingerprint(soon))
 	require.Contains(t, w.Message, soon.NotAfter.Format(time.DateOnly))
-	require.Equal(t, mcp.ActionAskPerson, w.NextSteps[0].Action)
+	require.Equal(t, toolresult.ActionAskPerson, w.NextSteps[0].Action)
 	require.Equal(t, "basalt init --agent bot", w.NextSteps[1].Command)
 	require.Contains(t, w.NextSteps[1].Text, "Only once", "the page adds nothing before the database presents the new certificate")
 	require.NotContains(t, w.PersonMessage, "add the provider's new root")
@@ -107,7 +107,7 @@ func TestStatusTrust(t *testing.T) {
 // A refused trust.d file is a warning per file, naming it and why.
 func TestStatusTrustRefused(t *testing.T) {
 	t.Parallel()
-	ok := &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	ok := &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	r := trustLocal(t, ok, reporter(trustprofile.Applied{Host: "db.example.com", Applies: trustprofile.AppliesSystem},
 		trustprofile.Refused{File: "/etc/basalt/trust.d/a.json", Reason: "it is writable by group or others"},
 		trustprofile.Refused{File: "/etc/basalt/trust.d/b.json", Reason: "roots file b.pem has SHA-256 x, the profile pins y"}))
@@ -135,7 +135,7 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	p := findProblem(t, r, problemCertificateNotVerified)
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, host)
-	require.Equal(t, NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	require.Contains(t, p.PersonMessage, "trust it there")
 	require.NotContains(t, p.PersonMessage, "sslrootcert", "the setup page refuses sslrootcert, so no message suggests it")
@@ -164,30 +164,30 @@ func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep TrustR
 
 // trustStatusCases are the status cases of the trust problems.
 func trustStatusCases(operatedBy string) map[string]statusCase {
-	ok := guardAt(guard.GuardOK, nil, nil)
+	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	const host = "db.internal.example.com"
 	return map[string]statusCase{
-		problemCertificateNotVerified: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemCertificateNotVerified: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			err := fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})
 			return trustStatusOf(t, operatedBy, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}))
 		}},
-		problemTrustRootExpiring: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemTrustRootExpiring: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			p := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, caExpiring(t, statusNow.Add(24*time.Hour)))
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}))
 		}},
-		problemTrustRootChanged: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+		problemTrustRootChanged: {state: guardmodel.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			r, _ := pinnedStatus(t, operatedBy, true, "")
 			return r
 		}},
-		problemTrustPinMismatch: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemTrustPinMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			r, _ := pinnedStatus(t, operatedBy, false, pinSHAOther)
 			return r
 		}},
-		problemTrustProfileRefused: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+		problemTrustProfileRefused: {state: guardmodel.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem},
 				trustprofile.Refused{File: "/etc/basalt/trust.d/a.json", Reason: "it is writable by group or others"}))
@@ -224,7 +224,7 @@ func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string
 	pinnedCA := caExpiring(t, statusNow.Add(400*24*time.Hour))
 	p := trustprofiletest.Profile(t, trustprofile.Operator, trustprofile.PinName(host), []string{"=" + host}, pinnedCA)
 	now := caExpiring(t, statusNow.Add(500*24*time.Hour))
-	probe := &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	probe := &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}
 	if certErr {
 		probe = &fakeProbe{err: fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})}
 	}

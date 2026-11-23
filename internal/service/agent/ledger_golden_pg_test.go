@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
@@ -119,7 +120,7 @@ func TestPageAPIBodiesGolden(t *testing.T) {
 	forger, err := passkeytest.New(e.person.Credential().Relying)
 	require.NoError(t, err)
 	forger.ID = e.person.ID
-	as, err := forger.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
+	as, err := forger.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	c.post("revert_apply_bad_assertion", revertPath(revertID)+"/apply", secret, revert.NewResponse(revertID, as))
 

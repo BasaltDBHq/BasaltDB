@@ -214,11 +214,11 @@ func (e *DatabaseNotConfirmedError) Error() string {
 
 // ConfirmResult is confirm_database's result.
 type ConfirmResult struct {
-	State         string            `json:"state"`
-	Database      handoff.Address   `json:"database"`
-	PersonMessage string            `json:"personMessage,omitempty"`
-	Links         []toolresult.Link `json:"links,omitempty"`
-	NextSteps     []NextStep        `json:"nextSteps"`
+	State         string                `json:"state"`
+	Database      handoff.Address       `json:"database"`
+	PersonMessage string                `json:"personMessage,omitempty"`
+	Links         []toolresult.Link     `json:"links,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps"`
 }
 
 // confirmedSteps: the engine restarts the agent on its credential; status

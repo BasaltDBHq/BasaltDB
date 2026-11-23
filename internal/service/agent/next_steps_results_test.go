@@ -17,10 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 // resultCase builds one result of the catalog: the person's message and the
@@ -29,7 +30,7 @@ type resultCase struct {
 	tool string
 	args map[string]any
 	// build returns the result's personMessage and nextSteps.
-	build func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep)
+	build func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep)
 	// openWithoutURL marks the one OPEN_LINK that names no url: the short
 	// link the agent gave earlier.
 	openWithoutURL bool
@@ -75,33 +76,33 @@ func caseBindingText(t *testing.T, batched bool) string {
 	return string(raw)
 }
 
-func caseRevertWith(t *testing.T, status string) ledger.Revert {
+func caseRevertWith(t *testing.T, status string) action.Revert {
 	t.Helper()
 	r := caseRevert(false)
 	r.Status, r.Rows, r.Skipped, r.BindingText = status, 3, 1, caseBindingText(t, false)
 	return r
 }
 
-func caseBatchedRevert(t *testing.T, status string) ledger.Revert {
+func caseBatchedRevert(t *testing.T, status string) action.Revert {
 	t.Helper()
 	r := caseRevert(true)
 	r.Status, r.Batched, r.Rows, r.Skipped = status, true, 1209, 1
 	r.BindingText = caseBindingText(t, true)
 	apply := r.ExpiresAt.Add(24 * time.Hour)
 	r.ApplyBy = &apply
-	r.Progress = ledger.RevertProgress{Restored: 200, Skipped: 1, Pending: 1009}
+	r.Progress = action.RevertProgress{Restored: 200, Skipped: 1, Pending: 1009}
 	return r
 }
 
 func planItems(outcome string, nos ...int) []RevertPlanLine {
 	out := make([]RevertPlanLine, 0, len(nos))
 	for _, n := range nos {
-		out = append(out, RevertPlanLine{RevertLine: ledger.RevertLine{No: n, Outcome: outcome}})
+		out = append(out, RevertPlanLine{RevertLine: action.RevertLine{No: n, Outcome: outcome}})
 	}
 	return out
 }
 
-func planGuidanceOf(t *testing.T, s *Service, r ledger.Revert, items []RevertPlanLine) (string, []mcp.Link, []mcp.NextStep) {
+func planGuidanceOf(t *testing.T, s *Service, r action.Revert, items []RevertPlanLine) (string, []toolresult.Link, []toolresult.NextStep) {
 	t.Helper()
 	plan := RevertPlan{Revert: r}
 	plan.Page.Items = items
@@ -118,7 +119,7 @@ func planGuidanceOf(t *testing.T, s *Service, r ledger.Revert, items []RevertPla
 func pendingItem(status string, expires time.Time) PendingItem {
 	n := caseNotice(caseShortLink)
 	return PendingItem{
-		Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: status, ExpiresAt: expires},
+		Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: status, ExpiresAt: expires},
 		Notice:   n,
 	}
 }
@@ -127,15 +128,15 @@ func resultCases() map[string]resultCase {
 	revertArgs := map[string]any{"revertId": caseRevertID}
 	run := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
 	task := action.Scope{Kind: revert.ScopeTask, ID: uuid.MustParse(caseRunID)}
-	state := func(status string) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
-		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+	state := func(status string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			out, err := s.revertState(context.Background(), caseRevertWith(t, status))
 			require.NoError(t, err)
 			return out.PersonMessage, out.Links, out.NextSteps
 		}
 	}
-	batch := func(status string) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
-		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+	batch := func(status string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			person, steps, err := s.batchGuidance(action.BatchResult{
 				RevertID: uuid.MustParse(caseRevertID), Batch: 5, Status: status, Restored: 1000, Skipped: 9,
 			})
@@ -143,7 +144,7 @@ func resultCases() map[string]resultCase {
 			return person, nil, steps
 		}
 	}
-	tooLargeRevert := func(t *testing.T, s *Service) ledger.Revert {
+	tooLargeRevert := func(t *testing.T, s *Service) action.Revert {
 		s.PagesOrigin = ""
 		r := caseRevertWith(t, ledger.RevertPending)
 		r.Lines, r.LinesLeftOut, r.LinesCost = nil, true, 2<<20
@@ -152,7 +153,7 @@ func resultCases() map[string]resultCase {
 	cases := map[string]resultCase{
 		resultKey("request_revert", "REQUEST_TOO_LARGE"): {
 			tool: "request_revert", args: map[string]any{"revertId": caseRevertID, "reissueLink": true},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				out, err := s.revertWithLink(context.Background(), tooLargeRevert(t, s))
 				require.NoError(t, err)
 				require.Equal(t, "http://localhost:8787/reverts/"+caseRevertID, out.RevertURL, "the page's address, no fragment")
@@ -161,7 +162,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("revert_plan", "REQUEST_TOO_LARGE"): {
 			tool: "revert_plan", args: revertArgs,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				r := tooLargeRevert(t, s)
 				n, err := s.revertNotice(context.Background(), r)
 				require.NoError(t, err)
@@ -173,10 +174,10 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("list_pending", "REQUEST_TOO_LARGE"): {
 			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				n := tooLargeNotice(t, s, keepLink)
 				item := PendingItem{
-					Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.Now().Add(time.Hour)},
+					Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.Now().Add(time.Hour)},
 					Notice:   n.ApprovalNotice, tooLargeSteps: n.steps,
 				}
 				person, links, steps, err := s.itemGuidance(item)
@@ -186,7 +187,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("preview_revert", "PREVIEW"): {
 			tool: "preview_revert", args: map[string]any{"runId": caseRunID},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				person, steps, err := s.previewGuidance(RevertPreview{Scope: run, Rows: 3, Skipped: 1})
 				require.NoError(t, err)
 				return person, nil, steps
@@ -194,7 +195,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("preview_revert", "PREVIEW_TASK"): {
 			tool: "preview_revert", args: map[string]any{"taskId": caseRunID},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				person, steps, err := s.previewGuidance(RevertPreview{Scope: task, Rows: 3, Skipped: 1})
 				require.NoError(t, err)
 				return person, nil, steps
@@ -203,7 +204,7 @@ func resultCases() map[string]resultCase {
 
 		resultKey("request_revert", "REQUESTED"): {
 			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
 				return out.PersonMessage, out.Links, out.NextSteps
@@ -211,7 +212,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("request_revert", "REQUESTED_NO_PAGES"): {
 			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				s.PagesOrigin = "" // no local pages and no Vault: a long link, review only
 				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
@@ -229,7 +230,7 @@ func resultCases() map[string]resultCase {
 
 		resultKey("list_pending", "PENDING"): {
 			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.Now().Add(time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
@@ -237,7 +238,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("list_pending", "EXPIRED"): {
 			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				person, links, steps, err := s.itemGuidance(pendingItem(ledger.ApprovalPending, s.Now().Add(-time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
@@ -245,7 +246,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("list_pending", "REVERT_PENDING"): {
 			tool: "list_pending", args: map[string]any{}, openWithoutURL: true,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				p := &PendingRevert{Revert: caseRevertWith(t, ledger.RevertPending)}
 				require.NoError(t, s.pendingRevert(context.Background(), p, false))
 				return p.PersonMessage, p.Links, p.NextSteps
@@ -253,7 +254,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("list_pending", "REVERT_APPLYING"): {
 			tool: "list_pending", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				p := &PendingRevert{Revert: caseBatchedRevert(t, ledger.RevertApplying)}
 				require.NoError(t, s.pendingRevert(context.Background(), p, false))
 				return p.PersonMessage, p.Links, p.NextSteps
@@ -262,31 +263,31 @@ func resultCases() map[string]resultCase {
 
 		resultKey("revert_plan", "PENDING"): {
 			tool: "revert_plan", args: revertArgs,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertPending), nil)
 			},
 		},
 		resultKey("revert_plan", "APPLYING"): {
 			tool: "revert_plan", args: revertArgs,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomePending, 202, 203, 204))
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomePending, 202, 203, 204))
 			},
 		},
 		resultKey("revert_plan", "APPLIED"): {
 			tool: "revert_plan", args: revertArgs,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplied), nil)
 			},
 		},
 		resultKey("revert_plan", "EXPIRED"): {
 			tool: "revert_plan", args: revertArgs,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertExpired), nil)
 			},
 		},
 		resultKey("revert_plan", "REJECTED"): {
 			tool: "revert_plan", args: revertArgs,
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				r := caseBatchedRevert(t, ledger.RevertRejected)
 				r.RejectNote = "Not now."
 				return planGuidanceOf(t, s, r, nil)
@@ -295,7 +296,7 @@ func resultCases() map[string]resultCase {
 
 		resultKey("describe", "OVERVIEW_LARGE"): {
 			tool: "describe", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				b := NewSteps()
 				overviewLargeSteps(b, []SchemaCount{{Schema: "app", Tables: 40}, {Schema: "billing", Tables: 12}})
 				steps, err := b.Build()
@@ -305,7 +306,7 @@ func resultCases() map[string]resultCase {
 		},
 		resultKey("describe", "NOT_GRANTED"): {
 			tool: "describe", args: map[string]any{},
-			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				b := NewSteps()
 				person := s.notGrantedSteps(b, 3)
 				steps, err := b.Build()
@@ -383,14 +384,14 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 
 // requireObeysCatalogSteps checks a result's or warning's person message and
 // steps against its catalog entry and the rules every step follows.
-func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase catalogCase, person string, links []mcp.Link, steps []mcp.NextStep, openWithoutURL bool) {
+func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase catalogCase, person string, links []toolresult.Link, steps []toolresult.NextStep, openWithoutURL bool) {
 	t.Helper()
 	got := catalogKinds(steps)
 	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence")
 	require.Equal(t, entry.PersonMessage, person != "", "personMessage set exactly when the catalog says: %q", person)
 	mcptest.Require(t, person, links)
 	for i, st := range steps {
-		if st.Action == mcp.ActionOpenLink && st.URL == "" && openWithoutURL {
+		if st.Action == toolresult.ActionOpenLink && st.URL == "" && openWithoutURL {
 			st.URL = "http://localhost/the-link-given-earlier"
 		}
 		requireStepObeysRules(t, st, kase, "step "+string(rune('1'+i)))
@@ -428,11 +429,11 @@ func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	_, _, steps := planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomeRestored, 1, 2))
+	_, _, steps := planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomeRestored, 1, 2))
 	require.Equal(t, toolRevertPlan, steps[0].Tool)
 	require.Equal(t, true, steps[0].Arguments["pending"])
 
-	_, _, steps = planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomePending, 5, 6))
+	_, _, steps = planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomePending, 5, 6))
 	require.Equal(t, toolApplyRevertBatch, steps[0].Tool)
 	require.Equal(t, []int{5, 6}, steps[0].Arguments["lines"])
 }
@@ -449,16 +450,16 @@ func TestAnApprovedPendingItemNeedsNothingFromThePerson(t *testing.T) {
 
 type warningCase struct {
 	tool  string
-	build func(t *testing.T, s *Service) []mcp.Warning
+	build func(t *testing.T, s *Service) []toolresult.Warning
 }
 
 func warningCases() map[string]warningCase {
 	return map[string]warningCase{
-		mcp.WarningRLSHidesRows: {tool: "query", build: func(t *testing.T, s *Service) []mcp.Warning {
+		toolresult.WarningRLSHidesRows: {tool: "query", build: func(t *testing.T, s *Service) []toolresult.Warning {
 			s.RLS = &fakeRLS{hidden: map[string]bool{"public.leads": true}}
 			return s.rlsWarnings(context.Background(), []string{"public.leads"}, 0)
 		}},
-		mcp.WarningGuardUpgradeAvailable: {tool: "run_start", build: func(t *testing.T, s *Service) []mcp.Warning {
+		toolresult.WarningGuardUpgradeAvailable: {tool: "run_start", build: func(t *testing.T, s *Service) []toolresult.Warning {
 			s.Upgrade = fakeUpgrade{available: true}
 			return s.upgradeWarnings(context.Background())
 		}},
@@ -648,10 +649,10 @@ func urlLinesOf(message string) []string {
 // catalogKinds is the (actor, action) sequence of steps as the catalog lists
 // it: without the SEND_REQUEST step the engine puts first when a result
 // carries requestFile (CONTRACT.md, Next steps).
-func catalogKinds(steps []mcp.NextStep) []mcpcontract.StepKind {
+func catalogKinds(steps []toolresult.NextStep) []mcpcontract.StepKind {
 	got := make([]mcpcontract.StepKind, 0, len(steps))
 	for i, st := range steps {
-		if i == 0 && st.Action == mcp.ActionSendRequest {
+		if i == 0 && st.Action == toolresult.ActionSendRequest {
 			continue
 		}
 		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})

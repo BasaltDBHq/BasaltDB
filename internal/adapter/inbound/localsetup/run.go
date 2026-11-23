@@ -315,7 +315,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 	var warnings, lines []string
 	wrote := false
 	err = inTx(ctx, conn, func(tx pgx.Tx) error {
-		database, err := currentDatabase(ctx, tx)
+		database, err := s.currentDatabase(ctx, tx)
 		if err != nil {
 			return err
 		}

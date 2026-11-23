@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
@@ -85,42 +86,42 @@ type Plugins struct {
 	// configured are the enabled entries that list an agent, in config
 	// order; entries are the ones the supervisor runs.
 	configured []config.Plugin
-	entries    []pluginhost.Entry
+	entries    []pluginmodel.Entry
 
-	mode  pluginhost.Mode
+	mode  pluginmodel.Mode
 	root  string
 	trust pluginhost.TrustStore
 
 	mu sync.Mutex
 	// first is each entry's copy verified at start, used by its first
 	// start only, so a start does not hash every file twice.
-	first map[pluginhost.EntryKey]pluginhost.Verified
+	first map[pluginmodel.EntryKey]pluginmodel.Verified
 	// notTrusted is why an entry failed verification, at start or before
 	// its last restart; cleared when a later verification passes.
-	notTrusted map[pluginhost.EntryKey]error
+	notTrusted map[pluginmodel.EntryKey]error
 	// refused is why an entry that verified is not started.
-	refused map[pluginhost.EntryKey]string
+	refused map[pluginmodel.EntryKey]string
 	// approval are the entries that require a plugin approval
 	// (config.Config.PluginRequiresApproval). Such an entry is verified with
 	// plugin.RequireApproval and starts with no agent: withhold grants it
 	// each agent whose approval matched, and no other.
-	approval map[pluginhost.EntryKey]bool
+	approval map[pluginmodel.EntryKey]bool
 	// unrecorded are the agents each entry is withheld from, and why: its
 	// ledger record could not be written, or, for an entry that requires
 	// approval, its approval is missing or does not match (withhold).
-	unrecorded map[pluginhost.EntryKey]map[string]withheldWhy
+	unrecorded map[pluginmodel.EntryKey]map[string]withheldWhy
 	// dialWhy is why a service entry's last connection failed, when the
 	// cause is one status should name (nothing listens, the socket
 	// directory changed).
-	dialWhy map[pluginhost.EntryKey]string
+	dialWhy map[pluginmodel.EntryKey]string
 
 	// In service mode: the units the engine expects (unitHost, or why it
 	// cannot tell) and each reachable local entry's socket and OS user.
 	unitHost    UnitHost
 	unitHostErr error
-	targets     map[pluginhost.EntryKey]serviceTarget
+	targets     map[pluginmodel.EntryKey]serviceTarget
 	// allKeys are every configured entry's, enabled or not.
-	allKeys []pluginhost.EntryKey
+	allKeys []pluginmodel.EntryKey
 
 	// rootErr is why no copy can be verified: the plugin root or the trust
 	// store cannot be read.
@@ -129,10 +130,10 @@ type Plugins struct {
 	// cannot be read; "" when it can (pluginWatch).
 	configProblem string
 	// startChecks is each entry's check at start. Immutable once built.
-	startChecks map[pluginhost.EntryKey]entryCheck
+	startChecks map[pluginmodel.EntryKey]entryCheck
 	// approvedBy is, for each entry that requires approval served at start,
 	// the approval each agent is served on.
-	approvedBy map[pluginhost.EntryKey]map[string]uuid.UUID
+	approvedBy map[pluginmodel.EntryKey]map[string]uuid.UUID
 
 	// A service engine's own entries: the store, which configured entries
 	// are engine-kept, why the entries file cannot be used ("" when it
@@ -140,7 +141,7 @@ type Plugins struct {
 	// their (name, instance), and why no engine-kept local entry may start
 	// (an agent's OS user in the engine's group).
 	kept        *pluginhost.Store
-	keptKeys    map[pluginhost.EntryKey]bool
+	keptKeys    map[pluginmodel.EntryKey]bool
 	keptProblem string
 	clashes     []config.Plugin
 	groupErr    error
@@ -193,13 +194,13 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 	}
 	ep := &Plugins{
 		host: pluginhost.NewHost(), log: log, o: o,
-		mode:  pluginhost.ModeSameUser,
-		first: map[pluginhost.EntryKey]pluginhost.Verified{}, notTrusted: map[pluginhost.EntryKey]error{}, refused: map[pluginhost.EntryKey]string{},
-		approval: map[pluginhost.EntryKey]bool{}, startChecks: map[pluginhost.EntryKey]entryCheck{},
-		keptKeys: map[pluginhost.EntryKey]bool{}, kick: make(chan chan struct{}), startCfg: cfg,
+		mode:  pluginmodel.ModeSameUser,
+		first: map[pluginmodel.EntryKey]pluginmodel.Verified{}, notTrusted: map[pluginmodel.EntryKey]error{}, refused: map[pluginmodel.EntryKey]string{},
+		approval: map[pluginmodel.EntryKey]bool{}, startChecks: map[pluginmodel.EntryKey]entryCheck{},
+		keptKeys: map[pluginmodel.EntryKey]bool{}, kick: make(chan chan struct{}), startCfg: cfg,
 	}
 	if cfg.Service() {
-		ep.mode = pluginhost.ModeService
+		ep.mode = pluginmodel.ModeService
 		ep.initServiceUnits(cfg, configPath)
 		if o.kept != nil {
 			ep.kept = o.kept
@@ -246,10 +247,10 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 			ep.entries = append(ep.entries, c.e)
 		}
 	}
-	if ep.mode == pluginhost.ModeService {
+	if ep.mode == pluginmodel.ModeService {
 		ep.checkServiceAgents(cfg)
 	}
-	if ep.mode == pluginhost.ModeSameUser && slices.ContainsFunc(ep.entries, func(e pluginhost.Entry) bool { return !e.Manifest.Endpoint.IsRemote() }) {
+	if ep.mode == pluginmodel.ModeSameUser && slices.ContainsFunc(ep.entries, func(e pluginmodel.Entry) bool { return !e.Manifest.Endpoint.IsRemote() }) {
 		log.Warn("local plugins run as the engine's own OS user: same-user mode is no security boundary, and a plugin can read whatever the engine can")
 	}
 	return ep
@@ -259,8 +260,8 @@ func NewFor(cfg config.Config, configPath string, o Options, log *slog.Logger) *
 // verified copy and the entry to run (with no agent when it requires
 // approval: servedAgentsLocked grants them), or why it is not started.
 type entryCheck struct {
-	v          pluginhost.Verified
-	e          pluginhost.Entry
+	v          pluginmodel.Verified
+	e          pluginmodel.Entry
 	notTrusted error
 	refused    string
 }
@@ -298,7 +299,7 @@ func (ep *Plugins) check(p config.Plugin, required bool) entryCheck {
 
 // startCheck is entry k's check at start, false when it was not checked
 // (not enabled, or with no agent).
-func (ep *Plugins) startCheck(k pluginhost.EntryKey) (entryCheck, bool) {
+func (ep *Plugins) startCheck(k pluginmodel.EntryKey) (entryCheck, bool) {
 	c, ok := ep.startChecks[k]
 	return c, ok
 }
@@ -307,7 +308,7 @@ func (ep *Plugins) startCheck(k pluginhost.EntryKey) (entryCheck, bool) {
 // failed check in fixed words, never a path a plugin could have named
 // (plugin.VerifyFailure).
 func verifyFailure(err error) string {
-	var ve *pluginhost.VerifyError
+	var ve *pluginmodel.VerifyError
 	if errors.As(err, &ve) {
 		return pluginhost.VerifyFailure(ve)
 	}
@@ -319,7 +320,7 @@ func verifyFailure(err error) string {
 // runs only under its own OS user and unit, which the engine connects to,
 // so it never runs with the engine's privileges (it could read the
 // engine's keys and credentials).
-func (ep *Plugins) localRefusal(p config.Plugin, v pluginhost.Verified) string {
+func (ep *Plugins) localRefusal(p config.Plugin, v pluginmodel.Verified) string {
 	switch {
 	case v.Manifest.Endpoint.IsRemote():
 		return ""
@@ -332,7 +333,7 @@ func (ep *Plugins) localRefusal(p config.Plugin, v pluginhost.Verified) string {
 			return whyKeptAgentInGroup
 		}
 		return ""
-	case ep.mode == pluginhost.ModeService:
+	case ep.mode == pluginmodel.ModeService:
 		return ep.serviceRefusal(p, v)
 	}
 	return ""
@@ -363,14 +364,14 @@ func (ep *Plugins) start(ctx context.Context) error {
 
 // dial verifies e's installed copy again, so a copy changed while the
 // engine runs is never started, and reaches it.
-func (ep *Plugins) dial(ctx context.Context, e pluginhost.Entry) (pluginhost.Transport, error) {
+func (ep *Plugins) dial(ctx context.Context, e pluginmodel.Entry) (pluginmodel.Transport, error) {
 	k := e.Key
 	v, err := ep.verified(k)
 	if err != nil {
 		ep.log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
 		return nil, err
 	}
-	var t pluginhost.Transport
+	var t pluginmodel.Transport
 	if u, ok := ep.targets[k]; ok {
 		if err := ep.recheckUnit(k, v, u); err != nil {
 			ep.log.Error("plugin not started: its service unit changed", "plugin", k.String(), "err", err)
@@ -381,7 +382,7 @@ func (ep *Plugins) dial(ctx context.Context, e pluginhost.Entry) (pluginhost.Tra
 		t, err = ep.dialer().Service(ctx, k, v, u.socket, u.uid, u.gid, func() error { return ep.recheckUnit(k, v, u) })
 		ep.mu.Lock()
 		if ep.dialWhy == nil {
-			ep.dialWhy = map[pluginhost.EntryKey]string{}
+			ep.dialWhy = map[pluginmodel.EntryKey]string{}
 		}
 		ep.dialWhy[k] = dialFailure(ep.dialer(), err)
 		ep.mu.Unlock()
@@ -395,7 +396,7 @@ func (ep *Plugins) dial(ctx context.Context, e pluginhost.Entry) (pluginhost.Tra
 	return t, nil
 }
 
-func (ep *Plugins) verified(k pluginhost.EntryKey) (pluginhost.Verified, error) {
+func (ep *Plugins) verified(k pluginmodel.EntryKey) (pluginmodel.Verified, error) {
 	ep.mu.Lock()
 	v, ok := ep.first[k]
 	delete(ep.first, k)
@@ -420,14 +421,14 @@ func (ep *Plugins) verified(k pluginhost.EntryKey) (pluginhost.Verified, error) 
 // verifyCopy verifies entry k's installed copy: an engine-kept entry's
 // under the state directory, always as one that requires approval; any
 // other under the plugin root of the engine's mode.
-func (ep *Plugins) verifyCopy(k pluginhost.EntryKey, sum string, required bool) (pluginhost.Verified, error) {
+func (ep *Plugins) verifyCopy(k pluginmodel.EntryKey, sum string, required bool) (pluginmodel.Verified, error) {
 	if ep.isKept(k) {
 		return ep.kept.Verify(k, sum)
 	}
 	return pluginhost.Verify(ep.root, k, sum, ep.trust, ep.mode, pluginhost.RequireApproval(required))
 }
 
-func (ep *Plugins) configuredEntry(k pluginhost.EntryKey) config.Plugin {
+func (ep *Plugins) configuredEntry(k pluginmodel.EntryKey) config.Plugin {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	return ep.configuredLocked(k)
@@ -435,7 +436,7 @@ func (ep *Plugins) configuredEntry(k pluginhost.EntryKey) config.Plugin {
 
 // configuredLocked is the configured entry k; ep.mu is held. While the
 // engine runs, pluginWatch replaces the configured entries.
-func (ep *Plugins) configuredLocked(k pluginhost.EntryKey) config.Plugin {
+func (ep *Plugins) configuredLocked(k pluginmodel.EntryKey) config.Plugin {
 	i := slices.IndexFunc(ep.configured, func(p config.Plugin) bool { return p.Key() == k })
 	if i < 0 {
 		return config.Plugin{}
@@ -443,7 +444,7 @@ func (ep *Plugins) configuredLocked(k pluginhost.EntryKey) config.Plugin {
 	return ep.configured[i]
 }
 
-func (ep *Plugins) credentialFile(k pluginhost.EntryKey) string {
+func (ep *Plugins) credentialFile(k pluginmodel.EntryKey) string {
 	return ep.configuredEntry(k).CredentialFile()
 }
 
@@ -570,7 +571,7 @@ func DebugWriter(cfg config.Config, w io.Writer, log *slog.Logger) io.Writer {
 const whyKeptAgentInGroup = "an agent's OS user is in the engine's group, or the group cannot be checked, so the engine starts no local plugin itself"
 
 // isKept reports whether configured entry k is engine-kept.
-func (ep *Plugins) isKept(k pluginhost.EntryKey) bool {
+func (ep *Plugins) isKept(k pluginmodel.EntryKey) bool {
 	if ep == nil {
 		return false
 	}
@@ -608,7 +609,7 @@ func (ep *Plugins) reloadKept(cfg config.Config, configPath string) config.Confi
 	held := configKeys(cfg, configPath)
 	out := cfg
 	out.Plugins = slices.Clone(cfg.Plugins)
-	keys := map[pluginhost.EntryKey]bool{}
+	keys := map[pluginmodel.EntryKey]bool{}
 	var clashes []config.Plugin
 	problem := ""
 	if err != nil {
@@ -633,8 +634,8 @@ func (ep *Plugins) reloadKept(cfg config.Config, configPath string) config.Confi
 
 // configKeys are the (name, instance)s of cfg's entries and of those
 // engine.json holds on disk now, read leniently.
-func configKeys(cfg config.Config, configPath string) map[pluginhost.EntryKey]bool {
-	out := map[pluginhost.EntryKey]bool{}
+func configKeys(cfg config.Config, configPath string) map[pluginmodel.EntryKey]bool {
+	out := map[pluginmodel.EntryKey]bool{}
 	for _, p := range cfg.Plugins {
 		out[p.Key()] = true
 	}
@@ -682,7 +683,7 @@ const kickWait = 30 * time.Second
 // NOT_STARTED when the engine does not run it. The engine runs one entry
 // per (name, instance): when engine.json and the engine both hold k, the
 // one it does not run is NOT_STARTED. It says nothing of any agent.
-func (ep *Plugins) healthOf(k pluginhost.EntryKey, kept bool) string {
+func (ep *Plugins) healthOf(k pluginmodel.EntryKey, kept bool) string {
 	if ep == nil || ep.host == nil || ep.isKept(k) != kept {
 		return person.HealthNotStarted
 	}
@@ -702,7 +703,7 @@ func (ep *Plugins) healthOf(k pluginhost.EntryKey, kept bool) string {
 
 // servingOf is what the running engine serves of engine-kept entry k: each
 // agent, the approval it is served on and whether the plugin answers READY.
-func (ep *Plugins) servingOf(k pluginhost.EntryKey) []person.PluginServing {
+func (ep *Plugins) servingOf(k pluginmodel.EntryKey) []person.PluginServing {
 	if ep == nil {
 		return nil
 	}

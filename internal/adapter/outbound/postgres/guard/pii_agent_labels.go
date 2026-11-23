@@ -7,6 +7,8 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
 // The labels of the Update check's LABELS fix (CONTRACT.md, Setup page, The
@@ -25,27 +27,27 @@ const agentReadableSQL = `SELECT r.table_oid, r.attnum, r.table_schema, r.table_
 
 // agentColumns reads the columns role may read with their class (no row is
 // UNCLASSIFIED), and every stored row. The caller acts as the guard role.
-func agentColumns(ctx context.Context, tx pgx.Tx, role string) ([]AgentColumn, map[ColumnKey]PIIColumn, error) {
+func agentColumns(ctx context.Context, tx pgx.Tx, role string) ([]guardmodel.AgentColumn, map[guardmodel.ColumnKey]guardmodel.PIIColumn, error) {
 	rows, err := tx.Query(ctx, agentReadableSQL, role)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read the agent's readable columns: %w", err)
 	}
-	readable, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (ReadableColumn, error) {
-		var c ReadableColumn
+	readable, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guardmodel.ReadableColumn, error) {
+		var c guardmodel.ReadableColumn
 		err := r.Scan(&c.TableOID, &c.Attnum, &c.Schema, &c.Table, &c.Column, &c.DataType)
 		return c, err
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	stored := map[ColumnKey]PIIColumn{}
+	stored := map[guardmodel.ColumnKey]guardmodel.PIIColumn{}
 	if err := readStored(ctx, tx, stored); err != nil {
 		return nil, nil, err
 	}
-	out := make([]AgentColumn, len(readable))
+	out := make([]guardmodel.AgentColumn, len(readable))
 	for i, c := range readable {
-		out[i] = AgentColumn{ReadableColumn: c, Label: unlabeled}
-		if s, ok := stored[ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}]; ok {
+		out[i] = guardmodel.AgentColumn{ReadableColumn: c, Label: unlabeled}
+		if s, ok := stored[guardmodel.ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}]; ok {
 			out[i].Label = labelOf(s)
 		}
 	}
@@ -55,15 +57,15 @@ func agentColumns(ctx context.Context, tx pgx.Tx, role string) ([]AgentColumn, m
 // AgentUnlabeled is every column role may read whose class is UNCLASSIFIED
 // (no row, or a row of that class), in pii_unclassified()'s order. It reads
 // in tx as the guard role and changes nothing.
-func AgentUnlabeled(ctx context.Context, tx pgx.Tx, n Names, role string) ([]AgentColumn, error) {
-	var out []AgentColumn
+func AgentUnlabeled(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string) ([]guardmodel.AgentColumn, error) {
+	var out []guardmodel.AgentColumn
 	err := asGuard(ctx, tx, n, func() error {
 		cols, _, err := agentColumns(ctx, tx, role)
 		if err != nil {
 			return err
 		}
 		for _, c := range cols {
-			if c.Class == ClassUnclassified {
+			if c.Class == guardmodel.ClassUnclassified {
 				out = append(out, c)
 			}
 		}
@@ -80,7 +82,7 @@ func AgentUnlabeled(ctx context.Context, tx pgx.Tx, n Names, role string) ([]Age
 // no class is written PUBLIC. When anything was written, the rows of columns
 // that no longer exist are deleted and pii_catalog is set, so a running
 // engine reloads its classes. It reports how many columns it wrote.
-func WriteAgentLabels(ctx context.Context, tx pgx.Tx, n Names, role string, changes []LabelChange, restPublic bool, at time.Time) (int, error) {
+func WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Names, role string, changes []guardmodel.LabelChange, restPublic bool, at time.Time) (int, error) {
 	if len(changes) == 0 && !restPublic {
 		return 0, nil
 	}
@@ -93,14 +95,14 @@ func WriteAgentLabels(ctx context.Context, tx pgx.Tx, n Names, role string, chan
 		if err != nil {
 			return err
 		}
-		prev := func(c AgentColumn) PIIColumn {
-			return stored[ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}]
+		prev := func(c guardmodel.AgentColumn) guardmodel.PIIColumn {
+			return stored[guardmodel.ColumnKey{Schema: c.Schema, Table: c.Table, Column: c.Column}]
 		}
-		byKey := make(map[[2]string]AgentColumn, len(cols))
+		byKey := make(map[[2]string]guardmodel.AgentColumn, len(cols))
 		for _, c := range cols {
 			byKey[[2]string{c.TableName(), c.Column}] = c
 		}
-		var out []PIIColumn
+		var out []guardmodel.PIIColumn
 		changed := map[[2]string]bool{}
 		for _, ch := range changes {
 			key := [2]string{ch.Table, ch.Column}
@@ -111,12 +113,12 @@ func WriteAgentLabels(ctx context.Context, tx pgx.Tx, n Names, role string, chan
 					return err
 				}
 				if gone {
-					return ErrClassesChanged
+					return guardmodel.ErrClassesChanged
 				}
-				return ErrLabelNotListed
+				return guardmodel.ErrLabelNotListed
 			}
 			if c.Label != ch.Was {
-				return ErrClassesChanged
+				return guardmodel.ErrClassesChanged
 			}
 			out = append(out, labeled(ch.Table, ch.Column, c.DataType, ch.Label, prev(c)))
 			changed[key] = true
@@ -124,10 +126,10 @@ func WriteAgentLabels(ctx context.Context, tx pgx.Tx, n Names, role string, chan
 		if restPublic {
 			for _, c := range cols {
 				key := [2]string{c.TableName(), c.Column}
-				if changed[key] || c.Class != ClassUnclassified {
+				if changed[key] || c.Class != guardmodel.ClassUnclassified {
 					continue
 				}
-				out = append(out, labeled(key[0], c.Column, c.DataType, Label{Class: ClassPublic}, prev(c)))
+				out = append(out, labeled(key[0], c.Column, c.DataType, guardmodel.Label{Class: guardmodel.ClassPublic}, prev(c)))
 			}
 		}
 		if len(out) == 0 {

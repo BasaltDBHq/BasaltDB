@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/connect"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
 )
 
@@ -256,7 +257,7 @@ func TestPluginIsolationAsRoot(t *testing.T) {
 	c, err := net.Dial("unix", na.Socket)
 	require.NoError(t, err)
 	require.NoError(t, dial.PeerIs(ua)(c))
-	require.ErrorIs(t, dial.PeerIs(ub)(c), dial.ErrWrongPeer)
+	require.ErrorIs(t, dial.PeerIs(ub)(c), connect.ErrWrongPeer)
 	_ = c.Close()
 	// The engine's per-connection check of the socket directory passes on
 	// the one the install made, and the plugin's user is not in its group.

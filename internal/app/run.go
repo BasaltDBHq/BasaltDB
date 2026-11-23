@@ -36,6 +36,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
@@ -872,7 +873,7 @@ func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 	case !st.Served():
 		log.Error("the guard cannot serve this agent; only status works until it is installed or upgraded",
 			"guard", st.State, "installed", st.Installed, "build", st.Build, "missingBreaking", st.MissingBreaking)
-	case st.State == guard.GuardUpgradeAvailable:
+	case st.State == guardmodel.GuardUpgradeAvailable:
 		log.Warn("the guard misses non-breaking migrations; the guard update basalt init links to adds them", "missingNonBreaking", st.MissingNonBreaking)
 	}
 }

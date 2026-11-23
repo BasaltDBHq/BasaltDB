@@ -23,13 +23,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -67,7 +67,7 @@ type Agent interface {
 	CheckResetLink(id uuid.UUID, secret string) bool
 	// PageFailure is err as the pages answer it: the error body with the
 	// person's message and steps (CONTRACT.md, Next steps).
-	PageFailure(err error) *mcp.ToolError
+	PageFailure(err error) *toolresult.ToolError
 }
 
 // PluginApprovals is what the plugin approval routes ask of an agent
@@ -242,7 +242,7 @@ func (s *Server) postApproval(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := approval.DecodeResponse(body)
 	if err != nil || resp.ApprovalID != id {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
+		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
 		return
 	}
 	receipt, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.Receipt, error) { return a.RelayApproval(ctx, resp) })
@@ -301,7 +301,7 @@ func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := revert.DecodeResponse(body)
 	if err != nil || resp.RevertID != id {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
+		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
 		return
 	}
 	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (relayedRevert, error) {
@@ -333,7 +333,7 @@ func (s *Server) postScope(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
-		s.fail(w, &mcp.ToolError{
+		s.fail(w, &toolresult.ToolError{
 			Code:    agent.CodeInvalidArgument,
 			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together",
 		})
@@ -366,7 +366,7 @@ func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() {
-		s.fail(w, &mcp.ToolError{
+		s.fail(w, &toolresult.ToolError{
 			Code:    agent.CodeInvalidArgument,
 			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)",
 		})
@@ -413,7 +413,7 @@ func (s *Server) reveal(w http.ResponseWriter, r *http.Request, name string,
 	}
 	in, ok := revealBody(body)
 	if !ok {
-		s.fail(w, &mcp.ToolError{
+		s.fail(w, &toolresult.ToolError{
 			Code:    agent.CodeInvalidArgument,
 			Message: "the body must be {\"proof\", \"revealSecret\"} (reveal-request.schema.json)",
 		})
@@ -495,7 +495,7 @@ func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := approval.DecodePluginResponse(body)
 	if err != nil || resp.ApprovalID != id {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
+		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
 		return
 	}
 	at, err := find(r.Context(), s, asPlugins(func(ctx context.Context, p PluginApprovals) (time.Time, error) {
@@ -583,7 +583,7 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 // nonceError is a page failure that hands the page the nonce of the widen
 // it asks the person for (a widened revert the engine no longer holds).
 type nonceError struct {
-	*mcp.ToolError
+	*toolresult.ToolError
 	nonce passkey.Bytes
 }
 
@@ -612,7 +612,7 @@ func unknownLink() error {
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(r.PathValue(name))
 	if err != nil {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: name + " must be a uuid"})
+		s.fail(w, &toolresult.ToolError{Code: agent.CodeInvalidArgument, Message: name + " must be a uuid"})
 		return uuid.Nil, false
 	}
 	return id, true
@@ -680,11 +680,11 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 // errorDTO is the pages' error body: the contract's tool error as the page
 // shows it, with the person's message and only the steps for the person.
 type errorDTO struct {
-	Code          string         `json:"code"`
-	Message       string         `json:"message"`
-	Reason        string         `json:"reason,omitempty"`
-	PersonMessage string         `json:"personMessage,omitempty"`
-	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
+	Code          string                `json:"code"`
+	Message       string                `json:"message"`
+	Reason        string                `json:"reason,omitempty"`
+	PersonMessage string                `json:"personMessage,omitempty"`
+	NextSteps     []toolresult.NextStep `json:"nextSteps,omitempty"`
 	// RescopeNonce is set only on the 409 for a widened revert the engine
 	// no longer holds: the nonce of the person's new widen proof.
 	RescopeNonce passkey.Bytes `json:"rescopeNonce,omitempty"`
@@ -696,10 +696,10 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 // personSteps are the steps the person takes: the page shows them, and the
 // agent's steps go to the agent through its own tools.
-func personSteps(steps []mcp.NextStep) []mcp.NextStep {
-	var out []mcp.NextStep
+func personSteps(steps []toolresult.NextStep) []toolresult.NextStep {
+	var out []toolresult.NextStep
 	for _, st := range steps {
-		if st.Actor == mcp.ActorPerson {
+		if st.Actor == toolresult.ActorPerson {
 			out = append(out, st)
 		}
 	}

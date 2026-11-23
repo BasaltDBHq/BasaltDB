@@ -37,22 +37,19 @@ var leadsSQL string
 //go:embed notes.sql
 var notesSQL string
 
-// Plan is what seeding the sample schema will run.
-type Plan = guardmodel.DemoPlan
-
 // Read reads what exists and plans only what is missing: the schema, and
 // each table with its rows. A table that exists is not touched (no row,
 // index or row-level security change).
-func Read(ctx context.Context, q guard.Querier) (Plan, error) {
+func Read(ctx context.Context, q guard.Querier) (guardmodel.DemoPlan, error) {
 	var schema, leads, notes bool
 	// Plain SQL: catalog lookups of fixed names.
 	err := q.QueryRow(ctx, `SELECT pg_catalog.to_regnamespace($1) IS NOT NULL,
 		pg_catalog.to_regclass($2) IS NOT NULL, pg_catalog.to_regclass($3) IS NOT NULL`,
 		Schema, Schema+".leads", Schema+".lead_notes").Scan(&schema, &leads, &notes)
 	if err != nil {
-		return Plan{}, err
+		return guardmodel.DemoPlan{}, err
 	}
-	var p Plan
+	var p guardmodel.DemoPlan
 	if leads && notes {
 		return p, nil
 	}
@@ -69,7 +66,7 @@ func Read(ctx context.Context, q guard.Querier) (Plan, error) {
 }
 
 // applyPlan runs the plan on tx.
-func applyPlan(ctx context.Context, tx pgx.Tx, p Plan) error {
+func applyPlan(ctx context.Context, tx pgx.Tx, p guardmodel.DemoPlan) error {
 	for _, s := range p.SQL {
 		if _, err := tx.Exec(ctx, s); err != nil {
 			return fmt.Errorf("sample data: %w", err)
@@ -79,10 +76,10 @@ func applyPlan(ctx context.Context, tx pgx.Tx, p Plan) error {
 }
 
 // Seed reads and applies the plan on tx.
-func Seed(ctx context.Context, tx pgx.Tx) (Plan, error) {
+func Seed(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, error) {
 	p, err := Read(ctx, tx)
 	if err != nil {
-		return Plan{}, err
+		return guardmodel.DemoPlan{}, err
 	}
 	return p, applyPlan(ctx, tx, p)
 }

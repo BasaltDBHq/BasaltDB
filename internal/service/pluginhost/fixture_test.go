@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
 // Contents of the test plugin's files. They stand in for a binary and a
@@ -41,9 +43,9 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	f := &fixture{t: t, base: base, configDir: filepath.Join(base, "config"), src: filepath.Join(base, "src")}
 	require.NoError(t, os.Mkdir(f.configDir, 0o700))
-	f.root, err = Root(ModeSameUser, runtime.GOOS, f.configDir)
+	f.root, err = Root(pluginmodel.ModeSameUser, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
-	f.trust, err = NewTrustStore(ModeSameUser, runtime.GOOS, f.configDir)
+	f.trust, err = NewTrustStore(pluginmodel.ModeSameUser, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
 	f.signer, err = GenerateKey()
 	require.NoError(t, err)
@@ -113,15 +115,15 @@ func (f *fixture) writeSigned(dir string, manifest []byte, signer *ecdsa.Private
 	require.NoError(f.t, os.WriteFile(filepath.Join(dir, SignatureFile), sig, 0o644))
 }
 
-func (f *fixture) install(instance string) Verified {
+func (f *fixture) install(instance string) pluginmodel.Verified {
 	f.t.Helper()
-	v, err := Install(f.src, f.root, instance, f.trust, ModeSameUser)
+	v, err := Install(f.src, f.root, instance, f.trust, pluginmodel.ModeSameUser)
 	require.NoError(f.t, err)
 	return v
 }
 
-func (f *fixture) verify(instance, manifestSHA string) (Verified, error) {
-	return Verify(f.root, EntryKey{Name: "acme-ner", Instance: instance}, manifestSHA, f.trust, ModeSameUser)
+func (f *fixture) verify(instance, manifestSHA string) (pluginmodel.Verified, error) {
+	return Verify(f.root, pluginmodel.EntryKey{Name: "acme-ner", Instance: instance}, manifestSHA, f.trust, pluginmodel.ModeSameUser)
 }
 
 // requireNoSecrets: an error never quotes a file's contents or a key.

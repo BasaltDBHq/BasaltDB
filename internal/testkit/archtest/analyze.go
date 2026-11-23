@@ -28,6 +28,7 @@ const (
 const (
 	lInbound  = "inbound"
 	lOutbound = "outbound"
+	lPlatform = "platform"
 	lService  = "service"
 	lCore     = "core"
 	lLib      = "lib"
@@ -45,6 +46,7 @@ const (
 var layerOrder = []struct{ prefix, name string }{
 	{"internal/adapter/inbound", lInbound},
 	{"internal/adapter/outbound", lOutbound},
+	{"internal/platform", lPlatform},
 	{"internal/service", lService},
 	{"internal/core", lCore},
 	{"internal/lib", lLib},
@@ -66,8 +68,9 @@ var allowed = map[string][]string{
 	lConfig:   {lConfig, lCore, lLib, lApi},
 	lService:  {lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lOutbound: {lOutbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
+	lPlatform: {lPlatform, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lInbound:  {lInbound, lService, lConfig, lCore, lLib, lPkg, lApi, lWeb},
-	lCmd:      {lCmd, lApp, lService, lInbound, lConfig, lCore, lLib, lPkg, lApi, lWeb},
+	lCmd:      {lCmd, lApp, lService, lInbound, lPlatform, lConfig, lCore, lLib, lPkg, lApi, lWeb},
 	lPkg:      {lPkg, lLib},
 	lApi:      {lApi},
 	lWeb:      {lCore, lLib},
@@ -363,7 +366,7 @@ func analyze(root string, reg *register) (violations, error) {
 			if rel != appPkg {
 				checkPathRulesInstall(v, rel, f)
 			}
-			if layer == lInbound || layer == lOutbound || layer == lCmd || layer == lPkg || layer == lWeb {
+			if layer == lInbound || layer == lOutbound || layer == lPlatform || layer == lCmd || layer == lPkg || layer == lWeb {
 				checkDecisionCalls(v, rel, f, decisions)
 			}
 		}

@@ -13,8 +13,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
@@ -175,7 +177,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 	defer release()
 	var stderr bytes.Buffer
 
-	code := runSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
+	code := enginecli.RunSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{}, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
 
 	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another basalt engine --supervise runs")

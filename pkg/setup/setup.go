@@ -787,6 +787,10 @@ const (
 	// CodeConnectOnly is a connect-only code given without
 	// Request.ConnectPage: only the connect page runs it.
 	CodeConnectOnly = string(setupcode.RefusalConnectOnly)
+	// CodeGuardUnusable is a database with an older BasaltDB install this
+	// version can neither install over nor update: remove it first, as the
+	// message's link says. Nothing changed.
+	CodeGuardUnusable = setuprun.SetuprunCodeGuardUnusable
 	// CodeSetupFailed is any other failure: the database or its driver.
 	// Nothing changed. Its Message may carry the database's own words; a
 	// service that shows fixed messages maps it to one.
@@ -802,7 +806,7 @@ var codes = []string{
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
 	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
-	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged,
+	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged, CodeGuardUnusable,
 }
 
 // Codes is every Error.Code this package returns: the setup code's

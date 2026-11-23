@@ -54,7 +54,7 @@ const (
 	CodeSetupFailed             = "SETUP_FAILED"
 	// CodeGuardUnusable: the database has a basalt_meta this build cannot
 	// install over or update (an older install, or a partial one).
-	CodeGuardUnusable = "GUARD_UNUSABLE"
+	CodeGuardUnusable = setup.SetuprunCodeGuardUnusable
 	CodeTimeLimit     = "TIME_LIMIT"
 )
 

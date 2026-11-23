@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 )
 
 // The link vector the setup page's parser reads too (web/lib/setup.test.mjs).

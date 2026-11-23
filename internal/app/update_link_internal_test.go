@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
 )
 
 func TestAgentCommandsCarryTheUpdateLinkOnlyWhereTheSetupJobsRun(t *testing.T) {

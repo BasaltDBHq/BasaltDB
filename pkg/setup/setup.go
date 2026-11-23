@@ -17,9 +17,10 @@
 //
 // The package takes a connection its caller opened as the database's admin.
 // It reads no environment variable, terminal or file. Its messages name
-// databases, hosts, roles and tables, never a connection string, and
-// never the database's or the driver's own words (see Error). A caller behind a transaction pooler opens the
-// connection with pgx.QueryExecModeExec, as basalt does.
+// databases, hosts, roles and tables, never a connection string. An
+// Error's Message never carries the database's or the driver's own words
+// (see Error). A caller behind a transaction pooler opens the connection
+// with pgx.QueryExecModeExec, as basalt does.
 package setup
 
 import (

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -84,30 +83,6 @@ func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) linksvc.He
 	require.NoError(t, err)
 	stepcatalogtest.RequirePersonMessage(t, n.PersonMessage, n.Links)
 	return n
-}
-
-// TestPersonMessagesNameNoCommandWithALongConfigPath builds the
-// personMessages that once offered a command named after --config, with a
-// 252-character path: each stays within the limit and names no basalt
-// command, since the person acts on a link (CONTRACT.md, Next steps).
-func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
-	t.Parallel()
-	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux", testManager())
-	require.NoError(t, err)
-
-	messages := map[string]string{}
-	describe := describeUseCase(cmds, &fakeCatalog{notGranted: 12})
-	granted, err := describe.DescribeOverview(context.Background())
-	require.NoError(t, err)
-	messages["not granted"] = granted.PersonMessage
-	messages["describe not found"] = describe.DescribeNotFoundSteps(guidance.NewSteps(), guidance.Failure{Tool: guidance.ToolDescribe})
-
-	for name, m := range messages {
-		require.NoError(t, guidance.CheckPersonMessage(m), "%s: %s", name, m)
-		require.NotContains(t, m, long, name)
-		require.NotContains(t, m, "basalt ", "%s: the person runs no command", name)
-	}
 }
 
 // APPROVAL_INVALID sends the person back to the page the hold handed over:

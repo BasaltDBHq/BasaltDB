@@ -97,6 +97,7 @@ type Service struct {
 	approvals Approvals
 	upgrade   UpgradeWarner
 	next      ApprovalLinker
+	steps     Unavailable
 }
 
 // Delivery is what the write use case asks of the delivery use case.
@@ -117,6 +118,10 @@ type Approvals interface {
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
 	// NotFound is the ledger's answer for an approval the role does not hold.
 	NotFound() error
+	// HoldTooLargeSteps and ApprovalRequiredSteps are the steps and the
+	// person's message of the errors a held write answers with.
+	HoldTooLargeSteps(b *guidance.Steps, te *toolresult.ToolError) string
+	ApprovalRequiredSteps(b *guidance.Steps, te *toolresult.ToolError) string
 }
 
 // UpgradeWarner gives the warnings of a guard that can be upgraded, for run_start.
@@ -127,6 +132,12 @@ type UpgradeWarner interface {
 // ApprovalLinker puts the link of a held write into an error answer.
 type ApprovalLinker interface {
 	ApprovalLinkError(te *toolresult.ToolError, n linksvc.HeldAnswer) *toolresult.ToolError
+}
+
+// Unavailable builds the steps and the person's message of an UNAVAILABLE
+// error, which the status and handoff use cases own.
+type Unavailable interface {
+	UnavailableSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string
 }
 
 // New returns the service over core and its dependency groups. A nil
@@ -150,10 +161,10 @@ func New(core Core, describe *DescribeDeps, write *WriteDeps, update func() *gui
 }
 
 // SetPorts gives the service the use cases it asks: the delivery of held
-// actions, the approvals, the upgrade warnings of run_start, and the link of
-// an approval error.
-func (ds *Service) SetPorts(delivery Delivery, approvals Approvals, upgrade UpgradeWarner, next ApprovalLinker) {
-	ds.delivery, ds.approvals, ds.upgrade, ds.next = delivery, approvals, upgrade, next
+// actions, the approvals, the upgrade warnings of run_start, the link of an
+// approval error and the steps of an UNAVAILABLE error.
+func (ds *Service) SetPorts(delivery Delivery, approvals Approvals, upgrade UpgradeWarner, next ApprovalLinker, steps Unavailable) {
+	ds.delivery, ds.approvals, ds.upgrade, ds.next, ds.steps = delivery, approvals, upgrade, next, steps
 }
 
 // StatementTimeout is the agent's statement timeout, 0 when the service

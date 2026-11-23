@@ -130,10 +130,10 @@ func describeNotFound(resource string) error {
 		"%q is not a table this agent can read: it does not exist, or the agent has no access to it", firstRunes(resource, guidance.MaxTableChars))}
 }
 
-// DescribeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
+// describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
-func (ds *Service) DescribeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
+func (ds *Service) describeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
 	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: searchTerm(f.Arg(guidance.ArgResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")

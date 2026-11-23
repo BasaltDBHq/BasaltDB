@@ -14,7 +14,7 @@ import (
 
 // The store ports: everything the service asks of the agent's store, on the
 // agent's own credential, in action types. The Postgres adapter
-// (internal/adapter/outbound/postgres/store) implements them; the service never imports it.
+// (internal/platform/postgres/store) implements them; the service never imports it.
 
 // Store is any store an agent can be bound to: its kind, what the engine
 // may rely on, and the ledger kept next to it.

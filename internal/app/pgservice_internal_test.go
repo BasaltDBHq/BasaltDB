@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 

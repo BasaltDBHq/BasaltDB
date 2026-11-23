@@ -12,13 +12,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 

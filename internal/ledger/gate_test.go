@@ -11,9 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // noDB fails the test on any statement: a gated tick must not reach the

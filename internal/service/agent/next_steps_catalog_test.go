@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -28,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // This file is the contract test of the engine's error guidance

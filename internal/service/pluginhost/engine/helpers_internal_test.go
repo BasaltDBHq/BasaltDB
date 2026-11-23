@@ -16,7 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -29,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"

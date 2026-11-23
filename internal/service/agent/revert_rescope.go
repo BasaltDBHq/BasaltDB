@@ -1,0 +1,402 @@
+package agent
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert"
+	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
+)
+
+// The revert page's scope route (CONTRACT.md, Revert, Rescope, widen and
+// reject; Local pages, POST /api/v1/reverts/{revertId}/scope): the person
+// narrows the agent's proposal, or widens it with a passkey proof bound to
+// a new link secret the page made. The engine derives the rescope key from
+// that secret and sends Postgres only the key and the proof; the secret
+// itself never reaches Postgres. Postgres decides every check.
+
+// ScopeRequest is the body of POST …/scope (revert-scope-request.schema.json).
+// Proof and NewSecret come together: a widen.
+type ScopeRequest struct {
+	Select    revert.Select `json:"select"`
+	Proof     *ScopeProof   `json:"proof,omitempty"`
+	NewSecret string        `json:"newSecret,omitempty"`
+}
+
+// ScopeResponse is the 200 answer of POST …/scope
+// (revert-scope-response.schema.json): the rebuilt request, and the catalog
+// for a proven widen or a narrow under its scope token.
+type ScopeResponse struct {
+	Request revert.Request        `json:"request"`
+	Catalog *action.RevertCatalog `json:"catalog,omitempty"`
+}
+
+// rescoped is what the engine holds in memory for a revert the person
+// rescoped through it: never written to stateDir, gone after a restart
+// (owner, Q13). Lines and catalog after a widen hold other agents' values,
+// served only to a request carrying the rotated link.
+type rescoped struct {
+	// link is sha256 of the link secret the state belongs to: the rotated
+	// one after a widen, the live one otherwise.
+	link    [sha256.Size]byte
+	token   []byte
+	request revert.Request
+	catalog *action.RevertCatalog
+	expires time.Time
+}
+
+// rescopes are a service's rescoped reverts, by revert id, and a lock per
+// revert that serializes everything that reads Postgres and then writes
+// the entry, so an older answer never overwrites a newer one.
+type rescopes struct {
+	mu    sync.Mutex
+	byID  map[uuid.UUID]rescoped
+	locks map[uuid.UUID]*revertLock
+}
+
+// revertLock is one revert's lock (a one-slot channel, so a waiter can
+// give up with its context) and how many hold or wait for it.
+type revertLock struct {
+	slot  chan struct{}
+	users int
+}
+
+func newRescopes() *rescopes {
+	return &rescopes{byID: map[uuid.UUID]rescoped{}, locks: map[uuid.UUID]*revertLock{}}
+}
+
+// lock takes revert id's lock and returns its release, or ctx's error when
+// ctx ends while it waits. The lock is forgotten once nobody holds or waits
+// for it.
+func (r *rescopes) lock(ctx context.Context, id uuid.UUID) (func(), error) {
+	r.mu.Lock()
+	l, ok := r.locks[id]
+	if !ok {
+		l = &revertLock{slot: make(chan struct{}, 1)}
+		r.locks[id] = l
+	}
+	l.users++
+	r.mu.Unlock()
+	leave := func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		l.users--
+		if l.users == 0 {
+			delete(r.locks, id)
+		}
+	}
+	select {
+	case l.slot <- struct{}{}:
+	case <-ctx.Done():
+		leave()
+		return nil, ctx.Err()
+	}
+	return func() {
+		<-l.slot
+		leave()
+	}, nil
+}
+
+// holdsToken reports whether the engine holds a scope token for revert id,
+// whatever link it belongs to.
+func (r *rescopes) holdsToken(id uuid.UUID, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.byID[id]
+	return ok && st.token != nil && now.Before(st.expires)
+}
+
+// get is id's state when it belongs to the link secret and has not
+// expired.
+func (r *rescopes) get(id uuid.UUID, secret string, now time.Time) (rescoped, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.byID[id]
+	if ok && !now.Before(st.expires) {
+		delete(r.byID, id)
+		return rescoped{}, false
+	}
+	hash := sha256.Sum256([]byte(secret))
+	if !ok || subtle.ConstantTimeCompare(hash[:], st.link[:]) != 1 {
+		return rescoped{}, false
+	}
+	return st, true
+}
+
+func (r *rescopes) put(id uuid.UUID, st rescoped) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.byID[id] = st
+}
+
+func (r *rescopes) drop(id uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.byID, id)
+}
+
+// RescopeRevert changes the scope of a revert this agent's role prepared,
+// for the person on the revert page that holds secret, the revert's live
+// link secret (the pages checked it). Without a proof it is a narrow: the
+// engine adds the scope token it holds for this link, if any. With a proof
+// and the page's new secret it is a widen: on success the revert's link is
+// rotated to that secret, and the token, lines and catalog Postgres
+// returned are kept in memory for it.
+func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in ScopeRequest) (ScopeResponse, error) {
+	widen := in.Proof != nil
+	if widen && subtle.ConstantTimeCompare([]byte(in.NewSecret), []byte(secret)) == 1 {
+		return ScopeResponse{}, &ArgumentError{Message: "newSecret must be a new secret the page made, not the link's current one"}
+	}
+	release, err := s.rescopes.lock(ctx, id)
+	if err != nil {
+		return ScopeResponse{}, err
+	}
+	defer release()
+	r, err := s.openRevert(ctx, id)
+	if err != nil {
+		return ScopeResponse{}, err
+	}
+	st, held, err := s.heldState(r, secret)
+	if err != nil {
+		return ScopeResponse{}, err
+	}
+	req := action.RescopeRequest{RevertID: id, Select: in.Select}
+	if widen {
+		raw, err := links.DecodeSecret(in.NewSecret)
+		if err != nil {
+			return ScopeResponse{}, &ArgumentError{Message: "newSecret must be 16 random bytes, base64url without padding"}
+		}
+		key, err := revert.RescopeKey(raw)
+		clear(raw)
+		if err != nil {
+			return ScopeResponse{}, err
+		}
+		as := in.Proof.assertion()
+		req.Proof, req.RescopeKey = &as, key
+	}
+	if !widen && held {
+		req.Token = st.token
+	}
+	out, err := s.deps.Revert.Store.RescopeRevert(ctx, req, guardmodel.MCPPrepareTimeout)
+	if err != nil {
+		return ScopeResponse{}, s.rescopeError(ctx, r, err)
+	}
+	ids, err := s.credentialIDs(ctx)
+	if err != nil {
+		return ScopeResponse{}, err
+	}
+	next := rescoped{
+		link: sha256.Sum256([]byte(secret)), token: req.Token, catalog: out.Catalog, expires: out.ExpiresAt,
+		request: revert.Request{RevertID: id, Binding: out.BindingText, Lines: out.Lines, RescopeNonce: out.RescopeNonce, CredentialIDs: ids},
+	}
+	if widen {
+		next.link, next.token = sha256.Sum256([]byte(in.NewSecret)), out.ScopeToken
+	}
+	if err := s.moveLink(ctx, id, in, out.ExpiresAt); err != nil {
+		return ScopeResponse{}, err
+	}
+	s.rescopes.put(id, next)
+	resp := next.request
+	resp.Columns = s.columnsOf(ctx, resp.Lines)
+	return ScopeResponse{Request: resp, Catalog: out.Catalog}, nil
+}
+
+// moveLink gives the revert's link the rescoped revert's expiry, and on a
+// widen rotates it to the page's new secret.
+func (s *Service) moveLink(ctx context.Context, id uuid.UUID, in ScopeRequest, expires time.Time) error {
+	if in.Proof == nil {
+		s.extendLink(ctx, id, expires)
+		return nil
+	}
+	return s.rotateLink(ctx, id, in.NewSecret, expires)
+}
+
+// rotateLink moves the revert's link to the page's new secret: the old one
+// stops working at once (the agent's link is dead). Inside a Vault session
+// the session moves to the new token and stays open, the old token's other
+// sessions end, and the new token is registered so a later session can
+// open with the new secret.
+func (s *Service) rotateLink(ctx context.Context, id uuid.UUID, secret string, expires time.Time) error {
+	rot, err := s.deps.Delivery.Links.Rotate(id, secret, expires)
+	if err != nil {
+		return err
+	}
+	if !rot.Relay {
+		return nil
+	}
+	s.deps.Revert.RotateSession(ctx, rot.Token)
+	s.registerRelay(ctx, id, rot.Token, expires)
+	return nil
+}
+
+// extendLink moves the live link's expiry to the revert's new one (every
+// rescope restarts the hour, owner Q12), registering a relay link again
+// with it. A failure only shortens the link: it is logged.
+func (s *Service) extendLink(ctx context.Context, id uuid.UUID, expires time.Time) {
+	l, relay, err := s.deps.Delivery.Links.Extend(id, expires)
+	if err != nil {
+		s.deps.Core.Log.Warn("extend a rescoped revert's link", "id", id, "err", err)
+		return
+	}
+	if relay {
+		s.registerRelay(ctx, id, l.Token, expires)
+	}
+}
+
+// registerRelay registers token with the Vault until expires. A refusal
+// leaves the open session working; a new session for it is refused until
+// the engine registers its links again after its next READY.
+func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel.LinkToken, expires time.Time) {
+	if err := s.deps.Delivery.Relay.Register(ctx, token, expires); err != nil {
+		s.deps.Core.Log.Warn("the Vault did not register a rotated revert link", "id", id, "err", err)
+	}
+}
+
+// rescopeError is the page's answer to a rescope Postgres refused, in the
+// contract's check order: a descriptor bad on its shape alone, or outside
+// the scope once proven, is INVALID_ARGUMENT; every proof or token
+// failure is one REVERT_INVALID whatever its cause; a rescope past
+// guardmodel.MCPPrepareTimeout is QUERY_TIMEOUT TIME_LIMIT.
+func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) error {
+	if _, hint, ok := scopeRefusal(err); ok {
+		return &ArgumentError{Message: "the scope was refused: " + hint}
+	}
+	se := storeError(err)
+	if se == nil {
+		return err
+	}
+	code, _ := ledgerCode(err)
+	switch {
+	case code == guardmodel.CodeRevertInvalid && se.Detail == guardmodel.RevertWidenRefused:
+		return widenRefused()
+	case code == guardmodel.CodeRevertExpired:
+		return s.revertExpired(r)
+	case timedOut(err) && ctx.Err() == nil:
+		return rescopeTimeout()
+	}
+	return err
+}
+
+// widenRefused is every failed proof or token check (CONTRACT.md, check
+// order 3): one fixed answer, so the agent holding the link learns nothing
+// about other agents' runs or tables from it.
+func widenRefused() error {
+	return &PageError{ToolError: &toolresult.ToolError{
+		Code:    CodeRevertInvalid,
+		Message: "the scope change was refused: it needs the person's passkey proof, or the page that proved one; nothing changed",
+		PersonMessage: "This scope change was refused, and nothing changed. To include other agents' changes, choose them " +
+			"again on this page and confirm with your passkey.",
+	}}
+}
+
+// rescopeTimeout is a rescope that ran past guardmodel.MCPPrepareTimeout (N12-R9).
+func rescopeTimeout() error {
+	return &PageError{ToolError: &toolresult.ToolError{
+		Code: CodeQueryTimeout, Reason: ReasonTimeLimit,
+		Message: "the scope change took longer than 100 seconds and was stopped; nothing changed",
+		PersonMessage: "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. " +
+			"Choose fewer agents, runs or tables, or try again.",
+	}}
+}
+
+// widenAgain is a widened revert whose lines this engine no longer holds:
+// it restarted since the person widened it (owner, Q13). The answer
+// carries the nonce the person's new widen proof signs.
+func widenAgain(nonce []byte) error {
+	return &PageError{RescopeNonce: nonce, ToolError: &toolresult.ToolError{
+		Code:    CodeRevertInvalid,
+		Message: "the engine restarted since the person widened this revert, and holds its lines in memory only",
+		PersonMessage: "The scope you chose on this page is no longer held by the engine (it restarted). Include other " +
+			"agents' changes again to see the lines, or ask the agent for a new link to its own proposal.",
+	}}
+}
+
+// heldState is what the engine holds for revert r and the page's link
+// secret, checked against Postgres, which wins: an entry whose scope token
+// outlived the person's scope (the agent reset the revert, or rescoped it
+// to its own work, straight in Postgres; the view then shows a binding
+// other than the one held) is dropped, the person's link is revoked as by a
+// reset, and the answer is NOT_FOUND LINK_RESET. The caller holds the
+// revert's lock.
+func (s *Service) heldState(r action.Revert, secret string) (rescoped, bool, error) {
+	st, held := s.rescopes.get(r.ID, secret, s.deps.Core.Now())
+	if !held || r.Widened || st.request.Binding == r.BindingText {
+		return st, held, nil
+	}
+	if st.token == nil {
+		s.rescopes.drop(r.ID)
+		return rescoped{}, false, nil
+	}
+	return rescoped{}, false, s.personScopeGone(r)
+}
+
+// personScopeGone drops what the engine held for revert r and revokes the
+// person's link as a reset does, once Postgres shows the person's scope is
+// gone (the agent role reset it directly): the answer is NOT_FOUND
+// LINK_RESET, and the page says the agent reset the revert.
+func (s *Service) personScopeGone(r action.Revert) error {
+	s.rescopes.drop(r.ID)
+	if err := s.deps.Delivery.Links.Reset(r.ID, r.ExpiresAt); err != nil {
+		return err
+	}
+	te, err := LinkReset()
+	if err != nil {
+		return err
+	}
+	return te
+}
+
+// resetToProposal puts a widened revert back to the agent's proposal for
+// its reissueLink (owner, Q8): Postgres drops the person's scope and
+// records REVERT_RESET, the person's link is revoked and kept so the page
+// can say the agent reset it (LINK_RESET), and the lines held in memory
+// go. The caller issues the new link.
+func (s *Service) resetToProposal(ctx context.Context, r action.Revert) (action.Revert, error) {
+	release, err := s.rescopes.lock(ctx, r.ID)
+	if err != nil {
+		return action.Revert{}, err
+	}
+	defer release()
+	out, err := s.deps.Revert.Store.ResetRevert(ctx, r.ID, guardmodel.MCPPrepareTimeout)
+	if err != nil {
+		return action.Revert{}, err
+	}
+	s.rescopes.drop(r.ID)
+	if err := s.deps.Delivery.Links.Reset(r.ID, out.ExpiresAt); err != nil {
+		return action.Revert{}, err
+	}
+	return s.deps.Revert.Store.FindRevert(ctx, r.ID)
+}
+
+// retirePersonScope is the agent's reissue of a revert that is no longer
+// widened while the engine still holds the person's scope token for it (the
+// agent reset it in Postgres directly): the person's link is revoked as by
+// a reset, so their page says LINK_RESET, and what the engine held goes.
+// The caller then issues the agent's new link.
+func (s *Service) retirePersonScope(ctx context.Context, r action.Revert) error {
+	release, err := s.rescopes.lock(ctx, r.ID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if !s.rescopes.holdsToken(r.ID, s.deps.Core.Now()) {
+		return nil
+	}
+	s.rescopes.drop(r.ID)
+	return s.deps.Delivery.Links.Reset(r.ID, r.ExpiresAt)
+}
+
+// CheckResetLink reports whether secret is a link of revert id that the
+// agent's reset revoked (NOT_FOUND reason LINK_RESET on the pages).
+func (s *Service) CheckResetLink(id uuid.UUID, secret string) bool {
+	return s.deps.Delivery.Links.WasReset(id, secret)
+}

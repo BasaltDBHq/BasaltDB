@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"sort"
 	"testing"
@@ -253,7 +252,6 @@ func catalogCases() map[string]catalogCase {
 
 		stepcatalogtest.CaseKey("INTERNAL", "", ""): {"query", queryArgs0, plain(errors.New("boom"))},
 	}
-	maps.Copy(cases, pluginCatalogCases())
 	return cases
 }
 
@@ -280,13 +278,13 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 	var missing []string
 	for _, e := range stepcatalogtest.CatalogOf(t).Errors {
 		seen[stepcatalogtest.EntryKey(e)] = true
-		if _, ok := cases[stepcatalogtest.EntryKey(e)]; !ok && !slices.Contains(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.EntryKey(e)) && !slices.Contains(stepcatalogtest.ApprovalErrorKeys(), stepcatalogtest.EntryKey(e)) {
+		if _, ok := cases[stepcatalogtest.EntryKey(e)]; !ok && !slices.Contains(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.EntryKey(e)) && !slices.Contains(stepcatalogtest.ApprovalErrorKeys(), stepcatalogtest.EntryKey(e)) && !slices.Contains(stepcatalogtest.PluginErrorKeys(), stepcatalogtest.EntryKey(e)) {
 			missing = append(missing, stepcatalogtest.EntryKey(e))
 		}
 	}
-	require.Empty(t, missing, "catalog errors without a case in catalogCases or in the revert or approval package's")
-	for _, k := range slices.Concat(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.ApprovalErrorKeys()) {
-		require.NotContains(t, cases, k, "a revert or approval error case runs in its own package only")
+	require.Empty(t, missing, "catalog errors without a case in catalogCases or in the revert, approval or plugin package's")
+	for _, k := range slices.Concat(stepcatalogtest.RevertErrorKeys(), stepcatalogtest.ApprovalErrorKeys(), stepcatalogtest.PluginErrorKeys()) {
+		require.NotContains(t, cases, k, "a revert, approval or plugin error case runs in its own package only")
 	}
 	var stale []string
 	for k := range cases {
@@ -304,18 +302,6 @@ func serviceFor(t *testing.T, goos, configPath string, opts ...func(*Deps)) *Ser
 	t.Helper()
 	return operatedService(t, goos, configPath, "", opts...)
 }
-
-// serviceWith is a service over s's dependencies after edit changed them. The
-// use cases copy what they read of the shared settings when they are built, so
-// a test that needs other settings builds its service again.
-func serviceWith(s *Service, edit func(*Deps)) *Service {
-	d := s.deps
-	edit(&d)
-	return NewService(d)
-}
-
-// withoutLocalPages is an engine that serves no local pages.
-func withoutLocalPages(d *Deps) { d.Core.PagesOrigin = "" }
 
 // operatedService is serviceFor on an engine whose operatedBy is operatedBy.
 func operatedService(t *testing.T, goos, configPath, operatedBy string, opts ...func(*Deps)) *Service {

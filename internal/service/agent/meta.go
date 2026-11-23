@@ -25,14 +25,3 @@ func metaOf(ctx context.Context) json.RawMessage {
 	m, _ := ctx.Value(metaKey{}).(json.RawMessage)
 	return m
 }
-
-// MetaPluginUpload is the _meta key under which basalt mcp hands the engine
-// the plugin files it uploaded for a request_plugin call.
-const MetaPluginUpload = "dev.basaltdb/upload"
-
-// PluginUpload is the value of MetaPluginUpload.
-type PluginUpload struct {
-	UploadID    string   `json:"uploadId"`
-	Name        string   `json:"name"`
-	Executables []string `json:"executables,omitempty"`
-}

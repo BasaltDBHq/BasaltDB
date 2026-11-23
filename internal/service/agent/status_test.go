@@ -36,7 +36,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 // This file is the contract test of the status tool (CONTRACT.md, MCP tools,
@@ -349,7 +348,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	require.NotContains(t, raw, "credential-file", "status never names the credential file")
 	require.Equal(t, kase.state, r.Guard.State)
 
-	entry, ok := agentkit.ProblemEntry(code)
+	entry, ok := guidance.ProblemEntry(code)
 	require.True(t, ok)
 	p := findProblem(t, r, code)
 	require.Equal(t, entry.Severity, p.Severity)
@@ -378,11 +377,11 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	}
 	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
 	for i := 1; i < len(r.Problems); i++ {
-		require.LessOrEqual(t, agentkit.SeverityRank(r.Problems[i-1].Severity), agentkit.SeverityRank(r.Problems[i].Severity), "errors first")
+		require.LessOrEqual(t, guidance.SeverityRank(r.Problems[i-1].Severity), guidance.SeverityRank(r.Problems[i].Severity), "errors first")
 	}
 }
 
-func findProblem(t *testing.T, r StatusReport, code string) Problem {
+func findProblem(t *testing.T, r StatusReport, code string) guidance.Problem {
 	t.Helper()
 	for _, p := range r.Problems {
 		if p.Code == code {
@@ -390,7 +389,7 @@ func findProblem(t *testing.T, r StatusReport, code string) Problem {
 		}
 	}
 	require.Failf(t, "problem missing", "no %s in %+v", code, r.Problems)
-	return Problem{}
+	return guidance.Problem{}
 }
 
 // requireStatusSchema checks r against the tool's outputSchema and returns

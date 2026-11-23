@@ -1,4 +1,4 @@
-package agentkit
+package guidance
 
 import (
 	"cmp"
@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -24,7 +23,7 @@ type Problem struct {
 
 // Problems collects status problems, each built from its catalog entry.
 type Problems struct {
-	Cmds guidance.Commands
+	Cmds Commands
 	// ConnectBudget: see Deps.ConnectBudget.
 	ConnectBudget int
 	list          []Problem
@@ -33,26 +32,26 @@ type Problems struct {
 
 // Add builds the problem code with the steps steps returns along with the
 // person's message.
-func (ps *Problems) Add(code, message string, steps func(*guidance.Steps) string) {
-	ps.AddLinked(code, message, func(b *guidance.Steps) (string, []toolresult.Link) { return steps(b), nil })
+func (ps *Problems) Add(code, message string, steps func(*Steps) string) {
+	ps.AddLinked(code, message, func(b *Steps) (string, []toolresult.Link) { return steps(b), nil })
 }
 
 // AddLinked is Add for a message that carries links.
-func (ps *Problems) AddLinked(code, message string, steps func(*guidance.Steps) (string, []toolresult.Link)) {
+func (ps *Problems) AddLinked(code, message string, steps func(*Steps) (string, []toolresult.Link)) {
 	entry, ok := ProblemEntry(code)
 	if !ok {
 		ps.Fail(fmt.Errorf("no catalog entry for status problem %s", code))
 		return
 	}
-	b := guidance.NewSteps()
+	b := NewSteps()
 	person, ls := steps(b)
 	list, err := b.Build()
 	if err != nil {
 		ps.Fail(fmt.Errorf("status problem %s: %w", code, err))
 		return
 	}
-	person = guidance.FitToSteps(person, list)
-	if err := guidance.CheckPersonMessage(person); err != nil {
+	person = FitToSteps(person, list)
+	if err := CheckPersonMessage(person); err != nil {
 		ps.Fail(fmt.Errorf("status problem %s: %w", code, err))
 		return
 	}
@@ -88,7 +87,7 @@ func SeverityRank(s string) int {
 
 // ProblemEntry is the catalog entry of the status problem code.
 func ProblemEntry(code string) (mcpcontract.ProblemSteps, bool) {
-	for _, p := range guidance.Catalog().Problems {
+	for _, p := range Catalog().Problems {
 		if p.Code == code {
 			return p, true
 		}

@@ -15,7 +15,7 @@ func (s *Service) itemGuidance(p PendingItem) (string, []toolresult.Link, []tool
 	switch {
 	case s.expired(p):
 		b := guidance.NewSteps()
-		approvalExpiredSteps(b)
+		guidance.ApprovalExpiredSteps(b)
 		steps, err := b.Build()
 		return approvalExpiredMessage, nil, steps, err
 	case s.waitsForPerson(p) && p.tooLargeSteps != nil:

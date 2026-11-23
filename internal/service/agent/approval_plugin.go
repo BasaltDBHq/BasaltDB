@@ -179,7 +179,7 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 	te := s.deps.Core.Errors.ToolError(err)
 	if te.Reason == guidance.ReasonPasskeyRevoked {
 		steps, stepErr := guidance.NewSteps().
-			TellAgent(askAgentForRegisterLinkText).
+			TellAgent(guidance.AskAgentForRegisterLinkText).
 			Build()
 		if stepErr != nil {
 			return errors.Join(err, stepErr)

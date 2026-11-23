@@ -55,7 +55,7 @@ func pluginArgs(p PluginProblem, remove bool) map[string]any {
 	return args
 }
 
-func (s statusDeps) addPluginProblems(ps *Problems) {
+func (s statusDeps) addPluginProblems(ps *guidance.Problems) {
 	if s.plugins == nil {
 		return
 	}

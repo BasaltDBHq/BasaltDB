@@ -10,7 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
@@ -252,7 +252,7 @@ func (e *SetupError) Error() string {
 // waits for the person's confirmation (UNAVAILABLE DATABASE_NOT_CONFIRMED).
 type DatabaseNotConfirmedError struct {
 	SetupID  string
-	Database handoff.Address
+	Database setupcode.Address
 }
 
 func (e *DatabaseNotConfirmedError) Error() string {

@@ -42,6 +42,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/connecttest"
 )
@@ -687,7 +688,7 @@ func TestConnectOnlyHostileReachCheck(t *testing.T) {
 		f := newHandoffFixture(t)
 		chk := f.checkOnPage(pastedFor(t, f.d, dbHost))
 		ctx := context.Background()
-		addr := handoff.Address{Host: dbHost, Port: 5432, Database: f.d.Admin.Config().Database}
+		addr := setupcode.Address{Host: dbHost, Port: 5432, Database: f.d.Admin.Config().Database}
 		other, err := channel.GenerateEngineKeys(time.Now)
 		require.NoError(t, err)
 		err = handoff.NewClient(nil, f.page.base, other, time.Now).Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{})
@@ -702,7 +703,7 @@ func TestConnectOnlyHostileReachCheck(t *testing.T) {
 		require.False(t, ok, "nothing refused is kept")
 
 		// Another address is accepted and ignored.
-		require.NoError(t, c.Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, handoff.Address{Host: "other.example.com", Port: 5432, Database: "app"}, handoff.Reach{}))
+		require.NoError(t, c.Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, setupcode.Address{Host: "other.example.com", Port: 5432, Database: "app"}, handoff.Reach{}))
 		_, ok = f.srv.Reached(f.install.res.SetupID)
 		require.False(t, ok)
 		// The hold's own, in another case, is kept.

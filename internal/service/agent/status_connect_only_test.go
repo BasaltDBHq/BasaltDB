@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
@@ -30,7 +31,7 @@ const (
 )
 
 // caseDatabase is a collected database through Supabase's pooler.
-var caseDatabase = handoff.Address{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+var caseDatabase = setupcode.Address{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 
 // connectOnlySetup is the fixture's pending setup in engine.json.
 func connectOnlySetup(expires time.Time) config.Setup {
@@ -54,7 +55,7 @@ func (f *fakeHandoff) StatusCollect(context.Context) handoff.State {
 	return f.st
 }
 
-func (f *fakeHandoff) Confirm(_ context.Context, id string, db handoff.Address, yes bool) (handoff.Answer, error) {
+func (f *fakeHandoff) Confirm(_ context.Context, id string, db setupcode.Address, yes bool) (handoff.Answer, error) {
 	f.asked = append(f.asked, yes)
 	if f.err != nil {
 		return handoff.Answer{}, f.err

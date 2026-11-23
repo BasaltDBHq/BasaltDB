@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/supabase"
+	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -100,7 +100,7 @@ type ReachError struct{ Reason string }
 func (e *ReachError) Error() string {
 	switch e.Reason {
 	case ReasonAddressRefused:
-		return ErrAddressInvalid.Error()
+		return setupcode.ErrAddressInvalid.Error()
 	case ReasonTrustRootMismatch:
 		return ErrTrustRootMismatch.Error()
 	}
@@ -112,7 +112,7 @@ func (e *ReachError) Error() string {
 func (e *ReachError) Is(target error) bool {
 	switch e.Reason {
 	case ReasonAddressRefused:
-		return target == ErrAddressInvalid
+		return target == setupcode.ErrAddressInvalid
 	case ReasonTrustRootMismatch:
 		return target == ErrTrustRootMismatch
 	}
@@ -185,7 +185,7 @@ type Pin struct {
 // when its SHA-256 is approved and the chain verifies against it
 // (TRUST_ROOT_MISMATCH): the connect service can never add trust that this
 // check did not find itself.
-func (p Prober) Approve(ctx context.Context, a Address, ip netip.Addr, approved string) (Pin, error) {
+func (p Prober) Approve(ctx context.Context, a setupcode.Address, ip netip.Addr, approved string) (Pin, error) {
 	if p.Roots != nil || p.profiles().For(a.Host) != nil {
 		return Pin{}, nil
 	}
@@ -219,7 +219,7 @@ func (p Prober) Approve(ctx context.Context, a Address, ip netip.Addr, approved 
 // page. Another profile covering the host decides as in Approve, and then
 // nothing is pinned (TRUST_ROOT_MISMATCH), and so does a chain that needs
 // no pin: only a pin whose top has approved's SHA-256 comes back.
-func (p Prober) Repin(ctx context.Context, a Address, ip netip.Addr, approved string) (Pin, error) {
+func (p Prober) Repin(ctx context.Context, a setupcode.Address, ip netip.Addr, approved string) (Pin, error) {
 	own := trustprofile.PinName(trustprofile.NormalizeHost(a.Host))
 	p.Profiles = p.profiles().Replacing(own, nil)
 	pin, err := p.Approve(ctx, a, ip, approved)
@@ -271,7 +271,7 @@ type Probed struct {
 
 // Probe checks a's shape and resolves its host (Resolve), then probes the
 // address it resolved to (ProbeAt), with no pin.
-func (p Prober) Probe(ctx context.Context, a Address, user string) (Probed, error) {
+func (p Prober) Probe(ctx context.Context, a setupcode.Address, user string) (Probed, error) {
 	ip, err := p.Resolve(ctx, a)
 	if err != nil {
 		return Probed{}, err
@@ -283,13 +283,13 @@ func (p Prober) Probe(ctx context.Context, a Address, user string) (Probed, erro
 // refuses any address outside global unicast (ADDRESS_REFUSED); a host
 // that resolves to nothing is NO_ROUTE. It returns the address to connect
 // to.
-func (p Prober) Resolve(ctx context.Context, a Address) (netip.Addr, error) {
+func (p Prober) Resolve(ctx context.Context, a setupcode.Address) (netip.Addr, error) {
 	if err := a.Check(); err != nil {
 		return netip.Addr{}, err
 	}
 	ip, err := pick(ctx, p.resolver(), a.Host)
 	switch {
-	case errors.Is(err, ErrAddressInvalid):
+	case errors.Is(err, setupcode.ErrAddressInvalid):
 		return netip.Addr{}, &ReachError{Reason: ReasonAddressRefused}
 	case err != nil:
 		return netip.Addr{}, &ReachError{Reason: ReasonNoRoute}
@@ -303,7 +303,7 @@ func (p Prober) Resolve(ctx context.Context, a Address) (netip.Addr, error) {
 // the certificate is verified against it as if it were written already. A
 // login refused for its password proves the server is reachable and its
 // certificate verifies; otherwise a *ReachError says why none did.
-func (p Prober) ProbeAt(ctx context.Context, a Address, ip netip.Addr, user string, pin Pin) (Probed, error) {
+func (p Prober) ProbeAt(ctx context.Context, a setupcode.Address, ip netip.Addr, user string, pin Pin) (Probed, error) {
 	var last error
 	for _, binding := range []bool{true, false} {
 		err := p.login(ctx, a, ip, user, binding, pin)
@@ -351,7 +351,7 @@ func reasonOf(err error) string {
 const serverRefusedTLS = "server refused TLS connection"
 
 // login tries one login bound to fail and closes it at once.
-func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string, binding bool, pin Pin) error {
+func (p Prober) login(ctx context.Context, a setupcode.Address, ip netip.Addr, user string, binding bool, pin Pin) error {
 	password := make([]byte, probePasswordBytes)
 	if _, err := rand.Read(password); err != nil {
 		return err
@@ -371,7 +371,7 @@ func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string
 
 // connConfig is the connection to a as user with password, made to ip only,
 // trusting pin as well when there is one.
-func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, binding bool, pin Pin) (*pgx.ConnConfig, error) {
+func (p Prober) connConfig(a setupcode.Address, ip netip.Addr, user, password string, binding bool, pin Pin) (*pgx.ConnConfig, error) {
 	set := p.Profiles
 	if pin.Profile != nil {
 		set = p.profiles().Replacing(pin.Profile.Name, pin.Profile)
@@ -413,7 +413,7 @@ func setRoots(cfg *pgconn.Config, roots *x509.CertPool) {
 // address goes in it. It names no sslrootcert: for a provider's host (Supabase,
 // Amazon RDS) the engine trusts that provider's roots when it opens the
 // connection (pgdial).
-func ConnString(a Address, user, password string, binding bool) string {
+func ConnString(a setupcode.Address, user, password string, binding bool) string {
 	q := url.Values{}
 	q.Set(paramSSLMode, sslVerifyFull)
 	if binding {
@@ -427,15 +427,6 @@ func ConnString(a Address, user, password string, binding bool) string {
 		RawQuery: q.Encode(),
 	}
 	return u.String()
-}
-
-// LoginUser is the user the agent's role logs in as at a: <role>.<ref>
-// through Supabase's pooler, the role otherwise.
-func LoginUser(a Address, role string) string {
-	if a.SupabaseRef != "" && supabase.PoolerHost(a.Host) {
-		return role + "." + a.SupabaseRef
-	}
-	return role
 }
 
 // proves reports whether a probe login's error proves the candidate: with

@@ -527,6 +527,19 @@ func checkPurity(v violations, reg *register, rel string, f *goFile) {
 	})
 }
 
+// extraAllowed reports whether the register may grant core package name the
+// extra import e: crypto/rand for key and salt generation in channel and
+// setupcode, net for setupcode's database address (net.JoinHostPort).
+func extraAllowed(name, e string) bool {
+	switch e {
+	case "crypto/rand":
+		return name == "channel" || name == "setupcode"
+	case "net":
+		return name == "setupcode"
+	}
+	return false
+}
+
 // checkRegister compares the register with the packages that exist.
 func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 	var problems []string
@@ -552,8 +565,8 @@ func checkRegister(pkgs map[string]*goPkg, reg *register) []string {
 			problems = append(problems, fmt.Sprintf("register row %s: admitted-by %q must be 1, 2 or 3", name, row.row))
 		}
 		for _, e := range row.extras {
-			if e != "crypto/rand" || (name != "channel" && name != "setupcode") {
-				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode)", name, e))
+			if !extraAllowed(name, e) {
+				problems = append(problems, fmt.Sprintf("register row %s: extra import %q is not allowed (only crypto/rand, only for channel and setupcode; net, only for setupcode)", name, e))
 			}
 		}
 		if len(row.codecs) > 0 && row.kind != kindDecision {

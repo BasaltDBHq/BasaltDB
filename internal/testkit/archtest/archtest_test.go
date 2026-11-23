@@ -257,7 +257,7 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		"internal/core/extra/a.go":   "package extra\n",
 		"internal/core/chan/a.go":    "package channel\n",
 		"internal/core/dec/a.go":     "package dec\n\nfunc Real() {}\n",
-		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand` | - |\n| `dec` | x | decision | 1 | - | `Real`, `Missing` |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
+		"ARCHITECTURE.md":            "| `badkind` | x | gadget | 1 | - | - |\n| `badrow` | x | types | 4 | - | `Zed` |\n| `extra` | x | codec | 3 | `crypto/rand`, `net` | - |\n| `dec` | x | decision | 1 | - | `Real`, `Missing` |\n| `chan` | x | codec | 3 | `os` | `Nope` |\n| `ghost` | x | types | 2 | - | - |\n",
 	})
 	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
 	if err != nil {
@@ -274,6 +274,7 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		`register row badkind: kind "gadget"`,
 		`register row badrow: admitted-by "4"`,
 		`register row extra: extra import "crypto/rand" is not allowed`,
+		`register row extra: extra import "net" is not allowed`,
 		`register row chan: extra import "os" is not allowed`,
 		`register row dec: codec function "Missing" is not an exported function`,
 		`register row chan: codec function "Nope" is not an exported function`,

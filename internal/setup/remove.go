@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // maxDatabaseName bounds a typed database name: Postgres names are at most
@@ -151,7 +152,7 @@ func CheckTypedName(ctx context.Context, b Backend, tx pgx.Tx, confirmName strin
 	if err := CheckDatabaseName(confirmName); err != nil {
 		return err
 	}
-	database, err := b.CurrentDatabase(ctx, tx)
+	database, err := b.CurrentDatabase(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return err
 	}
@@ -170,11 +171,11 @@ func RunRemove(ctx context.Context, b Backend, tx pgx.Tx, prefix, confirmName st
 	if err := CheckTypedName(ctx, b, tx, confirmName); err != nil {
 		return RemovePlan{}, false, err
 	}
-	if p, err = PlanRemove(ctx, b, tx, prefix); err != nil {
+	if p, err = PlanRemove(ctx, b, pgquerier.Neutralize(tx), prefix); err != nil {
 		return RemovePlan{}, false, err
 	}
 	for _, sql := range p.Drops {
-		if err := b.Run(ctx, tx, sql); err != nil {
+		if err := b.Run(ctx, pgquerier.Neutralize(tx), sql); err != nil {
 			return RemovePlan{}, false, &RefusalError{
 				Code:    CodeSetupFailed,
 				Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed.", Err: err,

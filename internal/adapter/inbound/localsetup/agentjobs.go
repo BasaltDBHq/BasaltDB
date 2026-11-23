@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
@@ -324,7 +325,7 @@ func (s *Service) planAgentJob(ctx context.Context, tx pgx.Tx, j agentJob, datab
 // installedPrefix is the prefix of the guard in the database, "" when it
 // has none; another prefix than this engine's is PREFIX_MISMATCH.
 func (s *Service) installedPrefix(ctx context.Context, tx pgx.Tx) (string, error) {
-	prefix, err := s.be.InstalledPrefix(ctx, tx)
+	prefix, err := s.be.InstalledPrefix(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return "", setupFailed("read the guard prefix", err)
 	}
@@ -342,7 +343,7 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 	if err != nil {
 		return 0, err
 	}
-	installed, err := s.be.InstalledVersion(ctx, tx)
+	installed, err := s.be.InstalledVersion(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return 0, setupFailed("read the guard version", err)
 	}
@@ -355,7 +356,7 @@ func (s *Service) installedGuard(ctx context.Context, tx pgx.Tx, database, what 
 // agentRole refuses a database without the agent's role: it is not the
 // agent's database.
 func (s *Service) agentRole(ctx context.Context, tx pgx.Tx, j agentJob, database string) error {
-	exists, err := s.be.AgentRoleExists(ctx, tx, j.names, j.req.Agent)
+	exists, err := s.be.AgentRoleExists(ctx, pgquerier.Neutralize(tx), j.names, j.req.Agent)
 	if err != nil {
 		return setupFailed("read the agent role", err)
 	}
@@ -385,7 +386,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 	if err := s.agentRole(ctx, tx, j, database); err != nil {
 		return agentPlan{}, err
 	}
-	script, err := s.be.PlanInit(ctx, tx, guardmodel.InitOptions{Names: j.names})
+	script, err := s.be.PlanInit(ctx, pgquerier.Neutralize(tx), guardmodel.InitOptions{Names: j.names})
 	if err != nil {
 		return agentPlan{}, setupFailed("plan the update", err)
 	}
@@ -404,7 +405,7 @@ func (s *Service) planUpdate(ctx context.Context, tx pgx.Tx, j agentJob, databas
 // (a removal whose engine.json write failed) plans only IF EXISTS drops,
 // and the run finishes the removal on this engine.
 func (s *Service) planRemove(ctx context.Context, tx pgx.Tx, j agentJob) (agentPlan, error) {
-	rp, err := setup.PlanRemove(ctx, s.be, tx, s.opts.Prefix)
+	rp, err := setup.PlanRemove(ctx, s.be, pgquerier.Neutralize(tx), s.opts.Prefix)
 	if err != nil {
 		return agentPlan{}, err
 	}

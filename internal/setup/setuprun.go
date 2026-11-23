@@ -25,6 +25,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // Refusal codes this package adds to setupcode's (setupcode.Refusal).
@@ -292,7 +293,8 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := CheckConnTarget(s.P, conn.Config()); err != nil {
 		return nil, err
 	}
-	db, state, err := s.readDatabase(ctx, conn)
+	q := pgquerier.Neutralize(conn)
+	db, state, err := s.readDatabase(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +309,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if s.P.KeepsGrants() && !s.asInstall && len(db.Roles) > 0 {
 		// The role's grants are the record of its tables: read them before
 		// the ticks are checked, since a role with none is ticked.
-		if s.kept, err = s.be.GrantedTables(ctx, conn, s.P.Role()); err != nil {
+		if s.kept, err = s.be.GrantedTables(ctx, q, s.P.Role()); err != nil {
 			return nil, err
 		}
 		s.noGrants = len(s.kept) == 0
@@ -316,7 +318,7 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := s.checkIncluded(); err != nil {
 		return nil, err
 	}
-	engine, err := s.readEngine(ctx, conn)
+	engine, err := s.readEngine(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -328,10 +330,10 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if p.NothingToDo || s.P.Agent == nil {
 		return p, nil
 	}
-	if err := s.readAllTables(ctx, conn, &p.State); err != nil {
+	if err := s.readAllTables(ctx, q, &p.State); err != nil {
 		return nil, err
 	}
-	blind, err := s.be.AgentBlindTables(ctx, conn, s.Names, s.Spec())
+	blind, err := s.be.AgentBlindTables(ctx, q, s.Names, s.Spec())
 	if err != nil {
 		return nil, MissingTablesHint(s.be, err, conn.Config().Database)
 	}
@@ -607,7 +609,7 @@ func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (
 		opts.AgentPolicies = policies
 		agent = p.P.Agent.Name
 	}
-	script, err := p.be.PlanInit(ctx, p.Conn, opts)
+	script, err := p.be.PlanInit(ctx, pgquerier.Neutralize(p.Conn), opts)
 	if err != nil {
 		return guardmodel.Script{}, err
 	}
@@ -683,7 +685,7 @@ func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script guard
 				return err
 			}
 		}
-		if err := b.Run(ctx, tx, record.SQL); err != nil {
+		if err := b.Run(ctx, pgquerier.Neutralize(tx), record.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 		return nil

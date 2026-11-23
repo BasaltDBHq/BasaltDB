@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // ApplyInitTx runs the script in the caller's transaction and refuses to
@@ -24,7 +25,7 @@ func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script guardmodel.Sc
 		return err
 	}
 	for _, st := range after {
-		if err := b.Run(ctx, tx, st.SQL); err != nil {
+		if err := b.Run(ctx, pgquerier.Neutralize(tx), st.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 	}
@@ -34,7 +35,7 @@ func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script guardmodel.Sc
 // checkCovered refuses, inside the install's transaction, while any
 // agent-writable table or cascade target is left unguarded.
 func checkCovered(ctx context.Context, b Backend, tx pgx.Tx) error {
-	uncovered, err := b.UncoveredTables(ctx, tx)
+	uncovered, err := b.UncoveredTables(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return err
 	}

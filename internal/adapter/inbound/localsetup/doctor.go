@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 )
 
@@ -216,7 +217,7 @@ func (s *Service) readDoctor(ctx context.Context, conn *pgx.Conn, a config.Agent
 	if err := conn.QueryRow(ctx, `SELECT pg_catalog.current_database()::text`).Scan(&out.Database); err != nil {
 		return err
 	}
-	st, err := s.be.AgentStatus(ctx, conn, s.be.Migrations())
+	st, err := s.be.AgentStatus(ctx, pgquerier.Neutralize(conn), s.be.Migrations())
 	if err != nil {
 		return err
 	}
@@ -225,7 +226,7 @@ func (s *Service) readDoctor(ctx context.Context, conn *pgx.Conn, a config.Agent
 		return nil
 	}
 	if h, err := s.hostOf(a); err == nil && h.pin != nil {
-		if rec, ok, err := s.be.RecordedTrustPin(ctx, conn, h.host, h.port); err == nil && ok && !pinHolds(h.pin, rec) {
+		if rec, ok, err := s.be.RecordedTrustPin(ctx, pgquerier.Neutralize(conn), h.host, h.port); err == nil && ok && !pinHolds(h.pin, rec) {
 			out.Certificate = DoctorCertificate{State: StateMismatch, Host: h.host, Port: h.port, Pinned: pinnedSHA(h.pin, ""), Recorded: rec}
 		}
 	}
@@ -253,7 +254,7 @@ func (s *Service) guardRow(st guardmodel.Status) DoctorGuard {
 // agent's role with why NEW or UNCLASSIFIED, and names the first 20.
 func (s *Service) doctorLabels(ctx context.Context, conn *pgx.Conn) DoctorLabels {
 	out := DoctorLabels{State: StateUnknown, Columns: []string{}}
-	cols, err := s.be.PIIUnclassified(ctx, conn)
+	cols, err := s.be.PIIUnclassified(ctx, pgquerier.Neutralize(conn))
 	if err != nil {
 		return out
 	}
@@ -278,7 +279,7 @@ func (s *Service) doctorLabels(ctx context.Context, conn *pgx.Conn) DoctorLabels
 // origin.
 func (s *Service) doctorPasskeys(ctx context.Context, conn *pgx.Conn) DoctorPasskeys {
 	out := DoctorPasskeys{State: StateUnknown, Items: []DoctorPasskey{}}
-	keys, err := s.be.ListPasskeys(ctx, conn)
+	keys, err := s.be.ListPasskeys(ctx, pgquerier.Neutralize(conn))
 	if err != nil {
 		return out
 	}

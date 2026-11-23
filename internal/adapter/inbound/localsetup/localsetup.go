@@ -22,6 +22,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -425,7 +426,7 @@ type planned struct {
 func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database string, answers []Answer) (planned, error) {
 	prefix := s.opts.Prefix
 	names := guardmodel.Names{Prefix: prefix}
-	installed, err := s.be.InstalledPrefix(ctx, tx)
+	installed, err := s.be.InstalledPrefix(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return planned{}, setupFailed("read the guard prefix", err)
 	}
@@ -435,7 +436,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 	if err := s.usable(ctx, tx); err != nil {
 		return planned{}, err
 	}
-	exists, err := s.be.AgentRoleExists(ctx, tx, names, j.req.Agent)
+	exists, err := s.be.AgentRoleExists(ctx, pgquerier.Neutralize(tx), names, j.req.Agent)
 	if err != nil {
 		return planned{}, setupFailed("read the agent role", err)
 	}
@@ -470,7 +471,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		}
 		spec.Write = s.be.DemoTables()
 	} else {
-		if p.list, err = readListing(ctx, tx, j.schemas); err != nil {
+		if p.list, err = readListing(ctx, pgquerier.Neutralize(tx), j.schemas); err != nil {
 			return planned{}, setupFailed("read the tables", err)
 		}
 		if j.picks == nil {
@@ -480,7 +481,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			return planned{}, err
 		}
 		spec.Write, spec.Read = p.write, p.read
-		blind, err := s.be.AgentBlindTables(ctx, tx, names, spec)
+		blind, err := s.be.AgentBlindTables(ctx, pgquerier.Neutralize(tx), names, spec)
 		if err != nil {
 			return planned{}, setupFailed("read the tables without row-level security", err)
 		}
@@ -494,7 +495,7 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 		p.answers = answers
 	}
 	opts.Agent = spec
-	if p.script, err = s.be.PlanInit(ctx, tx, opts); err != nil {
+	if p.script, err = s.be.PlanInit(ctx, pgquerier.Neutralize(tx), opts); err != nil {
 		return planned{}, setupFailed("plan the install", err)
 	}
 	return p, nil
@@ -534,7 +535,7 @@ func (s *Service) ownRole(ctx context.Context, j job, database string) bool {
 // usable refuses GUARD_UNUSABLE for a basalt_meta this build cannot
 // install over or update, before anything is planned or changed.
 func (s *Service) usable(ctx context.Context, tx pgx.Tx) error {
-	err := s.be.CheckUsable(ctx, tx)
+	err := s.be.CheckUsable(ctx, pgquerier.Neutralize(tx))
 	switch {
 	case s.be.UnusableInstall(err):
 		return refuse(CodeGuardUnusable, "This database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: "+s.be.RemoveOldInstallDoc()+" says how. Nothing changed.")
@@ -670,7 +671,7 @@ func listingAnswer(j job, database string, p planned, needed bool) (CheckAnswer,
 // currentDatabase is the name of the database the connection reached, as
 // the server says it: never a name read from the admin string.
 func (s *Service) currentDatabase(ctx context.Context, tx pgx.Tx) (string, error) {
-	name, err := s.be.CurrentDatabase(ctx, tx)
+	name, err := s.be.CurrentDatabase(ctx, pgquerier.Neutralize(tx))
 	if err != nil {
 		return "", setupFailed("read the database name", err)
 	}
@@ -686,7 +687,7 @@ func passkeyNeeded(ctx context.Context, b setup.Backend, tx pgx.Tx, origin strin
 		return false, err
 	}
 	defer func() { _ = sub.Rollback(context.WithoutCancel(ctx)) }()
-	has, err := b.HasPasskeyFor(ctx, sub, origin)
+	has, err := b.HasPasskeyFor(ctx, pgquerier.Neutralize(sub), origin)
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && (pg.Code == "42P01" || pg.Code == "3F000") {
 		return true, nil // basalt_meta or its passkeys table does not exist yet

@@ -37,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
 	setuprun "github.com/basaltdbhq/basaltdb/internal/setup"
 )
@@ -349,7 +350,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	for _, e := range tables.Excluded {
 		out.Excluded = append(out.Excluded, ExcludedTable(e))
 	}
-	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, store, conn, false); err != nil {
+	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(conn), false); err != nil {
 		return Checked{}, asError(err)
 	}
 	if !req.ConnectPage { // the laptop command shows no labels and no passkeys
@@ -602,7 +603,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	// the grants name them.
 	// A table dropped between this read and the grants still fails the
 	// grant itself: SETUP_FAILED, nothing changed.
-	first := func(ctx context.Context, tx pgx.Tx) error { return s.RecheckTables(ctx, tx) }
+	first := func(ctx context.Context, tx pgx.Tx) error { return s.RecheckTables(ctx, pgquerier.Neutralize(tx)) }
 	inTx := func(ctx context.Context, tx pgx.Tx) error {
 		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
 			return err
@@ -625,11 +626,11 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		return nil // the laptop asks after the commit
 	}
 	if err := setuprun.ApplySetupWith(ctx, store, conn, script, first, inTx); err != nil {
-		return Result{}, asError(setuprun.Refused(ctx, store, conn, s.P, err))
+		return Result{}, asError(setuprun.Refused(ctx, store, pgquerier.Neutralize(conn), s.P, err))
 	}
 	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}
 	if s.P.Agent != nil {
-		res.Warnings = setuprun.RLSBlindWarnings(ctx, store, conn, s.P.Role(), s.Spec())
+		res.Warnings = setuprun.RLSBlindWarnings(ctx, store, pgquerier.Neutralize(conn), s.P.Role(), s.Spec())
 	}
 	if in.Committed != nil {
 		in.Committed(res)

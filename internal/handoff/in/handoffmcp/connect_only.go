@@ -27,8 +27,6 @@ import (
 
 // --- the result of confirm_database ---
 
-// --- the served agent ---
-
 // ConnectOnly serves an agent whose connect-only setup waits for its
 // database: status, confirm_database, and every other tool refused.
 type ConnectOnly struct {

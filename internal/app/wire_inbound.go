@@ -10,8 +10,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 )
 
-// sessionDispatcher gives the pages to the Vault channel: it turns the
-// channel's link, request and response into the pages' own types and back.
 // newPages is the pages for origin with every page's handlers mounted: the
 // approval, revert and plugin approval routes.
 func newPages(origin string, log *slog.Logger) *pages.Server {
@@ -22,6 +20,8 @@ func newPages(origin string, log *slog.Logger) *pages.Server {
 	return srv
 }
 
+// sessionDispatcher gives the pages to the Vault channel: it turns the
+// channel's link, request and response into the pages' own types and back.
 type sessionDispatcher struct{ pages *pages.Server }
 
 func (d sessionDispatcher) Dispatch(ctx context.Context, link vault.SessionLink, req vault.Request) vault.Response {

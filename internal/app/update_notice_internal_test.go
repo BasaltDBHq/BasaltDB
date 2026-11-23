@@ -61,7 +61,7 @@ func TestStartUpdateNoticeSkips(t *testing.T) {
 	}
 	var e bytes.Buffer
 	for _, args := range [][]string{nil, {"engine"}, {"mcp"}, {"status", "--json"}, {"version"}} {
-		StartUpdateNotice(context.Background(), args, cli.Stdio{Err: &e}, getenv)()
+		startUpdateNotice(context.Background(), args, cli.Stdio{Err: &e}, getenv)()
 	}
 	if e.Len() != 0 {
 		t.Errorf("printed %q", e.String())

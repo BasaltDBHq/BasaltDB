@@ -65,11 +65,11 @@ func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
 // errDevBuild means this build has no release number, so no check runs.
 var errDevBuild = errors.New("a build with no release number gets no update notice")
 
-// StartUpdateNotice starts the refresh for a command and returns the
+// startUpdateNotice starts the refresh for a command and returns the
 // function to call after it ran: it prints the notice. It does nothing for
 // the commands in status.NoUpdateLine and for --json (whose output carries the
 // notice as a field where the command has one).
-func StartUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv func(string) string) func() {
+func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv func(string) string) func() {
 	nothing := func() {}
 	if len(args) == 0 || slices.Contains(status.NoUpdateLine, args[0]) || cli.WantsJSON(args) {
 		return nothing

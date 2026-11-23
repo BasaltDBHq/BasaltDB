@@ -56,7 +56,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// Started as root, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
 	if *supervised {
-		return runSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h)
+		return enginecli.RunSupervise(ctx, engine.EnginePath(*configPath), *startedBy, io, h, engineCLIHost{}, engineHost{}, engineTerminal{}, app.BinaryWatch{})
 	}
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)

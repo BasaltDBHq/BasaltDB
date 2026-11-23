@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -48,6 +47,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
@@ -154,11 +154,11 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	var site *pagesSite
 	var jobs setuppage.SetupJobs
-	rotated := newRotations()
+	rotated := setup.NewRotations()
 	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
 	handed = nil
 	if pagesCfg.Addr != "" {
-		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.changed)
+		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed)
 		site, err = listenPages(pagesCfg, pagesLn, jobs, log)
 		if err != nil {
 			return err
@@ -567,7 +567,7 @@ type agentEnv struct {
 	pins        ledger.Pins
 	// rotated takes each agent's password setter, for the setup page's
 	// REPAIR.
-	rotated *rotations
+	rotated *setup.Rotations
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
 	// portal reports the daily portal check in every agent's status; nil
@@ -621,18 +621,9 @@ func (env agentEnv) commands(a config.Agent) (guidance.Commands, error) {
 			cmds = cmds.UpdateLink(link)
 		}
 		// The setup page's REMOVE deletes engine.json with the last agent.
-		cmds = cmds.Removed(configGone(env.configPath))
+		cmds = cmds.Removed(setup.ConfigGone(env.configPath))
 	}
 	return cmds, nil
-}
-
-// configGone reports whether the config at path is gone: the setup page's
-// REMOVE deleted it with the engine's last agent.
-func configGone(path string) func() bool {
-	return func() bool {
-		_, err := os.Lstat(path)
-		return errors.Is(err, fs.ErrNotExist)
-	}
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -676,7 +667,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		return agentRuntime{}, err
 	}
 	if env.rotated != nil {
-		env.rotated.add(a.Name, func(pw string) {
+		env.rotated.Add(a.Name, func(pw string) {
 			password.Set(pw)
 			pool.Reset()
 		})

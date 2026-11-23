@@ -23,7 +23,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -113,7 +112,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
 	// A listener a waiting engine handed on is closed on any return before
-	// the pages take it (takeHandedListener).
+	// the pages take it (httpserver.TakeHandedListener).
 	handed := restart.PagesListener
 	defer func() {
 		if handed != nil {
@@ -157,7 +156,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	var site *pagesSite
 	var jobs setuppage.SetupJobs
 	rotated := setup.NewRotations()
-	pagesLn := takeHandedListener(handed, pagesCfg.Addr)
+	pagesLn := httpserver.TakeHandedListener(handed, pagesCfg.Addr, setup.PageAddr)
 	handed = nil
 	if pagesCfg.Addr != "" {
 		jobs = setupJobs(cfg, configPath, pagesCfg.Origin, log, rotated.Changed)
@@ -435,9 +434,6 @@ type pagesSite struct {
 	origin  string
 }
 
-// pagesHeaderTimeout bounds a page request's headers (slowloris).
-const pagesHeaderTimeout = 10 * time.Second
-
 // listenPages binds the local pages. Off, or an address it cannot bind (a
 // page server still on the port): no pages, logged, and held writes carry
 // the long link.
@@ -456,7 +452,7 @@ func listenPages(p config.Pages, handed net.Listener, setup setuppage.SetupJobs,
 	}
 	ln, h, err := httpserver.Listen(httpserver.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
-		return nil, pagesPortError(p.Addr, err)
+		return nil, linksvc.PagesPortError(p.Addr, err)
 	}
 	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
 	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}, nil
@@ -468,7 +464,7 @@ func listenPages(p config.Pages, handed net.Listener, setup setuppage.SetupJobs,
 // admin connection string, nor does an engine run as root, which reads
 // its agents' files by other rules.
 func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, rotated func(agent, password string)) setuppage.SetupJobs {
-	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != SetupOrigin {
+	if cfg.AgentOperated() || os.Geteuid() == 0 || origin != setup.PageOrigin {
 		return nil
 	}
 	jobs, err := newLocalSetup(localsetup.Options{ConfigPath: configPath, Origin: origin, Configured: true, CredentialChanged: rotated})
@@ -479,32 +475,8 @@ func setupJobs(cfg config.Config, configPath, origin string, log *slog.Logger, r
 	return jobs
 }
 
-// takeHandedListener is the listener a waiting engine handed on, when the
-// config serves its pages at that same address; else it is closed and the
-// pages bind as usual.
-func takeHandedListener(ln net.Listener, addr string) net.Listener {
-	if ln == nil {
-		return nil
-	}
-	if addr == SetupAddr && ln.Addr().String() == addr {
-		return ln
-	}
-	_ = ln.Close()
-	return nil
-}
-
-func pagesPortError(addr string, err error) error {
-	port := addr
-	if _, p, splitErr := net.SplitHostPort(addr); splitErr == nil {
-		port = p
-	}
-	return fmt.Errorf("%w: another process holds %s (an old `make serve-web`, or another engine): "+
-		"find it with `lsof -nP -iTCP:%s -sTCP:LISTEN`, stop it and start the engine again "+
-		`(or set "pagesAddr": "off" in engine.json to run without the pages)`, err, addr, port)
-}
-
 func (s *pagesSite) serve(ctx context.Context, log *slog.Logger) {
-	hs := &http.Server{Handler: s.handler, ReadHeaderTimeout: pagesHeaderTimeout}
+	hs := &http.Server{Handler: s.handler, ReadHeaderTimeout: linksvc.PagesHeaderTimeout}
 	go func() {
 		<-ctx.Done()
 		_ = hs.Shutdown(context.WithoutCancel(ctx))
@@ -664,7 +636,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// budget per call). Reads outside a call (upkeep, the person's socket)
 	// carry no budget and are not charged.
 	budgeted := resultsize.Budgeted(pool)
-	probe := postgres.Probe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
+	probe := postgres.Probe{Q: budgeted, Migrations: guard.Migrations(), Kept: ledger.KeptSetAside(env.pins, a.Name, log)}
 	// The guard is logged once the engine serves, never before: a database
 	// that is slow or drops packets must not keep the agent's socket down
 	// (logGuard).
@@ -716,7 +688,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.ConnectBudget, deps.Status.SameUser = env.cfg.ConnectLinkBudget(), !env.cfg.Service()
 	deps.Status.StartedBy, deps.Status.Setup, deps.Status.Probe = env.startedBy, a.Setup, agentProbe{probe}
 	deps.Status.Vault, deps.Status.Portal, deps.Status.Plugins = env.vault, env.portal, env.plugins
-	deps.Status.CrashDirs = crashDirs(env.stateDir)
+	deps.Status.CrashDirs = status.CrashDirs(env.stateDir)
 	deps.Status.Access = func(ctx context.Context) (status.CatalogAccess, error) { return agentAccess(ctx, pool) }
 	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, TrustOf(pool)
 	deps.Status.Database = handoff.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
@@ -789,19 +761,6 @@ func statePins(dir string, log *slog.Logger) ledger.Pins {
 		return &chainpin.Memory{}
 	}
 	return pinfile.File{Dir: dir}
-}
-
-// KeptSetAside reads the pins agent set aside after reinstalls from its
-// pin (chainpin.Pin.SetAside), for the reinstall notice. A pin that cannot
-// be read is logged and adds nothing: the ledger still shows the notice.
-func KeptSetAside(pins ledger.Pins, agent string, log *slog.Logger) func() []action.SetAside {
-	return func() []action.SetAside {
-		p, _, err := pins.Load(agent)
-		if err != nil {
-			log.Warn("read the kept copy of set-aside pins", "agent", agent, "err", err)
-		}
-		return p.SetAside
-	}
 }
 
 // sqlLimits applies the configured limits over the defaults.

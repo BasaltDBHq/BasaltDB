@@ -76,15 +76,15 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	mine := uint32(os.Getuid())
 	bot := Agent{
 		Name: "bot", UID: mine, SocketPath: filepath.Join(dir, "bot.sock"),
-		Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served)),
+		Server: mcpServer{mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served))},
 	}
 	stranger := Agent{
 		Name: "other", UID: mine + 1, SocketPath: filepath.Join(dir, "other.sock"),
-		Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served)),
+		Server: mcpServer{mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}).WithMethods(p.uploadMethods("bot", served))},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- New(slog.New(slog.DiscardHandler), []Agent{bot, stranger}).Serve(ctx) }()
+	go func() { done <- New(slog.New(slog.DiscardHandler), mcpLines{}, []Agent{bot, stranger}).Serve(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 	require.Eventually(t, func() bool {
 		c, err := net.Dial("unix", bot.SocketPath)

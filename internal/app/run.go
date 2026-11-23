@@ -335,7 +335,8 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
 	}
-	err = New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
+	err = New(log, mcpLines{}, agents).withGate(gate).
+		WithRestart(Restart{Upgrade: restart.Upgrade, IdleWait: restart.IdleWait, DrainWait: restart.DrainWait}).Serve(ctx)
 	select {
 	case <-reloading:
 		if errors.Is(err, ErrRestart) {
@@ -454,7 +455,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcp.NewServer(env.serverInfo(nil), rt.tools...),
+				Server: mcpServer{mcp.NewServer(env.serverInfo(nil), rt.tools...)},
 			})
 			continue
 		}
@@ -473,7 +474,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed)),
+			Server:     mcpServer{mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), AgentTools(rt.svc)...).WithMethods(env.requests.uploadMethods(a.Name, rt.svc.PluginUploadsServed))},
 		})
 	}
 	return out, nil

@@ -64,8 +64,8 @@ type restartingEngine struct {
 
 func startRestarting(t *testing.T, socket string, tools *restartTools, upgrade <-chan struct{}, idle, drain time.Duration) *restartingEngine {
 	t.Helper()
-	a := app.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: tools.server()}
-	e := app.New(slog.New(slog.DiscardHandler), []app.Agent{a}).WithRestart(app.RestartOptions{
+	a := app.Agent{Name: "bot", UID: myUID(), SocketPath: socket, Server: mcpServer{tools.server()}}
+	e := app.New(slog.New(slog.DiscardHandler), mcpLines{}, []app.Agent{a}).WithRestart(app.Restart{
 		Upgrade: func(ctx context.Context) error {
 			select {
 			case <-upgrade:

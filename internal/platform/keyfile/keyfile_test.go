@@ -74,7 +74,7 @@ func TestKeyFileHasTheSchemaShape(t *testing.T) {
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	schemaRaw, err := os.ReadFile("../../../../../api/mcp/vault/channel-key-file.schema.json")
+	schemaRaw, err := os.ReadFile("../../../api/mcp/vault/channel-key-file.schema.json")
 	require.NoError(t, err)
 	var schema struct {
 		Required   []string                   `json:"required"`

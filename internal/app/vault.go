@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
 	"github.com/basaltdbhq/basaltdb/internal/config"

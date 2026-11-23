@@ -236,7 +236,7 @@ func parseP256PKCS8(raw json.RawMessage) (*ecdsa.PrivateKey, error) {
 }
 
 // ParseKeyFile checks the content of a key file a caller read itself (the
-// engine's key file store, statefile/keyfile, or a root process reading it
+// engine's key file store, platform/keyfile, or a root process reading it
 // through a directory it opened without following a link): the schema, the
 // engineId and the box key's signature. The caller checks the file's
 // owner, mode and size; path names the file in errors.
@@ -248,7 +248,7 @@ func ParseKeyFile(path string, raw []byte) (*EngineKeys, error) {
 }
 
 // NewKeyFile is the content of a new key file with fresh keys, for the
-// engine's key file store (statefile/keyfile) or a root process that writes
+// engine's key file store (platform/keyfile) or a root process that writes
 // it for the engine's user (CreateFile on a held directory).
 func NewKeyFile(now func() time.Time) ([]byte, *EngineKeys, error) {
 	keys, err := GenerateEngineKeys(now)
@@ -265,5 +265,5 @@ func NewKeyFile(now func() time.Time) ([]byte, *EngineKeys, error) {
 // KeyFileMode is the mode of the key file.
 const KeyFileMode = keyFileMode
 
-// KeyFileMax is the largest key file a reader takes (statefile/keyfile).
+// KeyFileMax is the largest key file a reader takes (platform/keyfile).
 const KeyFileMax = keyFileMax

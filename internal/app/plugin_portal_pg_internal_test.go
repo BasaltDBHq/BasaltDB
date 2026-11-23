@@ -24,7 +24,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

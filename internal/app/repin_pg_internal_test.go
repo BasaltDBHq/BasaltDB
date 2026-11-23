@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"

@@ -25,17 +25,16 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
-	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
-// the engine wires it: query rows through the service, RETURNING rows inside
-// the write's transaction.
-func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedFunc) (*app.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
+// the engine wires it for query rows. (The write's RETURNING rows are
+// internal/agent's TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded.)
+func piiService(t *testing.T, obs agentsvc.PIIObserver) (*app.Service, *guardtest.DB, *corepii.FuseDictionary, *corepii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, city text);
@@ -62,7 +61,7 @@ func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedF
 	dict, err := dictfile.Open(dir, keys, corepii.DefaultDictionaryOptions(time.Now))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	env := agenttest.PgService(t, a.URL, agenttest.WithReturned(returned), agenttest.WithDeps(func(deps *app.Deps, pool *pgxpool.Pool) {
+	env := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(deps *app.Deps, pool *pgxpool.Pool) {
 		if obs == nil {
 			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(pool))
 		}
@@ -71,12 +70,17 @@ func piiService(t *testing.T, obs agentsvc.PIIObserver, returned store.ReturnedF
 	return env.Svc, d, dict, keys
 }
 
+// servedHarness serves svc's tools as the engine does.
+func servedHarness(svc *app.Service) harness {
+	return harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
+}
+
 func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
 	t.Parallel()
-	svc, _, dict, keys := piiService(t, nil, nil)
-	out, err := svc.Query(context.Background(), agentsvc.QueryParams{SQL: `SELECT id, email, city FROM people ORDER BY id`})
-	require.NoError(t, err)
-	require.Len(t, out.Rows, 2)
+	svc, _, dict, keys := piiService(t, nil)
+	body, isError := servedHarness(svc).query(t, map[string]any{"sql": `SELECT id, email, city FROM people ORDER BY id`})
+	require.False(t, isError, "%v", body)
+	require.Len(t, body["rows"], 2)
 	for _, v := range []string{"ann@corp.ee", "ben@corp.ee"} {
 		require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, v, "")), v)
 	}
@@ -93,27 +97,11 @@ func (failingObserver) Observe(context.Context, []action.Column, []map[string]an
 
 func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 	t.Parallel()
-	svc, d, _, _ := piiService(t, failingObserver{}, nil)
-	out, err := svc.Query(context.Background(), agentsvc.QueryParams{SQL: `SELECT email FROM people`})
-	require.Error(t, err)
-	require.Empty(t, out.Rows)
-	require.Equal(t, guidance.CodeInternal, agenttest.ToolError(err).Code)
+	svc, d, _, _ := piiService(t, failingObserver{})
+	body, isError := servedHarness(svc).query(t, map[string]any{"sql": `SELECT email FROM people`})
+	requireToolError(t, body, isError, guidance.CodeInternal, "", "")
+	require.NotContains(t, body, "rows")
 	var reads int
 	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(change_id) FROM basalt_meta.changes WHERE op = 'SELECT'`).Scan(&reads))
 	require.Zero(t, reads, "a read the agent did not get is not recorded as one")
-}
-
-func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
-	t.Parallel()
-	refuse := func(context.Context, sqlport.Port, []action.Column, []map[string]any) error {
-		return corepii.ErrDeltaFull
-	}
-	svc, d, _, _ := piiService(t, failingObserver{}, refuse)
-	_, err := svc.Write(context.Background(), agentsvc.WriteParams{
-		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",
-	})
-	require.ErrorIs(t, err, corepii.ErrDeltaFull)
-	var city string
-	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT city FROM people WHERE id = 1`).Scan(&city))
-	require.Equal(t, "Tartu", city, "the write was rolled back")
 }

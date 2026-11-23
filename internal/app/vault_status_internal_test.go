@@ -30,7 +30,7 @@ func vaultInStatus(t *testing.T, ev vault.Engine) map[string]any {
 	d := testAgentDeps("bot", onePasskey{})
 	d.Status.Vault = ev
 	svc := NewService(d)
-	r, err := svc.Status(context.Background())
+	r, err := svc.status.Status(context.Background())
 	require.NoError(t, err)
 	raw, err := json.Marshal(r)
 	require.NoError(t, err)

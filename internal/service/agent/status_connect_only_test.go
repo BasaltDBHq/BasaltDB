@@ -103,12 +103,12 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 		problemUnreachableFromBot: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
 			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemUnreachable, Database: &db,
 		})},
-		problemTrustRootMismatch: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
+		handoff.ProblemTrustRootMismatch: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
 			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemTrustRootMismatch, Database: &db,
 		})},
-		problemAddressInvalid: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
-		problemClockSkew:      {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
-		problemEngineAsRoot:   {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
+		handoff.ProblemAddressInvalid: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
+		handoff.ProblemClockSkew:      {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
+		handoff.ProblemEngineAsRoot:   {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
 		problemSetupNotFound: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return operatedStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, 1, &confirmed, operatedBy)(t)

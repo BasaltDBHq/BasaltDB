@@ -9,6 +9,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
 	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
 	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 )
 
@@ -19,7 +20,7 @@ func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv := pages.New(origin, log)
 	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(revertpage.NewRevertHandlers(srv))
-	srv.MountPlugins(pages.NewPluginHandlers(srv))
+	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))
 	return srv
 }

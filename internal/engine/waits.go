@@ -71,3 +71,15 @@ func ShimAgent(name, socket string) string {
 	}
 	return strings.TrimSuffix(filepath.Base(socket), ".sock")
 }
+
+// SuperviseConfig is the config the supervisor needs (its socket and state
+// folders): the config file's, or, for a service engine whose config does
+// not exist yet, the defaults its child waits with (WaitsForConfig).
+func SuperviseConfig(t Terminal, euid int, configPath string) (config.Config, error) {
+	if WaitsForConfig(t, euid, configPath) {
+		return config.Config{
+			SocketDir: config.DefaultSocketDir(runtime.GOOS), StateDir: config.DefaultStateDir(runtime.GOOS),
+		}, nil
+	}
+	return t.LoadEngineConfigAs(euid, configPath)
+}

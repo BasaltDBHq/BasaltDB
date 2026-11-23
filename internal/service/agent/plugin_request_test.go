@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
+
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 
 	"github.com/google/uuid"
@@ -39,21 +41,21 @@ const pluginBinding = `{"kind": "PLUGIN", "name": "local-ner", "hooks": ["wire.d
 // from its fields.
 type fakePluginRequests struct {
 	mu      sync.Mutex
-	opens   []PluginOpen
+	opens   []pluginsvc.PluginOpen
 	removes []string
 	dropped []uuid.UUID
 	reads   int
-	opened  PluginOpened
+	opened  pluginsvc.PluginOpened
 	err     error
-	states  []PluginApprovalState
+	states  []pluginsvc.PluginApprovalState
 }
 
-func (f *fakePluginRequests) OpenPlugin(_ context.Context, caller string, p PluginOpen) (PluginOpened, error) {
+func (f *fakePluginRequests) OpenPlugin(_ context.Context, caller string, p pluginsvc.PluginOpen) (pluginsvc.PluginOpened, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.opens = append(f.opens, p)
 	if f.err != nil {
-		return PluginOpened{}, f.err
+		return pluginsvc.PluginOpened{}, f.err
 	}
 	return f.opened, nil
 }
@@ -71,19 +73,19 @@ func (f *fakePluginRequests) DropUpload(_ string, id uuid.UUID) {
 	f.dropped = append(f.dropped, id)
 }
 
-func (f *fakePluginRequests) PluginApproval(context.Context, string, uuid.UUID) (PluginApprovalState, error) {
+func (f *fakePluginRequests) PluginApproval(context.Context, string, uuid.UUID) (pluginsvc.PluginApprovalState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
-		return PluginApprovalState{}, f.err
+		return pluginsvc.PluginApprovalState{}, f.err
 	}
 	i := min(f.reads, len(f.states)-1)
 	f.reads++
 	return f.states[i], nil
 }
 
-func openedPlugin() PluginOpened {
-	return PluginOpened{
+func openedPlugin() pluginsvc.PluginOpened {
+	return pluginsvc.PluginOpened{
 		Name: "local-ner", Instance: "default", Version: "0.3.1", Agents: []string{"bot"},
 		ApprovalID: uuid.MustParse(casePluginApproval), ExpiresAt: time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), BindingText: pluginBinding,
 	}
@@ -143,14 +145,14 @@ func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 		name, reason string
 		set          func(d *Deps)
 	}{
-		{"agent operated service", ReasonPluginAgentOperated, agentOperated},
-		{"agent operated without engine-kept plugins", ReasonPluginAgentOperated, func(d *Deps) {
+		{"agent operated service", pluginsvc.ReasonPluginAgentOperated, agentOperated},
+		{"agent operated without engine-kept plugins", pluginsvc.ReasonPluginAgentOperated, func(d *Deps) {
 			agentOperated(d)
 			d.Status.SameUser, d.Plugin.Requests = true, nil
 		}},
-		{"same user", ReasonPluginSameUserMode, func(d *Deps) { d.Status.SameUser = true }},
-		{"no engine-kept plugins", ReasonPluginSameUserMode, func(d *Deps) { d.Plugin.Requests = nil }},
-		{"no local pages", ReasonPluginNoLocalPages, withoutLocalPages},
+		{"same user", pluginsvc.ReasonPluginSameUserMode, func(d *Deps) { d.Status.SameUser = true }},
+		{"no engine-kept plugins", pluginsvc.ReasonPluginSameUserMode, func(d *Deps) { d.Plugin.Requests = nil }},
+		{"no local pages", pluginsvc.ReasonPluginNoLocalPages, withoutLocalPages},
 	} {
 		t.Run(kase.name, func(t *testing.T) {
 			t.Parallel()
@@ -228,7 +230,7 @@ func TestRequestPluginOpensAnApproval(t *testing.T) {
 	require.Equal(t, []string{"bin/ner"}, got.Executables)
 	require.Nil(t, got.Agents, "no agents: the engine's default")
 
-	require.Equal(t, PluginStatePending, out.State)
+	require.Equal(t, pluginsvc.PluginStatePending, out.State)
 	require.Equal(t, casePluginApproval, out.ApprovalID)
 	require.True(t, strings.HasPrefix(out.ApprovalURL, "http://localhost:7878/plugins/"+casePluginApproval+"#s="), out.ApprovalURL)
 	require.Equal(t, []toolresult.Link{{Label: "Approve the plugin local-ner", URL: out.ApprovalURL}}, out.Links)
@@ -263,36 +265,36 @@ func TestRequestPluginOpensAnApproval(t *testing.T) {
 // returns once the engine runs the plugin on the approval.
 func TestRequestPluginWaitOnlyReads(t *testing.T) {
 	t.Parallel()
-	pending := PluginApprovalState{Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: PluginStatePending, ExpiresAt: time.Now().Add(time.Hour)}
+	pending := pluginsvc.PluginApprovalState{Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: pluginsvc.PluginStatePending, ExpiresAt: time.Now().Add(time.Hour)}
 	running := pending
-	running.State = PluginStateRunning
-	f := &fakePluginRequests{states: []PluginApprovalState{pending, pending, running}}
+	running.State = pluginsvc.PluginStateRunning
+	f := &fakePluginRequests{states: []pluginsvc.PluginApprovalState{pending, pending, running}}
 	out, err := callPlugin(t, pluginService(t, f), map[string]any{"approvalId": casePluginApproval, "waitForApproval": 5}, nil)
 	require.NoError(t, err)
-	require.Equal(t, PluginStateRunning, out.State)
+	require.Equal(t, pluginsvc.PluginStateRunning, out.State)
 	require.Equal(t, 3, f.reads)
 	require.Empty(t, f.opens)
 	require.Empty(t, f.removes)
 	require.Empty(t, out.ApprovalURL, "the wait hands over no link")
 	require.Empty(t, out.Links)
 
-	f = &fakePluginRequests{states: []PluginApprovalState{pending}}
+	f = &fakePluginRequests{states: []pluginsvc.PluginApprovalState{pending}}
 	out, err = callPlugin(t, pluginService(t, f), map[string]any{"approvalId": casePluginApproval, "waitForApproval": 0}, nil)
 	require.NoError(t, err)
-	require.Equal(t, PluginStatePending, out.State)
+	require.Equal(t, pluginsvc.PluginStatePending, out.State)
 	require.Equal(t, 1, f.reads)
 
-	f = &fakePluginRequests{err: ErrPluginNotFound}
+	f = &fakePluginRequests{err: pluginsvc.ErrPluginNotFound}
 	_, err = callPlugin(t, pluginService(t, f), map[string]any{"approvalId": casePluginApproval}, nil)
 	requireReason(t, err, guidance.CodeNotFound, "")
 
 	// No entry holds it any more (removed, or replaced for every agent), but
 	// the caller's guard still has it: ENDED.
-	s := pluginService(t, &fakePluginRequests{err: ErrPluginNotFound})
+	s := pluginService(t, &fakePluginRequests{err: pluginsvc.ErrPluginNotFound})
 	s.deps.Plugin.Approvals = endedApprovals{id: uuid.MustParse(casePluginApproval)}
 	out, err = callPlugin(t, s, map[string]any{"approvalId": casePluginApproval}, nil)
 	require.NoError(t, err)
-	require.Equal(t, PluginStateEnded, out.State)
+	require.Equal(t, pluginsvc.PluginStateEnded, out.State)
 	require.Equal(t, "local-ner", out.Name)
 }
 
@@ -314,22 +316,22 @@ func (endedApprovals) SubmitPluginApproval(context.Context, guardmodel.PluginApp
 // reason; a narrowing needs no approval.
 func TestRequestPluginEngineAnswers(t *testing.T) {
 	t.Parallel()
-	f := &fakePluginRequests{err: &PluginRefusedError{Reason: ReasonPluginAgentNotAllowed, Message: "agent other uses another database"}}
+	f := &fakePluginRequests{err: &pluginsvc.PluginRefusedError{Reason: pluginsvc.ReasonPluginAgentNotAllowed, Message: "agent other uses another database"}}
 	_, err := callPlugin(t, pluginService(t, f), map[string]any{"source": "/p"}, uploadMeta())
-	te := requireReason(t, err, codePluginRefused, ReasonPluginAgentNotAllowed)
+	te := requireReason(t, err, codePluginRefused, pluginsvc.ReasonPluginAgentNotAllowed)
 	require.Contains(t, te.PersonMessage, "another database")
 
-	f = &fakePluginRequests{opened: PluginOpened{Name: "local-ner", Instance: "default", Version: "0.3.1", Agents: []string{"bot"}, Narrowed: true}}
+	f = &fakePluginRequests{opened: pluginsvc.PluginOpened{Name: "local-ner", Instance: "default", Version: "0.3.1", Agents: []string{"bot"}, Narrowed: true}}
 	out, err := callPlugin(t, pluginService(t, f), map[string]any{"name": "local-ner", "agents": []string{"bot"}}, nil)
 	require.NoError(t, err)
-	require.Equal(t, PluginStateNarrowed, out.State)
+	require.Equal(t, pluginsvc.PluginStateNarrowed, out.State)
 	require.Empty(t, out.ApprovalID)
 }
 
 func pluginResultCases() map[string]resultCase {
 	state := func(st string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-			out, err := s.plugin.pluginWaited(uuid.MustParse(casePluginApproval), PluginApprovalState{
+			out, err := s.plugin.pluginWaited(uuid.MustParse(casePluginApproval), pluginsvc.PluginApprovalState{
 				Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: st, ExpiresAt: s.deps.Core.Now().Add(time.Hour),
 			}, true)
 			require.NoError(t, err)
@@ -337,7 +339,7 @@ func pluginResultCases() map[string]resultCase {
 		}
 	}
 	wait := map[string]any{"approvalId": casePluginApproval}
-	call := func(args map[string]any, opened PluginOpened) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
+	call := func(args map[string]any, opened pluginsvc.PluginOpened) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			s.deps.Plugin.Requests = &fakePluginRequests{opened: opened}
 			setApprovals(&s.deps, keys{n: 1})
@@ -352,12 +354,12 @@ func pluginResultCases() map[string]resultCase {
 	remove := map[string]any{"name": "local-ner", "remove": true}
 	return map[string]resultCase{
 		resultKey(toolRequestPlugin, "REQUESTED"):  {tool: toolRequestPlugin, args: source, build: call(source, openedPlugin())},
-		resultKey(toolRequestPlugin, "WAIT_ENDED"): {tool: toolRequestPlugin, args: wait, build: state(PluginStatePending), openWithoutURL: true},
-		resultKey(toolRequestPlugin, "APPROVED"):   {tool: toolRequestPlugin, args: wait, build: state(PluginStateApproved)},
-		resultKey(toolRequestPlugin, "RUNNING"):    {tool: toolRequestPlugin, args: wait, build: state(PluginStateRunning)},
-		resultKey(toolRequestPlugin, "ENDED"):      {tool: toolRequestPlugin, args: wait, build: state(PluginStateEnded)},
+		resultKey(toolRequestPlugin, "WAIT_ENDED"): {tool: toolRequestPlugin, args: wait, build: state(pluginsvc.PluginStatePending), openWithoutURL: true},
+		resultKey(toolRequestPlugin, "APPROVED"):   {tool: toolRequestPlugin, args: wait, build: state(pluginsvc.PluginStateApproved)},
+		resultKey(toolRequestPlugin, "RUNNING"):    {tool: toolRequestPlugin, args: wait, build: state(pluginsvc.PluginStateRunning)},
+		resultKey(toolRequestPlugin, "ENDED"):      {tool: toolRequestPlugin, args: wait, build: state(pluginsvc.PluginStateEnded)},
 		resultKey(toolRequestPlugin, "NARROWED"):   {tool: toolRequestPlugin, args: source, build: call(source, narrowed)},
-		resultKey(toolRequestPlugin, "REMOVED"):    {tool: toolRequestPlugin, args: remove, build: call(remove, PluginOpened{})},
+		resultKey(toolRequestPlugin, "REMOVED"):    {tool: toolRequestPlugin, args: remove, build: call(remove, pluginsvc.PluginOpened{})},
 	}
 }
 
@@ -379,22 +381,22 @@ func pluginCatalogCases() map[string]catalogCase {
 	engine := func(reason string) func(*testing.T, *Service) error {
 		return func(t *testing.T, s *Service) error {
 			s = serviceWith(s, func(d *Deps) { d.Core.PagesOrigin = "http://localhost:7878" })
-			s.deps.Plugin.Requests = &fakePluginRequests{err: &PluginRefusedError{Reason: reason, Message: "refused: " + reason}}
+			s.deps.Plugin.Requests = &fakePluginRequests{err: &pluginsvc.PluginRefusedError{Reason: reason, Message: "refused: " + reason}}
 			_, err := callPlugin(t, s, source, uploadMeta())
 			return err
 		}
 	}
 	cases := map[string]catalogCase{
-		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginAgentOperated, toolRequestPlugin): {toolRequestPlugin, source, own(agentOperated)},
-		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginSameUserMode, toolRequestPlugin):  {toolRequestPlugin, source, own(func(d *Deps) { d.Status.SameUser = true })},
-		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginNoLocalPages, toolRequestPlugin):  {toolRequestPlugin, source, own(withoutLocalPages)},
-		stepcatalogtest.CaseKey(codePluginRefused, ReasonPluginNoPortalLink, toolRequestPlugin): {toolRequestPlugin, source, own(func(d *Deps) {
+		stepcatalogtest.CaseKey(codePluginRefused, pluginsvc.ReasonPluginAgentOperated, toolRequestPlugin): {toolRequestPlugin, source, own(agentOperated)},
+		stepcatalogtest.CaseKey(codePluginRefused, pluginsvc.ReasonPluginSameUserMode, toolRequestPlugin):  {toolRequestPlugin, source, own(func(d *Deps) { d.Status.SameUser = true })},
+		stepcatalogtest.CaseKey(codePluginRefused, pluginsvc.ReasonPluginNoLocalPages, toolRequestPlugin):  {toolRequestPlugin, source, own(withoutLocalPages)},
+		stepcatalogtest.CaseKey(codePluginRefused, pluginsvc.ReasonPluginNoPortalLink, toolRequestPlugin): {toolRequestPlugin, source, own(func(d *Deps) {
 			agentOperated(d)
 			d.Status.SameUser, d.Core.PagesOrigin = true, ""
 		})},
 	}
 	for _, reason := range []string{
-		ReasonPluginAgentNotAllowed, "BAD_MANIFEST", "NOT_TRUSTED", "UNKNOWN_AGENT", "UNSAFE_PATH", "TOO_MANY_PENDING", "GUARD_OUTDATED",
+		pluginsvc.ReasonPluginAgentNotAllowed, "BAD_MANIFEST", "NOT_TRUSTED", "UNKNOWN_AGENT", "UNSAFE_PATH", "TOO_MANY_PENDING", "GUARD_OUTDATED",
 		"DATABASE_UNREACHABLE", "NAME_TAKEN", "CONFIG_ENTRY", "TOO_LARGE", "TOO_MANY_UPLOADS", "ENGINE_IS_ROOT",
 	} {
 		cases[stepcatalogtest.CaseKey(codePluginRefused, reason, toolRequestPlugin)] = catalogCase{toolRequestPlugin, source, engine(reason)}

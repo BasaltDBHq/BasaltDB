@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -60,7 +62,7 @@ func TestRequestPluginHandsOverThePortalLink(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, f.opens, 1)
 	require.Equal(t, 1, r.tokens, "the link's token is registered before it is handed over")
-	require.Equal(t, PluginStatePending, out.State)
+	require.Equal(t, pluginsvc.PluginStatePending, out.State)
 	require.True(t, strings.HasPrefix(out.ApprovalURL, links.Portal+"/plugins/"+casePluginApproval+"#s="), out.ApprovalURL)
 	require.Contains(t, out.PersonMessage, "\n"+out.ApprovalURL+"\n")
 	require.Equal(t, toolresult.ActionOpenLink, out.NextSteps[0].Action)
@@ -84,7 +86,7 @@ func TestRequestPluginWithoutAPortalLink(t *testing.T) {
 			for _, args := range []map[string]any{{"source": "/home/bot/local-ner"}, {"name": "local-ner"}} {
 				f := &fakePluginRequests{opened: openedPlugin()}
 				_, err := callPlugin(t, portalPluginService(t, f, &pluginRelay{}, state), args, uploadMeta())
-				te := requireReason(t, err, codePluginRefused, ReasonPluginNoPortalLink)
+				te := requireReason(t, err, codePluginRefused, pluginsvc.ReasonPluginNoPortalLink)
 				require.Contains(t, te.Message, why)
 				require.Contains(t, te.Message, "Nothing was written")
 				require.Empty(t, f.opens, "nothing is asked of the engine")
@@ -92,7 +94,7 @@ func TestRequestPluginWithoutAPortalLink(t *testing.T) {
 					require.Equal(t, []uuid.UUID{uuid.MustParse(casePluginUpload)}, f.dropped, "the refused call's upload is dropped")
 				}
 			}
-			f := &fakePluginRequests{states: []PluginApprovalState{{Name: "local-ner", Instance: "default", State: PluginStatePending}}}
+			f := &fakePluginRequests{states: []pluginsvc.PluginApprovalState{{Name: "local-ner", Instance: "default", State: pluginsvc.PluginStatePending}}}
 			s := portalPluginService(t, f, &pluginRelay{}, state)
 			_, err := callPlugin(t, s, map[string]any{"name": "local-ner", "remove": true}, nil)
 			require.NoError(t, err)
@@ -111,7 +113,7 @@ func TestRequestPluginRegistrationFailsAfterTheOpen(t *testing.T) {
 	f := &fakePluginRequests{opened: openedPlugin()}
 	r := &pluginRelay{connected: true, err: errors.New("no OK within 5 seconds")}
 	_, err := callPlugin(t, portalPluginService(t, f, r, string(vault.StateConnected)), map[string]any{"source": "/home/bot/local-ner"}, uploadMeta())
-	te := requireReason(t, err, codePluginRefused, ReasonPluginNoPortalLink)
+	te := requireReason(t, err, codePluginRefused, pluginsvc.ReasonPluginNoPortalLink)
 	require.Len(t, f.opens, 1, "the approval was opened")
 	require.Contains(t, te.Message, "the Vault did not register the link")
 	require.Contains(t, te.Message, "call request_plugin with name and instance")
@@ -138,7 +140,7 @@ func TestRequestPluginDevLocalPages(t *testing.T) {
 func TestPluginUploadsRefusedWithoutAPortalLink(t *testing.T) {
 	t.Parallel()
 	s := portalPluginService(t, &fakePluginRequests{}, &pluginRelay{}, string(vault.StateOff))
-	requireReason(t, s.PluginUploadsServed(), codePluginRefused, ReasonPluginNoPortalLink)
+	requireReason(t, s.PluginUploadsServed(), codePluginRefused, pluginsvc.ReasonPluginNoPortalLink)
 	s = portalPluginService(t, &fakePluginRequests{}, &pluginRelay{connected: true}, string(vault.StateConnected))
 	require.NoError(t, s.PluginUploadsServed())
 }

@@ -25,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
-	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
@@ -176,8 +175,8 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// nothing is read or started.
 	pluginLog := log.With("component", "plugins")
 	pluginOpts := pluginOptions{
-		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
-		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
+		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: plugin.EUID(),
+		runs: pluginRuns(cfg, env.stateDir, plugin.EUID(), pluginLog), stateDir: env.stateDir,
 	}
 	keepsPlugins := plugin.KeepsEntries(cfg)
 	if keepsPlugins {
@@ -639,11 +638,11 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	probe := postgres.Probe{Q: budgeted, Migrations: guard.Migrations(), Kept: ledger.KeptSetAside(env.pins, a.Name, log)}
 	// The guard is logged once the engine serves, never before: a database
 	// that is slow or drops packets must not keep the agent's socket down
-	// (logGuard).
+	// (status.LogGuard).
 	guardCtx, stopGuardLog := context.WithTimeout(ctx, guardLogTimeout)
 	go func() {
 		defer stopGuardLog()
-		logGuard(guardCtx, agentProbe{probe}, log)
+		status.LogGuard(guardCtx, agentProbe{probe}, log)
 	}()
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
@@ -670,7 +669,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.deliverer != nil {
 		deliverer = env.deliverer(a.Name)
 	}
-	var requests agent.PluginRequests
+	var requests plugin.PluginRequests
 	if env.requests != nil {
 		requests = env.requests
 	}
@@ -720,7 +719,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	}, nil
 }
 
-// guardLogTimeout bounds the guard read logGuard makes as an agent starts.
+// guardLogTimeout bounds the guard read status.LogGuard makes as an agent starts.
 const guardLogTimeout = 15 * time.Second
 
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
@@ -731,25 +730,6 @@ func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 		return handoff.PathFiles{ConfigPath: env.configPath, CredFile: a.Store.CredentialFile}, nil
 	}
 	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
-}
-
-// logGuard logs the agent's guard as the engine starts serving it. It runs
-// beside the serving, never before it, so the sockets are bound whatever
-// the database does (CONTRACT.md, Next steps). A guard
-// that is missing or misses a breaking migration, or a database the engine
-// cannot reach, does not stop the engine: the agent gets status and its
-// problems, and the guard is read again on each call.
-func logGuard(ctx context.Context, probe status.Probe, log *slog.Logger) {
-	st, err := probe.GuardStatus(ctx)
-	switch {
-	case err != nil:
-		log.Error("cannot read the guard; only status works until the database answers", "err", err)
-	case !st.Served():
-		log.Error("the guard cannot serve this agent; only status works until it is installed or upgraded",
-			"guard", st.State, "installed", st.Installed, "build", st.Build, "missingBreaking", st.MissingBreaking)
-	case st.State == guardmodel.GuardUpgradeAvailable:
-		log.Warn("the guard misses non-breaking migrations; the guard update basalt init links to adds them", "missingNonBreaking", st.MissingNonBreaking)
-	}
 }
 
 // statePins keeps verified chain heads in dir. When dir cannot be created

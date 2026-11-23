@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
@@ -67,9 +66,6 @@ func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) 
 	child.Reap(dir, log)
 	return &child.Runs{Dir: dir}
 }
-
-// engineEUID is the engine's effective user id.
-func engineEUID() int { return os.Geteuid() }
 
 var pluginDebugWriter = plugin.DebugWriter
 
@@ -190,7 +186,7 @@ func (p *pluginRequests) uploadMethods(caller string, served func() error) map[s
 // uploadError is the upload methods' answer for err.
 func uploadError(err error) *toolresult.ToolError {
 	var te *toolresult.ToolError
-	var r *agent.PluginRefusedError
+	var r *plugin.PluginRefusedError
 	var ae *guidance.ArgumentError
 	switch {
 	case errors.As(err, &te):
@@ -199,7 +195,7 @@ func uploadError(err error) *toolresult.ToolError {
 		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: r.Reason, Message: r.Message}
 	case errors.As(err, &ae):
 		return &toolresult.ToolError{Code: guidance.CodeInvalidArgument, Message: ae.Message}
-	case errors.Is(err, agent.ErrPluginNotFound):
+	case errors.Is(err, plugin.ErrPluginNotFound):
 		return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: "the upload is unknown, expired or used"}
 	}
 	return &toolresult.ToolError{Code: guidance.CodeInternal, Message: "the engine could not take the plugin's files"}

@@ -19,6 +19,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
@@ -780,7 +781,7 @@ func TestWithheldEntryBlocksNoAgentCall(t *testing.T) {
 	require.Empty(t, servedTo(ep, p.Key()))
 
 	require.NoError(t, svc.Admit(ctx))
-	_, err := svc.StartRun(ctx, "check the leads", uuid.Nil)
+	err := newPGAgent(t, a.URL, 2).store.StartRun(ctx, action.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: uuid.Must(uuid.NewV7()), Text: "check the leads"})
 	require.NoError(t, err)
 	st, err := svc.Status(ctx)
 	require.NoError(t, err)

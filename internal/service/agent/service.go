@@ -430,7 +430,7 @@ type QueryOutcome struct {
 // cannot be recorded is not returned: the ledger must know what the agent
 // saw.
 func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error) {
-	run, err := s.findRun(ctx, p.RunID)
+	run, err := findRun(ctx, s.deps.Core.Store, p.RunID)
 	if err != nil {
 		return QueryOutcome{}, err
 	}
@@ -468,7 +468,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 
 // History returns one page of a run's change records.
 func (s *Service) History(ctx context.Context, p action.ChangeListParams) (History, error) {
-	if _, err := s.findRun(ctx, p.RunID); err != nil {
+	if _, err := findRun(ctx, s.deps.Core.Store, p.RunID); err != nil {
 		return History{}, err
 	}
 	return s.deps.Core.Store.History(ctx, p)
@@ -479,12 +479,18 @@ func (s *Service) ListRuns(ctx context.Context, p action.RunListParams) (paginat
 	return s.deps.Core.Store.ListRuns(ctx, p)
 }
 
-// findRun returns the agent's run, the zero run for uuid.Nil, or NOT_FOUND.
-func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error) {
+// runFinder is the ledger lookup of one run of the agent.
+type runFinder interface {
+	FindRun(ctx context.Context, id uuid.UUID) (action.Run, error)
+}
+
+// findRun looks up the agent's run in its ledger: the zero run for uuid.Nil, or
+// NOT_FOUND. Every domain that takes a runId goes through it.
+func findRun(ctx context.Context, store runFinder, id uuid.UUID) (action.Run, error) {
 	if id == uuid.Nil {
 		return action.Run{}, nil
 	}
-	run, err := s.deps.Core.Store.FindRun(ctx, id)
+	run, err := store.FindRun(ctx, id)
 	if errors.Is(err, action.ErrRunNotFound) {
 		return action.Run{}, &toolresult.ToolError{Code: guidance.CodeNotFound, Reason: guidance.ReasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}

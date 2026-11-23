@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/x509"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,11 +19,6 @@ import (
 // pkg/trustpin and trustdir, so init --remote needs nothing of the removed
 // basalt trust commands.
 
-// errNoEngineForTrust: the engine collects the certificate the person
-// trusted with its key, so a code without one could never finish.
-var errNoEngineForTrust = errors.New("the database's certificate changed, and the setup code that replaces the engine's pin " +
-	"needs the engine's key, which cannot be read here: run basalt init --remote as the engine's OS user")
-
 // noteUnknownAuthority says, before any login, that the credential's host
 // presents a chain no authority here verifies and that no profile covers:
 // the person trusts it on the connect page. Nothing is pinned. A chain that
@@ -39,7 +32,7 @@ func (r *remoteInit) noteUnknownAuthority() {
 		return
 	}
 	host := trustprofile.NormalizeHost(cfg.Host)
-	if r.setup.TrustProfileFor(r.f.configPath, host) != nil {
+	if r.setup.TrustProfileFor(r.f.ConfigPath, host) != nil {
 		return // a profile, a pin included, decides; a changed pin shows at the login
 	}
 	chain, err := r.c.FetchChain(r.c.Ctx, host, int(cfg.Port))
@@ -52,21 +45,11 @@ func (r *remoteInit) noteUnknownAuthority() {
 	}
 }
 
-// pinOf is the engine's pin for host in the config's trust.d: its
-// pin-<host> profile, or nil, read through h.
-func pinOf(h remoteHost, configPath, host string) *trustprofile.Profile {
-	p := h.TrustProfileFor(configPath, host)
-	if p == nil || !p.Exact() || p.Name != trustprofile.PinName(host) {
-		return nil
-	}
-	return p
-}
-
 // pinnedSHA is the SHA-256 (DER, lowercase hex) of the certificate the
 // engine has pinned for the target's host: the code's trustPin, "" when it
 // has no pin.
 func (r *remoteInit) pinnedSHA() string {
-	p := pinOf(r.setup, r.f.configPath, trustprofile.NormalizeHost(r.target.Host))
+	p := setup.PinOf(r.setup, r.f.ConfigPath, trustprofile.NormalizeHost(r.target.Host))
 	if p == nil || len(p.Certificates()) == 0 {
 		return ""
 	}
@@ -87,7 +70,7 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 		return false
 	}
 	host := trustprofile.NormalizeHost(cfg.Host)
-	p := pinOf(r.setup, r.f.configPath, host)
+	p := setup.PinOf(r.setup, r.f.ConfigPath, host)
 	if p == nil {
 		return false
 	}
@@ -95,26 +78,9 @@ func (r *remoteInit) rootChanged(dsn string, err error) bool {
 	if ferr != nil || len(chain) == 0 {
 		return false
 	}
-	return !pinned(p.Certificates(), chain[len(chain)-1])
+	return !setup.Pinned(p.Certificates(), chain[len(chain)-1])
 }
 
-// pinned reports whether top is one of the pinned certificates.
-func pinned(certs []*x509.Certificate, top *x509.Certificate) bool {
-	for _, c := range certs {
-		if c.Equal(top) {
-			return true
-		}
-	}
-	return false
-}
-
-// certificatePlan is the code for a changed certificate (CONTRACT.md,
-// basalt init --remote, step 3): a code that changes no grant, no password
-// and no policy, carrying engine. Never a new password: the credential is
-// not refused, its server's certificate is. An UPGRADE code from guard
-// version 0: it names no agent, so the role keeps its password and its
-// grants, and its migrations are the ones the database lacks, none when it
-// has them.
-func (r *remoteInit) certificatePlan() (plan, error) {
-	return plan{kind: setupcode.KindUpgrade}, nil
+func (r *remoteInit) certificatePlan() (setup.Plan, error) {
+	return setup.Plan{Kind: setupcode.KindUpgrade}, nil
 }

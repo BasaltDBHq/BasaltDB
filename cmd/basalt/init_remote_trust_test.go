@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -64,7 +65,7 @@ func pinnedAgent(t *testing.T, first caServer) string {
 // certRun runs basalt init --remote for the bot at cfg, its login failing
 // on the certificate as a verify-full login to the pinned host does when
 // the server presents another chain, and the chain read from server.
-func certRun(t *testing.T, cfg string, server caServer) (RemoteInitResult, string, error) {
+func certRun(t *testing.T, cfg string, server caServer) (setup.RemoteInitResult, string, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := noDB(t).io(&stdout, &stderr)
@@ -106,7 +107,7 @@ func TestInitRemoteChangedCertificate(t *testing.T) {
 	require.True(t, s.CertificateChanged)
 	require.False(t, s.ConnectOnly())
 	cred := c.Agents[0].Store.CredentialFile
-	require.NoFileExists(t, cred+pendingSuffix, "no new password is written")
+	require.NoFileExists(t, cred+setup.PendingSuffix, "no new password is written")
 	after, err := os.ReadFile(pinFile)
 	require.NoError(t, err)
 	require.Equal(t, before, after, "init pins nothing")
@@ -131,7 +132,7 @@ func TestInitRemoteSameCertificateFails(t *testing.T) {
 	c, lerr := config.Load(cfg)
 	require.NoError(t, lerr)
 	require.Nil(t, c.Agents[0].Setup)
-	require.NoFileExists(t, c.Agents[0].Store.CredentialFile+pendingSuffix)
+	require.NoFileExists(t, c.Agents[0].Store.CredentialFile+setup.PendingSuffix)
 }
 
 // Every code with a target of the AGENT or UPGRADE kind carries the

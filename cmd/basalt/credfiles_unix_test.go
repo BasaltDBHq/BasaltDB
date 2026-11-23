@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // As root, init --remote writes engine.json through the config directory
@@ -102,7 +103,7 @@ func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
 	var stderr bytes.Buffer
 	r := &remoteInit{
 		c: &cli.IO{Stderr: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
-		f:        remoteFlags{agent: "bot", configPath: filepath.Join(dir, "engine.json")},
+		f:        setup.RemoteFlags{Agent: "bot", ConfigPath: filepath.Join(dir, "engine.json")},
 		settings: config.Settings{SocketDir: "/run/basalt"},
 	}
 	require.NoError(t, os.Rename(dir, dir+".moved"))

@@ -24,8 +24,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
-	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -48,60 +48,10 @@ const (
 	// connect-only code waits for the database's address (CONTRACT.md,
 	// Connect-only setup codes): agents/<agent>.secret.
 	secretSuffix = config.SecretSuffix
-	// pendingSuffix names the new password's file while an AGENT code that
-	// rotates it waits: the old password keeps working until the person runs
-	// the code (RI-5).
-	pendingSuffix = ".pending"
-	// lockSuffix names the lock file that keeps two runs of init --remote
-	// for one agent apart.
-	lockSuffix = ".lock"
 	// releasePage is where the person installs basalt on their own computer.
 	releasePage = "https://github.com/BasaltDBHq/BasaltDB/releases"
 	toolStatus  = "status"
 )
-
-// remoteVaultWhy says why the vault is off by default for an engine
-// another init made person-operated.
-const remoteVaultWhy = "default for a person-operated engine"
-
-// remoteFlags are what basalt init --remote asks for: --agent, and the
-// fixed values the removed flags used to change. The agent's tables are
-// never among them: an INSTALL code lets the person tick them on the
-// connect page, and an AGENT code keeps the role's grants (the database's
-// grants are the only record of them).
-type remoteFlags struct {
-	agent, prefix, configPath string
-	timeout                   time.Duration
-	operatedBy                setup.OperatedBy
-	// vault is what init asks the config's vault to be (chooseVault).
-	vault setup.VaultChoice
-}
-
-// RemoteInitResult is what basalt init --remote prints.
-type RemoteInitResult struct {
-	Agent       string
-	SetupID     string
-	Kind        string
-	Code        string
-	Fingerprint string
-	Reused      bool
-	ExpiresAt   string
-	// ConnectOnly is a connect-only code: only the connect page runs it.
-	ConnectOnly   bool
-	PersonMessage string
-	// ConnectURL is the connect link, set when the engine is agent-operated
-	// with the Vault on and the whole link fits the link budget
-	// (CONTRACT.md, Connect, The connect link).
-	ConnectURL string
-	// MCPCommand is the basalt mcp command the agent registers, as argv.
-	MCPCommand []string
-	// pasteAtPortal: the engine would hand the connect link but the whole
-	// link does not fit the budget, so the text output says to paste the
-	// code at the connect page instead.
-	pasteAtPortal bool
-	// osUser is the OS user the MCP command runs as, for the text output.
-	osUser string
-}
 
 // isRemote reports whether args ask for basalt init --remote.
 func isRemote(args []string) bool {
@@ -132,22 +82,22 @@ func runInitRemote(c *cli.IO, h remoteHost, args []string) int {
 }
 
 // initRemote runs basalt init --remote and returns what it prints.
-func initRemote(c *cli.IO, h remoteHost, args []string) (RemoteInitResult, error) {
+func initRemote(c *cli.IO, h remoteHost, args []string) (setup.RemoteInitResult, error) {
 	f, err := parseInitRemote(c, args)
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	if c.Getenv(setup.EnvAdminURL) != "" {
 		// Never used here, but whoever can read this environment holds
 		// the admin password (CONTRACT.md, Agents and the admin credential).
 		fmt.Fprintln(c.Stderr, "basalt: warning: "+setup.RemoteAdminEnvSet)
 	}
-	if err := checkBuildVersion(buildVersion()); err != nil {
-		return RemoteInitResult{}, err
+	if err := setup.CheckBuildVersion(setup.BuildVersion()); err != nil {
+		return setup.RemoteInitResult{}, err
 	}
 	r, err := newRemoteInit(c, h, f)
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	res, err := r.run()
 	r.unlock()
@@ -157,16 +107,16 @@ func initRemote(c *cli.IO, h remoteHost, args []string) (RemoteInitResult, error
 // parseInitRemote reads basalt init --remote's flags: --remote and
 // --agent only (CONTRACT.md, CLI). The role's prefix and its statement
 // timeout are fixed values.
-func parseInitRemote(c *cli.IO, args []string) (remoteFlags, error) {
-	f := remoteFlags{prefix: cmp.Or(c.RolePrefix, guardmodel.DefaultPrefix), timeout: guardmodel.DefaultStatementTimeout, operatedBy: setup.OperatedByAgent}
+func parseInitRemote(c *cli.IO, args []string) (setup.RemoteFlags, error) {
+	f := setup.RemoteFlags{Prefix: cmp.Or(c.RolePrefix, guardmodel.DefaultPrefix), Timeout: guardmodel.DefaultStatementTimeout, OperatedBy: setup.OperatedByAgent}
 	var remote bool
 	fs := c.Flags("init --remote")
 	fs.BoolVar(&remote, flagRemote, false, "set up an agent on a bot's machine: prints the connect link the person opens")
-	fs.StringVar(&f.agent, "agent", "", "the agent's name (lowercase letters, digits, _); needed only when the engine serves more than one agent")
+	fs.StringVar(&f.Agent, "agent", "", "the agent's name (lowercase letters, digits, _); needed only when the engine serves more than one agent")
 	if err := cli.Parse(fs, args); err != nil {
 		return f, fmt.Errorf("%w (basalt init --remote takes only --agent; the connect page asks for the rest)", err)
 	}
-	f.configPath = cmp.Or(c.Paths.Config, c.SystemConfig())
+	f.ConfigPath = cmp.Or(c.Paths.Config, c.SystemConfig())
 	return f, nil
 }
 
@@ -190,7 +140,7 @@ type remoteInit struct {
 	// setup is what the run reaches outside the CLI: the guard, the engine
 	// keys and the trust profiles.
 	setup    remoteHost
-	f        remoteFlags
+	f        setup.RemoteFlags
 	names    guardmodel.Names
 	role     string
 	settings config.Settings
@@ -198,7 +148,7 @@ type remoteInit struct {
 	credFile string
 	// files reads and writes credFile, its .pending and its .lock: by
 	// path, or as root through agents/ opened without following a link.
-	files credFiles
+	files setup.CredFiles
 	// configDir is, as root, the config directory opened without following
 	// a link anyone but root controls: engine.json is locked, read and
 	// written relative to it (nil not as root: by path).
@@ -241,7 +191,7 @@ type remoteInit struct {
 	// code (CONTRACT.md, Connect-only setup codes).
 	connectOnly bool
 	// certChanged: the agent's login failed on the certificate of its
-	// pinned host, which presents another chain top (TRUST_ROOT_CHANGED):
+	// setup.Pinned host, which presents another chain top (TRUST_ROOT_CHANGED):
 	// this run makes an AGENT code with no change, marked
 	// certificateChanged, never a new password.
 	certChanged bool
@@ -289,12 +239,12 @@ type setupFilesHost interface {
 // files' own (app.TrustedDir), so a setupFilesHost reaches them too.
 type trustedDir = app.TrustedDir
 
-func newRemoteInit(c *cli.IO, h remoteHost, f remoteFlags) (*remoteInit, error) {
+func newRemoteInit(c *cli.IO, h remoteHost, f setup.RemoteFlags) (*remoteInit, error) {
 	r := &remoteInit{c: c, setup: h, f: f}
 	if err := r.paths(); err != nil {
 		return nil, err
 	}
-	unlock, err := r.files.Lock(r.credFile + lockSuffix)
+	unlock, err := r.files.Lock(r.credFile + setup.LockSuffix)
 	if err != nil {
 		r.files.Close()
 		return nil, err
@@ -317,7 +267,7 @@ func newRemoteInit(c *cli.IO, h remoteHost, f remoteFlags) (*remoteInit, error) 
 // settings of a new config. Not as root, the config lives in the user's own
 // config directory, as init's foreground setup, with the sockets next to it.
 func (r *remoteInit) paths() error {
-	dir := filepath.Dir(r.f.configPath)
+	dir := filepath.Dir(r.f.ConfigPath)
 	r.settings = config.Settings{SocketDir: config.DefaultSocketDir(r.c.Goos), PagesURL: links.Portal}
 	if r.c.Host.Euid() != 0 && r.c.Paths.Config == "" {
 		if _, err := r.c.FindConfig(); err != nil {
@@ -331,10 +281,10 @@ func (r *remoteInit) paths() error {
 			return err
 		}
 		dir = filepath.Join(base, config.UserDirName)
-		r.f.configPath = filepath.Join(dir, "engine.json")
+		r.f.ConfigPath = filepath.Join(dir, "engine.json")
 		r.settings.SocketDir = filepath.Join(dir, "run")
 	}
-	if r.f.configPath != r.c.SystemConfig() {
+	if r.f.ConfigPath != r.c.SystemConfig() {
 		if r.c.Paths.Config != "" && r.c.Host.Euid() != 0 {
 			// Not root, the system socket directory is not writable: keep
 			// the sockets next to a config in another place.
@@ -346,7 +296,7 @@ func (r *remoteInit) paths() error {
 	// As root, the hardened read (cli.LoadEngineConfig): the config must be a
 	// plain file owned by root or its directory's owner, not writable by
 	// group or others and reached without links, before any field is read.
-	cfg, err := cli.LoadEngineConfig(r.c, r.f.configPath)
+	cfg, err := cli.LoadEngineConfig(r.c, r.f.ConfigPath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
@@ -357,25 +307,25 @@ func (r *remoteInit) paths() error {
 		r.settings.SocketDir = cfg.SocketDir
 		r.linkBudget = cfg.LinkBudgetOrDefault()
 	}
-	if r.f.agent == "" {
+	if r.f.Agent == "" {
 		name, err := remoteAgentName(r.prev.Agents)
 		if err != nil {
 			return err
 		}
-		r.f.agent = name
+		r.f.Agent = name
 	}
-	if !config.ValidAgentName(r.f.agent) {
-		return fmt.Errorf("%w: agent name %q is not valid for the engine (lowercase letters, digits and _)", cli.ErrUsage, r.f.agent)
+	if !config.ValidAgentName(r.f.Agent) {
+		return fmt.Errorf("%w: agent name %q is not valid for the engine (lowercase letters, digits and _)", cli.ErrUsage, r.f.Agent)
 	}
 	for i := range r.prev.Agents {
-		if r.prev.Agents[i].Name == r.f.agent {
+		if r.prev.Agents[i].Name == r.f.Agent {
 			r.entry = &r.prev.Agents[i]
 		}
 	}
 	if err := r.settle(); err != nil {
 		return err
 	}
-	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.agent)); err != nil {
+	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.Agent)); err != nil {
 		return fmt.Errorf("%w; use a shorter agent name", err)
 	}
 	asRoot := r.c.Host.Euid() == 0
@@ -392,14 +342,14 @@ func (r *remoteInit) paths() error {
 		}
 		dir = abs
 	}
-	r.credFile = filepath.Join(dir, "agents", r.f.agent+".url")
+	r.credFile = filepath.Join(dir, "agents", r.f.Agent+".url")
 	r.osUser = ""
 	if r.entry != nil {
 		if asRoot {
 			// As root the computed path is used, never the config's
 			// string: agents/sub/../bot.url passes the check but would
 			// resolve through agents/sub.
-			if _, err := config.RootCredentialPath(r.f.configPath, r.f.agent, r.entry.Store.CredentialFile); err != nil {
+			if _, err := config.RootCredentialPath(r.f.ConfigPath, r.f.Agent, r.entry.Store.CredentialFile); err != nil {
 				return fmt.Errorf("%w; as root, basalt init --remote uses only that path. Fix the agent's store.credentialFile in the config", err)
 			}
 		} else {
@@ -445,56 +395,24 @@ func (r *remoteInit) paths() error {
 	return nil
 }
 
-// credFiles reads and writes the agent's credential file, its .pending and
-// its .lock for init --remote, each named by its full path.
-type credFiles interface {
-	Lock(path string) (func(), error)
-	// Read reads a credential file this process wrote (with the checks of
-	// credfiles' readOwnCredential); an error wrapping fs.ErrNotExist when
-	// there is none.
-	Read(path string) (string, os.FileInfo, error)
-	// Stat is the file at path, not following a link.
-	Stat(path string) (os.FileInfo, error)
-	Write(path string, data []byte) error
-	Rename(from, to string) error
-	// Remove removes the file at path, not following a link.
-	Remove(path string) error
-	Close()
-}
-
-// credential is a credential file as read: its connection string, the
-// database it names, and the file it was read from (to check, before
-// moving it, that the path still names that file).
-type credential struct {
-	dsn    string
-	url    *url.URL
-	target setupcode.Target
-	file   os.FileInfo
-}
-
-func (c *credential) password() string {
-	pw, _ := c.url.User.Password()
-	return pw
-}
-
 // connection settles the database: the .pending credential's (a setup for
 // another password may be waiting), else the credential file's, else none:
 // a connect-only code, whose engine collects the address. It logs in as the
 // agent with the credentials for that database, .pending first.
 func (r *remoteInit) connection() error {
-	cred, err := readCredentialIfAny(r.files, r.credFile)
+	cred, err := setup.ReadCredentialIfAny(r.files, r.credFile)
 	if err != nil {
 		return err
 	}
-	pending, err := readCredentialIfAny(r.files, r.credFile+pendingSuffix)
+	pending, err := setup.ReadCredentialIfAny(r.files, r.credFile+setup.PendingSuffix)
 	if err != nil {
 		return err
 	}
 	switch {
 	case pending != nil:
-		r.base, r.target = pending.url, pending.target
+		r.base, r.target = pending.URL, pending.Target
 	case cred != nil:
-		r.base, r.target = cred.url, cred.target
+		r.base, r.target = cred.URL, cred.Target
 	default:
 		// No address and no credential: a code for the connect page, which
 		// collects the address (CONTRACT.md, Connect-only setup codes).
@@ -505,7 +423,7 @@ func (r *remoteInit) connection() error {
 		return nil
 	}
 	r.credExists = cred != nil
-	if prefix := credentialPrefix(r.base, r.f.agent, r.target.SupabaseRef); prefix != "" && prefix != r.f.prefix {
+	if prefix := setup.CredentialPrefix(r.base, r.f.Agent, r.target.SupabaseRef); prefix != "" && prefix != r.f.Prefix {
 		if err := r.setPrefix(prefix); err != nil {
 			return err
 		}
@@ -519,59 +437,22 @@ func (r *remoteInit) connection() error {
 		cred = nil
 	}
 	// The password this machine holds for the database: the newest one.
-	for _, c := range []*credential{cred, pending} {
+	for _, c := range []*setup.Credential{cred, pending} {
 		if c != nil {
-			r.password = c.password()
+			r.password = c.Password()
 		}
 	}
 	// Before any login sends a startup message: say that a chain no
 	// authority here verifies is trusted on the connect page. Nothing is
-	// pinned here.
+	// setup.Pinned here.
 	r.noteUnknownAuthority()
 	return r.login(pending, cred)
 }
 
 // sameLogin reports whether c names the database and the role of the base
 // credential (r.base, r.target).
-func (r *remoteInit) sameLogin(c *credential) bool {
-	return c.target == r.target && urlUser(c.url) == urlUser(r.base)
-}
-
-// urlUser is u's user name, "" when it names none.
-func urlUser(u *url.URL) string {
-	if u == nil || u.User == nil {
-		return ""
-	}
-	return u.User.Username()
-}
-
-// readCredentialIfAny reads a credential file with the no-follow checks,
-// or nil when there is none.
-func readCredentialIfAny(files credFiles, path string) (*credential, error) {
-	dsn, fi, err := files.Read(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil //nolint:nilnil // no file is no credential
-	}
-	if err != nil {
-		return nil, fmt.Errorf("the credential file %s is not usable: %w", path, err)
-	}
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("the credential file %s does not hold a connection URL", path)
-	}
-	t, err := setupcode.TargetOf(u)
-	var pe *setupcode.TargetParamError
-	if errors.As(err, &pe) {
-		// basalt init keeps these parameters; --remote can't target them.
-		// The file is the running engine's credential: never treat it as
-		// absent, or a new one would overwrite it.
-		return nil, fmt.Errorf("the credential file %s was written by basalt init for a connection string with a %s= parameter, "+
-			"which basalt init --remote can't target; it was left as is. Use another --agent name", path, pe.Param)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("the credential file %s: %w", path, err)
-	}
-	return &credential{dsn: dsn, url: u, target: t, file: fi}, nil
+func (r *remoteInit) sameLogin(c *setup.Credential) bool {
+	return c.Target == r.target && setup.URLUser(c.URL) == setup.URLUser(r.base)
 }
 
 // login logs in as the agent: with the .pending credential first (a
@@ -579,13 +460,13 @@ func readCredentialIfAny(files credFiles, path string) (*credential, error) {
 // file once the pending setup is recorded, as the engine promotes it, else
 // with the credential file. A refused login is not an error: the role
 // cannot log in. An unreachable database is, and changes nothing.
-func (r *remoteInit) login(pending, cred *credential) error {
+func (r *remoteInit) login(pending, cred *setup.Credential) error {
 	if pending != nil {
-		conn, err := r.c.AgentLogin(r.c.Ctx, pending.dsn)
+		conn, err := r.c.AgentLogin(r.c.Ctx, pending.DSN)
 		switch {
 		case err == nil:
 			defer conn.Close(r.c.Ctx)
-			r.password = pending.password()
+			r.password = pending.Password()
 			if err := r.inspect(conn); err != nil {
 				return err
 			}
@@ -593,7 +474,7 @@ func (r *remoteInit) login(pending, cred *credential) error {
 				return nil // .pending stays until its setup is recorded
 			}
 			return r.promote(pending)
-		case r.rootChanged(pending.dsn, err):
+		case r.rootChanged(pending.DSN, err):
 			r.certChanged = true
 			return nil
 		case !errors.Is(err, handoff.ErrLoginRefused):
@@ -603,19 +484,19 @@ func (r *remoteInit) login(pending, cred *credential) error {
 	if cred == nil {
 		return nil
 	}
-	conn, err := r.c.AgentLogin(r.c.Ctx, cred.dsn)
+	conn, err := r.c.AgentLogin(r.c.Ctx, cred.DSN)
 	switch {
 	case errors.Is(err, handoff.ErrLoginRefused):
 		return nil // the role cannot log in
-	case r.rootChanged(cred.dsn, err):
-		// Not a refused credential: the pinned host presents another
+	case r.rootChanged(cred.DSN, err):
+		// Not a refused credential: the setup.Pinned host presents another
 		// certificate. The connect page asks the person.
 		r.certChanged = true
 		return nil
 	case err != nil:
 		return err
 	}
-	r.password = cred.password()
+	r.password = cred.Password()
 	defer conn.Close(r.c.Ctx)
 	return r.inspect(conn)
 }
@@ -623,15 +504,15 @@ func (r *remoteInit) login(pending, cred *credential) error {
 // promote moves the .pending credential, which logs in, over the
 // credential file, once the .pending path still names the file read, a
 // regular file with one link.
-func (r *remoteInit) promote(pending *credential) error {
-	pendingFile := r.credFile + pendingSuffix
+func (r *remoteInit) promote(pending *setup.Credential) error {
+	pendingFile := r.credFile + setup.PendingSuffix
 	now, err := r.files.Stat(pendingFile)
 	if err != nil {
 		return err
 	}
 	// The engine's check (config.SameCredentialFile): the same file, still
 	// a regular file with one link.
-	if !os.SameFile(now, pending.file) || config.CheckPlainFile(now) != nil {
+	if !os.SameFile(now, pending.File) || config.CheckPlainFile(now) != nil {
 		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
 	}
 	if err := r.files.Rename(pendingFile, r.credFile); err != nil {
@@ -667,7 +548,7 @@ func (r *remoteInit) reusable() *config.Setup {
 	if r.entry == nil || r.entry.Setup == nil || r.recorded || r.password == "" || r.entry.Setup.CertificateChanged != r.certChanged {
 		return nil
 	}
-	if r.entry.Setup.ConnectOnly() || connectOnlyCode(r.entry.Setup.Code) {
+	if r.entry.Setup.ConnectOnly() || setup.ConnectOnlyCode(r.entry.Setup.Code) {
 		// A connect-only code with a credential file is never handed out
 		// again on this path: the engine stopped between writing the
 		// credential and clearing awaitingAddress, or the person confirmed
@@ -683,16 +564,6 @@ func (r *remoteInit) reusable() *config.Setup {
 	return s
 }
 
-// plan is the code init makes: its kind, the password whose verifier it
-// carries (rotate), whether that password is new (and so written: see
-// writeCredential), and the guard versions.
-type plan struct {
-	kind                setupcode.Kind
-	password            string
-	rotate, newPassword bool
-	from                int
-}
-
 // decide picks the kind (CONTRACT.md, basalt init --remote, item 3; RI-6).
 // A role that does not log in while an INSTALL setup is pending: INSTALL
 // again with the password this machine holds, so any of its INSTALL codes
@@ -705,7 +576,7 @@ type plan struct {
 // agent the config does not have yet; else UPGRADE when its guard is older
 // than this build's; else an AGENT code with no change. Every AGENT code
 // names no tables: the role keeps its grants (payload).
-func (r *remoteInit) decide() (plan, error) {
+func (r *remoteInit) decide() (setup.Plan, error) {
 	latest := r.setup.GuardLatestVersion()
 	if r.certChanged {
 		return r.certificatePlan()
@@ -714,26 +585,26 @@ func (r *remoteInit) decide() (plan, error) {
 	if !r.loggedIn {
 		switch {
 		case r.password != "" && pendingInstall:
-			return plan{kind: setupcode.KindInstall, password: r.password, rotate: true}, nil
+			return setup.Plan{Kind: setupcode.KindInstall, Password: r.password, Rotate: true}, nil
 		case r.password != "":
-			return r.withNewPassword(plan{kind: setupcode.KindAgent})
+			return r.withNewPassword(setup.Plan{Kind: setupcode.KindAgent})
 		}
-		return r.withNewPassword(plan{kind: setupcode.KindInstall})
+		return r.withNewPassword(setup.Plan{Kind: setupcode.KindInstall})
 	}
 	if r.installed > latest {
-		return plan{}, fmt.Errorf("the database's guard (version %d) is newer than this basalt (version %d): update basalt on this machine first", r.installed, latest)
+		return setup.Plan{}, fmt.Errorf("the database's guard (version %d) is newer than this basalt (version %d): update basalt on this machine first", r.installed, latest)
 	}
-	p := plan{from: r.installed}
+	p := setup.Plan{From: r.installed}
 	switch {
 	case r.confirmedNotFound():
-		p.kind = setupcode.KindAgent
+		p.Kind = setupcode.KindAgent
 		return r.withNewPassword(p)
 	case r.entry == nil:
-		p.kind = setupcode.KindAgent
+		p.Kind = setupcode.KindAgent
 	case r.installed < latest:
-		p.kind = setupcode.KindUpgrade
+		p.Kind = setupcode.KindUpgrade
 	default:
-		p.kind = setupcode.KindAgent
+		p.Kind = setupcode.KindAgent
 	}
 	return p, nil
 }
@@ -743,52 +614,52 @@ func (r *remoteInit) decide() (plan, error) {
 // logs in to does not record (the engine's SETUP_NOT_FOUND).
 func (r *remoteInit) confirmedNotFound() bool {
 	s := r.entry
-	return s != nil && s.Setup != nil && !s.Setup.ConnectOnly() && connectOnlyCode(s.Setup.Code) && !r.recorded
+	return s != nil && s.Setup != nil && !s.Setup.ConnectOnly() && setup.ConnectOnlyCode(s.Setup.Code) && !r.recorded
 }
 
-func (r *remoteInit) withNewPassword(p plan) (plan, error) {
+func (r *remoteInit) withNewPassword(p setup.Plan) (setup.Plan, error) {
 	pw, err := setupcode.NewPassword()
 	if err != nil {
-		return plan{}, err
+		return setup.Plan{}, err
 	}
-	p.password, p.rotate, p.newPassword = pw, true, true
+	p.Password, p.Rotate, p.NewPassword = pw, true, true
 	return p, nil
 }
 
 // payload builds the setup code's content.
-func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
+func (r *remoteInit) payload(p setup.Plan) (setupcode.Payload, error) {
 	id, expires, err := setupcode.NewSetupID(r.c.Now(), r.c.Rand)
 	if err != nil {
 		return setupcode.Payload{}, err
 	}
 	out := setupcode.Payload{
-		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix,
-		Guard: setupcode.Guard{From: p.from, To: r.setup.GuardLatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
+		Format: setupcode.Format, SetupID: id, Kind: p.Kind, Prefix: r.f.Prefix,
+		Guard: setupcode.Guard{From: p.From, To: r.setup.GuardLatestVersion()}, Build: setup.BuildVersion(), ExpiresAt: expires,
 	}
 	if !r.connectOnly {
 		target := r.target
 		out.Target, out.Engine = &target, r.engineKey()
-		if p.kind != setupcode.KindInstall {
+		if p.Kind != setupcode.KindInstall {
 			// The engine's pin for the host, a hint for the connect page.
 			out.TrustPin = r.pinnedSHA()
 		}
 	}
 	if r.certChanged && out.Engine == nil {
-		return setupcode.Payload{}, errNoEngineForTrust
+		return setupcode.Payload{}, setup.ErrNoEngineForTrust
 	}
-	if p.kind == setupcode.KindUpgrade {
+	if p.Kind == setupcode.KindUpgrade {
 		return out, nil
 	}
 	// An INSTALL code asks for every table in public, which the person
 	// ticks on the connect page. An AGENT code names no tables: the role
 	// keeps the grants it holds (CONTRACT.md, The setup code, Kinds), and
 	// a role that is gone runs as an INSTALL, with ticks.
-	a := &setupcode.Agent{Name: r.f.agent, StatementTimeoutMs: r.f.timeout.Milliseconds()}
-	if p.kind == setupcode.KindInstall {
+	a := &setupcode.Agent{Name: r.f.Agent, StatementTimeoutMs: r.f.Timeout.Milliseconds()}
+	if p.Kind == setupcode.KindInstall {
 		a.AllTables = &setupcode.AllTables{Schemas: []string{"public"}}
 	}
-	if p.rotate {
-		if a.Verifier, err = setupcode.NewVerifier(p.password); err != nil {
+	if p.Rotate {
+		if a.Verifier, err = setupcode.NewVerifier(p.Password); err != nil {
 			return setupcode.Payload{}, err
 		}
 	}
@@ -796,69 +667,44 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 	return out, nil
 }
 
-// buildVersion is this build's version in the code's form (no leading v,
-// no build metadata).
-func buildVersion() string {
-	v := strings.TrimPrefix(buildinfo.Version, "v")
-	v, _, _ = strings.Cut(v, "+")
-	return v
-}
-
-// checkBuildVersion refuses, before anything is written, a build whose
-// version a setup code cannot carry (a source build without tags: "dev").
-func checkBuildVersion(version string) error {
-	if setupcode.ValidBuild(version) {
-		return nil
-	}
-	return fmt.Errorf("this build of basalt has no release version (it reports %q), so it cannot make a setup code; install a release build", version)
-}
-
 // run makes (or reuses) the code, writes the credential and the config,
 // and returns the result.
-func (r *remoteInit) run() (RemoteInitResult, error) {
+func (r *remoteInit) run() (setup.RemoteInitResult, error) {
 	if r.connectOnly {
 		return r.runConnectOnly()
 	}
 	if s := r.reusable(); s != nil {
 		if err := r.writeConfig(s); err != nil {
-			return RemoteInitResult{}, err
+			return setup.RemoteInitResult{}, err
 		}
 		return r.result(*s, true)
 	}
 	p, err := r.decide()
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	payload, err := r.payload(p)
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	code, err := encodeSetup(payload)
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	if err := r.writeCredential(p); err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
-	s := newSetup(payload, code)
+	s := setup.NewSetup(payload, code)
 	s.CertificateChanged = r.certChanged
 	if err := r.writeConfig(&s); err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	// A .secret a connect-only code left belongs to a code engine.json no
 	// longer records: its password is dropped.
 	if err := r.removeSecret(); err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	return r.result(s, false)
-}
-
-// newSetup is the pending setup engine.json records for a new code.
-func newSetup(p setupcode.Payload, code string) config.Setup {
-	return config.Setup{
-		SetupID: p.SetupID, Kind: string(p.Kind), GuardVersion: p.Guard.To,
-		ExpiresAt: p.ExpiresAt, Code: code, Fingerprint: p.Fingerprint(), AwaitingAddress: p.ConnectOnly(),
-	}
 }
 
 // connectOnlyAllowed is nil when this run may make a connect-only code: the
@@ -874,13 +720,6 @@ func (r *remoteInit) connectOnlyAllowed() error {
 		return errors.New("this engine has the Vault off, and the connect page that basalt init --remote hands the person needs it on")
 	}
 	return nil
-}
-
-// connectOnlyCode reports whether code is a connect-only setup code (it
-// has no target). A code that cannot be read is not.
-func connectOnlyCode(code string) bool {
-	p, err := setupcode.Decode(code)
-	return err == nil && p.ConnectOnly()
 }
 
 // pendingConnectOnly is the agent's pending connect-only setup, nil when
@@ -899,26 +738,26 @@ func (r *remoteInit) pendingConnectOnly() *config.Setup {
 // behind the person's back: the connect path then refuses.
 func (r *remoteInit) settle() error {
 	if r.existed && r.prev.OperatedBy != mcpcontract.OperatedByAgent {
-		r.f.operatedBy = setup.OperatedByPerson
+		r.f.OperatedBy = setup.OperatedByPerson
 	}
-	if err := r.setPrefix(r.f.prefix); err != nil {
+	if err := r.setPrefix(r.f.Prefix); err != nil {
 		return err
 	}
-	vc, err := setupcli.ChooseVault("", r.f.operatedBy, links.Portal, remoteVaultWhy)
+	vc, err := setupcli.ChooseVault("", r.f.OperatedBy, links.Portal, setup.RemoteVaultWhy)
 	if err != nil {
 		return err
 	}
-	r.f.vault = vc
+	r.f.Vault = vc
 	r.settings = vc.Settings(r.settings)
-	r.settings.OperatedBy = r.f.operatedBy.Enum()
+	r.settings.OperatedBy = r.f.OperatedBy.Enum()
 	return nil
 }
 
 // setPrefix sets the role prefix of the agent's names and role.
 func (r *remoteInit) setPrefix(prefix string) error {
-	r.f.prefix = prefix
+	r.f.Prefix = prefix
 	r.names = guardmodel.Names{Prefix: prefix}
-	role, err := r.names.Agent(r.f.agent)
+	role, err := r.names.Agent(r.f.Agent)
 	if err != nil {
 		return fmt.Errorf("%w: %w", cli.ErrUsage, err)
 	}
@@ -926,29 +765,9 @@ func (r *remoteInit) setPrefix(prefix string) error {
 	return nil
 }
 
-// credentialPrefix is the role prefix of the credential this machine holds
-// for the agent: its user is <prefix>_agent_<name> (with .<ref> through
-// Supabase's pooler). The credential names the role, so a code for it names
-// that role, never a saved copy; "" when its user is not such a role (the
-// fixed default prefix then).
-func credentialPrefix(u *url.URL, agent, supabaseRef string) string {
-	if u == nil || u.User == nil {
-		return ""
-	}
-	user := u.User.Username()
-	if supabaseRef != "" {
-		user = strings.TrimSuffix(user, "."+supabaseRef)
-	}
-	prefix, ok := strings.CutSuffix(user, "_agent_"+agent)
-	if !ok || (guardmodel.Names{Prefix: prefix}).Validate() != nil {
-		return ""
-	}
-	return prefix
-}
-
 // secretPath is agents/<agent>.secret, next to the credential file.
 func (r *remoteInit) secretPath() string {
-	return config.SecretPath(r.credFile, r.f.agent)
+	return config.SecretPath(r.credFile, r.f.Agent)
 }
 
 // hasSecret reports whether the agent's .secret exists.
@@ -981,16 +800,16 @@ func (r *remoteInit) removeSecret() error {
 // the person refused its database, after the engine refused the address
 // the connect page handed over, or when .secret is gone, the pending setup
 // is forgotten and the code is a recovery code: AGENT with a new password.
-func (r *remoteInit) runConnectOnly() (RemoteInitResult, error) {
+func (r *remoteInit) runConnectOnly() (setup.RemoteInitResult, error) {
 	pending := r.pendingConnectOnly()
 	if pending != nil && !pending.Refused && !pending.AddressInvalid {
 		reuse, err := r.reuseConnectOnly(pending)
 		if err != nil || reuse {
 			if err != nil {
-				return RemoteInitResult{}, err
+				return setup.RemoteInitResult{}, err
 			}
 			if err := r.writeConfig(pending); err != nil {
-				return RemoteInitResult{}, err
+				return setup.RemoteInitResult{}, err
 			}
 			return r.result(*pending, true)
 		}
@@ -999,29 +818,29 @@ func (r *remoteInit) runConnectOnly() (RemoteInitResult, error) {
 	if pending != nil {
 		kind = setupcode.KindAgent
 	}
-	p, err := r.withNewPassword(plan{kind: kind})
+	p, err := r.withNewPassword(setup.Plan{Kind: kind})
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	payload, err := r.connectOnlyPayload(p)
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	code, err := encodeSetup(payload)
 	if err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	// The old password is dropped only now, after the engine's key and the
 	// code: a refusal before this point leaves everything as it was.
 	if err := r.removeSecret(); err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
-	if err := r.files.Write(r.secretPath(), []byte(p.password+"\n")); err != nil {
-		return RemoteInitResult{}, err
+	if err := r.files.Write(r.secretPath(), []byte(p.Password+"\n")); err != nil {
+		return setup.RemoteInitResult{}, err
 	}
-	s := newSetup(payload, code)
+	s := setup.NewSetup(payload, code)
 	if err := r.writeConfig(&s); err != nil {
-		return RemoteInitResult{}, err
+		return setup.RemoteInitResult{}, err
 	}
 	return r.result(s, false)
 }
@@ -1039,7 +858,7 @@ func (r *remoteInit) reuseConnectOnly(pending *config.Setup) (bool, error) {
 
 // connectOnlyPayload is a connect-only code's content: no target, and the
 // engine's key, without which the engine could not collect the address.
-func (r *remoteInit) connectOnlyPayload(p plan) (setupcode.Payload, error) {
+func (r *remoteInit) connectOnlyPayload(p setup.Plan) (setupcode.Payload, error) {
 	key, err := r.loadEngineKey()
 	if err != nil {
 		return setupcode.Payload{}, fmt.Errorf("a setup code for the connect page needs the engine's key, and basalt cannot read or make it as this user (%w). "+
@@ -1079,11 +898,11 @@ func encodeSetup(p setupcode.Payload) (string, error) {
 // (confirmedNotFound), the new password goes to the credential file while
 // the working one stays in .pending. init never deletes the credential
 // file itself, so only a hand edit reaches this state.
-func (r *remoteInit) writeCredential(p plan) error {
-	if !p.newPassword {
+func (r *remoteInit) writeCredential(p setup.Plan) error {
+	if !p.NewPassword {
 		return nil
 	}
-	dsn, err := r.setup.GuardAgentConnString(r.base.String(), r.role, p.password)
+	dsn, err := r.setup.GuardAgentConnString(r.base.String(), r.role, p.Password)
 	if err != nil {
 		return err
 	}
@@ -1091,22 +910,22 @@ func (r *remoteInit) writeCredential(p plan) error {
 	fmt.Fprint(r.c.Stderr, applied.Line())
 	path := r.credFile
 	if r.credExists {
-		path += pendingSuffix
+		path += setup.PendingSuffix
 	}
 	return r.files.Write(path, []byte(dsn+"\n"))
 }
 
 // writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(s *config.Setup) error {
-	a := config.Agent{Name: r.f.agent, OSUser: r.osUser, Store: config.PostgresStore(r.credFile), Setup: s}
+	a := config.Agent{Name: r.f.Agent, OSUser: r.osUser, Store: config.PostgresStore(r.credFile), Setup: s}
 	var v config.VaultWritten
 	var err error
 	if r.configDir != nil {
 		// As root, through the directory opened in paths: a config
 		// directory swapped for a symlink since then redirects nothing.
-		v, err = r.configDir.upsert(filepath.Base(r.f.configPath), r.settings, a)
+		v, err = r.configDir.upsert(filepath.Base(r.f.ConfigPath), r.settings, a)
 	} else {
-		v, err = config.UpsertAgentVault(r.f.configPath, r.settings, a)
+		v, err = config.UpsertAgentVault(r.f.ConfigPath, r.settings, a)
 	}
 	if err != nil {
 		return err
@@ -1114,7 +933,7 @@ func (r *remoteInit) writeConfig(s *config.Setup) error {
 	fmt.Fprint(r.c.Stderr, r.serviceNote)
 	fmt.Fprint(r.c.Stderr, remoteVaultLine(v))
 	r.connectBudget = 0
-	if r.f.operatedBy == setup.OperatedByAgent && v.Vault == config.VaultOn {
+	if r.f.OperatedBy == setup.OperatedByAgent && v.Vault == config.VaultOn {
 		r.connectBudget = r.linkBudget
 		if r.connectBudget <= 0 {
 			r.connectBudget = links.DefaultBudget
@@ -1134,10 +953,10 @@ func remoteVaultLine(w config.VaultWritten) string {
 
 // result is the remote-init result: the code, and what the person does
 // with it.
-func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, error) {
-	res := RemoteInitResult{
-		Agent: r.f.agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
-		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.agent, s.Fingerprint),
+func (r *remoteInit) result(s config.Setup, reused bool) (setup.RemoteInitResult, error) {
+	res := setup.RemoteInitResult{
+		Agent: r.f.Agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
+		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.Agent, s.Fingerprint),
 	}
 	if s.AwaitingAddress {
 		res = r.connectOnlyResult(res, s)
@@ -1149,24 +968,24 @@ func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, erro
 
 // withSetupGuidance is the person message and connect link of a code that
 // is not connect-only.
-func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) RemoteInitResult {
+func (r *remoteInit) withSetupGuidance(res setup.RemoteInitResult, s config.Setup) setup.RemoteInitResult {
 	// An agent-operated engine with the Vault on hands the connect link
 	// when the whole link fits the budget (no network call: the link only
 	// holds the code); else the text says where to paste the code.
 	url := guidance.ConnectLink(s.Code, r.connectBudget)
 	if url != "" {
 		res.ConnectURL = url
-		res.PersonMessage, _ = guidance.ConnectMessage("Finish setting up Basalt for "+r.f.agent+".", url, s.Fingerprint)
+		res.PersonMessage, _ = guidance.ConnectMessage("Finish setting up Basalt for "+r.f.Agent+".", url, s.Fingerprint)
 	}
-	res.pasteAtPortal = url == ""
+	res.PasteAtPortal = url == ""
 	return res
 }
 
 // withMCP adds the basalt mcp command the agent registers, and the OS user
 // the text output names.
-func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
-	res.osUser = r.osUser
-	res.MCPCommand = setup.MCPArgs(r.f.agent, setup.MCPBinary(r.c.Host))
+func (r *remoteInit) withMCP(res setup.RemoteInitResult) setup.RemoteInitResult {
+	res.OSUser = r.osUser
+	res.MCPCommand = setup.MCPArgs(r.f.Agent, setup.MCPBinary(r.c.Host))
 	fmt.Fprint(r.c.Stderr, setup.TemporaryBinaryWarning(res.MCPCommand[0], os.TempDir()))
 	return res
 }
@@ -1174,15 +993,15 @@ func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
 // connectOnlyResult is the result of a connect-only code: the connect link
 // and the fingerprint, no laptop command. A link over the budget is left
 // out: the text says to paste the code at the connect page.
-func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) RemoteInitResult {
+func (r *remoteInit) connectOnlyResult(res setup.RemoteInitResult, s config.Setup) setup.RemoteInitResult {
 	res.ConnectOnly = true
-	lead := "Connect your database to " + r.f.agent + "."
+	lead := "Connect your database to " + r.f.Agent + "."
 	if open := guidance.ConnectLink(s.Code, r.connectBudget); open != "" {
 		res.ConnectURL = open
 		res.PersonMessage, _ = guidance.ConnectOnlyMessage(lead, open, s.Fingerprint)
 		return res
 	}
-	res.pasteAtPortal = true
+	res.PasteAtPortal = true
 	page := strings.TrimPrefix(links.Portal+links.ConnectPath, "https://")
 	res.PersonMessage = lead + " Open " + page + ", paste the setup code the agent shows you, check that it shows the setup fingerprint " + s.Fingerprint +
 		", and follow the page. The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat."
@@ -1201,7 +1020,7 @@ func setupPersonMessage(name, fingerprint string) string {
 
 // printRemoteResult prints the result: the connect link or the code in a
 // block of its own, its fingerprint and what the person does.
-func printRemoteResult(c *cli.IO, res RemoteInitResult) error {
+func printRemoteResult(c *cli.IO, res setup.RemoteInitResult) error {
 	if res.Reused {
 		fmt.Fprintln(c.Stderr, "basalt: a setup code is pending for this agent; here it is again")
 	}
@@ -1217,7 +1036,7 @@ func printRemoteResult(c *cli.IO, res RemoteInitResult) error {
 	}
 	_, err = fmt.Fprintf(c.Stdout, "Setup code for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
 		res.Agent, res.Kind, expires.UTC().Format("2006-01-02 15:04 UTC"), res.Code, res.Fingerprint, res.PersonMessage)
-	if err == nil && res.pasteAtPortal {
+	if err == nil && res.PasteAtPortal {
 		// The link is over the budget: no link is printed, the code is
 		// pasted at the connect page instead.
 		_, err = fmt.Fprintf(c.Stdout, "\nTo use Basalt Vault, a hosted service, paste the setup code at %s.\n", strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"))
@@ -1229,15 +1048,11 @@ func printRemoteResult(c *cli.IO, res RemoteInitResult) error {
 }
 
 // printRemoteMCP prints the basalt mcp command the agent registers.
-func printRemoteMCP(c *cli.IO, res RemoteInitResult) error {
+func printRemoteMCP(c *cli.IO, res setup.RemoteInitResult) error {
 	_, err := fmt.Fprintf(c.Stdout, "then add this MCP server to the agent's client, running as OS user %s:\n  %s\n",
-		res.osUser, cli.ShellJoin(res.MCPCommand))
+		res.OSUser, cli.ShellJoin(res.MCPCommand))
 	return err
 }
-
-// stateDirMode is the engine's state directory's mode when init makes it,
-// as the engine does: only its OS user.
-const stateDirMode = 0o700
 
 // engineKey is the engine's signing key for the code (M4.1, CO-18), made
 // as the engine makes it on its first start when the key file is missing.
@@ -1260,28 +1075,24 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 		// link the engine's user controls; a new key file is that user's.
 		spki, err := rootEngineKey(r.setup, r.stateDir, r.c.Goos, r.configDir, r.c.Now)
 		if err != nil {
-			return nil, keyRefused(err)
+			return nil, setup.KeyRefused(err)
 		}
 		return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(spki)}, nil
 	}
-	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
+	if err := os.MkdirAll(r.stateDir, engine.StateDirMode); err != nil {
 		return nil, err
 	}
 	keys, err := r.setup.LoadOrCreateEngineKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.Now)
 	if err != nil {
-		return nil, keyRefused(err)
+		return nil, setup.KeyRefused(err)
 	}
 	return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI())}, nil
-}
-
-func keyRefused(err error) error {
-	return fmt.Errorf("the engine's key file is refused (%w); the agent's status tool shows KEY_ERROR", err)
 }
 
 // printConnectOnly prints a connect-only code's result: the connect link
 // and the fingerprint, never a laptop command, or, over the link budget,
 // the code to paste at the connect page.
-func printConnectOnly(c *cli.IO, res RemoteInitResult, expires time.Time) error {
+func printConnectOnly(c *cli.IO, res setup.RemoteInitResult, expires time.Time) error {
 	until := expires.UTC().Format("2006-01-02 15:04 UTC")
 	if res.ConnectURL == "" {
 		_, err := fmt.Fprintf(c.Stdout, "Setup code for %s (%s), for the connect page only, valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",

@@ -11,7 +11,7 @@ import (
 // the CLI.
 func runInit(c *cli.IO, h initHost, args []string) int {
 	if setupcli.IsRemote(args) {
-		return runInitRemote(c, h, args)
+		return setupcli.RunRemote(c, h, args)
 	}
 	return setupcli.RunLocal(c, h, args)
 }
@@ -20,16 +20,4 @@ func runInit(c *cli.IO, h initHost, args []string) int {
 type initHost interface {
 	setupcli.Host
 	setupcli.LocalHost
-}
-
-// runInitRemote: basalt init --remote.
-func runInitRemote(c *cli.IO, h setupcli.Host, args []string) int {
-	res, err := setupcli.InitRemote(c, h, args)
-	if err != nil {
-		return c.Fail(err)
-	}
-	if err := setupcli.PrintRemoteResult(c, res); err != nil {
-		return c.Fail(err)
-	}
-	return cli.ExitOK
 }

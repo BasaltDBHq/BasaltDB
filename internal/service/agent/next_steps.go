@@ -100,7 +100,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f guidance.Failure) ([
 		person = s.permissionDeniedSteps(b, te, f)
 	case guidance.CodeNotFound:
 		if f.Tool == guidance.ToolDescribe {
-			person = s.describe.DescribeNotFoundSteps(b, f)
+			person = s.agent.DescribeNotFoundSteps(b, f)
 			break
 		}
 		person = notFoundSteps(b, te, f)
@@ -373,11 +373,11 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 	return ""
 }
 
-// approvalLinkError is the APPROVAL_INVALID answer for an approval that
+// ApprovalLinkError is the APPROVAL_INVALID answer for an approval that
 // needs the person back at its page: not signed yet, a signature the
 // database refused, or a passkey it does not accept. The link in its message
 // follows the link budget like the hold's; no new short link is issued here.
-func (s *Service) approvalLinkError(te *toolresult.ToolError, n linksvc.HeldAnswer) *toolresult.ToolError {
+func (s *Service) ApprovalLinkError(te *toolresult.ToolError, n linksvc.HeldAnswer) *toolresult.ToolError {
 	if n.Reason == linksvc.ReasonRequestTooLarge {
 		// No link can carry it: the same message and steps as the hold's.
 		te.PersonMessage, te.NextSteps = n.PersonMessage, n.Steps

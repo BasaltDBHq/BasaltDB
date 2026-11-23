@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+
 	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
 
 	"github.com/basaltdbhq/basaltdb/internal/ledger/out/pinfile"
@@ -662,7 +664,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.relayLinks != nil {
 		env.relayLinks.Add(a.Name, secrets, env.dropLink)
 	}
-	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+	blind := agentsvc.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
 	var deliverer linksvc.LinkDeliverer

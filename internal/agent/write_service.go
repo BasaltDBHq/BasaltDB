@@ -25,6 +25,13 @@ const (
 	maxReasonBytes = 2000
 )
 
+// statementChecker checks a statement against the engine's SQL policy for
+// a tool, and returns it as the store will run it, or an
+// *action.RefusalError.
+type statementChecker interface {
+	Check(sql string, tool action.Tool) (action.Statement, error)
+}
+
 // WriteStore is the part of the agent's store the query and write tools
 // run on.
 type WriteStore interface {
@@ -66,7 +73,7 @@ type WriteOutcome struct {
 
 // Write checks sql against the policy and runs it through the guard with
 // the intent. A refused or failed write is recorded as a REFUSED change.
-func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, error) {
+func (wc *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error) {
 	if p.ApprovalID != uuid.Nil {
 		return wc.applyApproved(ctx, p)
 	}
@@ -76,7 +83,7 @@ func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, er
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.deps.Store.Check(p.SQL, action.ToolWrite)
+	stmt, err := wc.write.Store.Check(p.SQL, action.ToolWrite)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
@@ -84,7 +91,7 @@ func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, er
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := wc.deps.Store.Write(ctx, in, op, p.SQL, p.Params)
+	res, err := wc.write.Store.Write(ctx, in, op, p.SQL, p.Params)
 	if errors.Is(err, action.ErrApprovalRequired) {
 		id, expires, err := wc.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil {
@@ -116,7 +123,7 @@ func (wc *writeCase) Write(ctx context.Context, p WriteParams) (WriteOutcome, er
 }
 
 // writeRun finds the named run, or starts a one-write run.
-func (wc *writeCase) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
+func (wc *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
 		return ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
 	}

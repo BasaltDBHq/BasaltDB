@@ -168,14 +168,17 @@ func describeService(t *testing.T, cat agentsvc.Catalog, classes fakeClasses, op
 	return NewService(d)
 }
 
-// kindStore is a store of one kind.
-type kindStore action.StoreKind
+// kindStore is a store of one kind: describe reads nothing else of it.
+type kindStore struct {
+	agentsvc.Store
+	kind action.StoreKind
+}
 
-func (k kindStore) Kind() action.StoreKind { return action.StoreKind(k) }
+func (k kindStore) Kind() action.StoreKind { return k.kind }
 
 // describeUseCase is the describe use case over cat, on the commands cmds.
 func describeUseCase(cmds guidance.Commands, cat agentsvc.Catalog) *agentsvc.Service {
-	return agentsvc.New(agentsvc.Core{Store: kindStore(action.StorePostgres), Commands: cmds}, &agentsvc.DescribeDeps{Catalog: cat, Classes: fakeClasses{}},
+	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Commands: cmds}, &agentsvc.DescribeDeps{Catalog: cat, Classes: fakeClasses{}}, &agentsvc.WriteDeps{},
 		func() *guidance.UpdateInfo { return nil })
 }
 

@@ -116,11 +116,11 @@ func registerInTx(ctx context.Context, tx pgx.Tx, pk *Passkey) (*RegisteredPassk
 	return pk.registered(), nil
 }
 
-// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction,
-// when the database needs the person's passkey and none was given: the
-// setup rolls back.
-func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
-	need, err := setuprun.PasskeyNeeded(ctx, store, pgquerier.Neutralize(tx), add)
+// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction
+// before its script runs, when the database needs the person's passkey and
+// none was given: nothing changed.
+func requirePasskey(ctx context.Context, tx setuprun.Querier, add bool) error {
+	need, err := setuprun.PasskeyNeeded(ctx, store, tx, add)
 	if err != nil {
 		return err
 	}

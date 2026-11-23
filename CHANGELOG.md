@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `pkg/setup.Run` without a passkey refuses `PASSKEY_REQUIRED` before the setup's script runs, as the local setup page does. Before, it ran the script and the labels, refused, and rolled them back. The code and message are unchanged.
 - `pkg/setup`'s `Check` and `Run` refuse a database with an older BasaltDB install this version cannot use with the new code `GUARD_UNUSABLE` (`setup.CodeGuardUnusable`), as the local setup page does, in place of `SETUP_FAILED`. The message is unchanged and links to the removal steps.
 - `pkg/setup.Run` refuses `Answers.AllRows` that names a table twice with `ANSWERS_INVALID`, as the local setup page refuses a question answered twice. Before, it ignored the repeat. The portal connect service already refused repeated answers before it called `Run`.
 - `pkg/setup.Run` (the portal connect page) refuses a column label whose column name is empty, longer than 63 bytes or holds a control character with `ANSWERS_INVALID` before it reads the database, as the local setup page does. Before, it refused only an empty name, and only after the read.

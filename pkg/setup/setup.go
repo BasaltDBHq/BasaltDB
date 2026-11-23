@@ -477,7 +477,7 @@ type RunInput struct {
 	// PASSKEY_NOT_REGISTERED. Set Passkey or AskPasskey, not both.
 	//
 	// With neither set and a passkey needed, Run refuses PASSKEY_REQUIRED
-	// in the transaction, which rolls back: nothing changes.
+	// in the transaction, before the setup's script runs: nothing changes.
 	AskPasskey func(ctx context.Context) (Passkey, error)
 	// AddPasskey asks for the person's passkey even when the database has
 	// an active portal passkey.
@@ -648,7 +648,17 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	// the grants name them.
 	// A table dropped between this read and the grants still fails the
 	// grant itself: SETUP_FAILED, nothing changed.
-	first := func(ctx context.Context, q setuprun.Querier) error { return s.RecheckTables(ctx, q) }
+	first := func(ctx context.Context, q setuprun.Querier) error {
+		if err := s.RecheckTables(ctx, q); err != nil {
+			return err
+		}
+		if in.Passkey == nil && in.AskPasskey == nil {
+			// Refused before the script runs, not after it: nothing was
+			// changed to roll back.
+			return requirePasskey(ctx, q, in.AddPasskey)
+		}
+		return nil
+	}
 	inTx := func(ctx context.Context, q setuprun.Querier) error {
 		tx := pgxTx(q)
 		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
@@ -661,15 +671,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 				return err
 			}
 		}
-		switch {
-		case in.Passkey != nil:
+		if in.Passkey != nil {
 			var err error
 			registered, err = registerInTx(ctx, tx, in.Passkey)
 			return err
-		case in.AskPasskey == nil:
-			return requirePasskey(ctx, tx, in.AddPasskey)
 		}
-		return nil // the laptop asks after the commit
+		return nil // none needed (checked first), or the laptop asks after the commit
 	}
 	if err := setuprun.ApplySetupWith(ctx, store, adminTx(conn), script, first, inTx); err != nil {
 		return Result{}, asError(setuprun.Refused(ctx, store, pgquerier.Neutralize(conn), s.P, err))

@@ -95,7 +95,7 @@ func (u appUpdateHost) DiscoverConfig(system string) (string, error) {
 }
 
 func (u appUpdateHost) LoadEngineConfigAs(euid int, path string) (config.Config, error) {
-	return loadEngineConfigAs(appShell{}, euid, path)
+	return cli.LoadEngineConfigAs(appShell{}, euid, path)
 }
 
 // updateNotice is the newer-release notice as the CLI prints it: its line

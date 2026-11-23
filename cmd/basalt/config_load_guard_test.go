@@ -19,17 +19,18 @@ const configImport = "github.com/basaltdbhq/basaltdb/internal/config"
 // config from a path.
 var configLoaders = map[string]bool{"Load": true, "LoadOpen": true, "LoadNoFollow": true}
 
-// plainConfigLoads are the only places in this package allowed to call a
-// config loader directly. Every other read goes through loadEngineConfig
-// (or loadEngineConfigAs), the hardened read as root. Each entry is
-// file:function:loader, with the reason it is safe.
+// plainConfigLoads are the only places in this package and the CLI shell
+// (internal/platform/cli) allowed to call a config loader directly. Every
+// other read goes through cli.LoadEngineConfig (or cli.LoadEngineConfigAs),
+// the hardened read as root. Each entry is file:function:loader, with the
+// reason it is safe.
 var plainConfigLoads = map[string]string{
 	// The non-root branch: euid is not 0.
-	"personfiles.go:loadEngineConfigAs:Load": "only when not root",
-	// The hardened read itself: OpenTrustedFile and checkConfigFile.
-	"personfiles_unix.go:loadConfigAsRoot:LoadOpen": "the hardened read",
+	shellDir + "config.go:LoadEngineConfigAs:Load": "only when not root",
+	// The hardened read itself: OpenTrustedFile and CheckConfigFile.
+	shellDir + "config_unix.go:loadConfigAsRoot:LoadOpen": "the hardened read",
 	// No root on that platform.
-	"personfiles_other.go:loadConfigAsRoot:Load": "platform without root",
+	shellDir + "config_other.go:loadConfigAsRoot:Load": "platform without root",
 	// basalt mcp runs as the agent's OS user.
 	"engine.go:engineDown:Load": "basalt mcp, as the agent's user",
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
@@ -98,13 +99,21 @@ func configLoadsIn(name string, f *ast.File) []string {
 	return found
 }
 
+// shellDir is the CLI shell's source folder, from this package, as the
+// entries in plainConfigLoads name it.
+const shellDir = "../../internal/platform/cli/"
+
 // No root code path reads the engine config with a config loader directly:
-// a new call outside plainConfigLoads fails here, so it uses
-// loadEngineConfig.
+// a new call outside plainConfigLoads, in this package or the CLI shell,
+// fails here, so it uses cli.LoadEngineConfig.
 func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 	t.Parallel()
 	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
+	shell, err := filepath.Glob(shellDir + "*.go")
+	require.NoError(t, err)
+	require.NotEmpty(t, shell, "the CLI shell's sources are scanned too")
+	files = append(files, shell...)
 	fset := token.NewFileSet()
 	var found []string
 	for _, name := range files {
@@ -124,7 +133,7 @@ func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 			stray = append(stray, at)
 		}
 	}
-	require.Empty(t, stray, "read the engine config with loadEngineConfig (the hardened read as root), not a config loader")
+	require.Empty(t, stray, "read the engine config with cli.LoadEngineConfig (the hardened read as root), not a config loader")
 	for at := range plainConfigLoads {
 		require.Contains(t, found, at, "stale entry in plainConfigLoads")
 	}

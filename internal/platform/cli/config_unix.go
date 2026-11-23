@@ -1,13 +1,12 @@
 //go:build unix
 
-package main
+package cli
 
 import (
 	"os"
 	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 )
 
 // loadConfigAsRoot reads the engine config for a root person CLI (sudo
@@ -23,12 +22,12 @@ import (
 // others. trusted is that user: the
 // credential the config names must belong to it (readCredentialAsRoot),
 // so a config the engine's user wrote cannot name a file only root reads.
-func loadConfigAsRoot(sh cli.Host, path string) (cfg config.Config, trusted int, err error) {
+func loadConfigAsRoot(sh Host, path string) (cfg config.Config, trusted int, err error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return config.Config{}, 0, err
 	}
-	trusted, err = cli.DirOwner(abs)
+	trusted, err = DirOwner(abs)
 	if err != nil {
 		return config.Config{}, 0, err
 	}
@@ -37,7 +36,7 @@ func loadConfigAsRoot(sh cli.Host, path string) (cfg config.Config, trusted int,
 		if err != nil {
 			return nil, err
 		}
-		if err := cli.CheckConfigFile(f, trusted); err != nil {
+		if err := CheckConfigFile(f, trusted); err != nil {
 			f.Close()
 			return nil, err
 		}

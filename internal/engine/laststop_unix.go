@@ -15,8 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
-// maxLastStopBytes bounds what is read of last-stop.json; maxReasonRunes what
-// is shown.
+// maxLastStopBytes bounds what is read of it; maxReasonRunes what is shown.
 const (
 	maxLastStopBytes = 4096
 	maxReasonRunes   = 300

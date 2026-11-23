@@ -133,7 +133,7 @@ var errDevBuild = errors.New("a build with no release number gets no update noti
 // function to call after it ran: it prints the notice. It does nothing for
 // the commands in noUpdateLine and for --json (whose output carries the
 // notice as a field where the command has one).
-func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv func(string) string) func() {
+func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv func(string) string) func() {
 	nothing := func() {}
 	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || cli.WantsJSON(args) {
 		return nothing
@@ -156,7 +156,7 @@ func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv fun
 		case <-time.After(refreshGrace):
 		}
 		exe, _ := os.Executable()
-		printUpdateLine(std.err, getenv, noticeOf(ck.Cached(), exe))
+		printUpdateLine(std.Err, getenv, noticeOf(ck.Cached(), exe))
 	}
 }
 

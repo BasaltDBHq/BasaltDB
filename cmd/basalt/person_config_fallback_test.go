@@ -28,7 +28,7 @@ func TestEngineFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.NoError(t, os.WriteFile(user, []byte(`not json`), 0o600))
 	run := func(args ...string) string {
 		var errOut bytes.Buffer
-		code := runEngineOn(context.Background(), args, stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &errOut}, h)
+		code := runEngineOn(context.Background(), args, cli.Stdio{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &errOut}, h)
 		require.NotEqual(t, cli.ExitOK, code)
 		return errOut.String()
 	}
@@ -54,7 +54,7 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	run := func(args ...string) string {
 		var out, errOut bytes.Buffer
 		in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}` + "\n"
-		code := runMCPOn(context.Background(), args, stdio{in: strings.NewReader(in), out: &out, err: &errOut}, h, appMCPHost{})
+		code := runMCPOn(context.Background(), args, cli.Stdio{In: strings.NewReader(in), Out: &out, Err: &errOut}, h, appMCPHost{})
 		require.Equal(t, cli.ExitOK, code, errOut.String())
 		return out.String()
 	}

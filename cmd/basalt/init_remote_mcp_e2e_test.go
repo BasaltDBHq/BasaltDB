@@ -99,7 +99,7 @@ func requireMCPCommandReachesEngine(t *testing.T, mcpCommand []string, h host, s
 	began := time.Now()
 	go func() {
 		// argv is the printed command without the program and "mcp" subcommand.
-		exited <- runMCPOn(ctx, mcpCommand[2:], stdio{in: in, out: outW, err: &errBuf}, h, appMCPHost{})
+		exited <- runMCPOn(ctx, mcpCommand[2:], cli.Stdio{In: in, Out: outW, Err: &errBuf}, h, appMCPHost{})
 		_ = outW.Close()
 	}()
 	_, err := fmt.Fprintf(inW, "%s\n%s\n",

@@ -28,7 +28,7 @@ func TestAPanicInACommandIsSavedAndScrubbed(t *testing.T) {
 	t.Setenv("PGPASSWORD", "envsecretvalue99")
 
 	var errw bytes.Buffer
-	code := guarded([]string{"init", "--agent", "bot"}, stdio{err: &errw}, func() int {
+	code := guarded([]string{"init", "--agent", "bot"}, cli.Stdio{Err: &errw}, func() int {
 		panic("connect " + leakedConn + " envsecretvalue99 " + panicSecret)
 	})
 	require.Equal(t, cli.ExitError, code)

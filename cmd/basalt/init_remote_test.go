@@ -85,7 +85,7 @@ func withDB(t *testing.T) remoteEnv {
 
 // io is the cliIO of a run in e, writing to stdout and stderr.
 func (e remoteEnv) io(stdout, stderr *bytes.Buffer) *cliIO {
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: stdout, err: stderr},
+	c := newIO(context.Background(), cli.Stdio{In: strings.NewReader(""), Out: stdout, Err: stderr},
 		func(k string) string {
 			if k == envAdminURL {
 				return "postgres://admin:" + adminSecret + "@db.example.com/postgres"

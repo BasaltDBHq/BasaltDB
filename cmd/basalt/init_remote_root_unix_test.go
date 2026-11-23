@@ -121,7 +121,7 @@ func TestEngineAsRootUsesTheHardenedConfigRead(t *testing.T) {
 		h.euid = euid
 		var stdout, stderr bytes.Buffer
 		code := runEngineOn(context.Background(), []string{"--config", path},
-			stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, h)
+			cli.Stdio{In: strings.NewReader(""), Out: &stdout, Err: &stderr}, h)
 		return code, stderr.String()
 	}
 	t.Run("symlink", func(t *testing.T) {

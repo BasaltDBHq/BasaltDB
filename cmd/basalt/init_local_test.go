@@ -45,7 +45,7 @@ func localInitWithin(t *testing.T, limit time.Duration, h *fakeHost, args ...str
 		}
 		return ""
 	}
-	c := newIO(ctx, stdio{in: strings.NewReader("y\ny\ny\n"), out: &stdout, err: &stderr}, getenv)
+	c := newIO(ctx, cli.Stdio{In: strings.NewReader("y\ny\ny\n"), Out: &stdout, Err: &stderr}, getenv)
 	c.goos, c.host, c.interactive = "linux", h, true
 	code := runInit(c, appSetupHost{}, args)
 	return result{code, stdout.String(), stderr.String()}, read
@@ -405,7 +405,7 @@ func TestPlainInitNeverReadsTheAdminEnv(t *testing.T) {
 			}
 			return ""
 		}
-		c := newIO(ctx, stdio{in: strings.NewReader(leakedAdmin + "\n"), out: &stdout, err: &stderr}, getenv)
+		c := newIO(ctx, cli.Stdio{In: strings.NewReader(leakedAdmin + "\n"), Out: &stdout, Err: &stderr}, getenv)
 		c.goos, c.host, c.interactive = "linux", newFakeHost(t), tc.interactive
 		code := runInit(c, appSetupHost{}, []string{"--demo"})
 		cancel()

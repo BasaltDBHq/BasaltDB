@@ -38,7 +38,7 @@ func TestServiceInstallRefusesKeepCredentialWithStdin(t *testing.T) {
 	code := runService(context.Background(), []string{
 		"install", "--agent", "bot", "--os-user", "x",
 		"--keep-credential", "--credential-stdin", "--dry-run",
-	}, stdio{in: strings.NewReader(""), out: &out, err: &errb})
+	}, cli.Stdio{In: strings.NewReader(""), Out: &out, Err: &errb})
 	require.Equal(t, cli.ExitUsage, code)
 }
 

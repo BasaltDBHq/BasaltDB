@@ -174,7 +174,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 	defer release()
 	var stderr bytes.Buffer
 
-	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
+	code := runSupervise(context.Background(), cfgPath, startedByHand, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
 
 	require.Equal(t, cli.ExitOK, code, stderr.String())
 	require.Contains(t, stderr.String(), "another basalt engine --supervise runs")
@@ -183,7 +183,7 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 func TestStartedByRefusesUnknownValue(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
-	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
+	code := runEngineOn(context.Background(), []string{"--started-by", "cron"}, cli.Stdio{In: bytes.NewReader(nil), Out: &bytes.Buffer{}, Err: &stderr}, osHost{})
 	require.Equal(t, cli.ExitUsage, code)
 }
 
@@ -288,7 +288,7 @@ func TestChildStarterResolvesThePathAtEachRestart(t *testing.T) {
 	bin := filepath.Join(dir, "basalt")
 	trace := filepath.Join(dir, "trace")
 	writeSh(t, bin, "echo first >> '"+trace+"'; exit 1")
-	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, stdio{out: io.Discard, err: io.Discard}, slog.New(slog.DiscardHandler))
+	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 
 	wait, err := start(context.Background(), startedByMCP)
 	require.NoError(t, err)
@@ -308,7 +308,7 @@ func TestChildStarterStopsWhenThePathIsGone(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "basalt")
 	writeSh(t, bin, "exit 1")
-	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, stdio{out: io.Discard, err: io.Discard}, slog.New(slog.DiscardHandler))
+	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, cli.Stdio{Out: io.Discard, Err: io.Discard}, slog.New(slog.DiscardHandler))
 	wait, err := start(context.Background(), startedByMCP)
 	require.NoError(t, err)
 	require.Error(t, wait())

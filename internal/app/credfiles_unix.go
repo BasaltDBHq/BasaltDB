@@ -35,9 +35,9 @@ type rootFiles struct {
 }
 
 // openRootFiles opens the files of agent for a root engine: credFile must
-// be the computed agents/<agent>.url (rootCredentialPath).
+// be the computed agents/<agent>.url (handoff.RootCredentialPath).
 func openRootFiles(configPath, agent, credFile string) (agentFiles, error) {
-	path, err := rootCredentialPath(configPath, agent, credFile)
+	path, err := handoff.RootCredentialPath(configPath, agent, credFile)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func ownerOf(path string) (int, error) {
 	return int(st.Uid), nil
 }
 
-func (r *rootFiles) readCredential() (string, error) {
+func (r *rootFiles) ReadCredential() (string, error) {
 	dsn, _, err := r.read(r.name, 0)
 	return dsn, err
 }
@@ -131,7 +131,7 @@ func (r *rootFiles) ClearSetup(agent, id string) (bool, error) {
 	return config.ClearSetupAt(r.configDir, r.configName, func(f *os.File) error { return config.CheckTrustedConfig(f, r.trusted) }, owner, agent, id)
 }
 
-func (r *rootFiles) close() {
+func (r *rootFiles) Close() {
 	_ = r.agentsDir.Close()
 	_ = r.configDir.Close()
 }

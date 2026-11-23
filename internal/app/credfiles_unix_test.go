@@ -78,15 +78,15 @@ func TestRootEngineUsesOnlyTheComputedCredentialPath(t *testing.T) {
 	files, err := agentFilesFor(agentEnv{configPath: cfgPath, asRoot: true},
 		config.Agent{Name: "bot", Store: config.PostgresStore(filepath.Join(filepath.Dir(credFile), "sub", "..", "bot.url"))})
 	require.NoError(t, err)
-	defer files.close()
-	dsn, err := files.readCredential()
+	defer files.Close()
+	dsn, err := files.ReadCredential()
 	require.NoError(t, err)
 	require.Equal(t, "postgres://bt_agent_bot:old@db:5432/app", dsn)
 
 	// Not as root, the config's path as it is.
 	files, err = agentFilesFor(agentEnv{configPath: cfgPath}, config.Agent{Name: "bot", Store: config.PostgresStore(elsewhere)})
 	require.NoError(t, err)
-	_, ok := files.(pathFiles)
+	_, ok := files.(handoff.PathFiles)
 	require.True(t, ok)
 }
 
@@ -116,7 +116,7 @@ func TestRootEngineReachesItsFilesThroughTheOpenedDirectories(t *testing.T) {
 
 	files, err := openRootFiles(cfgPath, "bot", credFile)
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
 	swap()
 
@@ -180,7 +180,7 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 	}
 	adapters := map[string]func(t *testing.T, cfgPath, credFile string) agentFiles{
 		"path": func(_ *testing.T, cfgPath, credFile string) agentFiles {
-			return pathFiles{configPath: cfgPath, credFile: credFile}
+			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
 		"root": func(t *testing.T, cfgPath, credFile string) agentFiles {
 			t.Helper()
@@ -196,7 +196,7 @@ func TestTheEngineDoesNotPromoteAPendingCredentialChangedAfterItsLogin(t *testin
 				id := uuid.Must(uuid.NewV7())
 				cfgPath, credFile := rootLayout(t, id)
 				files := open(t, cfgPath, credFile)
-				defer files.close()
+				defer files.Close()
 				require.NoError(t, config.WriteFile(credFile+handoff.PendingSuffix, []byte(pending)))
 				pw := &recordingPassword{}
 				f := &handoff.Finisher{
@@ -236,7 +236,7 @@ func TestTheEngineRefusesAPendingCredentialOver4096Bytes(t *testing.T) {
 	require.Len(t, exact, 4096)
 	adapters := map[string]func(t *testing.T, cfgPath, credFile string) agentFiles{
 		"path": func(_ *testing.T, cfgPath, credFile string) agentFiles {
-			return pathFiles{configPath: cfgPath, credFile: credFile}
+			return handoff.PathFiles{ConfigPath: cfgPath, CredFile: credFile}
 		},
 		"root": func(t *testing.T, cfgPath, credFile string) agentFiles {
 			t.Helper()
@@ -251,7 +251,7 @@ func TestTheEngineRefusesAPendingCredentialOver4096Bytes(t *testing.T) {
 			id := uuid.Must(uuid.NewV7())
 			cfgPath, credFile := rootLayout(t, id)
 			files := open(t, cfgPath, credFile)
-			defer files.close()
+			defer files.Close()
 			logins := 0
 			f := &handoff.Finisher{
 				ConfigPath: cfgPath, Agent: "bot", CredFile: credFile, Files: files,
@@ -285,7 +285,7 @@ func TestRootEngineClearsTheSetupInTheOpenedConfigDirectory(t *testing.T) {
 	cfgPath, credFile := rootLayout(t, id)
 	files, err := openRootFiles(cfgPath, "bot", credFile)
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	dir := filepath.Dir(cfgPath)
 	elsewhere := filepath.Join(filepath.Dir(dir), "elsewhere")
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
@@ -312,7 +312,7 @@ func TestRootEngineChecksTheOwnersCredential(t *testing.T) {
 	cfgPath, credFile := rootLayout(t, uuid.Must(uuid.NewV7()))
 	files, err := openRootFiles(cfgPath, "bot", credFile)
 	require.NoError(t, err)
-	defer files.close()
+	defer files.Close()
 	r, ok := files.(*rootFiles)
 	require.True(t, ok)
 	require.Equal(t, os.Geteuid(), r.self)
@@ -332,7 +332,7 @@ func TestRootEngineChecksTheOwnersCredential(t *testing.T) {
 			require.NoError(t, os.WriteFile(name, []byte(tc.dsn+"\n"), config.FileMode))
 		}
 		read := func() []error {
-			_, err := files.readCredential()
+			_, err := files.ReadCredential()
 			_, _, perr := files.ReadPending(4096)
 			return []error{err, perr}
 		}

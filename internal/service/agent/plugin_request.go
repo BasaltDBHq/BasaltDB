@@ -180,15 +180,15 @@ func (a requestPluginArgs) check() error {
 
 // RequestPlugin serves request_plugin. meta is the call's _meta, which
 // carries basalt mcp's upload for source.
-func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta json.RawMessage) (requestPluginResult, error) {
+func (pc *pluginCase) RequestPlugin(ctx context.Context, a requestPluginArgs, meta json.RawMessage) (requestPluginResult, error) {
 	instance := a.Instance
 	if instance == "" {
 		instance = pluginDefaultInstanceName
 	}
 	remove := a.Remove != nil && *a.Remove
-	if err := s.pluginsServed(a.ApprovalID == "" && !remove); err != nil {
-		if up, upErr := uploadOf(meta); a.Source != "" && upErr == nil && s.deps.Plugin.Requests != nil {
-			s.deps.Plugin.Requests.DropUpload(s.deps.Core.Name, uuid.MustParse(up.UploadID))
+	if err := pc.pluginsServed(a.ApprovalID == "" && !remove); err != nil {
+		if up, upErr := uploadOf(meta); a.Source != "" && upErr == nil && pc.deps.Requests != nil {
+			pc.deps.Requests.DropUpload(pc.core.Name, uuid.MustParse(up.UploadID))
 		}
 		return requestPluginResult{}, err
 	}
@@ -197,11 +197,11 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 		if a.WaitForApproval != nil {
 			wait = time.Duration(*a.WaitForApproval) * time.Second
 		}
-		return s.waitPlugin(ctx, uuid.MustParse(a.ApprovalID), wait)
+		return pc.waitPlugin(ctx, uuid.MustParse(a.ApprovalID), wait)
 	}
 	if remove {
-		if err := s.deps.Plugin.Requests.RemovePlugin(ctx, s.deps.Core.Name, a.Name, instance); err != nil {
-			return requestPluginResult{}, s.pluginError(err)
+		if err := pc.deps.Requests.RemovePlugin(ctx, pc.core.Name, a.Name, instance); err != nil {
+			return requestPluginResult{}, pc.pluginError(err)
 		}
 		return pluginDone(PluginStateRemoved, a.Name, instance,
 			fmt.Sprintf("The plugin %s/%s is removed: it stopped, and adding it again needs your approval.", a.Name, instance),
@@ -216,9 +216,9 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 		id := uuid.MustParse(up.UploadID)
 		open.UploadID, open.Name, open.Executables = &id, up.Name, up.Executables
 	}
-	opened, err := s.deps.Plugin.Requests.OpenPlugin(ctx, s.deps.Core.Name, open)
+	opened, err := pc.deps.Requests.OpenPlugin(ctx, pc.core.Name, open)
 	if err != nil {
-		return requestPluginResult{}, s.pluginError(err)
+		return requestPluginResult{}, pc.pluginError(err)
 	}
 	if opened.Narrowed {
 		res, err := pluginDone(PluginStateNarrowed, opened.Name, opened.Instance,
@@ -228,12 +228,12 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 		res.Version, res.Agents = opened.Version, opened.Agents
 		return res, err
 	}
-	return s.pluginOpened(ctx, opened)
+	return pc.pluginOpened(ctx, opened)
 }
 
 // PluginUploadsServed refuses the plugin upload where request_plugin's
 // install would be refused (pluginsServed), before anything is written.
-func (s *Service) PluginUploadsServed() error { return s.pluginsServed(true) }
+func (pc *pluginCase) PluginUploadsServed() error { return pc.pluginsServed(true) }
 
 // pluginsServed refuses request_plugin where it is not served, before
 // anything is written: an agent-operated engine that runs as a service
@@ -241,22 +241,22 @@ func (s *Service) PluginUploadsServed() error { return s.pluginsServed(true) }
 // person's own OS user, and, for a call that opens an approval, an engine
 // that has no page the person could sign on (CONTRACT.md, Plugin approval
 // through the portal).
-func (s *Service) pluginsServed(opens bool) error {
+func (pc *pluginCase) pluginsServed(opens bool) error {
 	switch {
-	case s.deps.Core.Commands.AgentOperated() && (!s.deps.Status.SameUser || s.deps.Plugin.Requests == nil):
+	case pc.core.Commands.AgentOperated() && (!pc.status.sameUser() || pc.deps.Requests == nil):
 		return pluginRefused(ReasonPluginAgentOperated,
 			"request_plugin is refused: this engine is operated by an agent and runs as a service under its own OS user, where plugin changes stay refused. Nothing was written",
 			"Plugins cannot be added or changed on this engine: an agent operates it and it runs as its own user. Nothing was changed.")
-	case s.deps.Core.Commands.AgentOperated():
-		if why := s.noPortalLink(); opens && why != "" {
+	case pc.core.Commands.AgentOperated():
+		if why := pc.noPortalLink(); opens && why != "" {
 			return noPortalLinkError("request_plugin is refused: "+why+", so there is no page to approve the plugin on. Nothing was written",
 				"Basalt cannot hand you a link to approve the plugin right now: "+why+". Nothing was changed.")
 		}
-	case s.deps.Status.SameUser || s.deps.Plugin.Requests == nil:
+	case pc.status.sameUser() || pc.deps.Requests == nil:
 		return pluginRefused(ReasonPluginSameUserMode,
 			"request_plugin is refused: this engine runs as the person's own OS user and keeps no plugins of its own. Nothing was written",
 			"This Basalt engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.")
-	case opens && s.deps.Core.PagesOrigin == "":
+	case opens && pc.core.PagesOrigin == "":
 		return pluginRefused(ReasonPluginNoLocalPages,
 			"request_plugin is refused: this engine serves no local pages, so there is no page to approve the plugin on. Nothing was written",
 			"This Basalt engine serves no approval pages on this computer, so you could not approve a plugin. Turn its local pages on first.")
@@ -267,21 +267,18 @@ func (s *Service) pluginsServed(opens bool) error {
 // portalPluginLinks reports whether a plugin approval's link is the
 // portal's: on an agent-operated engine, unless it serves its own pages
 // for development (devLocalPages).
-func (s *Service) portalPluginLinks() bool {
-	return s.deps.Core.Commands.AgentOperated() && (!s.deps.Status.DevLocalPages || s.deps.Core.PagesOrigin == "")
+func (pc *pluginCase) portalPluginLinks() bool {
+	return pc.core.Commands.AgentOperated() && (!pc.status.devLocalPages() || pc.core.PagesOrigin == "")
 }
 
 // noPortalLink is why the engine cannot hand over a plugin approval's
 // portal link now, "" when it can (or needs none). A plugin approval has
 // no long link to fall back to.
-func (s *Service) noPortalLink() string {
-	if !s.portalPluginLinks() || s.deps.Delivery.Relay.Connected() {
+func (pc *pluginCase) noPortalLink() string {
+	if !pc.portalPluginLinks() || pc.delivery.relayConnected() {
 		return ""
 	}
-	state := vaultStateOff
-	if s.deps.Status.Vault != nil {
-		state = s.deps.Status.Vault.VaultStatus().State
-	}
+	state := pc.status.vaultState()
 	switch state {
 	case vaultStateOff:
 		return "the Vault is off on this engine (vault in engine.json)"
@@ -299,14 +296,14 @@ func (s *Service) noPortalLink() string {
 // the Vault, on an agent-operated engine; else the engine's own pages. A
 // portal link the Vault did not register leaves the entry written and
 // withheld, and the name form opens a new approval later.
-func (s *Service) pluginLink(ctx context.Context, o PluginOpened) (string, error) {
-	if !s.portalPluginLinks() {
-		return s.delivery.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
+func (pc *pluginCase) pluginLink(ctx context.Context, o PluginOpened) (string, error) {
+	if !pc.portalPluginLinks() {
+		return pc.delivery.issuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
 	}
-	if link := s.delivery.relayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
+	if link := pc.delivery.relayLink(ctx, links.PluginApproval, o.ApprovalID, o.ExpiresAt); link != "" {
 		return link, nil
 	}
-	why := s.noPortalLink()
+	why := pc.noPortalLink()
 	if why == "" {
 		why = "the Vault did not register the link"
 	}
@@ -340,19 +337,19 @@ func uploadOf(meta json.RawMessage) (PluginUpload, error) {
 // pluginOpened hands over a new approval: the short link on the engine's
 // local pages, the person's message with the page's level line, and the
 // steps (CONTRACT.md, Plugin approval links).
-func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPluginResult, error) {
+func (pc *pluginCase) pluginOpened(ctx context.Context, o PluginOpened) (requestPluginResult, error) {
 	b, err := approval.ParsePluginBinding(o.BindingText)
 	if err != nil {
 		return requestPluginResult{}, err
 	}
-	link, err := s.pluginLink(ctx, o)
+	link, err := pc.pluginLink(ctx, o)
 	if err != nil {
 		return requestPluginResult{}, err
 	}
 	level := pluginLevel(b)
-	lead := fmt.Sprintf("%s asks you to approve the plugin %s %s.", s.deps.Core.Name, o.Name, o.Version)
+	lead := fmt.Sprintf("%s asks you to approve the plugin %s %s.", pc.core.Name, o.Name, o.Version)
 	if len(b.Change) > 0 {
-		lead = fmt.Sprintf("%s asks you to approve a change to the plugin %s %s.", s.deps.Core.Name, o.Name, o.Version)
+		lead = fmt.Sprintf("%s asks you to approve a change to the plugin %s %s.", pc.core.Name, o.Name, o.Version)
 	}
 	ask := "Approve it with your passkey:"
 	if level == pluginLevelUnfenced {
@@ -360,9 +357,9 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 	}
 	var lines []string
 	steps := guidance.NewSteps()
-	if ids, err := s.delivery.credentialIDs(ctx); err == nil && len(ids) == 0 {
+	if ids, err := pc.delivery.credentialIDs(ctx); err == nil && len(ids) == 0 {
 		lines = append(lines, "Nobody can approve this yet: no passkey is registered for this database.")
-		noPasskeySteps(steps, s.deps.Core.Commands)
+		noPasskeySteps(steps, pc.core.Commands)
 	}
 	lines = append(lines, lead, pluginLevelLine(level), ask, "", link, "",
 		fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", o.ExpiresAt.UTC().Format(guidance.PersonTime)))
@@ -384,24 +381,24 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 // waitPlugin is the wait form: it reads the approval about once a second
 // until the engine runs the plugin on it, it is no longer open, or wait is
 // up. It only reads.
-func (s *Service) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Duration) (requestPluginResult, error) {
-	deadline := s.deps.Core.Now().Add(wait)
+func (pc *pluginCase) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Duration) (requestPluginResult, error) {
+	deadline := pc.core.Now().Add(wait)
 	for {
-		st, err := s.deps.Plugin.Requests.PluginApproval(ctx, s.deps.Core.Name, id)
+		st, err := pc.deps.Requests.PluginApproval(ctx, pc.core.Name, id)
 		if errors.Is(err, ErrPluginNotFound) {
-			st, err = s.endedPluginApproval(ctx, id)
+			st, err = pc.endedPluginApproval(ctx, id)
 		}
 		if err != nil {
-			return requestPluginResult{}, s.pluginError(err)
+			return requestPluginResult{}, pc.pluginError(err)
 		}
 		done := st.State == PluginStateRunning || st.State == PluginStateEnded
-		if done || !s.deps.Core.Now().Add(s.deps.Delivery.Poll).Before(deadline) {
-			return s.pluginWaited(id, st, wait > 0)
+		if done || !pc.core.Now().Add(pc.delivery.pollInterval()).Before(deadline) {
+			return pc.pluginWaited(id, st, wait > 0)
 		}
 		select {
 		case <-ctx.Done():
 			return requestPluginResult{}, ctx.Err()
-		case <-time.After(s.deps.Delivery.Poll):
+		case <-time.After(pc.delivery.pollInterval()):
 		}
 	}
 }
@@ -410,11 +407,11 @@ func (s *Service) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Durati
 // plugin was removed, or a newer approval replaced it for every agent): an
 // approval the caller's role opened or that names it reads ENDED, anything
 // else is not found.
-func (s *Service) endedPluginApproval(ctx context.Context, id uuid.UUID) (PluginApprovalState, error) {
-	if s.deps.Plugin.Approvals == nil {
+func (pc *pluginCase) endedPluginApproval(ctx context.Context, id uuid.UUID) (PluginApprovalState, error) {
+	if pc.deps.Approvals == nil {
 		return PluginApprovalState{}, ErrPluginNotFound
 	}
-	r, ok, err := s.deps.Plugin.Approvals.ReadPluginApproval(ctx, id)
+	r, ok, err := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 	switch {
 	case err != nil:
 		return PluginApprovalState{}, err
@@ -425,7 +422,7 @@ func (s *Service) endedPluginApproval(ctx context.Context, id uuid.UUID) (Plugin
 }
 
 // pluginWaited is the wait form's answer for st.
-func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool) (requestPluginResult, error) {
+func (pc *pluginCase) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool) (requestPluginResult, error) {
 	entry := st.Name + "/" + st.Instance
 	again := map[string]any{"name": st.Name, "instance": st.Instance}
 	steps := guidance.NewSteps()
@@ -479,7 +476,7 @@ func pluginDone(state, name, instance, msg, text string) (requestPluginResult, e
 
 // pluginError maps the engine's answer to the tool's error body, with the
 // catalog's steps for each PLUGIN_REFUSED reason.
-func (s *Service) pluginError(err error) error {
+func (pc *pluginCase) pluginError(err error) error {
 	var r *PluginRefusedError
 	switch {
 	case errors.Is(err, ErrPluginNotFound):

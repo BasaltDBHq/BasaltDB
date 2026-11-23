@@ -290,6 +290,8 @@ type Service struct {
 	revert *revertCase
 	// write is the query and write use case.
 	write *writeCase
+	// plugin is the plugin use case.
+	plugin *pluginCase
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -358,6 +360,7 @@ func (s *Service) wire() {
 	s.revert = newRevertCase(&s.deps.Core, &s.deps.Revert, s.delivery, s.describe, s)
 	s.approval = newApprovalCase(&s.deps.Core, &s.deps.Approval, s.delivery, s.revert, liveWrites{&s.deps.Write}, s)
 	s.delivery.approvals = s.approval
+	s.plugin = newPluginCase(&s.deps.Core, &s.deps.Plugin, s.delivery, s, s)
 	s.write = newWriteCase(&s.deps.Core, &s.deps.Write, s.delivery, s.approval, s, s)
 }
 

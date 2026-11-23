@@ -321,7 +321,7 @@ func TestRequestPluginEngineAnswers(t *testing.T) {
 func pluginResultCases() map[string]resultCase {
 	state := func(st string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-			out, err := s.pluginWaited(uuid.MustParse(casePluginApproval), PluginApprovalState{
+			out, err := s.plugin.pluginWaited(uuid.MustParse(casePluginApproval), PluginApprovalState{
 				Name: "local-ner", Instance: "default", Agents: []string{"bot"}, State: st, ExpiresAt: s.deps.Core.Now().Add(time.Hour),
 			}, true)
 			require.NoError(t, err)

@@ -161,10 +161,10 @@ func (s *starter) record(err error) error {
 // that engine is gone).
 func (s *starter) start(ctx context.Context) error {
 	// An update drops empty folders and resets modes; these are ours.
-	if err := os.MkdirAll(s.cfg.SocketDir, privateDirMode); err != nil {
+	if err := os.MkdirAll(s.cfg.SocketDir, engine.PrivateDirMode); err != nil {
 		return s.record(err)
 	}
-	if err := os.MkdirAll(s.stateDir(), privateDirMode); err != nil {
+	if err := os.MkdirAll(s.stateDir(), engine.PrivateDirMode); err != nil {
 		return s.record(err)
 	}
 	release, err := lockStart(filepath.Join(s.cfg.SocketDir, startLockName))

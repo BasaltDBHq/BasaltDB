@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 
 	"github.com/google/uuid"
@@ -297,7 +298,7 @@ func resultCases() map[string]resultCase {
 		resultKey("describe", "OVERVIEW_LARGE"): {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				b := NewSteps()
+				b := guidance.NewSteps()
 				overviewLargeSteps(b, []SchemaCount{{Schema: "app", Tables: 40}, {Schema: "billing", Tables: 12}})
 				steps, err := b.Build()
 				require.NoError(t, err)
@@ -307,7 +308,7 @@ func resultCases() map[string]resultCase {
 		resultKey("describe", "NOT_GRANTED"): {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				b := NewSteps()
+				b := guidance.NewSteps()
 				person := s.notGrantedSteps(b, 3)
 				steps, err := b.Build()
 				require.NoError(t, err)
@@ -430,11 +431,11 @@ func TestApplyingStepsListPendingLinesWhenThePageHasNone(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
 	_, _, steps := planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomeRestored, 1, 2))
-	require.Equal(t, toolRevertPlan, steps[0].Tool)
+	require.Equal(t, guidance.ToolRevertPlan, steps[0].Tool)
 	require.Equal(t, true, steps[0].Arguments["pending"])
 
 	_, _, steps = planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(guardmodel.OutcomePending, 5, 6))
-	require.Equal(t, toolApplyRevertBatch, steps[0].Tool)
+	require.Equal(t, guidance.ToolApplyRevertBatch, steps[0].Tool)
 	require.Equal(t, []int{5, 6}, steps[0].Arguments["lines"])
 }
 

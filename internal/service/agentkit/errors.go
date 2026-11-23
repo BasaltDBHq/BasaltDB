@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 
@@ -123,13 +124,13 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 	case errors.Is(err, budget.ErrSizeLimit):
 		return SizeLimitError()
 	case errors.As(err, &se):
-		reason := ReasonSetupPending
+		reason := guidance.ReasonSetupPending
 		if se.Expired {
-			reason = ReasonSetupExpired
+			reason = guidance.ReasonSetupExpired
 		}
 		return &toolresult.ToolError{Code: CodeUnavailable, Reason: reason, Message: se.Error()}
 	case errors.As(err, &dn):
-		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseNotConfirmed, Message: dn.Error()}
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonDatabaseNotConfirmed, Message: dn.Error()}
 	case errors.As(err, &ae):
 		return &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
 	case Sentinel(err, m.InvalidParams), Sentinel(err, m.InvalidIntent):
@@ -137,7 +138,7 @@ func (m ErrorMap) ToolError(err error) *toolresult.ToolError {
 	case errors.As(err, &pe):
 		return &toolresult.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, SQLState: pe.SQLState}
 	case errors.Is(err, action.ErrUnavailable), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		return &toolresult.ToolError{Code: CodeUnavailable, Reason: ReasonDatabaseUnreachable, Message: "the database cannot be reached"}
+		return &toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonDatabaseUnreachable, Message: "the database cannot be reached"}
 	}
 	return &toolresult.ToolError{Code: CodeInternal, Message: "internal engine error"}
 }

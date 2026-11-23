@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -803,8 +804,8 @@ func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
 	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", testManager())
 	require.NoError(t, err)
 	s := &Service{deps: Deps{Core: CoreDeps{Commands: cmds}}}
-	msg := s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
+	msg := s.describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	require.Contains(t, msg, "another database needs its own agent")
 	require.NotContains(t, msg, "basalt ", "the person runs no command")
-	require.NoError(t, CheckPersonMessage(msg))
+	require.NoError(t, guidance.CheckPersonMessage(msg))
 }

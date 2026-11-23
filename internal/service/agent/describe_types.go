@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
 	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
@@ -130,7 +131,7 @@ type WritePolicy struct {
 
 // writePolicy is the one policy every guarded table has today.
 var writePolicy = WritePolicy{
-	AllowedUpTo: policyAllowedUpTo, HeldUpTo: MaxRetryRows, RefusedOver: MaxRetryRows,
+	AllowedUpTo: policyAllowedUpTo, HeldUpTo: guidance.MaxRetryRows, RefusedOver: guidance.MaxRetryRows,
 	DeleteHeld: true, CascadedRowsCounted: true,
 }
 

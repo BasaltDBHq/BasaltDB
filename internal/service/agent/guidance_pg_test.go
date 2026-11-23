@@ -13,8 +13,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // requireCatalogSteps checks an error body of tool against the catalog's
@@ -99,7 +99,7 @@ func TestRowLimitStepsNeverOfferABatchBelowAHold(t *testing.T) {
 	require.Contains(t, str(t, retry["text"]), "only on an explicit yes")
 	batch, err := retry["maxRows"].(json.Number).Int64()
 	require.NoError(t, err)
-	require.EqualValues(t, agent.MaxRetryRows, batch)
+	require.EqualValues(t, guidance.MaxRetryRows, batch)
 	var scoreSum int
 	require.NoError(t, env.d.Admin.QueryRow(context.Background(), `SELECT sum(score)::int FROM public.leads`).Scan(&scoreSum))
 

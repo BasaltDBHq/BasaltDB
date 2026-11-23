@@ -12,6 +12,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
@@ -63,36 +64,36 @@ func connectOnlyWaitingMessage(code string) string {
 	return connectOnlyWaiting
 }
 
-func connectOnlySteps(b *Steps, code, fingerprint string, budget int) (string, []toolresult.Link) {
+func connectOnlySteps(b *guidance.Steps, code, fingerprint string, budget int) (string, []toolresult.Link) {
 	if code == "" {
 		b.EndTurn("End your turn: a setup already started on the connect page may still finish.")
-		b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+		b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 		return connectOnlyExpiredHold, nil
 	}
 	if !setupCode.MatchString(code) || fingerprint == "" {
 		b.Fail(errors.New("a pending setup needs its code and fingerprint"))
 		return "", nil
 	}
-	url := ConnectLink(code, budget)
+	url := guidance.ConnectLink(code, budget)
 	lead := "This agent's setup has not run yet, or its database's address did not reach the agent."
 	if url == "" {
 		b.OpenGivenLink("Open " + connectPortal + " on your own computer or phone, paste the setup code the agent gave you, and paste your database's connection string on that page only.")
 	} else {
-		b.OpenLink(url, ConnectOnlyStepText)
+		b.OpenLink(url, guidance.ConnectOnlyStepText)
 	}
 	b.EndTurn("End your turn: the person acts on the connect page next.")
-	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+	b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 	if url == "" {
 		return lead + " Open " + connectPortal + ", paste the setup code the agent gave you, check that it shows the setup fingerprint " + fingerprint +
 			", and paste your database's connection string there only, never in this chat. If you already approved it, approve once more.", nil
 	}
-	return ConnectOnlyMessage(lead+" If you already approved it, open the same link and approve once more.", url, fingerprint)
+	return guidance.ConnectOnlyMessage(lead+" If you already approved it, open the same link and approve once more.", url, fingerprint)
 }
 
 // confirmDatabaseSteps: the agent asks the person whether db is their
 // database, ends its turn, and calls confirm_database with their answer.
 // The engine fills in setupId and database, never answer.
-func confirmDatabaseSteps(b *Steps, setupID string, db handoff.Address) string {
+func confirmDatabaseSteps(b *guidance.Steps, setupID string, db handoff.Address) string {
 	b.AskPerson("Ask the person exactly: The setup points me at " + db.Name() + ". Is that your database?")
 	b.EndTurn("End your turn: the person answers next.")
 	b.CallTool(toolConfirmDatabase, map[string]any{argSetupID: setupID, argDatabase: databaseArg(db)},
@@ -111,7 +112,7 @@ func databaseArg(db handoff.Address) map[string]any {
 }
 
 // databaseRefusedSteps: a recovery code, made on the engine's machine.
-func databaseRefusedSteps(b *Steps, cmds Commands) string {
+func databaseRefusedSteps(b *guidance.Steps, cmds Commands) string {
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "You said the database the setup reached is not yours, so the agent never logged in there and forgot its address and password. " +
@@ -120,7 +121,7 @@ func databaseRefusedSteps(b *Steps, cmds Commands) string {
 
 // addressInvalidSteps: the address the page handed over was refused; the
 // next basalt init --remote forgets the setup and makes a recovery code.
-func addressInvalidSteps(b *Steps, cmds Commands) string {
+func addressInvalidSteps(b *guidance.Steps, cmds Commands) string {
 	b.AskPerson("Tell the person the database address the connect page handed over was refused, so you did not use it.")
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
@@ -130,19 +131,19 @@ func addressInvalidSteps(b *Steps, cmds Commands) string {
 
 // setupNotFoundSteps: the database the person confirmed does not record
 // the setup; a new code.
-func setupNotFoundSteps(b *Steps, cmds Commands, database string) string {
+func setupNotFoundSteps(b *guidance.Steps, cmds Commands, database string) string {
 	where := "the database the agent connected to"
 	if database != "" {
 		where = database
 	}
-	b.AskPerson("Tell the person " + shown(where, maxTableChars) + " does not record this agent's setup, and that you make a new setup code.")
+	b.AskPerson("Tell the person " + guidance.Shown(where, maxTableChars) + " does not record this agent's setup, and that you make a new setup code.")
 	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
-	return "The database you confirmed, " + shown(where, maxTableChars) + ", does not record this agent's setup. The agent gives you a new link to run the setup there."
+	return "The database you confirmed, " + guidance.Shown(where, maxTableChars) + ", does not record this agent's setup. The agent gives you a new link to run the setup there."
 }
 
 // clockSkewSteps: the clock of the bot's machine is off.
-func clockSkewSteps(b *Steps) string {
+func clockSkewSteps(b *guidance.Steps) string {
 	b.AskPerson("Tell the person the clock of this machine is more than 5 minutes off, so the agent cannot collect its database's address until it is set right.")
 	b.EndTurn("End your turn: the person fixes the clock next.")
 	return "The clock of the agent's machine is more than 5 minutes off, so the agent cannot collect your database's address. Set the machine's clock right (turn on automatic time), then tell the agent."
@@ -150,7 +151,7 @@ func clockSkewSteps(b *Steps) string {
 
 // engineAsRootSteps: the engine was started as root; it
 // must run as the agent's OS user to collect the address.
-func engineAsRootSteps(b *Steps) string {
+func engineAsRootSteps(b *guidance.Steps) string {
 	b.AskPerson("Tell the person the engine runs as root, so it cannot pick up this agent's database address until it is restarted as the engine's user (the owner of its state directory).")
 	b.EndTurn("End your turn: the person restarts the engine next.")
 	return "The engine on the agent's machine runs as root, so it cannot pick up this agent's database address. " +
@@ -159,8 +160,8 @@ func engineAsRootSteps(b *Steps) string {
 
 // unreachableFromBotSteps: the bot's machine cannot reach the collected
 // database; the person runs the same link with a string it can reach.
-func unreachableFromBotSteps(b *Steps, code string, budget int, db handoff.Address) string {
-	url := ConnectLink(code, budget)
+func unreachableFromBotSteps(b *guidance.Steps, code string, budget int, db handoff.Address) string {
+	url := guidance.ConnectLink(code, budget)
 	fix := "allow the agent's machine in your database's firewall, or run the same link again with a connection string the agent's machine can reach"
 	if db.SupabaseRef != "" {
 		fix = "open the same link again and paste your Supabase project's pooler connection string (Connect, Session pooler) instead"
@@ -172,7 +173,7 @@ func unreachableFromBotSteps(b *Steps, code string, budget int, db handoff.Addre
 		b.OpenLink(url, text)
 	}
 	b.EndTurn("End your turn: the person acts next.")
-	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+	b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 	// The link is in the step; the message names the fix only.
 	return "The setup ran, but the agent's machine cannot reach " + db.Name() + ". To fix it, " + fix + ", then tell the agent."
 }
@@ -180,8 +181,8 @@ func unreachableFromBotSteps(b *Steps, code string, budget int, db handoff.Addre
 // trustRootMismatchSteps: the collected database presents another
 // certificate authority to the bot's machine than the one the person
 // trusted on the connect page; nothing was pinned.
-func trustRootMismatchSteps(b *Steps, code string, budget int, db handoff.Address) string {
-	url := ConnectLink(code, budget)
+func trustRootMismatchSteps(b *guidance.Steps, code string, budget int, db handoff.Address) string {
+	url := guidance.ConnectLink(code, budget)
 	text := "Open the same link again: the page reads the database's certificate again. Check it against your provider's console before you trust it."
 	if url == "" {
 		b.OpenGivenLink(text)
@@ -189,7 +190,7 @@ func trustRootMismatchSteps(b *Steps, code string, budget int, db handoff.Addres
 		b.OpenLink(url, text)
 	}
 	b.EndTurn("End your turn: the person acts next.")
-	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+	b.CallTool(guidance.ToolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 	return "The setup ran, but " + db.Name() + " shows the agent's machine another certificate authority than the one you trusted on the connect page, so the agent trusts nothing and does not sign in. " +
 		"Open the same link again and check the certificate against your provider's console. If it changes again, something between the agent's machine and your database may be in the way."
 }
@@ -207,13 +208,13 @@ type ConfirmResult struct {
 
 // confirmedSteps: the engine restarts the agent on its credential; status
 // says whether the database records the setup.
-func confirmedSteps(b *Steps) string {
-	b.CallTool(toolStatus, map[string]any{}, "Call status: it shows whether the database records the setup, and the agent works once it does.")
+func confirmedSteps(b *guidance.Steps) string {
+	b.CallTool(guidance.ToolStatus, map[string]any{}, "Call status: it shows whether the database records the setup, and the agent works once it does.")
 	return ""
 }
 
 // refusedResultSteps: the address and the password are gone; a new code.
-func refusedResultSteps(b *Steps, cmds Commands) string {
+func refusedResultSteps(b *guidance.Steps, cmds Commands) string {
 	return databaseRefusedSteps(b, cmds)
 }
 
@@ -271,7 +272,7 @@ func (c ConnectOnly) Tools() []Tool {
 		}
 		var call func(context.Context, json.RawMessage) (any, error)
 		switch ct.Name {
-		case toolStatus:
+		case guidance.ToolStatus:
 			call = c.status
 		case toolConfirmDatabase:
 			call = c.confirm
@@ -286,7 +287,7 @@ func (c ConnectOnly) Tools() []Tool {
 func (c ConnectOnly) status(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args struct{}
 	if err := decodeArgs(raw, &args); err != nil {
-		return nil, c.guide().Failure(toolStatus, nil, err)
+		return nil, c.guide().Failure(guidance.ToolStatus, nil, err)
 	}
 	return c.Status(ctx)
 }
@@ -327,7 +328,7 @@ func (c ConnectOnly) confirm(ctx context.Context, raw json.RawMessage) (any, err
 
 // confirmResult is confirm_database's result for ans.
 func confirmResult(ans handoff.Answer, cmds Commands) (ConfirmResult, error) {
-	b := NewSteps()
+	b := guidance.NewSteps()
 	out := ConfirmResult{State: confirmedState, Database: ans.Database}
 	if ans.Confirmed {
 		confirmedSteps(b)
@@ -340,8 +341,8 @@ func confirmResult(ans handoff.Answer, cmds Commands) (ConfirmResult, error) {
 		return ConfirmResult{}, err
 	}
 	out.NextSteps = steps
-	out.PersonMessage = fitToSteps(out.PersonMessage, steps)
-	return out, CheckPersonMessage(out.PersonMessage)
+	out.PersonMessage = guidance.FitToSteps(out.PersonMessage, steps)
+	return out, guidance.CheckPersonMessage(out.PersonMessage)
 }
 
 // Status is the status tool of a connect-only agent: the engine answers,
@@ -387,7 +388,7 @@ func connectOnlyProblems(st handoff.State, ps *Problems, now time.Time) SetupSta
 		db := *st.Database
 		out.State, out.Fingerprint, out.Database = setupConfirmDatabase, "", &db
 		ps.Add(problemConfirmDatabase, "the setup reached "+db.Name()+"; the person confirms it is their database before the agent uses it",
-			func(b *Steps) string { return confirmDatabaseSteps(b, s.SetupID, db) })
+			func(b *guidance.Steps) string { return confirmDatabaseSteps(b, s.SetupID, db) })
 	case st.Phase != handoff.PhaseWaiting:
 		// Confirmed, or engine.json changed: the engine builds the agent
 		// anew on what engine.json says now.
@@ -395,15 +396,15 @@ func connectOnlyProblems(st handoff.State, ps *Problems, now time.Time) SetupSta
 		v.addProblem(ps)
 	case st.Problem == handoff.ProblemAddressInvalid:
 		ps.Add(problemAddressInvalid, "the database address the connect page handed over was refused",
-			func(b *Steps) string { return addressInvalidSteps(b, ps.Cmds) })
+			func(b *guidance.Steps) string { return addressInvalidSteps(b, ps.Cmds) })
 	case st.Problem == handoff.ProblemTrustRootMismatch && st.Database != nil:
 		db := *st.Database
 		ps.Add(problemTrustRootMismatch, db.Name()+" presents another certificate authority to this machine than the one the person trusted on the connect page; nothing was pinned",
-			func(b *Steps) string { return trustRootMismatchSteps(b, s.Code, ps.ConnectBudget, db) })
+			func(b *guidance.Steps) string { return trustRootMismatchSteps(b, s.Code, ps.ConnectBudget, db) })
 	case st.Problem == handoff.ProblemUnreachable && st.Database != nil:
 		db := *st.Database
 		ps.Add(problemUnreachableFromBot, "this machine cannot reach "+db.Name(),
-			func(b *Steps) string { return unreachableFromBotSteps(b, s.Code, ps.ConnectBudget, db) })
+			func(b *guidance.Steps) string { return unreachableFromBotSteps(b, s.Code, ps.ConnectBudget, db) })
 	default:
 		v.addProblem(ps)
 		switch st.Problem {

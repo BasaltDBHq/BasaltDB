@@ -14,11 +14,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 // connectOnlyArgs make a connect-only code: a new engine is
@@ -101,8 +100,8 @@ func TestInitRemoteMakesAConnectOnlyCode(t *testing.T) {
 	require.Contains(t, pm, r.res.Fingerprint)
 	require.Contains(t, pm, "connection string")
 	require.NotContains(t, pm, "--setup-code")
-	require.NoError(t, agent.CheckPersonMessage(pm), pm)
-	mcptest.Require(t, pm, []toolresult.Link{{Label: agentkit.LabelConnect, URL: r.res.ConnectURL}})
+	require.NoError(t, guidance.CheckPersonMessage(pm), pm)
+	mcptest.Require(t, pm, []toolresult.Link{{Label: guidance.LabelConnect, URL: r.res.ConnectURL}})
 
 	// Text: the link and the fingerprint, no laptop command.
 	require.Contains(t, r.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
@@ -246,7 +245,7 @@ func TestInitRemoteConnectOnlyOverTheBudget(t *testing.T) {
 	require.Empty(t, r.res.ConnectURL)
 	require.NotContains(t, r.res.PersonMessage, "https://")
 	require.Contains(t, r.res.PersonMessage, "portal.basaltvault.app/connect")
-	require.NoError(t, agent.CheckPersonMessage(r.res.PersonMessage), r.res.PersonMessage)
+	require.NoError(t, guidance.CheckPersonMessage(r.res.PersonMessage), r.res.PersonMessage)
 	mcptest.Require(t, r.res.PersonMessage, nil)
 	require.Contains(t, r.stdout, "\n\n"+r.res.Code+"\n\n")
 	require.NotContains(t, r.stdout, "--setup-code")

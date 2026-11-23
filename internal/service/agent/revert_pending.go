@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -58,7 +59,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 		s.notifyRevert(ctx, r, n)
 		p.issued = n.short != ""
 		p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.PersonMessage, p.Links = r, n.Headline, n.URL, n.File, n.Message, n.Links
-		p.NextSteps = withSendRequest(pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey."), n.File)
+		p.NextSteps = guidance.WithSendRequest(pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey."), n.File)
 		return nil
 	}
 	headline, err := revertHeadline(p.Revert)
@@ -87,7 +88,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 	if s.shortLinked(p.ID) || pick.Kind == linkPage {
 		open = "" // the person has the short link the agent handed over
 	}
-	p.NextSteps = withSendRequest(pendingRevertSteps(p.ID, open,
+	p.NextSteps = guidance.WithSendRequest(pendingRevertSteps(p.ID, open,
 		"Open the revert link the agent gave you, review the rows and sign with your passkey."), p.RequestFile)
 	return nil
 }
@@ -105,7 +106,7 @@ func (s *Service) pendingRevertTooLarge(p *PendingRevert, r action.Revert, addre
 		return err
 	}
 	p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.Links = r, headline, address, nil, nil
-	p.PersonMessage = s.tooLargeMessage(sentence(revertTitle(r)), cost, r.ExpiresAt, true)
+	p.PersonMessage = s.tooLargeMessage(guidance.Sentence(revertTitle(r)), cost, r.ExpiresAt, true)
 	p.NextSteps = steps
 	return nil
 }
@@ -114,8 +115,8 @@ func (s *Service) pendingRevertTooLarge(p *PendingRevert, r action.Revert, addre
 // widened on), then the agent reads the result once.
 func pendingRevertSteps(id uuid.UUID, link, open string) []toolresult.NextStep {
 	return []toolresult.NextStep{
-		openLink(link, open),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
+		guidance.OpenLink(link, open),
+		guidance.CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), guidance.ArgWaitForSignature: 0},
 			"When the person says they signed, call this once; it returns at once."),
 	}
 }

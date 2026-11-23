@@ -24,10 +24,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agentkit"
 )
 
 // This file is the contract test of the engine's error guidance
@@ -148,7 +148,7 @@ const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AA
 func held(reason string, url string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
 		n := heldNotice{ApprovalNotice: caseNotice(url), reason: reason}
-		if reason == reasonWaitEnded {
+		if reason == guidance.ReasonWaitEnded {
 			return approvalStillPendingError(n)
 		}
 		return approvalRequiredError(n)
@@ -266,17 +266,17 @@ func catalogCases() map[string]catalogCase {
 			require.Equal(t, reasonRequestTooLarge, n.reason)
 			return approvalError(n, "")
 		}},
-		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(reasonHeld, caseShortLink)},
-		caseKey("APPROVAL_REQUIRED", "HELD_NO_PAGES", ""): {"write", writeArgs0, held(reasonHeldNoPages, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
-		caseKey("APPROVAL_REQUIRED", "NO_PASSKEY", ""):    {"write", writeArgs0, held(reasonNoPasskey, caseShortLink)},
+		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(guidance.ReasonHeld, caseShortLink)},
+		caseKey("APPROVAL_REQUIRED", "HELD_NO_PAGES", ""): {"write", writeArgs0, held(guidance.ReasonHeldNoPages, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
+		caseKey("APPROVAL_REQUIRED", "NO_PASSKEY", ""):    {"write", writeArgs0, held(guidance.ReasonNoPasskey, caseShortLink)},
 		caseKey("APPROVAL_REQUIRED", "WAIT_ENDED", ""): {
 			"write", withApproval(writeArgs0),
-			held(reasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc"),
+			held(guidance.ReasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc"),
 		},
 
 		caseKey("APPROVAL_EXPIRED", "", ""): {"write", withApproval(writeArgs0), asToolError(&toolresult.ToolError{Code: CodeApprovalExpired, Message: "approval expired"})},
 
-		caseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(reasonNotSigned)},
+		caseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonNotSigned)},
 		caseKey("APPROVAL_INVALID", "ALREADY_USED", ""):    {"write", withApproval(writeArgs0), guardApproval("approval already used")},
 		caseKey("APPROVAL_INVALID", "DIFFERENT_WRITE", ""): {"write", withApproval(writeArgs0), guardApproval("the statement or its parameters differ from the approval")},
 		caseKey("APPROVAL_INVALID", "NOT_THIS_AGENT", ""):  {"write", withApproval(writeArgs0), guardApproval("approval is for another agent")},
@@ -284,8 +284,8 @@ func catalogCases() map[string]catalogCase {
 			"write", withApproval(writeArgs0),
 			guardApproval("rows changed since the preview; a fresh preview and approval are needed"),
 		},
-		caseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(reasonBadSignature)},
-		caseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(reasonPasskeyRevoked)},
+		caseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonBadSignature)},
+		caseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(guidance.ReasonPasskeyRevoked)},
 
 		caseKey("REVERT_INVALID", "LINE_INVALID", ""): {
 			"apply_revert_batch",
@@ -311,10 +311,10 @@ func catalogCases() map[string]catalogCase {
 			return s.rowsChanged(caseRevert(false), "rows changed")
 		}},
 		caseKey("REVERT_INVALID", "BAD_SIGNATURE", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.badSignatureWith(openLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
+			return s.badSignatureWith(guidance.OpenLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
 		}},
 		caseKey("REVERT_INVALID", "PASSKEY_REVOKED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.passkeyRevokedWith(openLink(caseShortLink, signRevokedText), caseRevert(false))
+			return s.passkeyRevokedWith(guidance.OpenLink(caseShortLink, signRevokedText), caseRevert(false))
 		}},
 
 		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(false)) }},
@@ -364,7 +364,7 @@ func catalogCases() map[string]catalogCase {
 		},
 
 		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
-		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "changes no rows now"})},
+		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "changes no rows now"})},
 		caseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&ArgumentError{Message: "invalid arguments"})},
 		caseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {
 			"run_history",
@@ -392,9 +392,9 @@ func catalogCases() map[string]catalogCase {
 		caseKey("UNAVAILABLE", "TOO_MANY_CONNECTIONS", ""): {"query", queryArgs0, pgFail("53300", `too many connections for role "basalt_agent_bot"`, "")},
 		caseKey("UNAVAILABLE", "CREDENTIAL_REJECTED", ""):  {"query", queryArgs0, pgFail("28P01", "password authentication failed", "")},
 		caseKey("UNAVAILABLE", "GUARD_MISSING", ""):        {"query", queryArgs0, pgFail("3F000", `schema "basalt_meta" does not exist`, "")},
-		caseKey("UNAVAILABLE", "GUARD_OUTDATED", ""):       {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: reasonGuardOutdated, Message: "the guard is outdated"})},
-		caseKey("UNAVAILABLE", "ENGINE_UNREACHABLE", ""):   {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, Message: "no engine"})},
-		caseKey("UNAVAILABLE", "PAGES_OFF", ""):            {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: reasonPagesOff, Message: "no pages"})},
+		caseKey("UNAVAILABLE", "GUARD_OUTDATED", ""):       {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonGuardOutdated, Message: "the guard is outdated"})},
+		caseKey("UNAVAILABLE", "ENGINE_UNREACHABLE", ""):   {"query", queryArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonEngineUnreachable, Message: "no engine"})},
+		caseKey("UNAVAILABLE", "PAGES_OFF", ""):            {"write", writeArgs0, asToolError(&toolresult.ToolError{Code: CodeUnavailable, Reason: guidance.ReasonPagesOff, Message: "no pages"})},
 
 		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint})},
 		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint, Expired: true})},
@@ -565,7 +565,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *toolresult.ToolErro
 		require.NotEmpty(t, te.ErrorID, "errorId on UNAVAILABLE and INTERNAL")
 	}
 	if te.Code == CodeRowLimitExceeded {
-		require.Equal(t, MaxRetryRows, te.NextSteps[2].MaxRows)
+		require.Equal(t, guidance.MaxRetryRows, te.NextSteps[2].MaxRows)
 		require.Contains(t, te.NextSteps[2].Text, "only on an explicit yes", "AE-7")
 	}
 }
@@ -578,19 +578,19 @@ func requireStepObeysRules(t *testing.T, st toolresult.NextStep, kase catalogCas
 	t.Helper()
 	require.Contains(t, mcpcontract.ActorActions[st.Actor], st.Action, where)
 	require.NotEmpty(t, st.Text, where)
-	require.LessOrEqual(t, len([]rune(st.Text)), agentkit.MaxStepTextLength, where)
+	require.LessOrEqual(t, len([]rune(st.Text)), guidance.MaxStepTextLength, where)
 	require.Empty(t, conditionalWords.FindString(st.Text), "%s: no conditional steps: %q", where, st.Text)
 	require.Empty(t, removedCommand.FindString(st.Text+" "+st.Command), "%s: a step names no removed command: %q %q", where, st.Text, st.Command)
 	require.Empty(t, secretPattern.FindString(st.Command), "%s: a command never carries a secret: %q", where, st.Command)
 	require.NotContains(t, strings.ReplaceAll(strings.ToLower(st.Command), "--rotate-password", ""), "password", where)
-	require.LessOrEqual(t, st.WaitSeconds, agentkit.MaxWaitSeconds, where)
+	require.LessOrEqual(t, st.WaitSeconds, guidance.MaxWaitSeconds, where)
 
 	switch st.Action {
 	case toolresult.ActionCallTool, toolresult.ActionReviseCall:
 		requireToolArguments(t, st, kase, where)
 	case toolresult.ActionRetrySmallerBatches:
 		require.Positive(t, st.MaxRows, where)
-		require.LessOrEqual(t, st.MaxRows, MaxRetryRows, where)
+		require.LessOrEqual(t, st.MaxRows, guidance.MaxRetryRows, where)
 	case toolresult.ActionRunCommand:
 		requireCommand(t, st.Command, where)
 	case toolresult.ActionOpenLink:

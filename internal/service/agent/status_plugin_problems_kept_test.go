@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // A plugin in engine.json is not request_plugin's to change: its problems
@@ -35,7 +37,7 @@ func TestStatusShowsDroppedNotices(t *testing.T) {
 			require.Len(t, p.NextSteps, 1)
 			require.Equal(t, "AGENT", p.NextSteps[0].Actor)
 			require.Equal(t, "CALL_TOOL", p.NextSteps[0].Action)
-			require.Equal(t, toolListPending, p.NextSteps[0].Tool)
+			require.Equal(t, guidance.ToolListPending, p.NextSteps[0].Tool)
 			require.Contains(t, p.PersonMessage, "ask the agent what waits for your approval")
 		}
 	}

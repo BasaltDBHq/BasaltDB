@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
@@ -154,13 +155,13 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	requireStatusSchema(t, statusToolContract(t), r)
 
 	for _, tool := range c.Tools() {
-		if tool.Name == toolStatus || tool.Name == toolConfirmDatabase {
+		if tool.Name == guidance.ToolStatus || tool.Name == toolConfirmDatabase {
 			continue
 		}
 		body, isError := serveCall(t, srv, tool.Name, map[string]any{})
 		require.True(t, isError, tool.Name)
 		require.Equal(t, CodeUnavailable, body["code"], tool.Name)
-		require.Equal(t, reasonSetupPending, body["reason"], tool.Name)
+		require.Equal(t, guidance.ReasonSetupPending, body["reason"], tool.Name)
 		require.Equal(t, []mcpcontract.StepKind{{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool}}, steps(t, body), tool.Name)
 	}
 	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{
@@ -225,7 +226,7 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
-	require.Equal(t, reasonDatabaseNotConfirmed, body["reason"])
+	require.Equal(t, guidance.ReasonDatabaseNotConfirmed, body["reason"])
 
 	// Another setupId or another database is refused: an answer never
 	// confirms a database the person was not asked about.
@@ -251,7 +252,7 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 
 func statusToolContract(t *testing.T) mcpcontract.Tool {
 	t.Helper()
-	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	require.True(t, ok)
 	return tool
 }

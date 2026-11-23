@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
 
 // ReceiptSigner is the engine's signing key (*channel.EngineKeys), which
@@ -87,7 +88,7 @@ func (s *Service) signReceipt(p channel.Receipt, verb, noun string) (Receipt, er
 	if s.deps.Delivery.Receipts == nil {
 		return Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, nil
 	}
-	p.Headline = clip(p.Headline, channel.MaxReceiptHeadline)
+	p.Headline = guidance.Clip(p.Headline, channel.MaxReceiptHeadline)
 	p.Agent = s.deps.Core.Name
 	p.EngineID = s.deps.Delivery.Receipts.EngineID()
 	p.At = s.deps.Core.Now().UTC().Truncate(time.Second).Format("2006-01-02T15:04:05Z")
@@ -104,9 +105,9 @@ func receiptLine(verb, noun string, p channel.Receipt, fingerprint string) strin
 	format := func(headline string) string {
 		return fmt.Sprintf("%s: %s (%s %s), receipt from engine %s.", verb, headline, noun, p.ItemID, fingerprint)
 	}
-	headline := strings.TrimSuffix(strings.TrimSpace(plainText(p.Headline)), ".")
+	headline := strings.TrimSuffix(strings.TrimSpace(guidance.PlainText(p.Headline)), ".")
 	room := maxReceiptLine - len([]rune(format("")))
-	return format(clip(headline, room))
+	return format(guidance.Clip(headline, room))
 }
 
 // withReceiptLine puts the receipt line first in a personMessage.

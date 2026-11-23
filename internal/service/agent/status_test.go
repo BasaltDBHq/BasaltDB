@@ -32,6 +32,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -327,7 +328,7 @@ func TestEveryStatusProblemHasACase(t *testing.T) {
 
 func TestEveryStatusProblemObeysTheCatalog(t *testing.T) {
 	t.Parallel()
-	statusTool, ok := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	statusTool, ok := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	require.True(t, ok)
 	for _, operatedBy := range []string{mcpcontract.OperatedByPerson, mcpcontract.OperatedByAgent} {
 		for code, kase := range statusCasesFor(operatedBy) {
@@ -373,7 +374,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 			require.NotEmpty(t, st.Text, where)
 			continue
 		}
-		requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, where)
+		requireStepObeysRules(t, st, catalogCase{tool: guidance.ToolStatus, args: map[string]any{}}, where)
 	}
 	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
 	for i := 1; i < len(r.Problems); i++ {
@@ -407,7 +408,7 @@ func requireStatusSchema(t *testing.T, tool mcpcontract.Tool, r StatusReport) st
 func TestStatusWhenEverythingIsReady(t *testing.T) {
 	t.Parallel()
 	r := engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), ledger: 123456, latest: &guardmodel.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guardmodel.SetupAgent}}, 2, nil)(t)
-	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	requireStatusSchema(t, statusTool, r)
 	require.True(t, r.Ready)
 	require.Empty(t, r.Problems)
@@ -489,7 +490,7 @@ func TestStatusVaultHook(t *testing.T) {
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, &VaultStatus{State: "KEY_ERROR"}, r.Vault)
-	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	requireStatusSchema(t, statusTool, r)
 }
 
@@ -587,7 +588,7 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, reason, "")
 	require.True(t, ok)
 	for _, tool := range tools {
-		if tool.Name == toolStatus {
+		if tool.Name == guidance.ToolStatus {
 			continue
 		}
 		if tool.Name == toolConfirmDatabase {
@@ -607,7 +608,7 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 		require.Contains(t, body["personMessage"], inMessage, tool.Name)
 		require.Equal(t, "basalt init --agent bot", body["nextSteps"].([]any)[0].(map[string]any)["command"], tool.Name)
 	}
-	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
+	body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isError, "status is served: %v", body)
 	require.Equal(t, false, body["ready"])
 }
@@ -616,7 +617,7 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}
 	srv, tools := degraded(t, probe, nil)
-	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "The agent gives you a link")
+	requireOnlyStatusServed(t, srv, tools, guidance.ReasonGuardOutdated, "The agent gives you a link")
 
 	// The person upgrades: the next call is served, with no restart.
 	probe.st = guardAt(guardmodel.GuardOK, nil, nil)
@@ -628,7 +629,7 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 func TestAMissingGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	srv, tools := degraded(t, &fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, nil)
-	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "The agent gives you a link")
+	requireOnlyStatusServed(t, srv, tools, guidance.ReasonGuardMissing, "The agent gives you a link")
 }
 
 func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
@@ -652,9 +653,9 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	// The person runs the code on their own computer: basalt init
 	// --setup-code takes no --agent or --config, and the message names the
 	// fingerprint to check, not the code itself.
-	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, testFingerprint)
+	requireOnlyStatusServed(t, srv, tools, guidance.ReasonSetupPending, testFingerprint)
 
-	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
+	body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isError)
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1, "the setup explains the missing role: no database problem besides it")
@@ -664,7 +665,7 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	// (held calls may trust a not-recorded answer for a few seconds).
 	probe.recorded, probe.recordedErr = true, nil
 	probe.err, probe.st = nil, guardAt(guardmodel.GuardOK, nil, nil)
-	_, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	_, isError = serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isError)
 	_, isError = serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "a recorded setup is served")
@@ -680,9 +681,9 @@ func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
-	require.Equal(t, reasonDatabaseUnreachable, body["reason"])
+	require.Equal(t, guidance.ReasonDatabaseUnreachable, body["reason"])
 
-	body, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	body, isError = serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isError)
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1)
@@ -693,7 +694,7 @@ func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 func TestStatusRefusesArguments(t *testing.T) {
 	t.Parallel()
 	srv, _ := degraded(t, &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, nil)
-	body, isError := serveCall(t, srv, toolStatus, map[string]any{"verbose": true})
+	body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{"verbose": true})
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"])
 }
@@ -714,28 +715,28 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	sort.Strings(served)
 	require.NoError(t, mcpcontract.CheckServed(mcpcontract.MustLoad(), served), "the shim lists exactly the IMPLEMENTED contracts")
 
-	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, reasonEngineUnreachable, "query")
+	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, guidance.ReasonEngineUnreachable, "query")
 	require.True(t, ok)
 	for _, tool := range served {
-		if tool == toolStatus {
+		if tool == guidance.ToolStatus {
 			continue
 		}
 		body, isError := serveCall(t, srv, tool, map[string]any{})
 		require.True(t, isError, tool)
 		require.Equal(t, CodeUnavailable, body["code"], tool)
-		require.Equal(t, reasonEngineUnreachable, body["reason"], tool)
+		require.Equal(t, guidance.ReasonEngineUnreachable, body["reason"], tool)
 		require.NotEmpty(t, body["errorId"], tool)
 		require.NotEmpty(t, body["personMessage"], tool)
 		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool)
 		require.Equal(t, osservice.StartCommand("linux"), body["nextSteps"].([]any)[0].(map[string]any)["command"], tool)
 	}
-	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
+	body, isError := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isError)
 	require.Equal(t, false, body["engine"].(map[string]any)["reachable"])
 	require.Equal(t, guardmodel.GuardUnknown, body["guard"].(map[string]any)["state"])
 	require.Equal(t, mcpcontract.OperatedByPerson, body["operatedBy"])
 
-	body, isError = serveCall(t, srv, toolStatus, map[string]any{"x": 1})
+	body, isError = serveCall(t, srv, guidance.ToolStatus, map[string]any{"x": 1})
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"])
 	require.NotEmpty(t, body["nextSteps"])
@@ -755,7 +756,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(down.Tools(), WithMeta)...)
 
-	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, CodeUnavailable, reasonEngineUnreachable, "")
+	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, CodeUnavailable, guidance.ReasonEngineUnreachable, "")
 	require.True(t, ok)
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
@@ -767,7 +768,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	require.Equal(t, "query", second["tool"])
 	require.Equal(t, true, second["repeatCall"])
 
-	body, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	body, isError = serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.False(t, isError)
 	require.Equal(t, mcpcontract.OperatedByAgent, body["operatedBy"])
 	p := body["problems"].([]any)[0].(map[string]any)
@@ -796,7 +797,7 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 		r := report(t)
 		require.NotEmpty(t, r.Problems, name)
 		for _, p := range r.Problems {
-			require.NoError(t, CheckPersonMessage(p.PersonMessage), "%s: %s: %s", name, p.Code, p.PersonMessage)
+			require.NoError(t, guidance.CheckPersonMessage(p.PersonMessage), "%s: %s: %s", name, p.Code, p.PersonMessage)
 			require.NotContains(t, p.PersonMessage, long, "%s: %s", name, p.Code)
 		}
 	}
@@ -856,7 +857,7 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordRead
 
 func TestStatusEngineRecord(t *testing.T) {
 	t.Parallel()
-	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 	recorded := statusNow.Add(-48 * time.Hour).Format(time.RFC3339)
 	revokedAt := statusNow.Add(-time.Hour).Format(time.RFC3339)
 	for name, tc := range map[string]struct {
@@ -977,7 +978,7 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	probe := func() *fakeProbe {
 		return &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil), latest: &guardmodel.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guardmodel.SetupInstall}}
 	}
-	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolStatus)
 
 	one := engineStatus(probe(), 1, nil)(t)
 	requireStatusSchema(t, statusTool, one)

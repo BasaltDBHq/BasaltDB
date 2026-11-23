@@ -6,6 +6,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -28,9 +29,9 @@ func (s *Service) previewGuidance(p RevertPreview) (string, []toolresult.NextSte
 	if filters := filterText(p.Scope); filters != "" {
 		what += filters
 	}
-	steps, err := NewSteps().
+	steps, err := guidance.NewSteps().
 		AskPerson("Show the person what the revert would do and ask whether to go on, and why they want it.").
-		ReviseCall(toolRequestRevert, scopeArgs(p.Scope),
+		ReviseCall(guidance.ToolRequestRevert, scopeArgs(p.Scope),
 			"On yes, call request_revert with these arguments and the person's reason as intent.").
 		Build()
 	return fmt.Sprintf("Reverting %s %s. Say yes and the agent asks you to review the rows and sign with your passkey.%s",
@@ -42,18 +43,18 @@ func (s *Service) previewGuidance(p RevertPreview) (string, []toolresult.NextSte
 // agent applies the pending lines in batches.
 func (s *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, error) {
 	r := plan.Revert
-	b := NewSteps()
+	b := guidance.NewSteps()
 	switch {
 	case r.Status == revertPending && r.Widened:
 		// No link to give (RS-5): the step names the page, without a URL,
 		// which the step builder requires.
 		steps := []toolresult.NextStep{
-			openLink("", "Sign the plan once with your passkey on the page where you changed the scope."),
-			personStep(toolresult.ActionTellAgent, "Tell the agent when you have signed."),
-			agentStep(toolresult.ActionEndTurn, "End your turn: apply the lines only after the person says they signed."),
+			guidance.OpenLink("", "Sign the plan once with your passkey on the page where you changed the scope."),
+			guidance.PersonStep(toolresult.ActionTellAgent, "Tell the agent when you have signed."),
+			guidance.AgentStep(toolresult.ActionEndTurn, "End your turn: apply the lines only after the person says they signed."),
 		}
 		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
-			sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(personTime)), steps, nil
+			guidance.Sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(personTime)), steps, nil
 	case r.Status == revertPending && plan.tooLarge:
 		steps, err := revertTooLargeSteps(r.ID, false)
 		return plan.PersonMessage, steps, err
@@ -75,7 +76,7 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, 
 		return rejectedMessage(r), steps, err
 	}
 	steps, err := b.AskPerson("Tell the person the revert expired and ask whether to prepare it again.").
-		ReviseCall(toolRequestRevert, scopeArgs(proposalOf(r)), requestAgainText).Build()
+		ReviseCall(guidance.ToolRequestRevert, scopeArgs(proposalOf(r)), requestAgainText).Build()
 	return outcomeMessage(r), steps, err
 }
 
@@ -93,7 +94,7 @@ func (s *Service) applyBatchSteps(plan RevertPlan) ([]toolresult.NextStep, error
 	if len(lines) == 0 {
 		return applyingSteps(plan.Revert.ID), nil
 	}
-	return NewSteps().CallTool(toolApplyRevertBatch, map[string]any{argRevertID: id, "lines": lines},
+	return guidance.NewSteps().CallTool(guidance.ToolApplyRevertBatch, map[string]any{guidance.ArgRevertID: id, "lines": lines},
 		"Apply these pending lines, in this order; then call revert_plan again for the next ones.").Build()
 }
 
@@ -103,7 +104,7 @@ func (s *Service) batchGuidance(res action.BatchResult) (string, []toolresult.Ne
 	if res.Status != revertApplied {
 		return "", applyingSteps(res.RevertID), nil
 	}
-	steps, err := NewSteps().Stop("The revert is done; do not apply more lines.").Build()
+	steps, err := guidance.NewSteps().Stop("The revert is done; do not apply more lines.").Build()
 	return fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them after the agent (people win).",
 		res.Restored, res.Skipped), steps, err
 }
@@ -115,7 +116,7 @@ func outcomeMessage(r action.Revert) string {
 	if r.Batched {
 		restored, skipped = r.Progress.Restored, r.Progress.Skipped
 	}
-	what := sentence(revertTitle(r))
+	what := guidance.Sentence(revertTitle(r))
 	switch {
 	case r.Status == revertApplied:
 		return fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them after the agent (people win).",

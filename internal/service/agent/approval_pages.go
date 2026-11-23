@@ -8,6 +8,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -66,9 +67,9 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (action.Approv
 	case a.Status == approvalExpired || !s.deps.Core.Now().Before(a.ExpiresAt):
 		return a, &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(personTime))}
 	case a.Status == approvalApproved:
-		return a, approvalInvalid(reasonAlreadyUsed, "this write is already approved; the agent applies it")
+		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this write is already approved; the agent applies it")
 	case a.Status == approvalApplied:
-		return a, approvalInvalid(reasonAlreadyUsed, "this approval was already used")
+		return a, approvalInvalid(guidance.ReasonAlreadyUsed, "this approval was already used")
 	}
 	return a, nil
 }

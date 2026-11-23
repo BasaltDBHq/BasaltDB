@@ -5,12 +5,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
 const testUpdateLink = "http://localhost:8787/setup/#1.eyJqb2IiOiJVUERBVEUifQ"
 
-func actions(t *testing.T, b *Steps) []toolresult.NextStep {
+func actions(t *testing.T, b *guidance.Steps) []toolresult.NextStep {
 	t.Helper()
 	steps, err := b.Build()
 	require.NoError(t, err)
@@ -32,14 +33,14 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	require.NoError(t, err)
 	with := cmds.UpdateLink(testUpdateLink)
 
-	b := NewSteps()
-	person := fixSteps(b, with, reasonGuardOutdated)
+	b := guidance.NewSteps()
+	person := fixSteps(b, with, guidance.ReasonGuardOutdated)
 	steps := actions(t, b)
 	require.True(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, testUpdateLink), "%+v", steps)
 	require.False(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, ""), "no basalt init when the link is there")
 	require.Contains(t, person, "Open the link the agent gives you")
 
-	b = NewSteps()
+	b = guidance.NewSteps()
 	upgradeSteps(b, with)
 	steps = actions(t, b)
 	require.True(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, testUpdateLink), "%+v", steps)
@@ -48,14 +49,14 @@ func TestGuardStepsHandThePersonTheUpdateLink(t *testing.T) {
 	for _, tc := range []struct {
 		cmds   Commands
 		reason string
-	}{{cmds, reasonGuardOutdated}, {with, reasonCredentialRejected}, {with, reasonGuardMissing}} {
-		b = NewSteps()
+	}{{cmds, guidance.ReasonGuardOutdated}, {with, guidance.ReasonCredentialRejected}, {with, guidance.ReasonGuardMissing}} {
+		b = guidance.NewSteps()
 		fixSteps(b, tc.cmds, tc.reason)
 		steps = actions(t, b)
 		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", tc.reason, steps)
 		require.False(t, hasStep(steps, toolresult.ActorPerson, toolresult.ActionOpenLink, ""), tc.reason)
 	}
-	b = NewSteps()
+	b = guidance.NewSteps()
 	upgradeSteps(b, cmds)
 	require.True(t, hasStep(actions(t, b), toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"))
 }
@@ -68,13 +69,13 @@ func TestRemovedEngineStepsFinishTheRemoval(t *testing.T) {
 	require.NoError(t, err)
 	gone := false
 	removed := cmds.UpdateLink(testUpdateLink).Removed(func() bool { return gone })
-	for _, reason := range []string{reasonCredentialRejected, reasonGuardMissing, reasonGuardOutdated} {
-		b := NewSteps()
+	for _, reason := range []string{guidance.ReasonCredentialRejected, guidance.ReasonGuardMissing, guidance.ReasonGuardOutdated} {
+		b := guidance.NewSteps()
 		person := fixSteps(b, removed, reason)
 		require.NotContains(t, person, "Last step", "not removed yet: the usual fix")
 
 		gone = true
-		b = NewSteps()
+		b = guidance.NewSteps()
 		person = fixSteps(b, removed, reason)
 		steps := actions(t, b)
 		require.True(t, hasStep(steps, toolresult.ActorAgent, toolresult.ActionRunCommand, "basalt init --agent bot"), "%s: %+v", reason, steps)

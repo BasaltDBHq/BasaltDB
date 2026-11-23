@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -51,14 +52,14 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	}
 	pv, err := s.deps.Revert.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
 	if err != nil {
-		return RevertPreview{}, s.prepareError(ctx, toolPreviewRevert, p.Scope, err)
+		return RevertPreview{}, s.prepareError(ctx, guidance.ToolPreviewRevert, p.Scope, err)
 	}
 	if !pv.CursorFound {
 		return RevertPreview{}, &ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: ReasonStaleCursor}
 	}
 	if pv.Lines > 0 && pv.Restore == 0 {
 		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
-		return RevertPreview{}, s.nothingToRevertError(ctx, toolPreviewRevert, p.Scope, skipReason(pv), "every row is skipped")
+		return RevertPreview{}, s.nothingToRevertError(ctx, guidance.ToolPreviewRevert, p.Scope, skipReason(pv), "every row is skipped")
 	}
 	out := RevertPreview{Scope: p.Scope, Rows: pv.Restore, Skipped: pv.Lines - pv.Restore}
 	out.Page.Items = make([]revert.Line, 0, len(pv.Page))
@@ -123,7 +124,7 @@ type RevertPlan struct {
 func (s *Service) RevertPlan(ctx context.Context, p action.RevertLineParams) (RevertPlan, error) {
 	r, err := s.deps.Revert.Store.FindRevert(ctx, p.RevertID)
 	if sentinel(err, s.deps.Revert.ErrNotFound) {
-		return RevertPlan{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
+		return RevertPlan{}, &toolresult.ToolError{Code: CodeNotFound, Reason: guidance.ReasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
 		return RevertPlan{}, err
@@ -232,7 +233,7 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	}
 	prep, err := s.deps.Revert.Store.PrepareRevert(ctx, p.Scope, p.Intent, guardmodel.MCPPrepareTimeout)
 	if err != nil {
-		return RequestedRevert{}, s.prepareError(ctx, toolRequestRevert, p.Scope, err)
+		return RequestedRevert{}, s.prepareError(ctx, guidance.ToolRequestRevert, p.Scope, err)
 	}
 	r, err := s.deps.Revert.Store.FindRevert(ctx, prep.RevertID)
 	if err != nil {
@@ -288,7 +289,7 @@ func (s *Service) revertWithLink(ctx context.Context, r action.Revert) (Requeste
 	s.notifyRevert(ctx, r, n)
 	return RequestedRevert{
 		Revert: r, RevertURL: n.URL, RequestFile: n.File, PersonMessage: n.Message, Links: n.Links,
-		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL, n.short == ""), n.File),
+		NextSteps: guidance.WithSendRequest(requestedSteps(r.ID, n.URL, n.short == ""), n.File),
 		headline:  n.Headline, issued: n.short != "",
 	}, nil
 }
@@ -415,7 +416,7 @@ func (s *Service) revertStateOf(ctx context.Context, r action.Revert) (Requested
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:
-		return s.waitEnded(ctx, out, sentence(revertTitle(r)))
+		return s.waitEnded(ctx, out, guidance.Sentence(revertTitle(r)))
 	}
 	return out, nil
 }
@@ -515,7 +516,7 @@ func notOwnScope(scope action.Scope) error {
 			"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
 				"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
 				"a person can revert any change, run or task on the revert page that agent's request opens", kind, scope.ID, kind),
-		NextSteps: []toolresult.NextStep{callTool(toolListRuns, map[string]any{},
+		NextSteps: []toolresult.NextStep{guidance.CallTool(guidance.ToolListRuns, map[string]any{},
 			"This id is not one of your runs or changes; list your runs.")},
 	}
 }
@@ -530,7 +531,7 @@ func notOwnTask(scope action.Scope) error {
 				"check the task id in list_runs", scope.ID),
 		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, ask an agent that ran in it "+
 			"to request the revert: you can include the other agents' changes on its signing page.", scope.ID),
-		NextSteps: []toolresult.NextStep{callTool(toolListRuns, map[string]any{},
+		NextSteps: []toolresult.NextStep{guidance.CallTool(guidance.ToolListRuns, map[string]any{},
 			"This task has none of your runs; list your runs.")},
 	}
 }
@@ -581,7 +582,7 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope action.Sc
 		return refused
 	}
 	if errors.Is(err, action.ErrEmptyProposal) {
-		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, "this agent changed no rows in it that a revert could restore")
+		return s.nothingToRevertError(ctx, tool, scope, guidance.ReasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
 	if code, ok := ledgerCode(err); ok && code == guardmodel.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
@@ -642,7 +643,7 @@ func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink
 	if tooLarge && short == "" {
 		return revertLink{
 			URL: s.pageAddress(links.Revert, r.ID), Headline: bindingHeadline(b, r), tooLarge: true, cost: req.Cost,
-			Message: s.tooLargeMessage(sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
+			Message: s.tooLargeMessage(guidance.Sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
 		}, nil
 	}
 	pick, err := chooseLink(short, long, s.deps.Core.LinkBudget, links.RevertFile(r.ID))
@@ -650,7 +651,7 @@ func (s *Service) revertNotice(ctx context.Context, r action.Revert) (revertLink
 		return revertLink{}, err
 	}
 	headline := bindingHeadline(b, r)
-	summary := fmt.Sprintf("%s Why: %s. %s", headline, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
+	summary := fmt.Sprintf("%s Why: %s. %s", headline, guidance.Shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
 	if b.Select.Scope == revert.ScopeTask {
 		extra = append(extra, taskWidenPointer)

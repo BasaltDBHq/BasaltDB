@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -191,7 +192,7 @@ func adminCredentialError() error {
 // for the tools that answer without the service (the engine-down tools).
 func adminCredentialToolError(tool string) *toolresult.ToolError {
 	te := &toolresult.ToolError{Code: CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
-	b := NewSteps()
+	b := guidance.NewSteps()
 	invalidArgumentSteps(b, te, failure{tool: tool})
 	te.NextSteps, _ = b.Build() // fixed steps: they cannot fail
 	return te

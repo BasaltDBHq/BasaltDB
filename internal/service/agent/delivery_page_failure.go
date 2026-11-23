@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -13,12 +14,12 @@ import (
 // is (CONTRACT.md, Link secrets), and the person's next step is to ask the
 // agent for a new link.
 func LinkNotFound() (*toolresult.ToolError, error) {
-	steps, err := NewSteps().TellAgent("Ask the agent for the link again.").Build()
+	steps, err := guidance.NewSteps().TellAgent("Ask the agent for the link again.").Build()
 	if err != nil {
 		return nil, err
 	}
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: reasonLink,
+		Code: CodeNotFound, Reason: guidance.ReasonLink,
 		Message: "no held write or revert with this id, or the link is incomplete or was replaced by a newer one: " +
 			"ask the agent for the link again",
 		PersonMessage: "This link is incomplete, expired or was replaced by a newer one. Ask the agent for the link again.",
@@ -35,12 +36,12 @@ const linkResetMessage = "The agent reset this revert to its own work. Ask it fo
 // revoked (CONTRACT.md, Link secrets, A widened revert): the person widened
 // the revert, and the agent asked for a new link to its own proposal.
 func LinkReset() (*toolresult.ToolError, error) {
-	steps, err := NewSteps().TellAgent("Ask the agent for the new link to this revert.").Build()
+	steps, err := guidance.NewSteps().TellAgent("Ask the agent for the new link to this revert.").Build()
 	if err != nil {
 		return nil, err
 	}
 	return &toolresult.ToolError{
-		Code: CodeNotFound, Reason: reasonLinkReset,
+		Code: CodeNotFound, Reason: guidance.ReasonLinkReset,
 		Message:       "the agent reset this revert to its own work, so this link was replaced: ask the agent for the new link",
 		PersonMessage: linkResetMessage,
 		NextSteps:     steps,
@@ -77,13 +78,13 @@ func (s *Service) pageSignatureFailure(te *toolresult.ToolError) bool {
 		return false
 	}
 	switch te.Reason {
-	case reasonBadSignature:
+	case guidance.ReasonBadSignature:
 		te.PersonMessage = fmt.Sprintf("The %s signature did not verify, so nothing was applied. %s", what, again)
 		return true
-	case reasonPasskeyRevoked:
+	case guidance.ReasonPasskeyRevoked:
 		// The page has no agent to run basalt init: the person asks it for
 		// the link that registers the passkey they use.
-		steps, err := NewSteps().
+		steps, err := guidance.NewSteps().
 			TellAgent(askAgentForRegisterLinkText).
 			Build()
 		if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -485,7 +486,7 @@ func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error)
 	}
 	run, err := s.deps.Core.Store.FindRun(ctx, id)
 	if errors.Is(err, action.ErrRunNotFound) {
-		return action.Run{}, &toolresult.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
+		return action.Run{}, &toolresult.ToolError{Code: CodeNotFound, Reason: guidance.ReasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}
 	return run, err
 }

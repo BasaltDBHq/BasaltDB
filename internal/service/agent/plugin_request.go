@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
@@ -358,7 +359,7 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 		ask = "Approve it with your passkey only if you know who made it:"
 	}
 	var lines []string
-	steps := NewSteps()
+	steps := guidance.NewSteps()
 	if ids, err := s.credentialIDs(ctx); err == nil && len(ids) == 0 {
 		lines = append(lines, "Nobody can approve this yet: no passkey is registered for this database.")
 		noPasskeySteps(steps, s.deps.Core.Commands)
@@ -427,7 +428,7 @@ func (s *Service) endedPluginApproval(ctx context.Context, id uuid.UUID) (Plugin
 func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool) (requestPluginResult, error) {
 	entry := st.Name + "/" + st.Instance
 	again := map[string]any{"name": st.Name, "instance": st.Instance}
-	steps := NewSteps()
+	steps := guidance.NewSteps()
 	var msg string
 	switch st.State {
 	case PluginStateRunning:
@@ -435,7 +436,7 @@ func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool
 		steps.Stop("Tell the person the plugin runs.")
 	case PluginStateApproved:
 		msg = "You approved the plugin " + entry + ". It does not run yet; the agent checks why."
-		steps.CallTool(toolStatus, map[string]any{}, "Call status: its plugins and problems say why the plugin does not run yet.")
+		steps.CallTool(guidance.ToolStatus, map[string]any{}, "Call status: its plugins and problems say why the plugin does not run yet.")
 	case PluginStateEnded:
 		msg = "The approval of the plugin " + entry + " is over: it expired, a newer one replaced it, or the plugin was turned off or removed. Nothing runs on it."
 		steps.AskPerson("Ask the person whether to ask for the plugin again.").
@@ -469,7 +470,7 @@ func (s *Service) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool
 
 // pluginDone is a result that only tells the person.
 func pluginDone(state, name, instance, msg, text string) (requestPluginResult, error) {
-	built, err := NewSteps().Stop(text).Build()
+	built, err := guidance.NewSteps().Stop(text).Build()
 	if err != nil {
 		return requestPluginResult{}, err
 	}
@@ -492,7 +493,7 @@ func (s *Service) pluginError(err error) error {
 // pluginRefused is PLUGIN_REFUSED with the steps the catalog gives its
 // reason.
 func pluginRefused(reason, message, person string) error {
-	steps := NewSteps()
+	steps := guidance.NewSteps()
 	switch reason {
 	case reasonPluginBadManifest, reasonPluginNotTrusted:
 		steps.Stop("Stop: the plugin's files were refused; its publisher must fix them.")

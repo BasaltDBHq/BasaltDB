@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/budget"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -35,7 +36,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
-		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
+		return uuid.Nil, time.Time{}, &toolresult.ToolError{Code: CodeSQLError, Reason: guidance.ReasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
 		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
@@ -79,7 +80,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	a, err := s.deps.Approval.Store.FindApproval(ctx, p.ApprovalID)
 	if sentinel(err, s.deps.Approval.ErrNotFound) {
-		return WriteOutcome{}, approvalInvalid(reasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
+		return WriteOutcome{}, approvalInvalid(guidance.ReasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
 		return WriteOutcome{}, err
@@ -130,7 +131,7 @@ func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err e
 		return err
 	}
 	switch te.Reason {
-	case reasonNotSigned, reasonBadSignature, reasonPasskeyRevoked:
+	case guidance.ReasonNotSigned, guidance.ReasonBadSignature, guidance.ReasonPasskeyRevoked:
 	default:
 		return err
 	}
@@ -145,7 +146,7 @@ func (s *Service) withApprovalLink(ctx context.Context, a action.Approval, err e
 func sameAsHeld(a action.Approval, p WriteParams) error {
 	switch {
 	case a.Status == approvalApplied:
-		return approvalInvalid(reasonAlreadyUsed, "approval %s was already used", a.ID)
+		return approvalInvalid(guidance.ReasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == approvalExpired:
 		return &toolresult.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, timeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:

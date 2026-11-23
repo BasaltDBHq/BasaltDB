@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -129,9 +130,9 @@ func (s *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, erro
 // the agent gets.
 func actionTool(op action.Op) string {
 	if op == action.OpSelect {
-		return toolQuery
+		return guidance.ToolQuery
 	}
-	return toolWrite
+	return guidance.ToolWrite
 }
 
 // refusalOp is the op the guard's record_refusal accepts.

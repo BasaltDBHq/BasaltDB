@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
@@ -168,8 +169,8 @@ const endTurnSetup = "End your turn: the person changes the setup first."
 // the person changes the setup, then the agent asks for new links for the
 // run's pending holds.
 func approvalTooLargeSteps(runID uuid.UUID) ([]toolresult.NextStep, error) {
-	return NewSteps().AskPerson(tooLargeAsk(false)).EndTurn(endTurnSetup).
-		CallTool(toolListPending, map[string]any{"kind": KindApproval, "status": "PENDING", argRunID: runID.String(), argReissueLink: true},
+	return guidance.NewSteps().AskPerson(tooLargeAsk(false)).EndTurn(endTurnSetup).
+		CallTool(guidance.ToolListPending, map[string]any{"kind": KindApproval, "status": "PENDING", guidance.ArgRunID: runID.String(), argReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives the held write a new link.").
 		Build()
 }
@@ -179,12 +180,12 @@ func approvalTooLargeSteps(runID uuid.UUID) ([]toolresult.NextStep, error) {
 // setup or asks for a narrower revert, and the agent asks for a new link
 // for this revert only.
 func revertTooLargeSteps(id uuid.UUID, stop bool) ([]toolresult.NextStep, error) {
-	b := NewSteps()
+	b := guidance.NewSteps()
 	if stop {
 		b.Stop("Do not retry now: no link this engine has can carry this revert.")
 	}
 	return b.AskPerson(tooLargeAsk(true)).EndTurn(endTurnSetup).
-		CallTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
+		CallTool(guidance.ToolRequestRevert, map[string]any{guidance.ArgRevertID: id.String(), argReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives this revert a new link.").
 		Build()
 }

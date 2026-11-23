@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
@@ -36,7 +37,7 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	}
 	schemas := schemaCounts(visible)
 	o.Counts.Schemas = len(schemas)
-	b := NewSteps()
+	b := guidance.NewSteps()
 	switch {
 	case len(visible) > overviewInlineMax:
 		o.Schemas, o.OtherSchemas = capSchemas(schemas)
@@ -93,7 +94,7 @@ func capSchemas(schemas []SchemaCount) ([]SchemaCount, *OtherSchemas) {
 // overviewLargeSteps (OVERVIEW_LARGE): search instead of listing. The
 // arguments list the largest schema, a complete call the agent can make as
 // it is.
-func overviewLargeSteps(b *Steps, schemas []SchemaCount) {
+func overviewLargeSteps(b *guidance.Steps, schemas []SchemaCount) {
 	largest := schemas[0]
 	for _, sc := range schemas[1:] {
 		if sc.Tables > largest.Tables {
@@ -108,7 +109,7 @@ func overviewLargeSteps(b *Steps, schemas []SchemaCount) {
 // one of the tables; the setup page that basalt init links to lists them, so
 // the agent never sees their names (D-1, D-7). No ASK_PERSON: platform
 // schemas are ungranted on every Supabase project.
-func (s *Service) notGrantedSteps(b *Steps, notGranted int) string {
+func (s *Service) notGrantedSteps(b *guidance.Steps, notGranted int) string {
 	b.TellAgent("Tell the agent when it needs one of these tables: it gives you a link where you pick them.")
 	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
 		"To give it one, tell the agent: it gives you a link where you pick the tables.",
@@ -132,7 +133,7 @@ func describeNotFound(resource string) error {
 // describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
-func (s *Service) describeNotFoundSteps(b *Steps, f failure) string {
+func (s *Service) describeNotFoundSteps(b *guidance.Steps, f failure) string {
 	b.CallTool(toolDescribe, map[string]any{argQuery: searchTerm(f.arg(argResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")

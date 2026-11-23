@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -252,7 +253,7 @@ func theirsRequestedBy(t *testing.T, binding string) string {
 // app mounts them.
 func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv := pages.New(origin, log)
-	srv.MountApprovals(pages.NewApprovalHandlers(srv))
+	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(pages.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))

@@ -26,6 +26,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
+	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
@@ -393,7 +394,7 @@ func TestASetupThePersonDidNotMakeIsUndoneWithoutRoot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	srv := pages.New(origin, slog.New(slog.DiscardHandler))
-	srv.MountApprovals(pages.NewApprovalHandlers(srv))
+	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(pages.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewSetupHandlers(origin, jobs, slog.New(slog.DiscardHandler).With("component", "setup")))

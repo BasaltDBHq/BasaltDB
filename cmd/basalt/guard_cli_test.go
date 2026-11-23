@@ -35,7 +35,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit,
+	"init": runInitCommand,
 }
 
 func tempConfig(t *testing.T) string {

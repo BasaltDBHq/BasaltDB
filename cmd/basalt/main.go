@@ -49,11 +49,15 @@ func commands() []command {
 		{"engine", "Run the engine service in the foreground", runEngine, true},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP, false},
 		{"service", "Install the engine service (install)", runService, false},
-		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(newIO, runInit), false},
+		{"init", "Start setup: install the engine service when needed, then print and open the setup link", withIO(newIO, runInitCommand), false},
 		{"version", "Print the version", runVersion, false},
 		{"help", "Show this help", nil, false},
 	}
 }
+
+// runInitCommand is basalt init for the command table: init --remote
+// reaches the adapters through appSetupHost.
+func runInitCommand(c *cliIO, args []string) int { return runInit(c, appSetupHost{}, args) }
 
 func run(ctx context.Context, args []string, io stdio) int {
 	if len(args) == 0 {

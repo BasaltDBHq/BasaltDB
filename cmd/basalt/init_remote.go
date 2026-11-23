@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 
@@ -161,8 +162,8 @@ func isRemote(args []string) bool {
 }
 
 // runInitRemote: basalt init --remote.
-func runInitRemote(c *cliIO, args []string) int {
-	res, err := initRemote(c, args)
+func runInitRemote(c *cliIO, h remoteHost, args []string) int {
+	res, err := initRemote(c, h, args)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -173,7 +174,7 @@ func runInitRemote(c *cliIO, args []string) int {
 }
 
 // initRemote runs basalt init --remote and returns what it prints.
-func initRemote(c *cliIO, args []string) (RemoteInitResult, error) {
+func initRemote(c *cliIO, h remoteHost, args []string) (RemoteInitResult, error) {
 	f, err := parseInitRemote(c, args)
 	if err != nil {
 		return RemoteInitResult{}, err
@@ -186,7 +187,7 @@ func initRemote(c *cliIO, args []string) (RemoteInitResult, error) {
 	if err := checkBuildVersion(buildVersion()); err != nil {
 		return RemoteInitResult{}, err
 	}
-	r, err := newRemoteInit(c, f)
+	r, err := newRemoteInit(c, h, f)
 	if err != nil {
 		return RemoteInitResult{}, err
 	}
@@ -227,7 +228,10 @@ func remoteAgentName(agents []config.Agent) (string, error) {
 // remoteInit is one run of basalt init --remote: the paths, the existing
 // config and credential, and what logging in as the agent found.
 type remoteInit struct {
-	c        *cliIO
+	c *cliIO
+	// setup is what the run reaches outside the CLI: the guard, the engine
+	// keys and the trust profiles.
+	setup    remoteHost
 	f        remoteFlags
 	names    guardmodel.Names
 	role     string
@@ -284,8 +288,28 @@ type remoteInit struct {
 	certChanged bool
 }
 
-func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
-	r := &remoteInit{c: c, f: f}
+// remoteHost is what basalt init --remote reaches outside the CLI: the
+// guard's versions, records and agent connection string, the engine's
+// keys, and the trust profiles next to the config.
+type remoteHost interface {
+	// GuardAgentConnString is adminURL with the agent's role and password.
+	GuardAgentConnString(adminURL, role, password string) (string, error)
+	// GuardAgentVersion is the guard version q's database has, 0 when none.
+	GuardAgentVersion(ctx context.Context, q pgquerier.Querier) (int, error)
+	// GuardLatestVersion is the guard version this binary installs.
+	GuardLatestVersion() int
+	// GuardSetupRecorded reports whether the setup with id is recorded.
+	GuardSetupRecorded(ctx context.Context, q pgquerier.Querier, id uuid.UUID) (bool, error)
+	// LoadOrCreateEngineKeys reads the engine's keys at path, making them
+	// when there are none.
+	LoadOrCreateEngineKeys(path string, now func() time.Time) (*channel.EngineKeys, error)
+	// TrustProfileFor is the profile in the trust.d next to the config at
+	// configPath that names host, or nil.
+	TrustProfileFor(configPath, host string) *trustprofile.Profile
+}
+
+func newRemoteInit(c *cliIO, h remoteHost, f remoteFlags) (*remoteInit, error) {
+	r := &remoteInit{c: c, setup: h, f: f}
 	if err := r.paths(); err != nil {
 		return nil, err
 	}
@@ -670,7 +694,7 @@ func loginAsAgent(ctx context.Context, sh shellHost, dsn string) (agentConn, err
 // setup is recorded.
 func (r *remoteInit) inspect(conn agentConn) error {
 	r.loggedIn = true
-	v, err := app.GuardAgentVersion(r.c.ctx, conn)
+	v, err := r.setup.GuardAgentVersion(r.c.ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -682,7 +706,7 @@ func (r *remoteInit) inspect(conn agentConn) error {
 	if err != nil {
 		return nil //nolint:nilerr // a malformed pending setup is replaced, not reused
 	}
-	r.recorded, err = app.GuardSetupRecorded(r.c.ctx, conn, id)
+	r.recorded, err = r.setup.GuardSetupRecorded(r.c.ctx, conn, id)
 	return err
 }
 
@@ -731,7 +755,7 @@ type plan struct {
 // than this build's; else an AGENT code with no change. Every AGENT code
 // names no tables: the role keeps its grants (payload).
 func (r *remoteInit) decide() (plan, error) {
-	latest := app.GuardLatestVersion()
+	latest := r.setup.GuardLatestVersion()
 	if r.certChanged {
 		return r.certificatePlan()
 	}
@@ -788,7 +812,7 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 	}
 	out := setupcode.Payload{
 		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix,
-		Guard: setupcode.Guard{From: p.from, To: app.GuardLatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
+		Guard: setupcode.Guard{From: p.from, To: r.setup.GuardLatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
 	}
 	if !r.connectOnly {
 		target := r.target
@@ -1102,7 +1126,7 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if !p.newPassword {
 		return nil
 	}
-	dsn, err := app.GuardAgentConnString(r.base.String(), r.role, p.password)
+	dsn, err := r.setup.GuardAgentConnString(r.base.String(), r.role, p.password)
 	if err != nil {
 		return err
 	}
@@ -1286,7 +1310,7 @@ func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
 		return nil, err
 	}
-	keys, err := app.LoadOrCreateEngineKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
+	keys, err := r.setup.LoadOrCreateEngineKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
 	if err != nil {
 		return nil, keyRefused(err)
 	}

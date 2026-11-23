@@ -67,7 +67,7 @@ var errDevBuild = errors.New("a build with no release number gets no update noti
 
 // startUpdateNotice starts the refresh for a command and returns the
 // function to call after it ran: it prints the notice. It does nothing for
-// the commands in noUpdateLine and for --json (whose output carries the
+// the commands in status.NoUpdateLine and for --json (whose output carries the
 // notice as a field where the command has one).
 func startUpdateNotice(ctx context.Context, args []string, std cli.Stdio, getenv func(string) string) func() {
 	nothing := func() {}

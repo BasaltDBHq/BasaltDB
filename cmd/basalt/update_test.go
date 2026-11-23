@@ -14,21 +14,19 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/status"
-	"github.com/basaltdbhq/basaltdb/internal/status/in/statuscli"
 	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
-func TestPrintUpdateLine(t *testing.T) {
+// The command table hands the update check's notice to statuscli as the
+// line it prints and its security flag (statuscli tests the printing).
+func TestNoticeOf(t *testing.T) {
 	n := &updatecheck.Notice{Current: "0.0.1", Latest: "0.0.2", URL: "u"}
-	var b bytes.Buffer
-	statuscli.PrintUpdateLine(&b, func(string) string { return "" }, noticeOf(n, "/x/basalt"))
-	if got := b.String(); strings.Contains(got, "\x1b") || !strings.Contains(got, "basalt 0.0.1 is out of date; 0.0.2 is available.") || !strings.HasSuffix(got, "\n") {
-		t.Errorf("non-terminal output = %q", got)
+	got := noticeOf(n, "/x/basalt")
+	if got == nil || !strings.Contains(got.Line, "basalt 0.0.1 is out of date; 0.0.2 is available.") || got.Security {
+		t.Errorf("notice = %+v", got)
 	}
-	b.Reset()
-	statuscli.PrintUpdateLine(&b, func(string) string { return "" }, noticeOf(nil, "/x/basalt"))
-	if b.Len() != 0 {
-		t.Errorf("printed without a notice: %q", b.String())
+	if got := noticeOf(nil, "/x/basalt"); got != nil {
+		t.Errorf("a notice without one: %+v", got)
 	}
 }
 

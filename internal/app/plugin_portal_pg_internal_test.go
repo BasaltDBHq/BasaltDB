@@ -223,7 +223,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	body, isError := install()
 	require.True(t, isError, "%v", body)
 	require.Equal(t, "PLUGIN_REFUSED", body["code"], "%v", body)
-	require.Equal(t, agent.ReasonPluginNoPortalLink, body["reason"])
+	require.Equal(t, plugin.ReasonPluginNoPortalLink, body["reason"])
 	require.Empty(t, f.entries(), "nothing written without a portal link")
 
 	// basalt mcp uploads on an agent-operated engine; the engine refuses the
@@ -243,7 +243,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
-	require.Equal(t, agent.ReasonPluginNoPortalLink, te.Reason)
+	require.Equal(t, plugin.ReasonPluginNoPortalLink, te.Reason)
 	require.Contains(t, te.PersonMessage, "the Vault is off")
 	require.Equal(t, []string{toolresult.ActionAskPerson, toolresult.ActionCallTool}, []string{te.NextSteps[0].Action, te.NextSteps[1].Action})
 
@@ -275,14 +275,14 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 
 	body, isError = install()
 	require.False(t, isError, "%v", body)
-	require.Equal(t, agent.PluginStatePending, body["state"])
+	require.Equal(t, plugin.PluginStatePending, body["state"])
 	idText, secret := portalLink(t, body["approvalUrl"].(string), "plugins")
 	require.Equal(t, body["approvalId"], idText)
 	id := uuid.MustParse(idText)
 	require.Len(t, f.entries(), 1, "the entry is written and waits for the approval")
 	st, err := p.PluginApproval(ctx, "bot", id)
 	require.NoError(t, err)
-	require.Equal(t, agent.PluginStatePending, st.State, "nothing is served before the signature")
+	require.Equal(t, plugin.PluginStatePending, st.State, "nothing is served before the signature")
 
 	linkKeys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
@@ -324,7 +324,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 	require.Equal(t, http.StatusConflict, refused.Status, refused.Body)
 	st, err = p.PluginApproval(ctx, "bot", id)
 	require.NoError(t, err)
-	require.Equal(t, agent.PluginStatePending, st.State)
+	require.Equal(t, plugin.PluginStatePending, st.State)
 
 	// The person's passkey: Postgres verifies it, and the answer carries no
 	// receipt (there is no receipt kind for a plugin approval). The portal's
@@ -354,7 +354,7 @@ func TestPluginApprovalThroughThePortal(t *testing.T) {
 
 	body, isError = callWithMeta(ctx, t, server, "request_plugin", map[string]any{"approvalId": idText, "waitForApproval": 0}, nil)
 	require.False(t, isError, "%v", body)
-	require.Equal(t, agent.PluginStateApproved, body["state"], "signed in Postgres; the harness runs no plugin")
+	require.Equal(t, plugin.PluginStateApproved, body["state"], "signed in Postgres; the harness runs no plugin")
 }
 
 // pluginSigned is the approve body: signer's assertion over the binding the

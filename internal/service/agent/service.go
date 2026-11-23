@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
+
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
@@ -111,7 +113,7 @@ type PluginDeps struct {
 	// Requests serve request_plugin with the engine-kept plugin entries of
 	// a service engine; nil on any other engine, where the tool is refused
 	// (CONTRACT.md, MCP tools, request_plugin).
-	Requests PluginRequests
+	Requests pluginsvc.PluginRequests
 	// ApprovalsVersion is the basalt_meta version that holds plugin
 	// approvals.
 	ApprovalsVersion int

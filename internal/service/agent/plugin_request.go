@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
+
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/google/uuid"
@@ -27,94 +29,18 @@ import (
 
 const toolRequestPlugin = guidance.ToolRequestPlugin
 
-// The states of a request_plugin result.
-const (
-	PluginStatePending  = "PENDING"
-	PluginStateApproved = "APPROVED"
-	PluginStateRunning  = "RUNNING"
-	PluginStateNarrowed = "NARROWED"
-	PluginStateRemoved  = "REMOVED"
-	PluginStateEnded    = "ENDED"
-)
-
 // codePluginRefused is a refused plugin change.
 const codePluginRefused = "PLUGIN_REFUSED"
 
-// PLUGIN_REFUSED reasons the tool gives itself; the engine's PluginRequests
-// give the others (CONTRACT.md, Error codes).
+// PLUGIN_REFUSED reasons the engine's PluginRequests give and the tool
+// words (CONTRACT.md, Error codes).
 const (
-	ReasonPluginAgentOperated   = "AGENT_OPERATED"
-	ReasonPluginSameUserMode    = "SAME_USER_MODE"
-	ReasonPluginNoLocalPages    = "NO_LOCAL_PAGES"
-	ReasonPluginNoPortalLink    = "NO_PORTAL_LINK"
-	ReasonPluginAgentNotAllowed = "AGENT_NOT_ALLOWED"
-	reasonPluginBadManifest     = "BAD_MANIFEST"
-	reasonPluginNotTrusted      = "NOT_TRUSTED"
-	reasonPluginUnknownAgent    = "UNKNOWN_AGENT"
-	reasonPluginUnreachable     = "DATABASE_UNREACHABLE"
-	reasonPluginUnsafePath      = "UNSAFE_PATH"
+	reasonPluginBadManifest  = "BAD_MANIFEST"
+	reasonPluginNotTrusted   = "NOT_TRUSTED"
+	reasonPluginUnknownAgent = "UNKNOWN_AGENT"
+	reasonPluginUnreachable  = "DATABASE_UNREACHABLE"
+	reasonPluginUnsafePath   = "UNSAFE_PATH"
 )
-
-// PluginRequests serve request_plugin with the engine's engine-kept plugin
-// entries (CONTRACT.md, Plugin approval in service mode). caller is the
-// agent that calls; every method applies its OS user's scope. Errors are
-// *PluginRefusedError, ErrPluginNotFound or *ArgumentError; anything else is
-// INTERNAL.
-type PluginRequests interface {
-	// OpenPlugin is PLUGIN_OPEN for caller: the uploaded copy, or the
-	// installed one when p.UploadID is nil.
-	OpenPlugin(ctx context.Context, caller string, p PluginOpen) (PluginOpened, error)
-	// RemovePlugin is PLUGIN_REMOVE for caller.
-	RemovePlugin(ctx context.Context, caller, name, instance string) error
-	// PluginApproval is the state of approval id, as PLUGIN_LIST shows the
-	// entry that holds it to caller, and what the engine serves of it.
-	PluginApproval(ctx context.Context, caller string, id uuid.UUID) (PluginApprovalState, error)
-	// DropUpload removes caller's upload id of a call refused before the
-	// engine took it, so no refusal holds one of its few open uploads.
-	DropUpload(caller string, id uuid.UUID)
-}
-
-// PluginOpen is one request to open a plugin approval.
-type PluginOpen struct {
-	// UploadID is the upload basalt mcp made of the source; nil opens a new
-	// approval for the installed copy.
-	UploadID    *uuid.UUID
-	Name        string
-	Instance    string
-	Executables []string
-	// Agents is the entry's full new list; nil is the default: the caller
-	// alone for a new entry, the entry's agents for an existing one.
-	Agents []string
-}
-
-// PluginOpened is an approval opened, or a narrowing applied.
-type PluginOpened struct {
-	Name, Instance, Version string
-	Agents                  []string
-	Narrowed                bool
-	ApprovalID              uuid.UUID
-	ExpiresAt               time.Time
-	BindingText             string
-}
-
-// PluginApprovalState is one approval as the wait reads it. State is
-// PENDING, APPROVED, RUNNING or ENDED.
-type PluginApprovalState struct {
-	Name, Instance string
-	Agents         []string
-	State          string
-	ExpiresAt      time.Time
-}
-
-// PluginRefusedError is PLUGIN_REFUSED with its reason, from the engine.
-type PluginRefusedError struct {
-	Reason, Message string
-}
-
-func (r *PluginRefusedError) Error() string { return r.Message }
-
-// ErrPluginNotFound: no entry, or no approval, the caller may reach.
-var ErrPluginNotFound = errors.New("the engine keeps no such plugin or plugin approval for this agent")
 
 // requestPluginArgs is the request_plugin tool's input
 // (api/mcp/tools/request_plugin.json).
@@ -205,11 +131,11 @@ func (pc *pluginCase) RequestPlugin(ctx context.Context, a requestPluginArgs, me
 		if err := pc.deps.Requests.RemovePlugin(ctx, pc.core.Name, a.Name, instance); err != nil {
 			return requestPluginResult{}, pc.pluginError(err)
 		}
-		return pluginDone(PluginStateRemoved, a.Name, instance,
+		return pluginDone(pluginsvc.PluginStateRemoved, a.Name, instance,
 			fmt.Sprintf("The plugin %s/%s is removed: it stopped, and adding it again needs your approval.", a.Name, instance),
 			"Tell the person the plugin is removed.")
 	}
-	open := PluginOpen{Name: a.Name, Instance: instance, Agents: a.Agents}
+	open := pluginsvc.PluginOpen{Name: a.Name, Instance: instance, Agents: a.Agents}
 	if a.Source != "" {
 		up, err := uploadOf(meta)
 		if err != nil {
@@ -223,7 +149,7 @@ func (pc *pluginCase) RequestPlugin(ctx context.Context, a requestPluginArgs, me
 		return requestPluginResult{}, pc.pluginError(err)
 	}
 	if opened.Narrowed {
-		res, err := pluginDone(PluginStateNarrowed, opened.Name, opened.Instance,
+		res, err := pluginDone(pluginsvc.PluginStateNarrowed, opened.Name, opened.Instance,
 			fmt.Sprintf("The plugin %s/%s now serves only %s. Nothing needs your approval: removing agents never widens what it gets.",
 				opened.Name, opened.Instance, joinNames(opened.Agents)),
 			"Tell the person the plugin now serves only the agents named.")
@@ -246,7 +172,7 @@ func (pc *pluginCase) PluginUploadsServed() error { return pc.pluginsServed(true
 func (pc *pluginCase) pluginsServed(opens bool) error {
 	switch {
 	case pc.core.Commands.AgentOperated() && (!pc.status.SameUser() || pc.deps.Requests == nil):
-		return pluginRefused(ReasonPluginAgentOperated,
+		return pluginRefused(pluginsvc.ReasonPluginAgentOperated,
 			"request_plugin is refused: this engine is operated by an agent and runs as a service under its own OS user, where plugin changes stay refused. Nothing was written",
 			"Plugins cannot be added or changed on this engine: an agent operates it and it runs as its own user. Nothing was changed.")
 	case pc.core.Commands.AgentOperated():
@@ -255,11 +181,11 @@ func (pc *pluginCase) pluginsServed(opens bool) error {
 				"Basalt cannot hand you a link to approve the plugin right now: "+why+". Nothing was changed.")
 		}
 	case pc.status.SameUser() || pc.deps.Requests == nil:
-		return pluginRefused(ReasonPluginSameUserMode,
+		return pluginRefused(pluginsvc.ReasonPluginSameUserMode,
 			"request_plugin is refused: this engine runs as the person's own OS user and keeps no plugins of its own. Nothing was written",
 			"This Basalt engine runs as your own user, so it keeps no plugins it could add for you. A plugin is added to its engine.json by hand.")
 	case opens && pc.core.PagesOrigin == "":
-		return pluginRefused(ReasonPluginNoLocalPages,
+		return pluginRefused(pluginsvc.ReasonPluginNoLocalPages,
 			"request_plugin is refused: this engine serves no local pages, so there is no page to approve the plugin on. Nothing was written",
 			"This Basalt engine serves no approval pages on this computer, so you could not approve a plugin. Turn its local pages on first.")
 	}
@@ -298,7 +224,7 @@ func (pc *pluginCase) noPortalLink() string {
 // the Vault, on an agent-operated engine; else the engine's own pages. A
 // portal link the Vault did not register leaves the entry written and
 // withheld, and the name form opens a new approval later.
-func (pc *pluginCase) pluginLink(ctx context.Context, o PluginOpened) (string, error) {
+func (pc *pluginCase) pluginLink(ctx context.Context, o pluginsvc.PluginOpened) (string, error) {
 	if !pc.portalPluginLinks() {
 		return pc.delivery.IssuedLink(links.PluginApproval, o.ApprovalID, o.ExpiresAt)
 	}
@@ -316,7 +242,7 @@ func (pc *pluginCase) pluginLink(ctx context.Context, o PluginOpened) (string, e
 
 // noPortalLinkError is PLUGIN_REFUSED NO_PORTAL_LINK.
 func noPortalLinkError(message, person string) error {
-	return pluginRefused(ReasonPluginNoPortalLink, message, person)
+	return pluginRefused(pluginsvc.ReasonPluginNoPortalLink, message, person)
 }
 
 // uploadOf is basalt mcp's upload of the source, from the call's _meta.
@@ -339,7 +265,7 @@ func uploadOf(meta json.RawMessage) (PluginUpload, error) {
 // pluginOpened hands over a new approval: the short link on the engine's
 // local pages, the person's message with the page's level line, and the
 // steps (CONTRACT.md, Plugin approval links).
-func (pc *pluginCase) pluginOpened(ctx context.Context, o PluginOpened) (requestPluginResult, error) {
+func (pc *pluginCase) pluginOpened(ctx context.Context, o pluginsvc.PluginOpened) (requestPluginResult, error) {
 	b, err := approval.ParsePluginBinding(o.BindingText)
 	if err != nil {
 		return requestPluginResult{}, err
@@ -373,7 +299,7 @@ func (pc *pluginCase) pluginOpened(ctx context.Context, o PluginOpened) (request
 		return requestPluginResult{}, err
 	}
 	return requestPluginResult{
-		State: PluginStatePending, Name: o.Name, Instance: o.Instance, Version: o.Version, Agents: o.Agents,
+		State: pluginsvc.PluginStatePending, Name: o.Name, Instance: o.Instance, Version: o.Version, Agents: o.Agents,
 		ApprovalID: o.ApprovalID.String(), ExpiresAt: guidance.TimeText(o.ExpiresAt), ApprovalURL: link,
 		PersonMessage: strings.Join(lines, "\n"), Links: []toolresult.Link{{Label: "Approve the plugin " + o.Name, URL: link}},
 		NextSteps: built,
@@ -387,13 +313,13 @@ func (pc *pluginCase) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Du
 	deadline := pc.core.Now().Add(wait)
 	for {
 		st, err := pc.deps.Requests.PluginApproval(ctx, pc.core.Name, id)
-		if errors.Is(err, ErrPluginNotFound) {
+		if errors.Is(err, pluginsvc.ErrPluginNotFound) {
 			st, err = pc.endedPluginApproval(ctx, id)
 		}
 		if err != nil {
 			return requestPluginResult{}, pc.pluginError(err)
 		}
-		done := st.State == PluginStateRunning || st.State == PluginStateEnded
+		done := st.State == pluginsvc.PluginStateRunning || st.State == pluginsvc.PluginStateEnded
 		if done || !pc.core.Now().Add(pc.delivery.PollInterval()).Before(deadline) {
 			return pc.pluginWaited(id, st, wait > 0)
 		}
@@ -409,34 +335,34 @@ func (pc *pluginCase) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Du
 // plugin was removed, or a newer approval replaced it for every agent): an
 // approval the caller's role opened or that names it reads ENDED, anything
 // else is not found.
-func (pc *pluginCase) endedPluginApproval(ctx context.Context, id uuid.UUID) (PluginApprovalState, error) {
+func (pc *pluginCase) endedPluginApproval(ctx context.Context, id uuid.UUID) (pluginsvc.PluginApprovalState, error) {
 	if pc.deps.Approvals == nil {
-		return PluginApprovalState{}, ErrPluginNotFound
+		return pluginsvc.PluginApprovalState{}, pluginsvc.ErrPluginNotFound
 	}
 	r, ok, err := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 	switch {
 	case err != nil:
-		return PluginApprovalState{}, err
+		return pluginsvc.PluginApprovalState{}, err
 	case !ok:
-		return PluginApprovalState{}, ErrPluginNotFound
+		return pluginsvc.PluginApprovalState{}, pluginsvc.ErrPluginNotFound
 	}
-	return PluginApprovalState{Name: r.Name, Instance: r.Instance, State: PluginStateEnded}, nil
+	return pluginsvc.PluginApprovalState{Name: r.Name, Instance: r.Instance, State: pluginsvc.PluginStateEnded}, nil
 }
 
 // pluginWaited is the wait form's answer for st.
-func (pc *pluginCase) pluginWaited(id uuid.UUID, st PluginApprovalState, waited bool) (requestPluginResult, error) {
+func (pc *pluginCase) pluginWaited(id uuid.UUID, st pluginsvc.PluginApprovalState, waited bool) (requestPluginResult, error) {
 	entry := st.Name + "/" + st.Instance
 	again := map[string]any{"name": st.Name, "instance": st.Instance}
 	steps := guidance.NewSteps()
 	var msg string
 	switch st.State {
-	case PluginStateRunning:
+	case pluginsvc.PluginStateRunning:
 		msg = "The plugin " + entry + " is approved and running."
 		steps.Stop("Tell the person the plugin runs.")
-	case PluginStateApproved:
+	case pluginsvc.PluginStateApproved:
 		msg = "You approved the plugin " + entry + ". It does not run yet; the agent checks why."
 		steps.CallTool(guidance.ToolStatus, map[string]any{}, "Call status: its plugins and problems say why the plugin does not run yet.")
-	case PluginStateEnded:
+	case pluginsvc.PluginStateEnded:
 		msg = "The approval of the plugin " + entry + " is over: it expired, a newer one replaced it, or the plugin was turned off or removed. Nothing runs on it."
 		steps.AskPerson("Ask the person whether to ask for the plugin again.").
 			CallTool(toolRequestPlugin, again, "When they want it, call this: it opens a new approval for the installed plugin.")
@@ -461,7 +387,7 @@ func (pc *pluginCase) pluginWaited(id uuid.UUID, st PluginApprovalState, waited 
 		State: st.State, Name: st.Name, Instance: st.Instance, Agents: st.Agents, ApprovalID: id.String(),
 		PersonMessage: msg, NextSteps: built,
 	}
-	if st.State == PluginStatePending && !st.ExpiresAt.IsZero() {
+	if st.State == pluginsvc.PluginStatePending && !st.ExpiresAt.IsZero() {
 		res.ExpiresAt = guidance.TimeText(st.ExpiresAt)
 	}
 	return res, nil
@@ -479,9 +405,9 @@ func pluginDone(state, name, instance, msg, text string) (requestPluginResult, e
 // pluginError maps the engine's answer to the tool's error body, with the
 // catalog's steps for each PLUGIN_REFUSED reason.
 func (pc *pluginCase) pluginError(err error) error {
-	var r *PluginRefusedError
+	var r *pluginsvc.PluginRefusedError
 	switch {
-	case errors.Is(err, ErrPluginNotFound):
+	case errors.Is(err, pluginsvc.ErrPluginNotFound):
 		return &toolresult.ToolError{Code: guidance.CodeNotFound, Message: err.Error()}
 	case errors.As(err, &r):
 		return pluginRefused(r.Reason, r.Message, "Basalt did not add or change the plugin: "+r.Message)
@@ -501,7 +427,7 @@ func pluginRefused(reason, message, person string) error {
 	case reasonPluginUnreachable:
 		steps.AskPerson("Ask the person to check that the database is up.").
 			CallTool(toolRequestPlugin, nil, "Once it answers, call request_plugin again (with name and instance when the plugin is already installed).")
-	case ReasonPluginNoPortalLink:
+	case pluginsvc.ReasonPluginNoPortalLink:
 		steps.AskPerson("Show the person the personMessage: it says why Basalt cannot hand over a link; status shows vault.").
 			CallTool(toolRequestPlugin, nil, "Once the person says it is fixed, call request_plugin again: the same call when nothing was written, or with name and instance when the plugin is already installed.")
 	default:

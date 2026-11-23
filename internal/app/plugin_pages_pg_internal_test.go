@@ -1,10 +1,9 @@
-package plugin
+package app
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
@@ -25,10 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/plugin/in/pluginpage"
-	"github.com/basaltdbhq/basaltdb/internal/revert/in/revertpage"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/setup/in/setuppage"
 )
 
 // pluginApprovalDetail is the detail of a local wire.detect entry in same-user
@@ -252,13 +247,8 @@ func theirsRequestedBy(t *testing.T, binding string) string {
 	return b.RequestedBy
 }
 
-// newPages is the pages for origin with every page's handlers mounted, as
-// app mounts them.
-func newPages(origin string, log *slog.Logger) *pageserver.Server {
-	srv := pageserver.New(origin, log)
-	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
-	srv.MountReverts(revertpage.NewRevertHandlers(srv))
-	srv.MountPlugins(pluginpage.NewPluginHandlers(srv))
-	srv.MountSetup(setuppage.NewConfiguredSetupHandlers(origin))
-	return srv
-}
+// testProbe is the store's probe as the agent reads it; these tests have no
+// reinstall to tell of.
+type testProbe struct{ store.Probe }
+
+func (testProbe) ReinstallNotice(context.Context, int) (string, bool, error) { return "", false, nil }

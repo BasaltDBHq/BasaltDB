@@ -8,21 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/status"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/engine/out/crash"
-	"github.com/basaltdbhq/basaltdb/internal/engine/out/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -30,9 +30,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pluginledger"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/resultsize"
 	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/status/out/updatecheck"
 )
 
 // demoTables are the tables the demo database's agents may reach.
@@ -79,16 +76,6 @@ func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	}
 }
 
-// service builds the agent service over the store; set fills in the rest of
-// its dependencies (logger, links, relay and so on).
-func (p pgAgent) service(set func(*agent.Deps)) *agent.Service {
-	d := testAgentDeps("bot", p.store)
-	if set != nil {
-		set(&d)
-	}
-	return agent.NewService(d)
-}
-
 func problemCodes(r guidance.StatusReport) []string {
 	out := make([]string, 0, len(r.Problems))
 	for _, p := range r.Problems {
@@ -97,24 +84,49 @@ func problemCodes(r guidance.StatusReport) []string {
 	return out
 }
 
-// runtimeOf is the agent as the engine's runtime serves it, for the plugin
-// feature: the agent service over its own connection, which reports ep's
-// plugins in its status, and the ledger the plugin event writer reaches it by.
-func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*agent.Service, map[string]AgentLedger) {
+// runtimeOf is the agent's status as the engine's runtime serves it, for the
+// plugin feature: the status use case over the agent's own connection, which
+// reports ep's plugins, and the ledger the plugin event writer reaches the
+// agent by.
+func runtimeOf(t *testing.T, a *guardtest.Agent, ep *Plugins) (*status.Service, map[string]AgentLedger) {
 	t.Helper()
 	pool, err := postgres.NewPool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	pg := newPGAgent(t, a.URL, 2)
-	svc := pg.service(func(dp *agent.Deps) {
-		dp.Status.Plugins = ep
-		dp.Status.Probe = testProbe{postgres.Probe{Q: pool, Migrations: guard.Migrations()}}
-	})
+	core := status.Core{
+		Name: "bot", Log: quietLog(), Now: time.Now, Errors: testErrorMap(), PagesBase: links.DefaultLocal, LinkBudget: links.DefaultBudget,
+		Commands: guidance.NewCommands("bot", "", config.DefaultPath(runtime.GOOS), runtime.GOOS,
+			guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}),
+	}
+	deps := status.Deps{
+		Passkeys: pg.store, LatestGuardVersion: guard.LatestVersion,
+		Probe: testProbe{postgres.Probe{Q: pool, Migrations: guard.Migrations()}},
+	}
+	if ep != nil {
+		deps.Plugins = ep
+	}
+	svc := status.NewService(core, &deps)
 	return svc, map[string]AgentLedger{"bot": {ports: testPorts, db: pool, admit: pluginAdmit(svc)}}
 }
 
+// testErrorMap is the error map the app fills with the adapters' errors.
+func testErrorMap() guidance.ErrorMap {
+	return guidance.ErrorMap{
+		InvalidParams: ledger.ErrInvalidParams,
+		InvalidIntent: guard.ErrInvalidIntent,
+		RowTooLarge: func(err error) (string, bool) {
+			var rl *resultsize.RowTooLargeError
+			if errors.As(err, &rl) {
+				return rl.Error(), true
+			}
+			return "", false
+		},
+	}
+}
+
 // pluginAdmit is svc's admission for plugin records, as the app builds it.
-func pluginAdmit(svc *agent.Service) func(context.Context) error {
+func pluginAdmit(svc interface{ Admit(context.Context) error }) func(context.Context) error {
 	return func(ctx context.Context) error {
 		err := svc.Admit(ctx)
 		var te *toolresult.ToolError
@@ -141,52 +153,3 @@ var testPorts = Ports{
 type testProbe struct{ postgres.Probe }
 
 func (testProbe) ReinstallNotice(context.Context, int) (string, bool, error) { return "", false, nil }
-
-// testAgentDeps are the dependencies of an agent named name over store: the
-// adapters' ones as the app wires them (app.AgentHostDeps, which the engine
-// cannot import), a quiet log and the real clock.
-func testAgentDeps(name string, store agent.SQLStore) agent.Deps {
-	var d agent.Deps
-	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
-	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
-	d.Core.ServiceManager = guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
-	d.Core.Errors = guidance.ErrorMap{
-		InvalidParams: ledger.ErrInvalidParams,
-		InvalidIntent: guard.ErrInvalidIntent,
-		RowTooLarge: func(err error) (string, bool) {
-			var rl *resultsize.RowTooLargeError
-			if errors.As(err, &rl) {
-				return rl.Error(), true
-			}
-			return "", false
-		},
-	}
-	d.Write.Record = func(ch action.Change, rows []action.RowChange) any { return ledger.RecordFromDomain(ch, rows) }
-	d.Approval.ErrNotFound = ledger.ErrApprovalNotFound
-	d.Approval.SortSpec = ledger.ApprovalSortSpec
-	d.Revert.ErrNotFound = ledger.ErrRevertNotFound
-	d.Revert.AfterAnswer = vault.AfterAnswer
-	d.Revert.RotateSession = vault.RotateSession
-	d.Delivery.VaultConflict = vault.IsConflict
-	d.Delivery.ErrVaultNotConnected = vault.ErrNotConnected
-	d.Status.LatestGuardVersion = guard.LatestVersion
-	d.Status.StartHoldOffUntil = func(stop guidance.LastStop, configPath string, now time.Time) (time.Time, bool) {
-		return laststop.StartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, configPath, now)
-	}
-	d.Status.CrashReports = func(dirs ...string) []status.CrashReport {
-		reports := crash.List(dirs...)
-		out := make([]status.CrashReport, 0, len(reports))
-		for _, r := range reports {
-			out = append(out, status.CrashReport{
-				ID: r.ID, Time: r.Time, Version: r.Version, Command: r.Command,
-				IssueURL: func(limit int) string { link, _, _ := r.IssueURLWithin(limit); return link },
-			})
-		}
-		return out
-	}
-	d.Status.UpdateMessage = func(n status.ReleaseNotice, exe string) string {
-		return updatecheck.Notice{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL}.AgentMessage(exe)
-	}
-	d.Plugin.ApprovalsVersion = guard.PluginApprovalsVersion
-	return d
-}

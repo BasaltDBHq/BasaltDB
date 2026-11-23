@@ -26,7 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // uploadPerson and uploadOther are two OS user ids other than the test's own:
@@ -150,14 +149,14 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	}
 
 	te := call("bot", mcpserver.MethodPluginUploadBegin, func() error {
-		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: agent.ReasonPluginAgentOperated, Message: "operated by an agent"}
+		return &toolresult.ToolError{Code: "PLUGIN_REFUSED", Reason: plugin.ReasonPluginAgentOperated, Message: "operated by an agent"}
 	}, nil)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
-	require.Equal(t, agent.ReasonPluginAgentOperated, te.Reason, "the tool's own refusal is passed on")
+	require.Equal(t, plugin.ReasonPluginAgentOperated, te.Reason, "the tool's own refusal is passed on")
 
 	te = call("other", mcpserver.MethodPluginUploadBegin, ok, nil)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
-	require.Equal(t, agent.ReasonPluginAgentNotAllowed, te.Reason, "an OS user the engine does not let change plugins")
+	require.Equal(t, plugin.ReasonPluginAgentNotAllowed, te.Reason, "an OS user the engine does not let change plugins")
 
 	te = call("bot", mcpserver.MethodPluginUploadPart, ok, part(`{"uploadId":"x"}`))
 	require.Equal(t, "INVALID_ARGUMENT", te.Code)

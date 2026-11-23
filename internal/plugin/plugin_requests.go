@@ -13,7 +13,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // Requests serve the agents' request_plugin calls with the
@@ -33,10 +32,10 @@ type Requests struct {
 	admitted []uint32
 }
 
-var _ agent.PluginRequests = (*Requests)(nil)
+var _ PluginRequests = (*Requests)(nil)
 
 // errNoKept is the refusal while the engine keeps no plugins of its own.
-var errNoKept error = &agent.PluginRefusedError{
+var errNoKept error = &PluginRefusedError{
 	Reason:  reasonUnsafePath,
 	Message: "the engine keeps no plugins of its own: its state directory cannot hold them (the engine's log says why). Nothing was written",
 }
@@ -55,7 +54,7 @@ func (p *Requests) reach(caller string) (*KeptPlugins, uint32, Scope, error) {
 		return nil, 0, nil, fmt.Errorf("agent %s has no OS user", caller)
 	}
 	if !slices.Contains(p.admitted, uid) {
-		return nil, 0, nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
+		return nil, 0, nil, &PluginRefusedError{Reason: ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
 			"agent %s runs as an OS user (uid %d) the engine does not let change plugins: only the person's own users may. Nothing was written", caller, uid)}
 	}
 	scope := Scope{}
@@ -71,10 +70,10 @@ func (p *Requests) reach(caller string) (*KeptPlugins, uint32, Scope, error) {
 // caller's own credential: the caller goes first in agents, and every agent
 // must use the caller's database, so the approval's requestedBy is the
 // caller and the page lists exactly the agents the plugin will serve.
-func (p *Requests) OpenPlugin(ctx context.Context, caller string, o agent.PluginOpen) (agent.PluginOpened, error) {
+func (p *Requests) OpenPlugin(ctx context.Context, caller string, o PluginOpen) (PluginOpened, error) {
 	k, uid, scope, err := p.reach(caller)
 	if err != nil {
-		return agent.PluginOpened{}, err
+		return PluginOpened{}, err
 	}
 	key := pluginmodel.EntryKey{Name: o.Name, Instance: o.Instance}
 	agents := o.Agents
@@ -84,7 +83,7 @@ func (p *Requests) OpenPlugin(ctx context.Context, caller string, o agent.Plugin
 	agents, err = k.callerFirst(caller, agents)
 	if err != nil {
 		k.dropUpload(uid, o.UploadID)
-		return agent.PluginOpened{}, err
+		return PluginOpened{}, err
 	}
 	res, err := k.Open(ctx, uid, scope, PluginOpenParams{
 		UploadID: o.UploadID, Name: o.Name, Instance: o.Instance, Agents: agents, Executables: o.Executables,
@@ -93,21 +92,21 @@ func (p *Requests) OpenPlugin(ctx context.Context, caller string, o agent.Plugin
 		// A refusal before PLUGIN_OPEN took the upload (its scope check)
 		// leaves it; one it took is gone already.
 		k.dropUpload(uid, o.UploadID)
-		return agent.PluginOpened{}, requestError(err, o.UploadID != nil)
+		return PluginOpened{}, requestError(err, o.UploadID != nil)
 	}
-	out := agent.PluginOpened{Name: res.Name, Instance: res.Instance, Version: res.Version, Agents: agents, Narrowed: res.Narrowed}
+	out := PluginOpened{Name: res.Name, Instance: res.Instance, Version: res.Version, Agents: agents, Narrowed: res.Narrowed}
 	if res.Narrowed {
 		return out, nil
 	}
 	if len(res.Approvals) != 1 {
-		return agent.PluginOpened{}, fmt.Errorf("plugin %s: %d approvals opened, want one", key, len(res.Approvals))
+		return PluginOpened{}, fmt.Errorf("plugin %s: %d approvals opened, want one", key, len(res.Approvals))
 	}
 	a := res.Approvals[0]
 	switch {
 	case a.Refused != nil:
-		return agent.PluginOpened{}, &agent.PluginRefusedError{Reason: a.Refused.Reason, Message: a.Refused.Message}
+		return PluginOpened{}, &PluginRefusedError{Reason: a.Refused.Reason, Message: a.Refused.Message}
 	case a.ApprovalID == nil || a.ExpiresAt == nil:
-		return agent.PluginOpened{}, fmt.Errorf("plugin %s: an approval without its id", key)
+		return PluginOpened{}, fmt.Errorf("plugin %s: an approval without its id", key)
 	}
 	out.ApprovalID, out.ExpiresAt, out.BindingText = *a.ApprovalID, *a.ExpiresAt, a.BindingText
 	return out, nil
@@ -140,14 +139,14 @@ func (p *Requests) RemovePlugin(ctx context.Context, caller, name, instance stri
 // them, and whether the engine serves the entry READY on it to every agent
 // it names. An agent whose approvals could not be read decides nothing: the
 // approval stays PENDING (or APPROVED) until it can be read.
-func (p *Requests) PluginApproval(ctx context.Context, caller string, id uuid.UUID) (agent.PluginApprovalState, error) {
+func (p *Requests) PluginApproval(ctx context.Context, caller string, id uuid.UUID) (PluginApprovalState, error) {
 	k, _, scope, err := p.reach(caller)
 	if err != nil {
-		return agent.PluginApprovalState{}, err
+		return PluginApprovalState{}, err
 	}
 	list, err := k.List(ctx, scope)
 	if err != nil {
-		return agent.PluginApprovalState{}, requestError(err, false)
+		return PluginApprovalState{}, requestError(err, false)
 	}
 	for _, l := range list.Plugins {
 		if l.Source != SourceEngine {
@@ -157,13 +156,13 @@ func (p *Requests) PluginApproval(ctx context.Context, caller string, id uuid.UU
 			return st, nil
 		}
 	}
-	return agent.PluginApprovalState{}, agent.ErrPluginNotFound
+	return PluginApprovalState{}, ErrPluginNotFound
 }
 
 // approvalStateOf is id's state in entry l; false when no agent of l has
 // id as its newest approval.
-func approvalStateOf(l PluginListed, id uuid.UUID) (agent.PluginApprovalState, bool) {
-	st := agent.PluginApprovalState{Name: l.Name, Instance: l.Instance, State: agent.PluginStateApproved}
+func approvalStateOf(l PluginListed, id uuid.UUID) (PluginApprovalState, bool) {
+	st := PluginApprovalState{Name: l.Name, Instance: l.Instance, State: PluginStateApproved}
 	unread := false
 	for _, a := range l.Approval.Agents {
 		if a.State == approvalStateUnavailable {
@@ -174,10 +173,10 @@ func approvalStateOf(l PluginListed, id uuid.UUID) (agent.PluginApprovalState, b
 		}
 		st.Agents = append(st.Agents, a.Agent)
 		switch {
-		case a.State == "ENDED" || a.State == "EXPIRED" || st.State == agent.PluginStateEnded:
-			st.State = agent.PluginStateEnded
-		case a.State == "PENDING" || st.State == agent.PluginStatePending:
-			st.State = agent.PluginStatePending
+		case a.State == "ENDED" || a.State == "EXPIRED" || st.State == PluginStateEnded:
+			st.State = PluginStateEnded
+		case a.State == "PENDING" || st.State == PluginStatePending:
+			st.State = PluginStatePending
 			if a.ExpiresAt != nil {
 				st.ExpiresAt = *a.ExpiresAt
 			}
@@ -186,8 +185,8 @@ func approvalStateOf(l PluginListed, id uuid.UUID) (agent.PluginApprovalState, b
 	if len(st.Agents) == 0 {
 		return st, false
 	}
-	if st.State == agent.PluginStateApproved && !unread && servedOn(l, id, st.Agents) {
-		st.State = agent.PluginStateRunning
+	if st.State == PluginStateApproved && !unread && servedOn(l, id, st.Agents) {
+		st.State = PluginStateRunning
 	}
 	return st, true
 }
@@ -223,7 +222,7 @@ func (s *KeptPlugins) agentsOf(k pluginmodel.EntryKey, caller string) []string {
 // is left for PLUGIN_OPEN to refuse (UNKNOWN_AGENT).
 func (s *KeptPlugins) callerFirst(caller string, agents []string) ([]string, error) {
 	if !slices.Contains(agents, caller) {
-		return nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
+		return nil, &PluginRefusedError{Reason: ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
 			"agents must include you (%s): an agent asks for a plugin for itself, and for other agents only beside itself. Nothing was written", caller)}
 	}
 	own, ok := s.agents[caller]
@@ -236,7 +235,7 @@ func (s *KeptPlugins) callerFirst(caller string, agents []string) ([]string, err
 			continue
 		}
 		if other, known := s.agents[a]; known && (other.host != own.host || other.port != own.port || other.database != own.database) {
-			return nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
+			return nil, &PluginRefusedError{Reason: ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
 				"agent %s uses another database than yours: list only agents of your own database, each other database's agent asks for itself. Nothing was written", a)}
 		}
 		out = append(out, a)
@@ -266,14 +265,14 @@ func requestError(err error, upload bool) error {
 	}
 	switch pe.Code {
 	case CodePluginRefused:
-		return &agent.PluginRefusedError{Reason: pe.Reason, Message: pe.Message}
+		return &PluginRefusedError{Reason: pe.Reason, Message: pe.Message}
 	case CodeAgentNotAllowed:
-		return &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: pe.Message}
+		return &PluginRefusedError{Reason: ReasonPluginAgentNotAllowed, Message: pe.Message}
 	case CodeNotFound:
 		if upload {
 			return &guidance.ArgumentError{Message: "the plugin's files are no longer on the engine (it restarted, or 15 minutes passed): call request_plugin again with source"}
 		}
-		return agent.ErrPluginNotFound
+		return ErrPluginNotFound
 	case CodeInvalidArgument:
 		return &guidance.ArgumentError{Message: pe.Message}
 	case CodeUIDNotAllowed, CodeUnknownAgent, CodeUnknownMethod, CodeRefused, CodeInternal:
@@ -286,7 +285,7 @@ func requestError(err error, upload bool) error {
 // basalt mcp on a second connection. The agent's socket admits only its own
 // OS user, the upload belongs to that user, and the caller is refused as
 // request_plugin refuses an install (served, then reach) before anything is
-// written. The errors are the request's (agent.PluginRefusedError and the
+// written. The errors are the request's (PluginRefusedError and the
 // like); the transport maps them.
 func (p *Requests) UploadBegin(ctx context.Context, caller string, served func() error) (PluginUploadBeginResult, error) {
 	k, uid, err := p.admitUpload(caller, served)

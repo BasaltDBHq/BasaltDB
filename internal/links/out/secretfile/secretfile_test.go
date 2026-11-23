@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/secretfile"
+	"github.com/basaltdbhq/basaltdb/internal/links/out/secretfile"
 )
 
 func TestSecretsPersist(t *testing.T) {

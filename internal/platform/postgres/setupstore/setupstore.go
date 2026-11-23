@@ -116,8 +116,22 @@ func (Store) DemoPlanDrop(ctx context.Context, q pgquerier.Port) ([]string, erro
 	return demo.PlanDrop(ctx, pgquerier.Unwrap(q))
 }
 
-func (Store) DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (bool, error) {
+func (Store) DemoApplyDrop(ctx context.Context, q pgquerier.Port, drops []string) (bool, error) {
+	tx, err := unwrapTx(q)
+	if err != nil {
+		return false, err
+	}
 	return demo.ApplyDrop(ctx, tx, drops)
+}
+
+// unwrapTx is the transaction q was made from: the statements that run in
+// a savepoint of their own need it.
+func unwrapTx(q pgquerier.Port) (pgx.Tx, error) {
+	tx, ok := pgquerier.Unwrap(q).(pgx.Tx)
+	if !ok {
+		return nil, errors.New("setupstore: the statements need a transaction, not a connection")
+	}
+	return tx, nil
 }
 
 func (Store) HasPasskeyFor(ctx context.Context, q pgquerier.Port, origin string) (bool, error) {

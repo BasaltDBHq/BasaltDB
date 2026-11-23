@@ -88,14 +88,14 @@ func RunRemove(ctx context.Context, conn *pgx.Conn, confirmName string) (Removed
 	var out Removed
 	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		// The typed name first: a wrong one learns nothing of the guard.
-		if err := setuprun.CheckTypedName(ctx, store, tx, confirmName); err != nil {
+		if err := setuprun.CheckTypedName(ctx, store, pgquerier.Neutralize(tx), confirmName); err != nil {
 			return err
 		}
 		prefix, err := removalPrefix(ctx, tx)
 		if err != nil {
 			return err
 		}
-		p, kept, err := setuprun.RunRemove(ctx, store, tx, prefix, confirmName)
+		p, kept, err := setuprun.RunRemove(ctx, store, pgquerier.Neutralize(tx), prefix, confirmName)
 		if err != nil {
 			return err
 		}

@@ -6,11 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // maxDatabaseName bounds a typed database name: Postgres names are at most
@@ -146,13 +143,13 @@ func CheckDatabaseName(confirmName string) error {
 	return nil
 }
 
-// CheckTypedName refuses, in tx, a confirmName that is not
-// current_database(): the first thing a removal's transaction reads.
-func CheckTypedName(ctx context.Context, b SetuprunBackend, tx pgx.Tx, confirmName string) error {
+// CheckTypedName refuses, in the removal's transaction tx, a confirmName
+// that is not current_database(): the first thing that transaction reads.
+func CheckTypedName(ctx context.Context, b SetuprunBackend, tx Querier, confirmName string) error {
 	if err := CheckDatabaseName(confirmName); err != nil {
 		return err
 	}
-	database, err := b.CurrentDatabase(ctx, pgquerier.Neutralize(tx))
+	database, err := b.CurrentDatabase(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -167,15 +164,15 @@ func CheckTypedName(ctx context.Context, b SetuprunBackend, tx pgx.Tx, confirmNa
 // runs the drops. demoKept reports a sample schema another object depends
 // on, which stays. A failed drop refuses SETUP_FAILED; the caller rolls
 // tx back.
-func RunRemove(ctx context.Context, b SetuprunBackend, tx pgx.Tx, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
+func RunRemove(ctx context.Context, b SetuprunBackend, tx Querier, prefix, confirmName string) (p RemovePlan, demoKept bool, err error) {
 	if err := CheckTypedName(ctx, b, tx, confirmName); err != nil {
 		return RemovePlan{}, false, err
 	}
-	if p, err = PlanRemove(ctx, b, pgquerier.Neutralize(tx), prefix); err != nil {
+	if p, err = PlanRemove(ctx, b, tx, prefix); err != nil {
 		return RemovePlan{}, false, err
 	}
 	for _, sql := range p.Drops {
-		if err := b.Run(ctx, pgquerier.Neutralize(tx), sql); err != nil {
+		if err := b.Run(ctx, tx, sql); err != nil {
 			return RemovePlan{}, false, &SetuprunRefusalError{
 				Code:    SetuprunCodeSetupFailed,
 				Message: "Removing BasaltDB failed, for example because one of its roles still has privileges in another database; nothing changed.", Err: err,

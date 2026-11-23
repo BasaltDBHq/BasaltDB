@@ -63,5 +63,7 @@ type SetuprunBackend interface {
 
 	DemoSchema() string
 	DemoPlanDrop(ctx context.Context, q Querier) ([]string, error)
-	DemoApplyDrop(ctx context.Context, tx pgx.Tx, drops []string) (kept bool, err error)
+	// DemoApplyDrop runs drops inside tx, the removal's transaction, in a
+	// savepoint of their own.
+	DemoApplyDrop(ctx context.Context, tx Querier, drops []string) (kept bool, err error)
 }

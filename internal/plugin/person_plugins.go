@@ -1,4 +1,4 @@
-package person
+package plugin
 
 import (
 	"encoding/json"
@@ -13,8 +13,8 @@ import (
 const CodePluginRefused Code = "PLUGIN_REFUSED"
 
 // Refused is PLUGIN_REFUSED with reason.
-func Refused(reason, message string) *Error {
-	return &Error{Code: CodePluginRefused, Reason: reason, Message: message}
+func Refused(reason, message string) *PersonError {
+	return &PersonError{Code: CodePluginRefused, Reason: reason, Message: message}
 }
 
 // Scope is the agents a plugin request may reach: nil for a person, who

@@ -338,5 +338,5 @@ func refusalOf(err error) error {
 	if ve.Path != nil {
 		reason = ReasonUnsafePath
 	}
-	return &Error{Kind: KindRefused, Reason: reason, Message: "the plugin is refused: " + ve.Error() + ". Nothing was written"}
+	return &PluginhostError{Kind: KindRefused, Reason: reason, Message: "the plugin is refused: " + ve.Error() + ". Nothing was written"}
 }

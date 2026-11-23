@@ -15,8 +15,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/person"
 )
 
 // request_plugin on a real guard: the caller's upload opens one approval
@@ -109,7 +109,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 
 	// The person signs; nothing serves it here, so the wait reads APPROVED,
 	// not RUNNING.
-	f.sign(person.PluginOpenedApproval{ApprovalID: &opened.ApprovalID, BindingText: opened.BindingText})
+	f.sign(plugin.PluginOpenedApproval{ApprovalID: &opened.ApprovalID, BindingText: opened.BindingText})
 	st, err = p.PluginApproval(ctx, "bot", opened.ApprovalID)
 	require.NoError(t, err)
 	require.Equal(t, agent.PluginStateApproved, st.State)

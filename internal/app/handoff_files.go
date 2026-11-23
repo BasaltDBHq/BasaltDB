@@ -6,9 +6,9 @@ import (
 	"os"
 	"slices"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 )
 
 // handoffFiles are a connect-only agent's files as the hand-off reaches

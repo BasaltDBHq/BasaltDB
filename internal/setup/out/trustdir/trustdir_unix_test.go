@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )

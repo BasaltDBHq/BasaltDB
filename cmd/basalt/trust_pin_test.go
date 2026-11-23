@@ -17,9 +17,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"

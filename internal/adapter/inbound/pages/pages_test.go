@@ -46,7 +46,7 @@ type stubAgent struct {
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
 func (a *stubAgent) PageFailure(err error) *toolresult.ToolError {
-	return agent.ErrorMap{}.ToolError(err)
+	return guidance.ErrorMap{}.ToolError(err)
 }
 
 func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {

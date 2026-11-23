@@ -398,7 +398,7 @@ func catalogCases() map[string]catalogCase {
 
 		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&guidance.SetupError{Code: testSetupCode, Fingerprint: testFingerprint})},
 		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&guidance.SetupError{Code: testSetupCode, Fingerprint: testFingerprint, Expired: true})},
-		caseKey("UNAVAILABLE", "DATABASE_NOT_CONFIRMED", ""): {"query", queryArgs0, plain(&DatabaseNotConfirmedError{
+		caseKey("UNAVAILABLE", "DATABASE_NOT_CONFIRMED", ""): {"query", queryArgs0, plain(&guidance.DatabaseNotConfirmedError{
 			SetupID: caseSetupID, Database: caseDatabase,
 		})},
 

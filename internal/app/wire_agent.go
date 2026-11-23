@@ -58,8 +58,8 @@ func AgentServiceManager() guidance.ServiceManager {
 }
 
 // AgentErrors are the adapters' error values the agent maps to tool errors.
-func AgentErrors() agent.ErrorMap {
-	return agent.ErrorMap{
+func AgentErrors() guidance.ErrorMap {
+	return guidance.ErrorMap{
 		InvalidParams: ledger.ErrInvalidParams,
 		InvalidIntent: guard.ErrInvalidIntent,
 		RowTooLarge: func(err error) (string, bool) {

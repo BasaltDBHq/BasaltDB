@@ -59,7 +59,7 @@ type CoreDeps struct {
 	// Commands.
 	ServiceManager guidance.ServiceManager
 	// Errors tells apart the error values of the adapters.
-	Errors ErrorMap
+	Errors guidance.ErrorMap
 	// PagesBase is the base URL of the approval and revert pages (links);
 	// links.DefaultLocal when empty.
 	PagesBase string

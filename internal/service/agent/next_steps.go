@@ -493,7 +493,7 @@ func (s *Service) unavailableSteps(b *guidance.Steps, te *toolresult.ToolError, 
 	case guidance.ReasonSetupPending, guidance.ReasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case guidance.ReasonDatabaseNotConfirmed:
-		var dn *DatabaseNotConfirmedError
+		var dn *guidance.DatabaseNotConfirmedError
 		if !errors.As(f.err, &dn) {
 			b.Fail(errors.New("a database waiting for confirmation needs its setup and address"))
 			return ""

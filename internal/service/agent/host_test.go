@@ -66,8 +66,8 @@ func testManager() guidance.ServiceManager {
 	return guidance.ServiceManager{StartCommand: osservice.StartCommand, RestartArgs: osservice.RestartArgs}
 }
 
-func testErrors() ErrorMap {
-	return ErrorMap{
+func testErrors() guidance.ErrorMap {
+	return guidance.ErrorMap{
 		InvalidParams: ledger.ErrInvalidParams,
 		InvalidIntent: guard.ErrInvalidIntent,
 		RowTooLarge: func(err error) (string, bool) {

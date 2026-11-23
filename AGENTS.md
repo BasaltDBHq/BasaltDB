@@ -20,7 +20,7 @@ Where code goes and which package may import which: [ARCHITECTURE.md](ARCHITECTU
 
 ```
 cmd/basalt     the one binary: main.go calls app.Main
-internal/      app (wiring), one folder per domain (use cases, with in/ and out/ adapters), platform, core, lib, config
+internal/      app (wiring), one folder per domain (use cases, with in/ and out/ adapters), platform, core, lib, config, testkit
 pkg/           shared libraries (uniqueid, pagination, …)
 docs/          user guides: install, approving, MCP clients, releasing
 scripts/       release and packaging scripts

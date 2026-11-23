@@ -8,7 +8,7 @@ Where code lives in this repo and which package may import which. The behaviour 
 cmd/basalt/main.go             the one binary: main() calls app.Main. Nothing else lives here.
 internal/app                   the composition root: parses the command line, builds every adapter and hands it to the services; also wires the served agent (agent_*.go)
 internal/<domain>              the domain's use cases (the service): the order of the steps; declares its ports; no SQL, HTTP or files
-internal/<domain>/in/<name>    inbound adapters of the domain: <domain>cli, <domain>mcp, <domain>page. Translate a request, call the service
+internal/<domain>/in/<name>    inbound adapters of the domain, for example <domain>cli, <domain>mcp, <domain>page. Translate a request, call the service
 internal/<domain>/out/<name>   outbound adapters of the domain: files, the OS, the network. Implement the service's ports
 internal/platform/<name>       shared adapters. Inbound servers: httpserver, mcpserver, pageserver, shim, cli. All the rest is outbound: postgres/*, vault, osservice, keyfile
 internal/config                the engine config file
@@ -47,7 +47,7 @@ Three more rules sit on top of the table, all in `internal/testkit/archtest`.
 
 - **A service imports no driver, directly or through another package.** `TestArchitecture` fails a non-test file under a domain root that imports `github.com/jackc/pgx` (including `pgconn`), `database/sql` or `net/http`: the service declares a port and an outbound adapter holds the driver. `TestServicesLinkNoDatabaseDriver` runs `go list -deps` for every domain root on linux and darwin and fails when a database driver is among the transitive imports. The one named exception is the import of `pgconn` by `pkg/trustprofile`, whose `Trust` and `Explain` take a `*pgconn.Config` as part of the public API; only that edge is skipped, and every other import of `pkg/trustprofile` is followed.
 - **A platform inbound package imports no domain service.** `httpserver`, `mcpserver`, `pageserver`, `shim` and `cli` serve every domain, so none of them may import one domain's use case. What they need from a domain they take as a port that `internal/app` fills in. The packages that still break this are in the baseline (below), and the list only shrinks.
-- **Only `internal/app` installs the plugin path rule.** No other non-test file calls `UsePathRules` on the plugin package.
+- **Only `internal/app` installs the plugin path rule.** No other non-test file calls `UsePathRules` on the plugin package; test files and the test helper packages are exempt, as they are from the layer rules.
 
 One import that looks like it crosses a domain on purpose: `internal/approval/in/approvalmcp` imports `internal/revert/in/revertmcp` for the pending-revert item. The approval domain holds a revert (the approval service's `PendingEntry` carries a `revert.PendingRevert`), and the MCP item that lists it is the revert tool's type. It is an inbound adapter importing another inbound adapter, which the table allows.
 

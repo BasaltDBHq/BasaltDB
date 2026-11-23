@@ -337,7 +337,7 @@ func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {
 		if needed && cred == nil {
 			return refuse(CodePasskeyRequired, "The database has no passkey for this computer yet: create one on this page first. Nothing changed.")
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, tx, script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, pgquerier.Neutralize(tx), script); err != nil {
 			return setupFailed("install script", err)
 		}
 		if !req.Demo {

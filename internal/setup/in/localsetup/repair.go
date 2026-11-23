@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -130,7 +131,7 @@ func (s *Service) runRepair(ctx context.Context, j agentJob) (RunAnswer, error) 
 		if err != nil {
 			return err
 		}
-		if err := setup.ApplyInitTx(ctx, s.be, tx, script); err != nil {
+		if err := setup.ApplyInitTx(ctx, s.be, pgquerier.Neutralize(tx), script); err != nil {
 			return refuse(CodeSetupFailed, fmt.Sprintf("The role %s is not a plain agent role this admin can repair (elevated attributes, other memberships, owned objects or settings it cannot reset). Nothing changed.", j.role))
 		}
 		wrote = true

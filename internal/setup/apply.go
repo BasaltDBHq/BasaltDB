@@ -6,18 +6,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
-// ApplyInitTx runs the script in the caller's transaction and refuses to
-// commit while any agent-writable table or cascade target is left
+// ApplyInitTx runs the script in the caller's transaction tx and refuses
+// to commit while any agent-writable table or cascade target is left
 // unguarded. The after statements run last, once that check passed (a
 // setup code's record_setup).
-func ApplyInitTx(ctx context.Context, b SetuprunBackend, tx pgx.Tx, script guardmodel.Script, after ...guardmodel.Statement) error {
+func ApplyInitTx(ctx context.Context, b SetuprunBackend, tx Querier, script guardmodel.Script, after ...guardmodel.Statement) error {
 	if err := b.ApplyScript(ctx, tx, script); err != nil {
 		return err
 	}
@@ -25,7 +23,7 @@ func ApplyInitTx(ctx context.Context, b SetuprunBackend, tx pgx.Tx, script guard
 		return err
 	}
 	for _, st := range after {
-		if err := b.Run(ctx, pgquerier.Neutralize(tx), st.SQL); err != nil {
+		if err := b.Run(ctx, tx, st.SQL); err != nil {
 			return fmt.Errorf("record the setup: %w", err)
 		}
 	}
@@ -34,8 +32,8 @@ func ApplyInitTx(ctx context.Context, b SetuprunBackend, tx pgx.Tx, script guard
 
 // checkCovered refuses, inside the install's transaction, while any
 // agent-writable table or cascade target is left unguarded.
-func checkCovered(ctx context.Context, b SetuprunBackend, tx pgx.Tx) error {
-	uncovered, err := b.UncoveredTables(ctx, pgquerier.Neutralize(tx))
+func checkCovered(ctx context.Context, b SetuprunBackend, tx Querier) error {
+	uncovered, err := b.UncoveredTables(ctx, tx)
 	if err != nil {
 		return err
 	}

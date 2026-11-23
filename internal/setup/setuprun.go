@@ -679,7 +679,7 @@ func ApplySetupWith(ctx context.Context, b SetuprunBackend, conn *pgx.Conn, scri
 				return err
 			}
 		}
-		if err := ApplyInitTx(ctx, b, tx, body); err != nil {
+		if err := ApplyInitTx(ctx, b, pgquerier.Neutralize(tx), body); err != nil {
 			return err
 		}
 		if inTx != nil {

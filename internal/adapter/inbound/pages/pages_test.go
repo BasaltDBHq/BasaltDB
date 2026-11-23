@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
+	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -130,7 +131,7 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 // as app mounts them: the setup routes of an engine with no setup jobs.
 func newMounted(origin string, log *slog.Logger) *pages.Server {
 	p := pages.New(origin, log)
-	p.MountApprovals(pages.NewApprovalHandlers(p))
+	p.MountApprovals(approvalpage.NewApprovalHandlers(p))
 	p.MountReverts(pages.NewRevertHandlers(p))
 	p.MountPlugins(pages.NewPluginHandlers(p))
 	p.MountSetup(pages.NewConfiguredSetupHandlers(origin))

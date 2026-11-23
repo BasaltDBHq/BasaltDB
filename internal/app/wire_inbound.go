@@ -7,6 +7,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/localsetup"
 	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
 	"github.com/basaltdbhq/basaltdb/internal/app/setupbackend"
+	"github.com/basaltdbhq/basaltdb/internal/approval/in/approvalpage"
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
@@ -15,7 +16,7 @@ import (
 // engine with no setup jobs (listenPages mounts the jobs).
 func newPages(origin string, log *slog.Logger) *pages.Server {
 	srv := pages.New(origin, log)
-	srv.MountApprovals(pages.NewApprovalHandlers(srv))
+	srv.MountApprovals(approvalpage.NewApprovalHandlers(srv))
 	srv.MountReverts(pages.NewRevertHandlers(srv))
 	srv.MountPlugins(pages.NewPluginHandlers(srv))
 	srv.MountSetup(pages.NewConfiguredSetupHandlers(origin))

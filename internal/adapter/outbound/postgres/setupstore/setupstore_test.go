@@ -6,4 +6,4 @@ import (
 )
 
 // Store is the backend the setup service runs on.
-var _ setup.Backend = setupstore.Store{}
+var _ setup.SetuprunBackend = setupstore.Store{}

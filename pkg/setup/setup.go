@@ -159,7 +159,7 @@ var store = setupstore.New()
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
 // (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(store, req.Code, req.Now, req.ConnectPage)
+	s, err := setuprun.NewSetuprun(store, req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -383,9 +383,9 @@ func checkLabels(ctx context.Context, conn *pgx.Conn, s *setuprun.Setup) ([]guar
 // code that keeps the role's grants, the ones it holds.
 func agentTables(s *setuprun.Setup) []string { return s.AgentTables() }
 
-// newSetup is setuprun.New for req, with its ticked tables.
+// newSetup is setuprun.NewSetuprun for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {
-	s, err := setuprun.New(store, req.Code, req.Now, req.ConnectPage)
+	s, err := setuprun.NewSetuprun(store, req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +500,7 @@ func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
 		return nil
 	}
 	invalid := func(why string) error {
-		return asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "the column labels: " + why + "; nothing changed"})
+		return asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "the column labels: " + why + "; nothing changed"})
 	}
 	if len(in.ColumnClasses) > maxColumnClasses {
 		return invalid(fmt.Sprintf("more than %d columns", maxColumnClasses))
@@ -566,7 +566,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		return Result{}, asError(err)
 	}
 	if in.Passkey != nil && !in.Passkey.verified() {
-		return Result{}, asError(&setuprun.RefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
+		return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
 	}
 	p, err := s.Prepare(ctx, conn)
 	if err != nil {
@@ -581,7 +581,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		}
 		if len(in.ColumnClasses) > 0 || in.RestPublic {
 			// Nothing runs, so nothing would carry them: refused, not dropped.
-			return Result{}, asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
+			return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
 		}
 		if err := recordTrustPinAlone(ctx, conn, in.TrustPin); err != nil {
 			return Result{}, asError(err)
@@ -682,7 +682,7 @@ func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput,
 	}
 	_, err := guard.WriteLabels(ctx, tx, s.Names, tables, changes, in.RestPublic, now)
 	if errors.Is(err, guardmodel.ErrClassesChanged) {
-		return &setuprun.RefusalError{
+		return &setuprun.SetuprunRefusalError{
 			Code: CodeClassesChanged, Err: err,
 			Message: "a column's label changed since the page showed it (someone classified it, or the column is gone), so the setup did not run and nothing changed: read the labels again",
 		}
@@ -713,30 +713,30 @@ const (
 	CodeEngineRevoked = setuprun.CodeEngineRevoked
 	// CodeTargetMismatch is a connection to another database than the
 	// code's target.
-	CodeTargetMismatch = setuprun.CodeTargetMismatch
+	CodeTargetMismatch = setuprun.SetuprunCodeTargetMismatch
 	// CodeTablesMissing is an agent table the database does not have.
 	CodeTablesMissing = setuprun.CodeTablesMissing
 	// CodeAnswersInvalid is an answer to a question the setup does not ask.
-	CodeAnswersInvalid = setuprun.CodeAnswersInvalid
+	CodeAnswersInvalid = setuprun.SetuprunCodeAnswersInvalid
 	// CodePasskeyRequired is a setup that needs the person's passkey, run
 	// with none: nothing changed.
-	CodePasskeyRequired = setuprun.CodePasskeyRequired
+	CodePasskeyRequired = setuprun.SetuprunCodePasskeyRequired
 	// CodePasskeyInvalid is a RunInput.Passkey that PasskeyRequest.Verify
 	// did not make.
-	CodePasskeyInvalid = setuprun.CodePasskeyInvalid
+	CodePasskeyInvalid = setuprun.SetuprunCodePasskeyInvalid
 	// CodePasskeyNotRegistered is a setup that ran without registering the
 	// passkey it needed: only with RunInput.AskPasskey.
 	CodePasskeyNotRegistered = setuprun.CodePasskeyMissing
 	// CodeNoTables is an agent.allTables code whose schemas hold no table
 	// the admin role owns, or a connect page that ticked none: nothing
 	// changed.
-	CodeNoTables = setuprun.CodeNoTables
+	CodeNoTables = setuprun.SetuprunCodeNoTables
 	// CodeTablesChanged is a setup whose tables changed since they were
 	// listed: nothing changed.
-	CodeTablesChanged = setuprun.CodeTablesChanged
+	CodeTablesChanged = setuprun.SetuprunCodeTablesChanged
 	// CodeClassesChanged is a column label whose class stored now is not
 	// the one the page showed, or whose column is gone: nothing changed.
-	CodeClassesChanged = setuprun.CodeClassesChanged
+	CodeClassesChanged = setuprun.SetuprunCodeClassesChanged
 	// CodeConnectOnly is a connect-only code given without
 	// Request.ConnectPage: only the connect page runs it.
 	CodeConnectOnly = string(setupcode.RefusalConnectOnly)
@@ -768,7 +768,7 @@ func asError(err error) error {
 		return nil
 	}
 	code := CodeSetupFailed
-	var r *setuprun.RefusalError
+	var r *setuprun.SetuprunRefusalError
 	var se *setupcode.Error
 	switch {
 	case errors.As(err, &r):

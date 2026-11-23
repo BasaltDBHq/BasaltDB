@@ -29,36 +29,38 @@ import (
 
 // Refusal codes this package adds to setupcode's (setupcode.Refusal).
 const (
-	CodeEngineRevoked   = "ENGINE_REVOKED"
-	CodeTargetMismatch  = "TARGET_MISMATCH"
-	CodeTablesMissing   = "TABLES_MISSING"
-	CodeAnswersInvalid  = "ANSWERS_INVALID"
-	CodePasskeyRequired = "PASSKEY_REQUIRED"
-	CodePasskeyInvalid  = "PASSKEY_INVALID"
-	CodePasskeyMissing  = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
-	CodeNoTables        = "NO_TABLES"
-	// CodeTablesChanged: the tables changed since they were listed.
-	CodeTablesChanged = "TABLES_CHANGED"
-	// CodeClassesChanged: a column's class stored now is not the one the
+	CodeEngineRevoked           = "ENGINE_REVOKED"
+	SetuprunCodeTargetMismatch  = "TARGET_MISMATCH"
+	CodeTablesMissing           = "TABLES_MISSING"
+	SetuprunCodeAnswersInvalid  = "ANSWERS_INVALID"
+	SetuprunCodePasskeyRequired = "PASSKEY_REQUIRED"
+	SetuprunCodePasskeyInvalid  = "PASSKEY_INVALID"
+	CodePasskeyMissing          = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
+	SetuprunCodeNoTables        = "NO_TABLES"
+	// SetuprunCodeTablesChanged: the tables changed since they were listed.
+	SetuprunCodeTablesChanged = "TABLES_CHANGED"
+	// SetuprunCodeClassesChanged: a column's class stored now is not the one the
 	// person saw.
-	CodeClassesChanged = "CLASSES_CHANGED"
-	// CodeSetupFailed: the database or its driver failed; nothing changed.
-	CodeSetupFailed = "SETUP_FAILED"
+	SetuprunCodeClassesChanged = "CLASSES_CHANGED"
+	// SetuprunCodeSetupFailed: the database or its driver failed; nothing changed.
+	SetuprunCodeSetupFailed = "SETUP_FAILED"
 )
 
-// RefusalError is a refused setup: a code and the sentence the person reads.
+// SetuprunRefusalError is a refused setup: a code and the sentence the person reads.
 // Err, when set, is the error the sentence wraps.
-type RefusalError struct {
+type SetuprunRefusalError struct {
 	Code    string
 	Message string
 	Err     error
 }
 
-func (r *RefusalError) Error() string { return r.Message }
+func (r *SetuprunRefusalError) Error() string { return r.Message }
 
-func (r *RefusalError) Unwrap() error { return r.Err }
+func (r *SetuprunRefusalError) Unwrap() error { return r.Err }
 
-func refuse(code, message string) *RefusalError { return &RefusalError{Code: code, Message: message} }
+func setuprunRefuse(code, message string) *SetuprunRefusalError {
+	return &SetuprunRefusalError{Code: code, Message: message}
+}
 
 // upgradeLinePrefix starts the summary line of an UPGRADE code, replaced by
 // "No guard change." when the code only records the engine.
@@ -66,7 +68,7 @@ const upgradeLinePrefix = "This upgrades Basalt's guard"
 
 // Setup is one setup code that passed the checks needing no database.
 type Setup struct {
-	be      Backend
+	be      SetuprunBackend
 	P       setupcode.Payload
 	Names   guardmodel.Names
 	ID      uuid.UUID
@@ -130,7 +132,7 @@ const publicSchema = "public"
 // errTicksRequired refuses to grant a listing the person did not tick: an
 // AGENT code whose role does not exist and that names no tables.
 func errTicksRequired(agent string) error {
-	return refuse(CodeNoTables, fmt.Sprintf("%s has no tables in this database: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
+	return setuprunRefuse(SetuprunCodeNoTables, fmt.Sprintf("%s has no tables in this database: tick the tables to give %s on the connect page. Nothing changed", agent, agent))
 }
 
 // Include gives Prepare the tables the person left ticked on the connect
@@ -154,18 +156,18 @@ func (s *Setup) checkIncluded() error {
 	tables := *s.given
 	if !s.Ticked() {
 		if len(tables) > 0 {
-			return refuse(CodeAnswersInvalid, "this setup code names its tables, so no table can be ticked; nothing changed")
+			return setuprunRefuse(SetuprunCodeAnswersInvalid, "this setup code names its tables, so no table can be ticked; nothing changed")
 		}
 		return nil
 	}
 	if len(tables) == 0 {
-		return refuse(CodeNoTables, fmt.Sprintf("There is no table to give %s. Tick at least one table; nothing changed", AgentWord(s.P)))
+		return setuprunRefuse(SetuprunCodeNoTables, fmt.Sprintf("There is no table to give %s. Tick at least one table; nothing changed", AgentWord(s.P)))
 	}
 	seen := make(map[string]bool, len(tables))
 	for _, t := range tables {
 		schema, _, _ := strings.Cut(t, ".")
 		if !includedShape.MatchString(t) || !slices.Contains(s.listedSchemas(), schema) || seen[t] {
-			return refuse(CodeAnswersInvalid, "a ticked table is not a table of this setup's schemas, or is ticked twice; nothing changed")
+			return setuprunRefuse(SetuprunCodeAnswersInvalid, "a ticked table is not a table of this setup's schemas, or is ticked twice; nothing changed")
 		}
 		seen[t] = true
 	}
@@ -175,15 +177,15 @@ func (s *Setup) checkIncluded() error {
 
 // errTablesChanged is TABLES_CHANGED.
 func errTablesChanged() error {
-	return refuse(CodeTablesChanged, "the tables changed since they were listed (a table was dropped, renamed or given to another owner), so the setup did not run and nothing changed: check the setup again")
+	return setuprunRefuse(SetuprunCodeTablesChanged, "the tables changed since they were listed (a table was dropped, renamed or given to another owner), so the setup did not run and nothing changed: check the setup again")
 }
 
-// New decodes code and applies the checks that need no database, in the
+// NewSetuprun decodes code and applies the checks that need no database, in the
 // contract's order (step 1): the codec, CONNECT_ONLY unless connectPage
 // (the laptop command refuses a code without target before the clock
 // checks; the connect service runs it), then this clock and this binary's
 // guard (setupcode.CheckLocal).
-func New(b Backend, code string, now time.Time, connectPage bool) (*Setup, error) {
+func NewSetuprun(b SetuprunBackend, code string, now time.Time, connectPage bool) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
@@ -200,7 +202,7 @@ func New(b Backend, code string, now time.Time, connectPage bool) (*Setup, error
 }
 
 // forPayload is the Setup of a decoded payload, without checks.
-func forPayload(b Backend, p setupcode.Payload) (*Setup, error) {
+func forPayload(b SetuprunBackend, p setupcode.Payload) (*Setup, error) {
 	id, err := uuid.Parse(p.SetupID)
 	if err != nil {
 		return nil, err
@@ -271,7 +273,7 @@ type Prepared struct {
 	Conn  *pgx.Conn
 	State setupcode.SummaryState
 	// Engine is what the database records about the code's engine.
-	Engine EngineState
+	Engine SetuprunEngineState
 	// EngineOnly is an UPGRADE code with nothing to upgrade that still
 	// records its engine.
 	EngineOnly bool
@@ -377,7 +379,7 @@ func (s *Setup) listAllTables(ctx context.Context, q Querier) (guardmodel.Schema
 		}
 	}
 	if len(out.Write)+len(out.ReadOnly) == 0 {
-		return guardmodel.SchemaTables{}, refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
+		return guardmodel.SchemaTables{}, setuprunRefuse(SetuprunCodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
 			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(schemas, ", "), AgentWord(s.P)))
 	}
 	return out, nil
@@ -415,8 +417,8 @@ func (s *Setup) RecheckTables(ctx context.Context, q Querier) error {
 		return nil
 	}
 	now, err := s.listAllTables(ctx, q)
-	var r *RefusalError
-	if errors.As(err, &r) && r.Code == CodeNoTables {
+	var r *SetuprunRefusalError
+	if errors.As(err, &r) && r.Code == SetuprunCodeNoTables {
 		return errTablesChanged() // every table went since the listing
 	}
 	if err != nil {
@@ -441,7 +443,7 @@ func (s *Setup) RecheckTables(ctx context.Context, q Querier) error {
 // UpgradeDone is whether an UPGRADE code has nothing to add: the installed
 // guard already has every migration up to the code's guard.to (or is
 // newer). No guard installed is not done: the code installs it.
-func UpgradeDone(b Backend, p setupcode.Payload, installed int) bool {
+func UpgradeDone(b SetuprunBackend, p setupcode.Payload, installed int) bool {
 	if p.Kind != setupcode.KindUpgrade || installed == 0 {
 		return false
 	}
@@ -466,7 +468,7 @@ func (s *Setup) readDatabase(ctx context.Context, q Querier) (setupcode.Database
 	if db.Prefix == s.Names.Prefix {
 		// Another prefix is PREFIX_MISMATCH, from the checks.
 		if err := s.be.CheckUsable(ctx, q); s.be.UnusableInstall(err) {
-			return db, state, &RefusalError{Code: CodeSetupFailed, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + s.be.RemoveOldInstallDoc() + " says how. Nothing changed."}
+			return db, state, &SetuprunRefusalError{Code: SetuprunCodeSetupFailed, Err: err, Message: "the database has an older BasaltDB install that this version cannot use. Remove it first, then set up again: " + s.be.RemoveOldInstallDoc() + " says how. Nothing changed."}
 		} else if err != nil {
 			return db, state, err
 		}
@@ -626,7 +628,7 @@ func (p *Prepared) plan(ctx context.Context, policies []guardmodel.BlindTable) (
 // UPGRADE code with nothing to do.
 func RefuseAnswers(allRows []string) error {
 	if len(allRows) > 0 {
-		return refuse(CodeAnswersInvalid, "the answers reply to questions this setup does not ask: it has nothing to do")
+		return setuprunRefuse(SetuprunCodeAnswersInvalid, "the answers reply to questions this setup does not ask: it has nothing to do")
 	}
 	return nil
 }
@@ -637,7 +639,7 @@ func (p *Prepared) policies(allRows []string) ([]guardmodel.BlindTable, error) {
 	for _, table := range allRows {
 		i := blindIndex(p.Blind, table)
 		if i < 0 {
-			return nil, refuse(CodeAnswersInvalid, fmt.Sprintf("the answers name table %s, which this setup does not ask about; check the setup again", printableLabel(table)))
+			return nil, setuprunRefuse(SetuprunCodeAnswersInvalid, fmt.Sprintf("the answers name table %s, which this setup does not ask about; check the setup again", printableLabel(table)))
 		}
 		if blindIndex(out, table) < 0 {
 			out = append(out, p.Blind[i])
@@ -663,7 +665,7 @@ func blindIndex(tables []guardmodel.BlindTable, table string) int {
 // record_setup (a passkey registered with the setup). An error from it
 // rolls everything back. first, when set, runs in the transaction before
 // anything else (the tables read again before the grants name them).
-func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script guardmodel.Script, first, inTx func(context.Context, pgx.Tx) error) error {
+func ApplySetupWith(ctx context.Context, b SetuprunBackend, conn *pgx.Conn, script guardmodel.Script, first, inTx func(context.Context, pgx.Tx) error) error {
 	n := len(script.Statements)
 	if n == 0 {
 		return errors.New("nothing to run")
@@ -694,7 +696,7 @@ func ApplySetupWith(ctx context.Context, b Backend, conn *pgx.Conn, script guard
 // Refused turns a failed transaction into what the person reads. Nothing
 // changed: the transaction rolled back. A refusal by record_setup gets the
 // contract's words (USED and SUPERSEDED with the time, read again with q).
-func Refused(ctx context.Context, b Backend, q Querier, p setupcode.Payload, err error) error {
+func Refused(ctx context.Context, b SetuprunBackend, q Querier, p setupcode.Payload, err error) error {
 	agent := AgentWord(p)
 	detail, ok := b.SetupRefusal(err)
 	if !ok {
@@ -709,12 +711,12 @@ func Refused(ctx context.Context, b Backend, q Querier, p setupcode.Payload, err
 				}
 			}
 		}
-		return &RefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database refused this setup code (%s): it, or a newer one for %s, already ran. Ask %s for a new one", detail, agent, agent)}
+		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database refused this setup code (%s): it, or a newer one for %s, already ran. Ask %s for a new one", detail, agent, agent)}
 	case setupcode.RefusalExpired:
 		expires, _ := p.ExpiresTime() // the code passed Decode, so it parses
-		return &RefusalError{Code: detail, Err: err, Message: fmt.Sprintf("this setup code expired on %s by the database's clock. Ask %s for a new one", expires.UTC().Format("2006-01-02 15:04 UTC"), agent)}
+		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("this setup code expired on %s by the database's clock. Ask %s for a new one", expires.UTC().Format("2006-01-02 15:04 UTC"), agent)}
 	default:
-		return &RefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database's clock refuses this setup code (%s): check the database's and this computer's clocks, or ask %s for a new code", detail, agent)}
+		return &SetuprunRefusalError{Code: detail, Err: err, Message: fmt.Sprintf("the database's clock refuses this setup code (%s): check the database's and this computer's clocks, or ask %s for a new code", detail, agent)}
 	}
 }
 
@@ -723,7 +725,7 @@ func Refused(ctx context.Context, b Backend, q Querier, p setupcode.Payload, err
 // can turn RLS on for new tables, and the agent then reads 0 rows without
 // any error. A failed check is a warning too: the guard is installed
 // either way.
-func RLSBlindWarnings(ctx context.Context, b Backend, q Querier, role string, spec guardmodel.AgentSpec) []string {
+func RLSBlindWarnings(ctx context.Context, b SetuprunBackend, q Querier, role string, spec guardmodel.AgentSpec) []string {
 	tables := append(append([]string{}, spec.Write...), spec.Read...)
 	if len(tables) == 0 {
 		return nil // no tables would check every table the role can SELECT

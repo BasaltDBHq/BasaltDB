@@ -538,7 +538,7 @@ func (s *Service) runAgentJob(ctx context.Context, req Request) (RunAnswer, erro
 
 // removeRefusal is an internal/setup removal refusal as this page's.
 func removeRefusal(err error) error {
-	var r *setup.RefusalError
+	var r *setup.SetuprunRefusalError
 	if errors.As(err, &r) {
 		out := refuse(r.Code, r.Message)
 		if r.Code == CodeSetupFailed {

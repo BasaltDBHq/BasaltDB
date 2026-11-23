@@ -16,7 +16,7 @@ import (
 // commit while any agent-writable table or cascade target is left
 // unguarded. The after statements run last, once that check passed (a
 // setup code's record_setup).
-func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script guardmodel.Script, after ...guardmodel.Statement) error {
+func ApplyInitTx(ctx context.Context, b SetuprunBackend, tx pgx.Tx, script guardmodel.Script, after ...guardmodel.Statement) error {
 	if err := b.ApplyScript(ctx, tx, script); err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func ApplyInitTx(ctx context.Context, b Backend, tx pgx.Tx, script guardmodel.Sc
 
 // checkCovered refuses, inside the install's transaction, while any
 // agent-writable table or cascade target is left unguarded.
-func checkCovered(ctx context.Context, b Backend, tx pgx.Tx) error {
+func checkCovered(ctx context.Context, b SetuprunBackend, tx pgx.Tx) error {
 	uncovered, err := b.UncoveredTables(ctx, tx)
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ const demoSchema = "basalt_demo."
 // MissingTablesHint turns the guard's list of missing write and read
 // tables into one refusal naming the database, and points at the demo seed
 // when a demo table is missing. Other errors pass through.
-func MissingTablesHint(b Backend, err error, database string) error {
+func MissingTablesHint(b SetuprunBackend, err error, database string) error {
 	missing, ok := b.MissingTables(err)
 	if !ok {
 		return err
@@ -123,5 +123,5 @@ func MissingTablesHint(b Backend, err error, database string) error {
 			break
 		}
 	}
-	return refuse(CodeTablesMissing, msg)
+	return setuprunRefuse(CodeTablesMissing, msg)
 }

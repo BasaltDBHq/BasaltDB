@@ -208,13 +208,6 @@ type Handoff interface {
 	Confirm(ctx context.Context, setupID string, db setupcode.Address, yes bool) (Answer, error)
 }
 
-// ConfirmArgs are confirm_database's arguments.
-type ConfirmArgs struct {
-	SetupID  string            `json:"setupId" validate:"required,uuid"`
-	Database setupcode.Address `json:"database" validate:"required"`
-	Answer   string            `json:"answer" validate:"required,oneof=YES NO"`
-}
-
 // NewConfirmResult is confirm_database's result for ans.
 func NewConfirmResult(ans Answer, cmds guidance.Commands) (ConfirmResult, error) {
 	b := guidance.NewSteps()

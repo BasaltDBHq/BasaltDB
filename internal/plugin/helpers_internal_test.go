@@ -136,3 +136,7 @@ var testPorts = Ports{
 type testProbe struct{ postgres.Probe }
 
 func (testProbe) ReinstallNotice(context.Context, int) (string, bool, error) { return "", false, nil }
+
+// pgxOf is the agent's handle as the guard package takes it: a pgx connection,
+// pool or transaction.
+func pgxOf(q Querier) guard.Querier { return q.(guard.Querier) }

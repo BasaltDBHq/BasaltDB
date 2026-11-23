@@ -482,7 +482,7 @@ func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
 		Hooks: []string{"feed.observe"}, Egress: []string{}, Endpoint: guardmodel.PluginEndpoint{Kind: guardmodel.PluginEndpointLocal},
 		Isolation: &guardmodel.PluginIsolation{Files: guardmodel.PluginFilesOSUser, Network: guardmodel.PluginNetworkEnforced}, Signer: string(pluginmodel.SignerUnknown),
 	}
-	require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), db, guardmodel.PluginEnabled, recorded))
+	require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), pgxOf(db), guardmodel.PluginEnabled, recorded))
 
 	start := f.cfg
 	start.Plugins = []config.Plugin{held}

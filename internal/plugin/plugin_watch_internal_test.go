@@ -550,7 +550,7 @@ func TestDisableRecordedOnceDatabaseAnswers(t *testing.T) {
 	require.Empty(t, lp.w.backoff)
 	require.True(t, lp.w.next.IsZero(), "nothing left to check")
 
-	require.False(t, transientErr(errors.New("cannot decode the plugin approval detail")))
-	require.True(t, transientErr(action.Unavailable(errors.New("connection refused"))))
-	require.True(t, transientErr(context.DeadlineExceeded))
+	require.False(t, transientErr(testPorts.Guard, errors.New("cannot decode the plugin approval detail")))
+	require.True(t, transientErr(testPorts.Guard, action.Unavailable(errors.New("connection refused"))))
+	require.True(t, transientErr(testPorts.Guard, context.DeadlineExceeded))
 }

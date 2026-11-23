@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package engine
 
 import (
 	"context"
@@ -16,13 +16,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
-	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pidlock"
-	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
-	"github.com/basaltdbhq/basaltdb/internal/platform/shim"
 )
 
 const (
@@ -32,25 +29,21 @@ const (
 	dialTimeout   = 200 * time.Millisecond
 )
 
-// starterDeps are the starter's reach into the machine; tests replace them.
-type starterDeps struct {
+// StarterDeps are the starter's reach into the machine; tests replace them.
+type StarterDeps struct {
 	// owner is the uid that owns path.
-	owner func(path string) (int, error)
+	Owner func(path string) (int, error)
 	// launch runs exe with args detached, its output to logFile.
-	launch func(exe string, args []string, logFile *os.File) error
+	Launch func(exe string, args []string, logFile *os.File) error
 	// answers reports whether the socket answers.
-	answers func(socket string) bool
+	Answers func(socket string) bool
 	// wait is how long start waits for the socket to answer.
-	wait time.Duration
+	Wait time.Duration
 	// now is the clock for the start hold-off; tests replace it.
-	now func() time.Time
+	Now func() time.Time
 }
 
-func osStarterDeps() starterDeps {
-	return starterDeps{owner: cli.PathOwner, launch: launchDetached, answers: socketAnswers, wait: shim.DefaultStartWait, now: time.Now}
-}
-
-func socketAnswers(socket string) bool {
+func SocketAnswers(socket string) bool {
 	c, err := net.DialTimeout("unix", socket, dialTimeout)
 	if err != nil {
 		return false
@@ -59,9 +52,9 @@ func socketAnswers(socket string) bool {
 	return true
 }
 
-// launchDetached starts exe args in a new session with no stdin and
+// LaunchDetached starts exe args in a new session with no stdin and
 // logFile for output, and lets it go: it outlives this process.
-func launchDetached(exe string, args []string, logFile *os.File) error {
+func LaunchDetached(exe string, args []string, logFile *os.File) error {
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.Dir = "/" // the config path is absolute; nothing depends on the shim's folder
@@ -73,31 +66,26 @@ func launchDetached(exe string, args []string, logFile *os.File) error {
 	return nil
 }
 
-// engineStarter is the starter basalt mcp gives the shim (see
-// newEngineStarter) with the real machine.
-func engineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string) {
-	return newEngineStarter(osStarterDeps(), configPath, socket, cfg, euid, exe, log)
-}
-
-// newEngineStarter returns what starts the engine for configPath when a
+// NewStarter returns what starts the engine for configPath when a
 // message finds it down, and the text of the last failure ("" when the last
 // try worked or there was none). start is nil when auto-start does not
 // apply: no config, a service-mode config, or a config file another user
 // owns. The engine then keeps today's engine-down answer.
-func newEngineStarter(d starterDeps, configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string) {
+func NewStarter(h StarterHost, d StarterDeps, configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (start func(context.Context) error, failure func() string) {
 	// A root shim never starts an engine: root is not a same-user engine.
 	if cfg == nil || cfg.Service() || euid == 0 {
 		return nil, nil
 	}
-	if uid, err := d.owner(configPath); err != nil || uid != euid {
+	if uid, err := d.Owner(configPath); err != nil || uid != euid {
 		return nil, nil
 	}
-	s := &starter{deps: d, configPath: configPath, socket: socket, cfg: *cfg, exe: exe, log: log}
+	s := &starter{host: h, deps: d, configPath: configPath, socket: socket, cfg: *cfg, exe: exe, log: log}
 	return s.start, s.failure
 }
 
 type starter struct {
-	deps       starterDeps
+	host       StarterHost
+	deps       StarterDeps
 	configPath string
 	socket     string
 	cfg        config.Config
@@ -125,19 +113,19 @@ func (s *starter) failure() string {
 }
 
 func (s *starter) now() time.Time {
-	if s.deps.now != nil {
-		return s.deps.now()
+	if s.deps.Now != nil {
+		return s.deps.Now()
 	}
 	return time.Now()
 }
 
 // holdOff reports whether last-stop.json still holds off a new start.
 func (s *starter) holdOff() (until time.Time, stop guidance.LastStop, ok bool) {
-	stop, ok = engine.ReadLastStop(s.stateDir())
+	stop, ok = ReadLastStop(s.stateDir())
 	if !ok {
 		return time.Time{}, guidance.LastStop{}, false
 	}
-	until, ok = app.LastStopStartHoldOffUntil(app.LastStopRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
+	until, ok = s.host.LastStopStartHoldOffUntil(servicespec.LastStopFileRecord{Reason: stop.Reason, At: stop.At, EngineSHA256: stop.EngineSHA256}, s.configPath, s.now())
 	return until, stop, ok
 }
 
@@ -161,10 +149,10 @@ func (s *starter) record(err error) error {
 // that engine is gone).
 func (s *starter) start(ctx context.Context) error {
 	// An update drops empty folders and resets modes; these are ours.
-	if err := os.MkdirAll(s.cfg.SocketDir, engine.PrivateDirMode); err != nil {
+	if err := os.MkdirAll(s.cfg.SocketDir, PrivateDirMode); err != nil {
 		return s.record(err)
 	}
-	if err := os.MkdirAll(s.stateDir(), engine.PrivateDirMode); err != nil {
+	if err := os.MkdirAll(s.stateDir(), PrivateDirMode); err != nil {
 		return s.record(err)
 	}
 	release, err := lockStart(filepath.Join(s.cfg.SocketDir, startLockName))
@@ -176,12 +164,12 @@ func (s *starter) start(ctx context.Context) error {
 	}
 	defer release()
 
-	if _, up, _ := pidlock.Running(engine.LockPath(s.cfg.SocketDir)); up {
+	if _, up, _ := pidlock.Running(LockPath(s.cfg.SocketDir)); up {
 		return s.engineRuns(ctx)
 	}
 	// A supervisor may hold its lock before its child takes the engine
 	// lock (it is starting, or waiting to restart). Do not launch another.
-	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, engine.SuperviseLock))
+	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, SuperviseLock))
 	if err != nil {
 		return s.record(err)
 	}
@@ -201,7 +189,7 @@ func (s *starter) start(ctx context.Context) error {
 		return s.record(fmt.Errorf("open the engine log: %w", err))
 	}
 	defer logFile.Close()
-	if err := s.deps.launch(s.exe, []string{"engine", "--supervise", "--config", s.configPath, "--started-by", engine.StartedByMCP}, logFile); err != nil {
+	if err := s.deps.Launch(s.exe, []string{"engine", "--supervise", "--config", s.configPath, "--started-by", StartedByMCP}, logFile); err != nil {
 		return s.record(fmt.Errorf("start %s: %w", s.exe, err))
 	}
 	return s.waitSocket(ctx)
@@ -218,7 +206,7 @@ func (s *starter) engineRuns(ctx context.Context) error {
 	if !stuck {
 		return s.waitSocket(ctx)
 	}
-	if s.deps.answers(s.socket) {
+	if s.deps.Answers(s.socket) {
 		s.forgetStuck()
 		return s.record(nil)
 	}
@@ -234,12 +222,12 @@ func (s *starter) forgetStuck() {
 // waitSocket waits for the agent's socket to answer, up to the wait; the
 // reason it gives when it never does is named in status.
 func (s *starter) waitSocket(ctx context.Context) error {
-	deadline := time.NewTimer(s.deps.wait)
+	deadline := time.NewTimer(s.deps.Wait)
 	defer deadline.Stop()
 	tick := time.NewTicker(startPoll)
 	defer tick.Stop()
 	for {
-		if s.deps.answers(s.socket) {
+		if s.deps.Answers(s.socket) {
 			s.forgetStuck()
 			return s.record(nil)
 		}
@@ -247,11 +235,11 @@ func (s *starter) waitSocket(ctx context.Context) error {
 		case <-ctx.Done():
 			return s.record(ctx.Err())
 		case <-deadline.C:
-			_, up, _ := pidlock.Running(engine.LockPath(s.cfg.SocketDir))
+			_, up, _ := pidlock.Running(LockPath(s.cfg.SocketDir))
 			s.mu.Lock()
 			s.stuck = up
 			s.mu.Unlock()
-			return s.record(fmt.Errorf("the engine did not answer on %s within %s", s.socket, s.deps.wait))
+			return s.record(fmt.Errorf("the engine did not answer on %s within %s", s.socket, s.deps.Wait))
 		case <-tick.C:
 		}
 	}

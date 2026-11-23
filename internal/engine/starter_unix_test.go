@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package engine_test
 
 import (
 	"context"
@@ -64,10 +64,10 @@ func newStarterRig(t *testing.T) *starterRig {
 // launch that fails does not.
 func (r *starterRig) socket() string { return filepath.Join(r.cfg.SocketDir, "bot.sock") }
 
-func (r *starterRig) deps(owner int, launchErr error) starterDeps {
-	return starterDeps{
-		owner: func(string) (int, error) { return owner, nil },
-		launch: func(exe string, args []string, logFile *os.File) error {
+func (r *starterRig) deps(owner int, launchErr error) engine.StarterDeps {
+	return engine.StarterDeps{
+		Owner: func(string) (int, error) { return owner, nil },
+		Launch: func(exe string, args []string, logFile *os.File) error {
 			r.launches.Add(1)
 			if launchErr != nil {
 				return launchErr
@@ -106,7 +106,7 @@ func (r *starterRig) deps(owner int, launchErr error) starterDeps {
 			}()
 			return nil
 		},
-		answers: func(socket string) bool {
+		Answers: func(socket string) bool {
 			c, err := net.Dial("unix", socket)
 			if err != nil {
 				return false
@@ -114,7 +114,7 @@ func (r *starterRig) deps(owner int, launchErr error) starterDeps {
 			c.Close()
 			return true
 		},
-		wait: 3 * time.Second,
+		Wait: 3 * time.Second,
 	}
 }
 
@@ -122,7 +122,7 @@ func TestEngineStarterNilForServiceConfig(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
 	r.cfg.Mode = config.ModeService
-	start, failure := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, failure := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	require.Nil(t, start)
 	require.Nil(t, failure)
 }
@@ -130,28 +130,28 @@ func TestEngineStarterNilForServiceConfig(t *testing.T) {
 func TestEngineStarterNilWithoutConfig(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, _ := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), nil, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, _ := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), nil, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	require.Nil(t, start)
 }
 
 func TestEngineStarterNilForOtherOwner(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, _ := newEngineStarter(r.deps(testEuid+1, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, _ := engine.NewStarter(holdOff{}, r.deps(testEuid+1, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	require.Nil(t, start)
 }
 
 func TestEngineStarterNilForRoot(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, _ := newEngineStarter(r.deps(0, nil), "/x/engine.json", r.socket(), &r.cfg, 0, r.exe, slog.New(slog.DiscardHandler))
+	start, _ := engine.NewStarter(holdOff{}, r.deps(0, nil), "/x/engine.json", r.socket(), &r.cfg, 0, r.exe, slog.New(slog.DiscardHandler))
 	require.Nil(t, start)
 }
 
 func TestEngineStarterStartsOneEngine(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, failure := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, failure := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	require.NotNil(t, start)
 
 	require.NoError(t, start(context.Background()))
@@ -159,8 +159,8 @@ func TestEngineStarterStartsOneEngine(t *testing.T) {
 	require.EqualValues(t, 1, r.launches.Load())
 	require.Equal(t, []string{"engine", "--supervise", "--config", "/x/engine.json", "--started-by", "mcp"}, r.args)
 	require.Empty(t, failure())
-	require.True(t, r.deps(testEuid, nil).answers(r.socket()), "the start returns once the agent's socket answers")
-	fi, err := os.Stat(filepath.Join(r.cfg.StateDir, engineLogName))
+	require.True(t, r.deps(testEuid, nil).Answers(r.socket()), "the start returns once the agent's socket answers")
+	fi, err := os.Stat(filepath.Join(r.cfg.StateDir, "engine.log"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm(), "the engine log is private")
 	// An engine that runs is not started again.
@@ -171,7 +171,7 @@ func TestEngineStarterStartsOneEngine(t *testing.T) {
 func TestEngineStarterTwoAtOnce(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, _ := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, _ := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
@@ -189,14 +189,14 @@ func TestEngineStarterBinaryGone(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
 	require.NoError(t, os.Remove(r.exe))
-	start, failure := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, failure := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	err := start(context.Background())
 
 	require.ErrorContains(t, err, "is gone")
 	require.EqualValues(t, 0, r.launches.Load())
 	require.Contains(t, failure(), "is gone")
-	require.Contains(t, failure(), filepath.Join(r.cfg.StateDir, engineLogName), "the log's path is named")
+	require.Contains(t, failure(), filepath.Join(r.cfg.StateDir, "engine.log"), "the log's path is named")
 	require.Contains(t, failure(), "basalt mcp could not start the engine: ")
 }
 
@@ -206,9 +206,9 @@ func TestEngineStarterTimesOutThenTriesAgain(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
 	d := r.deps(testEuid, nil)
-	d.wait = 200 * time.Millisecond
-	d.launch = func(string, []string, *os.File) error { r.launches.Add(1); return nil } // never starts one
-	start, failure := newEngineStarter(d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	d.Wait = 200 * time.Millisecond
+	d.Launch = func(string, []string, *os.File) error { r.launches.Add(1); return nil } // never starts one
+	start, failure := engine.NewStarter(holdOff{}, d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	began := time.Now()
 	err := start(context.Background())
@@ -224,7 +224,7 @@ func TestEngineStarterTimesOutThenTriesAgain(t *testing.T) {
 func TestEngineStarterLaunchFailure(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, failure := newEngineStarter(r.deps(testEuid, os.ErrPermission), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, failure := engine.NewStarter(holdOff{}, r.deps(testEuid, os.ErrPermission), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	require.Error(t, start(context.Background()))
 	require.Contains(t, failure(), "permission denied")
@@ -233,7 +233,7 @@ func TestEngineStarterLaunchFailure(t *testing.T) {
 func TestEngineStarterRecreatesFolders(t *testing.T) {
 	t.Parallel()
 	r := newStarterRig(t)
-	start, _ := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, _ := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	_, err := os.Stat(r.cfg.SocketDir)
 	require.ErrorIs(t, err, os.ErrNotExist)
 
@@ -253,8 +253,8 @@ func TestEngineStarterRefusesASymlinkedLog(t *testing.T) {
 	require.NoError(t, os.MkdirAll(r.cfg.StateDir, 0o700))
 	target := filepath.Join(filepath.Dir(r.cfg.StateDir), "elsewhere")
 	require.NoError(t, os.WriteFile(target, nil, 0o600))
-	require.NoError(t, os.Symlink(target, filepath.Join(r.cfg.StateDir, engineLogName)))
-	start, failure := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	require.NoError(t, os.Symlink(target, filepath.Join(r.cfg.StateDir, "engine.log")))
+	start, failure := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	require.Error(t, start(context.Background()))
 	require.Contains(t, failure(), "open the engine log")
@@ -271,13 +271,13 @@ func TestEngineStarterEngineRunsButNeverServesThisSocket(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(l.Release)
 	d := r.deps(testEuid, nil)
-	d.wait = 600 * time.Millisecond
-	start, failure := newEngineStarter(d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	d.Wait = 600 * time.Millisecond
+	start, failure := engine.NewStarter(holdOff{}, d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	began := time.Now()
 	require.ErrorContains(t, start(context.Background()), "did not answer on")
 	require.GreaterOrEqual(t, time.Since(began), 600*time.Millisecond)
-	require.Contains(t, failure(), "Its log is "+filepath.Join(r.cfg.StateDir, engineLogName))
+	require.Contains(t, failure(), "Its log is "+filepath.Join(r.cfg.StateDir, "engine.log"))
 
 	began = time.Now()
 	require.Error(t, start(context.Background()))
@@ -316,8 +316,8 @@ func TestEngineStarterHoldsOffAfterGiveUp(t *testing.T) {
 	require.NoError(t, os.Chtimes(record, now.Add(2*time.Hour), now.Add(2*time.Hour)))
 
 	d := r.deps(testEuid, nil)
-	d.now = func() time.Time { return now }
-	start, failure := newEngineStarter(d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	d.Now = func() time.Time { return now }
+	start, failure := engine.NewStarter(holdOff{}, d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	began := time.Now()
 	err := start(context.Background())
@@ -339,8 +339,8 @@ func TestEngineStarterTriesAgainAfterHoldOff(t *testing.T) {
 	writeGiveUp(t, r.cfg.StateDir, cfgPath, "the engine crashed 5 times within 10s; last: exit status 1", now.Add(-2*time.Minute))
 
 	d := r.deps(testEuid, nil)
-	d.now = func() time.Time { return now }
-	start, _ := newEngineStarter(d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	d.Now = func() time.Time { return now }
+	start, _ := engine.NewStarter(holdOff{}, d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	require.NoError(t, start(context.Background()))
 	require.EqualValues(t, 1, r.launches.Load())
@@ -357,8 +357,8 @@ func TestEngineStarterHoldOffEndsWhenEngineJSONChanges(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte("v2\n"), 0o600))
 
 	d := r.deps(testEuid, nil)
-	d.now = func() time.Time { return now }
-	start, _ := newEngineStarter(d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	d.Now = func() time.Time { return now }
+	start, _ := engine.NewStarter(holdOff{}, d, cfgPath, r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	require.NoError(t, start(context.Background()))
 	require.EqualValues(t, 1, r.launches.Load())
@@ -391,7 +391,7 @@ func TestEngineStarterWaitsWhenSupervisorHoldsLock(t *testing.T) {
 			c.Close()
 		}
 	}()
-	start, failure := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	start, failure := engine.NewStarter(holdOff{}, r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 
 	require.NoError(t, start(context.Background()))
 
@@ -407,12 +407,19 @@ func TestEngineStarterStartsAfterSupervisorLockIsReleased(t *testing.T) {
 	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, engine.SuperviseLock))
 	require.NoError(t, err)
 	d := r.deps(testEuid, nil)
-	d.wait = 200 * time.Millisecond
-	start, _ := newEngineStarter(d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	d.Wait = 200 * time.Millisecond
+	start, _ := engine.NewStarter(holdOff{}, d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
 	require.ErrorContains(t, start(context.Background()), "did not answer on")
 	require.EqualValues(t, 0, r.launches.Load())
 
 	release()
 	require.NoError(t, start(context.Background()))
 	require.EqualValues(t, 1, r.launches.Load())
+}
+
+// holdOff is the starter's last-stop reader, as the real host has it.
+type holdOff struct{}
+
+func (holdOff) LastStopStartHoldOffUntil(rec servicespec.LastStopFileRecord, configPath string, now time.Time) (time.Time, bool) {
+	return laststop.StartHoldOffUntil(rec, configPath, now)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
+	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -46,7 +47,7 @@ func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (agen
 }
 
 func (engineCLIHost) EngineStarter(configPath, socket string, cfg *config.Config, euid int, exe string, log *slog.Logger) (func(context.Context) error, func() string) {
-	return engineStarter(configPath, socket, cfg, euid, exe, log)
+	return app.EngineStarter(engineHost{}, shim.DefaultStartWait, configPath, socket, cfg, euid, exe, log)
 }
 
 func (engineCLIHost) NewEngineDownServer(down agent.EngineDown) shim.Fallback {
@@ -73,6 +74,10 @@ type engineHost struct{ osHost }
 func (engineHost) NewRecorder() engine.Recorder { return newRecorder() }
 
 func (engineHost) LastStopHashEngineJSON(path string) string { return app.LastStopHashEngineJSON(path) }
+
+func (engineHost) LastStopStartHoldOffUntil(rec servicespec.LastStopFileRecord, configPath string, now time.Time) (time.Time, bool) {
+	return app.LastStopStartHoldOffUntil(rec, configPath, now)
+}
 
 // engineTerminal is engine.Terminal on the CLI shell.
 type engineTerminal struct{}

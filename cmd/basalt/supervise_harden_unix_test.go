@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -200,4 +201,18 @@ func TestSupervisedChildStopsWhenSupervisorIsAlreadyGone(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the child kept running although its parent is not the supervisor named in the environment")
 	}
+}
+
+// lockHeld reports whether another process holds an exclusive flock on
+// path, without keeping the lock.
+func lockHeld(path string) (bool, error) {
+	release, err := config.LockFile(path)
+	if errors.Is(err, config.ErrLocked) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	release()
+	return false, nil
 }

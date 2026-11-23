@@ -5,11 +5,12 @@ import (
 	"crypto/x509"
 	"errors"
 
+	"github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
@@ -19,12 +20,12 @@ import (
 // Trust profiles), the chain top that host presents now (read with the TLS
 // handshake alone, only for a pinned host whose certificate did not
 // verify), and the pin the ledger records for it. It never writes a pin.
-func TrustOf(pool *pgxpool.Pool) agent.TrustReporter {
-	return func() agent.TrustReport {
+func TrustOf(pool *pgxpool.Pool) status.TrustReporter {
+	return func() status.TrustReport {
 		cfg := pool.Config().ConnConfig
 		a, refused := pgdial.TrustOfConfig(&cfg.Config)
 		host, port := trustprofile.NormalizeHost(cfg.Host), cfg.Port
-		return agent.TrustReport{
+		return status.TrustReport{
 			Applied: a, Refused: refused, Port: port,
 			Presented: func(ctx context.Context) (*x509.Certificate, error) {
 				chain, err := trustpin.Fetch(ctx, nil, host, int(port))

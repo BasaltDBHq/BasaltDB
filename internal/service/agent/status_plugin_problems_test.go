@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -30,7 +32,7 @@ func (f fakePlugins) AddPluginProblems(ps *guidance.Problems, agent string) {
 
 func (f fakePlugins) PluginHealth(agent string) []guidance.PluginHealth { return f.health[agent] }
 
-func pluginStatus(t *testing.T, r PluginReporter) guidance.StatusReport {
+func pluginStatus(t *testing.T, r statussvc.PluginReporter) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.Plugins = r

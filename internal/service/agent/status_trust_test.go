@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -44,11 +46,11 @@ func caExpiring(t *testing.T, notAfter time.Time) *x509.Certificate {
 	return c
 }
 
-func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) guidance.StatusReport {
+func trustLocal(t *testing.T, probe *fakeProbe, rep statussvc.TrustReporter) guidance.StatusReport {
 	t.Helper()
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	r, err := LocalStatus{
+	r, err := statussvc.LocalStatus{
 		Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
 		Name: "bot", Commands: cmds.Foreground(), EngineRunning: true, Trust: rep, Probe: probe,
 		Passkeys: func(context.Context) ([]passkey.Credential, error) {
@@ -60,8 +62,8 @@ func trustLocal(t *testing.T, probe *fakeProbe, rep TrustReporter) guidance.Stat
 	return r
 }
 
-func reporter(a trustprofile.Applied, refused ...trustprofile.Refused) TrustReporter {
-	return func() TrustReport { return TrustReport{Applied: a, Refused: refused} }
+func reporter(a trustprofile.Applied, refused ...trustprofile.Refused) statussvc.TrustReporter {
+	return func() statussvc.TrustReport { return statussvc.TrustReport{Applied: a, Refused: refused} }
 }
 
 // status.trust names the profile and its roots, earliest expiry first, and
@@ -82,7 +84,7 @@ func TestStatusTrust(t *testing.T) {
 			{Subject: later.Subject.String(), SHA256: trustprofile.Fingerprint(later), NotAfter: later.NotAfter.UTC()},
 		},
 	}, r.Trust)
-	w := findProblem(t, r, problemTrustRootExpiring)
+	w := findProblem(t, r, "TRUST_ROOT_EXPIRING")
 	require.Equal(t, "WARNING", w.Severity)
 	require.Contains(t, w.Message, trustprofile.Fingerprint(soon))
 	require.Contains(t, w.Message, soon.NotAfter.Format(time.DateOnly))
@@ -116,7 +118,7 @@ func TestStatusTrustRefused(t *testing.T) {
 		trustprofile.Refused{File: "/etc/basalt/trust.d/b.json", Reason: "roots file b.pem has SHA-256 x, the profile pins y"}))
 	n := 0
 	for _, p := range r.Problems {
-		if p.Code == problemTrustProfileRefused {
+		if p.Code == "TRUST_PROFILE_REFUSED" {
 			n++
 			require.Equal(t, "WARNING", p.Severity)
 			require.Contains(t, p.Message, "/etc/basalt/trust.d/")
@@ -135,21 +137,21 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 	host := "db.internal.example.com"
 	err := fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})
 	r := trustLocal(t, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}))
-	p := findProblem(t, r, problemCertificateNotVerified)
+	p := findProblem(t, r, "CERTIFICATE_NOT_VERIFIED")
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, host)
-	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: trustInitText, Command: "basalt init --agent bot"}, p.NextSteps[0])
+	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: "Run this once and show the person the link it prints: the setup page shows the database's certificate, and they decide.", Command: "basalt init --agent bot"}, p.NextSteps[0])
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	require.Contains(t, p.PersonMessage, "trust it there")
 	require.NotContains(t, p.PersonMessage, "sslrootcert", "the setup page refuses sslrootcert, so no message suggests it")
 	for _, q := range r.Problems {
-		require.NotEqual(t, problemDatabaseUnreachable, q.Code)
+		require.NotEqual(t, guidance.ReasonDatabaseUnreachable, q.Code)
 	}
 	require.False(t, r.Ready)
 }
 
 // trustStatusOf is the engine's status with rep as its trust reporter.
-func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep TrustReporter) guidance.StatusReport {
+func trustStatusOf(t *testing.T, operatedBy string, probe *fakeProbe, rep statussvc.TrustReporter) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
@@ -170,27 +172,27 @@ func trustStatusCases(operatedBy string) map[string]statusCase {
 	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	const host = "db.internal.example.com"
 	return map[string]statusCase{
-		problemCertificateNotVerified: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
+		"CERTIFICATE_NOT_VERIFIED": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			err := fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})
 			return trustStatusOf(t, operatedBy, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem}))
 		}},
-		problemTrustRootExpiring: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"TRUST_ROOT_EXPIRING": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			p := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, caExpiring(t, statusNow.Add(24*time.Hour)))
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}))
 		}},
-		problemTrustRootChanged: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
+		"TRUST_ROOT_CHANGED": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			r, _ := pinnedStatus(t, operatedBy, true, "")
 			return r
 		}},
-		problemTrustPinMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"TRUST_PIN_MISMATCH": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			r, _ := pinnedStatus(t, operatedBy, false, pinSHAOther)
 			return r
 		}},
-		problemTrustProfileRefused: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"TRUST_PROFILE_REFUSED": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return trustStatusOf(t, operatedBy, &fakeProbe{st: ok}, reporter(trustprofile.Applied{Host: host, Applies: trustprofile.AppliesSystem},
 				trustprofile.Refused{File: "/etc/basalt/trust.d/a.json", Reason: "it is writable by group or others"}))
@@ -208,7 +210,7 @@ func TestStatusCertificateNotVerifiedOwnRoots(t *testing.T) {
 		trustprofile.AppliesNotVerified: "below verify-full",
 	} {
 		r := trustLocal(t, &fakeProbe{err: err}, reporter(trustprofile.Applied{Host: "db.example.com", Applies: applies}))
-		p := findProblem(t, r, problemCertificateNotVerified)
+		p := findProblem(t, r, "CERTIFICATE_NOT_VERIFIED")
 		require.Contains(t, p.PersonMessage, want, applies)
 		require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command, applies)
 		require.NotContains(t, p.PersonMessage, "basalt ", applies)
@@ -231,8 +233,8 @@ func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string
 	if certErr {
 		probe = &fakeProbe{err: fmt.Errorf("failed to connect: %w", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}})}
 	}
-	rep := func() TrustReport {
-		r := TrustReport{
+	rep := func() statussvc.TrustReport {
+		r := statussvc.TrustReport{
 			Applied: trustprofile.Applied{Host: host, Applies: trustprofile.AppliesProfile, Profile: p}, Port: 5432,
 			Presented: func(context.Context) (*x509.Certificate, error) { return now, nil },
 		}
@@ -250,14 +252,14 @@ func pinnedStatus(t *testing.T, operatedBy string, certErr bool, recorded string
 func TestStatusTrustRootChanged(t *testing.T) {
 	t.Parallel()
 	r, now := pinnedStatus(t, "", true, "")
-	p := findProblem(t, r, problemTrustRootChanged)
+	p := findProblem(t, r, "TRUST_ROOT_CHANGED")
 	require.Equal(t, "ERROR", p.Severity)
 	require.Contains(t, p.Message, trustprofile.Fingerprint(now))
 	require.Contains(t, p.Message, "pinned to")
 	require.Equal(t, "basalt init --agent bot", p.NextSteps[0].Command)
 	require.NotContains(t, p.PersonMessage, "basalt ", "the person runs no command")
 	for _, q := range r.Problems {
-		require.NotEqual(t, problemCertificateNotVerified, q.Code)
+		require.NotEqual(t, "CERTIFICATE_NOT_VERIFIED", q.Code)
 	}
 }
 
@@ -266,7 +268,7 @@ func TestStatusTrustRootChanged(t *testing.T) {
 func TestStatusTrustPinMismatch(t *testing.T) {
 	t.Parallel()
 	r, _ := pinnedStatus(t, "", false, pinSHAOther)
-	p := findProblem(t, r, problemTrustPinMismatch)
+	p := findProblem(t, r, "TRUST_PIN_MISMATCH")
 	require.Equal(t, "WARNING", p.Severity)
 	require.Contains(t, p.Message, pinSHAOther)
 	require.True(t, r.Ready)

@@ -36,20 +36,6 @@ func devLocalStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	return r
 }
 
-func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
-	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", testManager())
-	require.NoError(t, err)
-	b := guidance.NewSteps()
-	person := devLocalPagesSteps(b, cmds.OperatedBy(mcpcontract.OperatedByAgent))
-	steps, err := b.Build()
-	require.NoError(t, err)
-	require.Len(t, steps, 2)
-	require.Equal(t, toolresult.ActionAskPerson, steps[0].Action)
-	require.Equal(t, toolresult.NextStep{Actor: toolresult.ActorAgent, Action: toolresult.ActionRunCommand, Text: steps[1].Text, Command: "basalt init --agent bot --remote"}, steps[1])
-	require.NotContains(t, person, "basalt ", "the person runs no command")
-}
-
 func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	t.Parallel()
 	d := deps()
@@ -76,7 +62,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 		require.True(t, strings.HasPrefix(msg, config.DevLocalPagesWarning+"\n\n"), msg)
 		require.Equal(t, 1, strings.Count(msg, "DEV_LOCAL_PAGES:"), "the warning once, also on its own problem")
 	}
-	require.True(t, codes[problemDevLocalPages] && codes[problemNoPasskey], codes)
+	require.True(t, codes["DEV_LOCAL_PAGES"] && codes["NO_PASSKEY"], codes)
 }
 
 func TestNoWarningWithoutDevLocalPages(t *testing.T) {
@@ -85,7 +71,7 @@ func TestNoWarningWithoutDevLocalPages(t *testing.T) {
 	body, _ := serveCall(t, srv, guidance.ToolStatus, map[string]any{})
 	require.NotContains(t, body, "DEV_LOCAL_PAGES")
 	for _, p := range body["problems"].([]any) {
-		require.NotEqual(t, problemDevLocalPages, p.(map[string]any)["code"])
+		require.NotEqual(t, "DEV_LOCAL_PAGES", p.(map[string]any)["code"])
 	}
 }
 

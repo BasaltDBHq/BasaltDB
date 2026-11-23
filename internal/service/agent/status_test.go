@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 
 	"github.com/basaltdbhq/basaltdb/internal/handoff"
@@ -190,68 +192,68 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		return operatedStatus(probe, passkeys, setup, operatedBy)
 	}
 	cases := map[string]statusCase{
-		problemEngineUnreachable: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
+		guidance.ReasonEngineUnreachable: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
+			r, err := statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
-		problemEngineStartFailed: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
+		"ENGINE_START_FAILED": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
+			r, err := statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.", "")
 			require.NoError(t, err)
 			return r
 		}},
-		problemEngineGaveUp: {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
+		"ENGINE_GAVE_UP": {state: guardmodel.GuardUnknown, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", testManager())
 			require.NoError(t, err)
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
 			cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
+			r, err := statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
-		problemDatabaseUnreachable: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
-		problemTooManyConnections: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
+		guidance.ReasonDatabaseUnreachable: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
+		guidance.ReasonTooManyConnections: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "53300",
 			Message: `too many connections for role "basalt_agent_bot"`,
 		})}, 1, nil)},
-		problemCredentialRejected: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
+		guidance.ReasonCredentialRejected: {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",
 		})}, 1, nil)},
-		problemGuardMissing:     {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
-		problemGuardOutdated:    {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
-		problemUpgradeAvailable: {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
-		problemNoPasskey:        {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
-		"SETUP_NOT_RUN":         {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
-		"SETUP_EXPIRED":         {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
-		"SETUP_CHANGE_PENDING":  {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
-		problemLockFileUnusable: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		guidance.ReasonGuardMissing:  {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
+		guidance.ReasonGuardOutdated: {state: guardmodel.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
+		"GUARD_UPGRADE_AVAILABLE":    {state: guardmodel.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guardmodel.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
+		"NO_PASSKEY":                 {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
+		"SETUP_NOT_RUN":              {state: guardmodel.GuardMissing, report: engineStatus(&fakeProbe{st: guardmodel.Status{State: guardmodel.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guardmodel.SetupInstall, soon))},
+		"SETUP_EXPIRED":              {state: guardmodel.GuardUnknown, report: engineStatus(&fakeProbe{err: store.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guardmodel.SetupInstall, past))},
+		"SETUP_CHANGE_PENDING":       {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guardmodel.SetupAgent, soon))},
+		"LOCK_FILE_UNUSABLE": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
 		}},
-		problemPortalMismatch: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"PORTAL_MISMATCH": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
-			return portalStatus(t, operatedBy, fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
+			return portalStatus(t, operatedBy, fakePortal{ok: true, f: statussvc.PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
 		}},
-		problemDevLocalPages: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"DEV_LOCAL_PAGES": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
 		}},
-		problemEngineRevoked: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"ENGINE_REVOKED": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return engineRecordStatusOf(t, operatedBy, recordOf(true))
 		}},
-		problemLedgerReinstalled: {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
+		"LEDGER_REINSTALLED": {state: guardmodel.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
 	}
 	maps.Copy(cases, trustStatusCases(operatedBy))
 	maps.Copy(cases, connectOnlyStatusCases(operatedBy))
@@ -277,7 +279,7 @@ func TestStatusLedgerReinstalled(t *testing.T) {
 	t.Parallel()
 	ok := guardAt(guardmodel.GuardOK, nil, nil)
 	r := engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)(t)
-	p := findProblem(t, r, problemLedgerReinstalled)
+	p := findProblem(t, r, "LEDGER_REINSTALLED")
 	require.True(t, r.Ready)
 	require.Equal(t, mcpcontract.SeverityWarning, p.Severity)
 	require.Equal(t, ledger.ReinstallNotice(sampleReinstalls().List[0])[0]+"\nOlder reports stay in the ledger's install records.", p.PersonMessage)
@@ -285,7 +287,7 @@ func TestStatusLedgerReinstalled(t *testing.T) {
 
 	r = engineStatus(&fakeProbe{st: ok}, 1, nil)(t)
 	for _, p := range r.Problems {
-		require.NotEqual(t, problemLedgerReinstalled, p.Code)
+		require.NotEqual(t, "LEDGER_REINSTALLED", p.Code)
 	}
 }
 
@@ -361,7 +363,7 @@ func TestStatusWhenEverythingIsReady(t *testing.T) {
 	require.NotNil(t, r.Problems, "problems is an empty list, not null")
 	require.Equal(t, "bot", r.Agent)
 	require.Equal(t, mcpcontract.OperatedByPerson, r.OperatedBy)
-	require.Equal(t, EnforcementEngineAndGuard, r.Enforcement)
+	require.Equal(t, statussvc.EnforcementEngineAndGuard, r.Enforcement)
 	require.True(t, r.Engine.Reachable)
 	require.Equal(t, guardmodel.GuardOK, r.Guard.State)
 	require.True(t, r.Passkeys.Registered)
@@ -397,18 +399,18 @@ func ptr[T any](v T) *T { return &v }
 
 func TestStatusEnforcementAndOperator(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, EnforcementGuardOnly, enforcement(mcpcontract.OperatedByAgent, false))
-	require.Equal(t, EnforcementGuardOnly, enforcement(mcpcontract.OperatedByPerson, true), "same-user mode")
-	require.Equal(t, EnforcementEngineAndGuard, enforcement("", false))
-	require.Equal(t, mcpcontract.OperatedByPerson, operatedBy(""))
+	require.Equal(t, statussvc.EnforcementGuardOnly, statussvc.Enforcement(mcpcontract.OperatedByAgent, false))
+	require.Equal(t, statussvc.EnforcementGuardOnly, statussvc.Enforcement(mcpcontract.OperatedByPerson, true), "same-user mode")
+	require.Equal(t, statussvc.EnforcementEngineAndGuard, statussvc.Enforcement("", false))
+	require.Equal(t, mcpcontract.OperatedByPerson, statussvc.OperatedBy(""))
 
 	// The shim that cannot read the config: PERSON and GUARD_ONLY.
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
-	r, err := EngineDownStatus(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow)
+	r, err := statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByPerson, r.OperatedBy)
-	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
+	require.Equal(t, statussvc.EnforcementGuardOnly, r.Enforcement)
 	require.False(t, r.Engine.Reachable)
 	require.False(t, r.Ready)
 	require.Equal(t, handoff.SetupNone, r.Setup.State)
@@ -418,13 +420,13 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guardmodel.SetupInstall, statusNow.Add(time.Hour)),
 	}}}
-	r, err = EngineDownStatus(testEngineHost(), "bot", cmds.Foreground(), cfg, nil, "test", statusNow)
+	r, err = statussvc.EngineDownStatus(testEngineHost(), "bot", cmds.Foreground(), cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByAgent, r.OperatedBy)
-	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
+	require.Equal(t, statussvc.EnforcementGuardOnly, r.Enforcement)
 	require.Equal(t, "PENDING", r.Setup.State)
 	require.Equal(t, "a1b2 c3d4 e5f6 0718 293a", r.Setup.Fingerprint)
-	require.Equal(t, "basalt engine --config /etc/basalt/engine.json", findProblem(t, r, problemEngineUnreachable).NextSteps[0].Command)
+	require.Equal(t, "basalt engine --config /etc/basalt/engine.json", findProblem(t, r, guidance.ReasonEngineUnreachable).NextSteps[0].Command)
 	findProblem(t, r, "SETUP_NOT_RUN")
 }
 
@@ -633,7 +635,7 @@ func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
 	require.False(t, isError)
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1)
-	require.Equal(t, problemDatabaseUnreachable, problems[0].(map[string]any)["code"], "no SETUP_NOT_RUN for a code that may be used")
+	require.Equal(t, guidance.ReasonDatabaseUnreachable, problems[0].(map[string]any)["code"], "no SETUP_NOT_RUN for a code that may be used")
 	require.Equal(t, "PENDING", body["setup"].(map[string]any)["state"], "the config's code is still shown")
 }
 
@@ -759,7 +761,7 @@ func lockTroubleStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 	setApprovals(&d, keys{n: 1})
 	d.Status.Setup = pendingSetup(guardmodel.SetupAgent, statusNow.Add(time.Hour))
 	d.Core.Now = func() time.Time { return statusNow }
-	d.Status.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
+	d.Status.Finisher = failingFinisher{&config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
@@ -771,9 +773,9 @@ func lockTroubleStatus(t *testing.T, operatedBy string) guidance.StatusReport {
 // engineID is the id the test engine reports.
 const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"
 
-func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error) {
-	return func(_ context.Context, _ string) (*EngineRecord, error) {
-		e := &EngineRecord{RecordedAt: statusNow.Add(-48 * time.Hour)}
+func recordOf(revoked bool) func(context.Context, string) (*statussvc.EngineRecord, error) {
+	return func(_ context.Context, _ string) (*statussvc.EngineRecord, error) {
+		e := &statussvc.EngineRecord{RecordedAt: statusNow.Add(-48 * time.Hour)}
 		if revoked {
 			at := statusNow.Add(-time.Hour)
 			e.RevokedAt = &at
@@ -784,7 +786,7 @@ func recordOf(revoked bool) func(context.Context, string) (*EngineRecord, error)
 
 // engineRecordStatusOf is the status of a ready agent on an engine with a
 // Vault reporter whose record is read by read.
-func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordReader) guidance.StatusReport {
+func engineRecordStatusOf(t *testing.T, operatedBy string, read statussvc.EngineRecordReader) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
@@ -807,17 +809,17 @@ func TestStatusEngineRecord(t *testing.T) {
 	recorded := statusNow.Add(-48 * time.Hour).Format(time.RFC3339)
 	revokedAt := statusNow.Add(-time.Hour).Format(time.RFC3339)
 	for name, tc := range map[string]struct {
-		read EngineRecordReader
+		read statussvc.EngineRecordReader
 		want guidance.EngineRecordStatus
 		code string
 	}{
-		"recorded":     {read: recordOf(false), want: guidance.EngineRecordStatus{State: engineRecorded, RecordedAt: recorded}},
-		"revoked":      {read: recordOf(true), want: guidance.EngineRecordStatus{State: engineRevoked, RecordedAt: recorded, RevokedAt: revokedAt}, code: problemEngineRevoked},
-		"not recorded": {read: notRecorded, want: guidance.EngineRecordStatus{State: engineNotRecorded}},
-		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*EngineRecord, error) {
+		"recorded":     {read: recordOf(false), want: guidance.EngineRecordStatus{State: "RECORDED", RecordedAt: recorded}},
+		"revoked":      {read: recordOf(true), want: guidance.EngineRecordStatus{State: "REVOKED", RecordedAt: recorded, RevokedAt: revokedAt}, code: "ENGINE_REVOKED"},
+		"not recorded": {read: notRecorded, want: guidance.EngineRecordStatus{State: "NOT_RECORDED"}},
+		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*statussvc.EngineRecord, error) {
 			return nil, errors.New("relation does not exist")
-		}, want: guidance.EngineRecordStatus{State: engineUnknown}},
-		"no reader": {want: guidance.EngineRecordStatus{State: engineUnknown}},
+		}, want: guidance.EngineRecordStatus{State: "UNKNOWN"}},
+		"no reader": {want: guidance.EngineRecordStatus{State: "UNKNOWN"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -845,7 +847,7 @@ func TestStatusEngineRecord(t *testing.T) {
 		d.Status.EngineRecord = recordOf(true)
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, &guidance.EngineRecordStatus{State: engineUnknown}, r.EngineRecord)
+		require.Equal(t, &guidance.EngineRecordStatus{State: "UNKNOWN"}, r.EngineRecord)
 		require.Empty(t, r.Problems)
 	})
 	t.Run("no vault reporter: left out", func(t *testing.T) {
@@ -863,11 +865,11 @@ func TestStatusEngineRecord(t *testing.T) {
 // agent's own database, with the same problems as the status tool.
 func TestLocalStatusEngineRecord(t *testing.T) {
 	t.Parallel()
-	local := func(key *string, read EngineRecordReader) guidance.StatusReport {
+	local := func(key *string, read statussvc.EngineRecordReader) guidance.StatusReport {
 		t.Helper()
 		cmds, err := NewCommands("bot", "", "linux", testManager())
 		require.NoError(t, err)
-		r, err := LocalStatus{
+		r, err := statussvc.LocalStatus{
 			Errors: testErrors(), LatestGuardVersion: guard.LatestVersion,
 			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read,
 			Probe: &fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)},
@@ -881,23 +883,23 @@ func TestLocalStatusEngineRecord(t *testing.T) {
 	}
 	id := testEngineID
 	r := local(&id, recordOf(false))
-	require.Equal(t, engineRecorded, r.EngineRecord.State)
+	require.Equal(t, "RECORDED", r.EngineRecord.State)
 	require.Empty(t, r.Problems)
 
 	r = local(&id, recordOf(true))
-	require.Equal(t, engineRevoked, r.EngineRecord.State)
-	findProblem(t, r, problemEngineRevoked)
+	require.Equal(t, "REVOKED", r.EngineRecord.State)
+	findProblem(t, r, "ENGINE_REVOKED")
 
 	refused := ""
 	r = local(&refused, recordOf(true))
-	require.Equal(t, &guidance.EngineRecordStatus{State: engineUnknown}, r.EngineRecord, "the key file is refused")
+	require.Equal(t, &guidance.EngineRecordStatus{State: "UNKNOWN"}, r.EngineRecord, "the key file is refused")
 	require.Empty(t, r.Problems)
 
 	require.Nil(t, local(nil, recordOf(true)).EngineRecord, "an engine that is down has none")
 }
 
 // notRecorded is a database that holds no row for the engine.
-func notRecorded(context.Context, string) (*EngineRecord, error) {
+func notRecorded(context.Context, string) (*statussvc.EngineRecord, error) {
 	return nil, nil //nolint:nilnil // a missing row is the answer, not an error
 }
 
@@ -910,7 +912,7 @@ func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
 	_, cfgErr := config.Load(path)
 	cmds, err := NewCommands("bot", path, "linux", testManager())
 	require.NoError(t, err)
-	r, err := EngineDownStatus(testEngineHost(), "bot", cmds, nil, cfgErr, "test", statusNow)
+	r, err := statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, nil, cfgErr, "test", statusNow)
 	require.NoError(t, err)
 	require.Len(t, r.Problems, 1)
 	require.Contains(t, r.Problems[0].Message, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
@@ -986,7 +988,7 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	require.False(t, onlyLocal.Passkeys.Registered)
 	require.Equal(t, 0, *onlyLocal.Passkeys.Active)
 	require.Empty(t, onlyLocal.Passkeys.Keys)
-	noKey := findProblem(t, onlyLocal, problemNoPasskey)
+	noKey := findProblem(t, onlyLocal, "NO_PASSKEY")
 	require.Equal(t, mcpcontract.SeverityError, noKey.Severity)
 	require.Contains(t, noKey.Message, "no passkey is registered on "+links.Portal)
 	require.NotEmpty(t, noKey.NextSteps)
@@ -1000,7 +1002,7 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	require.Equal(t, 1, *both.Passkeys.Active)
 	require.Equal(t, passkey.Bytes{2}, both.Passkeys.Keys[0].CredentialID, "the portal's passkey only")
 	for _, p := range both.Problems {
-		require.NotEqual(t, problemNoPasskey, p.Code)
+		require.NotEqual(t, "NO_PASSKEY", p.Code)
 	}
 
 	// On local pages it is the other way round, and the setup page's
@@ -1011,7 +1013,7 @@ func TestStatusCountsOnlyThePagesPasskeys(t *testing.T) {
 	const update = "http://localhost:8797/setup#update"
 	onlyPortal := pagesStatus(t, "", local, update, links.Portal)
 	require.False(t, onlyPortal.Ready)
-	steps := findProblem(t, onlyPortal, problemNoPasskey).NextSteps
+	steps := findProblem(t, onlyPortal, "NO_PASSKEY").NextSteps
 	require.Equal(t, toolresult.ActionOpenLink, steps[0].Action)
 	require.Equal(t, update, steps[0].URL)
 	require.Equal(t, toolresult.ActionEndTurn, steps[1].Action)
@@ -1045,11 +1047,11 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	const why = "basalt mcp could not start the engine: the engine did not start within 15s. Its log is /s/engine.log."
 	down := EngineDown{Host: testEngineHost(), Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
 
-	r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow, why, "")
+	r, err := statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow, why, "")
 	require.NoError(t, err)
-	require.Equal(t, problemEngineStartFailed, r.Problems[0].Code, "the start failure comes first")
+	require.Equal(t, "ENGINE_START_FAILED", r.Problems[0].Code, "the start failure comes first")
 	require.Equal(t, why, r.Problems[0].Message)
-	require.Equal(t, problemEngineUnreachable, r.Problems[1].Code, "the manual step stays")
+	require.Equal(t, guidance.ReasonEngineUnreachable, r.Problems[1].Code, "the manual step stays")
 	require.False(t, r.Ready)
 
 	var query guidance.Tool
@@ -1064,9 +1066,9 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.Contains(t, te.Message, why)
 
 	// Without a failure nothing is added.
-	r, err = EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow, "", "")
+	r, err = statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, nil, nil, "test", statusNow, "", "")
 	require.NoError(t, err)
-	require.Equal(t, problemEngineUnreachable, r.Problems[0].Code)
+	require.Equal(t, guidance.ReasonEngineUnreachable, r.Problems[0].Code)
 	require.Len(t, r.Problems, 1)
 }
 
@@ -1091,23 +1093,23 @@ func TestEngineDownStatusLastStop(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 
-	r, err := EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
+	r, err := statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Nil(t, r.Engine.LastStop, "no file, no last stop")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte("{\"reason\":\"the engine crashed 5 times within 10s; last: exit status 1\\u0007\",\"at\":\"2026-11-20T01:02:03Z\"}"), 0o600))
-	r, err = EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
+	r, err = statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.NotNil(t, r.Engine.LastStop)
 	require.Equal(t, "the engine crashed 5 times within 10s; last: exit status 1 ", r.Engine.LastStop.Reason, "unprintable characters are blanked")
 	require.Equal(t, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), r.Engine.LastStop.At)
-	p := findProblem(t, r, problemEngineGaveUp)
+	p := findProblem(t, r, "ENGINE_GAVE_UP")
 	require.Contains(t, p.Message, "the engine crashed 5 times within 10s")
-	findProblem(t, r, problemEngineUnreachable)
+	findProblem(t, r, guidance.ReasonEngineUnreachable)
 
 	// A file that is not a record shows nothing.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, engine.LastStopFile), []byte("not json"), 0o600))
-	r, err = EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
+	r, err = statussvc.EngineDownStatus(testEngineHost(), "bot", cmds, cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Nil(t, r.Engine.LastStop)
 }
@@ -1129,9 +1131,9 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 	now := at.Add(30 * time.Second)
 
-	r, err := EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", now, "", cfgPath)
+	r, err := statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", now, "", cfgPath)
 	require.NoError(t, err)
-	p := findProblem(t, r, problemEngineGaveUp)
+	p := findProblem(t, r, "ENGINE_GAVE_UP")
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1. The next try is at 2026-11-21T08:01:00Z.", p.Message)
 	// lastStop on the wire stays {reason, at}.
 	raw, err := json.Marshal(r.Engine.LastStop)
@@ -1140,16 +1142,16 @@ func TestEngineDownStatusHoldOffNamesTheNextTry(t *testing.T) {
 	require.JSONEq(t, `{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-21T08:00:00Z"}`, string(raw))
 
 	// After the minute, the next-try sentence is gone; the reason stays.
-	r, err = EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", at.Add(time.Minute), "", cfgPath)
+	r, err = statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", at.Add(time.Minute), "", cfgPath)
 	require.NoError(t, err)
-	p = findProblem(t, r, problemEngineGaveUp)
+	p = findProblem(t, r, "ENGINE_GAVE_UP")
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
 
 	// Editing engine.json ends the hold-off message too.
 	require.NoError(t, os.WriteFile(cfgPath, []byte("v2\n"), 0o600))
-	r, err = EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", now, "", cfgPath)
+	r, err = statussvc.EngineDownStatusAfterStart(testEngineHost(), "bot", cmds, cfg, nil, "test", now, "", cfgPath)
 	require.NoError(t, err)
-	p = findProblem(t, r, problemEngineGaveUp)
+	p = findProblem(t, r, "ENGINE_GAVE_UP")
 	require.Equal(t, "the engine stopped and was not restarted: the engine crashed 5 times within 10s; last: exit status 1", p.Message)
 }
 
@@ -1176,3 +1178,18 @@ func TestEngineDownToolNamesHoldOff(t *testing.T) {
 	require.Contains(t, callErr.Error(), "the engine stopped and was not restarted: the engine crashed 5 times within 10s")
 	require.Contains(t, callErr.Error(), "The next try is at 2026-11-21T08:01:00Z")
 }
+
+// serverOf is svc's MCP server and tools.
+func serverOf(svc *Service) (*mcpserver.Server, []mcpserver.Tool) {
+	tools := Tools(svc)
+	return mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, mcpserver.ToolsFrom(tools, WithMeta)...), mcpserver.ToolsFrom(tools, WithMeta)
+}
+
+// failingFinisher is a finisher whose Finish fails with the error it holds.
+type failingFinisher struct{ err error }
+
+func (failingFinisher) PendingRecorded(context.Context, uuid.UUID) (bool, bool, error) {
+	return false, false, nil
+}
+
+func (f failingFinisher) Finish(context.Context, string, bool) error { return f.err }

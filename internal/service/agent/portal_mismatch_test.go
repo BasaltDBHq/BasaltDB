@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -13,13 +15,13 @@ import (
 )
 
 type fakePortal struct {
-	f  PortalFinding
+	f  statussvc.PortalFinding
 	ok bool
 }
 
-func (p fakePortal) PortalFinding() (PortalFinding, bool) { return p.f, p.ok }
+func (p fakePortal) PortalFinding() (statussvc.PortalFinding, bool) { return p.f, p.ok }
 
-func portalStatus(t *testing.T, operatedBy string, p PortalReporter) guidance.StatusReport {
+func portalStatus(t *testing.T, operatedBy string, p statussvc.PortalReporter) guidance.StatusReport {
 	t.Helper()
 	d := deps()
 	d.Status.OperatedBy = operatedBy
@@ -45,8 +47,8 @@ func portalCodes(r guidance.StatusReport) []string {
 
 func TestAMismatchingPortalIsAWarningToSignNothingThere(t *testing.T) {
 	t.Parallel()
-	r := portalStatus(t, "", fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
-	require.Equal(t, []string{problemPortalMismatch}, portalCodes(r))
+	r := portalStatus(t, "", fakePortal{ok: true, f: statussvc.PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
+	require.Equal(t, []string{"PORTAL_MISMATCH"}, portalCodes(r))
 	p := r.Problems[0]
 	require.Equal(t, "WARNING", p.Severity)
 	require.True(t, r.Ready, "a warning does not stop the tools")
@@ -59,10 +61,10 @@ func TestAMismatchingPortalIsAWarningToSignNothingThere(t *testing.T) {
 
 func TestNoPortalProblemWithoutAMismatch(t *testing.T) {
 	t.Parallel()
-	for name, p := range map[string]PortalReporter{
+	for name, p := range map[string]statussvc.PortalReporter{
 		"no reporter":   nil,
 		"no check yet":  fakePortal{},
-		"a clean check": fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow}},
+		"a clean check": fakePortal{ok: true, f: statussvc.PortalFinding{CheckedAt: statusNow}},
 	} {
 		require.Empty(t, portalCodes(portalStatus(t, "", p)), name)
 	}

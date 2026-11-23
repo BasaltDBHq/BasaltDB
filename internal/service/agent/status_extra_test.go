@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
+
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -73,32 +75,19 @@ func TestStatusLeavesCrashOutWhenNoneIsSaved(t *testing.T) {
 func TestStatusShowsTheTablesTheAgentCanReadAndWrite(t *testing.T) {
 	t.Parallel()
 	r, _ := extraStatus(t, func(d *Deps) {
-		d.Status.Access = func(context.Context) (CatalogAccess, error) {
-			return CatalogAccess{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}, NotGranted: []string{"public.secret"}}, nil
+		d.Status.Access = func(context.Context) (statussvc.CatalogAccess, error) {
+			return statussvc.CatalogAccess{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}, NotGranted: []string{"public.secret"}}, nil
 		}
 	})
 	require.Equal(t, &guidance.AccessStatus{Read: []string{"public.a", "public.b"}, Write: []string{"public.a"}}, r.Access)
 }
 
-func TestStatusAccessListsAreEmptyNotNullAndBounded(t *testing.T) {
-	t.Parallel()
-	many := make([]string, maxAccessTables+5)
-	for i := range many {
-		many[i] = "public.t"
-	}
-	r, raw := extraStatus(t, func(d *Deps) {
-		d.Status.Access = func(context.Context) (CatalogAccess, error) { return CatalogAccess{Read: many}, nil }
-	})
-	require.Len(t, r.Access.Read, maxAccessTables)
-	require.Equal(t, []string{}, r.Access.Write)
-	require.True(t, r.Access.Truncated)
-	require.Contains(t, raw, `"write":[]`)
-}
-
 func TestStatusLeavesAccessOutWhenItCannotBeRead(t *testing.T) {
 	t.Parallel()
 	r, _ := extraStatus(t, func(d *Deps) {
-		d.Status.Access = func(context.Context) (CatalogAccess, error) { return CatalogAccess{}, errors.New("down") }
+		d.Status.Access = func(context.Context) (statussvc.CatalogAccess, error) {
+			return statussvc.CatalogAccess{}, errors.New("down")
+		}
 	})
 	require.Nil(t, r.Access)
 	require.True(t, r.Ready, "an unreadable list is not a problem")

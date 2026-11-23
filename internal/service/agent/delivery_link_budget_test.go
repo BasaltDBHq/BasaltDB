@@ -283,8 +283,8 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 	for _, st := range te.NextSteps {
 		require.Empty(t, st.Command, "no command for other agents' changes in the task")
 	}
-	messages["not granted"] = s.notGrantedSteps(guidance.NewSteps(), 12)
-	messages["describe not found"] = s.describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
+	messages["not granted"] = newDescribeCase(s.deps.Core, DescribeDeps{}, nil).notGrantedSteps(guidance.NewSteps(), 12)
+	messages["describe not found"] = newDescribeCase(s.deps.Core, DescribeDeps{}, nil).describeNotFoundSteps(guidance.NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{deps: Deps{Core: CoreDeps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}}
 	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
 	require.NoError(t, err)

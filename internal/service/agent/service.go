@@ -283,6 +283,8 @@ type Service struct {
 	// rescopes are the reverts the person rescoped through this engine,
 	// in memory only (CONTRACT.md, Rescope, widen and reject).
 	rescopes *rescopes
+	// describe is the describe use case.
+	describe *describeCase
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -338,7 +340,9 @@ func NewService(d Deps) *Service {
 	if d.Delivery.Poll <= 0 {
 		d.Delivery.Poll = DefaultPoll
 	}
-	return &Service{deps: d, setup: d.Status.Setup, rescopes: newRescopes()}
+	s := &Service{deps: d, setup: d.Status.Setup, rescopes: newRescopes()}
+	s.describe = newDescribeCase(d.Core, d.Describe, s.updateInfo)
+	return s
 }
 
 // missing names the required ports d lacks.

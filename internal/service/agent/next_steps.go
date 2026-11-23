@@ -106,7 +106,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f failure) ([]toolresu
 		person = s.permissionDeniedSteps(b, te, f)
 	case guidance.CodeNotFound:
 		if f.tool == toolDescribe {
-			person = s.describeNotFoundSteps(b, f)
+			person = s.describe.describeNotFoundSteps(b, f)
 			break
 		}
 		person = notFoundSteps(b, te, f)

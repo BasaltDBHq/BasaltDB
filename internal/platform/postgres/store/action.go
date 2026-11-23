@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 )
 
 // The service speaks internal/core/action; the guard's functions take their own

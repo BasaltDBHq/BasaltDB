@@ -145,7 +145,7 @@ type fixtures struct {
 
 // rescopeFixture is one widen challenge. Select is the descriptor as a
 // page may send it; SelectText is Postgres's normalized text of it
-// (basalt_meta._revert_select_norm, checked in internal/adapter/outbound/postgres/guard), which the
+// (basalt_meta._revert_select_norm, checked in internal/platform/postgres/guard), which the
 // proof signs.
 type rescopeFixture struct {
 	Name       string          `json:"name"`

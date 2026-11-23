@@ -12,25 +12,25 @@ import (
 
 // DescribeOverview counts what the agent can see, lists it (up to 50
 // tables) or its schemas, and tells the person how to see what it cannot.
-func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
-	visible, notGranted, err := s.deps.Describe.Catalog.Relations(ctx)
+func (ds *describeCase) DescribeOverview(ctx context.Context) (Overview, error) {
+	visible, notGranted, err := ds.deps.Catalog.Relations(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	lines, err := s.deps.Describe.Catalog.Structure(ctx)
+	lines, err := ds.deps.Catalog.Structure(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	pii, err := s.deps.Describe.Classes.CatalogFingerprint(ctx)
+	pii, err := ds.deps.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	limits := s.deps.Describe.Catalog.Limits()
+	limits := ds.deps.Catalog.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: string(s.deps.Core.Store.Kind()), Database: s.deps.Describe.Catalog.Database(), Host: s.deps.Describe.Catalog.Host()},
+		Store:       StoreInfo{Kind: string(ds.core.Store.Kind()), Database: ds.deps.Catalog.Database(), Host: ds.deps.Catalog.Host()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
-		Update:      s.updateInfo(),
+		Update:      ds.update(),
 		Limits: OverviewLimits{
 			ReadRowLimit: limits.ReadRowLimit, StatementTimeoutMs: limits.StatementTimeout.Milliseconds(), WritePolicy: writePolicy,
 		},
@@ -49,7 +49,7 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 		}
 	}
 	if notGranted > 0 {
-		o.PersonMessage = s.notGrantedSteps(b, notGranted)
+		o.PersonMessage = ds.notGrantedSteps(b, notGranted)
 	}
 	if o.Schemas == nil && notGranted == 0 {
 		return o, nil
@@ -109,7 +109,7 @@ func overviewLargeSteps(b *guidance.Steps, schemas []SchemaCount) {
 // one of the tables; the setup page that basalt init links to lists them, so
 // the agent never sees their names (D-1, D-7). No ASK_PERSON: platform
 // schemas are ungranted on every Supabase project.
-func (s *Service) notGrantedSteps(b *guidance.Steps, notGranted int) string {
+func (ds *describeCase) notGrantedSteps(b *guidance.Steps, notGranted int) string {
 	b.TellAgent("Tell the agent when it needs one of these tables: it gives you a link where you pick them.")
 	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
 		"To give it one, tell the agent: it gives you a link where you pick the tables.",
@@ -133,12 +133,12 @@ func describeNotFound(resource string) error {
 // describeNotFoundSteps are NOT_FOUND's steps for describe, all of them on
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
-func (s *Service) describeNotFoundSteps(b *guidance.Steps, f failure) string {
+func (ds *describeCase) describeNotFoundSteps(b *guidance.Steps, f failure) string {
 	b.CallTool(toolDescribe, map[string]any{argQuery: searchTerm(f.arg(argResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the table once you decide it should have it, or which table to use instead.")
-	b.AgentRunCommand(s.deps.Core.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the table.")
+	b.AgentRunCommand(ds.core.Commands.Init(), "When the person tells you to add it, run this and show them the link it prints, where they grant the table.")
 	return "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. " +
 		"An agent uses one database; a table in another database needs its own agent. " +
 		"To give the agent a table, tell it: it gives you a link where you pick the tables."

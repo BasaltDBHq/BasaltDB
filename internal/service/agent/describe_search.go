@@ -25,7 +25,7 @@ func searchTerm(resource string) string {
 
 // DescribeSearch returns one page of the relations matching p.Query, never
 // matching or naming a SECRET column.
-func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (pagination.Page[SearchItem], error) {
+func (ds *describeCase) DescribeSearch(ctx context.Context, p DescribeSearchParams) (pagination.Page[SearchItem], error) {
 	var after *CatalogSearchCursor
 	if p.Cursor != "" {
 		c, err := decodeSearchCursor(p.Cursor)
@@ -34,7 +34,7 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 		}
 		after = &c
 	}
-	secrets, err := s.deps.Describe.Classes.Secrets(ctx)
+	secrets, err := ds.deps.Classes.Secrets(ctx)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}
@@ -42,7 +42,7 @@ func (s *Service) DescribeSearch(ctx context.Context, p DescribeSearchParams) (p
 	for _, r := range secrets {
 		exclude = append(exclude, CatalogColumnKey{OID: r.TableOID, Attnum: r.Attnum})
 	}
-	matches, err := s.deps.Describe.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
+	matches, err := ds.deps.Catalog.Search(ctx, p.Query, exclude, after, p.Limit+1)
 	if err != nil {
 		return pagination.Page[SearchItem]{}, err
 	}

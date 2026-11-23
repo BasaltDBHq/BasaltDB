@@ -309,7 +309,7 @@ func resultCases() map[string]resultCase {
 			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				b := guidance.NewSteps()
-				person := s.notGrantedSteps(b, 3)
+				person := s.describe.notGrantedSteps(b, 3)
 				steps, err := b.Build()
 				require.NoError(t, err)
 				return person, nil, steps

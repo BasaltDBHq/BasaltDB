@@ -47,23 +47,13 @@ type statusDeps struct {
 	engineKey    *string
 	engineRecord EngineRecordReader
 	trust        TrustReporter
-	// database names the credential's database (Deps.Database).
-	database string
-	cmds     guidance.Commands
-	setup    *config.Setup
-	probe    Probe
-	finisher SetupFinisher
-	// finished forgets the pending setup once the database shows it
-	// recorded.
-	finished func(id string)
-	// notRecorded remembers, for a few seconds, that a held call found the
-	// pending setup not recorded (setupGate).
-	notRecorded *setupCache
-	// lockTrouble is the lock file finishing a setup could not open.
-	lockTrouble *lockTrouble
-	passkeys    func(context.Context) ([]passkey.Credential, error)
-	log         *slog.Logger
-	now         func() time.Time
+	cmds         guidance.Commands
+	probe        Probe
+	// watch is the agent's pending setup as this report reads it.
+	watch    setupWatch
+	passkeys func(context.Context) ([]passkey.Credential, error)
+	log      *slog.Logger
+	now      func() time.Time
 	// The host's: how errors map, the guard version this build installs and
 	// the crash reports.
 	errs         guidance.ErrorMap
@@ -76,9 +66,9 @@ func (sc *statusKeeper) statusDeps() statusDeps {
 		name: sc.core.Name, operatedBy: sc.deps.OperatedBy, build: sc.deps.Build, startedBy: sc.deps.StartedBy, pagesBase: sc.core.PagesBase, pagesOrigin: sc.core.PagesOrigin,
 		sameUser: sc.deps.SameUser, devLocalPages: sc.deps.DevLocalPages, connectBudget: sc.deps.ConnectBudget, engineReachable: true, vault: sc.deps.Vault, portal: sc.deps.Portal, plugins: sc.deps.Plugins,
 		crashDirs: sc.deps.CrashDirs, linkBudget: sc.core.LinkBudget, access: sc.deps.Access,
-		engineRecord: sc.deps.EngineRecord, trust: sc.deps.Trust, database: sc.deps.Database, cmds: sc.core.Commands, setup: sc.pendingSetup(), probe: sc.deps.Probe,
+		engineRecord: sc.deps.EngineRecord, trust: sc.deps.Trust, cmds: sc.core.Commands, probe: sc.deps.Probe, watch: sc.setupWatch(),
 		errs: sc.core.Errors, latestGuard: sc.deps.LatestGuardVersion, crashReports: sc.deps.CrashReports,
-		update: sc.updateInfo(), finisher: sc.deps.Finisher, finished: sc.setupFinished, notRecorded: &sc.notRecorded, lockTrouble: &sc.lockTrouble, passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
+		update: sc.updateInfo(), passkeys: sc.deps.Passkeys.Passkeys, log: sc.core.Log, now: sc.core.Now,
 	}
 }
 
@@ -137,10 +127,13 @@ func (l LocalStatus) Report(ctx context.Context) (guidance.StatusReport, error) 
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, probe: l.Probe,
 		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
 		// basalt status reads; the running engine finishes the setup.
-		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		watch: setupWatch{
+			setup: l.Setup, probe: l.Probe, finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, log: l.Log, now: l.Now,
+		},
+		passkeys: l.Passkeys, log: l.Log, now: l.Now,
 		errs: l.Errors, latestGuard: l.LatestGuardVersion,
 	}.report(ctx)
 }
@@ -170,9 +163,9 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	s.addPluginProblems(&ps)
 	var trust *TrustReport
 	r.Trust, trust = s.trustStatus(ctx, &ps)
-	setup, known := s.setupView(ctx)
+	setup, known := s.watch.view(ctx)
 	r.Setup = setup.status
-	if path := s.lockTrouble.get(); path != "" {
+	if path := s.watch.lockTrouble.get(); path != "" {
 		ps.Add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
 			func(b *guidance.Steps) string { return lockFileSteps(b, path) })
 	}

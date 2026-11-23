@@ -130,11 +130,11 @@ func (v setupView) addProblem(ps *guidance.Problems) {
 	}
 }
 
-// setupView reads the agent's setup: its pending code from the config unless
+// view reads the agent's setup: its pending code from the config unless
 // it is recorded, else its latest recorded setup. known is false when the
 // database cannot tell whether the pending code was used (see
 // pendingRecorded); the config's code is then shown, with no problem.
-func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
+func (s setupWatch) view(ctx context.Context) (setupView, bool) {
 	recorded, known := false, true
 	if s.setup != nil {
 		recorded, known = s.pendingRecorded(ctx)
@@ -227,7 +227,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // guard on every call, so a guard update needs no engine restart. status is
 // never refused.
 func (sc *statusKeeper) Admit(ctx context.Context) error {
-	if v, known := sc.statusDeps().setupGate(ctx); known && v.blocks() {
+	if v, known := sc.setupWatch().gate(ctx); known && v.blocks() {
 		return &guidance.SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired, ConnectOnly: v.status.ConnectOnly}
 	}
 	st, err := sc.deps.Probe.GuardStatus(ctx)
@@ -248,10 +248,10 @@ func (sc *statusKeeper) Admit(ctx context.Context) error {
 	return nil
 }
 
-// setupGate is the pending setup a call checks: none without a pending
+// gate is the pending setup a call checks: none without a pending
 // INSTALL code, so an agent without one reads nothing more. known is false
 // when the database cannot tell whether the code was used.
-func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
+func (s setupWatch) gate(ctx context.Context) (setupView, bool) {
 	if s.setup == nil || (s.setup.Kind != guardmodel.SetupInstall && !connectOnlyCode(s.setup.Code)) {
 		return setupView{status: guidance.SetupStatus{State: setupNone}}, true
 	}
@@ -270,7 +270,7 @@ func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
 // that refuses the agent's role or has no guard yet means it was not (an
 // INSTALL code makes both); any other failure, such as a database that
 // cannot be reached, leaves it unknown (known false), logged.
-func (s statusDeps) pendingRecorded(ctx context.Context) (recorded, known bool) {
+func (s setupWatch) pendingRecorded(ctx context.Context) (recorded, known bool) {
 	id, err := uuid.Parse(s.setup.SetupID)
 	if err == nil {
 		recorded, err = s.recordedAsAgent(ctx, id)

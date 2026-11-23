@@ -2,9 +2,7 @@ package agent
 
 import (
 	"context"
-	"sync"
 
-	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 )
@@ -17,19 +15,12 @@ import (
 type statusKeeper struct {
 	core *CoreDeps
 	deps *StatusDeps
-	// setupMu guards setup, the agent's pending setup: StatusDeps.Setup until
-	// the database shows it recorded.
-	setupMu sync.Mutex
-	setup   *config.Setup
-	// notRecorded is the held calls' cache of a setup not recorded yet.
-	notRecorded setupCache
-	// lockTrouble is a lock file the engine could not open while finishing
-	// a setup (problem LOCK_FILE_UNUSABLE).
-	lockTrouble lockTrouble
+	// pending is the agent's pending setup and what finishing it keeps.
+	pending *setupKeeper
 }
 
 func newStatusKeeper(core *CoreDeps, deps *StatusDeps) *statusKeeper {
-	return &statusKeeper{core: core, deps: deps, setup: deps.Setup}
+	return &statusKeeper{core: core, deps: deps, pending: &setupKeeper{setup: deps.Setup}}
 }
 
 // The reads the plugin use case makes of the status group, read as it stands.

@@ -6,7 +6,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
-// Rules is the path rule as the plugin host's port (pluginhost.PathRules):
+// Rules is the path rule as the plugin host's port (plugin.PathRules):
 // each method is the package function of the same name.
 type Rules struct{}
 

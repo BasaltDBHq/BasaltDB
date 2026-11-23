@@ -25,8 +25,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 	pluginengine "github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
@@ -59,7 +59,7 @@ func bigSource(t *testing.T, size int) (string, []byte) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "share"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, pluginhost.ManifestFile), []byte(manifest), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, plugin.ManifestFile), []byte(manifest), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", "acme-ner"), exe, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "share", "model.txt"), model, 0o644))
 	return dir, model
@@ -70,7 +70,7 @@ func TestUploadThroughTheEnginesAgentSocket(t *testing.T) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
 	p.SetKept(pluginengine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))
@@ -134,7 +134,7 @@ func TestUploadMethodsAnswerWithTheirCodes(t *testing.T) {
 	dir, err := os.MkdirTemp("", "bu")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	store, err := pluginhost.New(filepath.Join(dir, "state"), time.Now)
+	store, err := plugin.New(filepath.Join(dir, "state"), time.Now)
 	require.NoError(t, err)
 	p := newPluginRequests(map[string]uint32{"bot": uploadPerson, "other": uploadOther}, []uint32{uploadPerson})
 	p.SetKept(pluginengine.OpenKeptPlugins(config.Config{}, "", store, nil, nil, slog.New(slog.DiscardHandler), pluginPorts))

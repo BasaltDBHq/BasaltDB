@@ -13,7 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // servicePluginHost is service.HostFor.
@@ -43,8 +43,8 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 		return nil
 	}
 	dir := filepath.Dir(configPath)
-	root, rootErr := pluginhost.Root(pluginmodel.ModeService, goos, dir)
-	trust, trustErr := pluginhost.NewTrustStore(pluginmodel.ModeService, goos, dir)
+	root, rootErr := plugin.Root(pluginmodel.ModeService, goos, dir)
+	trust, trustErr := plugin.NewTrustStore(pluginmodel.ModeService, goos, dir)
 	var out []app.OSPluginUnit
 	for _, p := range cfg.Plugins {
 		k := p.Key()
@@ -52,7 +52,7 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: the plugin directory cannot be read\n", k)
 			continue
 		}
-		v, err := pluginhost.Verify(root, k, p.ManifestSHA256, trust, pluginmodel.ModeService)
+		v, err := plugin.Verify(root, k, p.ManifestSHA256, trust, pluginmodel.ModeService)
 		if err != nil {
 			fmt.Fprintf(warn, "basalt: plugin %s: its service unit is left as it is: %s\n", k, terminalText(verifyFailure(err)))
 			continue
@@ -67,7 +67,7 @@ func serviceUnitEntries(cfg config.Config, goos, configPath string, warn io.Writ
 // verifyFailure names the failed check of a verification in fixed words.
 func verifyFailure(err error) string {
 	if ve, ok := err.(*pluginmodel.VerifyError); ok { //nolint:errorlint // Verify returns it unwrapped
-		return pluginhost.VerifyFailure(ve)
+		return plugin.VerifyFailure(ve)
 	}
 	return "it could not be verified"
 }

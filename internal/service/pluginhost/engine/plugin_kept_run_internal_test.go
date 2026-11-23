@@ -29,10 +29,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // keptWait bounds a wait on the running engine: a cold start of the test
@@ -108,7 +108,7 @@ func runSource(t *testing.T, report, hooks string) ([]shim.PluginFile, []string)
   "network": { "egress": [] }
 }
 `, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
-	return []shim.PluginFile{{Path: pluginhost.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
+	return []shim.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.
@@ -138,7 +138,7 @@ func (r *keptRun) requireServed(approval person.PluginOpenedApproval, agents ...
 	r.t.Helper()
 	require.Eventually(r.t, func() bool {
 		got := servedTo(r.ep, keptKey)
-		return len(got) == len(agents) && r.ep.host.State(keptKey) == pluginhost.StateReady
+		return len(got) == len(agents) && r.ep.host.State(keptKey) == plugin.StateReady
 	}, keptWait, 50*time.Millisecond, "served to %v", agents)
 	require.ElementsMatch(r.t, agents, servedTo(r.ep, keptKey))
 	list, err := r.f.client.PluginList(context.Background())

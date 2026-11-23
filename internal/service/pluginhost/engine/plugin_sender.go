@@ -10,7 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginproto"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // pluginSenderQueue is how many calls wait per entry (CONTRACT.md, Notifier
@@ -30,7 +30,7 @@ type pluginCall struct {
 	// calls (plugin.Host.ObserveFeedOn, DeliverApproval), which keep the
 	// listed agent, the entry's 4 call slots and its timeoutMs. ctx is the
 	// sender's: it ends when the sender stops.
-	run func(ctx context.Context, h *pluginhost.Host, k pluginmodel.EntryKey) error
+	run func(ctx context.Context, h *plugin.Host, k pluginmodel.EntryKey) error
 	// notAfter: a call still waiting at this time is dropped, never sent.
 	// Zero is no limit.
 	notAfter time.Time
@@ -46,7 +46,7 @@ type pluginCall struct {
 // the entry's call cap and timeoutMs. Whoever hands it a call never waits
 // on the plugin: Send returns at once, and a full queue refuses the call.
 type pluginSender struct {
-	host *pluginhost.Host
+	host *plugin.Host
 	key  pluginmodel.EntryKey
 	now  func() time.Time
 
@@ -66,7 +66,7 @@ type pluginSender struct {
 }
 
 // newPluginSender starts the sender of entry k on host.
-func newPluginSender(host *pluginhost.Host, k pluginmodel.EntryKey, now func() time.Time) *pluginSender {
+func newPluginSender(host *plugin.Host, k pluginmodel.EntryKey, now func() time.Time) *pluginSender {
 	if host == nil || now == nil {
 		panic("engine: a plugin sender needs a host and a clock")
 	}
@@ -196,14 +196,14 @@ func finish(c pluginCall, err error) {
 // declare a notifier hook, one per entry, started and stopped with the
 // entries (sync).
 type pluginSenders struct {
-	host *pluginhost.Host
+	host *plugin.Host
 	now  func() time.Time
 
 	mu sync.Mutex
 	m  map[pluginmodel.EntryKey]*pluginSender
 }
 
-func newPluginSenders(host *pluginhost.Host, now func() time.Time) *pluginSenders {
+func newPluginSenders(host *plugin.Host, now func() time.Time) *pluginSenders {
 	return &pluginSenders{host: host, now: now, m: map[pluginmodel.EntryKey]*pluginSender{}}
 }
 

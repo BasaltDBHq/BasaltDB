@@ -23,10 +23,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 )
 
 // writeConfig writes f.cfg as engine.json, as a basalt plugin command
@@ -137,7 +137,7 @@ func (lp *livePlugins) requireStopped(k pluginmodel.EntryKey) {
 	lp.t.Helper()
 	require.Empty(lp.t, servedTo(lp.ep, k))
 	require.NotContains(lp.t, lp.ep.sup.Supervised(), k)
-	require.Equal(lp.t, pluginhost.StateUnavailable, lp.ep.host.State(k))
+	require.Equal(lp.t, plugin.StateUnavailable, lp.ep.host.State(k))
 	for _, a := range lp.f.cfg.Agents {
 		require.Error(lp.t, lp.callAs(k, a.Name))
 	}
@@ -177,7 +177,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	// approval through the engine's own derivation.
 	p := f.installApproval(feedHooks, "product_a")
 	f.writeConfig()
-	v, err := pluginhost.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
+	v, err := plugin.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, plugin.RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), p.ApprovalSettings())
 	require.Eventually(t, func() bool {
@@ -189,7 +189,7 @@ func TestApprovedPluginStartsWithoutRestart(t *testing.T) {
 	l.sign(t, l.person(t), "product_a", a)
 	signed := time.Now()
 	require.Eventually(t, func() bool {
-		return ep.host.State(p.Key()) == pluginhost.StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
+		return ep.host.State(p.Key()) == plugin.StateReady && slices.Equal(servedTo(ep, p.Key()), []string{"product_a"})
 	}, 10*time.Second, 20*time.Millisecond, "served without a restart")
 	require.Less(t, time.Since(signed), 5*time.Second)
 	require.Empty(t, ep.PluginProblems("product_a"))
@@ -287,7 +287,7 @@ func TestChangedEntryRunsOnceItsApprovalIsSigned(t *testing.T) {
 	lp.change()
 	lp.requireStopped(p.Key())
 	require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, lp.ep, "product_a").Code)
-	v, err := pluginhost.Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, pluginhost.RequireApproval(true))
+	v, err := plugin.Verify(f.root, p.Key(), next.ManifestSHA256, f.trust, pluginmodel.ModeSameUser, plugin.RequireApproval(true))
 	require.NoError(t, err)
 	a := l.open(t, "product_a", PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]}), f.cfg.Plugins[0].ApprovalSettings())
 	lp.poll()

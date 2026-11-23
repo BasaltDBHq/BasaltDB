@@ -43,9 +43,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 	"github.com/basaltdbhq/basaltdb/internal/service/person"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost"
 	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
@@ -65,7 +65,7 @@ type portalFixture struct {
 	base  string
 	cfg   config.Config
 	s     *engine.KeptPlugins
-	store *pluginhost.Store
+	store *plugin.Store
 	roles map[string]*guardtest.Agent
 	pk    *passkeytest.Authenticator
 }
@@ -98,7 +98,7 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	if set != nil {
 		set(&f.cfg)
 	}
-	f.store, err = pluginhost.New(state, time.Now)
+	f.store, err = plugin.New(state, time.Now)
 	require.NoError(t, err)
 	f.s = engine.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
 	f.pk, err = passkeytest.New(passkey.Production)
@@ -154,7 +154,7 @@ func portalSource(version string) ([]shim.PluginFile, []string) {
 }
 `, version, sha256.Sum256(exe), sha256.Sum256([]byte("model")))
 	return []shim.PluginFile{
-		{Path: pluginhost.ManifestFile, Data: []byte(manifest)},
+		{Path: plugin.ManifestFile, Data: []byte(manifest)},
 		{Path: "bin/acme-ner", Data: exe},
 		{Path: "share/model.txt", Data: []byte("model")},
 	}, []string{"bin/acme-ner"}

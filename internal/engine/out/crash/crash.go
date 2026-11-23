@@ -151,6 +151,14 @@ func (r Recorder) Save(in servicespec.CrashInput) (Report, error) {
 	return rep, prune(r.Dir)
 }
 
+// SaveIn is Save with the report written to dir, readable by every user
+// when shared; it returns the report's id.
+func (r Recorder) SaveIn(dir string, shared bool, in servicespec.CrashInput) (string, error) {
+	r.Dir, r.Shared = dir, shared
+	rep, err := r.Save(in)
+	return rep.ID, err
+}
+
 // prune deletes the oldest reports in dir past Keep. The ids are UUIDv7, so
 // name order is time order.
 func prune(dir string) error {

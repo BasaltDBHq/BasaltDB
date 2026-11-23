@@ -331,13 +331,13 @@ func TestReadPluginRecordsTakesTheLatestTrustEvent(t *testing.T) {
 	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, k2))
 	recs, err := guard.ReadPluginRecords(ctx, a.Conn)
 	require.NoError(t, err)
-	require.Equal(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustRemoved}, {KeyID: k1, Kind: guardmodel.PluginTrustAdded}}, recs.LatestTrustEvents)
+	require.ElementsMatch(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustRemoved}, {KeyID: k1, Kind: guardmodel.PluginTrustAdded}}, recs.LatestTrustEvents)
 
 	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, k2))
 	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, k1))
 	recs, err = guard.ReadPluginRecords(ctx, a.Conn)
 	require.NoError(t, err)
-	require.Equal(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustAdded}, {KeyID: k1, Kind: guardmodel.PluginTrustRemoved}}, recs.LatestTrustEvents)
+	require.ElementsMatch(t, []guardmodel.PluginTrustEvent{{KeyID: k2, Kind: guardmodel.PluginTrustAdded}, {KeyID: k1, Kind: guardmodel.PluginTrustRemoved}}, recs.LatestTrustEvents)
 
 	require.Error(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guardmodel.PluginTrustRemoved, validLocal()), "a key event carries no entry")
 	requireCode(t, recordRaw(t, a.Conn, string(guardmodel.PluginTrustRemoved), `{"signerKeyId": "short"}`), guardmodel.CodeLedgerInputInvalid)

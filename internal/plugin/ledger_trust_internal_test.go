@@ -18,4 +18,5 @@ func TestLedgerTrustedKeys(t *testing.T) {
 		{KeyID: "c", Kind: guardmodel.PluginTrustAdded},
 	}))
 	require.Nil(t, ledgerTrustedKeys([]guardmodel.PluginTrustEvent{{KeyID: "b", Kind: guardmodel.PluginTrustRemoved}}))
+	require.Nil(t, ledgerTrustedKeys([]guardmodel.PluginTrustEvent{{KeyID: "d", Kind: "PLUGIN_SOMETHING_ELSE"}}), "only an ADDED trusts a key")
 }

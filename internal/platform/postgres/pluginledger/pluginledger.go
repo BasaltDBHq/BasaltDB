@@ -101,8 +101,8 @@ func (s snapshot) ChainHeadSeq(ctx context.Context) (int64, error) {
 	return guard.ChainHeadSeq(ctx, s.tx)
 }
 
-func (s snapshot) ServedFrom(ctx context.Context, name, instance string, after int64) (int64, bool, error) {
-	return guard.ServedFrom(ctx, s.tx, name, instance, after)
+func (s snapshot) PluginEntryEvents(ctx context.Context, name, instance string) ([]guardmodel.PluginEntryEvent, error) {
+	return guard.PluginEntryEvents(ctx, s.tx, name, instance)
 }
 
 func (s snapshot) SeqRetired(ctx context.Context, seq int64) (bool, error) {

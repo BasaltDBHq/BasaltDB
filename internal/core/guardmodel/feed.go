@@ -51,8 +51,19 @@ var ErrNoInstall = errors.New("basalt_meta has no install record; run basalt ini
 type FeedSnapshot interface {
 	InstallID(ctx context.Context) (uuid.UUID, error)
 	ChainHeadSeq(ctx context.Context) (int64, error)
-	ServedFrom(ctx context.Context, name, instance string, after int64) (int64, bool, error)
+	PluginEntryEvents(ctx context.Context, name, instance string) ([]PluginEntryEvent, error)
 	SeqRetired(ctx context.Context, seq int64) (bool, error)
 	ReadFeedRows(ctx context.Context, after int64, limit int) ([]FeedRow, error)
 	OldestSeqAfter(ctx context.Context, after int64) (int64, bool, error)
+}
+
+// PluginEntryEvent is one PLUGIN_ENABLED, PLUGIN_CHANGED or PLUGIN_DISABLED
+// record of an entry in the calling agent's ledger, with the egress and
+// endpoint its detail names. DecodeErr is set when either does not decode.
+type PluginEntryEvent struct {
+	Seq       int64
+	Kind      string
+	Egress    []string
+	Endpoint  PluginEndpoint
+	DecodeErr bool
 }

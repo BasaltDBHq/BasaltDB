@@ -759,7 +759,10 @@ func RLSBlindWarnings(ctx context.Context, b SetuprunBackend, q Querier, role st
 	}
 	blind, err := b.RLSBlindTables(ctx, q, role, tables)
 	if err != nil {
-		return []string{fmt.Sprintf("could not check row-level security on the agent's tables: %v", err)}
+		if s := SQLStateOf(err); s != "" {
+			return []string{fmt.Sprintf("could not check row-level security on the agent's tables (Postgres error %s)", s)}
+		}
+		return []string{"could not check row-level security on the agent's tables"}
 	}
 	out := make([]string, 0, len(blind))
 	for _, t := range blind {

@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `pkg/setup`'s messages no longer carry the database's or the driver's own words. `SETUP_FAILED` reads as the local setup page's does: `Reading the database or running the setup failed (Postgres error <SQLSTATE>, <step>); nothing changed.`, or that the admin role lacks a privilege. `PASSKEY_NOT_REGISTERED` and the row-level security check's warning name the Postgres error only. The database's words stay in the error `Unwrap` returns, for a log.
 - `pkg/setup.Run` refuses a setup whose commit got no answer from the database with the new code `SETUP_UNCONFIRMED` (`setup.CodeSetupUnconfirmed`): it may or may not have run, and checking again tells which. Before, it answered `SETUP_FAILED` with "nothing changed", which could be untrue. The local setup page keeps its own `SETUP_FAILED` sentence for that case, which already says the outcome is unknown.
 - `pkg/setup.Run` without a passkey refuses `PASSKEY_REQUIRED` before the setup's script runs, as the local setup page does. Before, it ran the script and the labels, refused, and rolled them back. The code and message are unchanged.
 - `pkg/setup`'s `Check` and `Run` refuse a database with an older BasaltDB install this version cannot use with the new code `GUARD_UNUSABLE` (`setup.CodeGuardUnusable`), as the local setup page does, in place of `SETUP_FAILED`. The message is unchanged and links to the removal steps.

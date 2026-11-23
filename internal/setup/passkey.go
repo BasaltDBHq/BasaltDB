@@ -55,8 +55,12 @@ func PasskeyNeeded(ctx context.Context, b SetuprunBackend, q Querier, add bool) 
 // PasskeyFailed is the refusal when the setup ran and its passkey step
 // failed with err.
 func PasskeyFailed(p setupcode.Payload, err error) error {
-	return &SetuprunRefusalError{Code: CodePasskeyMissing, Err: err, Message: fmt.Sprintf("the setup ran but no passkey was registered: %s. Ask %s for a new code; running it registers the passkey",
-		err.Error(), AgentWord(p))}
+	why := ""
+	if s := SQLStateOf(err); s != "" {
+		why = " (Postgres error " + s + ")"
+	}
+	return &SetuprunRefusalError{Code: CodePasskeyMissing, Err: err, Message: fmt.Sprintf("the setup ran but no passkey was registered%s. Ask %s for a new code; running it registers the passkey",
+		why, AgentWord(p))}
 }
 
 // LocalRelying is the relying party of the setup page served at origin on

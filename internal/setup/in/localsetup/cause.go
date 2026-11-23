@@ -7,13 +7,12 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // maxCauseMessage bounds a cause's message in the log.
 const maxCauseMessage = 500
-
-// initStep is the prefix guard.ApplyScript puts on a statement's error.
-var initStep = regexp.MustCompile(`^init step (\d+): `)
 
 // secretForms are the shapes a secret takes in an error's text: a
 // connection URL, a password parameter or literal, and a generated agent
@@ -33,12 +32,9 @@ const redacted = "[redacted]"
 // the database refused it, else the error's text; the
 // message redacted.
 func causeOf(step string, err error) *Cause {
-	c := &Cause{Step: step}
+	c := &Cause{Step: setup.FailedStep(step, err)}
 	if err == nil {
 		return c
-	}
-	if m := initStep.FindStringSubmatch(err.Error()); m != nil {
-		c.Step = step + ", statement " + m[1]
 	}
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) {

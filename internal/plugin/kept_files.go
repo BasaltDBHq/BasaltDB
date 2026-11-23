@@ -67,12 +67,12 @@ func (s *Store) WithLimits(l Limits) *Store {
 
 // Modes of what the store makes.
 const (
-	stateDirMode  = 0o700
-	copiesDirMode = 0o755
-	uploadDirMode = 0o700
-	uploadFile    = 0o600
-	execFile      = 0o700
-	privateFile   = 0o600
+	pluginhostStateDirMode = 0o700
+	copiesDirMode          = 0o755
+	uploadDirMode          = 0o700
+	uploadFile             = 0o600
+	execFile               = 0o700
+	privateFile            = 0o600
 )
 
 // Kind is how the person socket answers a PluginhostError.
@@ -134,16 +134,16 @@ type Store struct {
 	copies int64
 }
 
-// New opens the store in stateDir: it makes the state directory when it is
+// NewPluginhost opens the store in stateDir: it makes the state directory when it is
 // missing (mode 0700), removes every upload an earlier run left, and counts
 // the copies. A state directory that is not a directory the engine's user
 // owns, writable by no one else, is refused.
-func New(stateDir string, now func() time.Time) (*Store, error) {
+func NewPluginhost(stateDir string, now func() time.Time) (*Store, error) {
 	if !filepath.IsAbs(stateDir) {
 		return nil, fmt.Errorf("the state directory %s is not an absolute path", stateDir)
 	}
 	s := &Store{stateDir: filepath.Clean(stateDir), now: now, goos: runtime.GOOS, uploads: map[uuid.UUID]*upload{}, lim: DefaultLimits()}
-	if err := os.MkdirAll(s.stateDir, stateDirMode); err != nil {
+	if err := os.MkdirAll(s.stateDir, pluginhostStateDirMode); err != nil {
 		return nil, fmt.Errorf("the state directory %s cannot be made: %w", s.stateDir, err)
 	}
 	if err := checkOwnDir(s.stateDir); err != nil {

@@ -1,7 +1,3 @@
-// Package plugin is the protocol-neutral plugin host. It knows entries, the
-// agents each entry serves and the shape of a call, and nothing about how
-// bytes reach a plugin: transports are adapters behind the Transport
-// interface and live in other packages.
 package plugin
 
 // Hook names a point in the engine where a plugin is called.

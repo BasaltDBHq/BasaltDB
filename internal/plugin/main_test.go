@@ -1,3 +1,8 @@
+//go:build !unix
+
+// On unix, plugins_internal_test.go holds TestMain: it installs the same
+// path rule and also serves as a test plugin.
+
 package plugin
 
 import (

@@ -45,7 +45,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/service/agent"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
 )
 
 // portalPerson is the person's OS user id in these tests: any id but the
@@ -63,7 +62,7 @@ type portalFixture struct {
 	t     *testing.T
 	base  string
 	cfg   config.Config
-	s     *engine.KeptPlugins
+	s     *plugin.KeptPlugins
 	store *plugin.Store
 	roles map[string]*guardtest.Agent
 	pk    *passkeytest.Authenticator
@@ -89,7 +88,7 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	cc := pool.Config().ConnConfig
-	agents := map[string]engine.KeptAgent{name: engine.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database, cc.User)}
+	agents := map[string]plugin.KeptAgent{name: plugin.NewKeptAgent(pool, cc.Host, cc.Port, cc.Database, cc.User)}
 	f.cfg.Agents = append(f.cfg.Agents, config.Agent{Name: name, OSUser: me.Username})
 	raw, err := json.Marshal(f.cfg)
 	require.NoError(t, err)
@@ -97,9 +96,9 @@ func newPortalFixture(t *testing.T, name string, set func(*config.Config)) *port
 	if set != nil {
 		set(&f.cfg)
 	}
-	f.store, err = plugin.New(state, time.Now)
+	f.store, err = plugin.NewPluginhost(state, time.Now)
 	require.NoError(t, err)
-	f.s = engine.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
+	f.s = plugin.NewKeptPlugins(f.store, f.cfg, configPath, agents, slog.New(slog.DiscardHandler), pluginPorts)
 	f.pk, err = passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, f.pk.Credential(), "app"))

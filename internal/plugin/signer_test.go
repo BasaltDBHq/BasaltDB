@@ -13,8 +13,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 )
 
-// approval is the option of an entry that requires approval.
-var approval = RequireApproval(true)
+// pluginhostApproval is the option of an entry that requires approval.
+var pluginhostApproval = RequireApproval(true)
 
 // unsigned removes the .sig from the fixture's source.
 func (f *fixture) unsigned() {
@@ -46,7 +46,7 @@ func TestUnsignedStagesWhenApprovalRequired(t *testing.T) {
 	f := newFixture(t)
 	f.unsigned()
 
-	s, err := Stage(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+	s, err := Stage(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerUnknown, s.Signer)
 	require.Empty(t, s.SignerKeyID)
@@ -54,14 +54,14 @@ func TestUnsignedStagesWhenApprovalRequired(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{ManifestFile, "bin", "model"}, entries(t, dir), "no .sig is made up")
 
-	v, err := f.verifyWith(s.ManifestSHA256, f.trust, approval)
+	v, err := f.verifyWith(s.ManifestSHA256, f.trust, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerUnknown, v.Signer)
 	require.Empty(t, v.SignerKeyID)
 	require.Equal(t, dir, v.Dir)
 
 	// Installing it again keeps the copy.
-	again, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+	again, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, dir, again.Dir)
 
@@ -70,11 +70,11 @@ func TestUnsignedStagesWhenApprovalRequired(t *testing.T) {
 	require.NoError(t, os.RemoveAll(g.src))
 	require.NoError(t, os.MkdirAll(g.src, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(g.src, ManifestFile), []byte(remoteManifest), 0o644))
-	rv, err := Install(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser, approval)
+	rv, err := Install(g.src, g.root, "", g.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerUnknown, rv.Signer)
 	require.Equal(t, []string{ManifestFile}, entries(t, rv.Dir))
-	_, err = Verify(g.root, pluginmodel.EntryKey{Name: "acme-cloud", Instance: pluginmodel.DefaultInstance}, rv.ManifestSHA256, g.trust, pluginmodel.ModeSameUser, approval)
+	_, err = Verify(g.root, pluginmodel.EntryKey{Name: "acme-cloud", Instance: pluginmodel.DefaultInstance}, rv.ManifestSHA256, g.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 }
 
@@ -106,13 +106,13 @@ func TestUnknownKeyIsUnknown(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
 			prepare(f)
-			v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+			v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			require.NoError(t, err)
 			require.Equal(t, pluginmodel.SignerUnknown, v.Signer)
 			require.Empty(t, v.SignerKeyID, "a key id that cannot be checked is not reported")
 			require.Contains(t, entries(t, v.Dir), SignatureFile, "the .sig read is the .sig kept")
 
-			got, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			got, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			require.NoError(t, err)
 			require.Equal(t, pluginmodel.SignerUnknown, got.Signer)
 			require.Empty(t, got.SignerKeyID)
@@ -133,7 +133,7 @@ func TestUnknownKeyIsUnknown(t *testing.T) {
 // its key id, with approval required or not.
 func TestKnownSignerIsKnown(t *testing.T) {
 	t.Parallel()
-	for name, opts := range map[string][]Option{"approval": {approval}, "no approval": nil, "approval off": {RequireApproval(false)}} {
+	for name, opts := range map[string][]Option{"approval": {pluginhostApproval}, "no approval": nil, "approval off": {RequireApproval(false)}} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
@@ -184,7 +184,7 @@ func TestBadKnownSignatureRefused(t *testing.T) {
 			return []byte(`{"keyId":"\u00` + strings.ToLower(hexByte(id[0])) + id[1:] + `","alg":"ES256","sig":"x"}`)
 		},
 	}
-	options := map[string][]Option{"approval": {approval}, "no approval": nil}
+	options := map[string][]Option{"approval": {pluginhostApproval}, "no approval": nil}
 	for name, makeSig := range bad {
 		for optName, opts := range options {
 			t.Run(name+"/"+optName, func(t *testing.T) {
@@ -240,7 +240,7 @@ func TestUnsignedStillRefusedWithoutApproval(t *testing.T) {
 			require.Equal(t, filepath.Join(f.src, SignatureFile), ve.File)
 			require.Empty(t, entries(t, filepath.Join(f.root, "acme-ner", pluginmodel.DefaultInstance)))
 
-			v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+			v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			require.NoError(t, err)
 			_, err = f.verifyWith(v.ManifestSHA256, f.trust, opts...)
 			ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
@@ -270,7 +270,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 		"file hash at verify": func(t *testing.T, f *fixture, v pluginmodel.Verified) {
 			bin := filepath.Join(v.Dir, "bin", "acme-ner")
 			require.NoError(t, os.WriteFile(bin, []byte(strings.Replace(testBinary, "echo", "eCho", 1)), 0o755))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, bin, ve.File)
 			require.Contains(t, ve.Why, "SHA-256")
@@ -278,7 +278,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 		"file hash at add": func(t *testing.T, f *fixture, _ pluginmodel.Verified) {
 			srcModel := filepath.Join(f.src, "model", "weights.bin")
 			require.NoError(t, os.WriteFile(srcModel, []byte("TOP-SECRET-MODEL-WEIGHTz"), 0o644))
-			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, approval)
+			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.True(t, strings.HasSuffix(ve.File, filepath.Join("model", "weights.bin")), ve.File)
 			require.Contains(t, ve.Why, "SHA-256")
@@ -287,7 +287,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 		"path rule": func(t *testing.T, f *fixture, v pluginmodel.Verified) {
 			p := filepath.Join(v.Dir, "bin")
 			require.NoError(t, os.Chmod(p, 0o775))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, p, ve.File)
 			require.Contains(t, ve.Why, "written by group or others")
@@ -296,7 +296,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 		"trust store path rule": func(t *testing.T, f *fixture, v pluginmodel.Verified) {
 			p := f.trust.Dir()
 			require.NoError(t, os.Chmod(p, 0o757))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, p, ve.File)
 			require.Contains(t, ve.Why, "written by group or others")
@@ -306,7 +306,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 			elsewhere := filepath.Join(f.base, "weights.bin")
 			require.NoError(t, os.Rename(model, elsewhere))
 			require.NoError(t, os.Symlink(elsewhere, model))
-			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, approval)
+			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, model, ve.File)
 			require.Contains(t, ve.Why, "symlink")
@@ -315,7 +315,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 			sig := filepath.Join(f.src, SignatureFile)
 			require.NoError(t, os.WriteFile(filepath.Join(f.base, "elsewhere.sig"), []byte("{}"), 0o644))
 			require.NoError(t, os.Symlink(filepath.Join(f.base, "elsewhere.sig"), sig))
-			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, approval)
+			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, sig, ve.File)
 			require.Contains(t, ve.Why, "symlink")
@@ -324,14 +324,14 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 			sig := filepath.Join(v.Dir, SignatureFile)
 			require.NoError(t, os.WriteFile(filepath.Join(f.base, "elsewhere.sig"), []byte("{}"), 0o644))
 			require.NoError(t, os.Symlink(filepath.Join(f.base, "elsewhere.sig"), sig))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, sig, ve.File)
 		},
 		"extra file in copy": func(t *testing.T, f *fixture, v pluginmodel.Verified) {
 			extra := filepath.Join(v.Dir, "bin", "helper")
 			require.NoError(t, os.WriteFile(extra, []byte("x"), 0o644))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, extra, ve.File)
 			require.Contains(t, ve.Why, "not in the manifest's files")
@@ -339,7 +339,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 		"missing file in copy": func(t *testing.T, f *fixture, v pluginmodel.Verified) {
 			p := filepath.Join(v.Dir, "model", "weights.bin")
 			require.NoError(t, os.Remove(p))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, p, ve.File)
 			require.Contains(t, ve.Why, "missing")
@@ -347,7 +347,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 		"manifest rule": func(t *testing.T, f *fixture, _ pluginmodel.Verified) {
 			m := strings.Replace(string(localManifest()), `"version": "1.4.0"`, `"version": "one"`, 1)
 			require.NoError(t, os.WriteFile(filepath.Join(f.src, ManifestFile), []byte(m), 0o644))
-			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, approval)
+			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedBadManifest)
 			require.Equal(t, filepath.Join(f.src, ManifestFile), ve.File)
 		},
@@ -355,7 +355,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 			m := strings.Replace(string(localManifest()), `"files": {`, `"files": { "basalt-plugin.json.sig": "`+sha("x")+`",`, 1)
 			require.NoError(t, os.WriteFile(filepath.Join(f.src, ManifestFile), []byte(m), 0o644))
 			require.NoError(t, os.WriteFile(filepath.Join(f.src, SignatureFile), []byte("x"), 0o644))
-			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, approval)
+			_, err := Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedBadManifest)
 			require.Equal(t, whyFilesNameManifest, ve.Why)
 		},
@@ -364,7 +364,7 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 			m := strings.Replace(string(localManifest()), `"version": "1.4.0"`, `"version": "1.4.1"`, 1)
 			p := filepath.Join(v.Dir, ManifestFile)
 			require.NoError(t, os.WriteFile(p, []byte(m), 0o644))
-			_, err := f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err := f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 			require.Equal(t, p, ve.File)
 			require.Contains(t, ve.Why, "manifestSha256")
@@ -375,9 +375,9 @@ func TestApprovalKeepsEveryOtherCheck(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
 			f.unsigned()
-			v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+			v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 			require.NoError(t, err)
-			_, err = f.verifyWith(v.ManifestSHA256, f.trust, approval)
+			_, err = f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 			require.NoError(t, err, "the unsigned copy passes before it is broken")
 			run(t, f, v)
 		})
@@ -394,26 +394,26 @@ func TestCommitKeepsOnlyTheSameSigner(t *testing.T) {
 	require.NoError(t, err)
 	trust, id := f.builtIn(publisher)
 	f.writeSigned(f.src, localManifest(), publisher)
-	known, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser, approval)
+	known, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerKnown, known.Signer)
 
 	f.unsigned()
-	unknown, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser, approval)
+	unknown, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, known.Dir, unknown.Dir)
 	require.Equal(t, pluginmodel.SignerUnknown, unknown.Signer)
 	require.NotContains(t, entries(t, unknown.Dir), SignatureFile, "the unsigned copy replaced the signed one")
-	got, err := f.verifyWith(unknown.ManifestSHA256, trust, approval)
+	got, err := f.verifyWith(unknown.ManifestSHA256, trust, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerUnknown, got.Signer)
 
 	f.writeSigned(f.src, localManifest(), publisher)
-	again, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser, approval)
+	again, err := Install(f.src, f.root, "", trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerKnown, again.Signer)
 	require.Equal(t, id, again.SignerKeyID)
-	got, err = f.verifyWith(again.ManifestSHA256, trust, approval)
+	got, err = f.verifyWith(again.ManifestSHA256, trust, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerKnown, got.Signer)
 }
@@ -424,13 +424,13 @@ func TestCommitKeepsOnlyTheSameSigner(t *testing.T) {
 func TestCommitKeepsOnlyTheSameSignatureFile(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+	v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, pluginmodel.SignerUnknown, v.Signer)
 	require.Contains(t, entries(t, v.Dir), SignatureFile)
 
 	f.unsigned()
-	u, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+	u, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	require.Equal(t, v.Dir, u.Dir)
 	require.NotContains(t, entries(t, u.Dir), SignatureFile, "the unsigned copy replaced the one with a .sig")
@@ -438,7 +438,7 @@ func TestCommitKeepsOnlyTheSameSignatureFile(t *testing.T) {
 	stranger, err := GenerateKey()
 	require.NoError(t, err)
 	f.writeSigned(f.src, localManifest(), stranger)
-	s, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+	s, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 	want, err := os.ReadFile(filepath.Join(f.src, SignatureFile))
 	require.NoError(t, err)
@@ -453,18 +453,18 @@ func TestSignatureDirectoryRefused(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.unsigned()
-	v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, approval)
+	v, err := Install(f.src, f.root, "", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	require.NoError(t, err)
 
 	inCopy := filepath.Join(v.Dir, SignatureFile)
 	require.NoError(t, os.Mkdir(inCopy, 0o755))
-	_, err = f.verifyWith(v.ManifestSHA256, f.trust, approval)
+	_, err = f.verifyWith(v.ManifestSHA256, f.trust, pluginhostApproval)
 	ve := requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.True(t, strings.HasPrefix(ve.File, inCopy), ve.File)
 
 	inSource := filepath.Join(f.src, SignatureFile)
 	require.NoError(t, os.Mkdir(inSource, 0o755))
-	_, err = Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, approval)
+	_, err = Install(f.src, f.root, "x", f.trust, pluginmodel.ModeSameUser, pluginhostApproval)
 	ve = requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 	require.Equal(t, inSource, ve.File)
 }

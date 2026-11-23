@@ -522,9 +522,9 @@ func TestRemoteManifestSignatureOnly(t *testing.T) {
 	requireRefused(t, err, pluginmodel.RefusedNotTrusted)
 }
 
-// TestInstancesAreSeparate: two instances of one plugin get two copies, and
+// TestPluginhostInstancesAreSeparate: two instances of one plugin get two copies, and
 // changing or removing one does not affect the other.
-func TestInstancesAreSeparate(t *testing.T) {
+func TestPluginhostInstancesAreSeparate(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	a := f.install(pluginmodel.DefaultInstance)

@@ -315,17 +315,9 @@ type setupFilesHost interface {
 }
 
 // trustedDir is a directory opened by OSOpenTrustedDir: files in it are
-// reached relative to its descriptor, never by path.
-type trustedDir interface {
-	config.Dir
-	// CreateFile makes name with data, owned by owner (< 0: this process),
-	// refusing one that exists.
-	CreateFile(name string, data []byte, mode os.FileMode, owner int) error
-	// Remove removes name from the directory.
-	Remove(name string) error
-	// Close closes the directory's descriptor.
-	Close() error
-}
+// reached relative to its descriptor, never by path. It is the credential
+// files' own (app.TrustedDir), so a setupFilesHost reaches them too.
+type trustedDir = app.TrustedDir
 
 func newRemoteInit(c *cli.IO, h remoteHost, f remoteFlags) (*remoteInit, error) {
 	r := &remoteInit{c: c, setup: h, f: f}
@@ -452,7 +444,7 @@ func (r *remoteInit) paths() error {
 		}
 		r.osUser = u
 	}
-	r.files = pathCredFiles{}
+	r.files = app.PathCredFiles{}
 	if asRoot {
 		trusted, err := rootTrustedOwner(dir)
 		if err != nil {
@@ -487,8 +479,9 @@ func (r *remoteInit) paths() error {
 // its .lock for init --remote, each named by its full path.
 type credFiles interface {
 	Lock(path string) (func(), error)
-	// Read reads a credential file this process wrote (readOwnCredential's
-	// checks); an error wrapping fs.ErrNotExist when there is none.
+	// Read reads a credential file this process wrote (with the checks of
+	// credfiles' readOwnCredential); an error wrapping fs.ErrNotExist when
+	// there is none.
 	Read(path string) (string, os.FileInfo, error)
 	// Stat is the file at path, not following a link.
 	Stat(path string) (os.FileInfo, error)
@@ -498,29 +491,6 @@ type credFiles interface {
 	Remove(path string) error
 	Close()
 }
-
-// pathCredFiles reaches the credential files by path: init --remote not as
-// root, in the user's own directories.
-type pathCredFiles struct{}
-
-func (pathCredFiles) Lock(path string) (func(), error) { return lockFile(path) }
-
-func (pathCredFiles) Read(path string) (string, os.FileInfo, error) {
-	if _, err := os.Lstat(path); err != nil {
-		return "", nil, err
-	}
-	return readOwnCredential(path)
-}
-
-func (pathCredFiles) Stat(path string) (os.FileInfo, error) { return os.Lstat(path) }
-
-func (pathCredFiles) Write(path string, data []byte) error { return config.WriteFile(path, data) }
-
-func (pathCredFiles) Rename(from, to string) error { return os.Rename(from, to) }
-
-func (pathCredFiles) Remove(path string) error { return os.Remove(path) }
-
-func (pathCredFiles) Close() {}
 
 // credential is a credential file as read: its connection string, the
 // database it names, and the file it was read from (to check, before

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -47,7 +49,7 @@ func (e *rescopeEnv) syncedWidenBody(t *testing.T, id uuid.UUID, nonce []byte, s
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
 	as, err := e.person.Sign(reverttest.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, syncedPasskey)
 	require.NoError(t, err)
-	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
+	return scopeBody(t, agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 }
@@ -110,7 +112,7 @@ func TestAnAgentHoldingTheLinkCannotWiden(t *testing.T) {
 		"another revert's proof":                             scopeBody(t, foreign),
 		"a signature over a binding as the proof": scopeBody(t, agent.ScopeRequest{
 			Select: e.every(), NewSecret: newLinkSecret(t),
-			Proof: &agent.ScopeProof{
+			Proof: &linksvc.ScopeProof{
 				CredentialID: approvalLike.CredentialID, AuthenticatorData: approvalLike.AuthenticatorData,
 				ClientDataJSON: approvalLike.ClientDataJSON, Signature: approvalLike.Signature,
 			},

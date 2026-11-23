@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -58,7 +60,7 @@ type WriteOutcome struct {
 	ApprovalID uuid.UUID
 	Warnings   []toolresult.Warning
 	// Receipt is the approval's receipt when the write applied under one.
-	Receipt *Receipt
+	Receipt *linksvc.Receipt
 }
 
 // Write checks sql against the policy and runs it through the guard with

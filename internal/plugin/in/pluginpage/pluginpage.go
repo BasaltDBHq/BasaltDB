@@ -8,11 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // The plugin approval routes (CONTRACT.md, Local pages): the same link
@@ -44,7 +45,7 @@ func asPlugins[T any](ask func(context.Context, pageserver.PluginApprovals) (T, 
 		p, ok := a.(pageserver.PluginApprovals)
 		if !ok {
 			var zero T
-			return zero, agent.ErrNotThisAgent
+			return zero, linksvc.ErrNotThisAgent
 		}
 		return ask(ctx, p)
 	}

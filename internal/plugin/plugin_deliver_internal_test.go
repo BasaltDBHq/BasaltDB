@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
@@ -223,9 +225,9 @@ const (
 
 // heldNotice is a held write's notice with link, expiring in an hour of
 // the engine's clock.
-func (e *deliverEnv) heldNotice(link string) agent.LinkNotice {
-	return agent.LinkNotice{
-		Kind: agent.NoticeApprovalRequested, ApprovalID: uuid.MustParse(testApproval), Headline: "Update 27 rows in public·leads",
+func (e *deliverEnv) heldNotice(link string) linksvc.LinkNotice {
+	return linksvc.LinkNotice{
+		Kind: linksvc.NoticeApprovalRequested, ApprovalID: uuid.MustParse(testApproval), Headline: "Update 27 rows in public·leads",
 		ExpiresAt: e.now().Add(time.Hour), Link: link,
 	}
 }
@@ -271,8 +273,8 @@ func TestNoticeSaysWhereItsLinkOpens(t *testing.T) {
 	e := newDeliverEnv(t)
 	p := e.serve("acme-notify", "product_a")
 	e.start()
-	revertNotice := agent.LinkNotice{
-		Kind: agent.NoticeRevertRequested, RevertID: uuid.MustParse(testRevert), ExpiresAt: e.now().Add(time.Hour), Link: portalLong,
+	revertNotice := linksvc.LinkNotice{
+		Kind: linksvc.NoticeRevertRequested, RevertID: uuid.MustParse(testRevert), ExpiresAt: e.now().Add(time.Hour), Link: portalLong,
 		Headline: "Revert of run 0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b: 27 rows to restore, 0 left as they are (changed after the agent).",
 	}
 	e.d.forAgent("product_a").DeliverLink(revertNotice)
@@ -285,7 +287,7 @@ func TestNoticeSaysWhereItsLinkOpens(t *testing.T) {
 	require.Equal(t, "Open the link to review the revert and sign it with your passkey.", got.Event.Data["instruction"])
 
 	replaced := e.heldNotice(localShort)
-	replaced.Kind = agent.NoticeLinkReplaced
+	replaced.Kind = linksvc.NoticeLinkReplaced
 	e.d.forAgent("product_a").DeliverLink(replaced)
 	got = waitNotices(t, p, 2)[1]
 	require.Equal(t, "dev.basaltdb.link.replaced", got.Event.Type)

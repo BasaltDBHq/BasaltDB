@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -218,7 +220,7 @@ type RequestedRevert struct {
 	Links         []toolresult.Link
 	NextSteps     []toolresult.NextStep
 	// Receipt is the signed revert's receipt (APPLIED, APPLYING).
-	Receipt *Receipt
+	Receipt *linksvc.Receipt
 	// tooLarge is the notice when no link can carry the request.
 	tooLarge revertLink
 	// headline is the revert in one line, and issued is set when this
@@ -249,11 +251,11 @@ func (rc *revertCase) RequestRevert(ctx context.Context, p RequestRevertParams) 
 		if errors.As(answer, &te) {
 			// Prepared, with no link any page can open: a notice with none.
 			out.RevertURL = ""
-			rc.deliverRevert(NoticeRevertRequested, out)
+			rc.deliverRevert(linksvc.NoticeRevertRequested, out)
 		}
 		return RequestedRevert{}, answer
 	}
-	rc.deliverRevert(NoticeRevertRequested, out)
+	rc.deliverRevert(linksvc.NoticeRevertRequested, out)
 	return out, nil
 }
 
@@ -280,7 +282,7 @@ func (rc *revertCase) revertWithLink(ctx context.Context, r action.Revert) (Requ
 	if n.tooLarge {
 		// The results case REQUEST_TOO_LARGE (request_revert's reissue);
 		// RequestRevert answers the error instead.
-		steps, err := RevertTooLargeSteps(r.ID, false)
+		steps, err := linksvc.RevertTooLargeSteps(r.ID, false)
 		if err != nil {
 			return RequestedRevert{}, err
 		}
@@ -327,7 +329,7 @@ func (rc *revertCase) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Req
 		}
 		out, err := rc.revertWithLink(ctx, r)
 		if err == nil && out.issued {
-			rc.deliverRevert(NoticeLinkReplaced, out)
+			rc.deliverRevert(linksvc.NoticeLinkReplaced, out)
 		}
 		return out, err
 	}
@@ -395,7 +397,7 @@ func (rc *revertCase) revertState(ctx context.Context, r action.Revert) (Request
 		return RequestedRevert{}, err
 	}
 	out.Receipt = &receipt
-	out.PersonMessage = WithReceiptLine(receipt.Line, out.PersonMessage)
+	out.PersonMessage = linksvc.WithReceiptLine(receipt.Line, out.PersonMessage)
 	return out, nil
 }
 
@@ -440,15 +442,15 @@ func (rc *revertCase) waitEnded(ctx context.Context, out RequestedRevert, what s
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	if link.Kind == linkNone {
-		steps, err := RevertTooLargeSteps(r.ID, false)
+	if link.Kind == linksvc.LinkNone {
+		steps, err := linksvc.RevertTooLargeSteps(r.ID, false)
 		if err != nil {
 			return RequestedRevert{}, err
 		}
-		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, rc.delivery.TooLargeMessage(what, RevertRequestOf(r).Cost, r.ExpiresAt, true), steps
+		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, rc.delivery.TooLargeMessage(what, linksvc.RevertRequestOf(r).Cost, r.ExpiresAt, true), steps
 		return out, nil
 	}
-	if rc.delivery.ShortLinked(r.ID) || link.Kind == linkPage {
+	if rc.delivery.ShortLinked(r.ID) || link.Kind == linksvc.LinkPage {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
@@ -622,8 +624,8 @@ type revertLink struct {
 // skips, why, the expiry, and for a large plan that they sign it once, then
 // the link.
 func (rc *revertCase) revertNotice(ctx context.Context, r action.Revert) (revertLink, error) {
-	req := RevertRequestOf(r)
-	long, tooLarge, err := LongOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
+	req := linksvc.RevertRequestOf(r)
+	long, tooLarge, err := linksvc.LongOrTooLarge(req, func() (string, error) { return rc.longRevertLink(ctx, r) })
 	if err != nil {
 		return revertLink{}, err
 	}
@@ -635,7 +637,7 @@ func (rc *revertCase) revertNotice(ctx context.Context, r action.Revert) (revert
 	if tooLarge {
 		short, err = rc.delivery.LargeShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, req.Cost)
 	} else {
-		short, err = rc.delivery.ShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
+		short, err = rc.delivery.ShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, linksvc.IssueLink)
 	}
 	if err != nil {
 		return revertLink{}, err
@@ -646,12 +648,12 @@ func (rc *revertCase) revertNotice(ctx context.Context, r action.Revert) (revert
 			Message: rc.delivery.TooLargeMessage(guidance.Sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
 		}, nil
 	}
-	pick, err := ChooseLink(short, long, rc.core.LinkBudget, links.RevertFile(r.ID))
+	pick, err := linksvc.ChooseLink(short, long, rc.core.LinkBudget, links.RevertFile(r.ID))
 	if err != nil {
 		return revertLink{}, err
 	}
 	headline := bindingHeadline(b, r)
-	summary := fmt.Sprintf("%s Why: %s. %s", headline, guidance.Shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), ExpiryLine(r.ExpiresAt))
+	summary := fmt.Sprintf("%s Why: %s. %s", headline, guidance.Shown(strings.TrimRight(b.Intent, ". "), linksvc.MaxIntentChars), linksvc.ExpiryLine(r.ExpiresAt))
 	var extra []string
 	if b.Select.Scope == revert.ScopeTask {
 		extra = append(extra, taskWidenPointer)
@@ -660,7 +662,7 @@ func (rc *revertCase) revertNotice(ctx context.Context, r action.Revert) (revert
 		extra = append(extra, fmt.Sprintf("It covers %d rows: you sign once, and the agent restores it in batches within %d hours.",
 			b.Lines(), int(revert.ApplyWindow.Hours())))
 	}
-	msg, msgLinks := RevertMessage(summary, pick, extra...)
+	msg, msgLinks := linksvc.RevertMessage(summary, pick, extra...)
 	return revertLink{URL: pick.URL, File: pick.File, Message: msg, Links: msgLinks, Headline: headline, long: long, short: short}, nil
 }
 
@@ -695,7 +697,7 @@ func revertHeadline(r action.Revert) (string, error) {
 // for their signature (LP-2). A failed notice is logged; it never fails the
 // call.
 func (rc *revertCase) notifyRevert(ctx context.Context, r action.Revert, n revertLink) {
-	sent := RevertNotice{RevertID: r.ID, Agent: rc.core.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
+	sent := linksvc.RevertNotice{RevertID: r.ID, Agent: rc.core.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
 	if !r.Widened {
 		sent.Intent, sent.RevertURL, sent.ShortURL = r.Intent, n.long, n.short
 	}

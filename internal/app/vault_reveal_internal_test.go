@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -141,7 +143,7 @@ func (e *revealEnv) body(t *testing.T, kind string, id uuid.UUID, nonce []byte, 
 	as, err := e.person.Sign(ch, passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(raw)
-	b, err := json.Marshal(agent.RevealRequest{RevealSecret: secret, Proof: agent.ScopeProof{
+	b, err := json.Marshal(linksvc.RevealRequest{RevealSecret: secret, Proof: linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)

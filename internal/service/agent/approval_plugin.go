@@ -7,6 +7,8 @@ import (
 	"slices"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
@@ -70,7 +72,7 @@ func (pc *pluginCase) RelayPluginApproval(ctx context.Context, r approval.Plugin
 // asked instead), and a proof that does not match the binding text.
 func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (guardmodel.PluginApprovalRecord, error) {
 	if pc.deps.Approvals == nil {
-		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
+		return guardmodel.PluginApprovalRecord{}, linksvc.ErrNotThisAgent
 	}
 	if err := pc.admit.Admit(ctx); err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
@@ -80,14 +82,14 @@ func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (gua
 		return guardmodel.PluginApprovalRecord{}, err
 	}
 	if !holdsPluginApprovals(st, pc.deps.ApprovalsVersion) {
-		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
+		return guardmodel.PluginApprovalRecord{}, linksvc.ErrNotThisAgent
 	}
 	r, ok, err := pc.deps.Approvals.ReadPluginApproval(ctx, id)
 	if err != nil {
 		return guardmodel.PluginApprovalRecord{}, err
 	}
 	if !ok || r.BindingText == "" {
-		return guardmodel.PluginApprovalRecord{}, ErrNotThisAgent
+		return guardmodel.PluginApprovalRecord{}, linksvc.ErrNotThisAgent
 	}
 	switch {
 	case r.Status == guardmodel.PluginApprovalStatusExpired || (r.Status == guardmodel.PluginApprovalStatusPending && !pc.core.Now().Before(r.ExpiresAt)):
@@ -97,7 +99,7 @@ func (pc *pluginCase) openPluginApproval(ctx context.Context, id uuid.UUID) (gua
 	case r.Status == guardmodel.PluginApprovalStatusCancelled:
 		return r, pluginCancelled(r.ApprovalID)
 	case r.Status != guardmodel.PluginApprovalStatusPending:
-		return r, ErrNotThisAgent
+		return r, linksvc.ErrNotThisAgent
 	}
 	return r, nil
 }
@@ -174,7 +176,7 @@ func (pc *pluginCase) pluginRelayError(ctx context.Context, id uuid.UUID, err er
 	case detail == guardmodel.DetailApprovalCancelled:
 		return pluginCancelled(id)
 	case detail == guardmodel.DetailApprovalNotFound:
-		return ErrNotThisAgent
+		return linksvc.ErrNotThisAgent
 	}
 	te := pc.core.Errors.ToolError(err)
 	if te.Reason == guidance.ReasonPasskeyRevoked {

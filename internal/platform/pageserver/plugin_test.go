@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -20,7 +22,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
 )
 
 // pluginAgent is a stubAgent that also serves plugin approvals: it knows
@@ -43,14 +44,14 @@ const (
 
 func (a *pluginAgent) PluginApprovalRequest(_ context.Context, id uuid.UUID) (approval.PluginRequest, error) {
 	if id != a.plugin {
-		return approval.PluginRequest{}, agent.ErrNotThisAgent
+		return approval.PluginRequest{}, linksvc.ErrNotThisAgent
 	}
 	return approval.PluginRequest{ApprovalID: id, Binding: pluginBinding, Settings: pluginSettings}, a.pluginErr
 }
 
 func (a *pluginAgent) RelayPluginApproval(_ context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
 	if r.ApprovalID != a.plugin {
-		return time.Time{}, agent.ErrNotThisAgent
+		return time.Time{}, linksvc.ErrNotThisAgent
 	}
 	if a.pluginErr != nil {
 		return time.Time{}, a.pluginErr

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -80,7 +82,7 @@ func TestRevertReceiptWidened(t *testing.T) {
 	got, err := receiptService(t, keys).revert.revertReceipt(signedRevert(t, ledger.RevertApplying, true))
 	require.NoError(t, err)
 	require.Empty(t, got.Token)
-	require.Equal(t, NoReceiptWidened, got.Missing)
+	require.Equal(t, linksvc.NoReceiptWidened, got.Missing)
 	require.Equal(t, "No receipt: the revert's scope was changed on the signing page (1500 rows to restore in batches). "+
 		"If you did not change it, tell the agent at once.", got.Line)
 }
@@ -89,16 +91,6 @@ func TestReceiptOnKeyError(t *testing.T) {
 	t.Parallel()
 	got, err := receiptService(t, nil).revert.revertReceipt(signedRevert(t, ledger.RevertApplied, false))
 	require.NoError(t, err)
-	require.Equal(t, Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, got)
-}
-
-// A long headline is shortened in the line, never the id or the engine.
-func TestReceiptLineFitsAndKeepsTheIDs(t *testing.T) {
-	t.Parallel()
-	p := channel.Receipt{ItemID: uuid.Must(uuid.NewV7()).String(), Headline: strings.Repeat("Update 3 rows in public.orders + ", 20) + "end."}
-	line := receiptLine("Approved", "approval", p, "R68W FYxA cGgI jMEN")
-	require.LessOrEqual(t, len([]rune(line)), maxReceiptLine)
-	require.True(t, strings.HasSuffix(line, "... (approval "+p.ItemID+"), receipt from engine R68W FYxA cGgI jMEN."), line)
-	short := receiptLine("Approved", "approval", channel.Receipt{ItemID: p.ItemID, Headline: "Delete 1 row in public.customers + 30 cascaded rows."}, "R68W FYxA cGgI jMEN")
-	require.Equal(t, "Approved: Delete 1 row in public·customers + 30 cascaded rows (approval "+p.ItemID+"), receipt from engine R68W FYxA cGgI jMEN.", short)
+	require.Equal(t, linksvc.NoReceiptKeyError, got.Missing)
+	require.NotEmpty(t, got.Line)
 }

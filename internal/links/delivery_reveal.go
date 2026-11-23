@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ type ScopeProof struct {
 	Signature         passkey.Bytes `json:"signature"`
 }
 
-func (p ScopeProof) assertion() passkey.Assertion {
+func (p ScopeProof) Assertion() passkey.Assertion {
 	return passkey.Assertion{
 		CredentialID: p.CredentialID, AuthenticatorData: p.AuthenticatorData,
 		ClientDataJSON: p.ClientDataJSON, Signature: p.Signature,
@@ -45,7 +45,7 @@ type RevealRequest struct {
 
 // revealKey is the key Postgres checks the proof against, derived from the
 // page's reveal secret, which never reaches Postgres.
-func (in RevealRequest) revealKey() ([]byte, error) {
+func (in RevealRequest) RevealKey() ([]byte, error) {
 	raw, err := links.DecodeSecret(in.RevealSecret)
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: "revealSecret must be 16 random bytes, base64url without padding"}
@@ -88,7 +88,7 @@ func RevealRefused(code, link string) error {
 }
 
 // PageLink is the page's own short link, with the secret it holds.
-func (dc *deliveryCase) PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
+func (dc *Service) PageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
 	return links.WithSecret(page(dc.core.PagesBase, id), secret)
 }
 

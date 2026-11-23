@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -30,16 +32,16 @@ func TestChooseLink(t *testing.T) {
 		name        string
 		short, long string
 		budget      int
-		want        HandOver
+		want        linksvc.HandOver
 	}{
-		{"a short link comes first", short, long, 1800, HandOver{URL: short, Kind: linkShort}},
-		{"a short link is never measured", short, long, 1, HandOver{URL: short, Kind: linkShort}},
-		{"a long link within the budget", "", long, 1800, HandOver{URL: long, Kind: linkLong}},
-		{"a long link at the budget", "", long, len(long), HandOver{URL: long, Kind: linkLong}},
-		{"a long link one over the budget becomes the hash link", "", long, len(long) - 1, HandOver{URL: hash, Kind: linkHash, File: &file}},
-		{"far over the budget", "", long, 1, HandOver{URL: hash, Kind: linkHash, File: &file}},
+		{"a short link comes first", short, long, 1800, linksvc.HandOver{URL: short, Kind: linksvc.LinkShort}},
+		{"a short link is never measured", short, long, 1, linksvc.HandOver{URL: short, Kind: linksvc.LinkShort}},
+		{"a long link within the budget", "", long, 1800, linksvc.HandOver{URL: long, Kind: linksvc.LinkLong}},
+		{"a long link at the budget", "", long, len(long), linksvc.HandOver{URL: long, Kind: linksvc.LinkLong}},
+		{"a long link one over the budget becomes the hash link", "", long, len(long) - 1, linksvc.HandOver{URL: hash, Kind: linksvc.LinkHash, File: &file}},
+		{"far over the budget", "", long, 1, linksvc.HandOver{URL: hash, Kind: linksvc.LinkHash, File: &file}},
 	} {
-		got, err := ChooseLink(tc.short, tc.long, tc.budget, "f.txt")
+		got, err := linksvc.ChooseLink(tc.short, tc.long, tc.budget, "f.txt")
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, got, tc.name)
 	}
@@ -63,20 +65,23 @@ const noticeBinding = `{"kind": "APPROVE", "rows": 3, "agent": "basalt_agent_bot
 	`"params": [], "database": "app", "rowsHash": "3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4", ` +
 	`"expiresAt": "2026-11-12T06:02:11.123456Z", "statement": "DELETE FROM public.leads", "approvalId": "` + caseApproval + `", "assignedColumns": []}`
 
-func noticeService(origin string, budget int) *Service {
+func noticeService(origin string, budget int, opts ...func(*Deps)) *Service {
 	d := deps()
 	setApprovals(&d, catalogApprovals{})
 	setReverts(&d, catalogReverts{})
 	d.Core.PagesOrigin = origin
 	d.Core.LinkBudget = budget
+	for _, opt := range opts {
+		opt(&d)
+	}
 	return NewService(d)
 }
 
 const localPages = "http://localhost:8787"
 
-func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) HeldAnswer {
+func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) linksvc.HeldAnswer {
 	t.Helper()
-	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), SizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
+	n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
 		time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issue)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
@@ -85,42 +90,42 @@ func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) HeldAnswer
 
 func TestApprovalNoticeHandsOverTheShortLinkFirst(t *testing.T) {
 	t.Parallel()
-	n := approvalNoticeOf(t, noticeService(localPages, 1), 60, issueLink)
+	n := approvalNoticeOf(t, noticeService(localPages, 1), 60, linksvc.IssueLink)
 
-	require.Equal(t, n.shortURL, n.ApprovalURL, "approvalUrl is the link handed over")
-	require.Contains(t, n.shortURL, "#s=")
-	require.Contains(t, n.PersonMessage, "\n\n"+n.shortURL+"\n\n")
+	require.Equal(t, n.ShortURL, n.ApprovalURL, "approvalUrl is the link handed over")
+	require.Contains(t, n.ShortURL, "#s=")
+	require.Contains(t, n.PersonMessage, "\n\n"+n.ShortURL+"\n\n")
 	require.NotContains(t, n.PersonMessage, "#2.", "the long link stays out of the message")
-	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.shortURL}}, n.Links)
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.ShortURL}}, n.Links)
 	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "long", "no warning with a short link")
 }
 
 func TestApprovalNoticeHandsOverALongLinkWithinTheBudget(t *testing.T) {
 	t.Parallel()
-	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, issueLink)
+	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, linksvc.IssueLink)
 
-	require.Empty(t, n.shortURL)
-	require.LessOrEqual(t, len(n.longURL), links.DefaultBudget)
-	require.Equal(t, n.longURL, n.ApprovalURL)
-	require.Contains(t, n.PersonMessage, "\n\n"+n.longURL+"\n\n")
-	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.longURL}}, n.Links)
+	require.Empty(t, n.ShortURL)
+	require.LessOrEqual(t, len(n.LongURL), links.DefaultBudget)
+	require.Equal(t, n.LongURL, n.ApprovalURL)
+	require.Contains(t, n.PersonMessage, "\n\n"+n.LongURL+"\n\n")
+	require.Equal(t, []toolresult.Link{{Label: "Approve the held write", URL: n.LongURL}}, n.Links)
 	require.NotContains(t, n.PersonMessage, "basalt ", "the person runs no command")
 	require.NotContains(t, n.PersonMessage, "may arrive", "no warning within the budget")
 }
 
 func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
 	t.Parallel()
-	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 60, issueLink)
+	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 60, linksvc.IssueLink)
 
-	require.Greater(t, len(n.longURL), links.DefaultBudget, "the fixture must be over budget")
-	hash, file, err := links.HashLink(n.longURL, links.ApprovalFile(uuid.MustParse(caseApproval)))
+	require.Greater(t, len(n.LongURL), links.DefaultBudget, "the fixture must be over budget")
+	hash, file, err := links.HashLink(n.LongURL, links.ApprovalFile(uuid.MustParse(caseApproval)))
 	require.NoError(t, err)
 	require.Equal(t, hash, n.ApprovalURL, "the hash link stands in for the long link")
 	require.Less(t, len(n.ApprovalURL), 120, "about 110 characters")
 	require.Regexp(t, `/approvals/`+caseApproval+`#h=[A-Za-z0-9_-]{22}$`, n.ApprovalURL)
 	require.Equal(t, &file, n.RequestFile)
-	require.Equal(t, n.longURL[strings.Index(n.longURL, "#")+1:], n.RequestFile.Text, "the file carries the long link's request")
+	require.Equal(t, n.LongURL[strings.Index(n.LongURL, "#")+1:], n.RequestFile.Text, "the file carries the long link's request")
 	require.NotEmpty(t, n.RequestFile.Blocks)
 	require.NotContains(t, n.PersonMessage, "#2.", "no result hands over a long link over the budget")
 	require.Contains(t, n.PersonMessage, "open the request file the agent sends you (or paste its text blocks)")
@@ -131,17 +136,17 @@ func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
 
 func TestApprovalNoticeWithinTheBudgetCarriesNoRequestFile(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, issueLink).RequestFile)
-	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, 1), 60, issueLink).RequestFile, "a short link")
-	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, keepLink).RequestFile,
+	require.Nil(t, approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, linksvc.IssueLink).RequestFile)
+	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, 1), 60, linksvc.IssueLink).RequestFile, "a short link")
+	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, linksvc.KeepLink).RequestFile,
 		"a restated link while the pages are served")
 }
 
 func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
 	t.Parallel()
-	n := approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, keepLink)
+	n := approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, linksvc.KeepLink)
 
-	require.Empty(t, n.shortURL, "the engine keeps only the hash of the link it gave")
+	require.Empty(t, n.ShortURL, "the engine keeps only the hash of the link it gave")
 	require.NotContains(t, n.PersonMessage, "http", "the person has the link the agent gave them")
 	require.Empty(t, n.Links)
 	require.Contains(t, n.PersonMessage, "Approve with the link you were given.")
@@ -158,10 +163,9 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	}
 	lines = append(lines, bigLines(3)...)
 	for _, origin := range []string{localPages, ""} {
-		s := noticeService(origin, 1)
-		s.deps.Core.Commands = cmds
-		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), SizedRequest{Binding: noticeBinding, Lines: lines},
-			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issueLink)
+		s := noticeService(origin, 1, func(d *Deps) { d.Core.Commands = cmds })
+		n, err := s.approval.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), linksvc.SizedRequest{Binding: noticeBinding, Lines: lines},
+			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), linksvc.IssueLink)
 		require.NoError(t, err)
 		requirePersonMessage(t, n.PersonMessage, n.Links)
 	}
@@ -324,7 +328,7 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	ctx := context.Background()
 	s := noticeService("", links.DefaultBudget)
 
-	n := approvalNoticeOf(t, s, 60, issueLink)
+	n := approvalNoticeOf(t, s, 60, linksvc.IssueLink)
 	te := s.Failure(guidance.ToolWrite, writeArgs0, approvalRequiredError(n))
 	require.Same(t, n.RequestFile, te.Approval.RequestFile)
 	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
@@ -363,7 +367,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	require.Empty(t, p.NextSteps[0].URL)
 	require.Contains(t, p.RevertURL, "#2.", "the field keeps the long link")
 
-	n := approvalNoticeOf(t, s, 60, keepLink)
+	n := approvalNoticeOf(t, s, 60, linksvc.KeepLink)
 	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(time.Hour)
 	_, _, steps, err := s.approval.itemGuidance(item)
@@ -378,7 +382,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
 	t.Parallel()
 	s := noticeService("", links.DefaultBudget)
-	n := approvalNoticeOf(t, s, 60, issueLink)
+	n := approvalNoticeOf(t, s, 60, linksvc.IssueLink)
 	require.NotNil(t, n.RequestFile)
 	item := PendingItem{Notice: n.ApprovalNotice}
 	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.deps.Core.Now().Add(-time.Hour)
@@ -395,7 +399,7 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 	t.Parallel()
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, links.DefaultBudget)
-		n := approvalNoticeOf(t, s, 60, keepLink)
+		n := approvalNoticeOf(t, s, 60, linksvc.KeepLink)
 		te := s.approvalLinkError(&toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Reason: guidance.ReasonNotSigned, Message: "m"}, n)
 		requirePersonMessage(t, te.PersonMessage, te.Links)
 		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)

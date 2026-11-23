@@ -1,4 +1,4 @@
-package agent
+package links
 
 import (
 	"errors"
@@ -83,7 +83,7 @@ func standaloneLink(link string) string {
 // nothing after it issues another link for the item in this call. A
 // deliverer that panics is logged and costs the agent nothing: the answer
 // is returned as it was built.
-func (dc *deliveryCase) Deliver(n LinkNotice) {
+func (dc *Service) Deliver(n LinkNotice) {
 	if dc.deps.Deliverer == nil {
 		return
 	}
@@ -104,7 +104,7 @@ func (dc *deliveryCase) Deliver(n LinkNotice) {
 // a write this call held: its link is that answer's approval.approvalUrl.
 // Write calls it once, when the write is held, also when the call then
 // waits for the person.
-func (dc *deliveryCase) DeliverHeld(id uuid.UUID, expires time.Time, answer error) {
+func (dc *Service) DeliverHeld(id uuid.UUID, expires time.Time, answer error) {
 	var te *toolresult.ToolError
 	if !errors.As(answer, &te) || te.Code != guidance.CodeApprovalRequired || te.Approval == nil {
 		return

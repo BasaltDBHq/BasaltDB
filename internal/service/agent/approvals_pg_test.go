@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/basaltdbhq/basaltdb/internal/testkit/agenttest"
 
 	"github.com/google/uuid"
@@ -35,11 +37,11 @@ import (
 // notices records what the engine hands its Notifier.
 type notices struct {
 	mu      sync.Mutex
-	sent    []agent.HeldNotice
-	reverts []agent.RevertNotice
+	sent    []linksvc.HeldNotice
+	reverts []linksvc.RevertNotice
 }
 
-func (n *notices) NotifyRevert(_ context.Context, r agent.RevertNotice) error {
+func (n *notices) NotifyRevert(_ context.Context, r linksvc.RevertNotice) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.reverts = append(n.reverts, r)
@@ -47,13 +49,13 @@ func (n *notices) NotifyRevert(_ context.Context, r agent.RevertNotice) error {
 }
 
 // revertNotices returns what the engine sent about reverts so far.
-func (n *notices) revertNotices() []agent.RevertNotice {
+func (n *notices) revertNotices() []linksvc.RevertNotice {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return append([]agent.RevertNotice(nil), n.reverts...)
+	return append([]linksvc.RevertNotice(nil), n.reverts...)
 }
 
-func (n *notices) NotifyHeld(_ context.Context, h agent.HeldNotice) error {
+func (n *notices) NotifyHeld(_ context.Context, h linksvc.HeldNotice) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.sent = append(n.sent, h)
@@ -168,7 +170,7 @@ func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 // agentHarnessLimits is agentHarnessKeys with the agent's limits.
 func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, pagesOrigin ...string) agentEnv {
 	t.Helper()
-	var receipts agent.ReceiptSigner
+	var receipts linksvc.ReceiptSigner
 	if keys != nil {
 		receipts = keys
 	}

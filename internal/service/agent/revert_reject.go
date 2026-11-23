@@ -6,6 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -127,7 +129,7 @@ func (rc *revertCase) rejectError(r action.Revert, heldToken bool, err error) er
 	case code == guardmodel.CodeRevertInvalid && detail == guardmodel.RevertWidenRefused:
 		return rejectRefused()
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
-		return ErrNotThisAgent
+		return linksvc.ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:
 		return rc.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:

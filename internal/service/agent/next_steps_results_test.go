@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -145,17 +147,17 @@ func resultCases() map[string]resultCase {
 			return person, nil, steps
 		}
 	}
-	tooLargeRevert := func(t *testing.T, s *Service) action.Revert {
-		s.deps.Core.PagesOrigin = ""
+	tooLargeRevert := func(t *testing.T, s *Service) (*Service, action.Revert) {
 		r := caseRevertWith(t, ledger.RevertPending)
 		r.Lines, r.LinesLeftOut, r.LinesCost = nil, true, 2<<20
-		return r
+		return serviceWith(s, withoutLocalPages), r
 	}
 	cases := map[string]resultCase{
 		resultKey("request_revert", "REQUEST_TOO_LARGE"): {
 			tool: "request_revert", args: map[string]any{"revertId": caseRevertID, "reissueLink": true},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				out, err := s.revert.revertWithLink(context.Background(), tooLargeRevert(t, s))
+				s, r := tooLargeRevert(t, s)
+				out, err := s.revert.revertWithLink(context.Background(), r)
 				require.NoError(t, err)
 				require.Equal(t, "http://localhost:8787/reverts/"+caseRevertID, out.RevertURL, "the page's address, no fragment")
 				return out.PersonMessage, out.Links, out.NextSteps
@@ -164,7 +166,7 @@ func resultCases() map[string]resultCase {
 		resultKey("revert_plan", "REQUEST_TOO_LARGE"): {
 			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				r := tooLargeRevert(t, s)
+				s, r := tooLargeRevert(t, s)
 				n, err := s.revert.revertNotice(context.Background(), r)
 				require.NoError(t, err)
 				require.True(t, n.tooLarge)
@@ -176,10 +178,10 @@ func resultCases() map[string]resultCase {
 		resultKey("list_pending", "REQUEST_TOO_LARGE"): {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				n := tooLargeNotice(t, s, keepLink)
+				n := tooLargeNotice(t, s, linksvc.KeepLink)
 				item := PendingItem{
 					Approval: action.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.deps.Core.Now().Add(time.Hour)},
-					Notice:   n.ApprovalNotice, tooLargeSteps: n.steps,
+					Notice:   n.ApprovalNotice, tooLargeSteps: n.Steps,
 				}
 				person, links, steps, err := s.approval.itemGuidance(item)
 				require.NoError(t, err)
@@ -214,7 +216,7 @@ func resultCases() map[string]resultCase {
 		resultKey("request_revert", "REQUESTED_NO_PAGES"): {
 			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				s.deps.Core.PagesOrigin = "" // no local pages and no Vault: a long link, review only
+				s = serviceWith(s, withoutLocalPages) // no local pages and no Vault: a long link, review only
 				out, err := s.revert.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
 				return out.PersonMessage, out.Links, out.NextSteps
@@ -330,12 +332,13 @@ func resultCases() map[string]resultCase {
 	return cases
 }
 
-func resultService(t *testing.T, goos, config string) *Service {
+func resultService(t *testing.T, goos, config string, opts ...func(*Deps)) *Service {
 	t.Helper()
-	s := serviceFor(t, goos, config)
-	s.deps.Core.PagesOrigin = "http://localhost:7878"
-	s.deps.Core.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
-	return s
+	base := func(d *Deps) {
+		d.Core.PagesOrigin = "http://localhost:7878"
+		d.Core.Now = func() time.Time { return time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC) }
+	}
+	return serviceFor(t, goos, config, append([]func(*Deps){base}, opts...)...)
 }
 
 func TestEveryCatalogResultHasACase(t *testing.T) {
@@ -407,7 +410,7 @@ func TestWaitEndedNamesTheLongLinkOnlyWithoutPages(t *testing.T) {
 	require.Empty(t, short.NextSteps[0].URL, "the short link was given earlier: no url")
 	require.NotContains(t, short.PersonMessage, "http")
 
-	s.deps.Core.PagesOrigin = ""
+	s = serviceWith(s, withoutLocalPages)
 	long, err := s.revert.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
 	require.NoError(t, err)
 	require.NotEmpty(t, long.NextSteps[0].URL, "no pages: the long link is the only link")
@@ -416,10 +419,11 @@ func TestWaitEndedNamesTheLongLinkOnlyWithoutPages(t *testing.T) {
 func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 	t.Parallel()
 	for _, pages := range []bool{true, false} {
-		s := resultService(t, "linux", "")
+		var opts []func(*Deps)
 		if !pages {
-			s.deps.Core.PagesOrigin = ""
+			opts = append(opts, withoutLocalPages)
 		}
+		s := resultService(t, "linux", "", opts...)
 		n, err := s.revert.revertNotice(context.Background(), caseRevertWith(t, ledger.RevertPending))
 		require.NoError(t, err)
 		mcptest.Require(t, n.Message, n.Links)
@@ -515,8 +519,7 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 		kase := warningCases()[entry.Code]
 		t.Run(entry.Code, func(t *testing.T) {
 			t.Parallel()
-			s := operatedService(t, "linux", "", mcpcontract.OperatedByAgent)
-			s.deps.Core.PagesOrigin = "http://localhost:7878"
+			s := operatedService(t, "linux", "", mcpcontract.OperatedByAgent, func(d *Deps) { d.Core.PagesOrigin = "http://localhost:7878" })
 			warnings := kase.build(t, s)
 			require.Len(t, warnings, 1)
 			w := warnings[0]

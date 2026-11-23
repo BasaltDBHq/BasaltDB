@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
@@ -28,9 +30,9 @@ import (
 // ScopeRequest is the body of POST …/scope (revert-scope-request.schema.json).
 // Proof and NewSecret come together: a widen.
 type ScopeRequest struct {
-	Select    revert.Select `json:"select"`
-	Proof     *ScopeProof   `json:"proof,omitempty"`
-	NewSecret string        `json:"newSecret,omitempty"`
+	Select    revert.Select       `json:"select"`
+	Proof     *linksvc.ScopeProof `json:"proof,omitempty"`
+	NewSecret string              `json:"newSecret,omitempty"`
 }
 
 // ScopeResponse is the 200 answer of POST …/scope
@@ -181,7 +183,7 @@ func (rc *revertCase) RescopeRevert(ctx context.Context, id uuid.UUID, secret st
 		if err != nil {
 			return ScopeResponse{}, err
 		}
-		as := in.Proof.assertion()
+		as := in.Proof.Assertion()
 		req.Proof, req.RescopeKey = &as, key
 	}
 	if !widen && held {
@@ -349,7 +351,7 @@ func (rc *revertCase) personScopeGone(r action.Revert) error {
 	if err := rc.delivery.LinkReset(r.ID, r.ExpiresAt); err != nil {
 		return err
 	}
-	te, err := LinkReset()
+	te, err := linksvc.LinkReset()
 	if err != nil {
 		return err
 	}

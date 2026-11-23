@@ -32,7 +32,7 @@ import (
 // credential and promote a .pending one. Root reads files owned by root or
 // that owner. In a root-owned agents/ the files stay root's.
 type rootCredFiles struct {
-	dir *app.OSTrustedDir
+	dir trustedDir
 	// owner gets the files root writes; -1 when agents/ is root's.
 	owner int
 	// self is this process's uid: a file it does not own is checked with
@@ -41,9 +41,10 @@ type rootCredFiles struct {
 }
 
 // openRootCredFiles opens dir, the agents directory, as root, making it
-// (and the config directory) when missing. trusted is rootTrustedOwner's.
-func openRootCredFiles(dir string, trusted int) (credFiles, error) {
-	d, err := app.OSOpenTrustedDir(dir, trusted, true)
+// (and the config directory) when missing, through h. trusted is
+// rootTrustedOwner's.
+func openRootCredFiles(h setupFilesHost, dir string, trusted int) (credFiles, error) {
+	d, err := h.OSOpenTrustedDir(dir, trusted, true)
 	if err != nil {
 		return nil, fmt.Errorf("the credential directory %s is refused: %w", dir, err)
 	}
@@ -59,7 +60,7 @@ func openRootCredFiles(dir string, trusted int) (credFiles, error) {
 // (service.OpenTrustedDir, the trusted owner as openRootCredFiles): it
 // locks, reads and writes engine.json relative to it.
 type rootConfigDir struct {
-	dir     *app.OSTrustedDir
+	dir     trustedDir
 	trusted int
 }
 
@@ -70,9 +71,9 @@ type rootConfigDir struct {
 func rootTrustedOwner(dir string) (int, error) { return existingOwner(dir) }
 
 // openRootConfigDir opens dir, the config directory, as root, making it
-// when missing.
-func openRootConfigDir(dir string, trusted int) (*rootConfigDir, error) {
-	d, err := app.OSOpenTrustedDir(dir, trusted, true)
+// when missing, through h.
+func openRootConfigDir(h setupFilesHost, dir string, trusted int) (*rootConfigDir, error) {
+	d, err := h.OSOpenTrustedDir(dir, trusted, true)
 	if err != nil {
 		return nil, fmt.Errorf("the config directory %s is refused: %w", dir, err)
 	}
@@ -107,8 +108,8 @@ func (d *rootConfigDir) close() { _ = d.dir.Close() }
 // link, owned by that owner, mode 0600 or narrower, and pass the engine's
 // own checks (channel.ParseKeyFile). A new one is given to that owner
 // before it appears under its name, so the engine loads it as its own; one
-// made meanwhile by the engine is kept.
-func rootEngineKey(stateDir, goos string, cfg *rootConfigDir, now func() time.Time) ([]byte, error) {
+// made meanwhile by the engine is kept. The directory is opened through h.
+func rootEngineKey(h setupFilesHost, stateDir, goos string, cfg *rootConfigDir, now func() time.Time) ([]byte, error) {
 	if cfg == nil {
 		return nil, errors.New("the config directory is not open")
 	}
@@ -116,7 +117,7 @@ func rootEngineKey(stateDir, goos string, cfg *rootConfigDir, now func() time.Ti
 	if err != nil {
 		return nil, err
 	}
-	d, err := app.OSOpenTrustedDir(stateDir, cfg.trusted, false)
+	d, err := h.OSOpenTrustedDir(stateDir, cfg.trusted, false)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, missingStateDir(stateDir, goos, want)
 	}
@@ -169,7 +170,7 @@ func missingStateDir(stateDir, goos string, owner int) error {
 
 // readRootKeyFile reads the key file in the state directory d, owned by
 // dirUID: an error wrapping fs.ErrNotExist when there is none.
-func readRootKeyFile(d *app.OSTrustedDir, dirUID int) (*channel.EngineKeys, error) {
+func readRootKeyFile(d trustedDir, dirUID int) (*channel.EngineKeys, error) {
 	f, err := config.OpenPlainAt(d, channel.KeyFileName, func(f *os.File) error {
 		fi, err := f.Stat()
 		if err != nil {

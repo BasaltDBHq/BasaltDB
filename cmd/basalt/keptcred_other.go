@@ -17,12 +17,12 @@ var errRemoteUnsupported = errors.New("basalt init --remote is not supported on 
 var errNoService = errors.New("the engine service is not supported on this platform")
 
 // readKeptCredential: the engine service installs on linux and darwin only.
-func readKeptCredential(string, string) (string, error) {
+func readKeptCredential(setupFilesHost, string, string) (string, error) {
 	return "", errNoService
 }
 
 // openEngineFile: the engine service installs on linux and darwin only.
-func openEngineFile(string, string) (*os.File, error) {
+func openEngineFile(setupFilesHost, string, string) (*os.File, error) {
 	return nil, errNoService
 }
 
@@ -37,7 +37,7 @@ func lockFile(string) (func(), error) {
 }
 
 // openRootCredFiles: see errRemoteUnsupported.
-func openRootCredFiles(string, int) (credFiles, error) {
+func openRootCredFiles(setupFilesHost, string, int) (credFiles, error) {
 	return nil, errRemoteUnsupported
 }
 
@@ -45,7 +45,9 @@ func openRootCredFiles(string, int) (credFiles, error) {
 type rootConfigDir struct{}
 
 // openRootConfigDir: see errRemoteUnsupported.
-func openRootConfigDir(string, int) (*rootConfigDir, error) { return nil, errRemoteUnsupported }
+func openRootConfigDir(setupFilesHost, string, int) (*rootConfigDir, error) {
+	return nil, errRemoteUnsupported
+}
 
 // rootTrustedOwner: see errRemoteUnsupported.
 func rootTrustedOwner(string) (int, error) { return 0, errRemoteUnsupported }
@@ -59,6 +61,6 @@ func (*rootConfigDir) update(string, config.Change) error { return errRemoteUnsu
 func (*rootConfigDir) close() {}
 
 // rootEngineKey: see errRemoteUnsupported.
-func rootEngineKey(string, string, *rootConfigDir, func() time.Time) ([]byte, error) {
+func rootEngineKey(setupFilesHost, string, string, *rootConfigDir, func() time.Time) ([]byte, error) {
 	return nil, errRemoteUnsupported
 }

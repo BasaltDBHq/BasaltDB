@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 )
 
@@ -50,7 +51,7 @@ type statusDeps struct {
 	cmds         guidance.Commands
 	probe        Probe
 	// watch is the agent's pending setup as this report reads it.
-	watch    setupWatch
+	watch    handoff.SetupWatch
 	passkeys func(context.Context) ([]passkey.Credential, error)
 	log      *slog.Logger
 	now      func() time.Time
@@ -130,9 +131,7 @@ func (l LocalStatus) Report(ctx context.Context) (guidance.StatusReport, error) 
 		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, probe: l.Probe,
 		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
 		// basalt status reads; the running engine finishes the setup.
-		watch: setupWatch{
-			setup: l.Setup, probe: l.Probe, finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, log: l.Log, now: l.Now,
-		},
+		watch:    handoff.NewLocalWatch(l.Setup, l.Probe, l.Log, l.Now),
 		passkeys: l.Passkeys, log: l.Log, now: l.Now,
 		errs: l.Errors, latestGuard: l.LatestGuardVersion,
 	}.report(ctx)
@@ -163,22 +162,22 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 	s.addPluginProblems(&ps)
 	var trust *TrustReport
 	r.Trust, trust = s.trustStatus(ctx, &ps)
-	setup, known := s.watch.view(ctx)
-	r.Setup = setup.status
-	if path := s.watch.lockTrouble.get(); path != "" {
+	setup, known := s.watch.View(ctx)
+	r.Setup = setup.Status
+	if path := s.watch.LockTroubleFile(); path != "" {
 		ps.Add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
-			func(b *guidance.Steps) string { return lockFileSteps(b, path) })
+			func(b *guidance.Steps) string { return handoff.LockFileSteps(b, path) })
 	}
 	if known {
 		// A setup whose recorded state could not be read (the database is
 		// down) gets no problem: the code may have been used already.
-		setup.addProblem(&ps)
+		setup.AddProblem(&ps)
 	}
 
 	st, err := s.probe.GuardStatus(ctx)
 	// A pending INSTALL code explains a role that cannot log in or a guard
 	// that is not there yet; any other failure is reported as it is.
-	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
+	explained := known && setup.ExplainsGuard() && handoff.NotInstalledYet(st, err)
 	switch {
 	case err != nil:
 		r.Guard = guidance.GuardStatus{State: guardmodel.GuardUnknown, Build: s.latestGuard()}
@@ -192,7 +191,7 @@ func (s statusDeps) report(ctx context.Context) (guidance.StatusReport, error) {
 		}
 	}
 	if err == nil && st.State != guardmodel.GuardMissing {
-		r.Passkeys = s.countPasskeys(ctx, &ps, setup.status.State == setupDone)
+		r.Passkeys = s.countPasskeys(ctx, &ps, setup.Status.State == handoff.SetupDone)
 	}
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)

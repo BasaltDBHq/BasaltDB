@@ -85,8 +85,8 @@ func TestStatusProblemsHandTheConnectLinkFirst(t *testing.T) {
 		probe   *fakeProbe
 		kind    string
 	}{
-		{problemSetupNotRun, missing, guardmodel.SetupInstall},
-		{problemSetupChangePending, ok, guardmodel.SetupAgent},
+		{"SETUP_NOT_RUN", missing, guardmodel.SetupInstall},
+		{"SETUP_CHANGE_PENDING", ok, guardmodel.SetupAgent},
 	} {
 		t.Run(tc.problem, func(t *testing.T) {
 			t.Parallel()

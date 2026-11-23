@@ -5,6 +5,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
 // statusKeeper is the status use case: the status tool, the call admission, the
@@ -16,11 +17,11 @@ type statusKeeper struct {
 	core *CoreDeps
 	deps *StatusDeps
 	// pending is the agent's pending setup and what finishing it keeps.
-	pending *setupKeeper
+	pending *handoff.SetupKeeper
 }
 
 func newStatusKeeper(core *CoreDeps, deps *StatusDeps) *statusKeeper {
-	return &statusKeeper{core: core, deps: deps, pending: &setupKeeper{setup: deps.Setup}}
+	return &statusKeeper{core: core, deps: deps, pending: handoff.NewSetupKeeper(deps.Setup)}
 }
 
 // The reads the plugin use case makes of the status group, read as it stands.

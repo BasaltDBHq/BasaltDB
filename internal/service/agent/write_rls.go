@@ -37,7 +37,7 @@ func (wc *writeCase) rlsWarnings(ctx context.Context, tables []string, rows int)
 }
 
 func (wc *writeCase) rlsWarning(dbName string) (toolresult.Warning, error) {
-	table := guidance.Shown(dbName, maxTableChars)
+	table := guidance.Shown(dbName, guidance.MaxTableChars)
 	b := guidance.NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
 	b.AgentRunCommand(wc.core.Commands.Init(), "On the person's yes, run this and show them the link it prints, where they answer the row-level security question.")
 	if !wc.core.Commands.AgentOperated() {

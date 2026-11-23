@@ -67,7 +67,7 @@ func (f *fakeHandoff) Confirm(_ context.Context, id string, db setupcode.Address
 	return handoff.Answer{Confirmed: yes, Database: db}, nil
 }
 
-func connectOnlyServer(t *testing.T, operatedBy string, h Handoff) ConnectOnly {
+func connectOnlyServer(t *testing.T, operatedBy string, h handoff.Handoff) ConnectOnly {
 	t.Helper()
 	cmds, err := NewCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
@@ -98,9 +98,9 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 	confirmed := waiting
 	confirmed.AwaitingAddress = false
 	return map[string]statusCase{
-		problemConfirmDatabase: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseConfirm, Database: &db})},
-		problemDatabaseRefused: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: refused, Phase: handoff.PhaseRefused})},
-		problemUnreachableFromBot: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
+		"CONFIRM_DATABASE": {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseConfirm, Database: &db})},
+		"DATABASE_REFUSED": {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: refused, Phase: handoff.PhaseRefused})},
+		"DATABASE_UNREACHABLE_FROM_BOT": {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
 			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemUnreachable, Database: &db,
 		})},
 		handoff.ProblemTrustRootMismatch: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
@@ -109,7 +109,7 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 		handoff.ProblemAddressInvalid: {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
 		handoff.ProblemClockSkew:      {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
 		handoff.ProblemEngineAsRoot:   {state: guardmodel.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
-		problemSetupNotFound: {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
+		"SETUP_NOT_FOUND": {state: guardmodel.GuardOK, report: func(t *testing.T) guidance.StatusReport {
 			t.Helper()
 			return operatedStatus(&fakeProbe{st: guardAt(guardmodel.GuardOK, nil, nil)}, 1, &confirmed, operatedBy)(t)
 		}},
@@ -120,15 +120,15 @@ func confirmResultCases() map[string]resultCase {
 	build := func(yes bool) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 			t.Helper()
-			r, err := confirmResult(handoff.Answer{Confirmed: yes, Database: caseDatabase}, s.deps.Core.Commands)
+			r, err := handoff.NewConfirmResult(handoff.Answer{Confirmed: yes, Database: caseDatabase}, s.deps.Core.Commands)
 			require.NoError(t, err)
 			return r.PersonMessage, r.Links, r.NextSteps
 		}
 	}
-	args := map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes}
+	args := map[string]any{"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": handoff.AnswerYes}
 	return map[string]resultCase{
-		resultKey(toolConfirmDatabase, confirmedState): {tool: toolConfirmDatabase, args: args, build: build(true)},
-		resultKey(toolConfirmDatabase, refusedState):   {tool: toolConfirmDatabase, args: args, build: build(false)},
+		resultKey(guidance.ToolConfirmDatabase, "CONFIRMED"): {tool: guidance.ToolConfirmDatabase, args: args, build: build(true)},
+		resultKey(guidance.ToolConfirmDatabase, "REFUSED"):   {tool: guidance.ToolConfirmDatabase, args: args, build: build(false)},
 	}
 }
 
@@ -144,20 +144,20 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 1, h.statusN, "status collects")
-	require.Equal(t, setupPending, r.Setup.State)
+	require.Equal(t, "PENDING", r.Setup.State)
 	require.True(t, r.Setup.ConnectOnly)
 	require.Equal(t, caseFingerprint, r.Setup.Fingerprint)
 	require.True(t, r.Engine.Reachable)
 	require.False(t, r.Ready)
-	p := findProblem(t, r, problemSetupNotRun)
-	require.Equal(t, connectOnlyWaiting, p.Message)
+	p := findProblem(t, r, "SETUP_NOT_RUN")
+	require.Equal(t, "Waiting for the setup on the connect page. If you already approved it there, open the same link again and approve once more: your bot will connect.", p.Message)
 	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.True(t, strings.HasPrefix(p.NextSteps[0].URL, "https://portal.basaltvault.app/connect#basalt-setup.1."))
 	require.NotContains(t, p.PersonMessage, "basalt init --setup-code", "no laptop command for a connect-only code")
 	requireStatusSchema(t, statusToolContract(t), r)
 
 	for _, tool := range c.Tools() {
-		if tool.Name == guidance.ToolStatus || tool.Name == toolConfirmDatabase {
+		if tool.Name == guidance.ToolStatus || tool.Name == guidance.ToolConfirmDatabase {
 			continue
 		}
 		body, isError := serveCall(t, srv, tool.Name, map[string]any{})
@@ -166,8 +166,8 @@ func TestConnectOnlyWaitingServesOnlyStatus(t *testing.T) {
 		require.Equal(t, guidance.ReasonSetupPending, body["reason"], tool.Name)
 		require.Equal(t, []mcpcontract.StepKind{{Actor: toolresult.ActorAgent, Action: toolresult.ActionCallTool}}, steps(t, body), tool.Name)
 	}
-	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{
-		argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes,
+	body, isError := serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{
+		"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": handoff.AnswerYes,
 	})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"], "nothing waits for confirmation yet")
@@ -182,11 +182,11 @@ func TestConnectOnlyWaitingAfterExpiryOmitsTheCode(t *testing.T) {
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, setupPending, r.Setup.State)
+	require.Equal(t, "PENDING", r.Setup.State)
 	require.True(t, r.Setup.ConnectOnly)
 	require.Empty(t, r.Setup.Fingerprint)
-	p := findProblem(t, r, problemSetupNotRun)
-	require.Equal(t, connectOnlyExpiredHold, p.Message)
+	p := findProblem(t, r, "SETUP_NOT_RUN")
+	require.Equal(t, "Waiting for a setup already started on the connect page. The setup link has expired, so it cannot be opened again. If you already approved it there, your bot will connect.", p.Message)
 	require.NotEqual(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.NotContains(t, p.PersonMessage, connectOnlyFixture)
 	require.NotContains(t, p.PersonMessage, caseFingerprint)
@@ -199,9 +199,9 @@ func TestConnectOnlyAfterTheCollectWindowIsExpired(t *testing.T) {
 	c := connectOnlyServer(t, mcpcontract.OperatedByAgent, h)
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, setupExpired, r.Setup.State)
+	require.Equal(t, handoff.SetupExpired, r.Setup.State)
 	require.Empty(t, r.Setup.Fingerprint)
-	p := findProblem(t, r, problemSetupExpired)
+	p := findProblem(t, r, "SETUP_EXPIRED")
 	require.NotContains(t, p.PersonMessage, connectOnlyFixture)
 }
 
@@ -216,15 +216,15 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 
 	r, err := c.Status(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, setupConfirmDatabase, r.Setup.State)
+	require.Equal(t, "CONFIRM_DATABASE", r.Setup.State)
 	require.Equal(t, &db, r.Setup.Database)
 	requireStatusSchema(t, statusToolContract(t), r)
-	p := findProblem(t, r, problemConfirmDatabase)
+	p := findProblem(t, r, "CONFIRM_DATABASE")
 	require.Contains(t, p.NextSteps[0].Text, "The setup points me at Supabase project abcdefghijklmnopqrst, database postgres. Is that your database?")
 	call := p.NextSteps[2]
-	require.Equal(t, toolConfirmDatabase, call.Tool)
-	require.Equal(t, caseSetupID, call.Arguments[argSetupID])
-	require.NotContains(t, call.Arguments, argAnswer, "the engine never fills in the answer")
+	require.Equal(t, guidance.ToolConfirmDatabase, call.Tool)
+	require.Equal(t, caseSetupID, call.Arguments["setupId"])
+	require.NotContains(t, call.Arguments, "answer", "the engine never fills in the answer")
 
 	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
 	require.True(t, isError)
@@ -232,20 +232,20 @@ func TestConnectOnlyConfirmDatabase(t *testing.T) {
 
 	// Another setupId or another database is refused: an answer never
 	// confirms a database the person was not asked about.
-	other := databaseArg(caseDatabase)
+	other := databaseArgOf(caseDatabase)
 	other["database"] = "other"
-	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: other, argAnswer: answerYes})
+	body, isError = serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{"setupId": caseSetupID, "database": other, "answer": handoff.AnswerYes})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
-	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: "MAYBE"})
+	body, isError = serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": "MAYBE"})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 
-	body, isError = serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerNo})
+	body, isError = serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": answerNo})
 	require.False(t, isError, "%v", body)
-	require.Equal(t, refusedState, body["state"])
+	require.Equal(t, "REFUSED", body["state"])
 	require.NotEmpty(t, body["personMessage"])
-	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), toolConfirmDatabase)
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), guidance.ToolConfirmDatabase)
 	require.True(t, ok)
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func TestConfirmDatabaseOnAServedAgent(t *testing.T) {
 	t.Parallel()
 	s := NewService(deps())
 	srv := mcpserver.NewServer(mcpserver.Info{Name: "basalt", Version: "test"}, mcpserver.ToolsFrom(Tools(s), WithMeta)...)
-	body, isError := serveCall(t, srv, toolConfirmDatabase, map[string]any{argSetupID: caseSetupID, argDatabase: databaseArg(caseDatabase), argAnswer: answerYes})
+	body, isError := serveCall(t, srv, guidance.ToolConfirmDatabase, map[string]any{"setupId": caseSetupID, "database": databaseArgOf(caseDatabase), "answer": handoff.AnswerYes})
 	require.True(t, isError)
 	require.Equal(t, guidance.CodeInvalidArgument, body["code"])
 }
@@ -284,8 +284,8 @@ func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 		state string
 		code  string
 	}{
-		{waiting, setupPending, problemSetupNotRun},
-		{refused, setupRefused, problemDatabaseRefused},
+		{waiting, "PENDING", "SETUP_NOT_RUN"},
+		{refused, "REFUSED", "DATABASE_REFUSED"},
 	} {
 		cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
 			Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: &tc.setup,
@@ -296,4 +296,13 @@ func TestEngineDownReportsAConnectOnlySetup(t *testing.T) {
 		require.True(t, r.Setup.ConnectOnly)
 		findProblem(t, r, tc.code)
 	}
+}
+
+// databaseArgOf is db as confirm_database takes it.
+func databaseArgOf(db setupcode.Address) map[string]any {
+	out := map[string]any{"host": db.Host, "port": db.Port, "database": db.Database}
+	if db.SupabaseRef != "" {
+		out["supabaseRef"] = db.SupabaseRef
+	}
+	return out
 }

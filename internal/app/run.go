@@ -719,7 +719,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	deps.Status.CrashDirs = crashDirs(env.stateDir)
 	deps.Status.Access = func(ctx context.Context) (agent.CatalogAccess, error) { return agentAccess(ctx, pool) }
 	deps.Status.Update, deps.Status.EngineRecord, deps.Status.Trust = agentUpdate(env.updateNotice()), readRecord, TrustOf(pool)
-	deps.Status.Database = agent.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
+	deps.Status.Database = handoff.ConnectDatabaseName(cc.Host, cc.Port, cc.Database)
 	deps.Status.Finisher = finisher
 	deps.Describe.Catalog = agentCatalog{postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host)}
 	deps.Describe.Classes = pii.StoreClasses{BoundMap: classes.On(pgquerier.Neutralize(pool)), Store: storeErrors{}}

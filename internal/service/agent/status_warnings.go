@@ -8,9 +8,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 )
 
-// maxTableChars is the most of a table's name a personMessage quotes.
-const maxTableChars = 100
-
 // RLSChecker says whether row-level security hides every row of a table
 // from the agent role. It returns the table's name as the database writes it
 // (quoted where needed), or "" when the table is not hidden. The engine's is

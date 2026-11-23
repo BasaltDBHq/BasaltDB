@@ -96,7 +96,7 @@ func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessag
 	// status always answers; confirm_database answers INVALID_ARGUMENT
 	// here, where no connect-only database waits (ConnectOnly serves it
 	// while one does).
-	if tool == guidance.ToolStatus || tool == toolConfirmDatabase {
+	if tool == guidance.ToolStatus || tool == guidance.ToolConfirmDatabase {
 		return call(ctx, args)
 	}
 	if err := h.svc.Admit(ctx); err != nil {

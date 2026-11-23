@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/app/binwatch"
+	"github.com/basaltdbhq/basaltdb/internal/app"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
@@ -31,7 +31,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
-	startedFrom, err := superviseBinaryPath()
+	startedFrom, err := engine.SuperviseBinaryPath(app.BinaryWatch{})
 	if err != nil {
 		return fail(io.Err, "engine", err)
 	}
@@ -66,17 +66,6 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io cli.Stdi
 		return fail(io.Err, "engine", err)
 	}
 	return cli.ExitOK
-}
-
-// superviseBinaryPath is the path the supervisor was started from: a
-// crash restart resolves it again, so a new file at the same path is run
-// and a missing one is not looped on.
-func superviseBinaryPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, binwatch.OS{}.Stat)
 }
 
 // childStarter runs the engine as startedFrom engine --config ... --started-by ...

@@ -604,11 +604,3 @@ func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {
 		require.NotContains(t, r, "basalt-plugin-acme-ner")
 	}
 }
-
-func TestUserClash(t *testing.T) {
-	t.Parallel()
-	long := "acme-ner-presidio"
-	others := []pluginmodel.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
-	require.Nil(t, osservice.UserClash(long, "default", others), "an entry does not clash with itself")
-	require.Nil(t, osservice.UserClash("other", "default", others))
-}

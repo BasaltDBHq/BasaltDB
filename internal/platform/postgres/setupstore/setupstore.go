@@ -122,8 +122,11 @@ func (Store) UncoveredTables(ctx context.Context, q pgquerier.Port) ([]guardmode
 	return guard.UncoveredTables(ctx, pgquerier.Unwrap(q))
 }
 
+// Engines reads the recorded engines. The setup tolerates its
+// undefined_table on a database without the guard, so in a transaction it
+// reads under a savepoint (mayFail).
 func (Store) Engines(ctx context.Context, q pgquerier.Port, admin bool) ([]guardmodel.RecordedEngine, error) {
-	return guard.Engines(ctx, pgquerier.Unwrap(q), admin)
+	return mayFail(ctx, q, func(q pgquerier.Querier) ([]guardmodel.RecordedEngine, error) { return guard.Engines(ctx, q, admin) })
 }
 
 func (Store) RecordEngineStatement(publicKey []byte, guardVersion int) guardmodel.Statement {
@@ -154,8 +157,33 @@ func unwrapTx(q pgquerier.Port) (pgx.Tx, error) {
 	return tx, nil
 }
 
+// HasPasskeyFor reads whether origin has an active passkey, under a
+// savepoint in a transaction, as Engines does.
 func (Store) HasPasskeyFor(ctx context.Context, q pgquerier.Port, origin string) (bool, error) {
-	return guard.HasPasskeyFor(ctx, pgquerier.Unwrap(q), origin)
+	return mayFail(ctx, q, func(q pgquerier.Querier) (bool, error) { return guard.HasPasskeyFor(ctx, q, origin) })
+}
+
+// mayFail runs read on q. When q is a transaction it reads under a
+// savepoint, so an error its caller tolerates (a table a database without
+// the guard lacks) leaves the transaction usable; on a connection it reads
+// as it is.
+func mayFail[T any](ctx context.Context, q pgquerier.Port, read func(pgquerier.Querier) (T, error)) (T, error) {
+	raw := pgquerier.Unwrap(q)
+	tx, ok := raw.(pgx.Tx)
+	if !ok {
+		return read(raw)
+	}
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	out, err := read(sp)
+	if err != nil {
+		_ = sp.Rollback(context.WithoutCancel(ctx))
+		return out, err
+	}
+	return out, sp.Commit(ctx)
 }
 
 func (Store) CurrentDatabase(ctx context.Context, q pgquerier.Port) (string, error) {

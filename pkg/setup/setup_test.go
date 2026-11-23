@@ -286,6 +286,24 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 	require.Equal(t, setup.CodeEngineRevoked, codeOf(t, err))
 }
 
+// A first install with the engine's key: the engines read finds no guard
+// yet (undefined_table), which the setup's own transaction survives, and
+// the engine is recorded with the install.
+func TestRunInstallsWithAnEngineKeyOnAFreshDatabase(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	require.Zero(t, installedVersion(t, d), "no guard yet")
+	eng, _, _ := engineKey(t)
+	code := newCode(t, d, func(p *setupcode.Payload) { p.Engine = eng })
+	_, give := personPasskey(t)
+	res, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{Passkey: verified(t, give)})
+	require.NoError(t, err)
+	require.True(t, res.Ran)
+	require.True(t, res.EngineRecorded)
+	require.NotZero(t, installedVersion(t, d))
+}
+
 // A code's engine is recorded by its key alone; the other engines the
 // database records are left as they are.
 func TestRunRecordsTheEngine(t *testing.T) {

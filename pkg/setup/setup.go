@@ -364,6 +364,12 @@ func commitOutcome(err error) error {
 	return &setuprun.UnconfirmedError{Err: err}
 }
 
+// sameTx runs the setup's statements in tx, the transaction Run already
+// opened: no transaction of their own.
+func sameTx(tx setuprun.Querier) setuprun.TxRunner {
+	return func(_ context.Context, fn func(setuprun.Querier) error) error { return fn(tx) }
+}
+
 // pgxTx is the transaction adminTx handed the setup, for the writes in it
 // that run on the driver itself (labels, the trust pin, the passkey).
 func pgxTx(q setuprun.Querier) pgx.Tx {
@@ -651,74 +657,97 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	if err := checkColumnNames(in); err != nil {
 		return Result{}, err
 	}
-	p, err := s.Prepare(ctx, pgquerier.Neutralize(conn), adminAt(conn))
-	if err != nil {
-		return Result{}, asError(err)
-	}
-	if err := checkColumnClasses(s, in); err != nil {
-		return Result{}, err
-	}
-	if p.NothingToDo {
-		if err := setuprun.RefuseAnswers(in.Answers.AllRows); err != nil {
-			return Result{}, asError(err)
+	var (
+		res        Result
+		registered *RegisteredPasskey
+		// refused is a refusal before the setup's script runs (Prepare, the
+		// labels' rules, Plan, Approve): returned as it is, not through
+		// Refused.
+		refused error
+	)
+	err = adminTx(conn)(ctx, func(tx setuprun.Querier) error {
+		// The setup is checked and planned in its own transaction: nothing
+		// changes between the reads the plan rests on and its statements.
+		p, err := s.Prepare(ctx, tx, adminAt(conn))
+		if err != nil {
+			refused = asError(err)
+			return refused
 		}
-		if len(in.ColumnClasses) > 0 || in.RestPublic {
-			// Nothing runs, so nothing would carry them: refused, not dropped.
-			return Result{}, asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
+		if err := checkColumnClasses(s, in); err != nil {
+			refused = err
+			return refused
 		}
-		if err := recordTrustPinAlone(ctx, conn, in.TrustPin); err != nil {
-			return Result{}, asError(err)
+		if p.NothingToDo {
+			if err := setuprun.RefuseAnswers(in.Answers.AllRows); err != nil {
+				refused = asError(err)
+				return refused
+			}
+			if len(in.ColumnClasses) > 0 || in.RestPublic {
+				// Nothing runs, so nothing would carry them: refused, not dropped.
+				refused = asError(&setuprun.SetuprunRefusalError{Code: CodeAnswersInvalid, Message: "this setup has nothing to do, so it writes no label; nothing changed"})
+				return refused
+			}
+			res = Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}
+			// The certificate the login was verified against is still
+			// recorded (the changed-certificate code of an agent saved with
+			// every table in public).
+			return recordTrustPin(ctx, pgxTx(tx), in.TrustPin)
 		}
-		return Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}, nil
-	}
-	script, err := p.Plan(ctx, in.Answers.AllRows)
-	if err != nil {
-		return Result{}, asError(err)
-	}
-	if in.Approve != nil {
-		if err := in.Approve(Plan{SQL: script.SQL(), Warnings: slices.Clone(script.Warnings)}); err != nil {
-			return Result{}, err
+		script, err := p.Plan(ctx, in.Answers.AllRows)
+		if err != nil {
+			refused = asError(err)
+			return refused
 		}
-	}
-	var registered *RegisteredPasskey
-	// The tables the grants cover, read again in this transaction before
-	// the grants name them.
-	// A table dropped between this read and the grants still fails the
-	// grant itself: SETUP_FAILED, nothing changed.
-	first := func(ctx context.Context, q setuprun.Querier) error {
-		if err := s.RecheckTables(ctx, q); err != nil {
-			return err
-		}
-		if in.Passkey == nil && in.AskPasskey == nil {
-			// Refused before the script runs, not after it: nothing was
-			// changed to roll back.
-			return requirePasskey(ctx, q, in.AddPasskey)
-		}
-		return nil
-	}
-	inTx := func(ctx context.Context, q setuprun.Querier) error {
-		tx := pgxTx(q)
-		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
-			return err
-		}
-		if t := in.TrustPin; t != nil {
-			// The certificate the caller logged in against, recorded in the
-			// ledger (CONTRACT.md, Pinning on first use, Audit).
-			if err := guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256); err != nil {
-				return err
+		if in.Approve != nil {
+			if err := in.Approve(Plan{SQL: script.SQL(), Warnings: slices.Clone(script.Warnings)}); err != nil {
+				refused = err
+				return refused
 			}
 		}
-		if in.Passkey != nil {
-			var err error
-			registered, err = registerInTx(ctx, tx, in.Passkey)
-			return err
+		res = Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil}
+		// The tables the grants cover, read again before the grants name
+		// them. A table dropped between this read and the grants still
+		// fails the grant itself: SETUP_FAILED, nothing changed.
+		first := func(ctx context.Context, q setuprun.Querier) error {
+			if err := s.RecheckTables(ctx, q); err != nil {
+				return err
+			}
+			if in.Passkey == nil && in.AskPasskey == nil {
+				// Refused before the script runs, not after it: nothing was
+				// changed to roll back.
+				return requirePasskey(ctx, q, in.AddPasskey)
+			}
+			return nil
 		}
-		return nil // none needed (checked first), or the laptop asks after the commit
+		inTx := func(ctx context.Context, q setuprun.Querier) error {
+			tx := pgxTx(q)
+			if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
+				return err
+			}
+			// The certificate the caller logged in against, recorded in the
+			// ledger (CONTRACT.md, Pinning on first use, Audit).
+			if err := recordTrustPin(ctx, tx, in.TrustPin); err != nil {
+				return err
+			}
+			if in.Passkey != nil {
+				var err error
+				registered, err = registerInTx(ctx, tx, in.Passkey)
+				return err
+			}
+			return nil // none needed (checked first), or the laptop asks after the commit
+		}
+		return setuprun.ApplySetupWith(ctx, store, sameTx(tx), script, first, inTx)
+	})
+	if refused != nil {
+		return Result{}, refused
 	}
-	if err := setuprun.ApplySetupWith(ctx, store, adminTx(conn), script, first, inTx); err != nil {
+	if err != nil {
 		return Result{}, asError(setuprun.Refused(ctx, store, pgquerier.Neutralize(conn), s.P, err))
 	}
-	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}
+	if res.NothingToDo != nil {
+		return res, nil
+	}
+	res.Passkey = registered
 	if s.P.Agent != nil {
 		res.Warnings = setuprun.RLSBlindWarnings(ctx, store, pgquerier.Neutralize(conn), s.P.Role(), s.Spec())
 	}
@@ -736,17 +765,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	return res, nil
 }
 
-// recordTrustPinAlone records t, when set, in a transaction of its own: an
-// UPGRADE code with nothing to do runs no setup transaction, but the
-// certificate its login was verified against is still recorded (the
-// changed-certificate code of an agent saved with every table in public).
-func recordTrustPinAlone(ctx context.Context, conn *pgx.Conn, t *TrustPin) error {
+// recordTrustPin records t, when set, in the setup's transaction tx.
+func recordTrustPin(ctx context.Context, tx pgx.Tx, t *TrustPin) error {
 	if t == nil {
 		return nil
 	}
-	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		return guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256)
-	})
+	return guard.RecordTrustPin(ctx, tx, t.Host, t.Port, t.SHA256)
 }
 
 // writeLabels writes in.ColumnClasses and in.RestPublic in the setup's

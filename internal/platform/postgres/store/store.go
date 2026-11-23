@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
 )
@@ -37,7 +38,7 @@ type Store struct {
 // dictionary there. An error rolls the write back, so no value it could not
 // handle is applied or returned (fail closed). tx is the write's
 // transaction, driver-free.
-type ReturnedFunc func(ctx context.Context, tx pgquerier.Port, cols []action.Column, rows []map[string]any) error
+type ReturnedFunc func(ctx context.Context, tx sqlport.Port, cols []action.Column, rows []map[string]any) error
 
 // NewStore returns a store on db. Every transaction it begins is pinned
 // (guard.PinSession), so the row images the guard stores, the lines a
@@ -55,7 +56,7 @@ func (s *Store) readRaw(ctx context.Context, sql string, params []any, stmt acti
 	return s.reader.Read(ctx, sql, params, stmt)
 }
 
-func noReturned(context.Context, pgquerier.Port, []action.Column, []map[string]any) error { return nil }
+func noReturned(context.Context, sqlport.Port, []action.Column, []map[string]any) error { return nil }
 
 // WithReturned has every write hand its returned rows to f before COMMIT.
 // It panics on a nil f.

@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
@@ -104,7 +105,7 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()
-	refuse := func(context.Context, pgquerier.Port, []action.Column, []map[string]any) error {
+	refuse := func(context.Context, sqlport.Port, []action.Column, []map[string]any) error {
 		return corepii.ErrDeltaFull
 	}
 	svc, d, _, _ := piiService(t, failingObserver{}, refuse)

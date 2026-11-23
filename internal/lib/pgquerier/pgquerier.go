@@ -1,6 +1,7 @@
 // Package pgquerier is the part of a pgx connection, pool or transaction
-// that code needs to run queries. Code that takes a database handle without
-// importing a driver's pool types (a service port) names it.
+// that code needs to run queries, and the bridge from a pgx handle to the
+// driver-free port of internal/lib/sqlport. It imports the driver; a service
+// names sqlport, never this package.
 package pgquerier
 
 import (
@@ -8,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 )
 
 // Querier runs a statement or a query on a connection, pool or transaction.
@@ -15,29 +18,6 @@ type Querier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-// Rows, Row and Result are the answers of a driver-free query, written as
-// unnamed interfaces so every package's types of the same shape are the same
-// types.
-type (
-	Rows = interface {
-		Close()
-		Err() error
-		Next() bool
-		Scan(dest ...any) error
-	}
-	Row    = interface{ Scan(dest ...any) error }
-	Result = interface{ RowsAffected() int64 }
-)
-
-// Port is the driver-free query port a service declares for itself (setuprun
-// Querier): the same interface, so Neutral implements it and so does
-// anything else of the same shape.
-type Port = interface {
-	Exec(ctx context.Context, sql string, args ...any) (Result, error)
-	Query(ctx context.Context, sql string, args ...any) (Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) Row
 }
 
 // Neutral is a Querier seen through driver-free types: what a service that
@@ -52,11 +32,11 @@ func Neutralize(q Querier) Neutral { return Neutral{q: q} }
 // Pgx returns the Querier n wraps.
 func (n Neutral) Pgx() Querier { return n.q }
 
-func (n Neutral) Exec(ctx context.Context, sql string, args ...any) (Result, error) {
+func (n Neutral) Exec(ctx context.Context, sql string, args ...any) (sqlport.Result, error) {
 	return n.q.Exec(ctx, sql, args...)
 }
 
-func (n Neutral) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
+func (n Neutral) Query(ctx context.Context, sql string, args ...any) (sqlport.Rows, error) {
 	rows, err := n.q.Query(ctx, sql, args...) //nolint:sqlclosecheck // the caller closes the rows it is handed
 	if err != nil {
 		return nil, err
@@ -64,13 +44,13 @@ func (n Neutral) Query(ctx context.Context, sql string, args ...any) (Rows, erro
 	return rows, nil
 }
 
-func (n Neutral) QueryRow(ctx context.Context, sql string, args ...any) Row {
+func (n Neutral) QueryRow(ctx context.Context, sql string, args ...any) sqlport.Row {
 	return n.q.QueryRow(ctx, sql, args...)
 }
 
 // SnapshotRunner runs fn in one repeatable-read, read-only transaction and
 // rolls it back after; it returns fn's error, or the error of beginning it.
-type SnapshotRunner = func(ctx context.Context, fn func(Port) error) error
+type SnapshotRunner = func(ctx context.Context, fn func(sqlport.Port) error) error
 
 // ReadOnlySnapshot is the runner of read-only snapshots on n's handle when
 // it can begin a transaction of its own (a pool or a connection); false
@@ -82,7 +62,7 @@ func (n Neutral) ReadOnlySnapshot() (SnapshotRunner, bool) {
 	if !ok {
 		return nil, false
 	}
-	return func(ctx context.Context, fn func(Port) error) error {
+	return func(ctx context.Context, fn func(sqlport.Port) error) error {
 		tx, err := b.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 		if err != nil {
 			return err
@@ -108,8 +88,8 @@ func Unwrap(q any) Querier {
 func ReadOnlyTx(b interface {
 	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
 },
-) func(ctx context.Context, fn func(Port) error) error {
-	return func(ctx context.Context, fn func(Port) error) error {
+) func(ctx context.Context, fn func(sqlport.Port) error) error {
+	return func(ctx context.Context, fn func(sqlport.Port) error) error {
 		tx, err := b.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 		if err != nil {
 			return err

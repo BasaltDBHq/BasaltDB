@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/lib/sqlport"
 )
 
 // txOnly is a handle with no BeginTx, as a transaction is.
@@ -49,7 +50,7 @@ func TestReadOnlySnapshotOfAPool(t *testing.T) {
 	run, ok := pgquerier.Neutralize(pool).ReadOnlySnapshot()
 	require.True(t, ok)
 	readErr := errors.New("read failed")
-	err := run(context.Background(), func(q pgquerier.Port) error {
+	err := run(context.Background(), func(q sqlport.Port) error {
 		require.Equal(t, pgx.Tx(pool.tx), pgquerier.Unwrap(q))
 		return readErr
 	})

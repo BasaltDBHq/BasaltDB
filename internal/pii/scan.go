@@ -15,7 +15,6 @@ import (
 
 	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
-	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
 )
 
 // Scan defaults (M5.1 plan, section 6; CONTRACT.md engine config).
@@ -79,10 +78,6 @@ type Builder interface {
 type textQuerier interface {
 	QueryText(ctx context.Context, sql string, args []any, row func(raw [][]byte, typeOIDs []uint32) error) error
 }
-
-// The page transactions pii is given are pgquerier.Neutral: a change to its
-// method would otherwise fail every page.
-var _ textQuerier = pgquerier.Neutral{}
 
 // ScanSource is one agent whose readable IDENTIFIER columns the scan reads,
 // with the agent's own credential (decision M51-2) and statement timeout.

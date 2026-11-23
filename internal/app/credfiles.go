@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
-	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/handoff"
 )
 
 // agentFiles reaches an agent's credential file, and for the setup

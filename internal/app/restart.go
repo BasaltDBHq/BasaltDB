@@ -85,7 +85,18 @@ func startedByOrHand(v string) string {
 	return v
 }
 
-func (o RestartOptions) withDefaults() RestartOptions {
+// Restart is how the engine restarts onto a new binary: the part of
+// RestartOptions that Serve reads.
+type Restart struct {
+	// Upgrade says when to restart; nil turns the restart off.
+	Upgrade UpgradeFunc
+	// IdleWait and DrainWait default to DefaultIdleWait and
+	// DefaultDrainWait.
+	IdleWait  time.Duration
+	DrainWait time.Duration
+}
+
+func (o Restart) withDefaults() Restart {
 	if o.IdleWait <= 0 {
 		o.IdleWait = DefaultIdleWait
 	}

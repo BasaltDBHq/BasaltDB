@@ -108,11 +108,11 @@ func planGuidanceOf(t *testing.T, s *Service, r action.Revert, items []RevertPla
 	plan := RevertPlan{Revert: r}
 	plan.Page.Items = items
 	if r.Status == ledger.RevertPending {
-		n, err := s.revertNotice(context.Background(), r)
+		n, err := s.revert.revertNotice(context.Background(), r)
 		require.NoError(t, err)
 		plan.RevertURL, plan.PersonMessage, plan.Links = n.URL, n.Message, n.Links
 	}
-	person, steps, err := s.planGuidance(plan)
+	person, steps, err := s.revert.planGuidance(plan)
 	require.NoError(t, err)
 	return person, plan.Links, steps
 }
@@ -131,14 +131,14 @@ func resultCases() map[string]resultCase {
 	task := action.Scope{Kind: revert.ScopeTask, ID: uuid.MustParse(caseRunID)}
 	state := func(status string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-			out, err := s.revertState(context.Background(), caseRevertWith(t, status))
+			out, err := s.revert.revertState(context.Background(), caseRevertWith(t, status))
 			require.NoError(t, err)
 			return out.PersonMessage, out.Links, out.NextSteps
 		}
 	}
 	batch := func(status string) func(*testing.T, *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 		return func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-			person, steps, err := s.batchGuidance(action.BatchResult{
+			person, steps, err := s.revert.batchGuidance(action.BatchResult{
 				RevertID: uuid.MustParse(caseRevertID), Batch: 5, Status: status, Restored: 1000, Skipped: 9,
 			})
 			require.NoError(t, err)
@@ -155,7 +155,7 @@ func resultCases() map[string]resultCase {
 		resultKey("request_revert", "REQUEST_TOO_LARGE"): {
 			tool: "request_revert", args: map[string]any{"revertId": caseRevertID, "reissueLink": true},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				out, err := s.revertWithLink(context.Background(), tooLargeRevert(t, s))
+				out, err := s.revert.revertWithLink(context.Background(), tooLargeRevert(t, s))
 				require.NoError(t, err)
 				require.Equal(t, "http://localhost:8787/reverts/"+caseRevertID, out.RevertURL, "the page's address, no fragment")
 				return out.PersonMessage, out.Links, out.NextSteps
@@ -165,10 +165,10 @@ func resultCases() map[string]resultCase {
 			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				r := tooLargeRevert(t, s)
-				n, err := s.revertNotice(context.Background(), r)
+				n, err := s.revert.revertNotice(context.Background(), r)
 				require.NoError(t, err)
 				require.True(t, n.tooLarge)
-				person, steps, err := s.planGuidance(RevertPlan{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, tooLarge: true})
+				person, steps, err := s.revert.planGuidance(RevertPlan{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, tooLarge: true})
 				require.NoError(t, err)
 				return person, nil, steps
 			},
@@ -189,7 +189,7 @@ func resultCases() map[string]resultCase {
 		resultKey("preview_revert", "PREVIEW"): {
 			tool: "preview_revert", args: map[string]any{"runId": caseRunID},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				person, steps, err := s.previewGuidance(RevertPreview{Scope: run, Rows: 3, Skipped: 1})
+				person, steps, err := s.revert.previewGuidance(RevertPreview{Scope: run, Rows: 3, Skipped: 1})
 				require.NoError(t, err)
 				return person, nil, steps
 			},
@@ -197,7 +197,7 @@ func resultCases() map[string]resultCase {
 		resultKey("preview_revert", "PREVIEW_TASK"): {
 			tool: "preview_revert", args: map[string]any{"taskId": caseRunID},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				person, steps, err := s.previewGuidance(RevertPreview{Scope: task, Rows: 3, Skipped: 1})
+				person, steps, err := s.revert.previewGuidance(RevertPreview{Scope: task, Rows: 3, Skipped: 1})
 				require.NoError(t, err)
 				return person, nil, steps
 			},
@@ -206,7 +206,7 @@ func resultCases() map[string]resultCase {
 		resultKey("request_revert", "REQUESTED"): {
 			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
-				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
+				out, err := s.revert.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
 				return out.PersonMessage, out.Links, out.NextSteps
 			},
@@ -215,7 +215,7 @@ func resultCases() map[string]resultCase {
 			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				s.deps.Core.PagesOrigin = "" // no local pages and no Vault: a long link, review only
-				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
+				out, err := s.revert.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
 				return out.PersonMessage, out.Links, out.NextSteps
 			},
@@ -249,7 +249,7 @@ func resultCases() map[string]resultCase {
 			tool: "list_pending", args: map[string]any{}, openWithoutURL: true,
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				p := &PendingRevert{Revert: caseRevertWith(t, ledger.RevertPending)}
-				require.NoError(t, s.pendingRevert(context.Background(), p, false))
+				require.NoError(t, s.revert.pendingRevert(context.Background(), p, false))
 				return p.PersonMessage, p.Links, p.NextSteps
 			},
 		},
@@ -257,7 +257,7 @@ func resultCases() map[string]resultCase {
 			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []toolresult.Link, []toolresult.NextStep) {
 				p := &PendingRevert{Revert: caseBatchedRevert(t, ledger.RevertApplying)}
-				require.NoError(t, s.pendingRevert(context.Background(), p, false))
+				require.NoError(t, s.revert.pendingRevert(context.Background(), p, false))
 				return p.PersonMessage, p.Links, p.NextSteps
 			},
 		},
@@ -402,13 +402,13 @@ func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase c
 func TestWaitEndedNamesTheLongLinkOnlyWithoutPages(t *testing.T) {
 	t.Parallel()
 	s := resultService(t, "linux", "")
-	short, err := s.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
+	short, err := s.revert.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
 	require.NoError(t, err)
 	require.Empty(t, short.NextSteps[0].URL, "the short link was given earlier: no url")
 	require.NotContains(t, short.PersonMessage, "http")
 
 	s.deps.Core.PagesOrigin = ""
-	long, err := s.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
+	long, err := s.revert.revertState(context.Background(), caseRevertWith(t, ledger.RevertPending))
 	require.NoError(t, err)
 	require.NotEmpty(t, long.NextSteps[0].URL, "no pages: the long link is the only link")
 }
@@ -420,7 +420,7 @@ func TestRequestedPersonMessageKeepsItsLimitWithALongIntent(t *testing.T) {
 		if !pages {
 			s.deps.Core.PagesOrigin = ""
 		}
-		n, err := s.revertNotice(context.Background(), caseRevertWith(t, ledger.RevertPending))
+		n, err := s.revert.revertNotice(context.Background(), caseRevertWith(t, ledger.RevertPending))
 		require.NoError(t, err)
 		mcptest.Require(t, n.Message, n.Links)
 		require.Contains(t, n.Message, "http", "the link is in the message")
@@ -622,7 +622,7 @@ func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
 	})
 	require.NoError(t, err)
 	r.BindingText = string(raw)
-	n, err := s.revertNotice(context.Background(), r)
+	n, err := s.revert.revertNotice(context.Background(), r)
 	require.NoError(t, err)
 	mcptest.Require(t, n.Message, n.Links)
 	require.Len(t, n.Links, 1, "only the link the engine hands over")

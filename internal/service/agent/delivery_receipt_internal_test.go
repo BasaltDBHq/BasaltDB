@@ -52,7 +52,7 @@ func TestRevertReceiptWhileApplying(t *testing.T) {
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
 	r := signedRevert(t, ledger.RevertApplying, false)
-	got, err := receiptService(t, keys).revertReceipt(r)
+	got, err := receiptService(t, keys).revert.revertReceipt(r)
 	require.NoError(t, err)
 	p, err := channeltest.VerifyReceipt(got.Token, keys.PublicKeySPKI())
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestRevertReceiptRefusesAnUnsignedRevert(t *testing.T) {
 	t.Parallel()
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
-	_, err = receiptService(t, keys).revertReceipt(signedRevert(t, ledger.RevertPending, false))
+	_, err = receiptService(t, keys).revert.revertReceipt(signedRevert(t, ledger.RevertPending, false))
 	require.Error(t, err, "a receipt is made only once Postgres accepted the signature")
 }
 
@@ -77,7 +77,7 @@ func TestRevertReceiptWidened(t *testing.T) {
 	t.Parallel()
 	keys, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
-	got, err := receiptService(t, keys).revertReceipt(signedRevert(t, ledger.RevertApplying, true))
+	got, err := receiptService(t, keys).revert.revertReceipt(signedRevert(t, ledger.RevertApplying, true))
 	require.NoError(t, err)
 	require.Empty(t, got.Token)
 	require.Equal(t, NoReceiptWidened, got.Missing)
@@ -87,7 +87,7 @@ func TestRevertReceiptWidened(t *testing.T) {
 
 func TestReceiptOnKeyError(t *testing.T) {
 	t.Parallel()
-	got, err := receiptService(t, nil).revertReceipt(signedRevert(t, ledger.RevertApplied, false))
+	got, err := receiptService(t, nil).revert.revertReceipt(signedRevert(t, ledger.RevertApplied, false))
 	require.NoError(t, err)
 	require.Equal(t, Receipt{Missing: NoReceiptKeyError, Line: noReceiptKeyErrorLine}, got)
 }

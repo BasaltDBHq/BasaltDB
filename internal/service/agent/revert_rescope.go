@@ -152,21 +152,21 @@ func (r *rescopes) drop(id uuid.UUID) {
 // and the page's new secret it is a widen: on success the revert's link is
 // rotated to that secret, and the token, lines and catalog Postgres
 // returned are kept in memory for it.
-func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in ScopeRequest) (ScopeResponse, error) {
+func (rc *revertCase) RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in ScopeRequest) (ScopeResponse, error) {
 	widen := in.Proof != nil
 	if widen && subtle.ConstantTimeCompare([]byte(in.NewSecret), []byte(secret)) == 1 {
 		return ScopeResponse{}, &guidance.ArgumentError{Message: "newSecret must be a new secret the page made, not the link's current one"}
 	}
-	release, err := s.rescopes.lock(ctx, id)
+	release, err := rc.rescopes.lock(ctx, id)
 	if err != nil {
 		return ScopeResponse{}, err
 	}
 	defer release()
-	r, err := s.openRevert(ctx, id)
+	r, err := rc.openRevert(ctx, id)
 	if err != nil {
 		return ScopeResponse{}, err
 	}
-	st, held, err := s.heldState(r, secret)
+	st, held, err := rc.heldState(r, secret)
 	if err != nil {
 		return ScopeResponse{}, err
 	}
@@ -187,11 +187,11 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if !widen && held {
 		req.Token = st.token
 	}
-	out, err := s.deps.Revert.Store.RescopeRevert(ctx, req, guardmodel.MCPPrepareTimeout)
+	out, err := rc.deps.Store.RescopeRevert(ctx, req, guardmodel.MCPPrepareTimeout)
 	if err != nil {
-		return ScopeResponse{}, s.rescopeError(ctx, r, err)
+		return ScopeResponse{}, rc.rescopeError(ctx, r, err)
 	}
-	ids, err := s.delivery.credentialIDs(ctx)
+	ids, err := rc.delivery.credentialIDs(ctx)
 	if err != nil {
 		return ScopeResponse{}, err
 	}
@@ -202,23 +202,23 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if widen {
 		next.link, next.token = sha256.Sum256([]byte(in.NewSecret)), out.ScopeToken
 	}
-	if err := s.moveLink(ctx, id, in, out.ExpiresAt); err != nil {
+	if err := rc.moveLink(ctx, id, in, out.ExpiresAt); err != nil {
 		return ScopeResponse{}, err
 	}
-	s.rescopes.put(id, next)
+	rc.rescopes.put(id, next)
 	resp := next.request
-	resp.Columns = s.delivery.columnsOf(ctx, resp.Lines)
+	resp.Columns = rc.delivery.columnsOf(ctx, resp.Lines)
 	return ScopeResponse{Request: resp, Catalog: out.Catalog}, nil
 }
 
 // moveLink gives the revert's link the rescoped revert's expiry, and on a
 // widen rotates it to the page's new secret.
-func (s *Service) moveLink(ctx context.Context, id uuid.UUID, in ScopeRequest, expires time.Time) error {
+func (rc *revertCase) moveLink(ctx context.Context, id uuid.UUID, in ScopeRequest, expires time.Time) error {
 	if in.Proof == nil {
-		s.extendLink(ctx, id, expires)
+		rc.extendLink(ctx, id, expires)
 		return nil
 	}
-	return s.rotateLink(ctx, id, in.NewSecret, expires)
+	return rc.rotateLink(ctx, id, in.NewSecret, expires)
 }
 
 // rotateLink moves the revert's link to the page's new secret: the old one
@@ -226,39 +226,39 @@ func (s *Service) moveLink(ctx context.Context, id uuid.UUID, in ScopeRequest, e
 // the session moves to the new token and stays open, the old token's other
 // sessions end, and the new token is registered so a later session can
 // open with the new secret.
-func (s *Service) rotateLink(ctx context.Context, id uuid.UUID, secret string, expires time.Time) error {
-	rot, err := s.deps.Delivery.Links.Rotate(id, secret, expires)
+func (rc *revertCase) rotateLink(ctx context.Context, id uuid.UUID, secret string, expires time.Time) error {
+	rot, err := rc.delivery.linkRotate(id, secret, expires)
 	if err != nil {
 		return err
 	}
 	if !rot.Relay {
 		return nil
 	}
-	s.deps.Revert.RotateSession(ctx, rot.Token)
-	s.registerRelay(ctx, id, rot.Token, expires)
+	rc.deps.RotateSession(ctx, rot.Token)
+	rc.registerRelay(ctx, id, rot.Token, expires)
 	return nil
 }
 
 // extendLink moves the live link's expiry to the revert's new one (every
 // rescope restarts the hour, owner Q12), registering a relay link again
 // with it. A failure only shortens the link: it is logged.
-func (s *Service) extendLink(ctx context.Context, id uuid.UUID, expires time.Time) {
-	l, relay, err := s.deps.Delivery.Links.Extend(id, expires)
+func (rc *revertCase) extendLink(ctx context.Context, id uuid.UUID, expires time.Time) {
+	l, relay, err := rc.delivery.linkExtend(id, expires)
 	if err != nil {
-		s.deps.Core.Log.Warn("extend a rescoped revert's link", "id", id, "err", err)
+		rc.core.Log.Warn("extend a rescoped revert's link", "id", id, "err", err)
 		return
 	}
 	if relay {
-		s.registerRelay(ctx, id, l.Token, expires)
+		rc.registerRelay(ctx, id, l.Token, expires)
 	}
 }
 
 // registerRelay registers token with the Vault until expires. A refusal
 // leaves the open session working; a new session for it is refused until
 // the engine registers its links again after its next READY.
-func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel.LinkToken, expires time.Time) {
-	if err := s.deps.Delivery.Relay.Register(ctx, token, expires); err != nil {
-		s.deps.Core.Log.Warn("the Vault did not register a rotated revert link", "id", id, "err", err)
+func (rc *revertCase) registerRelay(ctx context.Context, id uuid.UUID, token channel.LinkToken, expires time.Time) {
+	if err := rc.delivery.relayRegister(ctx, token, expires); err != nil {
+		rc.core.Log.Warn("the Vault did not register a rotated revert link", "id", id, "err", err)
 	}
 }
 
@@ -267,7 +267,7 @@ func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel
 // the scope once proven, is INVALID_ARGUMENT; every proof or token
 // failure is one REVERT_INVALID whatever its cause; a rescope past
 // guardmodel.MCPPrepareTimeout is QUERY_TIMEOUT TIME_LIMIT.
-func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) error {
+func (rc *revertCase) rescopeError(ctx context.Context, r action.Revert, err error) error {
 	if _, hint, ok := guidance.ScopeRefusal(err); ok {
 		return &guidance.ArgumentError{Message: "the scope was refused: " + hint}
 	}
@@ -280,7 +280,7 @@ func (s *Service) rescopeError(ctx context.Context, r action.Revert, err error) 
 	case code == guardmodel.CodeRevertInvalid && se.Detail == guardmodel.RevertWidenRefused:
 		return widenRefused()
 	case code == guardmodel.CodeRevertExpired:
-		return s.revertExpired(r)
+		return rc.revertExpired(r)
 	case guidance.TimedOut(err) && ctx.Err() == nil:
 		return rescopeTimeout()
 	}
@@ -328,25 +328,25 @@ func widenAgain(nonce []byte) error {
 // other than the one held) is dropped, the person's link is revoked as by a
 // reset, and the answer is NOT_FOUND LINK_RESET. The caller holds the
 // revert's lock.
-func (s *Service) heldState(r action.Revert, secret string) (rescoped, bool, error) {
-	st, held := s.rescopes.get(r.ID, secret, s.deps.Core.Now())
+func (rc *revertCase) heldState(r action.Revert, secret string) (rescoped, bool, error) {
+	st, held := rc.rescopes.get(r.ID, secret, rc.core.Now())
 	if !held || r.Widened || st.request.Binding == r.BindingText {
 		return st, held, nil
 	}
 	if st.token == nil {
-		s.rescopes.drop(r.ID)
+		rc.rescopes.drop(r.ID)
 		return rescoped{}, false, nil
 	}
-	return rescoped{}, false, s.personScopeGone(r)
+	return rescoped{}, false, rc.personScopeGone(r)
 }
 
 // personScopeGone drops what the engine held for revert r and revokes the
 // person's link as a reset does, once Postgres shows the person's scope is
 // gone (the agent role reset it directly): the answer is NOT_FOUND
 // LINK_RESET, and the page says the agent reset the revert.
-func (s *Service) personScopeGone(r action.Revert) error {
-	s.rescopes.drop(r.ID)
-	if err := s.deps.Delivery.Links.Reset(r.ID, r.ExpiresAt); err != nil {
+func (rc *revertCase) personScopeGone(r action.Revert) error {
+	rc.rescopes.drop(r.ID)
+	if err := rc.delivery.linkReset(r.ID, r.ExpiresAt); err != nil {
 		return err
 	}
 	te, err := LinkReset()
@@ -361,21 +361,21 @@ func (s *Service) personScopeGone(r action.Revert) error {
 // records REVERT_RESET, the person's link is revoked and kept so the page
 // can say the agent reset it (LINK_RESET), and the lines held in memory
 // go. The caller issues the new link.
-func (s *Service) resetToProposal(ctx context.Context, r action.Revert) (action.Revert, error) {
-	release, err := s.rescopes.lock(ctx, r.ID)
+func (rc *revertCase) resetToProposal(ctx context.Context, r action.Revert) (action.Revert, error) {
+	release, err := rc.rescopes.lock(ctx, r.ID)
 	if err != nil {
 		return action.Revert{}, err
 	}
 	defer release()
-	out, err := s.deps.Revert.Store.ResetRevert(ctx, r.ID, guardmodel.MCPPrepareTimeout)
+	out, err := rc.deps.Store.ResetRevert(ctx, r.ID, guardmodel.MCPPrepareTimeout)
 	if err != nil {
 		return action.Revert{}, err
 	}
-	s.rescopes.drop(r.ID)
-	if err := s.deps.Delivery.Links.Reset(r.ID, out.ExpiresAt); err != nil {
+	rc.rescopes.drop(r.ID)
+	if err := rc.delivery.linkReset(r.ID, out.ExpiresAt); err != nil {
 		return action.Revert{}, err
 	}
-	return s.deps.Revert.Store.FindRevert(ctx, r.ID)
+	return rc.deps.Store.FindRevert(ctx, r.ID)
 }
 
 // retirePersonScope is the agent's reissue of a revert that is no longer
@@ -383,21 +383,21 @@ func (s *Service) resetToProposal(ctx context.Context, r action.Revert) (action.
 // agent reset it in Postgres directly): the person's link is revoked as by
 // a reset, so their page says LINK_RESET, and what the engine held goes.
 // The caller then issues the agent's new link.
-func (s *Service) retirePersonScope(ctx context.Context, r action.Revert) error {
-	release, err := s.rescopes.lock(ctx, r.ID)
+func (rc *revertCase) retirePersonScope(ctx context.Context, r action.Revert) error {
+	release, err := rc.rescopes.lock(ctx, r.ID)
 	if err != nil {
 		return err
 	}
 	defer release()
-	if !s.rescopes.holdsToken(r.ID, s.deps.Core.Now()) {
+	if !rc.rescopes.holdsToken(r.ID, rc.core.Now()) {
 		return nil
 	}
-	s.rescopes.drop(r.ID)
-	return s.deps.Delivery.Links.Reset(r.ID, r.ExpiresAt)
+	rc.rescopes.drop(r.ID)
+	return rc.delivery.linkReset(r.ID, r.ExpiresAt)
 }
 
 // CheckResetLink reports whether secret is a link of revert id that the
 // agent's reset revoked (NOT_FOUND reason LINK_RESET on the pages).
-func (s *Service) CheckResetLink(id uuid.UUID, secret string) bool {
-	return s.deps.Delivery.Links.WasReset(id, secret)
+func (rc *revertCase) CheckResetLink(id uuid.UUID, secret string) bool {
+	return rc.delivery.linkWasReset(id, secret)
 }

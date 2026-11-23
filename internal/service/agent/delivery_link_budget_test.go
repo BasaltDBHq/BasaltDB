@@ -199,7 +199,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	ctx := context.Background()
 	small, big := revertOf(t, "Undo the bad merge", revertLines(2), false), revertOf(t, "Undo the bad merge", revertLines(60), false)
 
-	short, err := noticeService(localPages, 1).revertNotice(ctx, big)
+	short, err := noticeService(localPages, 1).revert.revertNotice(ctx, big)
 	require.NoError(t, err)
 	require.Contains(t, short.URL, "#s=", "a short link is never measured")
 	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: short.URL}}, short.Links)
@@ -207,7 +207,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Nil(t, short.File)
 	requirePersonMessage(t, short.Message, short.Links)
 
-	within, err := noticeService("", links.DefaultBudget).revertNotice(ctx, small)
+	within, err := noticeService("", links.DefaultBudget).revert.revertNotice(ctx, small)
 	require.NoError(t, err)
 	require.Contains(t, within.URL, "#2.")
 	require.LessOrEqual(t, len(within.URL), links.DefaultBudget)
@@ -215,7 +215,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Equal(t, []toolresult.Link{{Label: "Review and sign the revert", URL: within.URL}}, within.Links)
 	requirePersonMessage(t, within.Message, within.Links)
 
-	over, err := noticeService("", links.DefaultBudget).revertNotice(ctx, big)
+	over, err := noticeService("", links.DefaultBudget).revert.revertNotice(ctx, big)
 	require.NoError(t, err)
 	require.Greater(t, len(over.long), links.DefaultBudget, "the fixture must be over budget")
 	require.Regexp(t, `/reverts/`+caseRevertID+`#h=[A-Za-z0-9_-]{22}$`, over.URL)
@@ -234,7 +234,7 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 func TestRevertNoticeNamesOnlyTheFileWithoutBlocks(t *testing.T) {
 	t.Parallel()
 	huge := revertOf(t, "Undo the bad merge", revertLines(200), false)
-	n, err := noticeService("", links.DefaultBudget).revertNotice(context.Background(), huge)
+	n, err := noticeService("", links.DefaultBudget).revert.revertNotice(context.Background(), huge)
 	require.NoError(t, err)
 	require.NotNil(t, n.File)
 	require.Greater(t, len(n.File.Text), links.RequestPieceChars*links.RequestMaxBlocks, "the fixture must need more than ten blocks")
@@ -250,7 +250,7 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	for _, batched := range []bool{false, true} {
 		for _, origin := range []string{localPages, ""} {
 			r := revertOf(t, intent, revertLines(60), batched)
-			n, err := noticeService(origin, 1).revertNotice(context.Background(), r)
+			n, err := noticeService(origin, 1).revert.revertNotice(context.Background(), r)
 			require.NoError(t, err)
 			requirePersonMessage(t, n.Message, n.Links)
 		}
@@ -272,12 +272,12 @@ func TestPersonMessagesNameNoCommandWithALongConfigPath(t *testing.T) {
 
 	messages := map[string]string{}
 	for _, tool := range []string{guidance.ToolPreviewRevert, guidance.ToolRequestRevert} {
-		err := s.prepareTimeout(tool, scope, "57014")
+		err := s.revert.prepareTimeout(tool, scope, "57014")
 		var te *toolresult.ToolError
 		require.ErrorAs(t, err, &te)
 		messages["timeout "+tool] = te.PersonMessage
 	}
-	err = s.nothingToRevertError(context.Background(), guidance.ToolPreviewRevert, scope, guidance.ReasonReadsOnly, "changed no rows")
+	err = s.revert.nothingToRevertError(context.Background(), guidance.ToolPreviewRevert, scope, guidance.ReasonReadsOnly, "changed no rows")
 	var te *toolresult.ToolError
 	require.ErrorAs(t, err, &te)
 	messages["nothing to revert, task"] = te.PersonMessage
@@ -330,13 +330,13 @@ func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
 	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
 
 	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
-	out, err := s.revertWithLink(ctx, r)
+	out, err := s.revert.revertWithLink(ctx, r)
 	require.NoError(t, err)
 	require.Contains(t, out.RevertURL, "#h=")
 	requireSendRequestFirst(t, out.NextSteps, out.RequestFile, "request_revert")
 
 	p := &PendingRevert{Revert: r}
-	require.NoError(t, s.pendingRevert(ctx, p, false))
+	require.NoError(t, s.revert.pendingRevert(ctx, p, false))
 	require.Contains(t, p.RevertURL, "#h=", "a restated link without pages is the hash link")
 	requireSendRequestFirst(t, p.NextSteps, p.RequestFile, "list_pending revert")
 	require.Equal(t, p.RevertURL, p.NextSteps[1].URL)
@@ -357,7 +357,7 @@ func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
 	s := noticeService(localPages, links.DefaultBudget)
 	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
 	p := &PendingRevert{Revert: r}
-	require.NoError(t, s.pendingRevert(ctx, p, false))
+	require.NoError(t, s.revert.pendingRevert(ctx, p, false))
 	require.Nil(t, p.RequestFile)
 	require.Equal(t, toolresult.ActionOpenLink, p.NextSteps[0].Action)
 	require.Empty(t, p.NextSteps[0].URL)
@@ -424,12 +424,12 @@ func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
 	big := revertOf(t, "Undo the bad merge", revertLines(60), false)
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, links.DefaultBudget)
-		long, err := s.longRevertLink(ctx, big)
+		long, err := s.revert.longRevertLink(ctx, big)
 		require.NoError(t, err)
 		require.Greater(t, len(long), links.DefaultBudget, "the fixture must be over budget")
 		for name, refuse := range map[string]func() error{
-			guidance.ReasonBadSignature:   func() error { return s.badSignature(ctx, big, "the code does not verify") },
-			guidance.ReasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
+			guidance.ReasonBadSignature:   func() error { return s.revert.badSignature(ctx, big, "the code does not verify") },
+			guidance.ReasonPasskeyRevoked: func() error { return s.revert.passkeyRevoked(ctx, big) },
 		} {
 			te := testErrors().ToolError(refuse())
 			require.Equal(t, guidance.CodeRevertInvalid, te.Code, name)
@@ -466,7 +466,7 @@ func TestWidenedRevertInvalidNamesNoLink(t *testing.T) {
 	r := revertOf(t, "Undo the bad merge", revertLines(2), false)
 	r.Widened = true
 	for _, origin := range []string{localPages, ""} {
-		te := testErrors().ToolError(noticeService(origin, links.DefaultBudget).badSignature(ctx, r, "m"))
+		te := testErrors().ToolError(noticeService(origin, links.DefaultBudget).revert.badSignature(ctx, r, "m"))
 		require.Equal(t, toolresult.ActionOpenLink, te.NextSteps[0].Action)
 		require.Empty(t, te.NextSteps[0].URL, origin)
 		require.NotContains(t, te.NextSteps[0].Text, "short link the agent gave you", origin)

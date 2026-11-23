@@ -18,29 +18,29 @@ import (
 // secret. It serializes with the revert's other page routes; Postgres
 // locks the revert row, so a signature racing it comes first or second,
 // never between.
-func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
+func (rc *revertCase) RevealRevert(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
 	key, err := in.revealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
 	defer clear(key)
-	release, err := s.rescopes.lock(ctx, id)
+	release, err := rc.rescopes.lock(ctx, id)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
 	defer release()
-	r, err := s.openRevert(ctx, id)
+	r, err := rc.openRevert(ctx, id)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	st, held, err := s.heldState(r, secret)
+	st, held, err := rc.heldState(r, secret)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
 	lines := r.Lines
 	if r.Widened {
 		if !held {
-			nonce, err := s.deps.Revert.Store.RevertNonce(ctx, id)
+			nonce, err := rc.deps.Store.RevertNonce(ctx, id)
 			if err != nil {
 				return approval.RevealAnswer{}, err
 			}
@@ -48,9 +48,9 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 		}
 		lines = st.request.Lines
 	}
-	out, err := s.deps.Revert.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
+	out, err := rc.deps.Store.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealRevertError(r, err, s.delivery.pageLink(links.Revert, id, secret))
+		return approval.RevealAnswer{}, rc.revealRevertError(r, err, rc.delivery.pageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
 		return approval.RevealAnswer{}, revealRowsChanged(guidance.CodeRevertInvalid, "revert", "Prepare it again")
@@ -60,7 +60,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 
 // revealRevertError is the page's answer to a revert reveal Postgres
 // refused.
-func (s *Service) revealRevertError(r action.Revert, err error, link string) error {
+func (rc *revertCase) revealRevertError(r action.Revert, err error, link string) error {
 	code, _ := guidance.LedgerCode(err)
 	detail := guidance.StoreDetail(err)
 	switch {
@@ -69,7 +69,7 @@ func (s *Service) revealRevertError(r action.Revert, err error, link string) err
 	case code == guardmodel.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guardmodel.CodeRevertExpired:
-		return s.revertExpired(r)
+		return rc.revertExpired(r)
 	case code == guardmodel.CodeRevertInvalid:
 		return &guidance.PageError{ToolError: &toolresult.ToolError{
 			Code:          guidance.CodeRevertInvalid,

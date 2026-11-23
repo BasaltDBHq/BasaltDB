@@ -19,7 +19,7 @@ func scopeText(scope string, id fmt.Stringer) string {
 // (CONTRACT.md, Next steps, PREVIEW and PREVIEW_TASK): the person decides,
 // and the agent requests the revert of its own change, run or task lines.
 // For a task the message always points to widening on the signing page.
-func (s *Service) previewGuidance(p RevertPreview) (string, []toolresult.NextStep, error) {
+func (rc *revertCase) previewGuidance(p RevertPreview) (string, []toolresult.NextStep, error) {
 	what := scopeText(string(p.Scope.Kind), p.Scope.ID)
 	effect := fmt.Sprintf("would restore %d rows and leave %d as they are (changed after the agent)", p.Rows, p.Skipped)
 	pointer := ""
@@ -41,7 +41,7 @@ func (s *Service) previewGuidance(p RevertPreview) (string, []toolresult.NextSte
 // planGuidance is what revert_plan adds to a page of a large plan's lines,
 // by the plan's state (CONTRACT.md, Next steps): signing first, then the
 // agent applies the pending lines in batches.
-func (s *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, error) {
+func (rc *revertCase) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, error) {
 	r := plan.Revert
 	b := guidance.NewSteps()
 	switch {
@@ -66,7 +66,7 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, 
 		steps, err := b.Build()
 		return plan.PersonMessage, steps, err
 	case r.Status == revertApplying:
-		steps, err := s.applyBatchSteps(plan)
+		steps, err := rc.applyBatchSteps(plan)
 		return "", steps, err
 	case r.Status == revertApplied:
 		steps, err := b.Stop("The revert is done; do not request it again.").Build()
@@ -83,7 +83,7 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []toolresult.NextStep, 
 // applyBatchSteps tells the agent to apply the pending lines this page
 // shows (at most one batch); a page without any is read again with only the
 // pending lines.
-func (s *Service) applyBatchSteps(plan RevertPlan) ([]toolresult.NextStep, error) {
+func (rc *revertCase) applyBatchSteps(plan RevertPlan) ([]toolresult.NextStep, error) {
 	id := plan.Revert.ID.String()
 	lines := make([]int, 0, revert.MaxBatch)
 	for _, l := range plan.Page.Items {
@@ -100,7 +100,7 @@ func (s *Service) applyBatchSteps(plan RevertPlan) ([]toolresult.NextStep, error
 
 // batchGuidance is what apply_revert_batch adds to a batch's result: more
 // lines to read, or the plan's end.
-func (s *Service) batchGuidance(res action.BatchResult) (string, []toolresult.NextStep, error) {
+func (rc *revertCase) batchGuidance(res action.BatchResult) (string, []toolresult.NextStep, error) {
 	if res.Status != revertApplied {
 		return "", applyingSteps(res.RevertID), nil
 	}

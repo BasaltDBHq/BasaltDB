@@ -151,7 +151,7 @@ func TestRevertStateMessagesObeyTheContract(t *testing.T) {
 			for _, batched := range []bool{false, true} {
 				r := revertOf(t, "Undo", revertLines(3), batched)
 				r.Status, r.ApplyBy = status, &at
-				out, err := s.revertState(context.Background(), r)
+				out, err := s.revert.revertState(context.Background(), r)
 				require.NoError(t, err)
 				requirePersonMessage(t, out.PersonMessage, out.Links)
 			}

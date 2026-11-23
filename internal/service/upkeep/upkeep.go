@@ -126,7 +126,7 @@ type noRefresh struct{}
 
 func (noRefresh) Refresh() {}
 
-// PIICheck is the hourly PII classification check (piidict.Watch): it
+// PIICheck is the hourly PII classification check (pii.Watch): it
 // reloads the classification map when it moved and warns about
 // unclassified columns.
 type PIICheck interface {

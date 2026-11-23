@@ -213,7 +213,6 @@ linters:
             - "**/internal/core/revert/**"
             - "**/internal/core/pii/**"
             - "**/internal/pii/**"
-            - "**/internal/service/piidict/**"
             - "!$test"
           deny:
             - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store

@@ -1,10 +1,4 @@
-// Package piidict keeps the engine's PII dictionary fresh (M5.1 plan,
-// section 6): the classification map of the columns an agent reads, the
-// values the agent reads added before they leave the engine, the throttled
-// scan that rebuilds the dictionary, and the hourly classification check.
-// Nothing here logs, returns or stores a value in plain form: logs carry
-// column names and counts only.
-package piidict
+package pii
 
 import (
 	"bytes"
@@ -21,7 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 )
 
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+var piidictPsql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // Bounds of the per-tick bookkeeping, so an agent that reads many tables
 // with no classes cannot grow the engine's memory or its reload count
@@ -127,13 +121,13 @@ func NewMap(log *slog.Logger) *Map {
 
 // Load reads agent_pii_columns, pii_fingerprint() and agent_pii_catalog
 // in one snapshot, begun after this call, and replaces the map.
-func (m *Map) Load(ctx context.Context, db Querier) error {
+func (m *Map) Load(ctx context.Context, db PiidictQuerier) error {
 	return m.load(ctx, db, true)
 }
 
 // load loads a snapshot. fresh asks for a load begun after this call (an
 // unknown oid, a moved catalog); otherwise a load already running will do.
-func (m *Map) load(ctx context.Context, db Querier, fresh bool) error {
+func (m *Map) load(ctx context.Context, db PiidictQuerier, fresh bool) error {
 	if _, ok := db.(beginner); !ok {
 		// Inside the caller's transaction: read on its own connection.
 		m.mu.Lock()
@@ -154,7 +148,7 @@ func (m *Map) load(ctx context.Context, db Querier, fresh bool) error {
 	if !lead {
 		return waitFlight(ctx, f)
 	}
-	s, err := withSnapshot(ctx, db, func(ctx context.Context, q Querier) (*snapshot, error) {
+	s, err := withSnapshot(ctx, db, func(ctx context.Context, q PiidictQuerier) (*snapshot, error) {
 		return readSnapshot(ctx, q, m.between)
 	})
 	if err != nil {
@@ -220,7 +214,7 @@ func (m *Map) store(seq uint64, s *snapshot) {
 // reload once more, and missing columns are warned again), then reads the
 // fingerprint and the catalog row and reloads the map when either differs
 // from the values kept at the last load (or nothing was loaded yet).
-func (m *Map) Tick(ctx context.Context, db Querier) (reloaded bool, err error) {
+func (m *Map) Tick(ctx context.Context, db PiidictQuerier) (reloaded bool, err error) {
 	m.mu.Lock()
 	clear(m.tried)
 	clear(m.warned)
@@ -243,7 +237,7 @@ func (m *Map) Tick(ctx context.Context, db Querier) (reloaded bool, err error) {
 // A column still missing is UNCLASSIFIED and warned about once per tick. A
 // computed column (oid 0) has no class: its zero Class. A load that fails
 // is an error, so the caller does not return values it cannot classify.
-func (m *Map) Resolve(ctx context.Context, db Querier, refs []ColumnRef) ([]Class, error) {
+func (m *Map) Resolve(ctx context.Context, db PiidictQuerier, refs []ColumnRef) ([]Class, error) {
 	s, err := m.current(ctx, db, refs)
 	if err != nil {
 		return nil, err
@@ -268,7 +262,7 @@ func (m *Map) Resolve(ctx context.Context, db Querier, refs []ColumnRef) ([]Clas
 // current is the snapshot to resolve refs against, loading it first when
 // none is loaded or a table oid of refs is unknown and not yet tried this
 // tick.
-func (m *Map) current(ctx context.Context, db Querier, refs []ColumnRef) (*snapshot, error) {
+func (m *Map) current(ctx context.Context, db PiidictQuerier, refs []ColumnRef) (*snapshot, error) {
 	s := m.snap.Load()
 	if s != nil && !s.unknown(refs) {
 		return s, nil
@@ -349,7 +343,7 @@ func (m *Map) warnMissing(refs []ColumnRef) {
 
 // Identifiers returns the IDENTIFIER columns of the map, loading it first
 // when nothing is loaded.
-func (m *Map) Identifiers(ctx context.Context, db Querier) ([]IdentifierColumn, error) {
+func (m *Map) Identifiers(ctx context.Context, db PiidictQuerier) ([]IdentifierColumn, error) {
 	if _, err := m.current(ctx, db, nil); err != nil {
 		return nil, err
 	}
@@ -377,7 +371,7 @@ type beginner interface {
 // withSnapshot runs read in one repeatable-read, read-only transaction when
 // db is a pool, so the map and its marks come from one snapshot; inside a
 // caller's transaction (a write's RETURNING) it runs there.
-func withSnapshot[T any](ctx context.Context, db Querier, read func(context.Context, Querier) (T, error)) (T, error) {
+func withSnapshot[T any](ctx context.Context, db PiidictQuerier, read func(context.Context, PiidictQuerier) (T, error)) (T, error) {
 	b, ok := db.(beginner)
 	if !ok {
 		return read(ctx, db)
@@ -398,13 +392,13 @@ func withSnapshot[T any](ctx context.Context, db Querier, read func(context.Cont
 // ones, so the next hourly tick sees the catalog move and reloads. (Read
 // the other way round, old classes would be kept with new marks and never
 // reloaded.) between runs between the two reads (tests).
-func readSnapshot(ctx context.Context, db Querier, between func()) (*snapshot, error) {
+func readSnapshot(ctx context.Context, db PiidictQuerier, between func()) (*snapshot, error) {
 	mk, err := readMarks(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	between()
-	q, args, err := psql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name",
+	q, args, err := piidictPsql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name",
 		"class", "coalesce(entity_type, '')", "coalesce(phone_region, '')").
 		From("basalt_meta.agent_pii_columns").ToSql()
 	if err != nil {
@@ -432,16 +426,16 @@ func readSnapshot(ctx context.Context, db Querier, between func()) (*snapshot, e
 
 // readMarks reads pii_fingerprint() and the agent_pii_catalog row (none
 // before the first basalt classify).
-func readMarks(ctx context.Context, db Querier) (marks, error) {
+func readMarks(ctx context.Context, db PiidictQuerier) (marks, error) {
 	var mk marks
-	q, args, err := psql.Select("basalt_meta.pii_fingerprint()").ToSql()
+	q, args, err := piidictPsql.Select("basalt_meta.pii_fingerprint()").ToSql()
 	if err != nil {
 		return mk, err
 	}
 	if err := db.QueryRow(ctx, q, args...).Scan(&mk.fingerprint); err != nil {
 		return mk, err
 	}
-	q, args, err = psql.Select("fingerprint", "classified_at").From("basalt_meta.agent_pii_catalog").ToSql()
+	q, args, err = piidictPsql.Select("fingerprint", "classified_at").From("basalt_meta.agent_pii_catalog").ToSql()
 	if err != nil {
 		return mk, err
 	}

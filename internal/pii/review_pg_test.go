@@ -1,4 +1,4 @@
-package piidict
+package pii
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 )
 
@@ -34,7 +34,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	dict, _ := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
 	require.NoError(t, classes.Load(ctx, pool))
@@ -87,7 +87,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	dict, _ := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
 	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
@@ -151,7 +151,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 		GRANT SELECT ON public.slow_v TO `+f.agent.Role)
 	f.classify(t, time.Now())
 	ctx := context.Background()
-	dict, keys := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, keys := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	limits := sqlguard.DefaultLimits()
 	limits.StatementTimeout = 200 * time.Millisecond
 	log, out := newLog()
@@ -161,7 +161,7 @@ func TestScanSkipsAKeylessRelationThatTimesOut(t *testing.T) {
 	res, err := s.Cycle(ctx)
 	require.NoError(t, err, "the slow view is skipped, the cycle commits")
 	require.Equal(t, 1, res.Skipped)
-	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "order7@corp.ee", "")))
+	require.True(t, dict.Contains(corepii.EntityEmail, keys.TypedHash(corepii.EntityEmail, "order7@corp.ee", "")))
 	require.Contains(t, out.String(), "pii: skipped a relation in this scan")
 	require.Contains(t, out.String(), "public.slow_v")
 	require.NotContains(t, out.String(), "corp.ee", "names and counts only")
@@ -174,7 +174,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	pool, err := postgres.NewPool(context.Background(), f.agent.URL, 1)
 	require.NoError(t, err)
 	pool.Close() // every cycle fails
-	dict, _ := newDict(t, pii.DefaultDictionaryOptions(time.Now))
+	dict, _ := newDict(t, corepii.DefaultDictionaryOptions(time.Now))
 	log, out := newLog()
 	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: NewMap(slog.New(slog.DiscardHandler)), Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, log)
@@ -223,6 +223,6 @@ func TestDictionaryErrorsAreEngineErrors(t *testing.T) {
 	err := error(&DictionaryError{err: &pgconn.PgError{Code: "42P01", Message: "relation does not exist"}})
 	var pe *pgconn.PgError
 	require.False(t, errors.As(err, &pe), "a map reload's Postgres error is not the agent's SQL error")
-	err = &DictionaryError{err: pii.ErrDeltaFull}
-	require.ErrorIs(t, err, pii.ErrDeltaFull)
+	err = &DictionaryError{err: corepii.ErrDeltaFull}
+	require.ErrorIs(t, err, corepii.ErrDeltaFull)
 }

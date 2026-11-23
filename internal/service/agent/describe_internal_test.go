@@ -19,7 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/piidict"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // fakeCatalog is a Catalog over fixed relations and details.
@@ -78,24 +78,24 @@ func (f *fakeCatalog) Limits() action.Limits                       { return acti
 
 // fakeClasses is a ClassResolver over a fixed class map.
 type fakeClasses struct {
-	classes map[piidict.ColumnRef]piidict.Class
+	classes map[pii.ColumnRef]pii.Class
 	print   string
 }
 
-func (f fakeClasses) Resolve(_ context.Context, refs []piidict.ColumnRef) ([]piidict.Class, error) {
-	out := make([]piidict.Class, len(refs))
+func (f fakeClasses) Resolve(_ context.Context, refs []pii.ColumnRef) ([]pii.Class, error) {
+	out := make([]pii.Class, len(refs))
 	for i, r := range refs {
 		c, ok := f.classes[r]
 		if !ok {
-			c = piidict.Unclassified
+			c = pii.Unclassified
 		}
 		out[i] = c
 	}
 	return out, nil
 }
 
-func (f fakeClasses) Secrets(context.Context) ([]piidict.ColumnRef, error) {
-	var out []piidict.ColumnRef
+func (f fakeClasses) Secrets(context.Context) ([]pii.ColumnRef, error) {
+	var out []pii.ColumnRef
 	for r, c := range f.classes {
 		if c.Class == guardmodel.ClassSecret {
 			out = append(out, r)
@@ -172,7 +172,7 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 		lines:   []string{"shop.orders:TABLE"},
 		guarded: map[uint32]bool{ordersOID: true},
 	}
-	classes := fakeClasses{classes: map[piidict.ColumnRef]piidict.Class{
+	classes := fakeClasses{classes: map[pii.ColumnRef]pii.Class{
 		{TableOID: ordersOID, Attnum: 1}: {Class: guardmodel.ClassPublic},
 		{TableOID: ordersOID, Attnum: 2}: {Class: guardmodel.ClassSecret},
 		{TableOID: ordersOID, Attnum: 5}: {Class: guardmodel.ClassPublic},

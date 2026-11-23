@@ -9,11 +9,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	corepii "github.com/basaltdbhq/basaltdb/internal/core/pii"
 )
 
-// The card and IBAN checks are internal/core/pii's (pii.ValidCardNumber,
-// pii.ValidIBAN, pii.LuhnValid), shared with the tokenizer's patterns.
+// The card and IBAN checks are internal/core/pii's, imported here as corepii
+// (corepii.ValidCardNumber, corepii.ValidIBAN, corepii.LuhnValid), shared
+// with the tokenizer's patterns.
 
 // compact drops spaces and dashes, as cards, IBANs and IMEIs are often
 // written in groups.
@@ -40,17 +41,17 @@ func allASCIIDigits(s string) bool {
 
 func validCard(v string) bool {
 	c := compact(v)
-	return allASCIIDigits(c) && pii.ValidCardNumber(c)
+	return allASCIIDigits(c) && corepii.ValidCardNumber(c)
 }
 
-func validIBAN(v string) bool { return pii.ValidIBAN(compact(v)) }
+func validIBAN(v string) bool { return corepii.ValidIBAN(compact(v)) }
 
 // imeiDigits is the length of an IMEI with its Luhn check digit.
 const imeiDigits = 15
 
 func validIMEI(v string) bool {
 	c := compact(v)
-	return len(c) == imeiDigits && allASCIIDigits(c) && pii.LuhnValid(c)
+	return len(c) == imeiDigits && allASCIIDigits(c) && corepii.LuhnValid(c)
 }
 
 // validEmail is net/mail's address syntax, the bare address only, with a

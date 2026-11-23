@@ -43,6 +43,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/connecttest"
 )
@@ -178,7 +179,7 @@ func startHandoffEngine(t *testing.T, cfgPath string, o app.HandoffOptions) hand
 				return
 			}
 			err = app.RunWith(ctx, cfg, cfgPath, slog.New(slog.DiscardHandler), app.RestartOptions{Handoff: o})
-			if !errors.Is(err, app.ErrReload) || ctx.Err() != nil {
+			if !errors.Is(err, engine.ErrReload) || ctx.Err() != nil {
 				done <- err
 				return
 			}

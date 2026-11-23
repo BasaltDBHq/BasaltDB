@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 )
 
 // memLimitFactor sizes GOMEMLIMIT from pii.maxMemoryMB: a dictionary build
@@ -29,7 +30,7 @@ const envGoMemLimit = "GOMEMLIMIT"
 // wider than 0600 (the engine does not start), and the dictionary in pii/.
 // It sets GOMEMLIMIT from the budget and writes status.json.
 func openPII(stateDir string, p config.PII, log *slog.Logger) (*pii.FuseDictionary, error) {
-	if err := os.MkdirAll(stateDir, stateDirMode); err != nil {
+	if err := os.MkdirAll(stateDir, engine.StateDirMode); err != nil {
 		return nil, fmt.Errorf("pii: state directory %s: %w", stateDir, err)
 	}
 	keys, err := dictfile.LoadKeys(filepath.Join(stateDir, pii.KeyFileName), rand.Reader)

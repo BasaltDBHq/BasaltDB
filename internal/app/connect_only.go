@@ -20,12 +20,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/service/handoff"
 )
 
-// ErrReload is what Serve and Run return after they stopped to serve the
-// config again: an agent's connect-only setup changed (the person confirmed
-// its database, or basalt init --remote replaced the pending setup). The
-// caller reads the config again and runs the engine anew, in this process.
-var ErrReload = errors.New("the engine stopped to serve its config again")
-
 // HandoffOptions reach the connect service and the collected database for
 // the agents of a connect-only setup code. The zero value is the
 // contract's: the connect service at handoff.ServiceURL, the system's

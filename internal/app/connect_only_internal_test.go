@@ -136,18 +136,3 @@ func TestConnectOnlyAgentRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, waiting)
 }
-
-// A reload asked for while the engine waits makes the restart trigger
-// return, and marks it a reload.
-func TestUpgradeOrReload(t *testing.T) {
-	t.Parallel()
-	reload, reloading := make(chan struct{}, 1), make(chan struct{})
-	up := upgradeOrReload(nil, reload, reloading)
-	reload <- struct{}{}
-	require.NoError(t, up(t.Context()))
-	select {
-	case <-reloading:
-	default:
-		t.Fatal("not marked a reload")
-	}
-}

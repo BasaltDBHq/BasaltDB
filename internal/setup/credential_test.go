@@ -1,4 +1,4 @@
-package main
+package setup
 
 import (
 	"context"
@@ -23,8 +23,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/stretchr/testify/require"
-
-	"github.com/basaltdbhq/basaltdb/internal/setup"
 )
 
 // fakeProbe answers a probe by its sslmode and channel binding: answers maps
@@ -36,7 +34,7 @@ func fakeProbe(t *testing.T, answers map[string]error, seen *[]string) func(cont
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
 		q := u.Query()
-		key := q.Get(paramSSLMode) + "/" + q.Get(paramChannelBinding)
+		key := q.Get(ParamSSLMode) + "/" + q.Get(ParamChannelBinding)
 		*seen = append(*seen, key)
 		if err := answers[key]; err != nil {
 			return err
@@ -47,7 +45,7 @@ func fakeProbe(t *testing.T, answers map[string]error, seen *[]string) func(cont
 
 var (
 	errRefusedPassword = &pgconn.PgError{Code: sqlstateInvalidPassword, Message: "password authentication failed"}
-	errNoTenant        = &pgconn.PgError{Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant}
+	errNoTenant        = &pgconn.PgError{Code: SQLStateInternal, Message: SupavisorNoTenant}
 	errTooMany         = &pgconn.PgError{Code: "53300", Message: "too many connections"}
 )
 
@@ -150,10 +148,10 @@ func TestHardenedCredential(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var seen []string
-			got, p := hardenedCredential(context.Background(), fakeProbe(t, tc.answers, &seen), tc.dsn)
+			got, p := HardenedCredential(context.Background(), fakeProbe(t, tc.answers, &seen), pgErrors{}, tc.dsn)
 			require.Equal(t, tc.want, got)
 			require.Equal(t, tc.probes, seen)
-			line := p.line()
+			line := p.Line()
 			require.Regexp(t, `^basalt: connection [^\n]+\n$`, line, "one line")
 			require.Contains(t, line, tc.line)
 			require.NotContains(t, line, "pw@", "the line never carries the credential")
@@ -166,10 +164,10 @@ func TestHardenedCredentialStopsAtAnUnreachableDatabase(t *testing.T) {
 	dsn := "postgres://basalt_agent_bot:pw@db.example.com/postgres"
 	for _, err := range []error{context.DeadlineExceeded, &net.OpError{Op: "dial", Err: errors.New("connection refused")}} {
 		probes := 0
-		got, p := hardenedCredential(context.Background(), func(context.Context, string) error { probes++; return err }, dsn)
+		got, p := HardenedCredential(context.Background(), func(context.Context, string) error { probes++; return err }, pgErrors{}, dsn)
 		require.Equal(t, dsn, got)
 		require.Equal(t, 1, probes, "one probe that cannot reach the server is enough")
-		require.Contains(t, p.line(), "could not be reached")
+		require.Contains(t, p.Line(), "could not be reached")
 	}
 }
 
@@ -193,12 +191,12 @@ func TestHardenedCredentialProbesOnWhenOneAddressIsReached(t *testing.T) {
 	// A multi-host URL: the live server (untrusted certificate, channel
 	// binding) and a closed port.
 	dsn := "postgres://basalt_agent_bot:pw@db.example.test:" + strconv.Itoa(port) + ",db.example.test:" + strconv.Itoa(deadPort) + "/postgres?sslmode=prefer"
-	got, p := hardenedCredential(context.Background(), loopbackProbe, dsn)
+	got, p := HardenedCredential(context.Background(), loopbackProbe, pgErrors{}, dsn)
 	u, err := url.Parse(got)
 	require.NoError(t, err)
-	require.Equal(t, sslRequire, u.Query().Get(paramSSLMode), got)
-	require.Equal(t, bindingRequire, u.Query().Get(paramChannelBinding), got)
-	require.Contains(t, p.line(), "encrypted with channel binding")
+	require.Equal(t, sslRequire, u.Query().Get(ParamSSLMode), got)
+	require.Equal(t, bindingRequire, u.Query().Get(ParamChannelBinding), got)
+	require.Contains(t, p.Line(), "encrypted with channel binding")
 }
 
 // fakeServer is what a TLS Postgres front answers after the startup message.
@@ -287,7 +285,7 @@ func serveFake(conn net.Conn, ca testCA, kind fakeServer) {
 	}
 	switch kind {
 	case supavisor:
-		b.Send(&pgproto3.ErrorResponse{Severity: "FATAL", Code: setup.SQLStateInternal, Message: setup.SupavisorNoTenant})
+		b.Send(&pgproto3.ErrorResponse{Severity: "FATAL", Code: SQLStateInternal, Message: SupavisorNoTenant})
 		_ = b.Flush()
 		return
 	case postgresPlus:
@@ -338,15 +336,15 @@ func TestHardenedCredentialOverTLS(t *testing.T) {
 	}{
 		{
 			name: "Postgres with channel binding and a verified certificate", host: "db.example.test", params: rootcert,
-			kind: postgresPlus, mode: sslVerifyFull, binding: bindingRequire, line: "database identity verified, channel binding on",
+			kind: postgresPlus, mode: SSLVerifyFull, binding: bindingRequire, line: "database identity verified, channel binding on",
 		},
 		{
 			name: "PgBouncer: verified certificate, no channel binding", host: "db.example.test", params: rootcert,
-			kind: pgbouncer, mode: sslVerifyFull, line: "(the server offers no channel binding)",
+			kind: pgbouncer, mode: SSLVerifyFull, line: "(the server offers no channel binding)",
 		},
 		{
 			name: "Supabase pooler: verified certificate, answers before SASL", host: poolerHost, user: ".abcdefghijklmnopqrst", params: rootcert,
-			kind: supavisor, mode: sslVerifyFull, line: "(channel binding not available through the Supabase pooler)",
+			kind: supavisor, mode: SSLVerifyFull, line: "(channel binding not available through the Supabase pooler)",
 		},
 		{
 			name: "channel binding, certificate not trusted", host: "db.example.test", params: "sslmode=prefer",
@@ -365,19 +363,31 @@ func TestHardenedCredentialOverTLS(t *testing.T) {
 			t.Parallel()
 			port := startFakePostgres(t, ca, tc.kind)
 			dsn := "postgres://basalt_agent_bot" + tc.user + ":pw@" + tc.host + ":" + strconv.Itoa(port) + "/postgres?" + tc.params
-			got, p := hardenedCredential(context.Background(), loopbackProbe, dsn)
-			require.Contains(t, p.line(), tc.line)
+			got, p := HardenedCredential(context.Background(), loopbackProbe, pgErrors{}, dsn)
+			require.Contains(t, p.Line(), tc.line)
 			if tc.mode == "" {
 				require.Equal(t, dsn, got, "unchanged")
 				return
 			}
 			u, err := url.Parse(got)
 			require.NoError(t, err)
-			require.Equal(t, tc.mode, u.Query().Get(paramSSLMode), got)
-			require.Equal(t, tc.binding, u.Query().Get(paramChannelBinding), got)
+			require.Equal(t, tc.mode, u.Query().Get(ParamSSLMode), got)
+			require.Equal(t, tc.binding, u.Query().Get(ParamChannelBinding), got)
 			// The credential written gets as far as the probe did.
 			var pg *pgconn.PgError
 			require.ErrorAs(t, loopbackProbe(context.Background(), got), &pg)
 		})
 	}
+}
+
+// pgErrors is DBErrors on pgx's server errors, as the command table's glue
+// fills it.
+type pgErrors struct{}
+
+func (pgErrors) SQLState(err error) (string, string, bool) {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) {
+		return "", "", false
+	}
+	return pg.Code, pg.Message, true
 }

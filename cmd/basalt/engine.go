@@ -66,7 +66,7 @@ func runEngineOn(ctx context.Context, args []string, io cli.Stdio, h cli.Machine
 	// config: the first run serves its own pages on it.
 	var handed net.Listener
 	if engine.WaitsForConfig(engineTerminal{}, h.Euid(), engine.EnginePath(*configPath)) {
-		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: app.SetupAddr, Origin: app.SetupOrigin, ConfigPath: *configPath, Log: log})
+		ln, err := app.WaitForConfig(ctx, app.WaitOptions{Addr: setup.PageAddr, Origin: setup.PageOrigin, ConfigPath: *configPath, Log: log})
 		if err != nil {
 			if ctx.Err() != nil {
 				return cli.ExitOK

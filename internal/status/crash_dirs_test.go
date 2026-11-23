@@ -1,4 +1,4 @@
-package app
+package status
 
 import (
 	"path/filepath"
@@ -26,7 +26,7 @@ func TestCrashDirsFindAnEngineProcessPanic(t *testing.T) {
 	rep, err := rec.Save(servicespec.CrashInput{Command: "engine", Kind: servicespec.CrashKindPanic, ErrorCode: "INTERNAL", Value: "x", Stack: []byte("main.f()\n\t/src/a.go:1 +0x1\n")})
 	require.NoError(t, err)
 
-	got := crash.List(crashDirs(t.TempDir())...)
+	got := crash.List(CrashDirs(t.TempDir())...)
 	require.Len(t, got, 1)
 	require.Equal(t, rep.ID, got[0].ID)
 }

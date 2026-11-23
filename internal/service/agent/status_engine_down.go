@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	enginesvc "github.com/basaltdbhq/basaltdb/internal/engine"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -130,18 +131,13 @@ func (d EngineDown) unreachableError(tool, retry, message string) (*toolresult.T
 	return te, nil
 }
 
-// AbandonedMessage is the text of the answer to a request the engine took
-// and never answered (it closed the connection: it stopped, or it refused
-// the peer).
-const AbandonedMessage = "the basalt engine closed the connection before answering, so the call may or may not have run; call status, and read before you write again"
-
 // Abandoned is the tool error that answers a tools/call the engine took and
 // never answered: UNAVAILABLE ENGINE_UNREACHABLE with its steps. The call
 // may have run, so the agent checks status and never repeats it. It is nil
 // when the error cannot be built; the caller then answers with
-// AbandonedMessage alone.
+// engine.AbandonedMessage alone.
 func (d EngineDown) Abandoned(tool string) *toolresult.ToolError {
-	te, err := d.unreachableError(tool, "", AbandonedMessage)
+	te, err := d.unreachableError(tool, "", enginesvc.AbandonedMessage)
 	if err == nil {
 		return te
 	}

@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package app
 
 import (
 	"fmt"
@@ -27,7 +27,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
+	d, err := openRootConfigDir(SetupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -40,7 +40,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 	require.Empty(t, entries)
 	require.FileExists(t, filepath.Join(dir+".moved", "engine.json"))
 
-	_, err = openRootConfigDir(appSetupHost{}, dir, trusted)
+	_, err = openRootConfigDir(SetupHost{}, dir, trusted)
 	require.ErrorContains(t, err, "a symlink is refused")
 }
 
@@ -57,17 +57,17 @@ func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
 	dir := filepath.Join(root, "basalt")
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
+	d, err := openRootConfigDir(SetupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
-	_, err = rootEngineKey(appSetupHost{}, "/usr", runtime.GOOS, d, time.Now)
+	_, err = rootEngineKey(SetupHost{}, "/usr", runtime.GOOS, d, time.Now)
 	require.ErrorContains(t, err, fmt.Sprintf("the state directory /usr is owned by uid 0, not uid %d (the owner of the config directory %s)", os.Geteuid(), dir))
-	require.NoFileExists(t, filepath.Join("/usr", channel.KeyFileName))
+	require.NoFileExists(t, "/usr/"+channel.KeyFileName)
 
 	// Its own state directory: the key is made there.
 	state := filepath.Join(dir, "state")
 	require.NoError(t, os.Mkdir(state, 0o700))
-	spki, err := rootEngineKey(appSetupHost{}, state, runtime.GOOS, d, time.Now)
+	spki, err := rootEngineKey(SetupHost{}, state, runtime.GOOS, d, time.Now)
 	require.NoError(t, err)
 	require.NotEmpty(t, spki)
 }
@@ -94,7 +94,7 @@ func TestRootConfigDirUpsertStaysInTheOpenedDir(t *testing.T) {
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	trusted, err := rootTrustedOwner(dir)
 	require.NoError(t, err)
-	d, err := openRootConfigDir(appSetupHost{}, dir, trusted)
+	d, err := openRootConfigDir(SetupHost{}, dir, trusted)
 	require.NoError(t, err)
 	defer d.Close()
 	require.NoError(t, os.Rename(dir, dir+".moved"))
@@ -105,4 +105,16 @@ func TestRootConfigDirUpsertStaysInTheOpenedDir(t *testing.T) {
 	c, err := config.Load(filepath.Join(dir+".moved", "engine.json"))
 	require.NoError(t, err)
 	require.Equal(t, "bot", c.Agents[0].Name)
+}
+
+// requireEmptyDir fails when dir holds anything: root wrote nothing there.
+func requireEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.Empty(t, names, "root wrote through the planted link into %s", dir)
 }

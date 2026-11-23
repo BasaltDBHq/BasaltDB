@@ -66,7 +66,7 @@ type PortalverifyOptions struct {
 	Base string
 	// Files is the embedded copy; every regular file in it is checked.
 	Files fs.FS
-	// Client fetches; NewClient(Base) when nil.
+	// Client fetches; newClient(Base) when nil.
 	Client *http.Client
 	// Headers are the response headers every file must carry; only
 	// Content-Security-Policy is compared, plus the media type of .js.
@@ -95,17 +95,17 @@ type Route struct {
 	File string
 }
 
-// NotFoundFile is the portal's not-found page. Its host serves it, with
+// notFoundFile is the portal's not-found page. Its host serves it, with
 // status 404, at every path it has no file for, so Verify checks it at
-// NotFoundPath rather than at its own path.
-const NotFoundFile = "404.html"
+// notFoundPath rather than at its own path.
+const notFoundFile = "404.html"
 
-// NotFoundPath is a path no portal file or rewrite answers.
-const NotFoundPath = "/basalt-portal-verify-no-such-page"
+// notFoundPath is a path no portal file or rewrite answers.
+const notFoundPath = "/basalt-portal-verify-no-such-page"
 
-// ProbeID stands in for the id of an ID route; the portal's static rewrite
+// probeID stands in for the id of an ID route; the portal's static rewrite
 // ignores it.
-const ProbeID = "00000000-0000-7000-8000-000000000000"
+const probeID = "00000000-0000-7000-8000-000000000000"
 
 // ValidateURL accepts an https URL, or an http URL on a loopback host (a
 // test server), with no path, query, fragment or credentials. It returns
@@ -140,9 +140,9 @@ func isLoopback(host string) bool {
 
 var errOffOrigin = errors.New("redirected to another origin; not followed")
 
-// NewClient returns a client that follows redirects only within base's
+// newClient returns a client that follows redirects only within base's
 // origin.
-func NewClient(base string) *http.Client {
+func newClient(base string) *http.Client {
 	u, _ := url.Parse(base)
 	return &http.Client{
 		Timeout: requestTimeout,
@@ -199,8 +199,8 @@ func requestPath(p string) string {
 	return p
 }
 
-// Embedded lists the regular files of fsys, sorted.
-func Embedded(fsys fs.FS) ([]string, error) {
+// embedded lists the regular files of fsys, sorted.
+func embedded(fsys fs.FS) ([]string, error) {
 	var out []string
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
@@ -214,13 +214,13 @@ func Embedded(fsys fs.FS) ([]string, error) {
 
 // Verify checks every embedded file against the portal.
 func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
-	paths, err := Embedded(o.Files)
+	paths, err := embedded(o.Files)
 	if err != nil {
 		return nil, err
 	}
 	client := o.Client
 	if client == nil {
-		client = NewClient(o.Base)
+		client = newClient(o.Base)
 	}
 	r := &Report{PortalURL: o.Base, Files: make([]File, 0, len(paths))}
 	for _, p := range paths {
@@ -228,7 +228,7 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 		if err != nil {
 			return nil, err
 		}
-		if p == NotFoundFile {
+		if p == notFoundFile {
 			r.Files = append(r.Files, checkNotFound(ctx, client, o, want))
 			continue
 		}
@@ -241,7 +241,7 @@ func Verify(ctx context.Context, o PortalverifyOptions) (*Report, error) {
 		}
 		u := rt.Path
 		if rt.ID {
-			u += ProbeID
+			u += probeID
 		}
 		r.Files = append(r.Files, checkFile(ctx, client, o, u, u, want, o.headersFor(rt.File)))
 	}
@@ -323,23 +323,23 @@ func compare(p string, a answer, want []byte, hdr http.Header) File {
 	return File{Path: p, Status: StatusOK}
 }
 
-// checkNotFound fetches NotFoundPath and wants status 404 with the bytes of
+// checkNotFound fetches notFoundPath and wants status 404 with the bytes of
 // the not-found page. A 200 means the host answers unknown paths with
 // something else (a single-page fallback to the home page, say), which would
 // also hide the probes for files it must not serve; any other status is
 // reported as an error.
 func checkNotFound(ctx context.Context, c *http.Client, o PortalverifyOptions, want []byte) File {
-	a, err := get(ctx, c, o.Base, NotFoundPath)
+	a, err := get(ctx, c, o.Base, notFoundPath)
 	if err != nil {
-		return File{Path: NotFoundFile, Status: StatusError, Detail: errText(err)}
+		return File{Path: notFoundFile, Status: StatusError, Detail: errText(err)}
 	}
 	switch {
 	case a.status == http.StatusOK:
-		return File{Path: NotFoundFile, Status: StatusDiffers, Detail: fmt.Sprintf("HTTP %d at %s, want 404 with this page", a.status, NotFoundPath)}
+		return File{Path: notFoundFile, Status: StatusDiffers, Detail: fmt.Sprintf("HTTP %d at %s, want 404 with this page", a.status, notFoundPath)}
 	case a.status != http.StatusNotFound:
-		return File{Path: NotFoundFile, Status: StatusError, Detail: fmt.Sprintf("HTTP %d at %s", a.status, NotFoundPath)}
+		return File{Path: notFoundFile, Status: StatusError, Detail: fmt.Sprintf("HTTP %d at %s", a.status, notFoundPath)}
 	}
-	return compare(NotFoundFile, a, want, o.headersFor(NotFoundFile))
+	return compare(notFoundFile, a, want, o.headersFor(notFoundFile))
 }
 
 // headerProblem names the first wrong header: the CSP must equal the

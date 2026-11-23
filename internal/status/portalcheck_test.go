@@ -114,7 +114,7 @@ func TestTheResultIsSavedOwnerOnly(t *testing.T) {
 	dir := t.TempDir()
 	checker(dir, report(File{Path: "a", Status: StatusDiffers}), nil).Check(context.Background())
 
-	st, err := os.Stat(filepath.Join(dir, FileName))
+	st, err := os.Stat(filepath.Join(dir, fileName))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
 }

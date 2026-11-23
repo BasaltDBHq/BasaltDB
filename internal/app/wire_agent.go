@@ -133,7 +133,7 @@ func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byt
 		return nil
 	}
 	if req.Method != "tools/call" {
-		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, agent.AbandonedMessage)
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
 	}
 	var p struct {
 		Name string `json:"name"`
@@ -141,7 +141,7 @@ func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byt
 	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
 	te := s.down.Abandoned(p.Name)
 	if te == nil {
-		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, agent.AbandonedMessage)
+		return mcpserver.WriteError(out, req.ID, mcpserver.ErrCodeServer, engine.AbandonedMessage)
 	}
 	return mcpserver.WriteToolError(out, req.ID, te)
 }

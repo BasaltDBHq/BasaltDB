@@ -258,8 +258,9 @@ type remoteInit struct {
 	// and closes files.
 	unlock func()
 	// loggedIn: the role logs in with the credential (or its .pending one,
-	// then moved over the credential file). installed is the guard version
-	// it sees, recorded whether the pending setup is recorded.
+	// then moved over the credential file once the pending setup is
+	// recorded). installed is the guard version it sees, recorded whether
+	// the pending setup is recorded.
 	loggedIn, recorded bool
 	installed          int
 	// stateDir is the engine's state directory, where its key file is.
@@ -502,9 +503,6 @@ type credFiles interface {
 	read(path string) (string, os.FileInfo, error)
 	// stat is the file at path, not following a link.
 	stat(path string) (os.FileInfo, error)
-	// sameFile reports whether path still names the file fi describes, a
-	// regular file with one link, not following a link.
-	sameFile(path string, fi os.FileInfo) error
 	write(path string, data []byte) error
 	rename(from, to string) error
 	// remove removes the file at path, not following a link.
@@ -526,10 +524,6 @@ func (pathCredFiles) read(path string) (string, os.FileInfo, error) {
 }
 
 func (pathCredFiles) stat(path string) (os.FileInfo, error) { return os.Lstat(path) }
-
-func (pathCredFiles) sameFile(path string, fi os.FileInfo) error {
-	return config.SameCredentialFile(path, fi)
-}
 
 func (pathCredFiles) write(path string, data []byte) error { return config.WriteFile(path, data) }
 
@@ -702,10 +696,13 @@ func (r *remoteInit) login(pending, cred *credential) error {
 // regular file with one link.
 func (r *remoteInit) promote(pending *credential) error {
 	pendingFile := r.credFile + pendingSuffix
-	if err := r.files.sameFile(pendingFile, pending.file); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
+	now, err := r.files.stat(pendingFile)
+	if err != nil {
+		return err
+	}
+	// The engine's check (config.SameCredentialFile): the same file, still
+	// a regular file with one link.
+	if !os.SameFile(now, pending.file) || config.CheckPlainFile(now) != nil {
 		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
 	}
 	if err := r.files.rename(pendingFile, r.credFile); err != nil {
@@ -1173,11 +1170,17 @@ func encodeSetup(p setupcode.Payload) (string, error) {
 // writeCredential writes a new password's connection string. It never
 // replaces a credential file that exists: a login refused now may be a
 // transient error, and the old password may still be the one that works,
-// so the new one waits in .pending until a login proves it (the engine,
-// or the next run of init, then moves it over). Only the first credential
-// goes straight to the credential file. Both 0600, atomic, never through
-// a symlink (config.WriteFile). A password this machine already holds is
-// not written again.
+// so the new one waits in .pending until a login proves it and the pending
+// setup is recorded (the engine, or the next run of init, then moves it
+// over). Only the first credential goes straight to the credential file.
+// Both 0600, atomic, never through a symlink (config.WriteFile). A password
+// this machine already holds is not written again.
+//
+// One state is left as is: with the credential file deleted by hand, a
+// .pending that logs in for a setup not recorded, and a new password
+// (confirmedNotFound), the new password goes to the credential file while
+// the working one stays in .pending. init never deletes the credential
+// file itself, so only a hand edit reaches this state.
 func (r *remoteInit) writeCredential(p plan) error {
 	if !p.newPassword {
 		return nil

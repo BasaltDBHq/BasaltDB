@@ -283,14 +283,6 @@ func (r rootCredFiles) stat(path string) (os.FileInfo, error) {
 	return f.Stat()
 }
 
-func (r rootCredFiles) sameFile(path string, fi os.FileInfo) error {
-	name, err := r.name(path)
-	if err != nil {
-		return err
-	}
-	return config.SameFileAt(r.dir, name, fi)
-}
-
 func (r rootCredFiles) write(path string, data []byte) error {
 	name, err := r.name(path)
 	if err != nil {

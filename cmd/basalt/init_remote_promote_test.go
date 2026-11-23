@@ -167,6 +167,37 @@ func TestInitRemotePromoteRefusesAChangedPending(t *testing.T) {
 	}
 }
 
+// An error reaching .pending before the move is returned as it is, not as
+// a changed file: as root, a .pending swapped for a symlink fails to open
+// (the directory is reached without following links), and nothing moves.
+func TestInitRemotePromoteReturnsTheErrorReachingPending(t *testing.T) {
+	t.Parallel()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	credFile := filepath.Join(dir, "bot.url")
+	const old = "postgres://bt_agent_bot:old@db.example.com:5432/app\n"
+	require.NoError(t, config.WriteFile(credFile, []byte(old)))
+	require.NoError(t, config.WriteFile(credFile+pendingSuffix, []byte("postgres://bt_agent_bot:new@db.example.com:5432/app\n")))
+	files, err := openRootCredFiles(appSetupHost{}, dir, os.Geteuid())
+	require.NoError(t, err)
+	t.Cleanup(files.close)
+	r := &remoteInit{credFile: credFile, files: files}
+	pending, err := readCredentialIfAny(r.files, credFile+pendingSuffix)
+	require.NoError(t, err)
+
+	elsewhere := filepath.Join(dir, "elsewhere.url")
+	require.NoError(t, os.Rename(credFile+pendingSuffix, elsewhere))
+	require.NoError(t, os.Symlink(elsewhere, credFile+pendingSuffix))
+	_, want := files.stat(credFile + pendingSuffix)
+	require.Error(t, want)
+	err = r.promote(pending)
+	require.Equal(t, want.Error(), err.Error(), "the open error itself")
+	require.NotContains(t, err.Error(), "changed while basalt init ran")
+	got, err := os.ReadFile(credFile)
+	require.NoError(t, err)
+	require.Equal(t, old, string(got), "the credential file is unchanged")
+}
+
 // A lock another run holds keeps init --remote's message, and is still
 // config.ErrLocked, by path and through the directory root opens.
 func TestInitRemoteLockedKeepsItsMessageAndErrLocked(t *testing.T) {

@@ -284,3 +284,62 @@ func TestRegisterChecksCatchProblems(t *testing.T) {
 		}
 	}
 }
+
+// TestNewTreeLayers checks the layer table of the new tree (domain folders):
+// platform transports are inbound, the rest of platform outbound, a domain's
+// in/ and out/ are inbound and outbound and its root is a service; the store
+// keeps its sqlguard exception and the plugin path rule its owner at the new
+// paths, and the moved test helpers stay exempt.
+func TestNewTreeLayers(t *testing.T) {
+	m := modulePath + "/"
+	guard := "package sqlguard\n\nfunc Check() {}\nfunc Other() {}\nfunc WithRowVersions() {}\n"
+	use := func(fn string) string { return "\nvar _ = sqlguard." + fn + "\n" }
+	sg := "import \"" + m + "internal/core/sqlguard\"\n"
+	files := map[string]string{
+		"go.mod":                                 "module " + modulePath + "\n",
+		"internal/core/sqlguard/g.go":            guard,
+		"internal/platform/postgres/store/s.go":  "package store\n\n" + sg + use("Check") + use("WithRowVersions"),
+		"internal/platform/postgres/other/o.go":  "package other\n\n" + sg + use("Check"),
+		"internal/platform/mcpserver/m.go":       "package mcpserver\n\n" + imp(m+"internal/setup"),
+		"internal/platform/vault/v.go":           "package vault\n\n" + imp(m+"internal/setup"),
+		"internal/platform/vault/vaulttest/h.go": "package vaulttest\n\n" + imp(m+"internal/setup"),
+		"internal/setup/s.go":                    "package setup\n\n" + imp("net/http", m+"internal/platform/vault"),
+		"internal/setup/in/setupcli/c.go":        "package setupcli\n\n" + imp(m+"internal/setup", m+"internal/platform/mcpserver"),
+		"internal/setup/out/trustdir/t.go":       "package trustdir\n\n" + imp(m+"internal/setup"),
+		"internal/plugin/p.go":                   "package plugin\n\nfunc UsePathRules() {}\n",
+		"internal/platform/osservice/o.go":       "package osservice\n\nimport \"" + m + "internal/plugin\"\n\nfunc init() { plugin.UsePathRules() }\n",
+		"internal/app/a.go":                      "package app\n\nimport \"" + m + "internal/plugin\"\n\nfunc init() { plugin.UsePathRules() }\n",
+		"internal/zzz/z.go":                      "package zzz\n",
+		"ARCHITECTURE.md":                        "| `sqlguard` | sql | decision | 1 | - | `Other` |\n",
+	}
+	root := fixture(t, files)
+	reg, err := parseRegister(filepath.Join(root, "ARCHITECTURE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := analyze(root, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"internal/platform/postgres/other": {"o.go calls sqlguard.Check"},
+		"internal/platform/vault":          {"imports internal/setup"},
+		"internal/setup": {
+			"imports internal/platform/vault",
+			"s.go imports net/http (a service reaches the database and the network through a port)",
+		},
+		"internal/setup/out/trustdir": {"imports internal/setup"},
+		"internal/platform/osservice": {"imports internal/plugin", "o.go calls pluginhost.UsePathRules (only internal/app installs the path rule)"},
+		"internal/zzz":                {"package is under internal/ but not in a layer"},
+	}
+	for pkg, lines := range want {
+		if strings.Join(got[pkg], "|") != strings.Join(lines, "|") {
+			t.Errorf("%s: got %q, want %q", pkg, got[pkg], lines)
+		}
+	}
+	for pkg := range got {
+		if _, ok := want[pkg]; !ok {
+			t.Errorf("unexpected violations in %s: %q", pkg, got[pkg])
+		}
+	}
+}

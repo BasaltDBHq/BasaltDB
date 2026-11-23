@@ -31,6 +31,10 @@ func (engineCLIHost) CommandName(args []string) string { return commandName(args
 
 func (engineCLIHost) Fail(w io.Writer, name string, err error) int { return fail(w, name, err) }
 
+func (engineCLIHost) RunServiceAt(ctx context.Context, args []string, io cli.Stdio, configPath string) int {
+	return runServiceAt(ctx, args, io, configPath)
+}
+
 func (engineCLIHost) EngineLog(w io.Writer) *slog.Logger { return engineLog(w) }
 
 func (engineCLIHost) EngineDown(name, configPath string, log *slog.Logger) (agent.EngineDown, error) {

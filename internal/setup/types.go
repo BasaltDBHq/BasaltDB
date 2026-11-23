@@ -31,6 +31,11 @@ type Querier = interface {
 	QueryRow(ctx context.Context, sql string, args ...any) Row
 }
 
+// TxRunner runs fn in one transaction on the admin connection: committed
+// when fn returns nil, rolled back when it returns an error, which TxRunner
+// returns.
+type TxRunner func(ctx context.Context, fn func(tx Querier) error) error
+
 // ActivePasskey is an active passkey as the doctor lists it.
 type ActivePasskey struct {
 	Credential passkey.Credential

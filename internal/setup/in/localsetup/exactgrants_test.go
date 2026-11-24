@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -44,11 +45,11 @@ func directGrants(t *testing.T, f *fixture, role string) []string {
 		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 		CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
 		JOIN pg_catalog.pg_roles r ON r.oid = a.grantee
-		WHERE n.nspname = 'public' AND r.rolname = $1
-		ORDER BY 1 COLLATE "C"`, role)
+		WHERE n.nspname = 'public' AND r.rolname = $1`, role)
 	require.NoError(t, err)
 	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
+	slices.Sort(out)
 	return out
 }
 

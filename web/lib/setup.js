@@ -8,7 +8,7 @@ import { $, el, webauthnError } from "./page.js";
 import { answersFor, ENTITY_WORDS, fingerprintText, Labels, MAX_LABELS, restNote, tableName, trustRootFrom } from "./picks.js";
 import { labelRow } from "./pickviews.js";
 import { confirmView, factsDiffer, paintConfirm, stringFacts } from "./confirm.js";
-import { ALL_SET, checkView, laterText, passkeyItems, PASSKEYS_NOTE, RESET, signalRemoved, targetView } from "./doctor.js";
+import { ALL_SET, checkView, columnKey, laterText, passkeyItems, PASSKEYS_NOTE, RESET, signalRemoved, targetView } from "./doctor.js";
 import { browserFetch } from "./transport.js";
 
 export const CHECK_PATH = "/api/v1/setup/check";
@@ -1611,7 +1611,7 @@ export function startUpdate(link, env) {
     const stop = labels.problem(tables);
     if (stop) return problem("labels-error", stop);
     const fields = labelFields(labels, columnsMore, !$("rest-choice").hidden && $("rest-mark").checked);
-    const leave = () => saveLeft(labels.unlabeled(tables).map((c) => `${c.table}.${c.column}`));
+    const leave = () => saveLeft(labels.unlabeled(tables).map((c) => columnKey(c.table, c.column)));
     if (!fields.columnClasses && !fields.restPublic) {
       leave();
       return afterFix(); // left unlabeled for now: no run

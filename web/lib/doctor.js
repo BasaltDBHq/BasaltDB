@@ -50,8 +50,8 @@ export function certificateRow(database) {
   return { title: `${database || "Your database"} renewed its security certificate`, text: "Your agents are paused until you confirm." };
 }
 
-// FIX_JOBS are the fixes a row's action starts, in the order "Fix these"
-// walks them. UPDATE is the guard update, which opens its own job.
+// FIX_ORDER are the fixes a critical row's action starts, in the order the
+// rows list them. UPDATE is the guard update, which opens its own job.
 export const FIX_ORDER = ["TRUST", "UPDATE", "PASSKEY_ADD", "REPAIR"];
 
 export const MAX_WARNINGS = 3;
@@ -59,11 +59,19 @@ export const READY_SUB = "BasaltDB is running and your agents can connect.";
 export const ALL_SET = { title: "All set", text: "Close this tab and go back to your agent. It can work now.", later: "Run `basalt init` to change it." };
 export const LEFT_NOTE = "you chose to leave them for now";
 
+// localPasskeys counts the passkeys of origin: the devices that approve on
+// this page's pages.
 export function localPasskeys(passkeys, origin) {
   return (passkeys?.items ?? []).filter((k) => k?.origin === origin).length;
 }
 
-// leftUnlabeled: every unlabeled column was one the person chose to leave.
+// columnKey is a column as doctor names it, schema.table.column: the
+// labels page's table is schema.table, and a bare table is in public.
+export function columnKey(table, column) {
+  return `${String(table).includes(".") ? table : `public.${table}`}.${column}`;
+}
+
+// allLeft: every unlabeled column is one the person chose to leave.
 const allLeft = (columns, left) => columns.length > 0 && columns.every((c) => left.includes(c));
 
 // checkView is the check-up. Critical rows stop BasaltDB working and each
@@ -88,6 +96,10 @@ export function checkView(d, origin, left = []) {
   if (d.passkeys?.state === "NONE") critical("PASSKEY_ADD", NO_PASSKEY.title, NO_PASSKEY.text, "Add a passkey", "Add a passkey to finish. Until then, writes over 10 rows wait.");
   if (d.login?.code === "CREDENTIAL_REJECTED") critical("REPAIR", "Your agent can't log in", "Its database password was changed or removed.", "Fix", "Fix your agent's login to finish. Until then, it can't connect.");
   else if (d.login) critical(null, "Your agent can't connect", String(d.login.message ?? ""), "", "Your agent has to connect before setup is done.");
+  // BasaltDB could not read the database and nothing else says why: it
+  // cannot say it is running, so setup is not done.
+  const cannotCheck = unknown && crit.length === 0;
+  if (cannotCheck) critical(null, "BasaltDB can't check your database yet", "The rest is checked once BasaltDB can connect.", "", "BasaltDB has to reach your database before setup is done.");
   const labelCols = d.labels?.state === "UNLABELED" ? (d.labels.columns ?? []) : [];
   let leftNote = false;
   if (d.labels?.state === "UNLABELED") {
@@ -103,7 +115,7 @@ export function checkView(d, origin, left = []) {
   }
   if (d.passkeys?.state === "OK") ok.push({ job: "MANAGE", mark: "✓", tone: "good", title: "Passkeys", text: devicesText(devices), action: "Manage" });
   const later = (title) => ({ job: null, mark: "·", tone: "later", title, text: "Checked once BasaltDB can connect.", action: "" });
-  if (d.passkeys?.state === "UNKNOWN") ok.push(later("Passkeys"));
+  if (d.passkeys?.state === "UNKNOWN" && !cannotCheck) ok.push(later("Passkeys"));
   const shown = [...crit, ...warn.slice(0, MAX_WARNINGS), ...ok];
   const more = warn.slice(MAX_WARNINGS);
   const ready = crit.length === 0;
@@ -124,11 +136,14 @@ export function laterText(later) {
   return later.length === 0 ? "" : `Left for later: ${later.join(", ")}. ${ALL_SET.later}`;
 }
 
+// fixQueue is the critical fixes for a doctor answer, in order. Warnings
+// (the unlabeled columns) have no fix of their own to run.
 export function fixQueue(d, origin) {
   const jobs = checkView(d, origin).rows.filter((r) => r.tone === "critical").map((r) => r.job).filter((j) => FIX_ORDER.includes(j));
   return FIX_ORDER.filter((j) => jobs.includes(j));
 }
 
+// dayMonth is a date as the list shows it: "3 Nov".
 export function dayMonth(t) {
   const d = new Date(t);
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;

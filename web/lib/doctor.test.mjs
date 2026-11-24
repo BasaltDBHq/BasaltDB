@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { checkView, columnName, fixQueue, laterText, passkeyItems, passkeyLine, signalRemoved, usedText } from "./doctor.js";
+import { checkView, columnKey, columnName, fixQueue, laterText, passkeyItems, passkeyLine, signalRemoved, usedText } from "./doctor.js";
 
 const ORIGIN = "http://localhost:8787";
 const local = (label, extra = {}) => ({ credentialId: label, label, rpId: "localhost", origin: ORIGIN, createdAt: "2026-11-03T12:00:00Z", ...extra });
@@ -70,6 +70,24 @@ test("unlabeled columns are a warning that never blocks; a saved choice is said"
   assert.equal(partly.rows[0].text, "orders.a, orders.b", "a column the person did not choose is new");
   assert.equal(checkView({ ...good, labels: { ...labels, count: 1, columns: ["s.t.c"] } }, ORIGIN).rows[0].title, "1 column has no label");
   assert.deepEqual(fixQueue({ ...good, labels }, ORIGIN), [], "Fix these never walks the labels");
+});
+
+test("a database BasaltDB cannot read yet is critical, never Ready", () => {
+  const d = { ...good, database: undefined, labels: { state: "UNKNOWN" }, passkeys: { state: "UNKNOWN" } };
+  const v = checkView(d, ORIGIN);
+  assert.equal(v.title, "1 thing needs you");
+  assert.equal(v.sub, "The rest is checked once BasaltDB can connect.");
+  assert.deepEqual(v.rows.map((r) => [r.tone, r.title, r.text, r.action]), [["critical", "BasaltDB can't check your database yet", "The rest is checked once BasaltDB can connect.", ""]]);
+  assert.deepEqual(v.done, { enabled: false, why: "BasaltDB has to reach your database before setup is done." });
+});
+
+test("the labels page's columns match doctor's names, so the saved choice is said", () => {
+  const saved = [columnKey("public.leads", "id"), columnKey("leads", "name")];
+  assert.deepEqual(saved, ["public.leads.id", "public.leads.name"]);
+  assert.equal(columnKey("sales.orders", "id"), "sales.orders.id");
+  const labels = { state: "UNLABELED", count: 2, columns: ["public.leads.id", "public.leads.name"] };
+  const v = checkView({ ...good, labels }, ORIGIN, saved);
+  assert.ok(v.rows[0].text.endsWith("you chose to leave them for now"));
 });
 
 test("more than 3 warnings fold the rest", () => {

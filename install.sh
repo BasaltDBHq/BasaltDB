@@ -58,10 +58,12 @@ resolve_tag() {
 		;;
 	latest | "")
 		# Follow the Releases "latest" redirect (no jq).
-		# Include prereleases. /releases/latest skips them.
+		# Include prereleases. /releases/latest skips them. Never a release
+		# candidate (v*-rc.N): those are for testing, not for installs.
 		tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
 			"https://api.github.com/repos/${BASALTDB_REPO}/releases?per_page=10" |
-			tr ',' '\n' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+			tr ',' '\n' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' |
+			grep -Ev -- '-rc\.[0-9]+$' | head -n 1)
 		if [ -z "$tag" ]; then
 			echo "install.sh: could not resolve latest release (GitHub API unavailable, or no v* tag visible)" >&2
 			echo "install.sh: build from source instead: https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/install.md" >&2

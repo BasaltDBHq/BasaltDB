@@ -3,6 +3,15 @@ name: Release
 # Only a v* tag pushed by hand (docs/RELEASING.md).
 # Never runs on master/main, pull_request, or workflow_dispatch.
 # This workflow never creates or pushes git tags.
+#
+# Two kinds of tag (scripts/release-kind.sh):
+#   rc   v<semver>-rc.<N>, e.g. v0.1.0-alpha-rc.1: build, run the end-to-end
+#        test on macOS (arm64, Intel) and Ubuntu against the built archives,
+#        then publish those same files as a GitHub prerelease. No Homebrew,
+#        npm, MCP registry or portal check.
+#   tag  every other v* tag, e.g. v0.1.0-alpha: refused unless a release
+#        candidate of it on the same commit passed (scripts/rc-gate.sh), then
+#        built, signed and published with notes from CHANGELOG.md.
 on:
   push:
     tags: ["v*"]
@@ -15,8 +24,231 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  kind:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      kind: ${{ steps.kind.outputs.kind }}
+      stable: ${{ steps.kind.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Refuse non-tag publish
+        id: kind
+        run: |
+          set -eu
+          kind=$(sh scripts/release-kind.sh "${GITHUB_EVENT_NAME}" "${GITHUB_REF}")
+          case "$kind" in
+          rc) stable=${GITHUB_REF_NAME%-rc.*} ;;
+          tag) stable=${GITHUB_REF_NAME} ;;
+          *) echo "release-kind.sh says ${kind} for ${GITHUB_REF}: nothing to release" >&2; exit 1 ;;
+          esac
+          sh scripts/require-v-tag.sh "${GITHUB_REF_NAME}"
+          sh scripts/require-v-tag.sh "${stable}"
+          echo "kind=${kind}" >> "${GITHUB_OUTPUT}"
+          echo "stable=${stable}" >> "${GITHUB_OUTPUT}"
+          echo "${GITHUB_REF_NAME}: ${kind} (stable tag ${stable})"
+
+      # The stable tag publishes the notes of its CHANGELOG.md section and is
+      # pushed on this same commit, so a release candidate whose commit has no
+      # notes could never be promoted. Fail it here, before the e2e runs.
+      - name: CHANGELOG.md has notes for the stable tag
+        env:
+          STABLE: ${{ steps.kind.outputs.stable }}
+        run: sh scripts/release-notes.sh "${STABLE}" > /dev/null
+
+  # ---- rc: build, end-to-end test, prerelease of the tested files ----
+
+  build:
+    needs: kind
+    if: needs.kind.outputs.kind == 'rc'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Keyless signing: cosign trades the job's OIDC token for a short-lived
+      # Sigstore certificate naming this workflow and tag.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3, no floating v4 tag
+
+      # Builds, packages, checksums and signs; publishes nothing. The publish
+      # job uploads exactly these files once every e2e leg passed.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A commit can carry several tags (rc.1, rc.2, the stable one):
+          # build this one, not the one GoReleaser would pick from git.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          BASALT_VERSION: ${{ github.ref_name }}
+          RELEASE_KIND: rc
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PUBLISH_HOMEBREW: "false"
+          HOMEBREW_TAP_GITHUB_TOKEN: ""
+
+      # GoReleaser attaches it at publish (release.extra_files); the rc
+      # publishes without GoReleaser, so it travels with the archives.
+      - name: Add portal.sha256
+        run: cp web/portal.sha256 dist/portal.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: basaltdb-${{ github.ref_name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.apk
+            dist/SHA256SUMS
+            dist/SHA256SUMS.sigstore.json
+            dist/portal.sha256
+          if-no-files-found: error
+
+  # The released basalt binary, end to end, on each runner. scripts/rc-gate.sh
+  # looks for these job names: keep "e2e (<runner>)" and keep its runner list
+  # in step with this matrix (scripts/rc-gate_test.sh checks both).
+  e2e:
+    name: e2e (${{ matrix.runner }})
+    needs: [kind, build]
+    if: needs.kind.outputs.kind == 'rc'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            os: darwin
+            arch: arm64
+            expect_uname: arm64
+          - runner: macos-15-intel
+            os: darwin
+            arch: amd64
+            expect_uname: x86_64
+          - runner: ubuntu-latest
+            os: linux
+            arch: amd64
+            expect_uname: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # For e2e/release: go run of its helpers, Node and Playwright.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: basaltdb-${{ github.ref_name }}
+          path: dist
+
+      - name: Verify runner arch, checksum, and archive
+        env:
+          TARGET: ${{ matrix.os }}_${{ matrix.arch }}
+          EXPECT_UNAME: ${{ matrix.expect_uname }}
+        run: |
+          set -euo pipefail
+          archive="basaltdb_${GITHUB_REF_NAME#v}_${TARGET}.tar.gz"
+          got=$(uname -m)
+          echo "runner=${RUNNER_NAME} uname-m=${got} expect=${EXPECT_UNAME} archive=${archive}"
+          test "$got" = "$EXPECT_UNAME"
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            grep " ${archive}$" SHA256SUMS | sha256sum -c -
+          else
+            grep " ${archive}$" SHA256SUMS | shasum -a 256 -c -
+          fi
+          mkdir extract
+          tar -xzf "$archive" -C extract
+          test -x extract/basalt
+
+      # e2e/release/run.sh is the full test (setup page, passkey, MCP, held
+      # write, approval, revert, remove); it cleans up after itself, also on
+      # failure. A commit without it runs the archive smoke only.
+      - name: End-to-end test
+        env:
+          EXPECT_UNAME: ${{ matrix.expect_uname }}
+        run: |
+          set -eu
+          if [ -f e2e/release/run.sh ]; then
+            sh e2e/release/run.sh "$PWD/dist/extract"
+          else
+            echo "e2e/release/run.sh is not in this commit: archive smoke only"
+            sh scripts/release-archive-smoke.sh dist/extract
+          fi
+
+  publish:
+    needs: [kind, e2e]
+    if: needs.kind.outputs.kind == 'rc'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: basaltdb-${{ github.ref_name }}
+          path: dist
+
+      # The files every e2e leg ran, not a rebuild. A re-run after a partial
+      # upload replaces what is there.
+      - name: Publish the prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          STABLE: ${{ needs.kind.outputs.stable }}
+        run: |
+          set -eu
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" --clobber dist/*
+          else
+            gh release create "$TAG" --verify-tag --prerelease --title "$TAG" \
+              --notes "Release candidate for ${STABLE}. Not for general use." dist/*
+          fi
+
+  # ---- stable tag: refuse without a passing rc, then release ----
+
+  gate:
+    needs: kind
+    if: needs.kind.outputs.kind == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: A release candidate of this tag passed on this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh scripts/rc-gate.sh "${GITHUB_REF_NAME}"
+
+  release:
+    needs: [kind, gate]
+    if: needs.kind.outputs.kind == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -52,6 +284,9 @@ jobs:
           echo "RELEASE_KIND=tag" >> "${GITHUB_ENV}"
           echo "ARTIFACT_NAME=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
 
+      - name: Release notes from CHANGELOG.md
+        run: sh scripts/release-notes.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"
+
       # Only the GitHub release needs the default GITHUB_TOKEN. The Homebrew
       # formula is uploaded only when the repository variable PUBLISH_HOMEBREW
       # is "true"; the tap token is passed in only then (docs/RELEASING.md).
@@ -59,9 +294,12 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The commit also carries its rc tags: build this one, not the one
+          # GoReleaser would pick from git.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           BASALT_VERSION: ${{ env.BASALT_VERSION }}
           RELEASE_KIND: ${{ env.RELEASE_KIND }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -83,11 +321,11 @@ jobs:
             dist/SHA256SUMS.sigstore.json
           if-no-files-found: error
 
-  # Off unless the repository variable PUBLISH_NPM is "true".
+  # Off unless the repository variable PUBLISH_NPM is "true". Stable tags only.
   npm:
     name: Publish npm
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true'
-    needs: release
+    if: needs.kind.outputs.kind == 'tag' && vars.PUBLISH_NPM == 'true'
+    needs: [kind, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,15 +350,15 @@ jobs:
 
   # Off unless the repository variable PUBLISH_MCP_REGISTRY is "true". It runs
   # after the npm job when that is on, and on its own when npm is off (the
-  # registry entry points at a package that is already on npm).
+  # registry entry points at a package that is already on npm). Stable tags only.
   mcp-registry:
     name: Publish MCP registry
     if: >-
-      !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+      !cancelled() && needs.kind.outputs.kind == 'tag'
       && vars.PUBLISH_MCP_REGISTRY == 'true'
       && needs.release.result == 'success'
       && (needs.npm.result == 'success' || needs.npm.result == 'skipped')
-    needs: [release, npm]
+    needs: [kind, release, npm]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -142,10 +380,11 @@ jobs:
   # its manifest web/portal.sha256 must match them (CONTRACT.md, CLI, Portal
   # check). Read-only: public pages over HTTPS. A mismatch fails this job,
   # after the release, so the maintainers deploy the portal or find out why.
+  # Stable tags only.
   portal-check:
     name: Portal check
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: release
+    if: needs.kind.outputs.kind == 'tag'
+    needs: [kind, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read

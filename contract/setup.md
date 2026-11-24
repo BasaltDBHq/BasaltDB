@@ -17,6 +17,7 @@ The CLI side is [`basalt init`](cli.md#basalt-init). The sections from [Agents a
 | The admin string goes to | the engine, over loopback, used once, never stored | the connect service, in one request's memory, never stored |
 | The SQL runs in | the engine | the connect service |
 | The passkey belongs to | `localhost` | `basaltvault.app` |
+| A string with no `sslmode` for Supabase or Amazon RDS | gets `sslmode=verify-full` and the built-in profile's roots ([No `sslmode` for a provider's host](trust.md#trust-profiles)) | always verified by the connect service; the engine's credential has `sslmode=verify-full` |
 
 There is no second way to set up: no terminal prompt for the admin string, no admin string in an environment variable, no setup code a person runs on their own computer ([Removed: the laptop setup command](#removed-the-laptop-setup-command)).
 

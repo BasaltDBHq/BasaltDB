@@ -263,8 +263,10 @@ func (s *Service) checkBinding(req Request, b bound) error {
 // passkey in one transaction, then the agent's credential and engine.json,
 // written as this engine's own user. One run at a time.
 func (s *Service) Run(ctx context.Context, req Request) (RunAnswer, error) {
+	given := req.DatabaseURL
+	req.DatabaseURL = s.verifyByDefault(given)
 	a, err := s.run(ctx, req)
-	return a, scrub(err, req.DatabaseURL)
+	return a, scrub(scrub(err, given), req.DatabaseURL)
 }
 
 func (s *Service) run(ctx context.Context, req Request) (RunAnswer, error) {

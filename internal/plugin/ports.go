@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/pluginmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
@@ -68,6 +69,12 @@ type Ports struct {
 	// SystemdOverrides are the drop-ins systemd reads for a unit on this
 	// machine (Linux only).
 	SystemdOverrides func(unit string) ([]string, error)
+	// ReadConfig reads engine.json at path exactly as the engine's start
+	// read it, for a process with effective uid euid (as root, the hardened
+	// read: no link followed, the file's owner and mode checked), and
+	// returns the bytes that read returned. The plugin watch reads every
+	// change through it, never a second plain read.
+	ReadConfig func(euid int, path string) (config.Config, []byte, error)
 	// NewUnitHost is the plugin units an engine on host expects (HostFor).
 	NewUnitHost func(host servicespec.PluginHost) UnitHost
 }
@@ -109,6 +116,8 @@ func (p Ports) check() string {
 		return "SystemdOverrides"
 	case p.NewUnitHost == nil:
 		return "NewUnitHost"
+	case p.ReadConfig == nil:
+		return "ReadConfig"
 	}
 	return ""
 }

@@ -306,8 +306,14 @@ func TestFeedStopsWithoutLeaks(t *testing.T) {
 	begun := time.Now()
 	e.stop()
 	require.Less(t, time.Since(begun), 2*time.Second, "a hanging call does not hold the stop")
+	// A connection whose transaction the stop cut short is destroyed by the
+	// pool in a goroutine of its own (pgxpool Release destroys a conn that is
+	// closed or mid-transaction asynchronously), so the count falls to zero
+	// just after stop returns, not before. Every reader and sender has
+	// returned by then; nothing of the feed's still holds the connection.
 	for name, l := range e.pools {
-		require.Zero(t, poolOf(t, l).Stat().AcquiredConns(), name)
+		require.Eventually(t, func() bool { return poolOf(t, l).Stat().AcquiredConns() == 0 }, 5*time.Second, 5*time.Millisecond,
+			"%s: a connection is still acquired", name)
 	}
 	goleak.VerifyNone(t, snapshot)
 }

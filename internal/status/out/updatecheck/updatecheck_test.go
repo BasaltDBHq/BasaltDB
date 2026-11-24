@@ -290,3 +290,14 @@ func TestAgentMessageSaysToRestartTheEngine(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseCandidatesAreNeverOffered(t *testing.T) {
+	t.Parallel()
+	rels := []Release{{Tag: "v0.1.0-alpha-rc.2", Prerelease: true}, {Tag: "v0.1.0-alpha-rc.1"}}
+	if n := notice("0.1.0-alpha", rels); n != nil {
+		t.Fatalf("a release candidate was offered: %+v", n)
+	}
+	if n := notice("0.1.0-alpha-rc.1", []Release{{Tag: "v0.1.0-alpha"}}); n == nil || n.Latest != "0.1.0-alpha" {
+		t.Fatalf("the stable release was not offered to a candidate: %+v", n)
+	}
+}

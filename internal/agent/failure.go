@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
@@ -78,7 +77,7 @@ func (s *Service) errorGuidance(te *toolresult.ToolError, f guidance.Failure) ([
 			person = s.approvals.HoldTooLargeSteps(b, te)
 			break
 		}
-		person = refusedSteps(b, te, f)
+		person = s.refusedSteps(b, te, f)
 	case guidance.CodeRowLimitExceeded:
 		person = rowLimitSteps(b)
 	case guidance.CodeQueryTimeout:
@@ -120,11 +119,12 @@ var staleDetail = regexp.MustCompile(`^STALE_READ: (.+?) (\{.*\}) read at xmin \
 
 // staleReadSteps: read the row again, then decide. The guard's detail names
 // the table and the key (`public.leads {"id": 42} read at xmin 7, now 9`);
-// the step is the query that reads that row. Decided here, provisionally:
-// the engine parses the detail, whose format a test against a real guard
-// pins, instead of a guard migration to a JSON detail.
+// the step is the query that reads that row, in the store's language.
+// Decided here, provisionally: the engine parses the detail, whose format a
+// test against a real guard pins, instead of a guard migration to a JSON
+// detail.
 func (s *Service) staleReadSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) {
-	args, err := staleReadQuery(te.Message, f.Arg(guidance.ArgRunID))
+	args, err := s.staleReadQuery(te.Message, f.Arg(guidance.ArgRunID))
 	if err != nil {
 		// A detail the engine cannot read: the catalog's query step cannot be
 		// filled in, so the agent stops and asks instead of guessing a row.
@@ -139,7 +139,7 @@ func (s *Service) staleReadSteps(b *guidance.Steps, te *toolresult.ToolError, f 
 
 // staleReadQuery is the query arguments that read the row a STALE_READ
 // message names.
-func staleReadQuery(message, runID string) (map[string]any, error) {
+func (s *Service) staleReadQuery(message, runID string) (map[string]any, error) {
 	m := staleDetail.FindStringSubmatch(message)
 	if m == nil {
 		return nil, fmt.Errorf("cannot read the table and key from the stale read detail %q", message)
@@ -150,40 +150,18 @@ func staleReadQuery(message, runID string) (map[string]any, error) {
 	if err := dec.Decode(&key); err != nil || len(key) == 0 {
 		return nil, fmt.Errorf("cannot read the key of the stale read: %q", m[2])
 	}
-	cols := make([]string, 0, len(key))
-	for c := range key {
-		cols = append(cols, c)
-	}
-	slices.Sort(cols)
-	conds, params := make([]string, 0, len(cols)), make([]any, 0, len(cols))
-	for i, c := range cols {
-		conds = append(conds, fmt.Sprintf("%s = $%d", sanitizeIdent(c), i+1))
-		params = append(params, key[c])
-	}
-	args := map[string]any{"sql": "SELECT * FROM " + m[1] + " WHERE " + strings.Join(conds, " AND "), "params": params}
+	req := s.core.Language.ReadRow(m[1], key)
+	args := map[string]any{"sql": req.Text, "params": req.Params}
 	if runID != "" {
 		args[guidance.ArgRunID] = runID
 	}
 	return args, nil
 }
 
-// refusedText is the revision each statement refusal asks for.
-var refusedText = map[string]string{
-	string(action.ReasonParseError):         "Fix the SQL syntax as the message says, then call again.",
-	string(action.ReasonMultipleStatements): "Send exactly one statement per call: split it into separate calls.",
-	string(action.ReasonWrongTool):          "Send SELECT with query, and INSERT, UPDATE and DELETE with write.",
-	string(action.ReasonUtility):            "Only SELECT (query) and INSERT, UPDATE, DELETE (write) are allowed: use one of them.",
-	string(action.ReasonSelectInto):         "SELECT INTO creates a table: rewrite it as a plain SELECT.",
-	string(action.ReasonLockingRead):        "Drop FOR UPDATE and the other lock clauses: query reads without locking.",
-	string(action.ReasonMerge):              "MERGE is not allowed: use separate INSERT, UPDATE and DELETE statements.",
-	string(action.ReasonDataModifyingWith):  "Move the INSERT, UPDATE or DELETE out of the WITH and send it as its own write.",
-	string(action.ReasonFunction):           "Remove the call to the refused function the message names and use plain SQL.",
-	string(action.ReasonNotRepeatable):      "Rewrite the write with fixed values instead of ones that change between runs, then call it again.",
-}
-
-// refusedSteps: most refusals are fixed by rewriting the statement; DDL and
-// the guard's own refusals are not the agent's to get around.
-func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
+// refusedSteps: most refusals are fixed by rewriting the statement, as the
+// store's language says; DDL and the guard's own refusals are not the
+// agent's to get around.
+func (s *Service) refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failure) string {
 	switch te.Reason {
 	case string(action.ReasonDDL):
 		b.Stop("Do not retry and do not look for another way to change the schema.")
@@ -204,7 +182,8 @@ func refusedSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failur
 			tool = guidance.ToolWrite
 		}
 	}
-	b.ReviseCall(tool, nil, refusedText[te.Reason])
+	text, _ := s.core.Language.RefusalText(te.Reason)
+	b.ReviseCall(tool, nil, text)
 	return ""
 }
 
@@ -334,11 +313,4 @@ func sqlErrorSteps(b *guidance.Steps, te *toolresult.ToolError, f guidance.Failu
 		return
 	}
 	b.ReviseCall(f.Tool, nil, "Fix the statement as the database's message says, then call again.")
-}
-
-// sanitizeIdent quotes a column name for the SQL a step suggests: in double
-// quotes, a double quote doubled and a NUL dropped.
-func sanitizeIdent(name string) string {
-	name = strings.ReplaceAll(name, "\x00", "")
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

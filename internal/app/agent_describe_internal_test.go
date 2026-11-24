@@ -11,6 +11,7 @@ import (
 	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
@@ -183,7 +184,7 @@ func (k kindStore) Kind() action.StoreKind { return k.kind }
 // describeUseCase is the describe use case over cat, on the commands cmds.
 func describeUseCase(cmds guidance.Commands, cat pgCatalog) *agentsvc.Service {
 	describe := &agentsvc.DescribeDeps{Catalog: agentCatalog{pg: cat}, Classes: agentClasses{pg: fakeClasses{}}}
-	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Commands: cmds}, describe, &agentsvc.WriteDeps{},
+	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Language: sqllang.New(nil), Commands: cmds}, describe, &agentsvc.WriteDeps{},
 		func() *guidance.UpdateInfo { return nil })
 }
 

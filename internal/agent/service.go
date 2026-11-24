@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -33,11 +34,33 @@ type Store interface {
 	ListRuns(ctx context.Context, p action.RunListParams) (pagination.Page[action.RunSummary], error)
 }
 
+// Language is what the agent use cases ask of the store's language: they
+// pass a request on and never read its text.
+type Language interface {
+	// Check checks req against the store's policy for tool and its
+	// parameters, and returns it as the store will run it. With an error the
+	// statement carries the op the store read, when it read one.
+	Check(req agentstore.Request, tool action.Tool) (action.Statement, error)
+	// RefusalText is the revision a statement refusal of reason asks for,
+	// and false for a reason not fixed by rewriting the request.
+	RefusalText(reason string) (string, bool)
+	// ReadRow is the request that reads the item of target with key.
+	ReadRow(target string, key map[string]any) agentstore.Request
+	// ParseName reads a resource's name as the agent writes it; its error
+	// says what is wrong with it.
+	ParseName(s string) (namespace, name string, err error)
+	// PrintName is a resource's name as the agent writes it.
+	PrintName(namespace, name string) string
+}
+
 // Core is the part of the shared settings the agent use cases read, copied
 // when the service is built.
 type Core struct {
-	Name     string
-	Store    Store
+	Name  string
+	Store Store
+	// Language is the store's language: the check of a request, the texts
+	// of its refusals and steps, and its resource names.
+	Language Language
 	Log      *slog.Logger
 	Now      func() time.Time
 	Commands guidance.Commands
@@ -112,8 +135,8 @@ type Delivery interface {
 // hold a write and to read it back.
 type Approvals interface {
 	ApprovalNotice(ctx context.Context, id, runID uuid.UUID, req linksvc.SizedRequest, expires time.Time, issue bool) (linksvc.HeldAnswer, error)
-	HoldColumns(ctx context.Context, sql string, params []any) ([]string, error)
-	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
+	HoldColumns(ctx context.Context, req agentstore.Request) ([]string, error)
+	Preview(ctx context.Context, in action.Intent, req agentstore.Request, assigned []string) ([]string, error)
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (action.Approval, error)
 	// NotFound is the ledger's answer for an approval the role does not hold.

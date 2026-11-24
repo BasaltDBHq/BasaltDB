@@ -10,6 +10,7 @@ import (
 	pluginsvc "github.com/basaltdbhq/basaltdb/internal/plugin"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
 	statussvc "github.com/basaltdbhq/basaltdb/internal/status"
@@ -141,13 +142,17 @@ func (s *Service) wire() {
 	s.approval.SetReverts(s.revert)
 	s.plugin = pluginsvc.NewService(s.pluginCore(), &s.deps.Plugin, s.delivery, s.status, s)
 	s.ledger = ledgersvc.NewReads(s.deps.Core.Store)
-	s.agent.SetPorts(s.delivery, s.approval, s.status, s, s)
+	s.agent.SetPorts(s.delivery, agentApprovals{s.approval}, s.status, s, s)
 }
 
-// agentCore is the part of the shared settings the agent use cases read.
+// agentCore is the part of the shared settings the agent use cases read,
+// with the store's language: SQL, over the write store's statement check.
 func (s *Service) agentCore() agentsvc.Core {
 	c := s.deps.Core
-	return agentsvc.Core{Name: c.Name, Store: c.Store, Log: c.Log, Now: c.Now, Commands: c.Commands, Errors: c.Errors}
+	return agentsvc.Core{
+		Name: c.Name, Store: c.Store, Language: sqllang.New(liveWrites{&s.deps.Write}), Log: c.Log, Now: c.Now,
+		Commands: c.Commands, Errors: c.Errors,
+	}
 }
 
 // statusCore is the part of the shared settings the status use case reads.

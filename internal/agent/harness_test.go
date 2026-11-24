@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/agent/out/sqllang"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
@@ -49,7 +50,7 @@ func testManager() guidance.ServiceManager {
 func newTestService(t *testing.T, goos, configPath string, opts ...option) *Service {
 	t.Helper()
 	st := settings{core: Core{
-		Name: "bot", Store: kindStore{kind: action.StorePostgres}, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		Name: "bot", Store: kindStore{kind: action.StorePostgres}, Language: sqllang.New(nil), Log: slog.New(slog.DiscardHandler), Now: time.Now,
 		Commands: guidance.NewCommands("bot", configPath, config.DefaultPath(goos), goos, testManager()),
 	}}
 	for _, opt := range opts {

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
+	"github.com/basaltdbhq/basaltdb/internal/core/agentstore"
 	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/lib/pagination"
@@ -125,7 +126,7 @@ func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, &guidance.ArgumentError{Message: err.Error()}
 	}
-	res, err := h.svc.Query(ctx, agentsvc.QueryParams{SQL: args.SQL, Params: params, RunID: uniqueid.Optional(args.RunID)})
+	res, err := h.svc.Query(ctx, agentsvc.QueryParams{Request: agentstore.Request{Text: args.SQL, Params: params}, RunID: uniqueid.Optional(args.RunID)})
 	if err != nil {
 		return nil, err
 	}

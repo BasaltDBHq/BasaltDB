@@ -47,7 +47,7 @@ func (ds *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	default:
 		o.Resources = make([]SearchItem, 0, len(visible))
 		for _, r := range visible {
-			o.Resources = append(o.Resources, searchItem(r, ""))
+			o.Resources = append(o.Resources, ds.searchItem(r, ""))
 		}
 	}
 	if notGranted > 0 {
@@ -137,7 +137,7 @@ func describeNotFound(resource string) error {
 // every answer: search, ask, and basalt init, whose link opens the page
 // where the person grants a table.
 func (ds *Service) describeNotFoundSteps(b *guidance.Steps, f guidance.Failure) string {
-	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: searchTerm(f.Arg(guidance.ArgResource))},
+	b.CallTool(guidance.ToolDescribe, map[string]any{guidance.ArgQuery: ds.searchTerm(f.Arg(guidance.ArgResource))},
 		"Search for the table by name: it may be spelled differently or sit in another schema.")
 	b.AskPerson("Tell the person the table was not found or is not granted to you, and ask whether you should have it.")
 	b.TellAgent("Tell the agent to add the table once you decide it should have it, or which table to use instead.")

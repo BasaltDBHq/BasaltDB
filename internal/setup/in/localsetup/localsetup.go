@@ -463,7 +463,13 @@ func (s *Service) plan(ctx context.Context, tx pgx.Tx, j job, password, database
 			return planned{}, refuse(CodeRoleExists, fmt.Sprintf("The database already has the role %s. An install never takes over an existing role.", j.role))
 		}
 	}
-	spec := guardmodel.AgentSpec{Name: j.req.Agent, Password: password, CreateOnly: !p.keep && !p.rekey, StatementTimeout: statementTimeout}
+	// A role that exists may hold grants from an earlier run that never
+	// finished: the run revokes those on tables not picked now (Exact), in
+	// the same transaction, so the role ends with exactly this run's tables.
+	spec := guardmodel.AgentSpec{
+		Name: j.req.Agent, Password: password, CreateOnly: !p.keep && !p.rekey, Exact: p.keep || p.rekey,
+		StatementTimeout: statementTimeout,
+	}
 	opts := guardmodel.InitOptions{Names: names}
 	if j.req.Demo {
 		if p.seeded, err = s.be.SeedDemo(ctx, tx); err != nil {

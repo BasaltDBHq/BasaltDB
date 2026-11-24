@@ -40,7 +40,14 @@ type AgentSpec struct {
 	// KeepGrants, with Change, keeps the role's table privileges: an AGENT
 	// setup code that names no tables. The role must still be an agent of
 	// the group; nothing is revoked and Read and Write are empty.
-	KeepGrants       bool
+	KeepGrants bool
+	// Exact is a local install that finishes with a role that already
+	// exists (an earlier run was interrupted after its commit): before the
+	// grants, the role loses the privileges the setup grants (SELECT,
+	// INSERT, UPDATE and DELETE on a table, USAGE and SELECT on its serial
+	// sequence) on every table outside Read and Write, so it ends with
+	// exactly them. Grants the setup never makes are left as they are.
+	Exact            bool
 	Read             []string
 	Write            []string
 	StatementTimeout time.Duration

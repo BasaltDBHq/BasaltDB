@@ -276,7 +276,16 @@ async function remove() {
   const init = basaltInit(["--agent", AGENT]);
   const link = await initLink(init);
   await open(link);
-  await page.locator("#u-pick").waitFor({ state: "visible" });
+  // The change link first asks whose database the engine serves, then runs the check.
+  const first = await until("the confirm step or the check", async () => {
+    if (await visible("#confirm-go")) return "confirm";
+    if (await visible("#u-pick")) return "check";
+    return "";
+  });
+  if (first === "confirm") {
+    await page.locator("#confirm-go").click();
+    await page.locator("#u-pick").waitFor({ state: "visible" });
+  }
   await page.locator("#u-pick").click();
   await page.locator("#choice-remove").check();
   await page.locator("#confirm-os-user").check();

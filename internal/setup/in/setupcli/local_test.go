@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/servicespec"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/platform/osservice"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
@@ -56,6 +57,12 @@ type fakeHost struct {
 	setupCodes []string
 	setupErrs  []error
 	setupCalls int
+	// build is the build the engine reports ("" is this binary's own);
+	// buildErr, when set, is the engine not answering.
+	build    string
+	buildErr error
+	// silent is an engine too old to report a build.
+	silent bool
 	// runs are what ServiceRuns reads, one per call (the last one repeats),
 	// with lastExit; none is no service manager.
 	runs     []int
@@ -69,6 +76,19 @@ func newFakeHost() *fakeHost {
 func (h *fakeHost) Euid() int                           { return h.euid }
 func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
 func (h *fakeHost) DialogAvailable(string) error        { return h.noDialog }
+
+func (h *fakeHost) EngineBuild(context.Context, string) (string, error) {
+	if h.buildErr != nil {
+		return "", h.buildErr
+	}
+	if h.silent {
+		return "", nil
+	}
+	if h.build == "" {
+		return buildinfo.Version, nil
+	}
+	return h.build, nil
+}
 
 func (h *fakeHost) ServiceRuns(context.Context, string) (int, int, error) {
 	if len(h.runs) == 0 {
@@ -127,10 +147,11 @@ type localHost struct{}
 func (localHost) OSInstallScript(goos, binary string) (string, error) {
 	return osservice.InstallScript(goos, binary)
 }
-func (localHost) OSRemoveScript(goos string) (string, error) { return osservice.RemoveScript(goos) }
-func (localHost) OSResetScript(goos string) (string, error)  { return osservice.ResetScript(goos) }
-func (localHost) OSDefaultUser(goos string) string           { return osservice.DefaultUser(goos) }
-func (localHost) OSUnitPath(goos string) string              { return osservice.UnitPath(goos) }
+func (localHost) OSRemoveScript(goos string) (string, error)  { return osservice.RemoveScript(goos) }
+func (localHost) OSResetScript(goos string) (string, error)   { return osservice.ResetScript(goos) }
+func (localHost) OSRestartScript(goos string) (string, error) { return osservice.RestartScript(goos) }
+func (localHost) OSDefaultUser(goos string) string            { return osservice.DefaultUser(goos) }
+func (localHost) OSUnitPath(goos string) string               { return osservice.UnitPath(goos) }
 
 // newIO is the CLI's I/O on the fake machine, without the shell.
 func newIO(ctx context.Context, in io.Reader, out, errw io.Writer, getenv func(string) string) *cli.IO {
@@ -242,6 +263,67 @@ func TestInitWithTheServiceInstalledAsksNoPassword(t *testing.T) {
 	require.Equal(t, cli.ExitOK, r.code, r.stderr)
 	require.Empty(t, h.dialogs)
 	require.Equal(t, "sales_bot", linkJob(t, strings.SplitN(r.stdout, "\n", 2)[0]).Agent)
+}
+
+// An engine service that runs another build than init is restarted through
+// the dialog, with the fixed restart script and its prompt; an engine too
+// old to report a build counts as another one.
+func TestInitRestartsAnEngineThatRunsAnotherBuild(t *testing.T) {
+	t.Parallel()
+	for _, build := range []string{"0.0.1-old", ""} {
+		h := newFakeHost()
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.build, h.silent = build, build == ""
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		want, err := osservice.RestartScript("linux")
+		require.NoError(t, err)
+		require.Equal(t, []string{want}, h.dialogs)
+		require.Equal(t, []string{servicespec.RestartPrompt}, h.prompts)
+		require.Contains(t, r.stderr, "older build")
+		require.Contains(t, h.opened[0], "#1.", "init goes on to the link")
+	}
+}
+
+// The same build, an engine that does not answer, and a first install
+// restart nothing.
+func TestInitRestartsNothingWhenTheBuildsMatch(t *testing.T) {
+	t.Parallel()
+	same := newFakeHost()
+	same.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	down := newFakeHost()
+	down.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+	down.buildErr = errors.New("connection refused")
+	fresh := newFakeHost()
+	fresh.build = "0.0.1-old"
+	for _, h := range []*fakeHost{same, down, fresh} {
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitOK, r.code, r.stderr)
+		for _, p := range h.prompts {
+			require.NotEqual(t, servicespec.RestartPrompt, p)
+		}
+	}
+}
+
+// With no dialog the restart stops init and names the command; a closed
+// dialog stops it too, and the link is not opened.
+func TestInitRestartStops(t *testing.T) {
+	t.Parallel()
+	noDialog := newFakeHost()
+	noDialog.noDialog = servicespec.ErrNoDialog
+	closed := newFakeHost()
+	closed.dialogErr = servicespec.ErrDialogCancelled
+	for name, h := range map[string]*fakeHost{"no dialog": noDialog, "closed": closed} {
+		h.sys.existing = map[string]bool{osservice.UnitPath("linux"): true}
+		h.build = "0.0.1-old"
+		r, _ := localInit(t, h, "--demo")
+		require.Equal(t, cli.ExitError, r.code, name)
+		require.Contains(t, r.stderr, "older build", name)
+		require.Empty(t, h.opened, name)
+		if name == "no dialog" {
+			require.Contains(t, r.stderr, "systemctl restart", "it names the command")
+		}
+	}
 }
 
 func TestInitOnASetUpEngineOpensTheChangeLink(t *testing.T) {

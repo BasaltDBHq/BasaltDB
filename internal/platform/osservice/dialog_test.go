@@ -155,7 +155,7 @@ func TestDialogCommand(t *testing.T) {
 // unexpected dialog reads as one to cancel.
 func TestDialogPromptsNameTheirAction(t *testing.T) {
 	t.Parallel()
-	for prompt, action := range map[string]string{servicespec.InstallPrompt: "INSTALL", servicespec.RemovePrompt: "REMOVE", servicespec.ResetPrompt: "RESET"} {
+	for prompt, action := range map[string]string{servicespec.InstallPrompt: "INSTALL", servicespec.RemovePrompt: "REMOVE", servicespec.ResetPrompt: "RESET", servicespec.RestartPrompt: "RESTART"} {
 		require.Contains(t, prompt, "BasaltDB wants to "+action+" ")
 		require.Contains(t, prompt, "Cancel unless you just ")
 		require.NotContainsf(t, prompt, `"`, "the prompt is an AppleScript argument; keep it plain: %s", prompt)
@@ -324,4 +324,18 @@ func TestScriptPutFile(t *testing.T) {
 	b, err = os.ReadFile(other)
 	require.NoError(t, err)
 	require.Empty(t, b, "the link's target is untouched")
+}
+
+// The restart script is one fixed command per platform, and no other
+// platform has one.
+func TestRestartScript(t *testing.T) {
+	t.Parallel()
+	got, err := osservice.RestartScript("darwin")
+	require.NoError(t, err)
+	require.Equal(t, "launchctl kickstart -k system/"+servicespec.LaunchdLabel+"\n", got)
+	got, err = osservice.RestartScript("linux")
+	require.NoError(t, err)
+	require.Equal(t, "systemctl restart "+servicespec.SystemdUnitName+"\n", got)
+	_, err = osservice.RestartScript("windows")
+	require.Error(t, err)
 }

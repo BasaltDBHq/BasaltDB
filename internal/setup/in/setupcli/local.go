@@ -5,7 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os/user"
+	"strings"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -14,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/in/enginecli"
+	"github.com/basaltdbhq/basaltdb/internal/lib/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/platform/cli"
 	"github.com/basaltdbhq/basaltdb/internal/setup"
 	"github.com/basaltdbhq/basaltdb/internal/setup/in/localsetup"
@@ -42,8 +45,14 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 		return c.Fail(fmt.Errorf("your OS user cannot be read: %w", err))
 	}
 	job.OSUser = me.Username
+	installed := c.Host.System(io.Discard, io.Discard).Exists(h.OSUnitPath(c.Goos))
 	if err := enginecli.EnsureService(c, h); err != nil {
 		return c.Fail(err)
+	}
+	if installed {
+		if err := restartOlderEngine(c, h); err != nil {
+			return c.Fail(err)
+		}
 	}
 	state, err := waitForSetupPage(c)
 	if err != nil {
@@ -81,6 +90,34 @@ func RunLocal(c *cli.IO, h LocalHost, args []string) int {
 	}
 	fmt.Fprintln(c.Stderr, "basalt: finish the setup on the page that opened: type your database's admin connection string there, never here. The last line above is the MCP server the agent registers.")
 	return cli.ExitOK
+}
+
+// restartOlderEngine restarts the engine service when it runs another
+// build than this basalt: a new binary installed at the service's path is
+// not the running engine until the service restarts. The restart is the
+// administrator dialog's fixed script; with no dialog init stops and says
+// how. An engine that does not answer is left to waitForSetupPage.
+func restartOlderEngine(c *cli.IO, h LocalHost) error {
+	build, err := c.Host.EngineBuild(c.Ctx, links.DefaultLocal)
+	if err != nil || build == buildinfo.Version {
+		return nil
+	}
+	script, err := h.OSRestartScript(c.Goos)
+	if err != nil {
+		return err
+	}
+	if err := c.Host.DialogAvailable(c.Goos); err != nil {
+		return fmt.Errorf("the engine service runs an older build of basalt than this one, and restarting it needs the system's administrator dialog, which cannot be shown here (%w). Restart it as root: %s", err, strings.TrimSpace(script))
+	}
+	fmt.Fprintln(c.Stderr, "basalt: the engine service runs an older build than this basalt. Asking for your password in the system's administrator dialog to restart it: it runs "+strings.TrimSpace(script))
+	if err := c.Host.AdminDialog(c.Ctx, c.Goos, servicespec.RestartPrompt, script, c.Stderr); err != nil {
+		if errors.Is(err, servicespec.ErrDialogCancelled) {
+			return errors.New("the administrator dialog was closed, so the engine service was not restarted and still runs the older build. Run basalt init again to restart it")
+		}
+		return fmt.Errorf("the engine service was not restarted: %w", err)
+	}
+	fmt.Fprintln(c.Stderr, "basalt: the engine service is restarted onto this build.")
+	return nil
 }
 
 // changeLink is basalt init on an engine that is already set up: it prints
@@ -178,6 +215,8 @@ type LocalHost interface {
 	enginecli.InstallHost
 	// OSRemoveScript is the fixed script that removes the engine service.
 	OSRemoveScript(goos string) (string, error)
+	// OSRestartScript is the fixed script that restarts the engine service.
+	OSRestartScript(goos string) (string, error)
 	// OSResetScript is the fixed script that resets BasaltDB on this
 	// computer.
 	OSResetScript(goos string) (string, error)

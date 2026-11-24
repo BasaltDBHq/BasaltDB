@@ -89,6 +89,8 @@ func (setupHost) OSRemoveScript(goos string) (string, error) { return osservice.
 
 func (setupHost) OSResetScript(goos string) (string, error) { return osservice.ResetScript(goos) }
 
+func (setupHost) OSRestartScript(goos string) (string, error) { return osservice.RestartScript(goos) }
+
 func (setupHost) OSDefaultUser(goos string) string { return osservice.DefaultUser(goos) }
 
 func (setupHost) OSUnitPath(goos string) string { return osservice.UnitPath(goos) }

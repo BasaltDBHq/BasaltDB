@@ -72,8 +72,10 @@ type Ports struct {
 	// ReadConfig reads engine.json at path exactly as the engine's start
 	// read it, for a process with effective uid euid (as root, the hardened
 	// read: no link followed, the file's owner and mode checked), and
-	// returns the bytes that read returned. The plugin watch reads every
-	// change through it, never a second plain read.
+	// returns the bytes that read returned: nil when it refused or could not
+	// read the file, set with the error when the file was read and does not
+	// parse or breaks a rule. The plugin package reads engine.json through it
+	// only, never with a plain read.
 	ReadConfig func(euid int, path string) (config.Config, []byte, error)
 	// NewUnitHost is the plugin units an engine on host expects (HostFor).
 	NewUnitHost func(host servicespec.PluginHost) UnitHost

@@ -73,7 +73,10 @@ func LoadEngineConfigAs(sh TrustedOpener, euid int, path string) (config.Config,
 // ReadEngineConfigAs is LoadEngineConfigAs that also returns the bytes it
 // read: the engine's plugin watch reads engine.json here on every change,
 // with the engine's euid, so as root it gets the same hardened read as the
-// engine's start, and compares the bytes that read returned.
+// engine's start, and compares the bytes that read returned. The bytes are
+// nil when the read refused or could not read the file, and set with the
+// error when the file was read and does not parse or breaks a rule
+// (config.LoadOpenRaw).
 func ReadEngineConfigAs(sh TrustedOpener, euid int, path string) (config.Config, []byte, error) {
 	if euid != 0 {
 		return config.LoadOpenRaw(path, os.Open)

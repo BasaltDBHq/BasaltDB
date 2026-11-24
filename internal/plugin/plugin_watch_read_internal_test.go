@@ -9,7 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -26,19 +30,44 @@ type readWatch struct {
 	f      *pluginFixture
 	ep     *Plugins
 	w      *pluginWatch
-	logged *bytes.Buffer
+	logged *lockedBuffer
+}
+
+// lockedBuffer is the watch's log, written from its goroutine.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func newReadWatch(t *testing.T, euid int) *readWatch {
+	return newReadWatchKept(t, euid, nil)
+}
+
+// newReadWatchKept is newReadWatch for an engine that keeps entries of its
+// own in kept (an agent-operated engine on the bot's computer); nil keeps
+// none.
+func newReadWatchKept(t *testing.T, euid int, kept *Store) *readWatch {
 	t.Helper()
 	f := newPluginFixture(t)
 	f.install("default", dial.TransportStdio, "product_a")
 	f.writeConfig()
 	cfg, err := cli.LoadEngineConfigAs(trustedOpener{}, euid, f.configPath)
 	require.NoError(t, err, "the engine's own read of the start config")
-	logged := &bytes.Buffer{}
+	logged := &lockedBuffer{}
 	log := slog.New(slog.NewTextHandler(logged, nil))
-	ep := NewFor(cfg, f.configPath, Options{Ports: testPorts, Dialer: dial.Dialer{}, SocketBase: f.sockBase, euid: euid}, log)
+	ep := NewFor(cfg, f.configPath, Options{Ports: testPorts, Dialer: dial.Dialer{}, SocketBase: f.sockBase, euid: euid, kept: kept}, log)
 	rw := &readWatch{t: t, f: f, ep: ep, w: newPluginWatch(ep, cfg, f.configPath, map[string]AgentLedger{}), logged: logged}
 	rw.w.step(context.Background()) // the first read of engine.json changes nothing
 	require.False(t, rw.w.bad)
@@ -87,6 +116,73 @@ func (rw *readWatch) requireRefused(why string) {
 		require.True(t, rw.configInvalid(a), a)
 	}
 	require.Contains(t, rw.logged.String(), engineErr.Error(), "the watch refused it the same way")
+	rw.w.step(context.Background())
+	rw.w.step(context.Background())
+	require.Equal(t, 1, strings.Count(rw.logged.String(), whyLogged), "logged once while the file stays refused")
+}
+
+const whyLogged = "engine.json changed and its plugins cannot be read"
+
+// An agent-operated engine running as root, whose engine.json is replaced
+// by a symlink to a FIFO, or by a FIFO: the watch refuses it without
+// blocking, also on the engine-kept entries' path (a change of the entries
+// file applies over the last good read's entries), and keeps answering:
+// a kick still returns, as request_plugin's applyNow needs.
+func TestWatchAsRootRefusesFIFOConfig(t *testing.T) {
+	t.Parallel()
+	for _, link := range []bool{true, false} {
+		state, err := filepath.EvalSymlinks(t.TempDir())
+		require.NoError(t, err)
+		store, err := NewPluginhost(state, time.Now)
+		require.NoError(t, err)
+		rw := newReadWatchKept(t, 0, store)
+		fifo := filepath.Join(filepath.Dir(rw.f.configPath), "fifo")
+		require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+		require.NoError(t, os.Remove(rw.f.configPath))
+		why := "not a regular file"
+		if link {
+			require.NoError(t, os.Symlink(fifo, rw.f.configPath))
+			why = "symlink"
+		} else {
+			require.NoError(t, os.Rename(fifo, rw.f.configPath))
+		}
+		_, engineErr := cli.LoadEngineConfigAs(trustedOpener{}, 0, rw.f.configPath)
+		require.ErrorContains(t, engineErr, why, "the engine's read as root refuses it")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { rw.w.run(ctx, RealClock()); close(done) }()
+		kick := func() {
+			t.Helper()
+			reply := make(chan struct{})
+			select {
+			case rw.ep.kick <- reply:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the watch takes no kick: it is blocked")
+			}
+			select {
+			case <-reply:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the watch's pass never returned: it is blocked")
+			}
+		}
+		kick()
+		// A change of the engine-kept entries file, while engine.json is
+		// refused: applied over the entries of the last good read.
+		require.NoError(t, os.WriteFile(store.EntriesPath(), []byte("[]"), 0o600))
+		kick()
+		kick()
+		require.True(t, rw.enabled(), "nothing from the refused file is applied")
+		require.True(t, rw.configInvalid("product_a"))
+		require.Contains(t, rw.logged.String(), engineErr.Error())
+		require.Equal(t, 1, strings.Count(rw.logged.String(), whyLogged), "logged once")
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the watch does not stop")
+		}
+	}
 }
 
 // An engine running as root re-reads engine.json with the hardened read of

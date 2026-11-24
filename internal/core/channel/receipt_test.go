@@ -1,4 +1,4 @@
-package channel
+package channel_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
 )
 
 // The shared RECEIPT vectors run through the engine's own verifier.
@@ -19,13 +22,13 @@ func TestReceiptVectors(t *testing.T) {
 		PayloadJSON string `json:"payloadJson,omitempty"`
 		Expect      string `json:"expect"`
 	}
-	cases := loadVectors[receiptCase](t, "receipt.json", "RECEIPT")
+	cases := channel.LoadVectors[receiptCase](t, "receipt.json", "RECEIPT")
 	require.NotEmpty(t, cases)
 	for _, c := range cases {
-		key, err := unb64(c.EngineKey)
+		key, err := channel.Unb64(c.EngineKey)
 		require.NoError(t, err, c.Name)
-		got, err := VerifyReceipt(c.Token, key)
-		require.Equal(t, c.Expect, outcome(err), c.Name)
+		got, err := channeltest.VerifyReceipt(c.Token, key)
+		require.Equal(t, c.Expect, channel.Outcome(err), c.Name)
 		if err != nil {
 			continue
 		}
@@ -35,16 +38,16 @@ func TestReceiptVectors(t *testing.T) {
 	}
 }
 
-func testKeys(t *testing.T) *EngineKeys {
+func testKeys(t *testing.T) *channel.EngineKeys {
 	t.Helper()
-	k, err := GenerateEngineKeys(time.Now)
+	k, err := channel.GenerateEngineKeys(time.Now)
 	require.NoError(t, err)
 	return k
 }
 
-func sampleReceipt(k *EngineKeys) Receipt {
-	return Receipt{
-		Kind: ReceiptApproval, ItemID: "0192f3a0-7c1e-7b2a-9c4d-5e6f708192a3", Status: ReceiptApproved,
+func sampleReceipt(k *channel.EngineKeys) channel.Receipt {
+	return channel.Receipt{
+		Kind: channel.ReceiptApproval, ItemID: "0192f3a0-7c1e-7b2a-9c4d-5e6f708192a3", Status: channel.ReceiptApproved,
 		Headline: "Update 3 rows in public.orders", RowsHash: strings.Repeat("ab", 32),
 		Agent: "billing-bot", EngineID: k.EngineID(), At: "2026-11-12T09:30:00Z",
 	}
@@ -54,10 +57,10 @@ func TestSignReceiptRoundTrip(t *testing.T) {
 	t.Parallel()
 	k := testKeys(t)
 	r := sampleReceipt(k)
-	tok, err := SignReceipt(k, r)
+	tok, err := channel.SignReceipt(k, r)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(tok, ReceiptPrefix))
-	got, err := VerifyReceipt(tok, k.PublicKeySPKI())
+	require.True(t, strings.HasPrefix(tok, channel.ReceiptPrefix))
+	got, err := channeltest.VerifyReceipt(tok, k.PublicKeySPKI())
 	require.NoError(t, err)
 	r.Format = 1
 	require.Equal(t, r, got)
@@ -69,47 +72,47 @@ func TestSignReceiptRefusesWhatAVerifierWouldRefuse(t *testing.T) {
 	other := testKeys(t)
 	r := sampleReceipt(k)
 	r.EngineID = other.EngineID()
-	_, err := SignReceipt(k, r)
+	_, err := channel.SignReceipt(k, r)
 	require.Error(t, err, "a receipt names its own signer")
 	r = sampleReceipt(k)
 	r.Headline = ""
-	_, err = SignReceipt(k, r)
+	_, err = channel.SignReceipt(k, r)
 	require.Error(t, err)
 }
 
 // signRaw signs arbitrary payload bytes with k, as an engine would.
-func signRaw(t *testing.T, k *EngineKeys, payload string) string {
+func signRaw(t *testing.T, k *channel.EngineKeys, payload string) string {
 	t.Helper()
-	sig, err := k.Sign(ContextReceipt, []byte(payload))
+	sig, err := k.Sign(channel.ContextReceipt, []byte(payload))
 	require.NoError(t, err)
-	return ReceiptPrefix + b64([]byte(payload)) + "." + b64(sig)
+	return channel.ReceiptPrefix + channel.B64([]byte(payload)) + "." + channel.B64(sig)
 }
 
 func TestVerifyReceiptRefusals(t *testing.T) {
 	t.Parallel()
 	k := testKeys(t)
 	attacker := testKeys(t)
-	good, err := SignReceipt(k, sampleReceipt(k))
+	good, err := channel.SignReceipt(k, sampleReceipt(k))
 	require.NoError(t, err)
-	payload, err := json.Marshal(func() Receipt { r := sampleReceipt(k); r.Format = 1; return r }())
+	payload, err := json.Marshal(func() channel.Receipt { r := sampleReceipt(k); r.Format = 1; return r }())
 	require.NoError(t, err)
 	body := string(payload)
 
 	// Signed by another key, naming the expected engine.
 	forged := signRaw(t, attacker, body)
-	_, err = VerifyReceipt(forged, k.PublicKeySPKI())
-	require.ErrorIs(t, err, ErrBadReceipt, "signed by another key")
+	_, err = channeltest.VerifyReceipt(forged, k.PublicKeySPKI())
+	require.ErrorIs(t, err, channeltest.ErrBadReceipt, "signed by another key")
 	// Checked only against the key that came with it: the attacker's key
 	// verifies the signature, but the payload names another engine.
-	_, err = VerifyReceipt(forged, attacker.PublicKeySPKI())
-	require.ErrorIs(t, err, ErrBadReceipt, "checked against only the key that came with it")
+	_, err = channeltest.VerifyReceipt(forged, attacker.PublicKeySPKI())
+	require.ErrorIs(t, err, channeltest.ErrBadReceipt, "checked against only the key that came with it")
 	// Signed by the expected key, naming another engine.
 	other := strings.Replace(body, k.EngineID(), attacker.EngineID(), 1)
-	_, err = VerifyReceipt(signRaw(t, k, other), k.PublicKeySPKI())
-	require.ErrorIs(t, err, ErrBadReceipt, "engineId is not the expected key's")
+	_, err = channeltest.VerifyReceipt(signRaw(t, k, other), k.PublicKeySPKI())
+	require.ErrorIs(t, err, channeltest.ErrBadReceipt, "engineId is not the expected key's")
 	// No expected key at all.
-	_, err = VerifyReceipt(good, nil)
-	require.ErrorIs(t, err, ErrBadReceipt, "an expected key is required")
+	_, err = channeltest.VerifyReceipt(good, nil)
+	require.ErrorIs(t, err, channeltest.ErrBadReceipt, "an expected key is required")
 
 	for name, p := range map[string]string{
 		"extra field":       strings.TrimSuffix(body, "}") + `,"rows":3}`,
@@ -124,20 +127,20 @@ func TestVerifyReceiptRefusals(t *testing.T) {
 		"at with offset":    strings.Replace(body, `09:30:00Z`, `11:30:00+02:00`, 1),
 	} {
 		require.NotEqual(t, body, p, name)
-		_, err := VerifyReceipt(signRaw(t, k, p), k.PublicKeySPKI())
-		require.ErrorIs(t, err, ErrBadReceipt, name)
+		_, err := channeltest.VerifyReceipt(signRaw(t, k, p), k.PublicKeySPKI())
+		require.ErrorIs(t, err, channeltest.ErrBadReceipt, name)
 	}
 
 	// A bad signature.
-	parts := strings.Split(strings.TrimPrefix(good, ReceiptPrefix), ".")
-	sig, err := unb64(parts[1])
+	parts := strings.Split(strings.TrimPrefix(good, channel.ReceiptPrefix), ".")
+	sig, err := channel.Unb64(parts[1])
 	require.NoError(t, err)
 	sig[3] ^= 1
-	_, err = VerifyReceipt(ReceiptPrefix+parts[0]+"."+b64(sig), k.PublicKeySPKI())
-	require.ErrorIs(t, err, ErrBadReceipt, "bad signature")
+	_, err = channeltest.VerifyReceipt(channel.ReceiptPrefix+parts[0]+"."+channel.B64(sig), k.PublicKeySPKI())
+	require.ErrorIs(t, err, channeltest.ErrBadReceipt, "bad signature")
 	// A signature under another context.
-	sessionSig, err := k.Sign(ContextSession, payload)
+	sessionSig, err := k.Sign(channel.ContextSession, payload)
 	require.NoError(t, err)
-	_, err = VerifyReceipt(ReceiptPrefix+parts[0]+"."+b64(sessionSig), k.PublicKeySPKI())
-	require.ErrorIs(t, err, ErrBadReceipt, "another signing context")
+	_, err = channeltest.VerifyReceipt(channel.ReceiptPrefix+parts[0]+"."+channel.B64(sessionSig), k.PublicKeySPKI())
+	require.ErrorIs(t, err, channeltest.ErrBadReceipt, "another signing context")
 }

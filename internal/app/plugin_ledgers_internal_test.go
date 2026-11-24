@@ -9,18 +9,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
-	"github.com/basaltdbhq/basaltdb/internal/service/pluginhost/engine"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
 // The engine's own runtime gives the plugin writer the agent's ledger:
 // startAgents maps each agent to its pool and its admission. An admitted
 // agent is admitted; an agent served status only (a pending install setup) is
-// refused with engine.ErrNotAdmitted.
+// refused with plugin.ErrNotAdmitted.
 func TestRuntimeGivesThePluginWriterTheAgentsLedger(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -44,5 +44,5 @@ func TestRuntimeGivesThePluginWriterTheAgentsLedger(t *testing.T) {
 
 	pending := newRemoteAgent(t, d.NewAgent(t, "other", demoTables, nil).URL, guardmodel.SetupInstall)
 	rt := pending.start(t)
-	require.ErrorIs(t, pluginAdmit(rt.svc)(context.Background()), engine.ErrNotAdmitted)
+	require.ErrorIs(t, pluginAdmit(rt.svc)(context.Background()), plugin.ErrNotAdmitted)
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	plugincontract "github.com/basaltdbhq/basaltdb/api/plugin"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/plugintransport/dial"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/dial"
 )
 
 // sdkModule is the Go plugin SDK. It lives in its own repository and holds

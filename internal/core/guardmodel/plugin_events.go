@@ -85,13 +85,20 @@ type PluginRecord struct {
 func (r PluginRecord) Enabled() bool { return r.Kind != PluginDisabled }
 
 // PluginRecords is what an agent's ledger says of its plugins: the latest
-// event of each entry, in name and instance order, and the trust keys
-// recorded as added.
+// event of each entry, in name and instance order, and the latest trust
+// event of each signer key.
 type PluginRecords struct {
 	Entries []PluginRecord
-	// TrustKeys are the keys the ledger records as trusted: their latest
-	// PLUGIN_TRUST_ADDED or PLUGIN_TRUST_REMOVED is an ADDED. Sorted.
-	TrustKeys []string
+	// LatestTrustEvents are each signer key's latest PLUGIN_TRUST_ADDED or
+	// PLUGIN_TRUST_REMOVED, in key order.
+	LatestTrustEvents []PluginTrustEvent
+}
+
+// PluginTrustEvent is a signer key's trust event: PLUGIN_TRUST_ADDED or
+// PLUGIN_TRUST_REMOVED.
+type PluginTrustEvent struct {
+	KeyID string
+	Kind  PluginEventKind
 }
 
 // EnabledPlugins are the entries the records leave served, in name and

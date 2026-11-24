@@ -16,23 +16,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/statefile/keyfile"
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
+	"github.com/basaltdbhq/basaltdb/internal/platform/keyfile"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
 // relayPoll is how often a waiting write or request_revert reads whether
@@ -46,8 +50,8 @@ const relayPoll = 50 * time.Millisecond
 type relayEnv struct {
 	d      *guardtest.DB
 	person *passkeytest.Authenticator
-	server *mcp.Server
-	svc    *agent.Service
+	server *mcpserver.Server
+	svc    *Service
 	v      *vaulttest.Vault
 	keys   *channel.EngineKeys
 	relay  *lateRelay
@@ -76,32 +80,32 @@ func newRelayEnvWith(t *testing.T, opts vaulttest.Options) *relayEnv {
 	require.NoError(t, err)
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := newPGAgent(t, bot.URL, 4).service(func(dp *agent.Deps) {
-		dp.PagesBase, dp.Links, dp.Relay, dp.Receipts, dp.Poll = links.Portal, secrets, relay, keys, relayPoll
+	svc := newPGAgent(t, bot.URL, 4).service(func(dp *Deps) {
+		dp.Core.PagesBase, dp.Delivery.Links, dp.Delivery.Relay, dp.Delivery.Receipts, dp.Delivery.Poll = links.Portal, secrets, relay, keys, relayPoll
 	})
 
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
-	live := newRelayLinks(quietLog())
-	site := pages.New(links.Portal, quietLog())
+	live := linksvc.NewRegistry(quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(svc)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, stateDir, time.Now, quietLog(), live, sessionDispatcher{site})
-	require.NotNil(t, ev.client)
-	live.add("bot", secrets, ev.client.Unregister)
+	require.NotNil(t, ev.Client)
+	live.Add("bot", secrets, ev.Client.Unregister)
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = ev.client.Run(runCtx)
+		_ = ev.Client.Run(runCtx)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		<-done
 	})
-	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
-	relay.c.Store(ev.client)
-	return &relayEnv{d: d, person: person, server: mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.ToolsFrom(agent.Tools(svc), agent.WithMeta)...), svc: svc, v: v, keys: keys, relay: relay}
+	require.Eventually(t, ev.Client.Connected, 5*time.Second, 5*time.Millisecond)
+	relay.c.Store(ev.Client)
+	return &relayEnv{d: d, person: person, server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, AgentTools(svc)...), svc: svc, v: v, keys: keys, relay: relay}
 }
 
 // call runs one tools/call as the agent would and returns its body and
@@ -173,7 +177,7 @@ func portalLink(t *testing.T, link, page string) (string, string) {
 	require.True(t, strings.HasPrefix(link, prefix), "a portal short link: %s", link)
 	id, _, ok := strings.Cut(strings.TrimPrefix(link, prefix), "#")
 	require.True(t, ok)
-	secret := links.SecretOf(link)
+	secret := linkstest.SecretOf(link)
 	require.Len(t, secret, 22)
 	return id, secret
 }
@@ -261,7 +265,7 @@ func (e *relayEnv) requireReceiptLine(t *testing.T, signed map[string]any) {
 	require.True(t, ok, "%v", signed)
 	token, ok := result["receipt"].(string)
 	require.True(t, ok, "the answer carries the engine's receipt: %v", result)
-	_, err := channel.VerifyReceipt(token, e.keys.PublicKeySPKI())
+	_, err := channeltest.VerifyReceipt(token, e.keys.PublicKeySPKI())
 	require.NoError(t, err, "signed by this engine's key")
 	line := signed["receiptLine"].(string)
 	require.Contains(t, line, "Receipt from the engine with fingerprint "+e.keys.Fingerprint())
@@ -360,7 +364,7 @@ func TestRelayApprovalEndToEnd(t *testing.T) {
 
 	select {
 	case body := <-waiting:
-		require.Equal(t, agent.StatusApplied, body["status"], "%v", body)
+		require.Equal(t, "APPLIED", body["status"], "%v", body)
 		requireNothingToPaste(t, body)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the waiting write did not return")
@@ -409,7 +413,7 @@ func TestRelayApprovalAfterTheVaultWasDown(t *testing.T) {
 	require.Equal(t, "APPROVED", signed["result"].(map[string]any)["status"])
 	select {
 	case body := <-waiting:
-		require.Equal(t, agent.StatusApplied, body["status"], "%v", body)
+		require.Equal(t, "APPLIED", body["status"], "%v", body)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the waiting write did not return")
 	}
@@ -556,9 +560,9 @@ func TestRelayRevertWidenKeepsTheSession(t *testing.T) {
 	require.NoError(t, err)
 	var norm string
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
-	as, err := e.person.Sign(revert.RescopeChallenge(revertID, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := e.person.Sign(reverttest.RescopeChallenge(revertID, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	widen, err := json.Marshal(agent.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &agent.ScopeProof{
+	widen, err := json.Marshal(revertsvc.ScopeRequest{Select: sel, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)
@@ -595,7 +599,7 @@ func TestRelayRevertRejectEndsTheSession(t *testing.T) {
 	p := startPageDriver(t, e.v.URL())
 	p.ok(t, map[string]any{"op": "open", "secret": secret})
 	note := "Not this one"
-	body, err := json.Marshal(agent.RejectRequest{Note: &note})
+	body, err := json.Marshal(revertsvc.RejectRequest{Note: &note})
 	require.NoError(t, err)
 	r := p.ok(t, map[string]any{"op": "request", "method": http.MethodPost, "path": "/api/v1/reverts/" + id + "/reject", "secret": secret, "body": string(body)})
 	require.EqualValues(t, http.StatusOK, r["status"], r["body"])

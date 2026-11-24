@@ -11,7 +11,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
 	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/core/links/linkstest"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 )
@@ -72,7 +74,7 @@ func TestPluginLinkRoundTrip(t *testing.T) {
 			require.True(t, strings.HasPrefix(frag, linkcodec.Format2), frag)
 
 			// The hash link carries the same text in its request file.
-			hashLink, file, err := links.HashLink(url, links.PluginFile(id))
+			hashLink, file, err := links.HashLink(url, linkstest.PluginFile(id))
 			require.NoError(t, err)
 			require.Equal(t, page+"#h="+links.RequestHash(frag), hashLink)
 			require.Equal(t, "basalt-plugin-"+id.String()+".txt", file.FileName)
@@ -119,7 +121,7 @@ func TestPluginLinkFixtures(t *testing.T) {
 		req := approval.PluginRequest{ApprovalID: pluginID(t, v.Binding), Binding: v.Binding, Settings: v.Settings, CredentialIDs: ids}
 		url, err := req.URL(links.DefaultLocal)
 		require.NoError(t, err)
-		hashLink, file, err := links.HashLink(url, links.PluginFile(req.ApprovalID))
+		hashLink, file, err := links.HashLink(url, linkstest.PluginFile(req.ApprovalID))
 		require.NoError(t, err)
 		out = append(out, pluginLink{Name: v.Name, URL: url, HashLink: hashLink, RequestText: file.Text, CredentialIDs: []string{ids[0].String()}})
 	}
@@ -154,7 +156,7 @@ func TestPluginRequestRefuses(t *testing.T) {
 	}
 
 	// Only format 2: a plugin approval link was never written in format 1.
-	f1, err := linkcodec.Encode(linkcodec.Format1, map[string]any{"approvalId": id, "binding": v.Binding, "settings": v.Settings})
+	f1, err := linkcodectest.Encode(linkcodec.Format1, map[string]any{"approvalId": id, "binding": v.Binding, "settings": v.Settings})
 	require.NoError(t, err)
 	_, _, err = approval.ParsePluginRequest(f1)
 	require.ErrorIs(t, err, approval.ErrInvalid)

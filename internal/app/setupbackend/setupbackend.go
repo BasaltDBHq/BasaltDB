@@ -10,21 +10,22 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/demo"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/ledger"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/setupstore"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/trustdir"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/lib/pgquerier"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/demo"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/setupstore"
+	"github.com/basaltdbhq/basaltdb/internal/setup"
+	"github.com/basaltdbhq/basaltdb/internal/setup/out/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Backend implements localsetup's Backend: the setup store (which is also
-// setuprun's backend) and the connection, trust and passkey calls localsetup
+// internal/setup's backend) and the connection, trust and passkey calls localsetup
 // makes itself.
 type Backend struct{ setupstore.Store }
 
@@ -43,7 +44,7 @@ func (Backend) ReadCredential(path string) (string, error) {
 		return "", err
 	}
 	if pgdial.CheckForeignDSN(dsn) != nil {
-		return "", setuprun.ErrForeignCredential
+		return "", setup.ErrForeignCredential
 	}
 	return dsn, nil
 }
@@ -65,8 +66,8 @@ func (Backend) PinFileNew(configPath, host string, cert *x509.Certificate, caOnl
 
 // The guard's install.
 
-func (Backend) AgentStatus(ctx context.Context, q setuprun.Querier, migs []guardmodel.Migration) (guardmodel.Status, error) {
-	return guard.AgentStatus(ctx, q, migs)
+func (Backend) AgentStatus(ctx context.Context, q setup.Querier, migs []guardmodel.Migration) (guardmodel.Status, error) {
+	return guard.AgentStatus(ctx, pgquerier.Unwrap(q), migs)
 }
 
 func (Backend) RepairScript(n guardmodel.Names, agent, password string, timeoutMs int64) (guardmodel.Script, error) {
@@ -80,12 +81,12 @@ func (Backend) AgentConnString(adminURL, role, password string) (string, error) 
 
 // Trust pins recorded in the database.
 
-func (Backend) RecordTrustPin(ctx context.Context, q setuprun.Querier, host string, port int, sha256 string) error {
-	return guard.RecordTrustPin(ctx, q, host, port, sha256)
+func (Backend) RecordTrustPin(ctx context.Context, q setup.Querier, host string, port int, sha256 string) error {
+	return guard.RecordTrustPin(ctx, pgquerier.Unwrap(q), host, port, sha256)
 }
 
-func (Backend) RecordedTrustPin(ctx context.Context, q setuprun.Querier, host string, port int) (string, bool, error) {
-	return guard.RecordedTrustPin(ctx, q, host, port)
+func (Backend) RecordedTrustPin(ctx context.Context, q setup.Querier, host string, port int) (string, bool, error) {
+	return guard.RecordedTrustPin(ctx, pgquerier.Unwrap(q), host, port)
 }
 
 func (Backend) RecordedTrustPinTx(ctx context.Context, tx pgx.Tx, n guardmodel.Names, host string, port int) (string, bool, error) {
@@ -94,8 +95,8 @@ func (Backend) RecordedTrustPinTx(ctx context.Context, tx pgx.Tx, n guardmodel.N
 
 // Column labels.
 
-func (Backend) PIIUnclassified(ctx context.Context, q setuprun.Querier) ([]guardmodel.UnclassifiedColumn, error) {
-	return guard.PIIUnclassified(ctx, q)
+func (Backend) PIIUnclassified(ctx context.Context, q setup.Querier) ([]guardmodel.UnclassifiedColumn, error) {
+	return guard.PIIUnclassified(ctx, pgquerier.Unwrap(q))
 }
 
 func (Backend) ReadLabels(ctx context.Context, conn *pgx.Conn, n guardmodel.Names, tables []string) ([]guardmodel.ColumnLabel, error) {
@@ -116,26 +117,26 @@ func (Backend) WriteAgentLabels(ctx context.Context, tx pgx.Tx, n guardmodel.Nam
 
 // Passkeys.
 
-func (Backend) ActivePasskeys(ctx context.Context, q setuprun.Querier) ([]guardmodel.RegisteredPasskey, error) {
-	return guard.ActivePasskeys(ctx, q)
+func (Backend) ActivePasskeys(ctx context.Context, q setup.Querier) ([]guardmodel.RegisteredPasskey, error) {
+	return guard.ActivePasskeys(ctx, pgquerier.Unwrap(q))
 }
 
-func (Backend) RegisterPasskey(ctx context.Context, q setuprun.Querier, cred passkey.Credential, label string) error {
-	return guard.RegisterPasskey(ctx, q, cred, label)
+func (Backend) RegisterPasskey(ctx context.Context, q setup.Querier, cred passkey.Credential, label string) error {
+	return guard.RegisterPasskey(ctx, pgquerier.Unwrap(q), cred, label)
 }
 
-func (Backend) RevokePasskey(ctx context.Context, q setuprun.Querier, credentialID []byte, force bool) (int, error) {
-	return guard.RevokePasskey(ctx, q, credentialID, force)
+func (Backend) RevokePasskey(ctx context.Context, q setup.Querier, credentialID []byte, force bool) (int, error) {
+	return guard.RevokePasskey(ctx, pgquerier.Unwrap(q), credentialID, force)
 }
 
-func (Backend) ListPasskeys(ctx context.Context, q setuprun.Querier) ([]setuprun.ActivePasskey, error) {
-	keys, err := ledger.ListPasskeys(ctx, q)
+func (Backend) ListPasskeys(ctx context.Context, q setup.Querier) ([]setup.ActivePasskey, error) {
+	keys, err := ledger.ListPasskeys(ctx, pgquerier.Unwrap(q))
 	if err != nil {
 		return nil, err
 	}
-	out := make([]setuprun.ActivePasskey, len(keys))
+	out := make([]setup.ActivePasskey, len(keys))
 	for i, k := range keys {
-		out[i] = setuprun.ActivePasskey{Credential: k.Credential, Label: k.Label, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt}
+		out[i] = setup.ActivePasskey{Credential: k.Credential, Label: k.Label, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt}
 	}
 	return out, nil
 }
@@ -148,6 +149,6 @@ func (Backend) SeedDemo(ctx context.Context, tx pgx.Tx) (guardmodel.DemoPlan, er
 	return demo.Seed(ctx, tx)
 }
 
-func (Backend) DemoCounts(ctx context.Context, q setuprun.Querier) (int, int, error) {
-	return demo.Counts(ctx, q)
+func (Backend) DemoCounts(ctx context.Context, q setup.Querier) (int, int, error) {
+	return demo.Counts(ctx, pgquerier.Unwrap(q))
 }

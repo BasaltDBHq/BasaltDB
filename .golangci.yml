@@ -128,49 +128,93 @@ linters:
           files:
             - "!$test"
           deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest
               desc: vaulttest is a test fake; import it from _test.go files only
+        # Test helper packages (fakes, fixtures and the core test oracles) are
+        # linked into test binaries only: no production file imports one.
+        # The helpers themselves (directories ending in "test") and the smoke
+        # test programs under scripts/ may.
+        no-test-helpers-in-production:
+          files:
+            - "!$test"
+            - "!**/*test/**"
+            - "!**/scripts/**"
+          deny:
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/mcpserver/mcptest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/plugin/out/plugintransport/adaptertest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/channel/channeltest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/linkcodec/linkcodectest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/links/linkstest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/agenttest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/connecttest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest
+              desc: a test helper package; import it from _test.go files only
+            - pkg: github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest
+              desc: a test helper package; import it from _test.go files only
         # The Go plugin SDK is its own module, with its own generated copy of
         # the plugin service. Only the programs that are plugins import it: a
         # binary that also links the engine's copy would not start.
         plugin-sdk-only-in-plugins:
           files:
-            - "!**/internal/adapter/outbound/plugintransport/testnotifier/cmd/**"
+            - "!**/internal/plugin/out/plugintransport/testnotifier/cmd/**"
             - "!**/scripts/systemd-smoke/probe/**"
           deny:
             - pkg: github.com/basaltdbhq/basalt-plugin-go
               desc: only the test notifier and the systemd smoke probe import the plugin SDK
-        # The agent service talks to its store only through the store ports
-        # (internal/service/agent/ports.go): no database driver, SQL policy or
-        # adapter in it.
+        # The agent service, its MCP tools and the agent service's code in
+        # internal/app (agent_*.go) talk to the store only through the store
+        # ports (internal/agent: Store, WriteStore; app: Store, SQLStore): no
+        # database driver, SQL policy or adapter in them. The rest of
+        # internal/app, which wires the adapters, is outside it.
         agent-through-store-ports:
           files:
-            - "**/internal/service/agent/**"
+            - "**/internal/agent/**"
+            - "**/internal/app/agent_*.go"
             - "!$test"
           deny:
             - pkg: github.com/jackc/pgx
               desc: the agent service reaches Postgres only through the store ports
             - pkg: github.com/basaltdbhq/basaltdb/internal/core/sqlguard
               desc: statements are checked by the store (SQLStore.Check)
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/store
               desc: the run.go wiring picks the adapter; the service sees ports only
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/pgdial
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgdial
               desc: the agent service opens no connection
         # The ledger, the signed-message codecs and the PII code do not depend
-        # on a store adapter or on the agent service.
+        # on a store adapter or on the agent service. The agent service's
+        # wiring now lives in internal/app, which none of them can import
+        # (that would be an import cycle).
         no-adapter-in-ledger-and-pii:
           files:
-            - "**/internal/adapter/outbound/postgres/ledger/**"
+            - "**/internal/platform/postgres/ledger/**"
             - "**/internal/core/approval/**"
             - "**/internal/core/revert/**"
             - "**/internal/core/pii/**"
-            - "**/internal/service/classify/**"
-            - "**/internal/service/piidict/**"
+            - "**/internal/pii/**"
             - "!$test"
           deny:
-            - pkg: github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store
+            - pkg: github.com/basaltdbhq/basaltdb/internal/platform/postgres/store
               desc: the ledger and PII code do not depend on a store adapter
-            - pkg: github.com/basaltdbhq/basaltdb/internal/service/agent
+            - pkg: github.com/basaltdbhq/basaltdb/internal/agent
               desc: the ledger and PII code do not depend on the agent service
         # internal/core/action is the store-neutral vocabulary: the standard
         # library, uuid, pagination and the signed-message codecs only.

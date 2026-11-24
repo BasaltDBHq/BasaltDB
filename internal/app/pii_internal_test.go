@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/pii"
+	piisvc "github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
 // The tests that change GOMEMLIMIT do not run in parallel.
@@ -18,7 +19,7 @@ import (
 func TestOpenPIICreatesTheKeyAndRefusesAWideOne(t *testing.T) {
 	limit := debug.SetMemoryLimit(-1)
 	t.Cleanup(func() { debug.SetMemoryLimit(limit) })
-	t.Setenv(envGoMemLimit, "")
+	t.Setenv(piisvc.EnvGoMemLimit, "")
 	dir := filepath.Join(t.TempDir(), "state")
 	p := config.Config{}.PIIOrDefault()
 
@@ -31,7 +32,7 @@ func TestOpenPIICreatesTheKeyAndRefusesAWideOne(t *testing.T) {
 	fi, err = os.Stat(filepath.Join(dir, pii.DictionaryDirName, pii.StatusFileName))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), "status.json holds counts only, readable by basalt log")
-	require.Equal(t, int64(memLimitFactor*config.DefaultPIIMaxMemoryMB)<<20, debug.SetMemoryLimit(-1), "GOMEMLIMIT from the budget")
+	require.Equal(t, int64(piisvc.MemLimitFactor*config.DefaultPIIMaxMemoryMB)<<20, debug.SetMemoryLimit(-1), "GOMEMLIMIT from the budget")
 
 	// The same key on the next start; a key file wider than 0600 stops it.
 	dict, err = openPII(dir, p, slog.New(slog.DiscardHandler))
@@ -45,7 +46,7 @@ func TestOpenPIICreatesTheKeyAndRefusesAWideOne(t *testing.T) {
 func TestOpenPIIKeepsGOMEMLIMITFromTheEnvironment(t *testing.T) {
 	limit := debug.SetMemoryLimit(-1)
 	t.Cleanup(func() { debug.SetMemoryLimit(limit) })
-	t.Setenv(envGoMemLimit, "1GiB")
+	t.Setenv(piisvc.EnvGoMemLimit, "1GiB")
 	debug.SetMemoryLimit(1 << 30)
 	dict, err := openPII(t.TempDir(), config.PII{MaxMemoryMB: 64}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)

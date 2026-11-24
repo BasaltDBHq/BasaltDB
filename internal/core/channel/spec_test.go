@@ -103,7 +103,7 @@ func TestChannelSpecMatchesContract(t *testing.T) {
 	require.Equal(t, PSKLen, specInt(t, get("psk-length")))
 	require.Equal(t, SecretLen, specInt(t, get("secret-length")))
 	spki := spkiOfPoint(make([]byte, PointLen))
-	idRaw, err := unb64(EngineIDOf(spki))
+	idRaw, err := Unb64(EngineIDOf(spki))
 	require.NoError(t, err)
 	require.Equal(t, len(idRaw), specInt(t, get("engine-id-bytes")))
 	require.Equal(t, len(strings.ReplaceAll(FingerprintOf(EngineIDOf(spki)), " ", "")), specInt(t, get("fingerprint-chars")))

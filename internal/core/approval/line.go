@@ -32,15 +32,15 @@ func ParseLine(text string) (Line, error) {
 	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&l); err != nil {
-		return Line{}, invalid("preview line: %v", err)
+		return Line{}, Invalid("preview line: %v", err)
 	}
 	switch l.Op {
 	case OpInsert, OpUpdate, OpDelete:
 	default:
-		return Line{}, invalid("preview line op %q", l.Op)
+		return Line{}, Invalid("preview line op %q", l.Op)
 	}
 	if l.Table == "" {
-		return Line{}, invalid("preview line without a table")
+		return Line{}, Invalid("preview line without a table")
 	}
 	return l, nil
 }

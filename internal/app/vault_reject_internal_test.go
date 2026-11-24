@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
@@ -26,7 +26,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/core/revert/reverttest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 )
 
 // A reject inside a Vault session behaves as on loopback: a bad body gets
@@ -64,11 +67,13 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := pg.service(func(d *agent.Deps) { d.PagesBase, d.Links, d.Relay = links.Portal, secrets, relay })
+	svc := pg.service(func(d *Deps) {
+		d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = links.Portal, secrets, relay
+	})
 	s := serveOverVault(t, &wire{}, svc, secrets, id)
 	relay.c.Store(s.client)
 
-	loopback := pages.New(links.Portal, quietLog())
+	loopback := newPages(links.Portal, quietLog())
 	loopback.Add(svc)
 	viaLoopback := func(method, path string, headers map[string]string, body string) (int, string) {
 		t.Helper()
@@ -118,7 +123,7 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 	// The reject is answered, then the revoked link ends the session.
 	r := do(p, http.MethodPost, rejectPath, s.secret, `{"note":"leave it"}`)
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
-	var out agent.RejectResponse
+	var out revertsvc.RejectResponse
 	require.NoError(t, json.Unmarshal([]byte(r.Body), &out))
 	require.Equal(t, id.String(), out.RevertID)
 	require.Equal(t, "REJECTED", out.Status)
@@ -154,9 +159,9 @@ func TestVaultSessionRejectsARevert(t *testing.T) {
 	require.NoError(t, err)
 	var norm string
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
-	as, err := person.Sign(revert.RescopeChallenge(widened, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
+	as, err := person.Sign(reverttest.RescopeChallenge(widened, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	widen, err := json.Marshal(agent.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &agent.ScopeProof{
+	widen, err := json.Marshal(revertsvc.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)

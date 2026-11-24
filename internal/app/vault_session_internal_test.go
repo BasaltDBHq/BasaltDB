@@ -14,24 +14,28 @@ import (
 	"testing"
 	"time"
 
+	revertsvc "github.com/basaltdbhq/basaltdb/internal/revert"
+
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/config"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
+	"github.com/basaltdbhq/basaltdb/internal/core/guidance"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/pageserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
 // heldAgent holds one write for approval. Its relay checks the person's
@@ -44,7 +48,7 @@ type heldAgent struct {
 	lines   []string
 	cred    passkey.Credential
 	// receipt is what RelayApproval returns.
-	receipt agent.Receipt
+	receipt linksvc.Receipt
 
 	mu       sync.Mutex
 	approved bool
@@ -52,22 +56,22 @@ type heldAgent struct {
 
 func (a *heldAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
 	if id != a.id {
-		return approval.Request{}, agent.ErrNotThisAgent
+		return approval.Request{}, linksvc.ErrNotThisAgent
 	}
 	return approval.Request{ApprovalID: id, Binding: a.binding, Lines: a.lines}, nil
 }
 
-func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (agent.Receipt, error) {
+func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (linksvc.Receipt, error) {
 	if r.ApprovalID != a.id {
-		return agent.Receipt{}, agent.ErrNotThisAgent
+		return linksvc.Receipt{}, linksvc.ErrNotThisAgent
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.approved {
-		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
+		return linksvc.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "this approval was already used"}
 	}
-	if _, err := approval.Verify(a.binding, a.cred, r); err != nil {
-		return agent.Receipt{}, &toolresult.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
+	if _, err := approvaltest.Verify(a.binding, a.cred, r); err != nil {
+		return linksvc.Receipt{}, &toolresult.ToolError{Code: guidance.CodeApprovalInvalid, Message: "the signature does not verify"}
 	}
 	a.approved = true
 	return a.receipt, nil
@@ -80,34 +84,34 @@ func (a *heldAgent) isApproved() bool {
 }
 
 func (a *heldAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
-	return revert.Request{}, agent.ErrNotThisAgent
+	return revert.Request{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
-	return agent.ScopeResponse{}, agent.ErrNotThisAgent
+func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, revertsvc.ScopeRequest) (revertsvc.ScopeResponse, error) {
+	return revertsvc.ScopeResponse{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
-func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
-	return agent.RejectResponse{}, agent.ErrNotThisAgent
+func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, revertsvc.RejectRequest) (revertsvc.RejectResponse, error) {
+	return revertsvc.RejectResponse{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RevealApproval(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
-	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+func (a *heldAgent) RevealApproval(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
-	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, linksvc.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, linksvc.ErrNotThisAgent
 }
 
-func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, agent.Receipt, error) {
-	return action.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
+func (a *heldAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, linksvc.Receipt, error) {
+	return action.AppliedRevert{}, linksvc.Receipt{}, linksvc.ErrNotThisAgent
 }
 
 func (a *heldAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
 
-func (a *heldAgent) PageFailure(err error) *toolresult.ToolError { return agent.ToolError(err) }
+func (a *heldAgent) PageFailure(err error) *toolresult.ToolError { return AgentErrors().ToolError(err) }
 
 // intentMarker is in the held write's binding: it must never cross the
 // Vault's sockets in the clear.
@@ -171,7 +175,7 @@ func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSe
 	store := links.NewSecrets(time.Now, rand.Reader)
 	held := &heldAgent{
 		secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential(),
-		receipt: agent.Receipt{Token: "basalt-receipt.1.cA.cw"},
+		receipt: linksvc.Receipt{Token: "basalt-receipt.1.cA.cw"},
 	}
 	s := serveOverVaultWith(t, w, opts, held, store, id)
 	s.agent, s.person = held, person
@@ -180,41 +184,41 @@ func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSe
 
 // serveOverVault connects an engine whose pages serve a to a fake Vault
 // that records into w, and issues and registers a relay link for item id.
-func serveOverVault(t *testing.T, w *wire, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+func serveOverVault(t *testing.T, w *wire, a pageserver.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
 	t.Helper()
 	return serveOverVaultWith(t, w, vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe}, a, store, id)
 }
 
 // serveOverVaultWith is serveOverVault with the fake Vault's options.
-func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pageserver.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
 	t.Helper()
 	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
-	relay := newRelayLinks(quietLog())
-	site := pages.New(links.Portal, quietLog())
+	relay := linksvc.NewRegistry(quietLog())
+	site := newPages(links.Portal, quietLog())
 	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, sessionDispatcher{site})
-	require.NotNil(t, ev.client)
-	relay.add("bot", store, ev.client.Unregister)
+	require.NotNil(t, ev.Client)
+	relay.Add("bot", store, ev.Client.Unregister)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = ev.client.Run(ctx)
+		_ = ev.Client.Run(ctx)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		<-done
 	})
-	require.Eventually(t, ev.client.Connected, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, ev.Client.Connected, 5*time.Second, 5*time.Millisecond)
 
 	secret, token, err := store.IssueRelay(id, time.Now().Add(time.Hour))
 	require.NoError(t, err)
-	require.NoError(t, ev.client.Register(context.Background(), token, time.Now().Add(time.Hour)))
+	require.NoError(t, ev.Client.Register(context.Background(), token, time.Now().Add(time.Hour)))
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
-	return &vaultSession{v: v, client: ev.client, wire: w, store: store, secret: secret, keys: keys}
+	return &vaultSession{v: v, client: ev.Client, wire: w, store: store, secret: secret, keys: keys}
 }
 
 func (s *vaultSession) open(t *testing.T) *pagetest.Page {
@@ -240,7 +244,7 @@ func signed(t *testing.T, signer *passkeytest.Authenticator, req approval.Reques
 	t.Helper()
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	body, err := json.Marshal(approval.NewResponse(req.ApprovalID, as))
+	body, err := json.Marshal(approvaltest.NewResponse(req.ApprovalID, as))
 	require.NoError(t, err)
 	return string(body)
 }
@@ -431,10 +435,10 @@ func TestVaultSessionEndsWhenItsLinkIsRevoked(t *testing.T) {
 // check, so a probe cannot tell them apart by time.
 func TestVaultSessionDeadTokenTiming(t *testing.T) {
 	t.Parallel()
-	relay := newRelayLinks(quietLog())
+	relay := linksvc.NewRegistry(quietLog())
 	for range 2 {
 		store := links.NewSecrets(time.Now, rand.Reader)
-		relay.add("bot", store, func(channel.LinkToken) {})
+		relay.Add("bot", store, func(channel.LinkToken) {})
 		for range 50 {
 			_, _, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 			require.NoError(t, err)
@@ -455,7 +459,7 @@ func TestVaultSessionDeadTokenTiming(t *testing.T) {
 		require.NoError(t, err)
 		token := keys.Token
 		lookup := func(t channel.LinkToken) (channel.PSK, bool) {
-			l, ok := relay.Session(t)
+			l, ok := vaultLinks{relay}.Session(t)
 			return l.PSK, ok
 		}
 		start := time.Now()

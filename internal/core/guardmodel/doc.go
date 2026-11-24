@@ -3,5 +3,5 @@
 // codes and refusal details, the guard status, revert scopes and results,
 // plugin events, approvals and settings, and setup kinds. It holds types,
 // constants and pure checks only; the SQL that installs and calls the guard
-// stays in internal/adapter/outbound/postgres/guard.
+// stays in internal/platform/postgres/guard.
 package guardmodel

@@ -18,11 +18,10 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/vaulttest"
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/vaulttest"
 )
 
 // portalStep is one line testdata/portal_relay.mjs prints.
@@ -96,7 +95,7 @@ func TestPortalChannelClientAgainstFakeVault(t *testing.T) {
 	s := serveOverVault(t, w, e.svc, e.secrets, e.held)
 	path := "/api/v1/approvals/" + e.held.String()
 
-	loopback := pages.New(links.Portal, slog.New(slog.DiscardHandler))
+	loopback := newPages(links.Portal, slog.New(slog.DiscardHandler))
 	loopback.Add(e.svc)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 	for k, v := range pagetest.Headers(s.secret) {

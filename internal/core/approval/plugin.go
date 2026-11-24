@@ -60,19 +60,19 @@ func ParsePluginBinding(text string) (PluginBinding, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&b); err != nil {
-		return PluginBinding{}, invalid("plugin binding: %v", err)
+		return PluginBinding{}, Invalid("plugin binding: %v", err)
 	}
 	if dec.More() {
-		return PluginBinding{}, invalid("plugin binding has data after its end")
+		return PluginBinding{}, Invalid("plugin binding has data after its end")
 	}
 	if b.Kind != KindPlugin {
-		return PluginBinding{}, invalid("binding kind %q is not a plugin approval", b.Kind)
+		return PluginBinding{}, Invalid("binding kind %q is not a plugin approval", b.Kind)
 	}
 	if b.ApprovalID == uuid.Nil {
-		return PluginBinding{}, invalid("plugin binding has no approvalId")
+		return PluginBinding{}, Invalid("plugin binding has no approvalId")
 	}
 	if !isSHA256Hex(b.ManifestSHA256) || !isSHA256Hex(b.SettingsSHA256) {
-		return PluginBinding{}, invalid("plugin binding manifestSha256 and settingsSha256 must be lowercase sha256 hex")
+		return PluginBinding{}, Invalid("plugin binding manifestSha256 and settingsSha256 must be lowercase sha256 hex")
 	}
 	return b, nil
 }
@@ -112,10 +112,10 @@ func (r PluginRequest) Check() (PluginBinding, error) {
 		return PluginBinding{}, err
 	}
 	if b.ApprovalID != r.ApprovalID {
-		return PluginBinding{}, invalid("request is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
+		return PluginBinding{}, Invalid("request is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
 	}
 	if SettingsHash(r.Settings) != b.SettingsSHA256 {
-		return PluginBinding{}, invalid("the settings text does not match the binding's settingsSha256")
+		return PluginBinding{}, Invalid("the settings text does not match the binding's settingsSha256")
 	}
 	return b, nil
 }
@@ -148,7 +148,7 @@ const pluginTexts = 2
 // approval link was never written in format 1.
 func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
 	if strings.HasPrefix(strings.TrimPrefix(fragment, "#"), linkcodec.Format1) {
-		return PluginRequest{}, PluginBinding{}, invalid("a plugin approval link is format %q only", linkcodec.Format2)
+		return PluginRequest{}, PluginBinding{}, Invalid("a plugin approval link is format %q only", linkcodec.Format2)
 	}
 	r, err := linkcodec.DecodeRequest(fragment, pluginTexts-1, func(binding string, lines []string, ids []passkey.Bytes) PluginRequest {
 		out := PluginRequest{Binding: binding, Settings: lines[0], CredentialIDs: ids}
@@ -158,7 +158,7 @@ func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
 		return out
 	})
 	if err != nil {
-		return PluginRequest{}, PluginBinding{}, invalid("plugin approval request %v", err)
+		return PluginRequest{}, PluginBinding{}, Invalid("plugin approval request %v", err)
 	}
 	b, err := r.Check()
 	if err != nil {
@@ -205,10 +205,10 @@ func (r PluginApprovalResponse) Assertion() passkey.Assertion {
 func DecodePluginResponse(raw []byte) (PluginApprovalResponse, error) {
 	var r PluginApprovalResponse
 	if err := passkey.DecodeStrict(raw, &r); err != nil {
-		return PluginApprovalResponse{}, invalid("%v", err)
+		return PluginApprovalResponse{}, Invalid("%v", err)
 	}
 	if r.ApprovalID == uuid.Nil || len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return PluginApprovalResponse{}, invalid("plugin approval response is missing a field")
+		return PluginApprovalResponse{}, Invalid("plugin approval response is missing a field")
 	}
 	return r, nil
 }
@@ -223,7 +223,7 @@ func VerifyPlugin(bindingText string, cred passkey.Credential, r PluginApprovalR
 		return 0, err
 	}
 	if b.ApprovalID != r.ApprovalID {
-		return 0, invalid("response is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
+		return 0, Invalid("response is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
 	}
 	count, err := passkey.VerifyAssertion(cred, Challenge(bindingText), r.Assertion())
 	if err != nil {

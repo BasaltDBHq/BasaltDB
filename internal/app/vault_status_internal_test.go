@@ -14,24 +14,23 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/channel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
 // onePasskey answers the passkey count status reads; nothing else is called.
-type onePasskey struct{ agent.SQLStore }
+type onePasskey struct{ SQLStore }
 
 func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 	return make([]passkey.Credential, 1), nil
 }
 
 // vaultInStatus is status.vault as an agent's status tool reports ev.
-func vaultInStatus(t *testing.T, ev engineVault) map[string]any {
+func vaultInStatus(t *testing.T, ev vault.Engine) map[string]any {
 	t.Helper()
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Store: onePasskey{},
-		Log: quietLog(), Now: time.Now, Vault: ev,
-	})
-	r, err := svc.Status(context.Background())
+	d := testAgentDeps("bot", onePasskey{})
+	d.Status.Vault = ev
+	svc := NewService(d)
+	r, err := svc.status.Status(context.Background())
 	require.NoError(t, err)
 	raw, err := json.Marshal(r)
 	require.NoError(t, err)
@@ -57,6 +56,6 @@ func TestStatusReportsVaultOff(t *testing.T) {
 	ev := openVault(config.Config{}, t.TempDir(), time.Now, quietLog(), nil, nil)
 	v := vaultInStatus(t, ev)
 	require.Equal(t, "OFF", v["state"])
-	require.Equal(t, ev.status().EngineID, v["engineId"], "the engine id whenever the key file loads")
-	require.Equal(t, ev.status().Fingerprint, v["fingerprint"])
+	require.Equal(t, ev.Status().EngineID, v["engineId"], "the engine id whenever the key file loads")
+	require.Equal(t, ev.Status().Fingerprint, v["fingerprint"])
 }

@@ -227,9 +227,6 @@ func (k *EngineKeys) PublicKeySPKI() []byte { return bytes.Clone(k.spki) }
 // BoxPublicKeySPKI is a copy of the box key's public SPKI DER.
 func (k *EngineKeys) BoxPublicKeySPKI() []byte { return spkiOfPoint(k.box.PublicKey().Bytes()) }
 
-// BoxKeySig is the signing key's signature over the box key statement.
-func (k *EngineKeys) BoxKeySig() []byte { return bytes.Clone(k.boxKeySig) }
-
 // Sign signs context followed by body with the signing key and returns the
 // 64-byte r || s. Only the contract's contexts are signed.
 func (k *EngineKeys) Sign(context SigningContext, body []byte) ([]byte, error) {

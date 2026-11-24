@@ -17,22 +17,23 @@ import (
 	"testing"
 	"time"
 
+	linksvc "github.com/basaltdbhq/basaltdb/internal/links"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/adapter/inbound/pages"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/guard/guardtest"
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
-	"github.com/basaltdbhq/basaltdb/internal/adapter/outbound/vault/pagetest"
 	"github.com/basaltdbhq/basaltdb/internal/core/action"
 	"github.com/basaltdbhq/basaltdb/internal/core/approval"
+	"github.com/basaltdbhq/basaltdb/internal/core/approval/approvaltest"
 	"github.com/basaltdbhq/basaltdb/internal/core/guardmodel"
 	"github.com/basaltdbhq/basaltdb/internal/core/links"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/core/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/core/revert"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/guard/guardtest"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
+	"github.com/basaltdbhq/basaltdb/internal/platform/vault/pagetest"
 )
 
 // syncBuffer is a log sink the tests read back.
@@ -61,7 +62,7 @@ func (b *syncBuffer) String() string {
 type revealEnv struct {
 	d       *guardtest.DB
 	person  *passkeytest.Authenticator
-	svc     *agent.Service
+	svc     *Service
 	secrets *links.Secrets
 	logs    *syncBuffer
 	held    uuid.UUID
@@ -105,8 +106,8 @@ func newRevealEnv(t *testing.T) *revealEnv {
 	// The person's passkey is a synced one: its counter stays 0.
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
 
-	e.svc = pg.service(func(d *agent.Deps) {
-		d.Log, d.PagesBase, d.Links, d.Relay = log, links.Portal, e.secrets, &lateRelay{}
+	e.svc = pg.service(func(d *Deps) {
+		d.Core.Log, d.Core.PagesBase, d.Delivery.Links, d.Delivery.Relay = log, links.Portal, e.secrets, &lateRelay{}
 	})
 	return e
 }
@@ -136,12 +137,12 @@ func (e *revealEnv) body(t *testing.T, kind string, id uuid.UUID, nonce []byte, 
 	require.NoError(t, err)
 	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)
-	ch, err := approval.RevealChallenge(kind, id, nonce, key, rowsHash)
+	ch, err := approvaltest.RevealChallenge(kind, id, nonce, key, rowsHash)
 	require.NoError(t, err)
 	as, err := e.person.Sign(ch, passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(raw)
-	b, err := json.Marshal(agent.RevealRequest{RevealSecret: secret, Proof: agent.ScopeProof{
+	b, err := json.Marshal(linksvc.RevealRequest{RevealSecret: secret, Proof: linksvc.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,
 	}})
 	require.NoError(t, err)
@@ -166,7 +167,7 @@ func TestRevealRoutes(t *testing.T) {
 	t.Parallel()
 	e := newRevealEnv(t)
 	ctx := context.Background()
-	loopback := pages.New(links.Portal, slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	loopback := newPages(links.Portal, slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	loopback.Add(e.svc)
 	viaLoopback := func(method, path, secret, body string) (int, string) {
 		t.Helper()

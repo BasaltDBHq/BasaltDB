@@ -39,7 +39,7 @@ func connectOnlyEnv(t *testing.T) (agentEnv, config.Agent) {
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfgPath, raw))
 	require.NoError(t, config.WriteFile(config.SecretPath(cred, "bot"), []byte("pw\n")))
-	return agentEnv{cfg: cfg, configPath: cfgPath, handoff: HandoffOptions{
+	return agentEnv{cfg: cfg, configPath: cfgPath, handoff: handoffOptions{
 		Now: func() time.Time { return connectOnlyMade.Add(time.Minute) },
 	}}, a
 }
@@ -135,19 +135,4 @@ func TestConnectOnlyAgentRefused(t *testing.T) {
 	waiting, err := connectOnlyAgent(env, a, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.True(t, waiting)
-}
-
-// A reload asked for while the engine waits makes the restart trigger
-// return, and marks it a reload.
-func TestUpgradeOrReload(t *testing.T) {
-	t.Parallel()
-	reload, reloading := make(chan struct{}, 1), make(chan struct{})
-	up := upgradeOrReload(nil, reload, reloading)
-	reload <- struct{}{}
-	require.NoError(t, up(t.Context()))
-	select {
-	case <-reloading:
-	default:
-		t.Fatal("not marked a reload")
-	}
 }

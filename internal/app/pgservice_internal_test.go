@@ -7,9 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	postgres "github.com/basaltdbhq/basaltdb/internal/adapter/outbound/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/core/sqlguard"
-	"github.com/basaltdbhq/basaltdb/internal/service/agent"
+	postgres "github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 )
 
 // pgAgent is an agent's Postgres store opened the way the engine opens it,
@@ -35,15 +34,21 @@ func newPGAgent(t *testing.T, url string, conns int32) pgAgent {
 	}
 }
 
+// testAgentDeps are the dependencies of an agent named name over store: the
+// adapters' ones as the engine wires them, a quiet log and the real clock.
+func testAgentDeps(name string, store SQLStore) Deps {
+	d := AgentHostDeps()
+	d.Core.Name, d.Core.Log, d.Core.Now = name, quietLog(), time.Now
+	d.Core.Store, d.Write.Store, d.Approval.Store, d.Revert.Store, d.Status.Passkeys = store, store, store, store, store
+	return d
+}
+
 // service builds the agent service over the store; set fills in the rest of
 // its dependencies (logger, links, relay and so on).
-func (p pgAgent) service(set func(*agent.Deps)) *agent.Service {
-	d := agent.Deps{
-		Name: "bot", Store: p.store,
-		Log: quietLog(), Now: time.Now,
-	}
+func (p pgAgent) service(set func(*Deps)) *Service {
+	d := testAgentDeps("bot", p.store)
 	if set != nil {
 		set(&d)
 	}
-	return agent.NewService(d)
+	return NewService(d)
 }

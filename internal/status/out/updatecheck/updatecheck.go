@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -117,20 +118,40 @@ func (c *Checker) Cached() *Notice {
 	return notice(c.Current, c.load().Releases)
 }
 
+// releaseCandidateRE matches a release candidate tag such as v0.1.0-alpha-rc.2.
+var releaseCandidateRE = regexp.MustCompile(`-rc\.[0-9]+$`)
+
+// releaseCandidate reports whether tag names a release candidate: a build to
+// test before a release, never offered to anyone.
+func releaseCandidate(tag string) bool { return releaseCandidateRE.MatchString(tag) }
+
 // notice picks the newest release above current that the person may see:
-// pre-releases (a tag suffix or GitHub's flag) only when current is one.
+// pre-releases (a tag suffix or GitHub's flag) only when current is one, and
+// release candidates never.
 func notice(current string, releases []Release) *Notice {
 	cur, ok := parseVersion(current)
 	if !ok || current == DevVersion {
 		return nil
+	}
+	// A candidate build is older than the release it leads up to, but
+	// semantic version order puts v0.1.0-alpha-rc.1 above v0.1.0-alpha: judge
+	// it by its base, and count the release itself as newer.
+	floor, floorEq := cur, false
+	if releaseCandidate(current) {
+		if base, ok := parseVersion(releaseCandidateRE.ReplaceAllString(current, "")); ok {
+			floor, floorEq = base, true
+		}
 	}
 	var best *Release
 	var bestV version
 	security := false
 	for i := range releases {
 		r := &releases[i]
+		if releaseCandidate(r.Tag) {
+			continue
+		}
 		v, ok := parseVersion(r.Tag)
-		if !ok || ((v.prerelease() || r.Prerelease) && !cur.prerelease()) || v.compare(cur) <= 0 {
+		if !ok || ((v.prerelease() || r.Prerelease) && !cur.prerelease()) || older(v.compare(floor), floorEq) {
 			continue
 		}
 		security = security || r.Security
@@ -148,6 +169,10 @@ func notice(current string, releases []Release) *Notice {
 		URL:      releasePageBase + best.Tag,
 	}
 }
+
+// older reports whether a comparison against the floor rules a release out:
+// below it, or equal to it when the floor is a build's own number.
+func older(c int, floorEq bool) bool { return c < 0 || (c == 0 && !floorEq) }
 
 // Run refreshes the cache now and then whenever it falls due, until ctx is
 // done: for a long-running process (the engine). Errors go to onErr.

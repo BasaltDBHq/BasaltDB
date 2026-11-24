@@ -581,17 +581,26 @@ func (c Config) checkLinkBudget() error {
 		*c.LinkBudget, links.DefaultBudget)
 }
 
-// ReadCredential reads an agent's Postgres URL. It refuses a file that group
-// or others can read, so a credential never sits readable by the agent.
+// ReadCredential reads an agent's Postgres URL. It opens the file without
+// following a symlink at the path, and refuses anything but a regular file
+// with one link, owned by this process's user or root, that group and others
+// cannot read, so a credential never sits readable by the agent and a link
+// never sends the read to another file. Every check is on the descriptor
+// read from (openCredential).
 func ReadCredential(path string) (string, error) {
-	fi, err := os.Stat(path)
+	f, err := openCredential(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
 	if err != nil {
 		return "", err
 	}
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
 	}
-	raw, err := readSmall(path, os.Open)
+	raw, err := readSmallFrom(path, f)
 	if err != nil {
 		return "", err
 	}
@@ -608,6 +617,11 @@ func readSmall(path string, open func(string) (*os.File, error)) ([]byte, error)
 		return nil, err
 	}
 	defer f.Close()
+	return readSmallFrom(path, f)
+}
+
+// readSmallFrom reads f, the open file at path, refusing one over 1 MiB.
+func readSmallFrom(path string, f *os.File) ([]byte, error) {
 	raw, err := io.ReadAll(io.LimitReader(f, maxConfigBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)

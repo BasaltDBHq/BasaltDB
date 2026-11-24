@@ -65,7 +65,7 @@ func piiService(t *testing.T, obs agentsvc.PIIObserver) (*app.Service, *guardtes
 		if obs == nil {
 			obs = pii.NewObserver(pii.NewMap(slog.New(slog.DiscardHandler)), dict).On(pgquerier.Neutralize(pool))
 		}
-		deps.Write.PII = obs
+		deps.Agent.PII = obs
 	}))
 	return env.Svc, d, dict, keys
 }

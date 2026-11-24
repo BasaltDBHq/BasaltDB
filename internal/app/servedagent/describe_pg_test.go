@@ -92,8 +92,8 @@ func describeDBWithUpdate(t *testing.T, update func() *status.ReleaseNotice) des
 	classifyDescribe(t, d)
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
-		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
+		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Agent.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
 		d.Status.Update = update
 	})).Svc
 	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, db: d, role: a.Role}
@@ -332,8 +332,8 @@ func TestDescribeSearchScale(t *testing.T) {
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
-		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
+		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Agent.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
@@ -379,8 +379,8 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	}
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
-		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
+		d.Agent.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
+		d.Agent.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map

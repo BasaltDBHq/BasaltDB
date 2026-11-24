@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 	approvalsvc "github.com/basaltdbhq/basaltdb/internal/approval"
 
 	"github.com/google/uuid"
@@ -30,13 +29,6 @@ func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (links
 // RevealApproval reveals the rows of a held write to the page holding secret.
 func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in linksvc.RevealRequest) (approval.RevealAnswer, error) {
 	return s.approval.RevealApproval(ctx, id, secret, in)
-}
-
-// liveWrites is the write store's statement check, read live from the service.
-type liveWrites struct{ d *agentsvc.WriteDeps }
-
-func (l liveWrites) Check(sql string, tool action.Tool) (action.Statement, error) {
-	return l.d.Store.Check(sql, tool)
 }
 
 // agentApprovals is the approval use case as the agent's write use case

@@ -23,18 +23,18 @@ import (
 // its name and fingerprint when ifFingerprint is still current. A resource
 // that does not exist and one the agent cannot read are the same NOT_FOUND.
 func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint string) (Resource, error) {
-	namespace, name, err := ds.core.Language.ParseName(resource)
+	namespace, name, err := ds.store.Language.ParseName(resource)
 	if err != nil {
 		return Resource{}, &guidance.ArgumentError{Message: "invalid arguments: resource " + err.Error()}
 	}
-	res, ok, err := ds.describe.Catalog.Find(ctx, namespace, name)
+	res, ok, err := ds.store.Catalog.Find(ctx, namespace, name)
 	if err != nil {
 		return Resource{}, err
 	}
 	if !ok {
 		return Resource{}, describeNotFound(resource)
 	}
-	d, err := ds.describe.Catalog.Describe(ctx, res.Ref)
+	d, err := ds.store.Catalog.Describe(ctx, res.Ref)
 	if errors.Is(err, action.ErrNotFound) { // dropped since Find
 		return Resource{}, describeNotFound(resource)
 	}
@@ -45,11 +45,11 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 	for i, f := range d.Fields {
 		refs[i] = f.Ref
 	}
-	classes, err := ds.describe.Classes.Resolve(ctx, refs)
+	classes, err := ds.store.Classes.Resolve(ctx, refs)
 	if err != nil {
 		return Resource{}, err
 	}
-	pii, err := ds.describe.Classes.CatalogFingerprint(ctx)
+	pii, err := ds.store.Classes.CatalogFingerprint(ctx)
 	if err != nil {
 		return Resource{}, err
 	}
@@ -58,7 +58,7 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 		return Resource{}, err
 	}
 	if slices.ContainsFunc(detail.Actions, func(a action.Op) bool { return a != action.OpSelect }) {
-		guarded, err := ds.describe.Catalog.Guarded(ctx, d.Ref)
+		guarded, err := ds.store.Catalog.Guarded(ctx, d.Ref)
 		if err != nil {
 			return Resource{}, err
 		}
@@ -67,7 +67,7 @@ func (ds *Service) DescribeResource(ctx context.Context, resource, ifFingerprint
 			detail.Policy = &p
 		}
 	}
-	out := Resource{Resource: ds.core.Language.PrintName(d.Namespace, d.Name), Detail: &detail}
+	out := Resource{Resource: ds.store.Language.PrintName(d.Namespace, d.Name), Detail: &detail}
 	out.Fingerprint, err = resourceFingerprint(out, pii)
 	if err != nil {
 		return Resource{}, err

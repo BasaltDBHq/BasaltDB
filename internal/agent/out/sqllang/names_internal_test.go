@@ -62,7 +62,6 @@ func TestPrintName(t *testing.T) {
 		{"", "t", `"".t`},
 		{"public", "café", `public."café"`},
 	} {
-		require.Equal(t, tc.want, PrintName(tc.schema, tc.name), "%s.%s", tc.schema, tc.name)
 		require.Equal(t, tc.want, Language{}.PrintName(tc.schema, tc.name))
 	}
 }

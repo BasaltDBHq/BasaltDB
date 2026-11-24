@@ -79,7 +79,7 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	if p.RunID == uuid.Nil {
 		return WriteOutcome{}, &guidance.ArgumentError{Message: "approvalId needs the runId the write was held in"}
 	}
-	run, err := ledgersvc.FindRun(ctx, wc.core.Store, p.RunID)
+	run, err := ledgersvc.FindRun(ctx, wc.store.Ledger, p.RunID)
 	if err != nil {
 		return WriteOutcome{}, err
 	}
@@ -112,12 +112,12 @@ func (wc *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutco
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := wc.core.Now()
-	stmt, err := wc.core.Language.Check(p.Request, action.ToolWrite)
+	stmt, err := wc.store.Language.Check(p.Request, action.ToolWrite)
 	op := stmt.Op
 	if err != nil {
 		return WriteOutcome{}, wc.refused(ctx, in, op, p.Request, start, err)
 	}
-	res, err := wc.write.Store.WriteApproved(ctx, in, a.ID, op, p.Request.Text, p.Request.Params)
+	res, err := wc.store.Data.WriteApproved(ctx, in, a.ID, p.Request, stmt)
 	if err != nil {
 		return WriteOutcome{}, wc.withApprovalLink(ctx, a, wc.refused(ctx, in, op, p.Request, start, err))
 	}

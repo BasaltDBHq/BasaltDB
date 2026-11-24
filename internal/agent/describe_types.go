@@ -41,8 +41,6 @@ type Catalog interface {
 	// Host is the host that database is on (name and host only, never a
 	// user, port or credential).
 	Host() string
-	// Limits are the read limits the agent's statements run within.
-	Limits() action.Limits
 }
 
 // ClassResolver is the agent's PII classification, by field.
@@ -88,8 +86,6 @@ func (noCatalog) Structure(context.Context) ([]string, error) { return nil, errN
 func (noCatalog) Database() string { return "" }
 
 func (noCatalog) Host() string { return "" }
-
-func (noCatalog) Limits() action.Limits { return action.Limits{} }
 
 // noClasses serves a service built without PII classes: it cannot tell a
 // SECRET field, so every describe call fails closed (INTERNAL).

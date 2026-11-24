@@ -5,19 +5,7 @@ import (
 	"sync"
 )
 
-// RLSChecker says whether row-level security hides every row of a table
-// from the agent role. It returns the table's name as the database writes it
-// (quoted where needed), or "" when the table is not hidden. The engine's is
-// a BlindCache; the default says no table is hidden.
-type RLSChecker interface {
-	Hides(ctx context.Context, table string) (string, error)
-}
-
-type noRLS struct{}
-
-func (noRLS) Hides(context.Context, string) (string, error) { return "", nil }
-
-// BlindCache answers RLSChecker from the database's catalog, once per table
+// BlindCache answers Visibility from the database's catalog, once per table
 // until Refresh: a statement that returns no rows asks, and a busy agent
 // does not ask again for the same table. The upkeep cycle calls Refresh, so
 // a policy added or dropped by the person shows within one cycle.

@@ -46,10 +46,10 @@ func (unsafeGuard) ReinstallNotice(context.Context, int) (string, bool, error) {
 }
 
 // gatedService is a real agent service on an unsafe guard. Its stores are
-// empty interfaces: a call that got past Admit would panic, so a test that
-// passes relayed nothing.
+// empty interfaces but for their kind: a call that got past Admit would
+// panic, so a test that passes relayed nothing.
 func gatedService(store *links.Secrets) *Service {
-	d := testAgentDeps("demo_bot", struct{ SQLStore }{})
+	d := testAgentDeps("demo_bot", postgresStore{})
 	d.Core.PagesBase, d.Delivery.Links, d.Status.Probe = links.Portal, store, unsafeGuard{}
 	return NewService(d)
 }

@@ -10,12 +10,9 @@ func (Language) ParseName(s string) (namespace, name string, err error) {
 	return parseResource(s)
 }
 
-// PrintName is schema.name as Postgres prints it (quote_ident).
+// PrintName is schema.name as Postgres prints it (quote_ident). The zero
+// Language prints names: it needs no check.
 func (Language) PrintName(namespace, name string) string { return printedName(namespace, name) }
-
-// PrintName is schema.name as Postgres prints it (quote_ident), for the
-// store wiring that renders a foreign key's other table.
-func PrintName(schema, name string) string { return printedName(schema, name) }
 
 // parseResource reads schema.table as Postgres prints it: each part bare
 // (folded to lower case, as Postgres folds it) or double-quoted, with ""

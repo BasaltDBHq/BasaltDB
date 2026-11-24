@@ -17,8 +17,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/platform/vault"
 )
 
-// onePasskey answers the passkey count status reads; nothing else is called.
-type onePasskey struct{ SQLStore }
+// onePasskey answers the passkey count status reads, on a Postgres store;
+// nothing else is called.
+type onePasskey struct{ postgresStore }
 
 func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 	return make([]passkey.Credential, 1), nil

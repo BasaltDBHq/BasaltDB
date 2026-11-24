@@ -291,8 +291,10 @@ BEGIN
         EXECUTE pg_catalog.format('REVOKE %%s ON %%s %%s FROM %%I', v_rec.privs,
             CASE WHEN v_rec.seq THEN 'SEQUENCE' ELSE 'TABLE' END, v_rec.rel, '%[1]s');
     END LOOP;
-    SELECT pg_catalog.string_agg(DISTINCT u.rel::pg_catalog.regclass::text, ', ') INTO v_left
-        FROM (` + agentExactFrom + agentExactKinds + `) u;
+    SELECT pg_catalog.string_agg(DISTINCT pg_catalog.format('%%I.%%I', ns.nspname, cl.relname), ', ') INTO v_left
+        FROM (` + agentExactFrom + agentExactKinds + `) u
+        JOIN pg_catalog.pg_class cl ON cl.oid = u.rel
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = cl.relnamespace;
     IF v_left IS NOT NULL THEN
         RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
             DETAIL = '%[1]s ` + guardmodel.UnpickedGrantsDetail + `' || v_left,

@@ -50,11 +50,6 @@ type describeSearchResult struct {
 	NextCursor string                `json:"nextCursor,omitempty"`
 }
 
-type describeResourceResult struct {
-	Form string `json:"form"`
-	agentsvc.Resource
-}
-
 // describe serves the three forms, told apart by their arguments, with every
 // error within the codes describe declares.
 func (h handlers) describe(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -91,7 +86,9 @@ func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, e
 		if err != nil {
 			return nil, err
 		}
-		return describeResourceResult{Form: agentsvc.FormResource, Resource: res}, nil
+		// The resource writes its own members in order, form first.
+		res.Form = agentsvc.FormResource
+		return res, nil
 	}
 	o, err := h.svc.DescribeOverview(ctx)
 	if err != nil {

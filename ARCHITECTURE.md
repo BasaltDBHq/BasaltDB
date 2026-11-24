@@ -131,6 +131,7 @@ A codec function is a function of a decision package that only decodes, parses o
 | `toolresult` | agent | types | 2 | - | - |
 | `servicespec` | engine service | types | 2 | - | - |
 | `guidance` | agent | types | 2 | - | - |
+| `agentstore` | agent | types | 2 | - | - |
 
 ## Known violations
 

@@ -93,7 +93,7 @@ func describeDBWithUpdate(t *testing.T, update func() *status.ReleaseNotice) des
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
+		d.Describe.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
 		d.Status.Update = update
 	})).Svc
 	return describeHarness{harness: harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}, db: d, role: a.Role}
@@ -333,7 +333,7 @@ func TestDescribeSearchScale(t *testing.T) {
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
+		d.Describe.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
@@ -380,7 +380,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 
 	svc := agenttest.PgService(t, a.URL, agenttest.WithDeps(func(d *app.Deps, pool *pgxpool.Pool) {
 		d.Describe.Catalog = app.NewAgentCatalog(store.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database).WithHost("db.example.com"))
-		d.Describe.Classes = pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool))
+		d.Describe.Classes = app.NewAgentClasses(pii.NewMap(slog.New(slog.DiscardHandler)).On(pgquerier.Neutralize(pool)))
 	})).Svc
 	h := harness{server: mcpserver.NewServer(mcpserver.Info{Name: "basalt"}, app.AgentTools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
@@ -391,11 +391,11 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	require.False(t, isError, "%v", body)
 	t.Logf("overview of %d schemas: %s", schemas, took)
 	require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout)
-	require.Len(t, body["schemas"], 50)
-	n, err := body["counts"].(map[string]any)["schemas"].(json.Number).Int64()
+	require.Len(t, body["namespaces"], 50)
+	n, err := body["counts"].(map[string]any)["namespaces"].(json.Number).Int64()
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, n, int64(schemas), "counts.schemas is the full number")
-	require.NotNil(t, body["otherSchemas"])
+	require.GreaterOrEqual(t, n, int64(schemas), "counts.namespaces is the full number")
+	require.NotNil(t, body["otherNamespaces"])
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
 	require.Less(t, len(raw), 16<<10, "the overview stays small")

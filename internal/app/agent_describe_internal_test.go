@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	agentsvc "github.com/basaltdbhq/basaltdb/internal/agent"
 
@@ -22,37 +23,39 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/core/toolresult"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/platform/mcpserver"
+	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/platform/postgres/store"
 	"github.com/basaltdbhq/basaltdb/internal/testkit/stepcatalogtest"
 )
 
-// fakeCatalog is a Catalog over fixed relations and details.
+// fakeCatalog is the Postgres catalog over fixed relations and details;
+// describe reads it through the agent's wiring (agentCatalog).
 type fakeCatalog struct {
-	visible    []agentsvc.CatalogRelation
+	visible    []pgcatalog.Relation
 	notGranted int
-	details    map[uint32]agentsvc.CatalogDetail
-	matches    []agentsvc.CatalogMatch
+	details    map[uint32]pgcatalog.Detail
+	matches    []pgcatalog.Match
 	lines      []string
 	// guarded are the tables basalt init guards.
 	guarded map[uint32]bool
 	// searched records the exclude list of the last search.
-	searched []agentsvc.CatalogColumnKey
+	searched []pgcatalog.ColumnKey
 }
 
-func (f *fakeCatalog) Relations(context.Context) ([]agentsvc.CatalogRelation, int, error) {
+func (f *fakeCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
 	return f.visible, f.notGranted, nil
 }
 
-func (f *fakeCatalog) Find(_ context.Context, schema, name string) (agentsvc.CatalogRelation, bool, error) {
+func (f *fakeCatalog) Find(_ context.Context, schema, name string) (pgcatalog.Relation, bool, error) {
 	for _, r := range f.visible {
 		if r.Schema == schema && r.Name == name {
 			return r, true, nil
 		}
 	}
-	return agentsvc.CatalogRelation{}, false, nil
+	return pgcatalog.Relation{}, false, nil
 }
 
-func (f *fakeCatalog) Describe(_ context.Context, oid uint32) (agentsvc.CatalogDetail, error) {
+func (f *fakeCatalog) Describe(_ context.Context, oid uint32) (pgcatalog.Detail, error) {
 	return f.details[oid], nil
 }
 
@@ -60,9 +63,9 @@ func (f *fakeCatalog) Guarded(_ context.Context, oid uint32) (bool, error) {
 	return f.guarded[oid], nil
 }
 
-func (f *fakeCatalog) Search(_ context.Context, _ string, exclude []agentsvc.CatalogColumnKey, after *agentsvc.CatalogSearchCursor, limit int) ([]agentsvc.CatalogMatch, error) {
+func (f *fakeCatalog) Search(_ context.Context, _ string, exclude []pgcatalog.ColumnKey, after *pgcatalog.SearchCursor, limit int) ([]pgcatalog.Match, error) {
 	f.searched = exclude
-	out := []agentsvc.CatalogMatch{}
+	out := []pgcatalog.Match{}
 	for _, m := range f.matches {
 		if after != nil && (m.Rank < after.Rank || (m.Rank == after.Rank && m.Schema+"."+m.Name <= after.Schema+"."+after.Name)) {
 			continue
@@ -112,20 +115,20 @@ func (f fakeClasses) CatalogFingerprint(context.Context) (string, error) { retur
 
 const ordersOID = 100
 
-func rel(oid uint32, schema, name string, privs ...string) agentsvc.CatalogRelation {
+func rel(oid uint32, schema, name string, privs ...string) pgcatalog.Relation {
 	rows := int64(12)
 	if len(privs) == 0 {
 		privs = []string{"SELECT"}
 	}
-	return agentsvc.CatalogRelation{OID: oid, Schema: schema, Name: name, Kind: "TABLE", EstimatedRows: &rows, Privileges: privs}
+	return pgcatalog.Relation{OID: oid, Schema: schema, Name: name, Kind: "TABLE", EstimatedRows: &rows, Privileges: privs}
 }
 
 // ordersDetail is a table with a SECRET column (card_token), an ungranted
 // one (cost_price), an index and a partial index on them, and a generated
 // column over one of them.
-func ordersDetail() agentsvc.CatalogDetail {
-	d := agentsvc.CatalogDetail{CatalogRelation: rel(ordersOID, "shop", "orders", "SELECT", "UPDATE")}
-	d.Columns = []agentsvc.CatalogColumn{
+func ordersDetail() pgcatalog.Detail {
+	d := pgcatalog.Detail{Relation: rel(ordersOID, "shop", "orders", "SELECT", "UPDATE")}
+	d.Columns = []pgcatalog.Column{
 		{Attnum: 1, Name: "id", Type: "bigint", Selectable: true, Comment: "order id"},
 		{Attnum: 2, Name: "card_token", Type: "text", Nullable: true, Selectable: true},
 		{Attnum: 3, Name: "cost_price", Type: "numeric", Nullable: true},
@@ -136,12 +139,12 @@ func ordersDetail() agentsvc.CatalogDetail {
 		{Attnum: 5, Name: "price", Type: "numeric", Selectable: true, Default: "0"},
 	}
 	d.PrimaryKey = []int16{1}
-	d.Indexes = []agentsvc.CatalogIndex{
+	d.Indexes = []pgcatalog.Index{
 		{Name: "orders_pkey", Definition: "CREATE UNIQUE INDEX orders_pkey ON shop.orders USING btree (id)", Attnums: []int16{1}, Unique: true},
 		{Name: "orders_card_idx", Definition: "CREATE INDEX orders_card_idx ON shop.orders USING btree (card_token)", Attnums: []int16{2}},
 		{Name: "orders_cheap_idx", Definition: "CREATE INDEX orders_cheap_idx ON shop.orders USING btree (price) WHERE cost_price < 1", Attnums: []int16{3, 5}, Partial: true},
 	}
-	d.Keys = []agentsvc.CatalogKey{
+	d.Keys = []pgcatalog.Key{
 		{
 			Name: "lines_order_fk", Attnums: []int16{1}, OtherOID: 101, OtherSchema: "shop", OtherTable: "lines",
 			OtherColumns: []string{"order_id"}, OtherReadable: true, OnDelete: "CASCADE", OnUpdate: "NO ACTION",
@@ -152,20 +155,20 @@ func ordersDetail() agentsvc.CatalogDetail {
 			OtherColumns: []string{"token"}, OtherReadable: true, OnDelete: "RESTRICT", OnUpdate: "RESTRICT",
 		},
 	}
-	d.Stats = agentsvc.CatalogStats{TableBytes: 8192, TotalBytes: 32768, SeqScans: 3}
+	d.Stats = pgcatalog.Stats{TableBytes: 8192, TotalBytes: 32768, SeqScans: 3}
 	d.CascadesIntoHidden = 1
 	return d
 }
 
-func describeService(t *testing.T, cat agentsvc.Catalog, classes fakeClasses, operatedBy string) *Service {
+func describeService(t *testing.T, cat pgCatalog, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
 	cmds, err := newCommands("bot", "", "linux", testManager())
 	require.NoError(t, err)
 	d.Core.Commands = cmds
 	d.Status.OperatedBy = operatedBy
-	d.Describe.Catalog = cat
-	d.Describe.Classes = classes
+	d.Describe.Catalog = agentCatalog{pg: cat}
+	d.Describe.Classes = agentClasses{pg: classes}
 	return NewService(d)
 }
 
@@ -178,15 +181,16 @@ type kindStore struct {
 func (k kindStore) Kind() action.StoreKind { return k.kind }
 
 // describeUseCase is the describe use case over cat, on the commands cmds.
-func describeUseCase(cmds guidance.Commands, cat agentsvc.Catalog) *agentsvc.Service {
-	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Commands: cmds}, &agentsvc.DescribeDeps{Catalog: cat, Classes: fakeClasses{}}, &agentsvc.WriteDeps{},
+func describeUseCase(cmds guidance.Commands, cat pgCatalog) *agentsvc.Service {
+	describe := &agentsvc.DescribeDeps{Catalog: agentCatalog{pg: cat}, Classes: agentClasses{pg: fakeClasses{}}}
+	return agentsvc.New(agentsvc.Core{Store: kindStore{kind: action.StorePostgres}, Commands: cmds}, describe, &agentsvc.WriteDeps{},
 		func() *guidance.UpdateInfo { return nil })
 }
 
 func ordersCatalog() (*fakeCatalog, fakeClasses) {
 	cat := &fakeCatalog{
-		visible: []agentsvc.CatalogRelation{rel(ordersOID, "shop", "orders", "SELECT", "UPDATE"), rel(101, "shop", "lines")},
-		details: map[uint32]agentsvc.CatalogDetail{ordersOID: ordersDetail()},
+		visible: []pgcatalog.Relation{rel(ordersOID, "shop", "orders", "SELECT", "UPDATE"), rel(101, "shop", "lines")},
+		details: map[uint32]pgcatalog.Detail{ordersOID: ordersDetail()},
 		lines:   []string{"shop.orders:TABLE"},
 		guarded: map[uint32]bool{ordersOID: true},
 	}
@@ -329,8 +333,8 @@ func TestUnguardedWritableTableHasNullPolicy(t *testing.T) {
 	require.Nil(t, m["policy"])
 }
 
-func manyRelations(n int) []agentsvc.CatalogRelation {
-	out := make([]agentsvc.CatalogRelation, 0, n)
+func manyRelations(n int) []pgcatalog.Relation {
+	out := make([]pgcatalog.Relation, 0, n)
 	for i := range n {
 		schema := "app"
 		if i%3 == 0 {
@@ -351,10 +355,10 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	m := decodeBody(t, body)
 	require.Equal(t, "OVERVIEW", m["form"])
 	require.Len(t, m["resources"], 50)
-	require.NotContains(t, m, "schemas")
+	require.NotContains(t, m, "namespaces")
 	require.NotContains(t, m, "nextSteps")
 	require.NotContains(t, m, "personMessage")
-	require.Equal(t, map[string]any{"schemas": 2.0, "tables": 50.0, "notGranted": 0.0}, m["counts"])
+	require.Equal(t, map[string]any{"namespaces": 2.0, "resources": 50.0, "notGranted": 0.0}, m["counts"])
 	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app", "host": "db.example.com"}, m["store"])
 	first := m["resources"].([]any)[0].(map[string]any)
 	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"SELECT"}}, first)
@@ -376,9 +380,9 @@ func TestOverviewLargeListsSchemas(t *testing.T) {
 	m := decodeBody(t, body)
 	require.NotContains(t, m, "resources")
 	require.Equal(t, []any{
-		map[string]any{"schema": "app", "tables": 34.0},
-		map[string]any{"schema": "billing", "tables": 17.0},
-	}, m["schemas"])
+		map[string]any{"namespace": "app", "resources": 34.0},
+		map[string]any{"namespace": "billing", "resources": 17.0},
+	}, m["namespaces"])
 	require.Equal(t, []string{"AGENT CALL_TOOL"}, stepKinds(t, m))
 	step := m["nextSteps"].([]any)[0].(map[string]any)
 	require.Equal(t, guidance.ToolDescribe, step["tool"])
@@ -540,9 +544,9 @@ func TestDescribeStaleCursor(t *testing.T) {
 
 func TestDescribeQuotedResourceNames(t *testing.T) {
 	t.Parallel()
-	cat := &fakeCatalog{visible: []agentsvc.CatalogRelation{rel(7, "Sales", "Order Items"), rel(8, "public", "order"), rel(9, "public", "leads")}}
-	cat.details = map[uint32]agentsvc.CatalogDetail{
-		7: {CatalogRelation: cat.visible[0]}, 8: {CatalogRelation: cat.visible[1]}, 9: {CatalogRelation: cat.visible[2]},
+	cat := &fakeCatalog{visible: []pgcatalog.Relation{rel(7, "Sales", "Order Items"), rel(8, "public", "order"), rel(9, "public", "leads")}}
+	cat.details = map[uint32]pgcatalog.Detail{
+		7: {Relation: cat.visible[0]}, 8: {Relation: cat.visible[1]}, 9: {Relation: cat.visible[2]},
 	}
 	s := describeService(t, cat, fakeClasses{}, "")
 	for in, printed := range map[string]string{
@@ -561,11 +565,11 @@ func TestCommentTrimmed(t *testing.T) {
 	long := "  " + strings.Repeat("é", 600) + "  "
 	d := ordersDetail()
 	d.Comment = long
-	r := d.CatalogRelation
+	r := d.Relation
 	cat := &fakeCatalog{
-		visible: []agentsvc.CatalogRelation{r},
-		details: map[uint32]agentsvc.CatalogDetail{ordersOID: d},
-		matches: []agentsvc.CatalogMatch{{CatalogRelation: r, Rank: 0, Matched: "table"}},
+		visible: []pgcatalog.Relation{r},
+		details: map[uint32]pgcatalog.Detail{ordersOID: d},
+		matches: []pgcatalog.Match{{Relation: r, Rank: 0, Matched: "table"}},
 	}
 	_, classes := ordersCatalog()
 	s := describeService(t, cat, classes, "")
@@ -583,7 +587,7 @@ func TestDescribeSearchPagesAndExcludesSecrets(t *testing.T) {
 	t.Parallel()
 	cat, classes := ordersCatalog()
 	for _, r := range manyRelations(5) {
-		cat.matches = append(cat.matches, agentsvc.CatalogMatch{CatalogRelation: r, Rank: 2, Matched: "table"})
+		cat.matches = append(cat.matches, pgcatalog.Match{Relation: r, Rank: 2, Matched: "table"})
 	}
 	sort.Slice(cat.matches, func(i, j int) bool {
 		return cat.matches[i].Schema+"."+cat.matches[i].Name < cat.matches[j].Schema+"."+cat.matches[j].Name
@@ -593,7 +597,7 @@ func TestDescribeSearchPagesAndExcludesSecrets(t *testing.T) {
 	require.Equal(t, "SEARCH", first["form"])
 	require.Len(t, first["items"], 3)
 	require.NotEmpty(t, first["nextCursor"])
-	require.Equal(t, []agentsvc.CatalogColumnKey{{OID: ordersOID, Attnum: 2}}, cat.searched, "SECRET columns are excluded")
+	require.Equal(t, []pgcatalog.ColumnKey{{OID: ordersOID, Attnum: 2}}, cat.searched, "SECRET columns are excluded")
 
 	next := decodeBody(t, mustDescribe(t, s, map[string]any{"query": "t", "limit": 3, "cursor": first["nextCursor"]}))
 	require.NotContains(t, next, "nextCursor", "the last page")
@@ -648,7 +652,7 @@ func TestDescribeAnswersMatchTheOutputSchema(t *testing.T) {
 	cat, classes := ordersCatalog()
 	cat.visible = append(cat.visible, manyRelations(60)...)
 	cat.notGranted = 2
-	cat.matches = []agentsvc.CatalogMatch{{CatalogRelation: cat.visible[0], Rank: 1, Matched: "column id"}}
+	cat.matches = []pgcatalog.Match{{Relation: cat.visible[0], Rank: 1, Matched: "column id"}}
 	large := describeService(t, cat, classes, "")
 	small := describeService(t, &fakeCatalog{visible: manyRelations(3)}, fakeClasses{}, "")
 	fp := decodeBody(t, mustDescribe(t, large, map[string]any{"resource": "shop.orders"}))["fingerprint"]
@@ -677,15 +681,15 @@ type errCatalog struct {
 	err error
 }
 
-func (e *errCatalog) Relations(context.Context) ([]agentsvc.CatalogRelation, int, error) {
+func (e *errCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
 	return nil, 0, e.err
 }
 
-func (e *errCatalog) Find(context.Context, string, string) (agentsvc.CatalogRelation, bool, error) {
-	return agentsvc.CatalogRelation{}, false, e.err
+func (e *errCatalog) Find(context.Context, string, string) (pgcatalog.Relation, bool, error) {
+	return pgcatalog.Relation{}, false, e.err
 }
 
-func (e *errCatalog) Search(context.Context, string, []agentsvc.CatalogColumnKey, *agentsvc.CatalogSearchCursor, int) ([]agentsvc.CatalogMatch, error) {
+func (e *errCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatalog.SearchCursor, int) ([]pgcatalog.Match, error) {
 	return nil, e.err
 }
 
@@ -735,7 +739,7 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 	t.Parallel()
 	cat, _ := ordersCatalog()
 	d := deps()
-	d.Describe.Catalog = cat
+	d.Describe.Catalog = agentCatalog{pg: cat}
 	s := NewService(d)
 	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}} {
 		body, isError := callDescribe(t, s, args)
@@ -747,8 +751,8 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 
 // manySchemas is one table in each of n schemas, plus extra tables in the
 // schemas named by bigger.
-func manySchemas(n int, bigger map[string]int) []agentsvc.CatalogRelation {
-	var out []agentsvc.CatalogRelation
+func manySchemas(n int, bigger map[string]int) []pgcatalog.Relation {
+	var out []pgcatalog.Relation
 	oid := uint32(1000)
 	add := func(schema string, tables int) {
 		for i := range tables {
@@ -772,15 +776,15 @@ func TestOverviewCapsTheSchemaList(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
-	schemas := m["schemas"].([]any)
+	schemas := m["namespaces"].([]any)
 	require.Len(t, schemas, 50)
-	require.Equal(t, map[string]any{"schema": "tenant_00007", "tables": 9.0}, schemas[0])
-	require.Equal(t, map[string]any{"schema": "tenant_04999", "tables": 5.0}, schemas[1])
-	require.Equal(t, map[string]any{"schema": "tenant_00000", "tables": 1.0}, schemas[2], "ties by schema name")
-	require.Equal(t, map[string]any{"schema": "tenant_00048", "tables": 1.0}, schemas[49])
-	require.Equal(t, map[string]any{"schemas": 4950.0, "tables": 4950.0}, m["otherSchemas"])
-	require.Equal(t, 5000.0, m["counts"].(map[string]any)["schemas"], "the full count")
-	require.Equal(t, 5012.0, m["counts"].(map[string]any)["tables"])
+	require.Equal(t, map[string]any{"namespace": "tenant_00007", "resources": 9.0}, schemas[0])
+	require.Equal(t, map[string]any{"namespace": "tenant_04999", "resources": 5.0}, schemas[1])
+	require.Equal(t, map[string]any{"namespace": "tenant_00000", "resources": 1.0}, schemas[2], "ties by schema name")
+	require.Equal(t, map[string]any{"namespace": "tenant_00048", "resources": 1.0}, schemas[49])
+	require.Equal(t, map[string]any{"namespaces": 4950.0, "resources": 4950.0}, m["otherNamespaces"])
+	require.Equal(t, 5000.0, m["counts"].(map[string]any)["namespaces"], "the full count")
+	require.Equal(t, 5012.0, m["counts"].(map[string]any)["resources"])
 	step := m["nextSteps"].([]any)[0].(map[string]any)
 	require.Equal(t, map[string]any{"query": "tenant_00007"}, step["arguments"], "the largest schema")
 	require.Less(t, len(body), 8<<10, "the answer stays small")
@@ -792,6 +796,72 @@ func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
-	require.Len(t, m["schemas"], 50)
-	require.NotContains(t, m, "otherSchemas")
+	require.Len(t, m["namespaces"], 50)
+	require.NotContains(t, m, "otherNamespaces")
+}
+
+// openDetail is a table with nothing hidden: defaults, a generated column,
+// two indexes with sizes and scans, an outgoing and an incoming key to
+// quoted names, row-level security, stats and no privileges listed.
+func openDetail() pgcatalog.Detail {
+	at := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	r := rel(200, "shop", "open")
+	r.Privileges = nil
+	r.Comment = "open table"
+	d := pgcatalog.Detail{Relation: r}
+	d.Columns = []pgcatalog.Column{
+		{Attnum: 1, Name: "id", Type: "bigint", Selectable: true, Default: "nextval('shop.open_id_seq'::regclass)"},
+		{Attnum: 2, Name: "label", Type: "text", Nullable: true, Selectable: true, Default: "'a'::text", Comment: "a label"},
+		{Attnum: 3, Name: "total", Type: "numeric", Nullable: true, Selectable: true, Generated: true, Default: "(id * 2)", DefaultAttnums: []int16{1}},
+	}
+	d.Indexes = []pgcatalog.Index{
+		{Name: "open_label_idx", Definition: "CREATE INDEX open_label_idx ON shop.open USING btree (label)", Attnums: []int16{2}, SizeBytes: 8192, Scans: 4},
+		{
+			Name: "open_total_idx", Definition: "CREATE UNIQUE INDEX open_total_idx ON shop.open USING btree (total) WHERE total > 0",
+			Attnums: []int16{3}, Unique: true, Partial: true, SizeBytes: 16384, Scans: 9,
+		},
+	}
+	d.Keys = []pgcatalog.Key{
+		{
+			Name: "open_lines_fk", Outgoing: true, Attnums: []int16{1}, OtherOID: 101, OtherSchema: "Sales", OtherTable: "Order Items",
+			OtherColumns: []string{"id"}, OtherReadable: true, OnDelete: "SET DEFAULT", OnUpdate: "CASCADE",
+		},
+		{
+			Name: "in_fk", Attnums: []int16{2}, OtherOID: 102, OtherSchema: "public", OtherTable: "order",
+			OtherColumns: []string{"label"}, OtherReadable: true, OnDelete: "NO ACTION", OnUpdate: "SET NULL",
+		},
+	}
+	d.Stats = pgcatalog.Stats{TableBytes: 1, TotalBytes: 2, SeqScans: 3, IndexScans: 4, LastAnalyzed: &at}
+	d.RLS = true
+	return d
+}
+
+// TestResourceFingerprintsArePinned: the resource fingerprint is the
+// agent's cache key (ifFingerprint), so the same structure keeps the same
+// fingerprint from one engine release to the next. The values are the
+// fingerprints these tables had before describe was written in
+// store-neutral types.
+func TestResourceFingerprintsArePinned(t *testing.T) {
+	t.Parallel()
+	fp := func(cat *fakeCatalog, classes fakeClasses, resource string) string {
+		return decodeBody(t, mustDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": resource}))["fingerprint"].(string)
+	}
+
+	cat, classes := ordersCatalog()
+	require.Equal(t, "7f923422275798f3a00060b442c39dad26b4bd5d0268e3dd9f910f534296e403", fp(cat, classes, "shop.orders"), "hidden columns, indexes and keys")
+
+	cat, classes = ordersCatalog()
+	d := cat.details[ordersOID]
+	d.Indexes[0].Scans, d.Indexes[0].SizeBytes = 7, 100
+	d.Indexes[0].Definition += " WHERE id < 5 & true"
+	d.Comment = "<orders> & co"
+	cat.details[ordersOID] = d
+	require.Equal(t, "2694b9c982b7bd8fd73ae11e4b38df6013ab8921797a32fce900213f6f3c1ede", fp(cat, classes, "shop.orders"), "escaped text and index counters")
+
+	open := openDetail()
+	cat = &fakeCatalog{visible: []pgcatalog.Relation{open.Relation}, details: map[uint32]pgcatalog.Detail{200: open}}
+	classes = fakeClasses{classes: map[pii.ColumnRef]pii.Class{
+		{TableOID: 200, Attnum: 2}: {Class: guardmodel.ClassIdentifier, EntityType: "PERSON_NAME"},
+	}, print: "p1"}
+	require.Equal(t, "dc0a15972befb4445524c297feaed53dd8f27378f28db50b500d2e85565b20ed", fp(cat, classes, "shop.open"), "nothing hidden")
 }
